@@ -49,6 +49,14 @@ class SampleReallocatorConfig:
     # Validation
     validate_reallocation: bool = True
     max_reallocation_ratio: float = 0.3
+    
+    # Regime-aware reallocation
+    enable_regime_aware_reallocation: bool = True
+    regime_detection_method: str = 'variance'  # 'variance', 'entropy', 'volatility'
+    regime_window: int = 20
+    regime_threshold: float = 0.1
+    regime_specific_quality_metrics: bool = True
+    regime_transition_aware: bool = True
 
 class SampleReallocator:
     """
@@ -104,7 +112,10 @@ class SampleReallocator:
             initial_quality = self._calculate_quality_metric(cluster_labels, features, target_metric)
             
             # Perform reallocation
-            optimized_labels = self._perform_reallocation(cluster_labels, features, target_metric)
+            if self.config.enable_regime_aware_reallocation:
+                optimized_labels = self._perform_regime_aware_reallocation(cluster_labels, features, target_metric)
+            else:
+                optimized_labels = self._perform_reallocation(cluster_labels, features, target_metric)
             
             # Calculate final quality
             final_quality = self._calculate_quality_metric(optimized_labels, features, target_metric)
@@ -473,3 +484,295 @@ class SampleReallocator:
     def get_original_features(self) -> Optional[np.ndarray]:
         """Get original features."""
         return self.original_features.copy() if self.original_features is not None else None
+    
+    def _perform_regime_aware_reallocation(self, 
+                                         cluster_labels: np.ndarray, 
+                                         features: np.ndarray,
+                                         target_metric: Optional[str] = None) -> np.ndarray:
+        """Perform regime-aware sample reallocation."""
+        try:
+            logger.info("🎯 Starting regime-aware reallocation...")
+            
+            # Detect regimes
+            regimes = self._detect_regimes(features)
+            
+            if regimes is not None and len(np.unique(regimes)) > 1:
+                # Apply regime-aware reallocation
+                optimized_labels = self._apply_regime_aware_reallocation(cluster_labels, features, regimes, target_metric)
+            else:
+                # Fall back to standard reallocation
+                optimized_labels = self._perform_reallocation(cluster_labels, features, target_metric)
+            
+            return optimized_labels
+            
+        except Exception as e:
+            logger.error(f"❌ Regime-aware reallocation failed: {e}")
+            return self._perform_reallocation(cluster_labels, features, target_metric)
+    
+    def _detect_regimes(self, features: np.ndarray) -> Optional[np.ndarray]:
+        """Detect regimes in the feature data."""
+        try:
+            # Use first feature for regime detection
+            primary_feature = features[:, 0]
+            
+            if self.config.regime_detection_method == 'variance':
+                regimes = self._detect_regimes_by_variance(primary_feature)
+            elif self.config.regime_detection_method == 'entropy':
+                regimes = self._detect_regimes_by_entropy(primary_feature)
+            elif self.config.regime_detection_method == 'volatility':
+                regimes = self._detect_regimes_by_volatility(primary_feature)
+            else:
+                regimes = self._detect_regimes_by_variance(primary_feature)
+            
+            return regimes
+            
+        except Exception as e:
+            logger.error(f"❌ Regime detection failed: {e}")
+            return None
+    
+    def _detect_regimes_by_variance(self, feature: np.ndarray) -> np.ndarray:
+        """Detect regimes based on variance changes."""
+        try:
+            window = self.config.regime_window
+            threshold = self.config.regime_threshold
+            
+            regimes = np.zeros(len(feature))
+            rolling_var = pd.Series(feature).rolling(window=window).var().values
+            
+            # Find variance change points
+            var_changes = np.abs(np.diff(rolling_var)) > (threshold * np.nanmean(rolling_var))
+            change_points = np.where(var_changes)[0]
+            
+            # Assign regime labels
+            current_regime = 0
+            for i in range(len(regimes)):
+                if i in change_points:
+                    current_regime = (current_regime + 1) % 3
+                regimes[i] = current_regime
+            
+            return regimes
+            
+        except Exception as e:
+            logger.debug(f"Variance-based regime detection failed: {e}")
+            return np.zeros(len(feature))
+    
+    def _detect_regimes_by_entropy(self, feature: np.ndarray) -> np.ndarray:
+        """Detect regimes based on entropy changes."""
+        try:
+            window = self.config.regime_window
+            threshold = self.config.regime_threshold
+            
+            regimes = np.zeros(len(feature))
+            
+            # Calculate rolling entropy
+            rolling_entropy = []
+            for i in range(window, len(feature)):
+                window_data = feature[i-window:i]
+                # Discretize data
+                hist, _ = np.histogram(window_data, bins=10)
+                hist = hist / hist.sum()
+                hist = hist[hist > 0]
+                entropy = -np.sum(hist * np.log2(hist))
+                rolling_entropy.append(entropy)
+            
+            rolling_entropy = np.array(rolling_entropy)
+            
+            # Find entropy change points
+            entropy_changes = np.abs(np.diff(rolling_entropy)) > (threshold * np.std(rolling_entropy))
+            change_points = np.where(entropy_changes)[0] + window
+            
+            # Assign regime labels
+            current_regime = 0
+            for i in range(len(regimes)):
+                if i in change_points:
+                    current_regime = (current_regime + 1) % 3
+                regimes[i] = current_regime
+            
+            return regimes
+            
+        except Exception as e:
+            logger.debug(f"Entropy-based regime detection failed: {e}")
+            return np.zeros(len(feature))
+    
+    def _detect_regimes_by_volatility(self, feature: np.ndarray) -> np.ndarray:
+        """Detect regimes based on volatility changes."""
+        try:
+            window = self.config.regime_window
+            threshold = self.config.regime_threshold
+            
+            regimes = np.zeros(len(feature))
+            rolling_vol = pd.Series(feature).rolling(window=window).std().values
+            
+            # Find volatility change points
+            vol_changes = np.abs(np.diff(rolling_vol)) > (threshold * np.nanmean(rolling_vol))
+            change_points = np.where(vol_changes)[0]
+            
+            # Assign regime labels
+            current_regime = 0
+            for i in range(len(regimes)):
+                if i in change_points:
+                    current_regime = (current_regime + 1) % 3
+                regimes[i] = current_regime
+            
+            return regimes
+            
+        except Exception as e:
+            logger.debug(f"Volatility-based regime detection failed: {e}")
+            return np.zeros(len(feature))
+    
+    def _apply_regime_aware_reallocation(self, 
+                                       cluster_labels: np.ndarray, 
+                                       features: np.ndarray, 
+                                       regimes: np.ndarray,
+                                       target_metric: Optional[str] = None) -> np.ndarray:
+        """Apply regime-aware reallocation."""
+        try:
+            unique_regimes = np.unique(regimes)
+            optimized_labels = cluster_labels.copy()
+            
+            # Process each regime separately
+            for regime in unique_regimes:
+                regime_mask = regimes == regime
+                regime_cluster_labels = cluster_labels[regime_mask]
+                regime_features = features[regime_mask]
+                
+                if len(regime_cluster_labels) > 1:
+                    # Apply regime-specific reallocation
+                    regime_optimized = self._reallocate_regime_samples(
+                        regime_cluster_labels, regime_features, regime, target_metric
+                    )
+                    optimized_labels[regime_mask] = regime_optimized
+            
+            # Apply regime transition awareness
+            if self.config.regime_transition_aware:
+                optimized_labels = self._apply_transition_aware_reallocation(
+                    optimized_labels, features, regimes
+                )
+            
+            return optimized_labels
+            
+        except Exception as e:
+            logger.error(f"❌ Regime-aware reallocation application failed: {e}")
+            return cluster_labels
+    
+    def _reallocate_regime_samples(self, 
+                                 cluster_labels: np.ndarray, 
+                                 features: np.ndarray, 
+                                 regime: int,
+                                 target_metric: Optional[str] = None) -> np.ndarray:
+        """Reallocate samples within a specific regime."""
+        try:
+            # Use regime-specific quality metrics
+            if self.config.regime_specific_quality_metrics:
+                regime_metric = self._get_regime_specific_metric(regime, target_metric)
+            else:
+                regime_metric = target_metric
+            
+            # Apply standard reallocation within regime
+            current_labels = cluster_labels.copy()
+            best_labels = current_labels.copy()
+            best_quality = self._calculate_quality_metric(current_labels, features, regime_metric)
+            
+            iteration = 0
+            improvement = float('inf')
+            
+            while iteration < self.config.max_iterations and improvement > self.config.convergence_threshold:
+                iteration += 1
+                
+                # Select samples for reallocation within regime
+                samples_to_reallocate = self._select_regime_samples_for_reallocation(
+                    current_labels, features, regime
+                )
+                
+                if len(samples_to_reallocate) == 0:
+                    break
+                
+                # Reallocate selected samples
+                new_labels = self._reallocate_selected_samples(
+                    current_labels, features, samples_to_reallocate, regime_metric
+                )
+                
+                # Calculate new quality
+                new_quality = self._calculate_quality_metric(new_labels, features, regime_metric)
+                
+                # Check for improvement
+                improvement = new_quality - best_quality
+                
+                if improvement > self.config.min_improvement:
+                    best_labels = new_labels.copy()
+                    best_quality = new_quality
+                    current_labels = new_labels
+            
+            return best_labels
+            
+        except Exception as e:
+            logger.error(f"❌ Regime sample reallocation failed: {e}")
+            return cluster_labels
+    
+    def _get_regime_specific_metric(self, regime: int, target_metric: Optional[str] = None) -> str:
+        """Get regime-specific quality metric."""
+        try:
+            # Define regime-specific metrics based on regime characteristics
+            if regime == 0:  # Low volatility regime
+                return 'silhouette'  # Focus on cluster separation
+            elif regime == 1:  # Medium volatility regime
+                return target_metric or 'calinski_harabasz'  # Balanced metric
+            else:  # High volatility regime
+                return 'davies_bouldin'  # Focus on cluster compactness
+            
+        except Exception as e:
+            logger.debug(f"Regime-specific metric selection failed: {e}")
+            return target_metric or 'silhouette'
+    
+    def _select_regime_samples_for_reallocation(self, 
+                                              cluster_labels: np.ndarray, 
+                                              features: np.ndarray, 
+                                              regime: int) -> np.ndarray:
+        """Select samples for reallocation within a regime."""
+        try:
+            # Use regime-specific selection strategy
+            if regime == 0:  # Low volatility regime
+                # Focus on border samples
+                return self._select_border_samples(cluster_labels, features)
+            elif regime == 1:  # Medium volatility regime
+                # Use uncertain samples
+                return self._select_uncertain_samples(cluster_labels, features)
+            else:  # High volatility regime
+                # Use all samples (more aggressive reallocation)
+                return np.arange(len(cluster_labels))
+            
+        except Exception as e:
+            logger.error(f"❌ Regime sample selection failed: {e}")
+            return np.array([])
+    
+    def _apply_transition_aware_reallocation(self, 
+                                           cluster_labels: np.ndarray, 
+                                           features: np.ndarray, 
+                                           regimes: np.ndarray) -> np.ndarray:
+        """Apply transition-aware reallocation."""
+        try:
+            optimized_labels = cluster_labels.copy()
+            
+            # Find regime transition points
+            regime_changes = np.diff(regimes) != 0
+            transition_points = np.where(regime_changes)[0]
+            
+            # Apply smoothing around transition points
+            for transition_point in transition_points:
+                # Define smoothing window around transition
+                window_size = min(10, len(cluster_labels) // 10)
+                start_idx = max(0, transition_point - window_size)
+                end_idx = min(len(cluster_labels), transition_point + window_size)
+                
+                # Apply majority vote smoothing in transition window
+                window_labels = cluster_labels[start_idx:end_idx]
+                if len(window_labels) > 0:
+                    unique_labels, counts = np.unique(window_labels, return_counts=True)
+                    most_common_label = unique_labels[np.argmax(counts)]
+                    optimized_labels[start_idx:end_idx] = most_common_label
+            
+            return optimized_labels
+            
+        except Exception as e:
+            logger.error(f"❌ Transition-aware reallocation failed: {e}")
+            return cluster_labels

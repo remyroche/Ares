@@ -43,6 +43,14 @@ class RegimeFeatureConfig:
     include_regime_volatility: bool = True
     include_regime_trend: bool = True
     
+    # Enhanced regime features
+    include_regime_momentum: bool = True
+    include_regime_mean_reversion: bool = True
+    include_regime_volatility_regime: bool = True
+    include_regime_correlation: bool = True
+    include_regime_fractal: bool = True
+    include_regime_chaos: bool = True
+    
     # Technical parameters
     lookback_window: int = 20
     volatility_window: int = 10
@@ -159,6 +167,37 @@ class RegimeFeatureExtractor:
                 trend_features, trend_names = self._extract_regime_trend_features(market_data)
                 features_list.append(trend_features)
                 feature_names.extend(trend_names)
+            
+            # Enhanced regime features
+            if self.config.include_regime_momentum:
+                momentum_features, momentum_names = self._extract_regime_momentum_features(market_data)
+                features_list.append(momentum_features)
+                feature_names.extend(momentum_names)
+            
+            if self.config.include_regime_mean_reversion:
+                mr_features, mr_names = self._extract_regime_mean_reversion_features(market_data)
+                features_list.append(mr_features)
+                feature_names.extend(mr_names)
+            
+            if self.config.include_regime_volatility_regime:
+                vol_regime_features, vol_regime_names = self._extract_regime_volatility_regime_features(market_data)
+                features_list.append(vol_regime_features)
+                feature_names.extend(vol_regime_names)
+            
+            if self.config.include_regime_correlation:
+                corr_features, corr_names = self._extract_regime_correlation_features(market_data)
+                features_list.append(corr_features)
+                feature_names.extend(corr_names)
+            
+            if self.config.include_regime_fractal:
+                fractal_features, fractal_names = self._extract_regime_fractal_features(market_data)
+                features_list.append(fractal_features)
+                feature_names.extend(fractal_names)
+            
+            if self.config.include_regime_chaos:
+                chaos_features, chaos_names = self._extract_regime_chaos_features(market_data)
+                features_list.append(chaos_features)
+                feature_names.extend(chaos_names)
             
             # Combine all features
             if features_list:
@@ -1337,3 +1376,883 @@ class RegimeFeatureExtractor:
     def get_feature_stats(self) -> Dict[str, Any]:
         """Get feature statistics."""
         return self.feature_stats.copy()
+    
+    def _extract_regime_momentum_features(self, market_data: pd.DataFrame) -> Tuple[np.ndarray, List[str]]:
+        """Extract regime momentum features."""
+        try:
+            # Get price data
+            prices = self._get_price_data(market_data)
+            returns = np.diff(prices) / prices[:-1]
+            returns = np.concatenate([[0], returns])
+            
+            features = []
+            names = []
+            
+            window = self.config.lookback_window
+            if len(returns) >= window:
+                # Price momentum
+                price_momentum = self._calculate_price_momentum(prices, window)
+                features.append(price_momentum)
+                names.append('regime_price_momentum')
+                
+                # Return momentum
+                return_momentum = self._calculate_return_momentum(returns, window)
+                features.append(return_momentum)
+                names.append('regime_return_momentum')
+                
+                # Momentum persistence
+                momentum_persistence = self._calculate_momentum_persistence(returns, window)
+                features.append(momentum_persistence)
+                names.append('regime_momentum_persistence')
+                
+                # Momentum acceleration
+                momentum_acceleration = self._calculate_momentum_acceleration(returns, window)
+                features.append(momentum_acceleration)
+                names.append('regime_momentum_acceleration')
+            
+            return np.column_stack(features), names
+            
+        except Exception as e:
+            logger.error(f"❌ Regime momentum feature extraction failed: {e}")
+            return np.zeros((len(market_data), 1)), ['momentum_error']
+    
+    def _extract_regime_mean_reversion_features(self, market_data: pd.DataFrame) -> Tuple[np.ndarray, List[str]]:
+        """Extract regime mean reversion features."""
+        try:
+            # Get price data
+            prices = self._get_price_data(market_data)
+            returns = np.diff(prices) / prices[:-1]
+            returns = np.concatenate([[0], returns])
+            
+            features = []
+            names = []
+            
+            window = self.config.lookback_window
+            if len(returns) >= window:
+                # Mean reversion strength
+                mr_strength = self._calculate_mean_reversion_strength(returns, window)
+                features.append(mr_strength)
+                names.append('regime_mr_strength')
+                
+                # Mean reversion speed
+                mr_speed = self._calculate_mean_reversion_speed(returns, window)
+                features.append(mr_speed)
+                names.append('regime_mr_speed')
+                
+                # Mean reversion persistence
+                mr_persistence = self._calculate_mean_reversion_persistence(returns, window)
+                features.append(mr_persistence)
+                names.append('regime_mr_persistence')
+                
+                # Ornstein-Uhlenbeck process parameters
+                ou_params = self._calculate_ou_parameters(returns, window)
+                features.extend(ou_params)
+                names.extend(['regime_ou_speed', 'regime_ou_volatility', 'regime_ou_mean'])
+            
+            return np.column_stack(features), names
+            
+        except Exception as e:
+            logger.error(f"❌ Regime mean reversion feature extraction failed: {e}")
+            return np.zeros((len(market_data), 1)), ['mr_error']
+    
+    def _extract_regime_volatility_regime_features(self, market_data: pd.DataFrame) -> Tuple[np.ndarray, List[str]]:
+        """Extract regime volatility regime features."""
+        try:
+            # Get price data
+            prices = self._get_price_data(market_data)
+            returns = np.diff(prices) / prices[:-1]
+            returns = np.concatenate([[0], returns])
+            
+            features = []
+            names = []
+            
+            window = self.config.volatility_window
+            if len(returns) >= window:
+                # Volatility regime classification
+                vol_regime = self._classify_volatility_regime(returns, window)
+                features.append(vol_regime)
+                names.append('regime_vol_regime')
+                
+                # Volatility regime persistence
+                vol_regime_persistence = self._calculate_volatility_regime_persistence(returns, window)
+                features.append(vol_regime_persistence)
+                names.append('regime_vol_regime_persistence')
+                
+                # Volatility regime transitions
+                vol_regime_transitions = self._calculate_volatility_regime_transitions(returns, window)
+                features.append(vol_regime_transitions)
+                names.append('regime_vol_regime_transitions')
+                
+                # Volatility regime stability
+                vol_regime_stability = self._calculate_volatility_regime_stability(returns, window)
+                features.append(vol_regime_stability)
+                names.append('regime_vol_regime_stability')
+            
+            return np.column_stack(features), names
+            
+        except Exception as e:
+            logger.error(f"❌ Regime volatility regime feature extraction failed: {e}")
+            return np.zeros((len(market_data), 1)), ['vol_regime_error']
+    
+    def _extract_regime_correlation_features(self, market_data: pd.DataFrame) -> Tuple[np.ndarray, List[str]]:
+        """Extract regime correlation features."""
+        try:
+            # Get price data
+            prices = self._get_price_data(market_data)
+            returns = np.diff(prices) / prices[:-1]
+            returns = np.concatenate([[0], returns])
+            
+            features = []
+            names = []
+            
+            window = self.config.lookback_window
+            if len(returns) >= window:
+                # Autocorrelation features
+                autocorr_features = self._calculate_autocorrelation_features(returns, window)
+                features.extend(autocorr_features)
+                names.extend(['regime_autocorr_1', 'regime_autocorr_5', 'regime_autocorr_10'])
+                
+                # Cross-correlation with volatility
+                vol_corr = self._calculate_volatility_correlation(returns, window)
+                features.append(vol_corr)
+                names.append('regime_vol_correlation')
+                
+                # Regime correlation persistence
+                corr_persistence = self._calculate_correlation_persistence(returns, window)
+                features.append(corr_persistence)
+                names.append('regime_corr_persistence')
+            
+            return np.column_stack(features), names
+            
+        except Exception as e:
+            logger.error(f"❌ Regime correlation feature extraction failed: {e}")
+            return np.zeros((len(market_data), 1)), ['corr_error']
+    
+    def _extract_regime_fractal_features(self, market_data: pd.DataFrame) -> Tuple[np.ndarray, List[str]]:
+        """Extract regime fractal features."""
+        try:
+            # Get price data
+            prices = self._get_price_data(market_data)
+            returns = np.diff(prices) / prices[:-1]
+            returns = np.concatenate([[0], returns])
+            
+            features = []
+            names = []
+            
+            window = self.config.lookback_window
+            if len(returns) >= window:
+                # Hurst exponent
+                hurst = self._calculate_hurst_exponent(returns, window)
+                features.append(hurst)
+                names.append('regime_hurst_exponent')
+                
+                # Fractal dimension
+                fractal_dim = self._calculate_fractal_dimension(returns, window)
+                features.append(fractal_dim)
+                names.append('regime_fractal_dimension')
+                
+                # Detrended fluctuation analysis
+                dfa = self._calculate_dfa(returns, window)
+                features.append(dfa)
+                names.append('regime_dfa')
+                
+                # Multifractal spectrum
+                mf_spectrum = self._calculate_multifractal_spectrum(returns, window)
+                features.extend(mf_spectrum)
+                names.extend(['regime_mf_width', 'regime_mf_alpha0', 'regime_mf_fmax'])
+            
+            return np.column_stack(features), names
+            
+        except Exception as e:
+            logger.error(f"❌ Regime fractal feature extraction failed: {e}")
+            return np.zeros((len(market_data), 1)), ['fractal_error']
+    
+    def _extract_regime_chaos_features(self, market_data: pd.DataFrame) -> Tuple[np.ndarray, List[str]]:
+        """Extract regime chaos features."""
+        try:
+            # Get price data
+            prices = self._get_price_data(market_data)
+            returns = np.diff(prices) / prices[:-1]
+            returns = np.concatenate([[0], returns])
+            
+            features = []
+            names = []
+            
+            window = self.config.lookback_window
+            if len(returns) >= window:
+                # Lyapunov exponent
+                lyapunov = self._calculate_lyapunov_exponent(returns, window)
+                features.append(lyapunov)
+                names.append('regime_lyapunov_exponent')
+                
+                # Correlation dimension
+                corr_dim = self._calculate_correlation_dimension(returns, window)
+                features.append(corr_dim)
+                names.append('regime_correlation_dimension')
+                
+                # Kolmogorov entropy
+                kolmogorov_entropy = self._calculate_kolmogorov_entropy(returns, window)
+                features.append(kolmogorov_entropy)
+                names.append('regime_kolmogorov_entropy')
+                
+                # Chaos indicators
+                chaos_indicators = self._calculate_chaos_indicators(returns, window)
+                features.extend(chaos_indicators)
+                names.extend(['regime_chaos_strength', 'regime_chaos_persistence'])
+            
+            return np.column_stack(features), names
+            
+        except Exception as e:
+            logger.error(f"❌ Regime chaos feature extraction failed: {e}")
+            return np.zeros((len(market_data), 1)), ['chaos_error']
+    
+    # Helper methods for new regime features
+    def _calculate_price_momentum(self, prices: np.ndarray, window: int) -> np.ndarray:
+        """Calculate price momentum."""
+        try:
+            momentum = np.zeros(len(prices))
+            for i in range(window, len(prices)):
+                momentum[i] = (prices[i] - prices[i-window]) / prices[i-window]
+            return momentum
+        except Exception as e:
+            logger.debug(f"Price momentum calculation failed: {e}")
+            return np.zeros(len(prices))
+    
+    def _calculate_return_momentum(self, returns: np.ndarray, window: int) -> np.ndarray:
+        """Calculate return momentum."""
+        try:
+            momentum = np.zeros(len(returns))
+            for i in range(window, len(returns)):
+                momentum[i] = np.sum(returns[i-window:i])
+            return momentum
+        except Exception as e:
+            logger.debug(f"Return momentum calculation failed: {e}")
+            return np.zeros(len(returns))
+    
+    def _calculate_momentum_persistence(self, returns: np.ndarray, window: int) -> np.ndarray:
+        """Calculate momentum persistence."""
+        try:
+            persistence = np.zeros(len(returns))
+            for i in range(window, len(returns)):
+                window_returns = returns[i-window:i]
+                # Calculate autocorrelation of returns
+                if len(window_returns) > 1:
+                    autocorr = np.corrcoef(window_returns[:-1], window_returns[1:])[0, 1]
+                    persistence[i] = autocorr if not np.isnan(autocorr) else 0
+            return persistence
+        except Exception as e:
+            logger.debug(f"Momentum persistence calculation failed: {e}")
+            return np.zeros(len(returns))
+    
+    def _calculate_momentum_acceleration(self, returns: np.ndarray, window: int) -> np.ndarray:
+        """Calculate momentum acceleration."""
+        try:
+            acceleration = np.zeros(len(returns))
+            for i in range(window, len(returns)):
+                window_returns = returns[i-window:i]
+                if len(window_returns) > 2:
+                    # Calculate second derivative
+                    first_diff = np.diff(window_returns)
+                    second_diff = np.diff(first_diff)
+                    acceleration[i] = np.mean(second_diff) if len(second_diff) > 0 else 0
+            return acceleration
+        except Exception as e:
+            logger.debug(f"Momentum acceleration calculation failed: {e}")
+            return np.zeros(len(returns))
+    
+    def _calculate_mean_reversion_strength(self, returns: np.ndarray, window: int) -> np.ndarray:
+        """Calculate mean reversion strength."""
+        try:
+            mr_strength = np.zeros(len(returns))
+            for i in range(window, len(returns)):
+                window_returns = returns[i-window:i]
+                if len(window_returns) > 1:
+                    # Calculate half-life of mean reversion
+                    log_prices = np.log(np.cumprod(1 + window_returns))
+                    if len(log_prices) > 1:
+                        # Simple AR(1) regression
+                        y = log_prices[1:]
+                        x = log_prices[:-1]
+                        if len(x) > 0 and len(y) > 0:
+                            try:
+                                coeff = np.polyfit(x, y, 1)[0]
+                                half_life = -np.log(2) / np.log(coeff) if coeff < 1 else 0
+                                mr_strength[i] = 1.0 / (1.0 + half_life) if half_life > 0 else 0
+                            except:
+                                mr_strength[i] = 0
+            return mr_strength
+        except Exception as e:
+            logger.debug(f"Mean reversion strength calculation failed: {e}")
+            return np.zeros(len(returns))
+    
+    def _calculate_mean_reversion_speed(self, returns: np.ndarray, window: int) -> np.ndarray:
+        """Calculate mean reversion speed."""
+        try:
+            mr_speed = np.zeros(len(returns))
+            for i in range(window, len(returns)):
+                window_returns = returns[i-window:i]
+                if len(window_returns) > 1:
+                    # Calculate speed as inverse of autocorrelation
+                    autocorr = np.corrcoef(window_returns[:-1], window_returns[1:])[0, 1]
+                    mr_speed[i] = 1.0 - abs(autocorr) if not np.isnan(autocorr) else 0
+            return mr_speed
+        except Exception as e:
+            logger.debug(f"Mean reversion speed calculation failed: {e}")
+            return np.zeros(len(returns))
+    
+    def _calculate_mean_reversion_persistence(self, returns: np.ndarray, window: int) -> np.ndarray:
+        """Calculate mean reversion persistence."""
+        try:
+            mr_persistence = np.zeros(len(returns))
+            for i in range(window, len(returns)):
+                window_returns = returns[i-window:i]
+                if len(window_returns) > 2:
+                    # Calculate persistence as consistency of mean reversion
+                    mean_return = np.mean(window_returns)
+                    deviations = window_returns - mean_return
+                    # Count how often deviations are corrected
+                    corrections = 0
+                    for j in range(1, len(deviations)):
+                        if (deviations[j-1] > 0 and deviations[j] < 0) or (deviations[j-1] < 0 and deviations[j] > 0):
+                            corrections += 1
+                    mr_persistence[i] = corrections / (len(deviations) - 1) if len(deviations) > 1 else 0
+            return mr_persistence
+        except Exception as e:
+            logger.debug(f"Mean reversion persistence calculation failed: {e}")
+            return np.zeros(len(returns))
+    
+    def _calculate_ou_parameters(self, returns: np.ndarray, window: int) -> List[np.ndarray]:
+        """Calculate Ornstein-Uhlenbeck process parameters."""
+        try:
+            speed = np.zeros(len(returns))
+            volatility = np.zeros(len(returns))
+            mean_level = np.zeros(len(returns))
+            
+            for i in range(window, len(returns)):
+                window_returns = returns[i-window:i]
+                if len(window_returns) > 2:
+                    # Simple OU parameter estimation
+                    mean_level[i] = np.mean(window_returns)
+                    volatility[i] = np.std(window_returns)
+                    
+                    # Estimate speed parameter
+                    log_prices = np.log(np.cumprod(1 + window_returns))
+                    if len(log_prices) > 1:
+                        y = log_prices[1:]
+                        x = log_prices[:-1]
+                        if len(x) > 0 and len(y) > 0:
+                            try:
+                                coeff = np.polyfit(x, y, 1)[0]
+                                speed[i] = -np.log(coeff) if 0 < coeff < 1 else 0
+                            except:
+                                speed[i] = 0
+            
+            return [speed, volatility, mean_level]
+        except Exception as e:
+            logger.debug(f"OU parameters calculation failed: {e}")
+            return [np.zeros(len(returns)), np.zeros(len(returns)), np.zeros(len(returns))]
+    
+    def _classify_volatility_regime(self, returns: np.ndarray, window: int) -> np.ndarray:
+        """Classify volatility regime."""
+        try:
+            vol_regime = np.zeros(len(returns))
+            rolling_vol = pd.Series(returns).rolling(window=window).std().values
+            
+            for i in range(window, len(returns)):
+                if not np.isnan(rolling_vol[i]):
+                    # Classify as high/low volatility regime
+                    vol_regime[i] = 1 if rolling_vol[i] > np.percentile(rolling_vol[~np.isnan(rolling_vol)], 75) else 0
+                else:
+                    vol_regime[i] = 0
+            
+            return vol_regime
+        except Exception as e:
+            logger.debug(f"Volatility regime classification failed: {e}")
+            return np.zeros(len(returns))
+    
+    def _calculate_volatility_regime_persistence(self, returns: np.ndarray, window: int) -> np.ndarray:
+        """Calculate volatility regime persistence."""
+        try:
+            persistence = np.zeros(len(returns))
+            vol_regime = self._classify_volatility_regime(returns, window)
+            
+            for i in range(window, len(returns)):
+                window_regime = vol_regime[i-window:i]
+                if len(window_regime) > 1:
+                    # Calculate persistence as consistency of regime
+                    persistence[i] = np.sum(window_regime == window_regime[-1]) / len(window_regime)
+            
+            return persistence
+        except Exception as e:
+            logger.debug(f"Volatility regime persistence calculation failed: {e}")
+            return np.zeros(len(returns))
+    
+    def _calculate_volatility_regime_transitions(self, returns: np.ndarray, window: int) -> np.ndarray:
+        """Calculate volatility regime transitions."""
+        try:
+            transitions = np.zeros(len(returns))
+            vol_regime = self._classify_volatility_regime(returns, window)
+            
+            for i in range(window, len(returns)):
+                window_regime = vol_regime[i-window:i]
+                if len(window_regime) > 1:
+                    # Count regime changes
+                    changes = np.sum(np.diff(window_regime) != 0)
+                    transitions[i] = changes / (len(window_regime) - 1)
+            
+            return transitions
+        except Exception as e:
+            logger.debug(f"Volatility regime transitions calculation failed: {e}")
+            return np.zeros(len(returns))
+    
+    def _calculate_volatility_regime_stability(self, returns: np.ndarray, window: int) -> np.ndarray:
+        """Calculate volatility regime stability."""
+        try:
+            stability = np.zeros(len(returns))
+            vol_regime = self._classify_volatility_regime(returns, window)
+            
+            for i in range(window, len(returns)):
+                window_regime = vol_regime[i-window:i]
+                if len(window_regime) > 1:
+                    # Stability is inverse of variance
+                    stability[i] = 1.0 / (np.var(window_regime) + 1e-10)
+            
+            return stability
+        except Exception as e:
+            logger.debug(f"Volatility regime stability calculation failed: {e}")
+            return np.zeros(len(returns))
+    
+    def _calculate_autocorrelation_features(self, returns: np.ndarray, window: int) -> List[np.ndarray]:
+        """Calculate autocorrelation features."""
+        try:
+            autocorr_1 = np.zeros(len(returns))
+            autocorr_5 = np.zeros(len(returns))
+            autocorr_10 = np.zeros(len(returns))
+            
+            for i in range(window, len(returns)):
+                window_returns = returns[i-window:i]
+                if len(window_returns) > 10:
+                    # Lag-1 autocorrelation
+                    if len(window_returns) > 1:
+                        corr_1 = np.corrcoef(window_returns[:-1], window_returns[1:])[0, 1]
+                        autocorr_1[i] = corr_1 if not np.isnan(corr_1) else 0
+                    
+                    # Lag-5 autocorrelation
+                    if len(window_returns) > 5:
+                        corr_5 = np.corrcoef(window_returns[:-5], window_returns[5:])[0, 1]
+                        autocorr_5[i] = corr_5 if not np.isnan(corr_5) else 0
+                    
+                    # Lag-10 autocorrelation
+                    if len(window_returns) > 10:
+                        corr_10 = np.corrcoef(window_returns[:-10], window_returns[10:])[0, 1]
+                        autocorr_10[i] = corr_10 if not np.isnan(corr_10) else 0
+            
+            return [autocorr_1, autocorr_5, autocorr_10]
+        except Exception as e:
+            logger.debug(f"Autocorrelation features calculation failed: {e}")
+            return [np.zeros(len(returns)), np.zeros(len(returns)), np.zeros(len(returns))]
+    
+    def _calculate_volatility_correlation(self, returns: np.ndarray, window: int) -> np.ndarray:
+        """Calculate correlation with volatility."""
+        try:
+            vol_corr = np.zeros(len(returns))
+            rolling_vol = pd.Series(returns).rolling(window=window).std().values
+            
+            for i in range(window, len(returns)):
+                if not np.isnan(rolling_vol[i]) and i >= window:
+                    window_returns = returns[i-window:i]
+                    window_vol = rolling_vol[i-window:i]
+                    valid_mask = ~np.isnan(window_vol)
+                    if np.sum(valid_mask) > 1:
+                        corr = np.corrcoef(window_returns[valid_mask], window_vol[valid_mask])[0, 1]
+                        vol_corr[i] = corr if not np.isnan(corr) else 0
+            
+            return vol_corr
+        except Exception as e:
+            logger.debug(f"Volatility correlation calculation failed: {e}")
+            return np.zeros(len(returns))
+    
+    def _calculate_correlation_persistence(self, returns: np.ndarray, window: int) -> np.ndarray:
+        """Calculate correlation persistence."""
+        try:
+            persistence = np.zeros(len(returns))
+            
+            for i in range(window, len(returns)):
+                window_returns = returns[i-window:i]
+                if len(window_returns) > 2:
+                    # Calculate rolling autocorrelation
+                    autocorrs = []
+                    for j in range(2, len(window_returns)):
+                        if j > 1:
+                            corr = np.corrcoef(window_returns[:j-1], window_returns[1:j])[0, 1]
+                            if not np.isnan(corr):
+                                autocorrs.append(corr)
+                    
+                    if len(autocorrs) > 1:
+                        # Persistence is consistency of autocorrelation
+                        persistence[i] = 1.0 - np.std(autocorrs) / (np.mean(autocorrs) + 1e-10)
+            
+            return persistence
+        except Exception as e:
+            logger.debug(f"Correlation persistence calculation failed: {e}")
+            return np.zeros(len(returns))
+    
+    def _calculate_hurst_exponent(self, returns: np.ndarray, window: int) -> np.ndarray:
+        """Calculate Hurst exponent."""
+        try:
+            hurst = np.zeros(len(returns))
+            
+            for i in range(window, len(returns)):
+                window_returns = returns[i-window:i]
+                if len(window_returns) > 10:
+                    # Simplified Hurst exponent calculation
+                    n = len(window_returns)
+                    mean_return = np.mean(window_returns)
+                    deviations = window_returns - mean_return
+                    cumulative_deviations = np.cumsum(deviations)
+                    range_series = np.max(cumulative_deviations) - np.min(cumulative_deviations)
+                    std_return = np.std(window_returns)
+                    
+                    if std_return > 0:
+                        rs_stat = range_series / (std_return * np.sqrt(n))
+                        hurst[i] = np.log(rs_stat) / np.log(n) if rs_stat > 0 else 0.5
+                    else:
+                        hurst[i] = 0.5
+            
+            return hurst
+        except Exception as e:
+            logger.debug(f"Hurst exponent calculation failed: {e}")
+            return np.zeros(len(returns))
+    
+    def _calculate_fractal_dimension(self, returns: np.ndarray, window: int) -> np.ndarray:
+        """Calculate fractal dimension."""
+        try:
+            fractal_dim = np.zeros(len(returns))
+            
+            for i in range(window, len(returns)):
+                window_returns = returns[i-window:i]
+                if len(window_returns) > 10:
+                    # Simplified fractal dimension calculation
+                    n = len(window_returns)
+                    # Calculate box-counting dimension
+                    scales = [2, 4, 8, 16]
+                    counts = []
+                    
+                    for scale in scales:
+                        if scale < n:
+                            boxes = n // scale
+                            count = 0
+                            for j in range(boxes):
+                                box_data = window_returns[j*scale:(j+1)*scale]
+                                if len(box_data) > 0:
+                                    count += 1
+                            counts.append(count)
+                    
+                    if len(counts) > 1:
+                        # Linear regression on log scales
+                        log_scales = np.log(scales[:len(counts)])
+                        log_counts = np.log(counts)
+                        if len(log_scales) > 1 and len(log_counts) > 1:
+                            coeff = np.polyfit(log_scales, log_counts, 1)[0]
+                            fractal_dim[i] = -coeff
+                        else:
+                            fractal_dim[i] = 1.0
+                    else:
+                        fractal_dim[i] = 1.0
+            
+            return fractal_dim
+        except Exception as e:
+            logger.debug(f"Fractal dimension calculation failed: {e}")
+            return np.zeros(len(returns))
+    
+    def _calculate_dfa(self, returns: np.ndarray, window: int) -> np.ndarray:
+        """Calculate Detrended Fluctuation Analysis."""
+        try:
+            dfa = np.zeros(len(returns))
+            
+            for i in range(window, len(returns)):
+                window_returns = returns[i-window:i]
+                if len(window_returns) > 10:
+                    # Simplified DFA calculation
+                    n = len(window_returns)
+                    # Integrate the series
+                    y = np.cumsum(window_returns - np.mean(window_returns))
+                    
+                    # Calculate fluctuation function
+                    scales = [4, 8, 16, 32]
+                    fluctuations = []
+                    
+                    for scale in scales:
+                        if scale < n:
+                            segments = n // scale
+                            fluctuation = 0
+                            for j in range(segments):
+                                segment = y[j*scale:(j+1)*scale]
+                                if len(segment) > 1:
+                                    # Detrend
+                                    x = np.arange(len(segment))
+                                    coeff = np.polyfit(x, segment, 1)
+                                    trend = np.polyval(coeff, x)
+                                    detrended = segment - trend
+                                    fluctuation += np.mean(detrended**2)
+                            
+                            if segments > 0:
+                                fluctuations.append(np.sqrt(fluctuation / segments))
+                    
+                    if len(fluctuations) > 1:
+                        # Calculate scaling exponent
+                        log_scales = np.log(scales[:len(fluctuations)])
+                        log_fluctuations = np.log(fluctuations)
+                        if len(log_scales) > 1 and len(log_fluctuations) > 1:
+                            coeff = np.polyfit(log_scales, log_fluctuations, 1)[0]
+                            dfa[i] = coeff
+                        else:
+                            dfa[i] = 0.5
+                    else:
+                        dfa[i] = 0.5
+            
+            return dfa
+        except Exception as e:
+            logger.debug(f"DFA calculation failed: {e}")
+            return np.zeros(len(returns))
+    
+    def _calculate_multifractal_spectrum(self, returns: np.ndarray, window: int) -> List[np.ndarray]:
+        """Calculate multifractal spectrum."""
+        try:
+            mf_width = np.zeros(len(returns))
+            mf_alpha0 = np.zeros(len(returns))
+            mf_fmax = np.zeros(len(returns))
+            
+            for i in range(window, len(returns)):
+                window_returns = returns[i-window:i]
+                if len(window_returns) > 20:
+                    # Simplified multifractal spectrum calculation
+                    # This is a very basic implementation
+                    n = len(window_returns)
+                    q_values = np.arange(-5, 6)
+                    tau_q = np.zeros(len(q_values))
+                    
+                    for j, q in enumerate(q_values):
+                        if q != 0:
+                            # Calculate partition function
+                            scales = [4, 8, 16]
+                            z_q = []
+                            for scale in scales:
+                                if scale < n:
+                                    segments = n // scale
+                                    sum_p = 0
+                                    for k in range(segments):
+                                        segment = window_returns[k*scale:(k+1)*scale]
+                                        if len(segment) > 0:
+                                            prob = np.sum(segment**2) / np.sum(window_returns**2)
+                                            if prob > 0:
+                                                sum_p += prob**q
+                                    if sum_p > 0:
+                                        z_q.append(sum_p)
+                            
+                            if len(z_q) > 1:
+                                log_scales = np.log(scales[:len(z_q)])
+                                log_z_q = np.log(z_q)
+                                if len(log_scales) > 1 and len(log_z_q) > 1:
+                                    coeff = np.polyfit(log_scales, log_z_q, 1)[0]
+                                    tau_q[j] = coeff
+                    
+                    # Calculate multifractal spectrum
+                    if len(tau_q) > 2:
+                        # Simple approximation
+                        alpha = np.gradient(tau_q, q_values)
+                        f_alpha = q_values * alpha - tau_q
+                        
+                        mf_width[i] = np.max(alpha) - np.min(alpha) if len(alpha) > 0 else 0
+                        mf_alpha0[i] = alpha[len(alpha)//2] if len(alpha) > 0 else 0
+                        mf_fmax[i] = np.max(f_alpha) if len(f_alpha) > 0 else 0
+                    else:
+                        mf_width[i] = 0
+                        mf_alpha0[i] = 0
+                        mf_fmax[i] = 0
+            
+            return [mf_width, mf_alpha0, mf_fmax]
+        except Exception as e:
+            logger.debug(f"Multifractal spectrum calculation failed: {e}")
+            return [np.zeros(len(returns)), np.zeros(len(returns)), np.zeros(len(returns))]
+    
+    def _calculate_lyapunov_exponent(self, returns: np.ndarray, window: int) -> np.ndarray:
+        """Calculate Lyapunov exponent."""
+        try:
+            lyapunov = np.zeros(len(returns))
+            
+            for i in range(window, len(returns)):
+                window_returns = returns[i-window:i]
+                if len(window_returns) > 10:
+                    # Simplified Lyapunov exponent calculation
+                    n = len(window_returns)
+                    # Embedding dimension
+                    m = min(3, n // 3)
+                    if m > 1:
+                        # Create embedded vectors
+                        embedded = np.array([window_returns[j:j+m] for j in range(n-m+1)])
+                        if len(embedded) > 1:
+                            # Calculate divergence
+                            divergences = []
+                            for j in range(len(embedded)-1):
+                                dist = np.linalg.norm(embedded[j+1] - embedded[j])
+                                if dist > 0:
+                                    divergences.append(np.log(dist))
+                            
+                            if len(divergences) > 0:
+                                lyapunov[i] = np.mean(divergences)
+                            else:
+                                lyapunov[i] = 0
+                        else:
+                            lyapunov[i] = 0
+                    else:
+                        lyapunov[i] = 0
+            
+            return lyapunov
+        except Exception as e:
+            logger.debug(f"Lyapunov exponent calculation failed: {e}")
+            return np.zeros(len(returns))
+    
+    def _calculate_correlation_dimension(self, returns: np.ndarray, window: int) -> np.ndarray:
+        """Calculate correlation dimension."""
+        try:
+            corr_dim = np.zeros(len(returns))
+            
+            for i in range(window, len(returns)):
+                window_returns = returns[i-window:i]
+                if len(window_returns) > 10:
+                    # Simplified correlation dimension calculation
+                    n = len(window_returns)
+                    m = min(3, n // 3)  # Embedding dimension
+                    if m > 1:
+                        # Create embedded vectors
+                        embedded = np.array([window_returns[j:j+m] for j in range(n-m+1)])
+                        if len(embedded) > 1:
+                            # Calculate correlation integral
+                            r_values = np.linspace(0.01, 0.1, 10)
+                            c_r = []
+                            
+                            for r in r_values:
+                                count = 0
+                                for j in range(len(embedded)):
+                                    for k in range(j+1, len(embedded)):
+                                        dist = np.linalg.norm(embedded[j] - embedded[k])
+                                        if dist < r:
+                                            count += 1
+                                
+                                if count > 0:
+                                    c_r.append(count / (len(embedded) * (len(embedded) - 1) / 2))
+                                else:
+                                    c_r.append(0)
+                            
+                            # Calculate dimension
+                            if len(c_r) > 1 and np.sum(c_r) > 0:
+                                log_r = np.log(r_values)
+                                log_c_r = np.log(np.array(c_r) + 1e-10)
+                                valid_mask = ~np.isnan(log_c_r) & ~np.isinf(log_c_r)
+                                if np.sum(valid_mask) > 1:
+                                    coeff = np.polyfit(log_r[valid_mask], log_c_r[valid_mask], 1)[0]
+                                    corr_dim[i] = coeff
+                                else:
+                                    corr_dim[i] = 0
+                            else:
+                                corr_dim[i] = 0
+                        else:
+                            corr_dim[i] = 0
+                    else:
+                        corr_dim[i] = 0
+            
+            return corr_dim
+        except Exception as e:
+            logger.debug(f"Correlation dimension calculation failed: {e}")
+            return np.zeros(len(returns))
+    
+    def _calculate_kolmogorov_entropy(self, returns: np.ndarray, window: int) -> np.ndarray:
+        """Calculate Kolmogorov entropy."""
+        try:
+            kolmogorov_entropy = np.zeros(len(returns))
+            
+            for i in range(window, len(returns)):
+                window_returns = returns[i-window:i]
+                if len(window_returns) > 10:
+                    # Simplified Kolmogorov entropy calculation
+                    n = len(window_returns)
+                    m = min(3, n // 3)  # Embedding dimension
+                    if m > 1:
+                        # Create embedded vectors
+                        embedded = np.array([window_returns[j:j+m] for j in range(n-m+1)])
+                        if len(embedded) > 1:
+                            # Calculate entropy
+                            r = 0.1 * np.std(window_returns)
+                            if r > 0:
+                                # Count matches
+                                matches = 0
+                                for j in range(len(embedded)):
+                                    for k in range(j+1, len(embedded)):
+                                        dist = np.linalg.norm(embedded[j] - embedded[k])
+                                        if dist < r:
+                                            matches += 1
+                                
+                                if matches > 0:
+                                    p = matches / (len(embedded) * (len(embedded) - 1) / 2)
+                                    if p > 0:
+                                        kolmogorov_entropy[i] = -np.log(p)
+                                    else:
+                                        kolmogorov_entropy[i] = 0
+                                else:
+                                    kolmogorov_entropy[i] = 0
+                            else:
+                                kolmogorov_entropy[i] = 0
+                        else:
+                            kolmogorov_entropy[i] = 0
+                    else:
+                        kolmogorov_entropy[i] = 0
+            
+            return kolmogorov_entropy
+        except Exception as e:
+            logger.debug(f"Kolmogorov entropy calculation failed: {e}")
+            return np.zeros(len(returns))
+    
+    def _calculate_chaos_indicators(self, returns: np.ndarray, window: int) -> List[np.ndarray]:
+        """Calculate chaos indicators."""
+        try:
+            chaos_strength = np.zeros(len(returns))
+            chaos_persistence = np.zeros(len(returns))
+            
+            for i in range(window, len(returns)):
+                window_returns = returns[i-window:i]
+                if len(window_returns) > 10:
+                    # Chaos strength based on unpredictability
+                    # Calculate prediction error
+                    if len(window_returns) > 2:
+                        # Simple linear prediction
+                        x = np.arange(len(window_returns)-1)
+                        y = window_returns[1:]
+                        if len(x) > 1 and len(y) > 1:
+                            try:
+                                coeff = np.polyfit(x, y, 1)
+                                predicted = np.polyval(coeff, x)
+                                mse = np.mean((y - predicted)**2)
+                                chaos_strength[i] = mse / (np.var(window_returns) + 1e-10)
+                            except:
+                                chaos_strength[i] = 0
+                        else:
+                            chaos_strength[i] = 0
+                    else:
+                        chaos_strength[i] = 0
+                    
+                    # Chaos persistence
+                    if len(window_returns) > 5:
+                        # Calculate autocorrelation
+                        autocorr = np.corrcoef(window_returns[:-1], window_returns[1:])[0, 1]
+                        if not np.isnan(autocorr):
+                            chaos_persistence[i] = 1.0 - abs(autocorr)
+                        else:
+                            chaos_persistence[i] = 0
+                    else:
+                        chaos_persistence[i] = 0
+            
+            return [chaos_strength, chaos_persistence]
+        except Exception as e:
+            logger.debug(f"Chaos indicators calculation failed: {e}")
+            return [np.zeros(len(returns)), np.zeros(len(returns))]

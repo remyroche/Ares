@@ -566,12 +566,85 @@ class HDBSCANClusterer:
                 except Exception as e:
                     logger.debug(f"HDBSCAN approximate_predict failed: {e}")
             
-            # Fallback to distance-based assignment
-            return self._distance_based_prediction(features)
+            # Try enhanced distance-based prediction with better probability estimation
+            return self._enhanced_distance_based_prediction(features)
             
         except Exception as e:
             logger.error(f"❌ Prediction failed: {e}")
             return self._random_fallback(features)
+    
+    def predict_regime_probabilities(self, features: np.ndarray) -> Tuple[np.ndarray, np.ndarray, Dict[str, Any]]:
+        """
+        Predict regime probabilities with detailed confidence measures.
+        
+        Args:
+            features: Feature matrix for prediction (n_samples, n_features)
+            
+        Returns:
+            Tuple of (labels, probabilities, confidence_info)
+        """
+        try:
+            logger.info("🔮 Predicting regime probabilities...")
+            
+            # Get basic prediction
+            labels, probabilities, method = self.approximate_predict_with_fallback(features)
+            
+            # Calculate confidence measures
+            confidence_info = self._calculate_prediction_confidence(features, labels, probabilities)
+            
+            # Enhance probabilities with uncertainty quantification
+            enhanced_probabilities = self._enhance_probability_estimation(features, labels, probabilities, confidence_info)
+            
+            logger.info(f"✅ Regime prediction completed using {method}")
+            
+            return labels, enhanced_probabilities, confidence_info
+            
+        except Exception as e:
+            logger.error(f"❌ Regime probability prediction failed: {e}")
+            return self._random_fallback(features)
+    
+    def predict_out_of_sample(self, features: np.ndarray, confidence_threshold: float = 0.5) -> Dict[str, Any]:
+        """
+        Predict out-of-sample regime assignments with confidence filtering.
+        
+        Args:
+            features: Feature matrix for prediction (n_samples, n_features)
+            confidence_threshold: Minimum confidence threshold for predictions
+            
+        Returns:
+            Dictionary with prediction results and confidence measures
+        """
+        try:
+            logger.info(f"🔮 Predicting out-of-sample regimes (confidence threshold: {confidence_threshold})...")
+            
+            # Get predictions
+            labels, probabilities, confidence_info = self.predict_regime_probabilities(features)
+            
+            # Filter by confidence
+            high_confidence_mask = probabilities >= confidence_threshold
+            n_high_confidence = np.sum(high_confidence_mask)
+            
+            # Calculate prediction quality metrics
+            prediction_quality = self._assess_prediction_quality(features, labels, probabilities, confidence_info)
+            
+            results = {
+                'labels': labels,
+                'probabilities': probabilities,
+                'confidence_info': confidence_info,
+                'high_confidence_mask': high_confidence_mask,
+                'n_high_confidence': n_high_confidence,
+                'confidence_ratio': n_high_confidence / len(features),
+                'prediction_quality': prediction_quality,
+                'recommendations': self._generate_prediction_recommendations(confidence_info, prediction_quality)
+            }
+            
+            logger.info(f"✅ Out-of-sample prediction completed. High confidence: {n_high_confidence}/{len(features)}")
+            
+            return results
+            
+        except Exception as e:
+            logger.error(f"❌ Out-of-sample prediction failed: {e}")
+            return {'error': str(e)}
     
     def _distance_based_prediction(self, features: np.ndarray) -> Tuple[np.ndarray, np.ndarray, str]:
         """Predict using distance-based assignment."""
@@ -602,6 +675,223 @@ class HDBSCANClusterer:
         except Exception as e:
             logger.error(f"❌ Distance-based prediction failed: {e}")
             return self._random_fallback(features)
+    
+    def _enhanced_distance_based_prediction(self, features: np.ndarray) -> Tuple[np.ndarray, np.ndarray, str]:
+        """Enhanced distance-based prediction with better probability estimation."""
+        try:
+            # Get cluster centers from training
+            if hasattr(self, 'cluster_centers') and self.cluster_centers is not None:
+                centers = self.cluster_centers
+            else:
+                logger.warning("⚠️ No cluster centers available, using random assignment")
+                return self._random_fallback(features)
+            
+            if len(centers) == 0:
+                return self._random_fallback(features)
+            
+            # Calculate distances to cluster centers
+            distances = np.sqrt(((features[:, np.newaxis] - centers[np.newaxis, :]) ** 2).sum(axis=2))
+            
+            # Assign to closest cluster
+            labels = np.argmin(distances, axis=1)
+            
+            # Enhanced probability calculation using softmax
+            # Convert distances to similarities (inverse relationship)
+            max_distance = np.max(distances)
+            similarities = max_distance - distances + 1e-10  # Add small value to avoid division by zero
+            
+            # Apply softmax to get probabilities
+            exp_similarities = np.exp(similarities / np.std(similarities))  # Normalize by standard deviation
+            probabilities = exp_similarities / np.sum(exp_similarities, axis=1, keepdims=True)
+            
+            # Get maximum probability for each sample
+            max_probabilities = np.max(probabilities, axis=1)
+            
+            return labels, max_probabilities, "enhanced_distance_based"
+            
+        except Exception as e:
+            logger.error(f"❌ Enhanced distance-based prediction failed: {e}")
+            return self._distance_based_prediction(features)
+    
+    def _calculate_prediction_confidence(self, features: np.ndarray, labels: np.ndarray, probabilities: np.ndarray) -> Dict[str, Any]:
+        """Calculate confidence measures for predictions."""
+        try:
+            confidence_info = {}
+            
+            # Basic confidence metrics
+            confidence_info['avg_probability'] = np.mean(probabilities)
+            confidence_info['min_probability'] = np.min(probabilities)
+            confidence_info['max_probability'] = np.max(probabilities)
+            confidence_info['probability_std'] = np.std(probabilities)
+            
+            # Confidence distribution
+            high_conf = np.sum(probabilities >= 0.7)
+            medium_conf = np.sum((probabilities >= 0.4) & (probabilities < 0.7))
+            low_conf = np.sum(probabilities < 0.4)
+            
+            confidence_info['high_confidence_count'] = high_conf
+            confidence_info['medium_confidence_count'] = medium_conf
+            confidence_info['low_confidence_count'] = low_conf
+            confidence_info['high_confidence_ratio'] = high_conf / len(probabilities)
+            
+            # Feature-based confidence (if we have training data)
+            if hasattr(self, 'cluster_centers') and self.cluster_centers is not None:
+                # Calculate distance-based confidence
+                distances = np.sqrt(((features[:, np.newaxis] - self.cluster_centers[np.newaxis, :]) ** 2).sum(axis=2))
+                min_distances = np.min(distances, axis=1)
+                avg_distance = np.mean(min_distances)
+                
+                confidence_info['avg_distance_to_centers'] = avg_distance
+                confidence_info['distance_confidence'] = 1.0 / (1.0 + avg_distance)  # Higher distance = lower confidence
+            
+            # Regime distribution confidence
+            unique_labels, counts = np.unique(labels, return_counts=True)
+            regime_balance = 1.0 - np.std(counts) / (np.mean(counts) + 1e-10)
+            confidence_info['regime_balance'] = regime_balance
+            
+            return confidence_info
+            
+        except Exception as e:
+            logger.error(f"❌ Confidence calculation failed: {e}")
+            return {}
+    
+    def _enhance_probability_estimation(self, features: np.ndarray, labels: np.ndarray, 
+                                      probabilities: np.ndarray, confidence_info: Dict[str, Any]) -> np.ndarray:
+        """Enhance probability estimation with uncertainty quantification."""
+        try:
+            enhanced_probabilities = probabilities.copy()
+            
+            # Apply confidence-based adjustment
+            avg_confidence = confidence_info.get('avg_probability', 0.5)
+            confidence_std = confidence_info.get('probability_std', 0.1)
+            
+            # Adjust probabilities based on confidence distribution
+            if confidence_std > 0:
+                # Normalize probabilities to account for uncertainty
+                z_scores = (probabilities - avg_confidence) / confidence_std
+                # Apply sigmoid function to bound probabilities
+                enhanced_probabilities = 1.0 / (1.0 + np.exp(-z_scores))
+            
+            # Apply regime balance adjustment
+            regime_balance = confidence_info.get('regime_balance', 1.0)
+            if regime_balance < 0.5:  # Unbalanced regime distribution
+                # Reduce confidence for less balanced predictions
+                enhanced_probabilities *= (0.5 + regime_balance)
+            
+            # Ensure probabilities are in valid range
+            enhanced_probabilities = np.clip(enhanced_probabilities, 0.0, 1.0)
+            
+            return enhanced_probabilities
+            
+        except Exception as e:
+            logger.error(f"❌ Probability enhancement failed: {e}")
+            return probabilities
+    
+    def _assess_prediction_quality(self, features: np.ndarray, labels: np.ndarray, 
+                                 probabilities: np.ndarray, confidence_info: Dict[str, Any]) -> Dict[str, Any]:
+        """Assess the quality of predictions."""
+        try:
+            quality = {}
+            
+            # Basic quality metrics
+            quality['n_predictions'] = len(labels)
+            quality['n_unique_regimes'] = len(np.unique(labels))
+            quality['avg_probability'] = np.mean(probabilities)
+            
+            # Prediction consistency
+            high_conf_mask = probabilities >= 0.7
+            if np.sum(high_conf_mask) > 0:
+                high_conf_labels = labels[high_conf_mask]
+                quality['high_conf_regime_diversity'] = len(np.unique(high_conf_labels))
+            else:
+                quality['high_conf_regime_diversity'] = 0
+            
+            # Feature space coverage
+            if len(features) > 1:
+                feature_std = np.std(features, axis=0)
+                quality['feature_diversity'] = np.mean(feature_std)
+                quality['feature_coverage'] = np.sum(feature_std > 0) / len(feature_std)
+            else:
+                quality['feature_diversity'] = 0.0
+                quality['feature_coverage'] = 0.0
+            
+            # Prediction stability (if we have multiple samples)
+            if len(labels) > 1:
+                label_changes = np.sum(np.diff(labels) != 0)
+                quality['prediction_stability'] = 1.0 - (label_changes / (len(labels) - 1))
+            else:
+                quality['prediction_stability'] = 1.0
+            
+            # Overall quality score
+            quality_score = (
+                quality['avg_probability'] * 0.3 +
+                quality['prediction_stability'] * 0.3 +
+                quality['feature_coverage'] * 0.2 +
+                (quality['high_conf_regime_diversity'] / max(quality['n_unique_regimes'], 1)) * 0.2
+            )
+            quality['overall_quality_score'] = quality_score
+            
+            return quality
+            
+        except Exception as e:
+            logger.error(f"❌ Prediction quality assessment failed: {e}")
+            return {}
+    
+    def _generate_prediction_recommendations(self, confidence_info: Dict[str, Any], 
+                                           prediction_quality: Dict[str, Any]) -> Dict[str, Any]:
+        """Generate recommendations based on prediction results."""
+        try:
+            recommendations = {}
+            
+            # Confidence-based recommendations
+            high_conf_ratio = confidence_info.get('high_confidence_ratio', 0.0)
+            if high_conf_ratio > 0.8:
+                recommendations['confidence_level'] = 'high'
+                recommendations['confidence_message'] = 'High confidence predictions - suitable for trading decisions'
+            elif high_conf_ratio > 0.5:
+                recommendations['confidence_level'] = 'medium'
+                recommendations['confidence_message'] = 'Medium confidence predictions - use with caution'
+            else:
+                recommendations['confidence_level'] = 'low'
+                recommendations['confidence_message'] = 'Low confidence predictions - avoid trading decisions'
+            
+            # Quality-based recommendations
+            overall_quality = prediction_quality.get('overall_quality_score', 0.0)
+            if overall_quality > 0.8:
+                recommendations['quality_level'] = 'excellent'
+                recommendations['quality_message'] = 'Excellent prediction quality'
+            elif overall_quality > 0.6:
+                recommendations['quality_level'] = 'good'
+                recommendations['quality_message'] = 'Good prediction quality'
+            else:
+                recommendations['quality_level'] = 'poor'
+                recommendations['quality_message'] = 'Poor prediction quality - consider retraining'
+            
+            # Regime balance recommendations
+            regime_balance = confidence_info.get('regime_balance', 1.0)
+            if regime_balance < 0.3:
+                recommendations['regime_balance'] = 'unbalanced'
+                recommendations['regime_message'] = 'Unbalanced regime distribution - consider adjusting parameters'
+            else:
+                recommendations['regime_balance'] = 'balanced'
+                recommendations['regime_message'] = 'Balanced regime distribution'
+            
+            # Overall recommendation
+            if high_conf_ratio > 0.7 and overall_quality > 0.7:
+                recommendations['overall'] = 'proceed'
+                recommendations['overall_message'] = 'Predictions are reliable for use'
+            elif high_conf_ratio > 0.5 and overall_quality > 0.5:
+                recommendations['overall'] = 'caution'
+                recommendations['overall_message'] = 'Use predictions with caution and additional validation'
+            else:
+                recommendations['overall'] = 'avoid'
+                recommendations['overall_message'] = 'Avoid using these predictions for trading decisions'
+            
+            return recommendations
+            
+        except Exception as e:
+            logger.error(f"❌ Recommendation generation failed: {e}")
+            return {}
     
     def _random_fallback(self, features: np.ndarray) -> Tuple[np.ndarray, np.ndarray, str]:
         """Fallback to random assignment when all other methods fail."""

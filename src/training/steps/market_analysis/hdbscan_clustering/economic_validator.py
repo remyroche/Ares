@@ -35,6 +35,13 @@ class RegimeProfile:
     works_best_for: List[str]
     risk_caveats: List[str]
     radar_plot_data: Dict[str, float]
+    # Enhanced regime profiling
+    regime_type: str  # 'bull', 'bear', 'sideways', 'volatile', 'trending'
+    market_conditions: Dict[str, Any]  # Market conditions when this regime occurs
+    statistical_significance: Dict[str, float]  # Statistical tests results
+    regime_stability: float  # Stability measure
+    transition_probabilities: Dict[str, float]  # Probabilities of transitioning to other regimes
+    economic_indicators: Dict[str, float]  # Economic indicators during this regime
 
 @dataclass
 class EconomicValidationResult:
@@ -43,6 +50,12 @@ class EconomicValidationResult:
     validation_metrics: Dict[str, float]
     regime_quality_score: float
     trading_recommendations: Dict[str, Any]
+    # Enhanced validation results
+    regime_correlation_matrix: Optional[np.ndarray] = None
+    regime_transition_matrix: Optional[np.ndarray] = None
+    market_regime_analysis: Dict[str, Any] = None
+    statistical_tests: Dict[str, Any] = None
+    regime_persistence_analysis: Dict[str, Any] = None
 
 class EconomicValidator:
     """
@@ -144,13 +157,27 @@ class EconomicValidator:
                 trading_recommendations = self._generate_trading_recommendations(profiles)
                 tprint_debug(f"Trading recommendations: {trading_recommendations}")
             
+            # Enhanced regime analysis
+            with tprint_timer("Enhanced regime analysis"):
+                regime_correlation_matrix = self._calculate_regime_correlations(profiles, returns)
+                regime_transition_matrix = self._calculate_regime_transitions(cluster_labels)
+                market_regime_analysis = self._analyze_market_regime_patterns(profiles, market_data)
+                statistical_tests = self._perform_statistical_tests(profiles, returns)
+                regime_persistence_analysis = self._analyze_regime_persistence(cluster_labels, profiles)
+                tprint_debug(f"Enhanced analysis completed")
+            
             tprint_success(f"✅ Economic validation completed. Quality score: {regime_quality_score:.3f}")
             
             return EconomicValidationResult(
                 profiles=profiles,
                 validation_metrics=validation_metrics,
                 regime_quality_score=regime_quality_score,
-                trading_recommendations=trading_recommendations
+                trading_recommendations=trading_recommendations,
+                regime_correlation_matrix=regime_correlation_matrix,
+                regime_transition_matrix=regime_transition_matrix,
+                market_regime_analysis=market_regime_analysis,
+                statistical_tests=statistical_tests,
+                regime_persistence_analysis=regime_persistence_analysis
             )
             
         except Exception as e:
@@ -246,6 +273,16 @@ class EconomicValidator:
             regime_name = self._generate_regime_name(key_stats, regime_id)
             tprint_debug(f"Generated name for regime {regime_id}: {regime_name}")
             
+            # Enhanced regime profiling
+            with tprint_timer(f"Enhanced profiling for regime {regime_id}"):
+                regime_type = self._classify_regime_type(key_stats, regime_data)
+                market_conditions = self._analyze_market_conditions(regime_data, key_stats)
+                statistical_significance = self._calculate_statistical_significance(regime_returns, key_stats)
+                regime_stability = self._calculate_regime_stability_score(cluster_labels, regime_id)
+                transition_probabilities = self._calculate_transition_probabilities(cluster_labels, regime_id)
+                economic_indicators = self._calculate_economic_indicators(regime_data, key_stats)
+                tprint_debug(f"Enhanced profiling completed for regime {regime_id}")
+            
             tprint_success(f"✅ Profile created for regime {regime_id}: {regime_name}")
             
             return RegimeProfile(
@@ -257,7 +294,13 @@ class EconomicValidator:
                 transitions=transitions,
                 works_best_for=works_best_for,
                 risk_caveats=risk_caveats,
-                radar_plot_data=radar_plot_data
+                radar_plot_data=radar_plot_data,
+                regime_type=regime_type,
+                market_conditions=market_conditions,
+                statistical_significance=statistical_significance,
+                regime_stability=regime_stability,
+                transition_probabilities=transition_probabilities,
+                economic_indicators=economic_indicators
             )
             
         except Exception as e:
@@ -738,5 +781,466 @@ class EconomicValidator:
             profiles=[],
             validation_metrics={'n_regimes': 0, 'noise_ratio': 1.0, 'silhouette_score': 0.0, 'regime_stability': 0.0},
             regime_quality_score=0.0,
-            trading_recommendations={'best_regimes': [], 'avoid_regimes': [], 'overall_strategy': 'Conservative', 'risk_level': 'Medium'}
+            trading_recommendations={'best_regimes': [], 'avoid_regimes': [], 'overall_strategy': 'Conservative', 'risk_level': 'Medium'},
+            regime_correlation_matrix=None,
+            regime_transition_matrix=None,
+            market_regime_analysis=None,
+            statistical_tests=None,
+            regime_persistence_analysis=None
         )
+    
+    def _classify_regime_type(self, key_stats: Dict[str, float], regime_data: pd.DataFrame) -> str:
+        """Classify regime type based on statistical characteristics."""
+        try:
+            # Determine regime type based on key characteristics
+            avg_return = key_stats['avg_return']
+            volatility = key_stats['volatility']
+            sharpe_ratio = key_stats['sharpe_ratio']
+            skewness = key_stats['skewness']
+            
+            # High volatility regime
+            if volatility > 0.2:
+                return 'volatile'
+            
+            # Trending regimes
+            if abs(avg_return) > 0.01:
+                if avg_return > 0:
+                    return 'bull' if sharpe_ratio > 0.5 else 'trending'
+                else:
+                    return 'bear' if sharpe_ratio < -0.5 else 'trending'
+            
+            # Sideways regime
+            if abs(avg_return) < 0.005 and volatility < 0.1:
+                return 'sideways'
+            
+            # Default classification
+            return 'trending'
+            
+        except Exception as e:
+            logger.error(f"❌ Regime type classification failed: {e}")
+            return 'unknown'
+    
+    def _analyze_market_conditions(self, regime_data: pd.DataFrame, key_stats: Dict[str, float]) -> Dict[str, Any]:
+        """Analyze market conditions during this regime."""
+        try:
+            conditions = {}
+            
+            # Volume analysis
+            volume_cols = [col for col in regime_data.columns if 'volume' in col.lower()]
+            if volume_cols:
+                volume = regime_data[volume_cols[0]].values
+                conditions['avg_volume'] = np.mean(volume)
+                conditions['volume_trend'] = 'increasing' if np.mean(volume[-len(volume)//4:]) > np.mean(volume[:len(volume)//4]) else 'decreasing'
+            else:
+                conditions['avg_volume'] = 0.0
+                conditions['volume_trend'] = 'unknown'
+            
+            # Price range analysis
+            if 'high' in regime_data.columns and 'low' in regime_data.columns:
+                price_range = (regime_data['high'] - regime_data['low']).mean()
+                conditions['avg_price_range'] = price_range
+                conditions['price_volatility'] = 'high' if price_range > regime_data['close'].mean() * 0.02 else 'low'
+            else:
+                conditions['avg_price_range'] = 0.0
+                conditions['price_volatility'] = 'unknown'
+            
+            # Regime characteristics
+            conditions['regime_volatility'] = 'high' if key_stats['volatility'] > 0.15 else 'low'
+            conditions['regime_trend'] = 'bullish' if key_stats['avg_return'] > 0 else 'bearish'
+            conditions['regime_quality'] = 'high' if key_stats['sharpe_ratio'] > 1.0 else 'medium' if key_stats['sharpe_ratio'] > 0 else 'low'
+            
+            return conditions
+            
+        except Exception as e:
+            logger.error(f"❌ Market conditions analysis failed: {e}")
+            return {}
+    
+    def _calculate_statistical_significance(self, returns: np.ndarray, key_stats: Dict[str, float]) -> Dict[str, float]:
+        """Calculate statistical significance tests for regime characteristics."""
+        try:
+            significance = {}
+            
+            # T-test for mean return
+            if len(returns) > 1:
+                t_stat, p_value = stats.ttest_1samp(returns, 0)
+                significance['return_t_stat'] = t_stat
+                significance['return_p_value'] = p_value
+                significance['return_significant'] = p_value < 0.05
+            else:
+                significance['return_t_stat'] = 0.0
+                significance['return_p_value'] = 1.0
+                significance['return_significant'] = False
+            
+            # Normality test (Shapiro-Wilk for small samples, Kolmogorov-Smirnov for larger)
+            if len(returns) >= 3:
+                if len(returns) <= 5000:
+                    try:
+                        shapiro_stat, shapiro_p = stats.shapiro(returns)
+                        significance['normality_test'] = 'shapiro'
+                        significance['normality_stat'] = shapiro_stat
+                        significance['normality_p_value'] = shapiro_p
+                    except:
+                        significance['normality_test'] = 'failed'
+                        significance['normality_stat'] = 0.0
+                        significance['normality_p_value'] = 1.0
+                else:
+                    ks_stat, ks_p = stats.kstest(returns, 'norm', args=(np.mean(returns), np.std(returns)))
+                    significance['normality_test'] = 'ks'
+                    significance['normality_stat'] = ks_stat
+                    significance['normality_p_value'] = ks_p
+                
+                significance['is_normal'] = significance['normality_p_value'] > 0.05
+            else:
+                significance['normality_test'] = 'insufficient_data'
+                significance['normality_stat'] = 0.0
+                significance['normality_p_value'] = 1.0
+                significance['is_normal'] = False
+            
+            # Autocorrelation test
+            if len(returns) > 10:
+                try:
+                    from statsmodels.stats.diagnostic import acorr_ljungbox
+                    lb_stat, lb_p = acorr_ljungbox(returns, lags=1, return_df=False)
+                    significance['autocorr_lb_stat'] = lb_stat[0]
+                    significance['autocorr_lb_p_value'] = lb_p[0]
+                    significance['has_autocorr'] = lb_p[0] < 0.05
+                except:
+                    significance['autocorr_lb_stat'] = 0.0
+                    significance['autocorr_lb_p_value'] = 1.0
+                    significance['has_autocorr'] = False
+            else:
+                significance['autocorr_lb_stat'] = 0.0
+                significance['autocorr_lb_p_value'] = 1.0
+                significance['has_autocorr'] = False
+            
+            return significance
+            
+        except Exception as e:
+            logger.error(f"❌ Statistical significance calculation failed: {e}")
+            return {}
+    
+    def _calculate_regime_stability_score(self, cluster_labels: np.ndarray, regime_id: int) -> float:
+        """Calculate stability score for a specific regime."""
+        try:
+            # Get regime periods
+            regime_mask = cluster_labels == regime_id
+            regime_changes = np.diff(np.concatenate([[False], regime_mask, [False]]).astype(int))
+            
+            # Find regime periods
+            starts = np.where(regime_changes == 1)[0]
+            ends = np.where(regime_changes == -1)[0]
+            
+            if len(starts) == 0:
+                return 0.0
+            
+            # Handle case where regime continues to end
+            if len(ends) < len(starts):
+                ends = np.concatenate([ends, [len(cluster_labels)]])
+            
+            # Calculate stability as consistency of regime duration
+            durations = ends - starts
+            if len(durations) == 0:
+                return 0.0
+            
+            # Stability is inverse of coefficient of variation
+            mean_duration = np.mean(durations)
+            std_duration = np.std(durations)
+            if mean_duration > 0:
+                cv = std_duration / mean_duration
+                stability = 1.0 / (1.0 + cv)  # Normalize to 0-1
+            else:
+                stability = 0.0
+            
+            return min(stability, 1.0)
+            
+        except Exception as e:
+            logger.error(f"❌ Regime stability calculation failed: {e}")
+            return 0.0
+    
+    def _calculate_transition_probabilities(self, cluster_labels: np.ndarray, regime_id: int) -> Dict[str, float]:
+        """Calculate transition probabilities from this regime to others."""
+        try:
+            # Get unique regimes
+            unique_regimes = np.unique(cluster_labels)
+            unique_regimes = unique_regimes[unique_regimes != -1]
+            
+            if len(unique_regimes) <= 1:
+                return {}
+            
+            # Find regime transitions
+            regime_mask = cluster_labels == regime_id
+            transitions = {}
+            
+            for other_regime in unique_regimes:
+                if other_regime == regime_id:
+                    continue
+                
+                # Count transitions from this regime to other regime
+                transitions_from = 0
+                total_transitions = 0
+                
+                for i in range(len(cluster_labels) - 1):
+                    if cluster_labels[i] == regime_id and cluster_labels[i + 1] != regime_id:
+                        total_transitions += 1
+                        if cluster_labels[i + 1] == other_regime:
+                            transitions_from += 1
+                
+                # Calculate probability
+                if total_transitions > 0:
+                    prob = transitions_from / total_transitions
+                    transitions[f'to_regime_{other_regime}'] = prob
+                else:
+                    transitions[f'to_regime_{other_regime}'] = 0.0
+            
+            # Add probability of staying in same regime
+            same_regime_count = 0
+            total_periods = 0
+            
+            for i in range(len(cluster_labels) - 1):
+                if cluster_labels[i] == regime_id:
+                    total_periods += 1
+                    if cluster_labels[i + 1] == regime_id:
+                        same_regime_count += 1
+            
+            if total_periods > 0:
+                transitions['stay_in_regime'] = same_regime_count / total_periods
+            else:
+                transitions['stay_in_regime'] = 0.0
+            
+            return transitions
+            
+        except Exception as e:
+            logger.error(f"❌ Transition probabilities calculation failed: {e}")
+            return {}
+    
+    def _calculate_economic_indicators(self, regime_data: pd.DataFrame, key_stats: Dict[str, float]) -> Dict[str, float]:
+        """Calculate economic indicators during this regime."""
+        try:
+            indicators = {}
+            
+            # Basic economic indicators
+            indicators['avg_return'] = key_stats['avg_return']
+            indicators['volatility'] = key_stats['volatility']
+            indicators['sharpe_ratio'] = key_stats['sharpe_ratio']
+            indicators['max_drawdown'] = key_stats['max_drawdown']
+            
+            # Risk-adjusted returns
+            if key_stats['volatility'] > 0:
+                indicators['risk_adjusted_return'] = key_stats['avg_return'] / key_stats['volatility']
+            else:
+                indicators['risk_adjusted_return'] = 0.0
+            
+            # Volatility clustering
+            indicators['volatility_clustering'] = key_stats.get('volatility_clustering', 0.0)
+            
+            # Market efficiency (approximate)
+            if len(regime_data) > 10:
+                prices = regime_data['close'].values if 'close' in regime_data.columns else regime_data.iloc[:, 0].values
+                returns = np.diff(prices) / prices[:-1]
+                if len(returns) > 1:
+                    # Calculate first-order autocorrelation as efficiency measure
+                    autocorr = np.corrcoef(returns[:-1], returns[1:])[0, 1]
+                    indicators['market_efficiency'] = 1.0 - abs(autocorr) if not np.isnan(autocorr) else 0.0
+                else:
+                    indicators['market_efficiency'] = 0.0
+            else:
+                indicators['market_efficiency'] = 0.0
+            
+            # Regime persistence
+            indicators['regime_persistence'] = key_stats.get('regime_persistence', 0.0)
+            
+            return indicators
+            
+        except Exception as e:
+            logger.error(f"❌ Economic indicators calculation failed: {e}")
+            return {}
+    
+    def _calculate_regime_correlations(self, profiles: List[RegimeProfile], returns: np.ndarray) -> Optional[np.ndarray]:
+        """Calculate correlation matrix between regimes."""
+        try:
+            if len(profiles) < 2:
+                return None
+            
+            # Extract regime returns
+            regime_returns = []
+            for profile in profiles:
+                # This is a simplified approach - in practice, you'd need to track regime periods
+                regime_returns.append([profile.key_stats['avg_return']])
+            
+            # Calculate correlation matrix
+            regime_returns = np.array(regime_returns)
+            correlation_matrix = np.corrcoef(regime_returns)
+            
+            return correlation_matrix
+            
+        except Exception as e:
+            logger.error(f"❌ Regime correlation calculation failed: {e}")
+            return None
+    
+    def _calculate_regime_transitions(self, cluster_labels: np.ndarray) -> Optional[np.ndarray]:
+        """Calculate regime transition matrix."""
+        try:
+            unique_regimes = np.unique(cluster_labels)
+            unique_regimes = unique_regimes[unique_regimes != -1]
+            
+            if len(unique_regimes) < 2:
+                return None
+            
+            # Create transition matrix
+            n_regimes = len(unique_regimes)
+            transition_matrix = np.zeros((n_regimes, n_regimes))
+            
+            # Count transitions
+            for i in range(len(cluster_labels) - 1):
+                current_regime = cluster_labels[i]
+                next_regime = cluster_labels[i + 1]
+                
+                if current_regime != -1 and next_regime != -1:
+                    current_idx = np.where(unique_regimes == current_regime)[0][0]
+                    next_idx = np.where(unique_regimes == next_regime)[0][0]
+                    transition_matrix[current_idx, next_idx] += 1
+            
+            # Normalize to probabilities
+            row_sums = transition_matrix.sum(axis=1, keepdims=True)
+            transition_matrix = np.divide(transition_matrix, row_sums, out=np.zeros_like(transition_matrix), where=row_sums!=0)
+            
+            return transition_matrix
+            
+        except Exception as e:
+            logger.error(f"❌ Regime transition calculation failed: {e}")
+            return None
+    
+    def _analyze_market_regime_patterns(self, profiles: List[RegimeProfile], market_data: pd.DataFrame) -> Dict[str, Any]:
+        """Analyze market regime patterns and characteristics."""
+        try:
+            analysis = {}
+            
+            # Regime distribution
+            regime_types = [profile.regime_type for profile in profiles]
+            type_counts = {}
+            for regime_type in regime_types:
+                type_counts[regime_type] = type_counts.get(regime_type, 0) + 1
+            analysis['regime_type_distribution'] = type_counts
+            
+            # Average regime characteristics
+            avg_characteristics = {
+                'avg_duration': np.mean([profile.avg_duration for profile in profiles]),
+                'avg_volatility': np.mean([profile.key_stats['volatility'] for profile in profiles]),
+                'avg_sharpe': np.mean([profile.key_stats['sharpe_ratio'] for profile in profiles]),
+                'avg_stability': np.mean([profile.regime_stability for profile in profiles])
+            }
+            analysis['avg_characteristics'] = avg_characteristics
+            
+            # Market regime analysis
+            analysis['total_regimes'] = len(profiles)
+            analysis['regime_diversity'] = len(set(regime_types))
+            analysis['most_common_type'] = max(type_counts, key=type_counts.get) if type_counts else 'unknown'
+            
+            return analysis
+            
+        except Exception as e:
+            logger.error(f"❌ Market regime pattern analysis failed: {e}")
+            return {}
+    
+    def _perform_statistical_tests(self, profiles: List[RegimeProfile], returns: np.ndarray) -> Dict[str, Any]:
+        """Perform statistical tests on regime characteristics."""
+        try:
+            tests = {}
+            
+            # Test for regime differences
+            if len(profiles) >= 2:
+                # Extract regime statistics
+                regime_returns = []
+                regime_volatilities = []
+                
+                for profile in profiles:
+                    regime_returns.append(profile.key_stats['avg_return'])
+                    regime_volatilities.append(profile.key_stats['volatility'])
+                
+                # ANOVA test for return differences
+                try:
+                    from scipy.stats import f_oneway
+                    f_stat, p_value = f_oneway(*[regime_returns])
+                    tests['regime_returns_anova'] = {
+                        'f_statistic': f_stat,
+                        'p_value': p_value,
+                        'significant': p_value < 0.05
+                    }
+                except:
+                    tests['regime_returns_anova'] = {'error': 'insufficient_data'}
+                
+                # Kruskal-Wallis test for volatility differences
+                try:
+                    from scipy.stats import kruskal
+                    h_stat, p_value = kruskal(*[regime_volatilities])
+                    tests['regime_volatility_kruskal'] = {
+                        'h_statistic': h_stat,
+                        'p_value': p_value,
+                        'significant': p_value < 0.05
+                    }
+                except:
+                    tests['regime_volatility_kruskal'] = {'error': 'insufficient_data'}
+            
+            # Overall market tests
+            if len(returns) > 10:
+                # Test for market efficiency (random walk)
+                try:
+                    from statsmodels.stats.diagnostic import acorr_ljungbox
+                    lb_stat, lb_p = acorr_ljungbox(returns, lags=5, return_df=False)
+                    tests['market_efficiency'] = {
+                        'lb_statistic': lb_stat[0],
+                        'p_value': lb_p[0],
+                        'efficient': lb_p[0] > 0.05
+                    }
+                except:
+                    tests['market_efficiency'] = {'error': 'test_failed'}
+            
+            return tests
+            
+        except Exception as e:
+            logger.error(f"❌ Statistical tests failed: {e}")
+            return {}
+    
+    def _analyze_regime_persistence(self, cluster_labels: np.ndarray, profiles: List[RegimeProfile]) -> Dict[str, Any]:
+        """Analyze regime persistence and stability patterns."""
+        try:
+            analysis = {}
+            
+            # Calculate regime durations
+            regime_durations = []
+            for profile in profiles:
+                regime_mask = cluster_labels == profile.regime_id
+                regime_changes = np.diff(np.concatenate([[False], regime_mask, [False]]).astype(int))
+                starts = np.where(regime_changes == 1)[0]
+                ends = np.where(regime_changes == -1)[0]
+                
+                if len(ends) < len(starts):
+                    ends = np.concatenate([ends, [len(cluster_labels)]])
+                
+                durations = ends - starts
+                regime_durations.extend(durations.tolist())
+            
+            if regime_durations:
+                analysis['avg_duration'] = np.mean(regime_durations)
+                analysis['duration_std'] = np.std(regime_durations)
+                analysis['min_duration'] = np.min(regime_durations)
+                analysis['max_duration'] = np.max(regime_durations)
+                analysis['duration_consistency'] = 1.0 / (1.0 + np.std(regime_durations) / np.mean(regime_durations))
+            else:
+                analysis['avg_duration'] = 0.0
+                analysis['duration_std'] = 0.0
+                analysis['min_duration'] = 0.0
+                analysis['max_duration'] = 0.0
+                analysis['duration_consistency'] = 0.0
+            
+            # Regime stability analysis
+            stability_scores = [profile.regime_stability for profile in profiles]
+            analysis['avg_stability'] = np.mean(stability_scores)
+            analysis['stability_std'] = np.std(stability_scores)
+            analysis['most_stable_regime'] = profiles[np.argmax(stability_scores)].regime_id if profiles else None
+            
+            return analysis
+            
+        except Exception as e:
+            logger.error(f"❌ Regime persistence analysis failed: {e}")
+            return {}

@@ -90,6 +90,14 @@ class DimensionalityReducerConfig:
     validate_input: bool = True
     min_samples: int = 10
     max_components: Optional[int] = None
+    
+    # Regime-aware reduction
+    enable_regime_aware_reduction: bool = True
+    regime_detection_method: str = 'variance'  # 'variance', 'entropy', 'volatility'
+    regime_window: int = 20
+    regime_threshold: float = 0.1
+    regime_specific_components: bool = True
+    regime_adaptive_components: bool = True
 
 class DimensionalityReducer:
     """
@@ -167,14 +175,20 @@ class DimensionalityReducer:
             # Apply dimensionality reduction
             if fit:
                 with tprint_timer(f"Dimensionality reduction fitting ({self.config.method})"):
-                    reduced_features, model = self._fit_reduction(features, n_components, target)
+                    if self.config.enable_regime_aware_reduction:
+                        reduced_features, model = self._fit_regime_aware_reduction(features, n_components, target)
+                    else:
+                        reduced_features, model = self._fit_reduction(features, n_components, target)
                     self.model = model
                     tprint_debug(f"After fitting: {reduced_features.shape}")
             else:
                 with tprint_timer(f"Dimensionality reduction transform ({self.config.method})"):
                     if self.model is None:
                         raise ValueError("Model not fitted. Call with fit=True first.")
-                    reduced_features = self._transform_features(features)
+                    if self.config.enable_regime_aware_reduction:
+                        reduced_features = self._transform_regime_aware_features(features)
+                    else:
+                        reduced_features = self._transform_features(features)
                     tprint_debug(f"After transform: {reduced_features.shape}")
             
             # Calculate reduction statistics
@@ -502,3 +516,310 @@ class DimensionalityReducer:
     def get_scaler(self) -> Any:
         """Get fitted scaler."""
         return self.scaler
+    
+    def _fit_regime_aware_reduction(self, features: np.ndarray, n_components: int, target: Optional[np.ndarray] = None) -> Tuple[np.ndarray, Any]:
+        """Fit regime-aware dimensionality reduction."""
+        try:
+            # Detect regimes
+            regimes = self._detect_regimes(features)
+            
+            if regimes is not None and len(np.unique(regimes)) > 1:
+                # Apply regime-aware reduction
+                reduced_features, model = self._apply_regime_aware_reduction(features, n_components, target, regimes)
+            else:
+                # Fall back to standard reduction
+                reduced_features, model = self._fit_reduction(features, n_components, target)
+            
+            return reduced_features, model
+            
+        except Exception as e:
+            logger.error(f"❌ Regime-aware reduction fitting failed: {e}")
+            return self._fit_reduction(features, n_components, target)
+    
+    def _transform_regime_aware_features(self, features: np.ndarray) -> np.ndarray:
+        """Transform features using regime-aware model."""
+        try:
+            if self.model is None:
+                raise ValueError("Model not fitted. Call with fit=True first.")
+            
+            # Detect regimes
+            regimes = self._detect_regimes(features)
+            
+            if regimes is not None and len(np.unique(regimes)) > 1:
+                # Apply regime-aware transformation
+                return self._apply_regime_aware_transformation(features, regimes)
+            else:
+                # Fall back to standard transformation
+                return self._transform_features(features)
+            
+        except Exception as e:
+            logger.error(f"❌ Regime-aware transformation failed: {e}")
+            return self._transform_features(features)
+    
+    def _detect_regimes(self, features: np.ndarray) -> Optional[np.ndarray]:
+        """Detect regimes in the feature data."""
+        try:
+            # Use first feature for regime detection
+            primary_feature = features[:, 0]
+            
+            if self.config.regime_detection_method == 'variance':
+                regimes = self._detect_regimes_by_variance(primary_feature)
+            elif self.config.regime_detection_method == 'entropy':
+                regimes = self._detect_regimes_by_entropy(primary_feature)
+            elif self.config.regime_detection_method == 'volatility':
+                regimes = self._detect_regimes_by_volatility(primary_feature)
+            else:
+                regimes = self._detect_regimes_by_variance(primary_feature)
+            
+            return regimes
+            
+        except Exception as e:
+            logger.error(f"❌ Regime detection failed: {e}")
+            return None
+    
+    def _detect_regimes_by_variance(self, feature: np.ndarray) -> np.ndarray:
+        """Detect regimes based on variance changes."""
+        try:
+            window = self.config.regime_window
+            threshold = self.config.regime_threshold
+            
+            regimes = np.zeros(len(feature))
+            rolling_var = pd.Series(feature).rolling(window=window).var().values
+            
+            # Find variance change points
+            var_changes = np.abs(np.diff(rolling_var)) > (threshold * np.nanmean(rolling_var))
+            change_points = np.where(var_changes)[0]
+            
+            # Assign regime labels
+            current_regime = 0
+            for i in range(len(regimes)):
+                if i in change_points:
+                    current_regime = (current_regime + 1) % 3
+                regimes[i] = current_regime
+            
+            return regimes
+            
+        except Exception as e:
+            logger.debug(f"Variance-based regime detection failed: {e}")
+            return np.zeros(len(feature))
+    
+    def _detect_regimes_by_entropy(self, feature: np.ndarray) -> np.ndarray:
+        """Detect regimes based on entropy changes."""
+        try:
+            window = self.config.regime_window
+            threshold = self.config.regime_threshold
+            
+            regimes = np.zeros(len(feature))
+            
+            # Calculate rolling entropy
+            rolling_entropy = []
+            for i in range(window, len(feature)):
+                window_data = feature[i-window:i]
+                # Discretize data
+                hist, _ = np.histogram(window_data, bins=10)
+                hist = hist / hist.sum()
+                hist = hist[hist > 0]
+                entropy = -np.sum(hist * np.log2(hist))
+                rolling_entropy.append(entropy)
+            
+            rolling_entropy = np.array(rolling_entropy)
+            
+            # Find entropy change points
+            entropy_changes = np.abs(np.diff(rolling_entropy)) > (threshold * np.std(rolling_entropy))
+            change_points = np.where(entropy_changes)[0] + window
+            
+            # Assign regime labels
+            current_regime = 0
+            for i in range(len(regimes)):
+                if i in change_points:
+                    current_regime = (current_regime + 1) % 3
+                regimes[i] = current_regime
+            
+            return regimes
+            
+        except Exception as e:
+            logger.debug(f"Entropy-based regime detection failed: {e}")
+            return np.zeros(len(feature))
+    
+    def _detect_regimes_by_volatility(self, feature: np.ndarray) -> np.ndarray:
+        """Detect regimes based on volatility changes."""
+        try:
+            window = self.config.regime_window
+            threshold = self.config.regime_threshold
+            
+            regimes = np.zeros(len(feature))
+            rolling_vol = pd.Series(feature).rolling(window=window).std().values
+            
+            # Find volatility change points
+            vol_changes = np.abs(np.diff(rolling_vol)) > (threshold * np.nanmean(rolling_vol))
+            change_points = np.where(vol_changes)[0]
+            
+            # Assign regime labels
+            current_regime = 0
+            for i in range(len(regimes)):
+                if i in change_points:
+                    current_regime = (current_regime + 1) % 3
+                regimes[i] = current_regime
+            
+            return regimes
+            
+        except Exception as e:
+            logger.debug(f"Volatility-based regime detection failed: {e}")
+            return np.zeros(len(feature))
+    
+    def _apply_regime_aware_reduction(self, features: np.ndarray, n_components: int, 
+                                    target: Optional[np.ndarray], regimes: np.ndarray) -> Tuple[np.ndarray, Any]:
+        """Apply regime-aware dimensionality reduction."""
+        try:
+            unique_regimes = np.unique(regimes)
+            n_regimes = len(unique_regimes)
+            
+            if n_regimes < 2:
+                # Not enough regimes, use standard reduction
+                return self._fit_reduction(features, n_components, target)
+            
+            # Calculate regime-specific components
+            if self.config.regime_specific_components:
+                regime_components = self._calculate_regime_specific_components(features, regimes, n_components)
+            else:
+                regime_components = n_components
+            
+            # Apply reduction for each regime
+            reduced_features = np.zeros((features.shape[0], n_components))
+            regime_models = {}
+            
+            for regime in unique_regimes:
+                regime_mask = regimes == regime
+                regime_features = features[regime_mask]
+                
+                if len(regime_features) > 1:
+                    # Determine components for this regime
+                    if self.config.regime_adaptive_components:
+                        regime_n_components = min(regime_components[regime], len(regime_features[0]))
+                    else:
+                        regime_n_components = min(n_components, len(regime_features[0]))
+                    
+                    # Apply reduction
+                    regime_reduced, regime_model = self._fit_reduction(regime_features, regime_n_components, target)
+                    regime_models[regime] = regime_model
+                    
+                    # Store results
+                    if regime_reduced.shape[1] == n_components:
+                        reduced_features[regime_mask] = regime_reduced
+                    else:
+                        # Pad or truncate to match n_components
+                        if regime_reduced.shape[1] < n_components:
+                            padded = np.zeros((regime_reduced.shape[0], n_components))
+                            padded[:, :regime_reduced.shape[1]] = regime_reduced
+                            reduced_features[regime_mask] = padded
+                        else:
+                            reduced_features[regime_mask] = regime_reduced[:, :n_components]
+            
+            # Store regime models
+            self.regime_models = regime_models
+            self.regimes = regimes
+            
+            # Create a combined model for transformation
+            combined_model = self._create_combined_model(regime_models, regimes)
+            
+            return reduced_features, combined_model
+            
+        except Exception as e:
+            logger.error(f"❌ Regime-aware reduction application failed: {e}")
+            return self._fit_reduction(features, n_components, target)
+    
+    def _apply_regime_aware_transformation(self, features: np.ndarray, regimes: np.ndarray) -> np.ndarray:
+        """Apply regime-aware transformation."""
+        try:
+            if not hasattr(self, 'regime_models') or self.regime_models is None:
+                return self._transform_features(features)
+            
+            unique_regimes = np.unique(regimes)
+            reduced_features = np.zeros((features.shape[0], self.config.n_components))
+            
+            for regime in unique_regimes:
+                regime_mask = regimes == regime
+                regime_features = features[regime_mask]
+                
+                if len(regime_features) > 0 and regime in self.regime_models:
+                    regime_model = self.regime_models[regime]
+                    
+                    if hasattr(regime_model, 'transform'):
+                        regime_reduced = regime_model.transform(regime_features)
+                        
+                        # Ensure correct dimensions
+                        if regime_reduced.shape[1] == self.config.n_components:
+                            reduced_features[regime_mask] = regime_reduced
+                        elif regime_reduced.shape[1] < self.config.n_components:
+                            padded = np.zeros((regime_reduced.shape[0], self.config.n_components))
+                            padded[:, :regime_reduced.shape[1]] = regime_reduced
+                            reduced_features[regime_mask] = padded
+                        else:
+                            reduced_features[regime_mask] = regime_reduced[:, :self.config.n_components]
+            
+            return reduced_features
+            
+        except Exception as e:
+            logger.error(f"❌ Regime-aware transformation failed: {e}")
+            return self._transform_features(features)
+    
+    def _calculate_regime_specific_components(self, features: np.ndarray, regimes: np.ndarray, n_components: int) -> Dict[int, int]:
+        """Calculate regime-specific number of components."""
+        try:
+            unique_regimes = np.unique(regimes)
+            regime_components = {}
+            
+            for regime in unique_regimes:
+                regime_mask = regimes == regime
+                regime_features = features[regime_mask]
+                
+                if len(regime_features) > 1:
+                    # Calculate explained variance for this regime
+                    if self.config.method == 'pca':
+                        from sklearn.decomposition import PCA
+                        pca = PCA()
+                        pca.fit(regime_features)
+                        explained_variance = pca.explained_variance_ratio_
+                        
+                        # Find number of components that explain 95% of variance
+                        cumsum = np.cumsum(explained_variance)
+                        n_comp = np.argmax(cumsum >= 0.95) + 1
+                        regime_components[regime] = min(n_comp, n_components)
+                    else:
+                        # Default to n_components
+                        regime_components[regime] = n_components
+                else:
+                    regime_components[regime] = 1
+            
+            return regime_components
+            
+        except Exception as e:
+            logger.error(f"❌ Regime-specific components calculation failed: {e}")
+            return {regime: n_components for regime in unique_regimes}
+    
+    def _create_combined_model(self, regime_models: Dict[int, Any], regimes: np.ndarray) -> Any:
+        """Create a combined model for regime-aware transformation."""
+        try:
+            # Create a simple wrapper that delegates to regime-specific models
+            class CombinedModel:
+                def __init__(self, regime_models, regimes):
+                    self.regime_models = regime_models
+                    self.regimes = regimes
+                
+                def transform(self, features):
+                    return self._transform(features)
+                
+                def _transform(self, features):
+                    # This would need to be implemented based on the specific use case
+                    # For now, return the first regime model's transform
+                    if self.regime_models:
+                        first_model = list(self.regime_models.values())[0]
+                        if hasattr(first_model, 'transform'):
+                            return first_model.transform(features)
+                    return features
+            
+            return CombinedModel(regime_models, regimes)
+            
+        except Exception as e:
+            logger.error(f"❌ Combined model creation failed: {e}")
+            return None

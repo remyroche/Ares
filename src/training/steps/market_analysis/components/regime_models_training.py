@@ -1,11 +1,14 @@
 """
-Regime Detection Models Training Component
+Regime Detection Models Training Step
 
-This component implements the specific regime detection models mentioned in the user's request:
+BaseStep-based implementation for training regime detection models.
+Migrated from the component pattern to use the new BaseStep architecture.
+
+This step implements the specific regime detection models:
 - CatBoost (base model)
 - Greedy Rule Lists (base model - multi-class compatible)
 - ExtraTrees (base model)
-- stacker_lgbm_calibrated (meta-learner with probability calibration)
+- LightGBM (meta-learner with probability calibration)
 """
 
 import numpy as np
@@ -19,9 +22,9 @@ import gc
 from typing import Any, Dict, List, Optional, Tuple
 from datetime import datetime
 
+from src.training.steps.base_step import BaseStep
 from src.utils.logger import system_logger
-from src.utils.tprint import tprint
-from .base_component import BaseMarketAnalysisComponent, ComponentConfig, ComponentResult
+from src.utils.tprint import tprint, tprint_info, tprint_success, tprint_warning, tprint_error
 
 # Suppress warnings
 warnings.filterwarnings('ignore')
@@ -105,21 +108,24 @@ except ImportError as e:
     SHAP_AVAILABLE = False
     tprint(f"⚠️ [REGIME_MODELS] SHAP explainability utilities not available: {e}", color="yellow")
 
-class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
+class RegimeModelsTrainingStep(BaseStep):
     """
-    Regime Detection Models Training Component.
+    Regime Detection Models Training Step using BaseStep pattern.
 
-    This component trains the specific regime detection models:
+    This step trains the specific regime detection models:
     - CatBoost (base model)
     - Greedy Rule Lists (base model - multi-class compatible)
     - ExtraTrees (base model)
-    - stacker_lgbm_calibrated (meta-learner with probability calibration)
+    - LightGBM (meta-learner with probability calibration)
     """
 
-    def __init__(self, config: Optional[ComponentConfig] = None):
-        """Initialize the Regime Models Training Component."""
-        tprint("🚀 [REGIME_MODELS] Initializing Regime Models Training Component", color="cyan", bold=True)
-        tprint(f"📋 [REGIME_MODELS] Config provided: {config is not None}", color="blue")
+    def __init__(self, step_name: str = "regime_models_training"):
+        """Initialize the Regime Models Training Step."""
+        super().__init__(step_name)
+        self.logger = system_logger.getChild('RegimeModelsTraining')
+        self.training_start_time = None
+        self.training_end_time = None
+        tprint("🚀 [REGIME_MODELS] Initializing Regime Models Training Step", "INFO")
 
         # Initialize parent component
         try:
@@ -211,46 +217,66 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
         tprint(f"✅ [REGIME_MODELS] Required artifacts: {required_artifacts}", color="green")
         return required_artifacts
 
-    async def execute(self, data: pd.DataFrame, pipeline_state: Dict[str, Any]) -> ComponentResult:
+    async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """
         Execute regime detection models training.
 
         Args:
-            data: Market data DataFrame
-            pipeline_state: Pipeline state dictionary
+            config: Configuration dictionary with parameters:
+                - symbol: Trading symbol (e.g., 'ETHUSDT')
+                - exchange: Exchange name (e.g., 'binance')
+                - timeframe: Timeframe (e.g., '15m')
+                - data_dir: Data directory path
+                - start_date: Start date (optional)
+                - end_date: End date (optional)
+                - train_data: Training data (optional)
+                - regime_labels: Regime labels (optional)
+                - model_params: Model parameters (optional)
 
         Returns:
-            ComponentResult with training results
+            Dictionary with training results and model artifacts
         """
-        execution_start_time = time.time()
-        tprint("🚀 [REGIME_MODELS] Starting regime detection models training execution", color="cyan", bold=True)
-        self.logger.info("Starting regime detection models training execution")
+        start_time = datetime.now()
+        tprint(f"🔍 Starting regime models training for {config.get('symbol', 'UNKNOWN')}", "INFO")
+        
+        # Set context for artifact management
+        self._set_context(
+            symbol=config.get('symbol', 'ETHUSDT'),
+            exchange=config.get('exchange', 'binance'),
+            direction=config.get('direction', 'both'),
+            model=config.get('model', 'default')
+        )
 
         # Log initial system performance
         initial_perf = self._get_system_performance()
         if initial_perf:
-            tprint(f"💻 [REGIME_MODELS] Initial system state - CPU: {initial_perf.get('cpu_percent', 'N/A')}%, Memory: {initial_perf.get('memory_percent', 'N/A')}%", color="blue")
+            tprint(f"💻 Initial system state - CPU: {initial_perf.get('cpu_percent', 'N/A')}%, Memory: {initial_perf.get('memory_percent', 'N/A')}%", "INFO")
 
         # Monitor initial memory usage
         initial_memory = self._monitor_memory_usage("Initial")
 
-        # Log execution context
-        tprint(f"📊 [REGIME_MODELS] Input data shape: {data.shape}", color="blue")
-        tprint(f"📋 [REGIME_MODELS] Data columns: {list(data.columns)}", color="blue")
-        tprint(f"🔍 [REGIME_MODELS] Pipeline state keys: {list(pipeline_state.keys())}", color="blue")
-
         try:
+            # Load training data
+            data = self._load_training_data(config)
+            if data is None:
+                raise ValueError("No training data found")
+            
+            tprint(f"✅ Loaded training data: {data.shape[0]} rows, {data.shape[1]} columns", "SUCCESS")
+
             # Step 0: Validate input data
-            tprint("🔍 [REGIME_MODELS] Step 0: Validating input data", color="cyan")
+            tprint("🔍 Step 0: Validating input data", "INFO")
             if not self._validate_input_data(data):
                 error_msg = "Input data validation failed"
-                tprint(f"❌ [REGIME_MODELS] {error_msg}", color="red")
+                tprint(f"❌ {error_msg}", "ERROR")
                 self.logger.error("Input data validation failed")
-                return ComponentResult(
-                    success=False,
-                    artifacts={},
-                    error_message=error_msg
-                )
+                return {
+                    'success': False,
+                    'error': error_msg,
+                    'trained_models': {},
+                    'evaluation_results': {},
+                    'metrics': {},
+                    'processing_time': (datetime.now() - start_time).total_seconds()
+                }
 
             # Step 1: Check ML libraries availability
             tprint("🔍 [REGIME_MODELS] Step 1: Checking ML libraries availability", color="cyan")
@@ -266,43 +292,13 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                 )
             tprint("✅ [REGIME_MODELS] ML libraries check passed", color="green")
 
-            # Step 2: Extract and validate regime labels
-            tprint("🔍 [REGIME_MODELS] Step 2: Extracting regime labels from pipeline state", color="cyan")
-            artifacts = pipeline_state.get('artifacts', {})
-            tprint(f"📋 [REGIME_MODELS] Available artifacts: {list(artifacts.keys())}", color="blue")
-
-            # If no artifacts available, try to load from previous outcome files or artifact manager
-            if not artifacts:
-                tprint("🔍 [REGIME_MODELS] No artifacts in pipeline state, trying to load from previous stages", color="yellow")
-
-                # First try to load from artifact manager (most recent session)
-                try:
-                    # Legacy NAS/TAS artifacts removed
-                    else:
-                        tprint("⚠️ [REGIME_MODELS] No artifacts found in artifact manager, checking outcome files", color="yellow")
-                        artifacts = self._load_artifacts_from_outcome_files()
-                except Exception as e:
-                    tprint(f"⚠️ [REGIME_MODELS] Failed to load from artifact manager: {e}, trying outcome files", color="yellow")
-                    artifacts = self._load_artifacts_from_outcome_files()
-
-            # Look for regime labels in regime_discovery_result artifact
-            regime_discovery_result = artifacts.get('regime_discovery_result', {})
-            tprint(f"🔍 [REGIME_MODELS] Regime discovery result keys: {list(regime_discovery_result.keys())}", color="blue")
-
-            # Try to get regime labels from regime assignments
-            regime_labels = regime_discovery_result.get('regime_assignments')
+            # Step 2: Load regime labels
+            tprint("🔍 Step 2: Loading regime labels", "INFO")
+            regime_labels = self._load_regime_labels(config)
             if regime_labels is None:
-                regime_labels = regime_discovery_result.get('cluster_assignments')
-                tprint("🔍 [REGIME_MODELS] Using cluster assignments as regime labels", color="blue")
-            else:
-                tprint("🔍 [REGIME_MODELS] Using regime assignments as regime labels", color="blue")
-
-            # If still no regime labels, try alternative artifact structures
-            if regime_labels is None:
-                tprint("🔍 [REGIME_MODELS] Trying alternative artifact structures...", color="yellow")
-
-                # Try direct access to artifacts
-                # Legacy TAS/NAS assignments removed
+                raise ValueError("No regime labels found")
+            
+            tprint(f"✅ Loaded regime labels: {len(regime_labels)} labels", "SUCCESS")
 
                 # Try other possible artifact keys
                 for key in ['regime_assignments', 'assignments', 'cluster_assignments']:
@@ -2766,3 +2762,141 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
             self.logger.error(f"Failed to load artifacts from outcome files: {e}")
 
         return artifacts
+
+    def _load_training_data(self, config: Dict[str, Any]) -> Optional[pd.DataFrame]:
+        """Load training data from artifacts or config."""
+        try:
+            # Try to load from artifacts first
+            train_data = self._load_dataframe('train_data')
+            if train_data is not None:
+                return train_data
+            
+            # Try alternative artifact names
+            train_data = self._load_dataframe('training_data') or self._load_dataframe('market_data')
+            if train_data is not None:
+                return train_data
+            
+            # Try to load from config
+            if 'train_data' in config:
+                return pd.DataFrame(config['train_data'])
+            
+            return None
+            
+        except Exception as e:
+            tprint(f"⚠️ Failed to load training data: {e}", "WARNING")
+            return None
+
+    def _load_regime_labels(self, config: Dict[str, Any]) -> Optional[np.ndarray]:
+        """Load regime labels from artifacts or config."""
+        try:
+            # Try to load from artifacts first
+            regime_data = self._get_artifact('regime_labels')
+            if regime_data is not None:
+                if isinstance(regime_data, dict) and 'labels' in regime_data:
+                    return np.array(regime_data['labels'])
+                elif isinstance(regime_data, (list, np.ndarray)):
+                    return np.array(regime_data)
+            
+            # Try alternative artifact names
+            regime_data = self._get_artifact('regime_assignments') or self._get_artifact('cluster_assignments')
+            if regime_data is not None:
+                return np.array(regime_data)
+            
+            # Try to load from config
+            if 'regime_labels' in config:
+                return np.array(config['regime_labels'])
+            
+            return None
+            
+        except Exception as e:
+            tprint(f"⚠️ Failed to load regime labels: {e}", "WARNING")
+            return None
+
+    def _calculate_training_metrics(self, models: Dict[str, Any], evaluation_results: Dict[str, Any], start_time: datetime, config: Dict[str, Any]) -> Dict[str, Any]:
+        """Calculate training metrics."""
+        try:
+            processing_time = (datetime.now() - start_time).total_seconds()
+            
+            # Calculate average accuracy
+            accuracies = [result.get('accuracy', 0) for result in evaluation_results.values()]
+            avg_accuracy = np.mean(accuracies) if accuracies else 0.0
+            
+            # Calculate best model
+            best_model = max(evaluation_results.items(), key=lambda x: x[1].get('accuracy', 0))[0] if evaluation_results else None
+            
+            metrics = {
+                'processing_time_seconds': processing_time,
+                'n_models_trained': len(models),
+                'n_models_evaluated': len(evaluation_results),
+                'average_accuracy': avg_accuracy,
+                'best_model': best_model,
+                'best_accuracy': evaluation_results[best_model].get('accuracy', 0) if best_model else 0.0,
+                'model_accuracies': {name: result.get('accuracy', 0) for name, result in evaluation_results.items()},
+                'success': True
+            }
+            
+            return metrics
+            
+        except Exception as e:
+            tprint(f"⚠️ Failed to calculate metrics: {e}", "WARNING")
+            return {'success': False, 'error': str(e)}
+
+    def _create_outcome_report(self, models: Dict[str, Any], evaluation_results: Dict[str, Any], metrics: Dict[str, Any], config: Dict[str, Any]) -> str:
+        """Create outcome report markdown."""
+        try:
+            report = f"""# Regime Models Training Outcome Report
+
+## Execution Summary
+- **Symbol**: {config.get('symbol', 'UNKNOWN')}
+- **Exchange**: {config.get('exchange', 'UNKNOWN')}
+- **Timeframe**: {config.get('timeframe', 'UNKNOWN')}
+- **Processing Time**: {metrics.get('processing_time_seconds', 0):.2f} seconds
+- **Success**: {'✅ Yes' if metrics.get('success', False) else '❌ No'}
+
+## Training Results
+- **Models Trained**: {metrics.get('n_models_trained', 0)}
+- **Models Evaluated**: {metrics.get('n_models_evaluated', 0)}
+- **Average Accuracy**: {metrics.get('average_accuracy', 0):.3f}
+- **Best Model**: {metrics.get('best_model', 'N/A')}
+- **Best Accuracy**: {metrics.get('best_accuracy', 0):.3f}
+
+## Model Performance
+"""
+            
+            for model_name, result in evaluation_results.items():
+                report += f"- **{model_name}**: {result.get('accuracy', 0):.3f} accuracy\n"
+            
+            report += f"""
+## Model Details
+- **CatBoost**: {'✅ Trained' if 'catboost' in models else '❌ Not available'}
+- **ExtraTrees**: {'✅ Trained' if 'extratrees' in models else '❌ Not available'}
+- **Greedy Rule Lists**: {'✅ Trained' if 'rulelist' in models else '❌ Not available'}
+- **LightGBM**: {'✅ Trained' if 'lightgbm' in models else '❌ Not available'}
+
+## Generated Artifacts
+- Trained models (pickle files)
+- Evaluation results
+- Model metadata
+
+---
+*Generated by Regime Models Training Step at {datetime.now().isoformat()}*
+"""
+            
+            return report
+            
+        except Exception as e:
+            tprint(f"⚠️ Failed to create outcome report: {e}", "WARNING")
+            return f"# Regime Models Training Outcome Report\n\nError creating report: {str(e)}"
+
+
+# Register the step
+def register_regime_models_training_step():
+    """Register the regime models training step."""
+    from src.training.steps.base_step import step_registry
+    
+    step_registry.register("regime_models_training", RegimeModelsTrainingStep)
+    tprint("✅ Regime models training step registered", "SUCCESS")
+
+
+# Auto-register when module is imported
+register_regime_models_training_step()

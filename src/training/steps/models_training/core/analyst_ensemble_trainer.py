@@ -48,9 +48,19 @@ class AnalystEnsembleTrainingConfig(AnalystTrainingConfig):
         AnalystModelType.LIGHTGBM_PATCHTST
     ])
     
-    # Meta-learner parameters
-    meta_learner_type: ModelType = ModelType.LIGHTGBM
-    meta_learner_params: Dict[str, Any] = field(default_factory=dict)
+                # Meta-learner parameters
+                meta_learner_type: ModelType = ModelType.LIGHTGBM
+                meta_learner_params: Dict[str, Any] = field(default_factory=lambda: {
+                    'objective': 'binary',
+                    'metric': 'binary_logloss',
+                    'boosting_type': 'gbdt',
+                    'num_leaves': 31,
+                    'learning_rate': 0.05,
+                    'feature_fraction': 0.9,
+                    'bagging_fraction': 0.8,
+                    'bagging_freq': 5,
+                    'verbose': -1
+                })
     
     # Ensemble validation
     ensemble_validation_split: float = 0.2
@@ -419,18 +429,28 @@ class AnalystEnsembleTrainer(BaseTrainer):
                 self._ensemble_model = self._create_meta_learner()
                 self._ensemble_model.fit(base_predictions, targets)
                 
-            elif self.config.ensemble_method == EnsembleMethod.VOTING:
-                # For voting, we create a voting classifier
-                from sklearn.ensemble import VotingClassifier
-                
-                estimators = []
-                for model_name, trainer in self._base_trainers.items():
-                    model = trainer._model_state.get(f"{model_name}_model")
-                    if model is not None:
-                        estimators.append((model_name, model))
-                
-                self._ensemble_model = VotingClassifier(estimators, voting='soft')
-                self._ensemble_model.fit(base_predictions, targets)
+                        elif self.config.ensemble_method == EnsembleMethod.VOTING:
+                            # For voting, we create a voting classifier
+                            from sklearn.ensemble import VotingClassifier
+                            
+                            estimators = []
+                            for model_name, trainer in self._base_trainers.items():
+                                model = trainer._model_state.get(f"{model_name}_model")
+                                if model is not None:
+                                    estimators.append((model_name, model))
+                            
+                            self._ensemble_model = VotingClassifier(estimators, voting='soft')
+                            self._ensemble_model.fit(base_predictions, targets)
+                            
+                        elif self.config.ensemble_method == EnsembleMethod.BLENDING:
+                            # For blending, we use a weighted combination with learned weights
+                            self._ensemble_model = self._create_blending_model()
+                            self._ensemble_model.fit(base_predictions, targets)
+                            
+                        elif self.config.ensemble_method == EnsembleMethod.WEIGHTED:
+                            # For weighted averaging, we learn optimal weights
+                            self._ensemble_model = self._create_weighted_model()
+                            self._ensemble_model.fit(base_predictions, targets)
                 
             elif self.config.ensemble_method == EnsembleMethod.AVERAGING:
                 # For averaging, we create a simple averaging model
@@ -448,55 +468,109 @@ class AnalystEnsembleTrainer(BaseTrainer):
             self.logger.error(f"Ensemble model training failed: {e}")
             return {'success': False, 'error': str(e)}
     
-    def _create_meta_learner(self):
-        """Create meta-learner for stacking."""
-        try:
-            if self.config.meta_learner_type == ModelType.LIGHTGBM:
-                import lightgbm as lgb
-                params = {
-                    'objective': 'binary',
-                    'metric': 'binary_logloss',
-                    'boosting_type': 'gbdt',
-                    'num_leaves': 31,
-                    'learning_rate': 0.05,
-                    'verbose': -1,
-                    **self.config.meta_learner_params
-                }
-                return lgb.LGBMClassifier(**params)
-            else:
-                # Default to logistic regression
-                from sklearn.linear_model import LogisticRegression
-                return LogisticRegression(**self.config.meta_learner_params)
+                def _create_meta_learner(self):
+                    """Create meta-learner for stacking."""
+                    try:
+                        if self.config.meta_learner_type == ModelType.LIGHTGBM:
+                            import lightgbm as lgb
+                            params = {
+                                'objective': 'binary',
+                                'metric': 'binary_logloss',
+                                'boosting_type': 'gbdt',
+                                'num_leaves': 31,
+                                'learning_rate': 0.05,
+                                'feature_fraction': 0.9,
+                                'bagging_fraction': 0.8,
+                                'bagging_freq': 5,
+                                'verbose': -1,
+                                **self.config.meta_learner_params
+                            }
+                            return lgb.LGBMClassifier(**params)
+                        else:
+                            # Default to logistic regression
+                            from sklearn.linear_model import LogisticRegression
+                            return LogisticRegression(**self.config.meta_learner_params)
+                            
+                    except ImportError:
+                        self.logger.error("Required libraries not available")
+                        return None
+    
+                def _create_averaging_model(self):
+                    """Create averaging model."""
+                    # Simple averaging model that doesn't need training
+                    return None
                 
-        except ImportError:
-            self.logger.error("Required libraries not available")
-            return None
-    
-    def _create_averaging_model(self):
-        """Create averaging model."""
-        # Simple averaging model that doesn't need training
-        return None
-    
-    async def _predict_ensemble(self, base_predictions: pd.DataFrame) -> np.ndarray:
-        """Make predictions with the ensemble model."""
-        try:
-            if self.config.ensemble_method == EnsembleMethod.AVERAGING:
-                # Simple averaging of base predictions
-                pred_columns = [col for col in base_predictions.columns if col.endswith('_pred')]
-                if pred_columns:
-                    return base_predictions[pred_columns].mean(axis=1).values
-                else:
-                    return np.zeros(len(base_predictions))
-            else:
-                # Use trained ensemble model
-                if self._ensemble_model is not None:
-                    return self._ensemble_model.predict(base_predictions)
-                else:
-                    return np.zeros(len(base_predictions))
+                def _create_blending_model(self):
+                    """Create blending model with learned weights."""
+                    try:
+                        from sklearn.linear_model import LogisticRegression
+                        return LogisticRegression(
+                            solver='liblinear',
+                            random_state=42,
+                            **self.config.meta_learner_params
+                        )
+                    except ImportError:
+                        self.logger.error("scikit-learn not available")
+                        return None
+                
+                def _create_weighted_model(self):
+                    """Create weighted averaging model."""
+                    # This is a simple wrapper that learns weights
+                    class WeightedAveraging:
+                        def __init__(self):
+                            self.weights_ = None
+                            
+                        def fit(self, X, y):
+                            from sklearn.linear_model import LogisticRegression
+                            # Use logistic regression to learn weights
+                            self.weights_ = LogisticRegression(
+                                solver='liblinear',
+                                random_state=42,
+                                **self.config.meta_learner_params
+                            )
+                            self.weights_.fit(X, y)
+                            return self
+                            
+                        def predict(self, X):
+                            if self.weights_ is not None:
+                                return self.weights_.predict(X)
+                            else:
+                                return X.mean(axis=1).values
                     
-        except Exception as e:
-            self.logger.error(f"Ensemble prediction failed: {e}")
-            return np.zeros(len(base_predictions))
+                    return WeightedAveraging()
+    
+                async def _predict_ensemble(self, base_predictions: pd.DataFrame) -> np.ndarray:
+                    """Make predictions with the ensemble model."""
+                    try:
+                        if self.config.ensemble_method == EnsembleMethod.AVERAGING:
+                            # Simple averaging of base predictions
+                            pred_columns = [col for col in base_predictions.columns if col.endswith('_pred')]
+                            if pred_columns:
+                                return base_predictions[pred_columns].mean(axis=1).values
+                            else:
+                                return np.zeros(len(base_predictions))
+                        elif self.config.ensemble_method == EnsembleMethod.WEIGHTED:
+                            # Weighted averaging (weights learned during training)
+                            pred_columns = [col for col in base_predictions.columns if col.endswith('_pred')]
+                            if pred_columns and hasattr(self, '_ensemble_weights'):
+                                weights = self._ensemble_weights
+                                if len(weights) == len(pred_columns):
+                                    weighted_preds = base_predictions[pred_columns] * weights
+                                    return weighted_preds.sum(axis=1).values
+                                else:
+                                    return base_predictions[pred_columns].mean(axis=1).values
+                            else:
+                                return base_predictions[pred_columns].mean(axis=1).values
+                        else:
+                            # Use trained ensemble model (stacking, voting, blending)
+                            if self._ensemble_model is not None:
+                                return self._ensemble_model.predict(base_predictions)
+                            else:
+                                return np.zeros(len(base_predictions))
+                                
+                    except Exception as e:
+                        self.logger.error(f"Ensemble prediction failed: {e}")
+                        return np.zeros(len(base_predictions))
     
     async def _calculate_ensemble_metrics(self, data: pd.DataFrame, targets: pd.Series) -> Dict[str, float]:
         """Calculate ensemble-specific metrics."""

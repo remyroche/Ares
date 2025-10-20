@@ -48,7 +48,17 @@ class TacticianEnsembleTrainingConfig:
     enable_position_sizing: bool = True
     
     # Meta-learner parameters
-    meta_learner_params: Dict[str, Any] = field(default_factory=dict)
+    meta_learner_params: Dict[str, Any] = field(default_factory=lambda: {
+        'objective': 'regression',
+        'metric': 'rmse',
+        'boosting_type': 'gbdt',
+        'num_leaves': 31,
+        'learning_rate': 0.05,
+        'feature_fraction': 0.9,
+        'bagging_fraction': 0.8,
+        'bagging_freq': 5,
+        'verbose': -1
+    })
 
 
 @dataclass
@@ -110,7 +120,18 @@ class TacticianEnsembleTraining(BaseStep):
             'auto_save': True,
             'enable_entry_timing': True,
             'enable_exit_timing': True,
-            'enable_position_sizing': True
+            'enable_position_sizing': True,
+            'meta_learner_params': {
+                'objective': 'regression',
+                'metric': 'rmse',
+                'boosting_type': 'gbdt',
+                'num_leaves': 31,
+                'learning_rate': 0.05,
+                'feature_fraction': 0.9,
+                'bagging_fraction': 0.8,
+                'bagging_freq': 5,
+                'verbose': -1
+            }
         }
         
         # Merge with provided configuration

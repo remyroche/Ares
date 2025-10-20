@@ -48,7 +48,17 @@ class AnalystEnsembleTrainingConfig:
     enable_multi_timeframe: bool = True
     
     # Meta-learner parameters
-    meta_learner_params: Dict[str, Any] = field(default_factory=dict)
+    meta_learner_params: Dict[str, Any] = field(default_factory=lambda: {
+        'objective': 'binary',
+        'metric': 'binary_logloss',
+        'boosting_type': 'gbdt',
+        'num_leaves': 31,
+        'learning_rate': 0.05,
+        'feature_fraction': 0.9,
+        'bagging_fraction': 0.8,
+        'bagging_freq': 5,
+        'verbose': -1
+    })
 
 
 @dataclass
@@ -110,7 +120,18 @@ class AnalystEnsembleTraining(BaseStep):
             'auto_save': True,
             'enable_patchtst_features': True,
             'enable_regime_features': True,
-            'enable_multi_timeframe': True
+            'enable_multi_timeframe': True,
+            'meta_learner_params': {
+                'objective': 'binary',
+                'metric': 'binary_logloss',
+                'boosting_type': 'gbdt',
+                'num_leaves': 31,
+                'learning_rate': 0.05,
+                'feature_fraction': 0.9,
+                'bagging_fraction': 0.8,
+                'bagging_freq': 5,
+                'verbose': -1
+            }
         }
         
         # Merge with provided configuration

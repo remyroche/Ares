@@ -75,13 +75,13 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
                 }
             }
 
-            # Validate required columns
-            required_cols = ['open', 'high', 'low', 'close']
-            missing = [c for c in required_cols if c not in data.columns]
-            if missing:
-                raise ValueError(f"Missing required columns for labeling: {missing}")
+        # Validate required columns
+        required_cols = ['open', 'high', 'low', 'close']
+        missing = [c for c in required_cols if c not in data.columns]
+        if missing:
+            raise ValueError(f"Missing required columns for labeling: {missing}")
 
-            # Run multi‑horizon labeler
+        # Run multi‑horizon labeler
             try:
                 from src.training.steps.pre_training.profit_labeling.volatility_aware_labeler import create_enhanced_analyst_labeler
                 labeler = create_enhanced_analyst_labeler()

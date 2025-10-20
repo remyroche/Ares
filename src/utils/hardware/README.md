@@ -1,84 +1,164 @@
-# Enhanced Hardware Utilities with Caching and Optimization
+# M1 Comprehensive Hardware Optimizations for Apple Silicon
 
-This module provides a comprehensive hardware optimization and caching system that automatically optimizes data types, implements LRU caching, and provides memory-efficient operations throughout the codebase.
+This module provides comprehensive hardware optimization specifically designed for M1/M2/M3/M4 Apple Silicon chips, including unified memory management, advanced CPU optimization, enhanced GPU acceleration, Neural Engine integration, and intelligent adaptive optimization.
 
-## Features
+## 🚀 Comprehensive M1 Features
 
-### 🚀 Automatic Data Type Optimization
+### 🧠 Unified Memory Architecture
+- **Cross-Component Sharing**: Intelligent memory sharing between CPU, GPU, and Neural Engine
+- **Memory Tier Optimization**: Automatic tier selection (CPU-only, Shared, GPU-optimized, Neural Engine, Compressed)
+- **Memory Compression**: Automatic compression for large datasets with configurable ratios
+- **Memory Pool Management**: Efficient memory pooling with adaptive sizing
+- **Pressure Management**: Real-time memory pressure detection and response
+
+### ⚡ Advanced CPU Optimization
+- **Performance/Efficiency Core Management**: Intelligent workload distribution across M1 cores
+- **Thread Affinity**: Automatic thread-to-core assignment for optimal performance
+- **Thermal Management**: Real-time thermal monitoring and throttling prevention
+- **Workload Balancing**: Dynamic load balancing across available cores
+- **Power Management**: Intelligent power scaling based on workload requirements
+
+### 🎮 Enhanced GPU Acceleration
+- **Metal Performance Shaders**: Native Metal compute pipeline integration
+- **Unified Memory Optimization**: Seamless data sharing between CPU and GPU
+- **Batch Processing**: Intelligent batching for improved throughput
+- **Memory Pool Management**: GPU memory pooling with compression
+- **Async Execution**: Non-blocking GPU operations with callback support
+
+### 🧠 Neural Engine Integration
+- **Model Optimization**: Automatic model optimization for Neural Engine execution
+- **Quantization Support**: 8-bit and 16-bit quantization for efficiency
+- **Batch Inference**: High-throughput batch processing
+- **Model Caching**: Intelligent model caching and management
+- **Fallback Support**: Automatic fallback to CPU/GPU when Neural Engine unavailable
+
+### 🔄 Adaptive Optimization Engine
+- **Performance Learning**: Learns from execution patterns and adapts optimization strategies
+- **Bottleneck Detection**: Automatically identifies and resolves performance bottlenecks
+- **Strategy Selection**: Chooses optimal execution strategy based on workload characteristics
+- **Real-time Adaptation**: Continuously adjusts optimization parameters
+- **Comprehensive Monitoring**: Detailed performance metrics and analysis
+
+### 💾 Advanced Memory Management
 - **int64 → int32**: Reduces memory usage by 50% for integer data
 - **float64 → float32**: Reduces memory usage by 50% for floating-point data
 - **object → category**: Converts repeated strings to efficient categorical data
 - **Automatic detection**: Intelligently determines when optimization is safe
 
-### 💾 Advanced Caching System
+### 🗄️ Intelligent Caching System
 - **LRU Eviction**: Least Recently Used eviction policy
 - **Compression**: Automatic compression for large data (>1MB)
 - **TTL Support**: Time-to-live for cached items
 - **Memory Monitoring**: Real-time memory usage tracking
 - **Statistics**: Comprehensive hit/miss rate tracking
 
-### 🔧 Hardware Integration
-- **M1 Optimization**: Apple Silicon specific optimizations
-- **GPU Acceleration**: Automatic GPU detection and acceleration
-- **Memory Management**: Intelligent memory cleanup and optimization
-- **Performance Monitoring**: Real-time performance tracking
-
-### 🧠 Dynamic Memory Allocation
-- **Intelligent System Detection**: Automatically detects system tier (Enterprise/High-end/Mid-range/Standard/Low-end)
-- **Workload-Based Allocation**: Adapts memory allocation based on workload type (Light/Moderate/Heavy/Extreme/Streaming)
-- **Data Size Adaptation**: Scales memory allocation based on actual data size
-- **User Preference Support**: Allows custom memory usage preferences
-- **Adaptive Learning**: Learns from performance patterns and adjusts allocation
-- **Real-Time Pressure Monitoring**: Continuously monitors memory pressure and adjusts allocation
-
 ## Quick Start
 
-### Basic Usage
-
-```python
-from src.utils.hardware import optimize_dataframe, cache_result, auto_optimize
-
-# Optimize a DataFrame
-df_optimized = optimize_dataframe(df)
-
-# Cache a function result
-@cache_result(ttl=3600)  # Cache for 1 hour
-def expensive_calculation(data):
-    return process_data(data)
-
-# Auto-optimize function inputs and outputs
-@auto_optimize()
-def process_data(data):
-    return data * 2
-```
-
-### Advanced Usage
+### Basic M1 Optimization
 
 ```python
 from src.utils.hardware import (
-    smart_cache, memory_efficient, performance_tracked,
-    get_integrated_hardware_manager, process_market_data
+    m1_optimized, get_comprehensive_optimizer, 
+    optimize_for_unified_memory, WorkloadCategory
 )
 
-# Smart caching with optimization
-@smart_cache(ttl=1800, key_func=lambda x: f"data_{x.shape}")
-@auto_optimize()
-def process_large_dataset(data):
-    return data.describe()
+# Comprehensive M1 optimization
+@m1_optimized("matrix_operations", WorkloadCategory.MACHINE_LEARNING)
+def optimized_matrix_operations(data):
+    return np.dot(data, data.T)
 
-# Memory-efficient processing
-@memory_efficient(memory_threshold_mb=200.0)
-def process_memory_intensive_data(data):
-    return np.dot(data.T, data)
+# Unified memory optimization
+optimized_data = optimize_for_unified_memory(large_array, 'matrix_operations', 'gpu')
 
-# Performance tracking
-@performance_tracked(log_performance=True)
-def tracked_operation(data):
-    return expensive_computation(data)
+# Get comprehensive optimizer
+optimizer = get_comprehensive_optimizer()
+result = optimizer.optimize_operation("neural_inference", model_data)
+```
 
-# Integrated hardware management
-manager = get_integrated_hardware_manager()
-optimized_data = process_market_data(raw_data)
+### Advanced M1 Features
+
+```python
+from src.utils.hardware import (
+    unified_memory_optimized, optimize_cpu_execution, 
+    gpu_accelerated, neural_engine_optimized,
+    WorkloadType, GPUOperationType, NeuralEngineOperation
+)
+
+# Unified memory optimization
+@unified_memory_optimized('matrix_operations', 'gpu')
+def gpu_optimized_function(data):
+    return data * 2
+
+# CPU optimization with thermal management
+@optimize_cpu_execution(WorkloadType.CPU_INTENSIVE)
+def cpu_intensive_task(data):
+    return np.sum(data ** 2)
+
+# GPU acceleration
+@gpu_accelerated(GPUOperationType.MATRIX_MULTIPLICATION)
+def gpu_matrix_multiply(A, B):
+    return np.dot(A, B)
+
+# Neural Engine optimization
+@neural_engine_optimized(NeuralEngineOperation.INFERENCE)
+def neural_inference(model, data):
+    return model.predict(data)
+```
+
+### Comprehensive M1 Optimization
+
+```python
+from src.utils.hardware import (
+    get_comprehensive_optimizer, ComprehensiveConfig, 
+    OptimizationStrategy, WorkloadCategory, m1_optimized
+)
+
+# Configure for maximum performance
+config = ComprehensiveConfig(
+    optimization_strategy=OptimizationStrategy.MAXIMUM_PERFORMANCE,
+    workload_category=WorkloadCategory.MACHINE_LEARNING
+)
+optimizer = get_comprehensive_optimizer(config)
+
+# Financial modeling with M1 optimization
+@m1_optimized("monte_carlo", WorkloadCategory.FINANCIAL_MODELING)
+def monte_carlo_simulation(returns, num_simulations=10000):
+    scenarios = np.random.normal(0, 0.02, (num_simulations, len(returns)))
+    portfolio_values = np.sum(returns * (1 + scenarios), axis=1)
+    return {
+        'mean': np.mean(portfolio_values),
+        'var_95': np.percentile(portfolio_values, 5)
+    }
+
+# Real-time trading optimization
+@m1_optimized("signal_processing", WorkloadCategory.REAL_TIME_TRADING)
+def process_trading_signals(market_data):
+    # Optimized for low-latency processing
+    return calculate_signals(market_data)
+```
+
+### Memory Management Examples
+
+```python
+from src.utils.hardware import (
+    get_unified_memory_manager, allocate_unified_memory,
+    memory_tier_aware, MemoryTier
+)
+
+# Unified memory allocation
+memory_manager = get_unified_memory_manager()
+allocation_id = memory_manager.allocate_for_operation(
+    'neural_network', 512.0, 'inference'
+)
+
+# Memory tier aware processing
+@memory_tier_aware(MemoryTier.NEURAL_ENGINE)
+def neural_processing(data):
+    return process_with_neural_engine(data)
+
+# Get comprehensive memory stats
+stats = memory_manager.get_comprehensive_stats()
+print(f"Memory usage: {stats['current_usage_mb']:.1f}MB")
 ```
 
 ### Dynamic Memory Allocation

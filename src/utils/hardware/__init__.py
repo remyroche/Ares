@@ -80,6 +80,37 @@ from .enhanced_gpu_manager import (
     GPUMemoryPool, BatchOperationConfig, create_gpu_operation, batch_gpu_operations
 )
 
+# Import comprehensive M1 enhancements
+from .m1_unified_memory_manager import (
+    M1UnifiedMemoryManager, UnifiedMemoryConfig, MemoryTier, MemoryAllocationStrategy,
+    get_unified_memory_manager, optimize_for_unified_memory, allocate_unified_memory,
+    get_unified_memory_stats, unified_memory_optimized, memory_tier_aware
+)
+
+from .m1_advanced_cpu_optimizer import (
+    M1AdvancedCPUOptimizer, CPUConfig, CoreType, WorkloadType as CPUWorkloadType,
+    ThermalState, get_advanced_cpu_optimizer, optimize_cpu_execution,
+    parallel_cpu_execution, get_cpu_performance_metrics
+)
+
+from .m1_enhanced_gpu_manager import (
+    M1EnhancedGPUManager, GPUConfig, GPUOperationType as EnhancedGPUOperationType,
+    MemoryLayout, ComputePipeline, get_enhanced_gpu_manager, gpu_accelerated,
+    get_gpu_performance_metrics
+)
+
+from .m1_neural_engine_manager import (
+    M1NeuralEngineManager, NeuralEngineConfig, NeuralEngineOperation,
+    ModelFormat, get_neural_engine_manager, neural_engine_optimized,
+    get_neural_engine_metrics
+)
+
+from .m1_comprehensive_optimizer import (
+    M1ComprehensiveOptimizer, ComprehensiveConfig, OptimizationStrategy,
+    WorkloadCategory, OptimizationResult, get_comprehensive_optimizer,
+    m1_optimized, get_m1_comprehensive_metrics
+)
+
 # Import examples
 from .optimization_examples import run_all_examples
 
@@ -238,6 +269,27 @@ __all__ = [
     # Hardware utilities
     'UnifiedHardwareManager', 'HardwareConfig', 'WorkloadType', 'OptimizationLevel',
     'M1MemoryOptimizer', 'M1CPUOptimizer', 'M1GPUManager', 'EnhancedM1GPUManager',
+    
+    # Comprehensive M1 enhancements
+    'M1UnifiedMemoryManager', 'UnifiedMemoryConfig', 'MemoryTier', 'MemoryAllocationStrategy',
+    'get_unified_memory_manager', 'optimize_for_unified_memory', 'allocate_unified_memory',
+    'get_unified_memory_stats', 'unified_memory_optimized', 'memory_tier_aware',
+    
+    'M1AdvancedCPUOptimizer', 'CPUConfig', 'CoreType', 'CPUWorkloadType',
+    'ThermalState', 'get_advanced_cpu_optimizer', 'optimize_cpu_execution',
+    'parallel_cpu_execution', 'get_cpu_performance_metrics',
+    
+    'M1EnhancedGPUManager', 'GPUConfig', 'EnhancedGPUOperationType',
+    'MemoryLayout', 'ComputePipeline', 'get_enhanced_gpu_manager', 'gpu_accelerated',
+    'get_gpu_performance_metrics',
+    
+    'M1NeuralEngineManager', 'NeuralEngineConfig', 'NeuralEngineOperation',
+    'ModelFormat', 'get_neural_engine_manager', 'neural_engine_optimized',
+    'get_neural_engine_metrics',
+    
+    'M1ComprehensiveOptimizer', 'ComprehensiveConfig', 'OptimizationStrategy',
+    'WorkloadCategory', 'OptimizationResult', 'get_comprehensive_optimizer',
+    'm1_optimized', 'get_m1_comprehensive_metrics',
     
     # Convenience functions
     'optimize_dataframe', 'optimize_array', 'cache_result', 'optimize_function',

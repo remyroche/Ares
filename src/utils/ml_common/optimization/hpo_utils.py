@@ -35,12 +35,28 @@ from concurrent.futures import ThreadPoolExecutor
 import time
 
 from src.utils.parallel_processing_optimizer import ParallelProcessor
-from ..hardware_optimized_parallel_processor import (
-    HardwareOptimizedMLProcessor,
-    get_hardware_optimized_ml_processor,
-    ml_training_optimized,
-    hpo_optimized
-)
+
+# Enhanced hardware optimization imports
+try:
+    from ...hardware import (
+        get_integrated_hardware_manager, m1_optimized, memory_optimized,
+        auto_optimize, smart_cache, performance_tracked, WorkloadCategory
+    )
+    HARDWARE_OPTIMIZATION_AVAILABLE = True
+except ImportError:
+    HARDWARE_OPTIMIZATION_AVAILABLE = False
+
+# Legacy hardware imports for compatibility
+try:
+    from ..hardware_optimized_parallel_processor import (
+        HardwareOptimizedMLProcessor,
+        get_hardware_optimized_ml_processor,
+        ml_training_optimized,
+        hpo_optimized
+    )
+    LEGACY_HARDWARE_AVAILABLE = True
+except ImportError:
+    LEGACY_HARDWARE_AVAILABLE = False
 from src.utils.ml_common.validation.unified_cv import perform_cross_validation as unified_perform_cv
 from sklearn.metrics import get_scorer
 from .grid_utils import build_coarse_grid_from_search_space, build_fine_grid_around_best
@@ -2646,6 +2662,8 @@ class HyperparameterOptimization:
 # ============================================================================
 # These functions provide a simple interface to the HyperparameterOptimization class
 
+@performance_tracked(log_performance=True, track_memory=True)
+@memory_optimized(aggressive_cleanup=True, enable_gc_optimization=True)
 def optimize_hyperparameters(model_factory: Callable = None,
                            model: Any = None,
                            X: np.ndarray = None,

@@ -74,6 +74,17 @@ from datetime import datetime
 import traceback
 
 from src.utils.artifact_manager import ArtifactManager
+# Enhanced hardware optimization imports
+from src.utils.hardware import (
+    get_integrated_hardware_manager, IntegratedHardwareConfig,
+    m1_optimized, memory_optimized, optimize_dataframe, force_cleanup
+)
+from src.utils.hardware.memory_optimized_decorators import (
+    MemoryOptimizationLevel, comprehensive_memory_optimization
+)
+from src.utils.hardware.optimization_decorators import (
+    smart_cache, auto_optimize, performance_tracked
+)
 
 
 class BaseStep(ABC):
@@ -90,7 +101,7 @@ class BaseStep(ABC):
     
     def __init__(self, step_name: str, config: Optional[Dict[str, Any]] = None):
         """
-        Initialize the base step with enhanced artifact management.
+        Initialize the base step with enhanced artifact management and hardware optimization.
         
         Args:
             step_name: Unique name for this step (used for artifact paths and outcomes)
@@ -98,6 +109,16 @@ class BaseStep(ABC):
         """
         self.step_name = step_name
         self.logger = logging.getLogger(f"ares.step.{step_name}")
+        
+        # Initialize hardware optimization for all steps
+        hardware_config = IntegratedHardwareConfig(
+            enable_automatic_optimization=True,
+            enable_caching=True,
+            enable_memory_monitoring=True,
+            memory_limit_gb=4.0,
+            cache_memory_limit_mb=256.0
+        )
+        self.hardware_manager = get_integrated_hardware_manager(hardware_config)
         
         # Initialize artifact manager with enhanced configuration
         artifact_config = config or {}
@@ -581,13 +602,48 @@ class BaseStep(ABC):
     
     def _clear_cache(self) -> None:
         """
-        Clear the artifact manager cache.
+        Clear the artifact manager cache and hardware caches.
         """
         try:
             self.artifact_manager.clear_cache()
-            self.logger.info("🧹 Artifact cache cleared")
+            self.hardware_manager.clear_all_caches()
+            force_cleanup()
+            self.logger.info("🧹 Artifact and hardware caches cleared")
         except Exception as e:
             self.logger.error(f"Failed to clear cache: {e}")
+    
+    @memory_optimized(optimization_level=MemoryOptimizationLevel.AGGRESSIVE)
+    def _optimize_dataframe(self, df) -> Any:
+        """
+        Optimize DataFrame using hardware acceleration.
+        
+        Args:
+            df: DataFrame to optimize
+            
+        Returns:
+            Optimized DataFrame
+        """
+        if df is None:
+            return df
+        try:
+            return self.hardware_manager.optimize_dataframe(df)
+        except Exception as e:
+            self.logger.warning(f"Hardware optimization failed, using fallback: {e}")
+            return optimize_dataframe(df)
+    
+    @smart_cache(ttl=1800, max_size=50)
+    def _get_hardware_stats(self) -> Dict[str, Any]:
+        """
+        Get comprehensive hardware statistics.
+        
+        Returns:
+            Dictionary containing hardware performance metrics
+        """
+        try:
+            return self.hardware_manager.get_performance_metrics()
+        except Exception as e:
+            self.logger.warning(f"Failed to get hardware stats: {e}")
+            return {}
     
     async def run(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """

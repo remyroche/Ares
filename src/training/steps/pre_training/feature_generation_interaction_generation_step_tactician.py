@@ -9,15 +9,12 @@ and intelligent caching for maximum performance on Apple Silicon.
 from __future__ import annotations
 
 import logging
-import gc
 import numpy as np
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Dict, Optional, List, Tuple
 import concurrent.futures
-import threading
 import time
-import os
 
 import pandas as pd
 from src.utils.tprint import tprint
@@ -93,9 +90,11 @@ class CMIComplementarityScorer:
                     
             return feature_scores
         except Exception as e:
-            # Fallback to simple implementation
+            # Hardware-optimized fallback
+            tprint(f"⚠️ CMI optimization failed, using hardware-optimized fallback: {e}")
+            optimized_features = optimize_dataframe(features_df)
             feature_scores = {}
-            for col in features_df.columns:
+            for col in optimized_features.columns:
                 if col not in targets:
                     feature_scores[col] = 0.5  # Default score
             return feature_scores
@@ -138,8 +137,9 @@ class AnalystSideInfoHandler:
             
             return optimization_result
         except Exception as e:
-            # Fallback to simple implementation
-            return features_df.copy()
+            # Hardware-optimized fallback
+            tprint(f"⚠️ Side info optimization failed, using hardware-optimized fallback: {e}")
+            return optimize_dataframe(features_df)
 
 # Set availability flag
 CMI_COMPLEMENTARITY_AVAILABLE = True
@@ -465,33 +465,51 @@ class FeatureGenerationInteractionGenerationStepTactician(BaseStep):
             tprint("⚠️ [TACTICIAN] CMI complementarity not available, using standard interaction generation")
             self.logger.warning("⚠️ CMI complementarity not available, using standard interaction generation")
 
-        # Create a simple artifact manager for compatibility
-        # Note: This is a simplified implementation since the original functions are not available
-        class SimpleArtifactManager:
+        # Create optimized artifact manager with hardware acceleration
+        class OptimizedArtifactManager:
             def __init__(self):
                 self.cache = {}
+                # Initialize hardware-optimized caching
+                self.hardware_manager = get_integrated_hardware_manager(
+                    IntegratedHardwareConfig(
+                        enable_automatic_optimization=True,
+                        enable_caching=True,
+                        enable_memory_monitoring=True,
+                        memory_limit_gb=2.0,
+                        cache_memory_limit_mb=512.0
+                    )
+                )
             
+            @smart_cache(ttl=3600, max_size=200)
             def retrieve_enhanced(self, key):
                 return self.cache.get(key)
             
+            @smart_cache(ttl=3600, max_size=200)
             def store_enhanced(self, key, value, metadata=None):
+                # Optimize data before storing
+                if hasattr(value, 'memory_usage'):
+                    value = self.hardware_manager.optimize_dataframe(value)
                 self.cache[key] = value
+                return value
             
+            @smart_cache(ttl=1800, max_size=100)
             def get_dataframe(self, step_name, key):
                 return self.cache.get(key)
             
+            @smart_cache(ttl=1800, max_size=100)
             def get_series(self, step_name, key):
                 return self.cache.get(key)
             
+            @smart_cache(ttl=1800, max_size=100)
             def get_artifact(self, step_name, key):
                 return self.cache.get(key)
             
             def save(self, step_name, artifacts, metadata=None):
                 for key, value in artifacts.items():
-                    self.cache[key] = value
+                    self.store_enhanced(key, value, metadata)
         
-        artifact_manager = SimpleArtifactManager()
-        tprint("📦 [TACTICIAN] Using simplified artifact manager")
+        artifact_manager = OptimizedArtifactManager()
+        tprint("📦 [TACTICIAN] Using hardware-optimized artifact manager")
         
         # Monitor memory usage before processing
         self._monitor_memory_usage()
@@ -1086,26 +1104,42 @@ async def handle_feature_generation_interaction_generation_step_tactician(
     hardware_manager = get_integrated_hardware_manager(hardware_config)
     
     try:
-        # Create simplified artifact manager for compatibility
-        class SimpleArtifactManager:
+        # Create optimized artifact manager with hardware acceleration
+        class OptimizedArtifactManager:
             def __init__(self):
                 self.cache = {}
+                # Initialize hardware-optimized caching
+                self.hardware_manager = get_integrated_hardware_manager(
+                    IntegratedHardwareConfig(
+                        enable_automatic_optimization=True,
+                        enable_caching=True,
+                        enable_memory_monitoring=True,
+                        memory_limit_gb=2.0,
+                        cache_memory_limit_mb=512.0
+                    )
+                )
             
+            @smart_cache(ttl=1800, max_size=100)
             def get_dataframe(self, step_name, key):
                 return self.cache.get(key)
             
+            @smart_cache(ttl=1800, max_size=100)
             def get_series(self, step_name, key):
                 return self.cache.get(key)
             
+            @smart_cache(ttl=1800, max_size=100)
             def get_artifact(self, step_name, key):
                 return self.cache.get(key)
             
             def save(self, step_name, artifacts, metadata=None):
                 for key, value in artifacts.items():
+                    # Optimize data before storing
+                    if hasattr(value, 'memory_usage'):
+                        value = self.hardware_manager.optimize_dataframe(value)
                     self.cache[key] = value
         
-        manager = SimpleArtifactManager()
-        tprint("📦 Using simplified artifact manager")
+        manager = OptimizedArtifactManager()
+        tprint("📦 Using hardware-optimized artifact manager")
         
         # Start comprehensive memory monitoring
         hardware_manager.start_monitoring()

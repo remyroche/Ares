@@ -93,13 +93,14 @@ def smart_cache(
                 ])
                 
                 # Auto-adjust TTL based on function type
+                # Shorter TTLs to prevent stale data and memory bloat
                 if ttl is None:
                     if any(keyword in func_name for keyword in ['correlation', 'mutual', 'variance']):
-                        ttl = 3600  # 1 hour for statistical calculations
+                        ttl = 300   # 5 minutes for statistical calculations (stable results)
                     elif any(keyword in func_name for keyword in ['select', 'ensemble']):
-                        ttl = 1800  # 30 minutes for selection methods
+                        ttl = 180   # 3 minutes for selection methods (may change with data)
                     else:
-                        ttl = 600   # 10 minutes for general functions
+                        ttl = 60    # 1 minute for general functions (short-lived)
                 
                 # Enable caching if function should be cached
                 if should_cache:

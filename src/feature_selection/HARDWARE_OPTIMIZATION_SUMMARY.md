@@ -103,6 +103,32 @@ Enabled for repeated operations:
 - **Neural Engine**: Automatic model optimization
 - **Thermal Management**: Prevents throttling
 
+## Context-Aware Behavior Examples
+
+### Small Dataset (100x10)
+- Memory threshold: 100MB
+- Optimization level: MINIMAL
+- Performance tracking: OFF
+- Cache TTL: 1 minute
+
+### Large Dataset (10000x100)
+- Memory threshold: 2000MB
+- Optimization level: AGGRESSIVE
+- Performance tracking: ON
+- Cache TTL: 5 minutes
+
+### Ensemble Methods
+- Memory threshold: 1000MB
+- Optimization level: AGGRESSIVE
+- Performance tracking: ON
+- Cache TTL: 3 minutes
+
+### Correlation Methods
+- Memory threshold: 500MB
+- Optimization level: BALANCED
+- Performance tracking: ON
+- Cache TTL: 5 minutes
+
 ## Usage Examples
 
 ### Basic Usage

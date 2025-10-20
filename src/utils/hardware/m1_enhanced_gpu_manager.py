@@ -729,7 +729,7 @@ def get_enhanced_gpu_manager(config: Optional[GPUConfig] = None) -> M1EnhancedGP
     return _enhanced_gpu_manager
 
 def gpu_accelerated(operation_type: GPUOperationType = GPUOperationType.GENERAL):
-    """Decorator for GPU acceleration."""
+    """Enhanced decorator for GPU acceleration with VectorBT integration."""
     def decorator(func):
         @wraps(func)
         def wrapper(*args, **kwargs):
@@ -738,18 +738,84 @@ def gpu_accelerated(operation_type: GPUOperationType = GPUOperationType.GENERAL)
             if not gpu_manager.is_available():
                 return func(*args, **kwargs)
             
-            # Execute with GPU acceleration
-            if operation_type == GPUOperationType.MATRIX_MULTIPLICATION:
-                if len(args) >= 2:
-                    return gpu_manager.execute_matrix_multiply(args[0], args[1])
-            elif operation_type == GPUOperationType.TENSOR_OPERATIONS:
-                return gpu_manager.execute_tensor_operations([('operation', args[0])])
-            elif operation_type == GPUOperationType.NEURAL_NETWORK:
-                if len(args) >= 2:
-                    return gpu_manager.execute_neural_network(args[0], args[1])
-            
-            # Fallback to original function
-            return func(*args, **kwargs)
+            # Enhanced GPU acceleration with VectorBT integration
+            try:
+                # Check if this is a VectorBT operation
+                if operation_type == GPUOperationType.MATRIX_MULTIPLICATION:
+                    # Try VectorBT GPU acceleration first
+                    try:
+                        from .vectorbt_gpu_accelerator import get_vectorbt_gpu_accelerator
+                        vectorbt_gpu = get_vectorbt_gpu_accelerator()
+                        if vectorbt_gpu.gpu_available and len(args) >= 2:
+                            # Check if this looks like financial data
+                            if (isinstance(args[0], np.ndarray) and isinstance(args[1], np.ndarray) and
+                                len(args[0].shape) == 2 and len(args[1].shape) == 2):
+                                return vectorbt_gpu._gpu_portfolio_analysis(args[0], args[1])
+                    except ImportError:
+                        pass
+                    
+                    # Fallback to standard GPU matrix multiplication
+                    if len(args) >= 2:
+                        return gpu_manager.execute_matrix_multiply(args[0], args[1])
+                
+                elif operation_type == GPUOperationType.TENSOR_OPERATIONS:
+                    # Enhanced tensor operations with memory optimization
+                    try:
+                        from .enhanced_unified_memory_manager import get_enhanced_unified_memory_manager
+                        memory_manager = get_enhanced_unified_memory_manager()
+                        
+                        # Optimize data for GPU
+                        optimized_args = []
+                        for arg in args:
+                            if isinstance(arg, (np.ndarray, pd.DataFrame)):
+                                optimized_arg = memory_manager.base_manager.optimize_data_for_component(arg, 'gpu')
+                                optimized_args.append(optimized_arg)
+                            else:
+                                optimized_args.append(arg)
+                        
+                        return gpu_manager.execute_tensor_operations([('operation', optimized_args[0])])
+                    except ImportError:
+                        return gpu_manager.execute_tensor_operations([('operation', args[0])])
+                
+                elif operation_type == GPUOperationType.NEURAL_NETWORK:
+                    # Enhanced neural network with adaptive optimization
+                    try:
+                        from .adaptive_optimization_engine import get_adaptive_optimization_engine, WorkloadCategory
+                        adaptive_engine = get_adaptive_optimization_engine()
+                        
+                        if len(args) >= 2:
+                            # Get optimization recommendations
+                            optimization = adaptive_engine.optimize_operation(
+                                operation_type="neural_network",
+                                workload_category=WorkloadCategory.NEURAL_INFERENCE,
+                                data_size_mb=args[0].nbytes / (1024 * 1024) if hasattr(args[0], 'nbytes') else 100.0
+                            )
+                            
+                            # Apply optimization settings
+                            if optimization.settings.gpu_acceleration_enabled:
+                                return gpu_manager.execute_neural_network(args[0], args[1])
+                            else:
+                                return func(*args, **kwargs)
+                    except ImportError:
+                        if len(args) >= 2:
+                            return gpu_manager.execute_neural_network(args[0], args[1])
+                
+                else:
+                    # Enhanced general operation with performance tracking
+                    try:
+                        from .backward_compatibility import performance_tracked
+                        
+                        @performance_tracked(['execution_time', 'memory_usage', 'gpu_utilization'])
+                        def tracked_gpu_operation():
+                            return gpu_manager.execute_general_operation(func, *args, **kwargs)
+                        
+                        return tracked_gpu_operation()
+                    except ImportError:
+                        return gpu_manager.execute_general_operation(func, *args, **kwargs)
+                        
+            except Exception as e:
+                logger.warning(f"Enhanced GPU acceleration failed: {e}, falling back to standard implementation")
+                return func(*args, **kwargs)
         
         return wrapper
     return decorator

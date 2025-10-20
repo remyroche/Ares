@@ -245,46 +245,110 @@ def performance_tracked(
     def decorator(func: Callable) -> Callable:
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
-            # Performance tracking
+            # Enhanced performance tracking
             start_time = time.perf_counter()
             initial_memory = 0
             cache_hits_before = 0
+            cpu_usage_before = 0
+            
+            # Get system metrics before execution
+            try:
+                import psutil
+                cpu_usage_before = psutil.cpu_percent()
+            except ImportError:
+                pass
             
             if track_memory:
-                cache = get_global_cache()
-                initial_memory = cache._get_current_memory_usage()
+                try:
+                    from .enhanced_unified_memory_manager import get_enhanced_unified_memory_manager
+                    memory_manager = get_enhanced_unified_memory_manager()
+                    initial_memory = memory_manager.get_enhanced_memory_stats().get('current_usage_mb', 0) * 1024 * 1024
+                except ImportError:
+                    cache = get_global_cache()
+                    initial_memory = cache._get_current_memory_usage()
             
             if track_cache_hits:
-                cache = get_global_cache()
-                stats = cache.get_statistics()
-                cache_hits_before = stats['hits']
+                try:
+                    from .enhanced_caching_system import get_global_cache as get_enhanced_cache
+                    cache = get_enhanced_cache()
+                    stats = cache.get_statistics()
+                    cache_hits_before = stats['hits']
+                except ImportError:
+                    cache = get_global_cache()
+                    stats = cache.get_statistics()
+                    cache_hits_before = stats['hits']
             
-            # Execute function
+            # Execute function with enhanced monitoring
             try:
+                # Try to get adaptive optimization recommendations
+                try:
+                    from .adaptive_optimization_engine import get_adaptive_optimization_engine, WorkloadCategory
+                    adaptive_engine = get_adaptive_optimization_engine()
+                    
+                    # Record performance for learning
+                    data_size_mb = sum(arg.nbytes for arg in args if hasattr(arg, 'nbytes')) / (1024 * 1024) if any(hasattr(arg, 'nbytes') for arg in args) else 100.0
+                    
+                    # Get optimization recommendations
+                    optimization = adaptive_engine.optimize_operation(
+                        operation_type=func.__name__,
+                        workload_category=WorkloadCategory.DATA_PROCESSING,
+                        data_size_mb=data_size_mb
+                    )
+                except ImportError:
+                    optimization = None
+                
                 result = func(*args, **kwargs)
                 
-                # Calculate metrics
+                # Calculate enhanced metrics
                 execution_time = time.perf_counter() - start_time
+                
+                # Get system metrics after execution
+                try:
+                    cpu_usage_after = psutil.cpu_percent()
+                    cpu_utilization = cpu_usage_after - cpu_usage_before
+                except ImportError:
+                    cpu_utilization = 0
                 
                 metrics = {
                     'function_name': func.__name__,
                     'execution_time': execution_time,
-                    'success': True
+                    'success': True,
+                    'cpu_utilization': cpu_utilization,
+                    'optimization_applied': optimization.strategy.value if optimization else 'none',
+                    'performance_improvement': optimization.performance_improvement if optimization else 1.0
                 }
                 
                 if track_memory:
-                    final_memory = cache._get_current_memory_usage()
-                    metrics['memory_delta_mb'] = (final_memory - initial_memory) / (1024 * 1024)
+                    try:
+                        from .enhanced_unified_memory_manager import get_enhanced_unified_memory_manager
+                        memory_manager = get_enhanced_unified_memory_manager()
+                        final_memory = memory_manager.get_enhanced_memory_stats().get('current_usage_mb', 0) * 1024 * 1024
+                        metrics['memory_delta_mb'] = (final_memory - initial_memory) / (1024 * 1024)
+                    except ImportError:
+                        cache = get_global_cache()
+                        final_memory = cache._get_current_memory_usage()
+                        metrics['memory_delta_mb'] = (final_memory - initial_memory) / (1024 * 1024)
                 
                 if track_cache_hits:
-                    stats = cache.get_statistics()
-                    metrics['cache_hits_delta'] = stats['hits'] - cache_hits_before
+                    try:
+                        from .enhanced_caching_system import get_global_cache as get_enhanced_cache
+                        cache = get_enhanced_cache()
+                        stats = cache.get_statistics()
+                        metrics['cache_hits_delta'] = stats['hits'] - cache_hits_before
+                    except ImportError:
+                        cache = get_global_cache()
+                        stats = cache.get_statistics()
+                        metrics['cache_hits_delta'] = stats['hits'] - cache_hits_before
                 
-                # Log performance if enabled
+                # Log enhanced performance metrics
                 if log_performance:
                     tprint_performance(f"{func.__name__}: {execution_time:.3f}s")
                     if track_memory and 'memory_delta_mb' in metrics:
                         tprint_performance(f"Memory delta: {metrics['memory_delta_mb']:.2f}MB")
+                    if 'cpu_utilization' in metrics:
+                        tprint_performance(f"CPU utilization: {metrics['cpu_utilization']:.1f}%")
+                    if optimization:
+                        tprint_performance(f"Optimization: {optimization.strategy.value} ({optimization.performance_improvement:.2f}x)")
                 
                 return result
                 
@@ -445,3 +509,41 @@ def clear_optimization_cache():
     cache = get_global_cache()
     cache.clear()
     tprint_info("Optimization cache cleared")
+
+def _optimize_inputs_enhanced(args: tuple, kwargs: dict) -> tuple:
+    """Enhanced input optimization with advanced features."""
+    try:
+        from .enhanced_unified_memory_manager import get_enhanced_unified_memory_manager
+        memory_manager = get_enhanced_unified_memory_manager()
+        
+        optimized_args = []
+        for arg in args:
+            if isinstance(arg, (np.ndarray, pd.DataFrame)):
+                optimized_arg = memory_manager.base_manager.optimize_data_for_component(arg, 'cpu')
+                optimized_args.append(optimized_arg)
+            else:
+                optimized_args.append(arg)
+        
+        optimized_kwargs = {}
+        for key, value in kwargs.items():
+            if isinstance(value, (np.ndarray, pd.DataFrame)):
+                optimized_value = memory_manager.base_manager.optimize_data_for_component(value, 'cpu')
+                optimized_kwargs[key] = optimized_value
+            else:
+                optimized_kwargs[key] = value
+        
+        return tuple(optimized_args), optimized_kwargs
+    except ImportError:
+        return args, kwargs
+
+def _optimize_output_enhanced(result: Any) -> Any:
+    """Enhanced output optimization with advanced features."""
+    try:
+        from .enhanced_unified_memory_manager import get_enhanced_unified_memory_manager
+        memory_manager = get_enhanced_unified_memory_manager()
+        
+        if isinstance(result, (np.ndarray, pd.DataFrame)):
+            return memory_manager.base_manager.optimize_data_for_component(result, 'cpu')
+        return result
+    except ImportError:
+        return result

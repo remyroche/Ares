@@ -75,18 +75,28 @@ import traceback
 
 from src.utils.artifact_manager import ArtifactManager
 # Enhanced hardware optimization imports
-from src.utils.hardware import (
-    get_integrated_hardware_manager, IntegratedHardwareConfig,
-    m1_optimized, memory_optimized, optimize_dataframe, force_cleanup,
-    WorkloadCategory, OptimizationLevel, get_memory_stats
-)
-from src.utils.hardware.memory_optimized_decorators import (
-    MemoryOptimizationLevel, comprehensive_memory_optimization,
-    memory_efficient, OptimizationConfig
-)
-from src.utils.hardware.optimization_decorators import (
-    smart_cache, auto_optimize, performance_tracked, memory_efficient, OptimizationConfig
-)
+try:
+    from src.utils.hardware import (
+        get_integrated_hardware_manager, IntegratedHardwareConfig,
+        m1_optimized, memory_optimized, optimize_dataframe, force_cleanup,
+        WorkloadCategory, OptimizationLevel, get_memory_stats
+    )
+    from src.utils.hardware.memory_optimized_decorators import (
+        MemoryOptimizationLevel, comprehensive_memory_optimization,
+        memory_efficient, OptimizationConfig
+    )
+    from src.utils.hardware.optimization_decorators import (
+        smart_cache, auto_optimize, performance_tracked, memory_efficient, OptimizationConfig
+    )
+except ImportError:
+    # Fallback to minimal hardware module
+    from src.utils.hardware_minimal import (
+        get_integrated_hardware_manager, IntegratedHardwareConfig,
+        m1_optimized, memory_optimized, optimize_dataframe, force_cleanup,
+        WorkloadCategory, OptimizationLevel, get_memory_stats,
+        MemoryOptimizationLevel, memory_efficient, OptimizationConfig,
+        smart_cache, auto_optimize, performance_tracked
+    )
 
 
 class BaseStep(ABC):
@@ -138,7 +148,7 @@ class BaseStep(ABC):
         # Set up artifact manager context with step-category organization
         self.artifact_manager.set_context(
             step_name=step_name,
-            datetime=datetime.now()
+            datetime_param=datetime.now()
         )
         
         # Ensure proper directory structure

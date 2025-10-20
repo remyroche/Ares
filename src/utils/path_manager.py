@@ -50,7 +50,7 @@ class PathManager:
         self.include_model_in_filename: bool = True
     
     def set_context(self, step_name: str, symbol: Optional[str] = None, 
-                   exchange: Optional[str] = None, datetime: Optional[datetime] = None, 
+                   exchange: Optional[str] = None, datetime_param: Optional[datetime] = None, 
                    information: Optional[str] = None, direction: str = "long", 
                    model: str = "Analyst") -> None:
         """Set the current context for path generation.
@@ -67,7 +67,7 @@ class PathManager:
         self._current_step_name = step_name
         self._current_symbol = symbol
         self._current_exchange = exchange
-        self._current_datetime = datetime or datetime.now()
+        self._current_datetime = datetime_param or datetime.now()
         self._current_information = information
         self._current_direction = direction
         self._current_model = model

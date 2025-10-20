@@ -8,15 +8,40 @@ This module provides intelligent, dynamic memory allocation based on:
 - User preferences and constraints
 """
 
-import psutil
 import logging
 import threading
 import time
 from typing import Dict, Any, Optional, Tuple, List
 from dataclasses import dataclass
 from enum import Enum
-import numpy as np
-import pandas as pd
+
+# Optional dependencies
+try:
+    import psutil
+    PSUTIL_AVAILABLE = True
+except ImportError:
+    PSUTIL_AVAILABLE = False
+    psutil = None
+
+try:
+    import numpy as np
+    NUMPY_AVAILABLE = True
+except ImportError:
+    NUMPY_AVAILABLE = False
+    class DummyModule:
+        def __getattr__(self, name):
+            return None
+    np = DummyModule()
+
+try:
+    import pandas as pd
+    PANDAS_AVAILABLE = True
+except ImportError:
+    PANDAS_AVAILABLE = False
+    class DummyModule:
+        def __getattr__(self, name):
+            return None
+    pd = DummyModule()
 
 from src.utils.tprint import (
     tprint, tprint_debug, tprint_info, tprint_success, tprint_warning, tprint_error,

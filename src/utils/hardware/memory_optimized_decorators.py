@@ -13,8 +13,26 @@ from typing import Any, Dict, List, Optional, Callable, Union, Tuple, Iterator
 from dataclasses import dataclass
 from enum import Enum
 
-import numpy as np
-import pandas as pd
+# Optional dependencies
+try:
+    import numpy as np
+    NUMPY_AVAILABLE = True
+except ImportError:
+    NUMPY_AVAILABLE = False
+    class DummyModule:
+        def __getattr__(self, name):
+            return None
+    np = DummyModule()
+
+try:
+    import pandas as pd
+    PANDAS_AVAILABLE = True
+except ImportError:
+    PANDAS_AVAILABLE = False
+    class DummyModule:
+        def __getattr__(self, name):
+            return None
+    pd = DummyModule()
 
 from .advanced_memory_manager import (
     get_advanced_memory_manager, memory_efficient_processing, 

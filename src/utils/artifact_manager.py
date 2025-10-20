@@ -310,6 +310,26 @@ class ArtifactManager:
         
         # Store original config for compatibility
         self.config = config
+        
+        # Add context attributes for BaseStep compatibility
+        self._current_model = ""
+        self._current_direction = ""
+        self._artifacts_dir = self.base_dir / "artifacts"
+        self._artifacts_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Initialize performance metrics
+        self._performance_metrics = {
+            'cache_hits': 0,
+            'cache_misses': 0,
+            'compression_savings_mb': 0.0,
+            'optimization_savings_mb': 0.0,
+            'spill_operations': 0,
+            'lazy_loads': 0
+        }
+        
+        # Initialize memory profiles for enhanced storage
+        self._memory_profiles = {}
+        self._total_memory_mb = 0.0
     
     def _lock_context(self):
         """Get lock context manager."""
@@ -324,17 +344,24 @@ class ArtifactManager:
         return nullcontext()
     
     def set_context(self, step_name: str, symbol: Optional[str] = None, 
-                   exchange: Optional[str] = None, datetime: Optional[Any] = None, 
+                   exchange: Optional[str] = None, datetime_param: Optional[Any] = None, 
                    information: Optional[str] = None, direction: str = "long", 
                    model: str = "Analyst") -> None:
         """Set the current context for path generation."""
         tprint_info(f"📁 SETTING CONTEXT: {step_name} | {symbol} | {exchange} | {direction} | {model}")
         with self._lock_context():
+            # Store context attributes for BaseStep compatibility
+            self._current_symbol = symbol
+            self._current_exchange = exchange
+            self._current_direction = direction
+            self._current_model = model
+            self._current_information = information
+            
             self._path_manager.set_context(
                 step_name=step_name,
                 symbol=symbol,
                 exchange=exchange,
-                datetime=datetime,
+                datetime_param=datetime_param,
                 information=information,
                 direction=direction,
                 model=model
@@ -597,4 +624,222 @@ class ArtifactManager:
     def get_run_dir(self) -> Optional[Path]:
         """Get current run directory (compatibility method)."""
         return self.base_dir
+    
+    def get_step_category(self, step_name: str) -> str:
+        """Get step category for a given step name."""
+        return get_step_category(step_name)
+    
+    def ensure_step_category_directories(self) -> None:
+        """Ensure all step category directories exist."""
+        for category in STEP_CATEGORIES.keys():
+            category_dir = self._artifacts_dir / category
+            category_dir.mkdir(parents=True, exist_ok=True)
+    
+    def _get_enhanced_path(self, step_name: str, artifact_name: str, file_extension: str) -> Path:
+        """Get enhanced path for artifact with step category organization."""
+        step_category = get_step_category(step_name)
+        category_dir = self._artifacts_dir / step_category
+        category_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Generate enhanced filename with context
+        context_parts = []
+        if hasattr(self, '_current_symbol') and self._current_symbol:
+            context_parts.append(self._current_symbol)
+        if hasattr(self, '_current_exchange') and self._current_exchange:
+            context_parts.append(self._current_exchange)
+        if hasattr(self, '_current_direction') and self._current_direction:
+            context_parts.append(self._current_direction)
+        if hasattr(self, '_current_model') and self._current_model:
+            context_parts.append(self._current_model)
+        
+        if context_parts:
+            context_str = "_".join(context_parts)
+            filename = f"{artifact_name}_{context_str}.{file_extension}"
+        else:
+            filename = f"{artifact_name}.{file_extension}"
+        
+        return category_dir / filename
+    
+    def _load_artifact_from_path(self, path: Path) -> Any:
+        """Load artifact from file path."""
+        try:
+            if path.suffix == '.parquet':
+                if PANDAS_AVAILABLE:
+                    return pd.read_parquet(path)
+                else:
+                    return None
+            elif path.suffix == '.csv':
+                if PANDAS_AVAILABLE:
+                    return pd.read_csv(path, index_col=0)
+                else:
+                    return None
+            elif path.suffix == '.pkl':
+                with open(path, 'rb') as f:
+                    return pickle.load(f)
+            elif path.suffix == '.json':
+                with open(path, 'r') as f:
+                    return json.load(f)
+            else:
+                self.logger.warning(f"Unknown file extension: {path.suffix}")
+                return None
+        except Exception as e:
+            self.logger.error(f"Failed to load artifact from {path}: {e}")
+            return None
+    
+    def _find_artifact_fuzzy(self, artifact_name: str, artifact_type: str) -> Optional[Path]:
+        """Find artifact using fuzzy matching across all directories."""
+        try:
+            if not self._artifacts_dir.exists():
+                return None
+            
+            # Search in all subdirectories
+            for file_path in self._artifacts_dir.rglob("*"):
+                if file_path.is_file():
+                    # Check if the filename is similar to the artifact name
+                    if self._is_similar_name(artifact_name, file_path.stem):
+                        # Additional check: ensure it's the right type of file
+                        if self._is_correct_file_type(file_path, artifact_type):
+                            return file_path
+            
+            return None
+        except Exception as e:
+            self.logger.warning(f"Failed to search with fuzzy matching: {e}")
+            return None
+    
+    def _is_similar_name(self, name1: str, name2: str) -> bool:
+        """Check if two names are similar (for fuzzy matching)."""
+        try:
+            # Simple similarity check
+            name1_clean = name1.lower().replace('_', '').replace('-', '')
+            name2_clean = name2.lower().replace('_', '').replace('-', '')
+            
+            # Check if one is contained in the other
+            if name1_clean in name2_clean or name2_clean in name1_clean:
+                return True
+            
+            # Check for common patterns
+            common_patterns = ['data', 'model', 'result', 'output', 'input']
+            for pattern in common_patterns:
+                if pattern in name1_clean and pattern in name2_clean:
+                    return True
+            
+            return False
+        except Exception:
+            return False
+    
+    def _is_correct_file_type(self, file_path: Path, artifact_type: str) -> bool:
+        """Check if the file type matches the expected artifact type."""
+        try:
+            file_extension = file_path.suffix.lower()
+            
+            # Map artifact types to expected file extensions
+            type_mappings = {
+                "data": [".parquet", ".csv", ".json"],
+                "model": [".pkl", ".joblib", ".h5", ".onnx"],
+                "metadata": [".json", ".yaml", ".yml"],
+                "image": [".png", ".jpg", ".jpeg", ".svg"],
+                "text": [".txt", ".md", ".log"]
+            }
+            
+            expected_extensions = type_mappings.get(artifact_type, [".parquet", ".csv", ".json", ".pkl"])
+            return file_extension in expected_extensions
+        except Exception:
+            return True  # Default to True if we can't determine
+    
+    def store_enhanced(self, key: str, data: Any, metadata: Optional[Dict] = None) -> bool:
+        """Store artifact with enhanced features including memory profiling and spilling."""
+        try:
+            # Profile memory usage
+            memory_usage_mb = self._profile_memory_usage(key, data)
+            
+            # Store using regular save method
+            artifact_path = self.save(data, key, "data", "auto", metadata)
+            
+            if artifact_path:
+                # Update performance metrics
+                self._performance_metrics['cache_hits'] += 1
+                return True
+            else:
+                self._performance_metrics['cache_misses'] += 1
+                return False
+                
+        except Exception as e:
+            self.logger.error(f"Failed to store enhanced artifact {key}: {e}")
+            return False
+    
+    def retrieve_enhanced(self, key: str) -> Optional[Any]:
+        """Retrieve artifact with enhanced features including lazy loading."""
+        try:
+            # Try regular retrieval first
+            data = self.get_artifact(key, "data")
+            if data is not None:
+                self._performance_metrics['cache_hits'] += 1
+                return data
+            else:
+                self._performance_metrics['cache_misses'] += 1
+                return None
+                
+        except Exception as e:
+            self.logger.error(f"Failed to retrieve enhanced artifact {key}: {e}")
+            return None
+    
+    def get_performance_metrics(self) -> Dict[str, Any]:
+        """Get performance metrics."""
+        total_requests = self._performance_metrics['cache_hits'] + self._performance_metrics['cache_misses']
+        cache_hit_ratio = (
+            self._performance_metrics['cache_hits'] / total_requests
+            if total_requests > 0 else 0
+        )
+        
+        return {
+            'cache_hits': self._performance_metrics['cache_hits'],
+            'cache_misses': self._performance_metrics['cache_misses'],
+            'cache_hit_ratio': cache_hit_ratio,
+            'compression_savings_mb': self._performance_metrics['compression_savings_mb'],
+            'optimization_savings_mb': self._performance_metrics['optimization_savings_mb'],
+            'spill_operations': self._performance_metrics['spill_operations'],
+            'lazy_loads': self._performance_metrics['lazy_loads']
+        }
+    
+    def get_memory_analytics(self) -> Dict[str, Any]:
+        """Get memory analytics."""
+        total_memory_mb = sum(profile.get('memory_usage_mb', 0) for profile in self._memory_profiles.values())
+        spilled_count = sum(1 for profile in self._memory_profiles.values() if profile.get('spilled', False))
+        
+        return {
+            'total_memory_mb': total_memory_mb,
+            'spilled_count': spilled_count,
+            'in_memory_artifacts': len(self._memory_profiles) - spilled_count,
+            'total_artifacts': len(self._memory_profiles)
+        }
+    
+    def _profile_memory_usage(self, artifact_id: str, data: Any) -> float:
+        """Profile memory usage of an artifact."""
+        try:
+            memory_usage_mb = 0
+            
+            if PANDAS_AVAILABLE and hasattr(data, 'memory_usage'):
+                memory_usage_mb = data.memory_usage(deep=True).sum() / (1024 * 1024)
+            elif NUMPY_AVAILABLE and hasattr(data, 'nbytes'):
+                memory_usage_mb = data.nbytes / (1024 * 1024)
+            else:
+                # Estimate for other types
+                try:
+                    memory_usage_mb = sys.getsizeof(data) / (1024 * 1024)
+                except:
+                    memory_usage_mb = 0
+            
+            # Store profile
+            self._memory_profiles[artifact_id] = {
+                'memory_usage_mb': memory_usage_mb,
+                'spilled': False,
+                'last_accessed': datetime.now()
+            }
+            
+            self._total_memory_mb += memory_usage_mb
+            return memory_usage_mb
+            
+        except Exception as e:
+            self.logger.warning(f"Failed to profile memory usage for {artifact_id}: {e}")
+            return 0.0
 

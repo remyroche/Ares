@@ -34,20 +34,26 @@ def get_memory_usage() -> Dict[str, float]:
 
 def optimize_dataframe_memory(df: pd.DataFrame) -> pd.DataFrame:
     """Optimize DataFrame memory usage by downcasting numeric types."""
-    df_opt = df.copy()
-    
-    # Downcast integers
-    for col in df_opt.select_dtypes(include=['int']).columns:
-        df_opt[col] = pd.to_numeric(df_opt[col], downcast='integer')
-    
-    # Downcast floats
-    for col in df_opt.select_dtypes(include=['float']).columns:
-        df_opt[col] = pd.to_numeric(df_opt[col], downcast='float')
-    
-    # Convert object columns to category if beneficial
-    for col in df_opt.select_dtypes(include=['object']).columns:
-        if df_opt[col].nunique() / len(df_opt) < 0.5:  # If less than 50% unique values
-            df_opt[col] = df_opt[col].astype('category')
+    # Use enhanced optimization system if available
+    try:
+        from src.utils.hardware import optimize_dataframe_default
+        return optimize_dataframe_default(df)
+    except ImportError:
+        # Fallback to original implementation
+        df_opt = df.copy()
+        
+        # Downcast integers
+        for col in df_opt.select_dtypes(include=['int']).columns:
+            df_opt[col] = pd.to_numeric(df_opt[col], downcast='integer')
+        
+        # Downcast floats
+        for col in df_opt.select_dtypes(include=['float']).columns:
+            df_opt[col] = pd.to_numeric(df_opt[col], downcast='float')
+        
+        # Convert object columns to category if beneficial
+        for col in df_opt.select_dtypes(include=['object']).columns:
+            if df_opt[col].nunique() / len(df_opt) < 0.5:  # If less than 50% unique values
+                df_opt[col] = df_opt[col].astype('category')
     
     return df_opt
 

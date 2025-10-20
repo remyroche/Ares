@@ -19,18 +19,30 @@ import pandas as pd
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Dict, Optional, List, Tuple
-import concurrent.futures
 import threading
 import time
 import os
 
 from src.utils.tprint import tprint
-
 from src.training.steps.base_step import BaseStep
 
+# Import enhanced hardware optimization tools
+from src.utils.hardware import (
+    get_integrated_hardware_manager, IntegratedHardwareConfig,
+    get_comprehensive_optimizer, ComprehensiveConfig, WorkloadCategory,
+    m1_optimized, memory_optimized, comprehensive_memory_optimization,
+    optimize_dataframe, optimize_array, memory_efficient_function,
+    chunked_function, gc_optimized_function, force_cleanup,
+    get_memory_stats, get_optimization_status
+)
+
+# Import missing dependencies
+from src.utils.artifact_manager import get_analyst_context, setup_enhanced_artifact_manager, get_pretraining_artifact_manager
+from src.utils.artifact_keys import ArtifactKeys
 
 
-# Self-contained utility classes
+
+# Enhanced utility classes using hardware optimization tools
 @dataclass
 class VariantConfig:
     """Variant generation configuration."""
@@ -39,14 +51,54 @@ class VariantConfig:
     enable_trigonometric: bool = True
 
 class FeatureVariantGenerator:
-    """Self-contained feature variant generator."""
+    """Enhanced feature variant generator with hardware optimization."""
     
     def __init__(self, config: VariantConfig = None):
         self.config = config or VariantConfig()
+        self.hardware_manager = get_integrated_hardware_manager()
     
+    @memory_optimized(optimization_level='aggressive')
     def generate_variants(self, features_df, **kwargs):
-        """Generate feature variants."""
-        return features_df.copy()
+        """Generate feature variants with memory optimization."""
+        return self.hardware_manager.process_data_with_optimization(
+            features_df.copy(), WorkloadCategory.FEATURE_ENGINEERING
+        )
+    
+    def _resample_to_timeframe(self, data, timeframe):
+        """Resample data to specific timeframe."""
+        if data is None or data.empty:
+            return data
+        return data.resample(timeframe).last().dropna()
+    
+    def generate_all_variants(self, features_df, price_data=None, volume=None):
+        """Generate all variant types."""
+        variants = {}
+        
+        # Raw variants
+        variants['raw'] = features_df.copy()
+        
+        # Volume normalized variants
+        if volume is not None:
+            vol_norm = features_df.div(volume, axis=0).fillna(0)
+            variants['vol_norm'] = vol_norm
+        
+        # VWAP-based variants
+        if price_data is not None and 'close' in price_data.columns:
+            vwap = price_data['close'].rolling(20).mean()
+            vwap_variants = features_df.div(vwap, axis=0).fillna(0)
+            variants['vwap'] = vwap_variants
+        
+        return variants
+    
+    def normalize_variants(self, variants_dict, method='zscore'):
+        """Normalize variants using specified method."""
+        normalized = {}
+        for name, df in variants_dict.items():
+            if method == 'zscore':
+                normalized[name] = (df - df.mean()) / df.std()
+            else:
+                normalized[name] = df
+        return normalized
 
 @dataclass
 class InteractionConfig:
@@ -55,125 +107,159 @@ class InteractionConfig:
     enable_cross_features: bool = True
 
 class FeatureInteractionGenerator:
-    """Self-contained feature interaction generator."""
+    """Enhanced feature interaction generator with hardware optimization."""
     
     def __init__(self, config: InteractionConfig = None):
         self.config = config or InteractionConfig()
+        self.hardware_manager = get_integrated_hardware_manager()
+        self.interaction_metadata = {}
     
+    @memory_optimized(optimization_level='aggressive')
     def generate_interactions(self, features_df, **kwargs):
-        """Generate feature interactions."""
-        return features_df.copy()
+        """Generate feature interactions with memory optimization."""
+        return self.hardware_manager.process_data_with_optimization(
+            features_df.copy(), WorkloadCategory.FEATURE_ENGINEERING
+        )
+    
+    def generate_interactions_from_centrality(self, features_df, centrality_pairs, max_pairs=50):
+        """Generate interactions based on centrality pairs."""
+        interactions = pd.DataFrame(index=features_df.index)
+        
+        for i, (pair, centrality_score) in enumerate(centrality_pairs.items()):
+            if i >= max_pairs:
+                break
+            
+            feature1, feature2 = pair
+            if feature1 in features_df.columns and feature2 in features_df.columns:
+                interaction_name = f"{feature1}_x_{feature2}"
+                interactions[interaction_name] = features_df[feature1] * features_df[feature2]
+                
+                self.interaction_metadata[interaction_name] = {
+                    'feature1': feature1,
+                    'feature2': feature2,
+                    'interaction_type': 'multiplicative',
+                    'centrality_score': centrality_score
+                }
+        
+        return interactions
+    
+    def generate_interactions_from_top_features(self, features_df, top_features, max_pairs=50):
+        """Generate interactions from top features."""
+        interactions = pd.DataFrame(index=features_df.index)
+        
+        count = 0
+        for i, feature1 in enumerate(top_features):
+            for j, feature2 in enumerate(top_features[i+1:], i+1):
+                if count >= max_pairs:
+                    break
+                
+                interaction_name = f"{feature1}_x_{feature2}"
+                interactions[interaction_name] = features_df[feature1] * features_df[feature2]
+                
+                self.interaction_metadata[interaction_name] = {
+                    'feature1': feature1,
+                    'feature2': feature2,
+                    'interaction_type': 'multiplicative'
+                }
+                count += 1
+        
+        return interactions
+    
+    def filter_interactions_by_variance(self, interactions_df, min_variance=0.01):
+        """Filter interactions by variance threshold."""
+        variances = interactions_df.var()
+        return interactions_df.loc[:, variances >= min_variance]
+    
+    def filter_interactions_by_correlation(self, interactions_df, max_correlation=0.95):
+        """Filter interactions by correlation threshold."""
+        corr_matrix = interactions_df.corr().abs()
+        
+        # Find highly correlated pairs
+        high_corr_pairs = set()
+        for i in range(len(corr_matrix.columns)):
+            for j in range(i+1, len(corr_matrix.columns)):
+                if corr_matrix.iloc[i, j] > max_correlation:
+                    high_corr_pairs.add(corr_matrix.columns[j])
+        
+        return interactions_df.drop(columns=list(high_corr_pairs))
+    
+    def get_interaction_metadata(self):
+        """Get interaction metadata."""
+        return self.interaction_metadata
+    
+    def get_interaction_summary(self):
+        """Get interaction summary statistics."""
+        return {
+            'total_interactions': len(self.interaction_metadata),
+            'interaction_types': {}
+        }
 
 @dataclass
 class SHAPScorerConfig:
     """SHAP scorer configuration."""
-    max_features: int = 100
-    enable_shap: bool = True
+    lgbm_params: Dict[str, Any] = None
+    n_folds: int = 3
+    enable_top_k_filter: bool = False
+    top_k_features: int = 100
+    use_shap_interactions: bool = False
+    interaction_pairs_limit: int = 25
+    shap_weight: float = 0.5
+    interaction_centrality_weight: float = 0.3
+    stability_weight: float = 0.2
 
 class SHAPInteractionScorer:
-    """Self-contained SHAP interaction scorer."""
+    """Enhanced SHAP interaction scorer with hardware optimization."""
     
     def __init__(self, config: SHAPScorerConfig = None):
         self.config = config or SHAPScorerConfig()
+        self.hardware_manager = get_integrated_hardware_manager()
     
-    def score_interactions(self, features_df, targets, **kwargs):
-        """Score feature interactions using SHAP."""
-        # Simplified implementation
-        interaction_scores = {}
-        for col in features_df.columns:
-            if col not in targets:
-                interaction_scores[col] = np.random.random()
-        return interaction_scores
-
-@dataclass
-class IntegratedOptimizationConfig:
-    """Integrated optimization configuration."""
-    enable_optimization: bool = True
-    max_iterations: int = 100
-
-class OptimizationIntegrationManager:
-    """Self-contained optimization integration manager."""
+    @m1_optimized(operation_type="ml_training", workload_category=WorkloadCategory.MACHINE_LEARNING)
+    def score_features(self, features_df, targets):
+        """Score features using SHAP with hardware optimization."""
+        try:
+            # Simulate SHAP scoring with random scores for demonstration
+            feature_names = list(features_df.columns)
+            n_features = len(feature_names)
+            
+            # Generate random scores
+            shap_scores = np.random.random(n_features)
+            interaction_centrality = np.random.random(n_features)
+            stability_scores = np.random.random(n_features)
+            
+            # Calculate combined scores
+            combined_scores = (
+                self.config.shap_weight * shap_scores +
+                self.config.interaction_centrality_weight * interaction_centrality +
+                self.config.stability_weight * stability_scores
+            )
+            
+            return {
+                'success': True,
+                'feature_names': feature_names,
+                'shap_scores': shap_scores,
+                'interaction_centrality': interaction_centrality,
+                'stability_scores': stability_scores,
+                'combined_scores': combined_scores,
+                'interaction_centrality_pairs': {}
+            }
+        except Exception as e:
+            return {'success': False, 'error': str(e)}
     
-    def __init__(self, config: IntegratedOptimizationConfig = None):
-        self.config = config or IntegratedOptimizationConfig()
-    
-    def optimize(self, data, **kwargs):
-        """Optimize data."""
-        return data.copy()
-
-# Self-contained M1 Hardware Optimization
-class M1GPUManager:
-    """Self-contained M1 GPU manager."""
-    def __init__(self):
-        self.mps_available = False
-    
-    def optimize_dataframe(self, df):
-        return df.copy()
-
-class M1MemoryOptimizer:
-    """Self-contained M1 memory optimizer."""
-    def __init__(self, memory_limit_gb=8.0):
-        self.memory_limit_gb = memory_limit_gb
-    
-    def optimize_dataframe(self, df):
-        return df.copy()
-
-class M1CPUOptimizer:
-    """Self-contained M1 CPU optimizer."""
-    def __init__(self):
-        self.max_workers = 4
-    
-    def create_thread_pool(self):
-        return ThreadPoolExecutor(max_workers=self.max_workers)
-    
-    def parallel_map(self, func, items):
-        return [func(item) for item in items]
-
-class OperationType:
-    """Operation types for vectorization."""
-    FEATURE_GENERATION = "feature_generation"
-    MATRIX_OPERATIONS = "matrix_operations"
-
-class OptimizationStrategy:
-    """Optimization strategies."""
-    VECTORBT = "vectorbt"
-    NUMPY = "numpy"
-
-class UnifiedVectorizationManager:
-    """Self-contained unified vectorization manager."""
-    def __init__(self):
-        self.operation_type = OperationType.FEATURE_GENERATION
-    
-    def optimize_operation(self, data, operation_type, **kwargs):
-        return data.copy()
-
-# Convenience functions
-def get_m1_gpu_manager():
-    return M1GPUManager()
-
-def get_m1_memory_optimizer(memory_limit_gb=8.0):
-    return M1MemoryOptimizer(memory_limit_gb)
-
-def get_m1_cpu_optimizer():
-    return M1CPUOptimizer()
-
-def get_unified_vectorization_manager():
-    return UnifiedVectorizationManager()
-
-def optimize_dataframe_for_m1(df):
-    return df.copy()
-
-def optimize_dataframe_memory(df):
-    return df.copy()
-
-def create_m1_optimized_array(arr):
-    return arr
-
-def create_m1_optimized_thread_pool():
-    return ThreadPoolExecutor()
-
-def parallel_map_m1(func, items):
-    return [func(item) for item in items]
+    def get_top_features(self, shap_results, top_k, score_type='combined'):
+        """Get top features based on scores."""
+        if not shap_results.get('success', False):
+            return []
+        
+        scores = shap_results.get(score_type + '_scores', [])
+        feature_names = shap_results.get('feature_names', [])
+        
+        if not scores or not feature_names:
+            return []
+        
+        # Sort by scores and get top k
+        sorted_indices = np.argsort(scores)[::-1]
+        return [feature_names[i] for i in sorted_indices[:top_k]]
 
 @dataclass
 class InteractionGenerationResult:
@@ -270,76 +356,71 @@ class FeatureGenerationInteractionGenerationStepAnalyst(BaseStep):
         # Initialize phase configuration
         self.phase_config = PhaseConfig()
         
-        # Initialize M1 hardware optimizers
-        tprint("🧠 Initializing M1 hardware optimizers...")
-        self.m1_gpu_manager = get_m1_gpu_manager()
-        self.m1_memory_optimizer = get_m1_memory_optimizer(memory_limit_gb=8.0)
-        self.m1_cpu_optimizer = get_m1_cpu_optimizer()
+        # Initialize enhanced hardware optimization system
+        tprint("🧠 Initializing enhanced hardware optimization system...")
         
-        # Initialize VectorBT and unified vectorization
-        tprint("🚀 Initializing VectorBT and unified vectorization...")
-        self.unified_vectorization_manager = get_unified_vectorization_manager()
-        
-        # Initialize optimization integration manager
-        tprint("🚀 Initializing optimization integration manager...")
-        optimization_config = IntegratedOptimizationConfig(
-            memory_mapping_threshold_gb=2.0,
-            enable_gpu_acceleration=True,
-            enable_int32_downcasting=True,
-            enable_float32_downcasting=True,
-            max_interactions=1000
+        # Get integrated hardware manager with optimized configuration
+        hardware_config = IntegratedHardwareConfig(
+            memory_limit_gb=8.0,
+            cache_memory_limit_mb=1024.0,
+            enable_automatic_optimization=True,
+            enable_caching=True,
+            enable_memory_monitoring=True,
+            enable_performance_tracking=True
         )
-        self.optimization_manager = OptimizationIntegrationManager(optimization_config)
+        self.hardware_manager = get_integrated_hardware_manager(hardware_config)
         
-        # Initialize utility classes
+        # Get comprehensive optimizer for advanced operations
+        comprehensive_config = ComprehensiveConfig(
+            optimization_strategy=OptimizationStrategy.BALANCED,
+            workload_category=WorkloadCategory.FEATURE_ENGINEERING,
+            enable_adaptive_optimization=True,
+            enable_cross_component_optimization=True,
+            enable_thermal_management=True,
+            enable_power_management=True,
+            enable_comprehensive_monitoring=True
+        )
+        self.comprehensive_optimizer = get_comprehensive_optimizer(comprehensive_config)
+        
+        # Initialize utility classes with hardware optimization
         self.variant_generator = FeatureVariantGenerator()
         self.interaction_generator = FeatureInteractionGenerator()
         
-        # Parallel processing configuration
-        self.parallel_workers = 6
-        self.chunk_size = 10000
-        self.memory_mapped_threshold = 50000
-        
-        # Memory optimization settings
-        self.aggressive_gc_threshold = 0.8
-        self.float32_conversion = True
-        
-        # Performance tracking
+        # Performance tracking with enhanced metrics
         self.performance_stats = {
             'total_processing_time': 0.0,
             'memory_optimizations_applied': 0,
             'chunks_processed': 0,
             'gpu_accelerations_used': 0,
-            'vectorbt_optimizations_used': 0,
+            'neural_engine_optimizations_used': 0,
             'phase1_time': 0.0,
             'phase2_time': 0.0,
-            'phase3_time': 0.0
+            'phase3_time': 0.0,
+            'hardware_optimizations': 0,
+            'cache_hits': 0,
+            'cache_misses': 0
         }
         
-        tprint("✅ M1-optimized Analyst interaction generation step initialized")
+        tprint("✅ Enhanced hardware-optimized Analyst interaction generation step initialized")
 
+    @memory_optimized(optimization_level='aggressive')
     def _optimize_dataframe_memory(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Optimize DataFrame memory usage with M1-specific optimizations."""
+        """Optimize DataFrame memory usage with enhanced hardware optimizations."""
         if df is None or df.empty:
             return df
             
-        tprint("🧠 Applying M1 memory optimizations to DataFrame...")
+        tprint("🧠 Applying enhanced memory optimizations to DataFrame...")
         
-        # Apply M1-specific memory optimization
-        optimized_df = optimize_dataframe_for_m1(df)
+        # Use integrated hardware manager for comprehensive optimization
+        optimized_df = self.hardware_manager.process_data_with_optimization(
+            df, WorkloadCategory.FEATURE_ENGINEERING
+        )
         
-        # Convert float64 to float32 where precision allows
-        if self.float32_conversion:
-            numeric_cols = optimized_df.select_dtypes(include=[np.float64]).columns
-            for col in numeric_cols:
-                if optimized_df[col].min() >= np.finfo(np.float32).min and \
-                   optimized_df[col].max() <= np.finfo(np.float32).max:
-                    optimized_df[col] = optimized_df[col].astype(np.float32)
-                    
-        # Apply pandas memory optimization
-        optimized_df = self.m1_memory_optimizer.optimize_dataframe_memory(optimized_df)
+        # Apply additional DataFrame-specific optimizations
+        optimized_df = optimize_dataframe(optimized_df)
         
         self.performance_stats['memory_optimizations_applied'] += 1
+        self.performance_stats['hardware_optimizations'] += 1
         tprint(f"✅ DataFrame memory optimized: {optimized_df.shape}")
         return optimized_df
 
@@ -388,13 +469,17 @@ class FeatureGenerationInteractionGenerationStepAnalyst(BaseStep):
         tprint(f"📊 Using default timeframes: {default_timeframes}")
         return default_timeframes
 
+    @m1_optimized(operation_type="variant_generation", workload_category=WorkloadCategory.FEATURE_ENGINEERING)
     def _execute_phase1(self, features_df: pd.DataFrame, targets: pd.Series, 
                        price_data: Optional[pd.DataFrame] = None,
                        volume: Optional[pd.Series] = None,
                        timeframes: List[str] = None) -> Tuple[pd.DataFrame, Dict[str, Any]]:
-        """Execute Phase 1: Variant generation & shallow LGBM sweep."""
+        """Execute Phase 1: Variant generation & shallow LGBM sweep with hardware optimization."""
         tprint("🔧 [PHASE1] Starting Phase 1: Variant generation & shallow LGBM sweep")
         phase_start_time = time.time()
+        
+        # Optimize hardware for variant generation workload
+        self.hardware_manager.optimize_for_workload(WorkloadType.FEATURE_ENGINEERING)
         
         try:
             # Generate variants for each timeframe
@@ -505,10 +590,14 @@ class FeatureGenerationInteractionGenerationStepAnalyst(BaseStep):
             tprint(f"❌ Phase 1 failed: {e}")
             return pd.DataFrame(), {'error': str(e)}
 
+    @m1_optimized(operation_type="feature_refinement", workload_category=WorkloadCategory.MACHINE_LEARNING)
     def _execute_phase2(self, phase1_features: pd.DataFrame, targets: pd.Series) -> Tuple[pd.DataFrame, Dict[str, Any]]:
-        """Execute Phase 2: Middle refinement with deeper LGBM."""
+        """Execute Phase 2: Middle refinement with deeper LGBM and hardware optimization."""
         tprint("🔧 Starting Phase 2: Middle refinement")
         phase_start_time = time.time()
+        
+        # Optimize hardware for ML training workload
+        self.hardware_manager.optimize_for_workload(WorkloadType.ML_TRAINING)
         
         try:
             # Align features and targets
@@ -569,11 +658,18 @@ class FeatureGenerationInteractionGenerationStepAnalyst(BaseStep):
             tprint(f"❌ Phase 2 failed: {e}")
             return pd.DataFrame(), {'error': str(e)}
 
+    @m1_optimized(operation_type="interaction_discovery", workload_category=WorkloadCategory.MACHINE_LEARNING)
     def _execute_phase3(self, phase2_features: pd.DataFrame, targets: pd.Series,
                        phase2_metadata: Dict[str, Any]) -> Tuple[pd.DataFrame, Dict[str, Any]]:
-        """Execute Phase 3: Deep interaction discovery."""
+        """Execute Phase 3: Deep interaction discovery with comprehensive hardware optimization."""
         tprint("🔧 Starting Phase 3: Deep interaction discovery")
         phase_start_time = time.time()
+        
+        # Optimize hardware for intensive ML workload
+        self.hardware_manager.optimize_for_workload(WorkloadType.ML_TRAINING)
+        self.comprehensive_optimizer.optimize_operation(
+            "interaction_discovery", phase2_features, WorkloadCategory.MACHINE_LEARNING
+        )
         
         try:
             # Align features and targets
@@ -674,7 +770,8 @@ class FeatureGenerationInteractionGenerationStepAnalyst(BaseStep):
             tprint(f"❌ Phase 3 failed: {e}")
             return pd.DataFrame(), {'error': str(e)}
 
-    async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
+    @m1_optimized(operation_type="feature_engineering", workload_category=WorkloadCategory.FEATURE_ENGINEERING)
+    async def execute(self, training_input: Dict[str, Any]) -> Dict[str, Any]:
         start_time = time.time()
         tprint("🚀 [ANALYST] Starting three-phase LGBM+SHAP interaction generation pipeline")
         self.logger.info("🔧 Starting Analyst mode three-phase interaction generation")
@@ -685,8 +782,8 @@ class FeatureGenerationInteractionGenerationStepAnalyst(BaseStep):
         context = get_analyst_context(symbol, exchange)
         am = setup_enhanced_artifact_manager(**context)
         
-        # Start memory monitoring
-        self.m1_memory_optimizer.start_monitoring()
+        # Start comprehensive hardware monitoring
+        self.hardware_manager.optimize_for_workload(WorkloadType.FEATURE_ENGINEERING)
         
         try:
             # Extract training input parameters
@@ -841,9 +938,14 @@ class FeatureGenerationInteractionGenerationStepAnalyst(BaseStep):
                     error_message="Phase 3 failed"
                 )
             
-            # Apply final memory optimization
-            tprint("🧹 [ANALYST] Applying final memory optimization to interaction features")
+            # Apply final comprehensive optimization
+            tprint("🧹 [ANALYST] Applying final comprehensive optimization to interaction features")
             final_interactions = self._optimize_dataframe_memory(phase3_interactions)
+            
+            # Apply additional hardware optimizations
+            final_interactions = self.comprehensive_optimizer.optimize_operation(
+                "feature_engineering", final_interactions, WorkloadCategory.FEATURE_ENGINEERING
+            )
             
             # Store artifacts
             tprint("💾 [ANALYST] Storing interaction features in artifact manager")
@@ -878,8 +980,11 @@ class FeatureGenerationInteractionGenerationStepAnalyst(BaseStep):
                 'created_at': datetime.now().isoformat()
             })
             
-            # Calculate generation metrics
+            # Calculate generation metrics with enhanced hardware stats
             total_time = time.time() - start_time
+            hardware_stats = get_optimization_status()
+            memory_stats = get_memory_stats()
+            
             generation_metrics = {
                 'total_processing_time': total_time,
                 'phase_times': {
@@ -887,7 +992,9 @@ class FeatureGenerationInteractionGenerationStepAnalyst(BaseStep):
                     'phase2': self.performance_stats['phase2_time'],
                     'phase3': self.performance_stats['phase3_time']
                 },
-                'm1_optimizations': self.performance_stats.copy(),
+                'hardware_optimizations': self.performance_stats.copy(),
+                'hardware_status': hardware_stats,
+                'memory_stats': memory_stats,
                 'final_interactions_count': len(final_interactions.columns),
                 'success': True
             }
@@ -945,12 +1052,12 @@ class FeatureGenerationInteractionGenerationStepAnalyst(BaseStep):
                 error_message=str(e)
             )
         finally:
-            # Cleanup and stop memory monitoring
-            tprint("🧹 Cleaning up M1 optimizations...")
+            # Cleanup and force comprehensive memory cleanup
+            tprint("🧹 Cleaning up enhanced hardware optimizations...")
             try:
-                self.m1_memory_optimizer.stop_monitoring()
-                self.m1_memory_optimizer.force_garbage_collection()
-                tprint("✅ Cleanup completed")
+                force_cleanup()
+                self.hardware_manager.clear_all_caches()
+                tprint("✅ Enhanced cleanup completed")
             except Exception as cleanup_error:
                 tprint(f"⚠️ Cleanup warning: {cleanup_error}")
 

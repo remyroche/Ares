@@ -586,26 +586,70 @@ def get_unified_memory_stats() -> Dict[str, Any]:
 
 # Decorators for easy integration
 def unified_memory_optimized(operation_type: str = 'general', component: str = 'general'):
-    """Decorator to optimize function for unified memory."""
+    """Enhanced decorator to optimize function for unified memory with advanced features."""
     def decorator(func):
         @wraps(func)
         def wrapper(*args, **kwargs):
-            # Optimize inputs
-            optimized_args = []
-            for arg in args:
-                if hasattr(arg, 'shape') or isinstance(arg, (np.ndarray, pd.DataFrame)):
-                    optimized_args.append(optimize_for_unified_memory(arg, operation_type, component))
-                else:
-                    optimized_args.append(arg)
-            
-            # Execute function
-            result = func(*optimized_args, **kwargs)
-            
-            # Optimize output
-            if hasattr(result, 'shape') or isinstance(result, (np.ndarray, pd.DataFrame)):
-                result = optimize_for_unified_memory(result, operation_type, component)
-            
-            return result
+            # Try enhanced unified memory manager first
+            try:
+                from .enhanced_unified_memory_manager import (
+                    get_enhanced_unified_memory_manager, MemoryComponent, MemoryAccessPattern
+                )
+                enhanced_manager = get_enhanced_unified_memory_manager()
+                
+                # Determine memory component and access pattern
+                memory_component = MemoryComponent.GPU if component == 'gpu' else MemoryComponent.CPU
+                access_pattern = MemoryAccessPattern.SEQUENTIAL if operation_type in ['feature_selection', 'general'] else MemoryAccessPattern.RANDOM
+                
+                # Optimize inputs with enhanced features
+                optimized_args = []
+                for i, arg in enumerate(args):
+                    if hasattr(arg, 'shape') or isinstance(arg, (np.ndarray, pd.DataFrame)):
+                        # Calculate data size
+                        data_size_mb = arg.nbytes / (1024 * 1024) if hasattr(arg, 'nbytes') else 100.0
+                        
+                        # Allocate enhanced memory
+                        allocation_id = enhanced_manager.allocate_enhanced_memory(
+                            size_mb=data_size_mb,
+                            tier=MemoryTier.GPU_OPTIMIZED if component == 'gpu' else MemoryTier.SHARED,
+                            component=memory_component,
+                            access_pattern=access_pattern,
+                            allow_sharing=True,
+                            data=arg
+                        )
+                        
+                        # Optimize data
+                        optimized_arg = enhanced_manager.base_manager.optimize_data_for_component(arg, component)
+                        optimized_args.append(optimized_arg)
+                    else:
+                        optimized_args.append(arg)
+                
+                # Execute function
+                result = func(*optimized_args, **kwargs)
+                
+                # Optimize output with enhanced features
+                if hasattr(result, 'shape') or isinstance(result, (np.ndarray, pd.DataFrame)):
+                    result = enhanced_manager.base_manager.optimize_data_for_component(result, component)
+                
+                return result
+                
+            except ImportError:
+                # Fallback to standard unified memory optimization
+                optimized_args = []
+                for arg in args:
+                    if hasattr(arg, 'shape') or isinstance(arg, (np.ndarray, pd.DataFrame)):
+                        optimized_args.append(optimize_for_unified_memory(arg, operation_type, component))
+                    else:
+                        optimized_args.append(arg)
+                
+                # Execute function
+                result = func(*optimized_args, **kwargs)
+                
+                # Optimize output
+                if hasattr(result, 'shape') or isinstance(result, (np.ndarray, pd.DataFrame)):
+                    result = optimize_for_unified_memory(result, operation_type, component)
+                
+                return result
         return wrapper
     return decorator
 

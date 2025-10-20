@@ -36,78 +36,20 @@ from sklearn.feature_selection import mutual_info_regression
 from sklearn.linear_model import LassoCV
 from sklearn.preprocessing import KBinsDiscretizer
 
-# Self-contained M1 Hardware Optimization
-class M1GPUManager:
-    """Self-contained M1 GPU manager."""
-    def __init__(self):
-        self.mps_available = False
-    
-    def optimize_dataframe(self, df):
-        return df.copy()
+# Import enhanced hardware optimization tools
+from src.utils.hardware import (
+    get_integrated_hardware_manager, IntegratedHardwareManager,
+    get_comprehensive_optimizer, M1ComprehensiveOptimizer,
+    WorkloadType, OptimizationLevel, WorkloadCategory,
+    memory_optimized, gc_optimized, chunked_processing_auto,
+    comprehensive_memory_optimization, MemoryOptimizationLevel,
+    optimize_dataframe, optimize_array, cache_result, auto_optimize,
+    memory_efficient, performance_tracked, force_cleanup, get_memory_stats
+)
 
-class M1MemoryOptimizer:
-    """Self-contained M1 memory optimizer."""
-    def __init__(self, memory_limit_gb=8.0):
-        self.memory_limit_gb = memory_limit_gb
-    
-    def optimize_memory(self):
-        gc.collect()
-
-class M1CPUOptimizer:
-    """Self-contained M1 CPU optimizer."""
-    def __init__(self):
-        self.max_workers = 4
-    
-    def create_thread_pool(self):
-        return ThreadPoolExecutor(max_workers=self.max_workers)
-
-# Convenience functions
-def get_m1_gpu_manager():
-    return M1GPUManager()
-
-def get_m1_memory_optimizer(memory_limit_gb=8.0):
-    return M1MemoryOptimizer(memory_limit_gb)
-
-def get_m1_cpu_optimizer():
-    return M1CPUOptimizer()
-
-def optimize_dataframe_for_m1(df):
-    return df.copy()
-
-# Set availability flag
-M1_OPTIMIZATIONS_AVAILABLE = True
-
-# Self-contained VectorBT components
-class VectorBTRollingOptimizer:
-    """Self-contained VectorBT rolling optimizer."""
-    def __init__(self):
-        pass
-    
-    def optimize(self, data, **kwargs):
-        return data.copy()
-
-class UnifiedVectorizationManager:
-    """Self-contained unified vectorization manager."""
-    def __init__(self):
-        pass
-    
-    def optimize_operation(self, data, **kwargs):
-        return data.copy()
-
-# Convenience functions
-def get_vectorbt_rolling_optimizer():
-    return VectorBTRollingOptimizer()
-
-def get_unified_vectorization_manager():
-    return UnifiedVectorizationManager()
-
-# Mock vectorbt module
-class MockVectorBT:
-    def __init__(self):
-        pass
-
-vbt = MockVectorBT()
-VECTORBT_AVAILABLE = True
+# Import base step and artifact management
+from src.training.steps.base_step import BaseStep
+from src.training.utils.artifact_manager import get_step_context_from_config, setup_enhanced_artifact_manager
 
 # LightGBM and SHAP
 try:
@@ -138,15 +80,6 @@ except ImportError:
     def tprint_error(*args, **kwargs): print("ERROR:", *args, **kwargs)
     def tprint_debug(*args, **kwargs): print("DEBUG:", *args, **kwargs)
 
-# Self-contained modular component
-class ModularComponent:
-    """Self-contained modular component."""
-    def __init__(self, name, config=None):
-        self.name = name
-        self.config = config or {}
-    
-    def execute(self, data, **kwargs):
-        return data.copy()
 from src.training.steps.pre_training.utils.artifact_manager import get_pretraining_artifact_manager, ArtifactKeys
 
 
@@ -174,13 +107,14 @@ class FinalFeatureSelectionResult:
 
 @contextmanager
 def memory_managed_operation(operation_name: str = "operation"):
-    """Context manager for memory-managed operations with GC."""
+    """Context manager for memory-managed operations with enhanced hardware optimization."""
     try:
         tprint_debug(f"🧠 Starting memory-managed operation: {operation_name}")
         yield
     finally:
-        gc.collect()
-        tprint_debug(f"🧠 Completed memory-managed operation: {operation_name}, GC run")
+        # Use enhanced memory cleanup
+        force_cleanup()
+        tprint_debug(f"🧠 Completed memory-managed operation: {operation_name}, enhanced cleanup run")
 
 
 class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
@@ -202,29 +136,18 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
         
         super().__init__("feature_generation_final_feature_selection_step", config)
         
-        # Initialize M1 hardware optimizers
-        if M1_OPTIMIZATIONS_AVAILABLE:
-            tprint_info("🚀 Initializing M1 hardware optimizers")
-            self.m1_gpu_manager = get_m1_gpu_manager()
-            self.m1_memory_optimizer = get_m1_memory_optimizer(memory_limit_gb=8.0)
-            self.m1_cpu_optimizer = get_m1_cpu_optimizer()
-            tprint_success("✅ M1 hardware optimizers initialized")
-        else:
-            self.m1_gpu_manager = None
-            self.m1_memory_optimizer = None
-            self.m1_cpu_optimizer = None
-            tprint_warning("⚠️ M1 optimizations not available")
+        # Initialize enhanced hardware optimization system
+        tprint_info("🚀 Initializing enhanced hardware optimization system")
+        self.hardware_manager = get_integrated_hardware_manager()
+        self.comprehensive_optimizer = get_comprehensive_optimizer()
         
-        # Initialize VectorBT utilities
-        if VECTORBT_AVAILABLE:
-            tprint_info("🚀 Initializing VectorBT utilities")
-            self.vectorbt_optimizer = get_vectorbt_rolling_optimizer()
-            self.unified_vectorization_manager = get_unified_vectorization_manager()
-            tprint_success("✅ VectorBT utilities initialized")
-        else:
-            self.vectorbt_optimizer = None
-            self.unified_vectorization_manager = None
-            tprint_warning("⚠️ VectorBT not available")
+        # Configure for feature selection workload
+        self.hardware_manager.optimize_for_workload(
+            WorkloadType.FEATURE_ENGINEERING, 
+            OptimizationLevel.AGGRESSIVE
+        )
+        
+        tprint_success("✅ Enhanced hardware optimization system initialized")
         
         # Configuration
         self.chunk_size = 50000  # Row chunk size
@@ -287,7 +210,8 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             'total_processing_time': 0.0,
             'stage_times': {},
             'memory_optimizations_applied': 0,
-            'gc_runs': 0
+            'gc_runs': 0,
+            'hardware_optimizations_applied': 0
         }
         
         tprint_success("✅ FeatureGenerationFinalFeatureSelectionStep initialized")
@@ -302,40 +226,52 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             return False
     
     def _cleanup_resources(self) -> None:
-        """Cleanup component-specific resources."""
+        """Cleanup component-specific resources using enhanced hardware tools."""
         self.set_state('cleaned_up_at', datetime.now().isoformat())
-        gc.collect()
+        # Use enhanced cleanup
+        force_cleanup()
+        # Clear hardware manager caches if needed
+        if hasattr(self, 'hardware_manager'):
+            self.hardware_manager.clear_all_caches()
     
     def _process_data(self, data: Any, **kwargs) -> Any:
         """Process data with component logic."""
         return data
     
     def _check_memory_and_gc(self):
-        """Check memory usage and run GC if needed."""
+        """Check memory usage and run GC if needed using enhanced hardware tools."""
         self.operation_counter += 1
         
         if self.aggressive_gc and self.operation_counter % self.gc_frequency == 0:
-            gc.collect()
+            # Use enhanced memory management
+            force_cleanup()
             self.performance_stats['gc_runs'] += 1
+            self.performance_stats['hardware_optimizations_applied'] += 1
             
-            if PSUTIL_AVAILABLE:
-                process = psutil.Process()
-                mem_usage = process.memory_info().rss / 1024 / 1024  # MB
-                if mem_usage > 4096:  # > 4GB
-                    gc.collect(generation=2)
-                    tprint_warning(f"⚠️ High memory usage: {mem_usage:.0f}MB, forcing full GC")
+            # Get memory stats from hardware manager
+            memory_stats = get_memory_stats()
+            if memory_stats.get('used_memory', 0) > 4096:  # > 4GB
+                force_cleanup()
+                tprint_warning(f"⚠️ High memory usage: {memory_stats.get('used_memory', 0):.0f}MB, forcing full cleanup")
     
     def _convert_to_float32(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Convert DataFrame to float32 for memory efficiency."""
-        tprint_debug("🔄 Converting data to float32")
-        numeric_cols = df.select_dtypes(include=[np.number]).columns
+        """Convert DataFrame to float32 for memory efficiency using enhanced hardware tools."""
+        tprint_debug("🔄 Converting data to float32 with enhanced optimization")
+        
+        # Use enhanced hardware optimization for dataframe conversion
+        optimized_df = optimize_dataframe(df)
+        
+        # Additional float32 conversion for numeric columns
+        numeric_cols = optimized_df.select_dtypes(include=[np.number]).columns
         for col in numeric_cols:
-            if df[col].dtype == np.float64:
-                df[col] = df[col].astype('float32', copy=False)
+            if optimized_df[col].dtype == np.float64:
+                optimized_df[col] = optimized_df[col].astype('float32', copy=False)
+        
         self.performance_stats['memory_optimizations_applied'] += 1
-        return df
+        self.performance_stats['hardware_optimizations_applied'] += 1
+        return optimized_df
     
-    async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
+    async def execute(self, model_type: str, direction: str, symbol: str, timeframe: str, config: Optional[Dict[str, Any]] = None) -> FinalFeatureSelectionResult:
         """
         Execute final feature selection step.
         
@@ -372,10 +308,17 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             if features_df is None or targets is None:
                 raise ValueError("Failed to load required artifacts from previous steps")
             
-            # Convert to float32 end-to-end
-            tprint_info("🔄 Converting data to float32 (end-to-end)")
+            # Convert to float32 end-to-end with enhanced optimization
+            tprint_info("🔄 Converting data to float32 (end-to-end with enhanced optimization)")
             features_df = self._convert_to_float32(features_df)
             targets = targets.astype('float32', copy=False)
+            
+            # Apply comprehensive hardware optimization
+            tprint_info("🚀 Applying comprehensive hardware optimization")
+            features_df = self.hardware_manager.process_data_with_optimization(
+                features_df, WorkloadType.FEATURE_ENGINEERING
+            )
+            self.performance_stats['hardware_optimizations_applied'] += 1
             
             tprint_success(f"✅ Loaded {features_df.shape[1]} features and {len(targets)} targets")
             tprint_info(f"📊 Feature matrix: {features_df.shape}, Target: {targets.shape}")
@@ -465,6 +408,10 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             tprint_success(f"🎉 Final feature selection completed in {execution_time:.2f}s")
             tprint_success(f"📊 Feature reduction: {features_df.shape[1]} → 60/50/40")
             tprint_success(f"💾 Total GC runs: {self.performance_stats['gc_runs']}")
+            tprint_success(f"🚀 Hardware optimizations applied: {self.performance_stats['hardware_optimizations_applied']}")
+            
+            # Final cleanup
+            force_cleanup()
             
             return result
             
@@ -614,6 +561,8 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             self.logger.error(f"Failed to load artifacts: {e}", exc_info=True)
             return None, None
     
+    @memory_optimized(optimization_level=MemoryOptimizationLevel.AGGRESSIVE)
+    @performance_tracked(log_performance=True, track_memory=True)
     async def _stage1_pca_mi_filter(self, X: pd.DataFrame, y: pd.Series) -> List[str]:
         """
         Stage 1: PCA + Approximate MI Filter
@@ -676,7 +625,7 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             else:
                 X_sampled = X_pca
             
-            # Compute MI in batches
+            # Compute MI in batches with enhanced optimization
             batch_size = min(50, len(X_sampled.columns))
             all_mi_scores = []
             all_columns = []
@@ -686,11 +635,14 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
                 batch_data = X_sampled[batch_cols]
                 
                 try:
-                    # Clean data
+                    # Clean data with enhanced optimization
                     batch_data_clean = batch_data.dropna()
                     y_clean = y_sampled.loc[batch_data_clean.index]
                     
                     if len(batch_data_clean) > 0:
+                        # Optimize batch data
+                        batch_data_clean = optimize_dataframe(batch_data_clean)
+                        
                         # Compute MI
                         batch_mi_scores = mutual_info_regression(
                             batch_data_clean, y_clean,
@@ -702,9 +654,9 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
                     tprint_warning(f"⚠️ MI batch failed: {e}")
                     continue
                 
-                # GC after each batch
+                # Enhanced cleanup after each batch
                 if self.aggressive_gc:
-                    gc.collect()
+                    force_cleanup()
             
             # Select top features by MI quantile
             mi_series = pd.Series(all_mi_scores, index=all_columns)
@@ -717,6 +669,8 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             
             return selected_features
     
+    @memory_optimized(optimization_level=MemoryOptimizationLevel.AGGRESSIVE)
+    @performance_tracked(log_performance=True, track_memory=True)
     async def _stage2_mrmr_selection(self, X: pd.DataFrame, y: pd.Series) -> List[str]:
         """
         Stage 2: Ultra-Optimized mRMR Selection
@@ -727,8 +681,8 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
         with memory_managed_operation("Stage 2: mRMR Selection"):
             tprint_info(f"📊 Input: {X.shape[1]} features")
             
-            # Ensure float32
-            X = X.astype('float32', copy=False)
+            # Ensure float32 with enhanced optimization
+            X = optimize_dataframe(X.astype('float32', copy=False))
             y = y.astype('float32', copy=False)
             
             # Step 1: Compute MI matrix upfront (cache)
@@ -845,6 +799,8 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             
             return selected_features[:target_features]
     
+    @memory_optimized(optimization_level=MemoryOptimizationLevel.AGGRESSIVE)
+    @performance_tracked(log_performance=True, track_memory=True)
     async def _stage3_lasso_stability(self, X: pd.DataFrame, y: pd.Series) -> List[str]:
         """
         Stage 3: LASSO + Stability Selection
@@ -855,8 +811,8 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
         with memory_managed_operation("Stage 3: LASSO + Stability"):
             tprint_info(f"📊 Input: {X.shape[1]} features")
             
-            # Ensure float32
-            X = X.astype('float32', copy=False)
+            # Ensure float32 with enhanced optimization
+            X = optimize_dataframe(X.astype('float32', copy=False))
             y = y.astype('float32', copy=False)
             
             # Convert to sparse if beneficial
@@ -975,6 +931,8 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             
             return current_features
     
+    @memory_optimized(optimization_level=MemoryOptimizationLevel.AGGRESSIVE)
+    @performance_tracked(log_performance=True, track_memory=True)
     async def _stage4_lgbm_rfe_shap(self, X: pd.DataFrame, y: pd.Series) -> Dict[str, Any]:
         """
         Stage 4: LGBM + RFE + SHAP
@@ -989,8 +947,8 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
                 tprint_error("❌ LightGBM/SHAP not available")
                 raise ImportError("LightGBM and SHAP are required for Stage 4")
             
-            # Ensure float32
-            X = X.astype('float32', copy=False)
+            # Ensure float32 with enhanced optimization
+            X = optimize_dataframe(X.astype('float32', copy=False))
             y = y.astype('float32', copy=False)
             
             # Create LightGBM Dataset (reusable)
@@ -1148,10 +1106,10 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             
             tprint_success(f"✅ SHAP analysis completed in {time.time() - shap_start:.2f}s")
             
-            # Cleanup
+            # Enhanced cleanup
             del explainer_60, explainer_50, explainer_40
             del model_60, model_50, model_40
-            gc.collect()
+            force_cleanup()
             
             return {
                 'features_60': features_60,
@@ -1198,6 +1156,16 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
         except Exception as e:
             tprint_error(f"❌ Failed to save artifacts: {e}")
             self.logger.error(f"Failed to save artifacts: {e}", exc_info=True)
+    
+    def get_hardware_optimization_status(self) -> Dict[str, Any]:
+        """Get current hardware optimization status."""
+        if hasattr(self, 'hardware_manager'):
+            return self.hardware_manager.get_optimization_report()
+        return {"error": "Hardware manager not available"}
+    
+    def get_memory_optimization_stats(self) -> Dict[str, Any]:
+        """Get memory optimization statistics."""
+        return get_memory_stats()
 
 
 # Handler function for pipeline integration
@@ -1233,7 +1201,7 @@ async def handle_feature_generation_final_feature_selection_step(
         direction=direction,
         symbol=symbol,
         timeframe=timeframe,
-        **kwargs
+        config=config
     )
     
     return result

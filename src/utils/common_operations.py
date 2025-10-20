@@ -1,13 +1,33 @@
 from __future__ import annotations
 from typing import Any, Callable, Dict, List, Optional, Union, Tuple
-import pandas as pd
-import numpy as np
 import logging
 from functools import wraps
 import time
 import gc
-import psutil
 import os
+
+# Optional dependencies
+try:
+    import pandas as pd
+    import numpy as np
+    PANDAS_AVAILABLE = True
+    NUMPY_AVAILABLE = True
+except ImportError:
+    PANDAS_AVAILABLE = False
+    NUMPY_AVAILABLE = False
+    # Create dummy modules to avoid NameError
+    class DummyModule:
+        def __getattr__(self, name):
+            return None
+    pd = DummyModule()
+    np = DummyModule()
+
+try:
+    import psutil
+    PSUTIL_AVAILABLE = True
+except ImportError:
+    PSUTIL_AVAILABLE = False
+    psutil = None
 from contextlib import contextmanager
 
 # Define OptimizationLevel first to avoid circular imports

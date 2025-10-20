@@ -34,6 +34,20 @@ from collections import OrderedDict, defaultdict, deque
 from datetime import datetime, timedelta
 from enum import Enum
 
+# Import hardware optimization utilities
+from src.utils.hardware import (
+    # Core optimization decorators
+    smart_cache, auto_optimize, memory_efficient, performance_tracked,
+    # Memory management
+    memory_optimized, gc_optimized, MemoryOptimizationLevel,
+    # Data optimization
+    optimize_dataframe_default, optimize_numpy_array_default,
+    # Hardware management
+    get_integrated_hardware_manager, track_memory_usage,
+    # M1 optimizations
+    m1_optimized, WorkloadCategory, OptimizationStrategy
+)
+
 # Optional dependencies for optimization
 try:
     import pandas as pd
@@ -511,6 +525,8 @@ class ArtifactManager:
 	# Enhanced Artifact Storage and Retrieval (BaseStep Compatible)
 	# ------------------------------------------------------------------
 	
+	@memory_optimized(level=MemoryOptimizationLevel.AGGRESSIVE)
+	@m1_optimized(workload_category=WorkloadCategory.IO_INTENSIVE)
 	def save(self, data: Any, artifact_name: str, 
 	         artifact_type: str = "data", 
 	         compression: str = "auto",

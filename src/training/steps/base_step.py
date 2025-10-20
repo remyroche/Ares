@@ -75,6 +75,20 @@ import traceback
 
 from src.utils.artifact_manager import ArtifactManager
 
+# Import hardware optimization utilities
+from src.utils.hardware import (
+    # Core optimization decorators
+    smart_cache, auto_optimize, memory_efficient, performance_tracked,
+    # Memory management
+    memory_optimized, gc_optimized, chunked_processing_auto, MemoryOptimizationLevel,
+    # Data optimization
+    optimize_dataframe_default, optimize_numpy_array_default,
+    # Hardware management
+    get_integrated_hardware_manager, track_memory_usage,
+    # M1 optimizations
+    m1_optimized, WorkloadCategory, OptimizationStrategy
+)
+
 
 class BaseStep(ABC):
     """
@@ -117,6 +131,8 @@ class BaseStep(ABC):
         
         self.logger.info(f"🔧 BaseStep initialized: {step_name} with enhanced artifact management")
     
+    @memory_optimized(level=MemoryOptimizationLevel.AGGRESSIVE)
+    @smart_cache(ttl=3600, max_size=100)
     def _save_dataframe(self, df: Any, name: str, metadata: Optional[Dict] = None) -> str:
         """
         Convenience method to save a DataFrame with automatic optimization.
@@ -129,8 +145,13 @@ class BaseStep(ABC):
         Returns:
             Path where artifact was saved
         """
+        # Optimize DataFrame before saving
+        if hasattr(df, 'dtypes'):
+            df = optimize_dataframe_default(df)
         return self._save_enhanced_artifact(df, name, "data", metadata)
     
+    @memory_optimized(level=MemoryOptimizationLevel.AGGRESSIVE)
+    @smart_cache(ttl=1800, max_size=50)
     def _load_dataframe(self, name: str) -> Any:
         """
         Convenience method to load a DataFrame with fallback support.
@@ -141,8 +162,13 @@ class BaseStep(ABC):
         Returns:
             Loaded DataFrame or None if not found
         """
-        return self._get_enhanced_artifact(name, "data")
+        df = self._get_enhanced_artifact(name, "data")
+        if df is not None and hasattr(df, 'dtypes'):
+            df = optimize_dataframe_default(df)
+        return df
     
+    @memory_optimized(level=MemoryOptimizationLevel.AGGRESSIVE)
+    @smart_cache(ttl=7200, max_size=20)
     def _save_model(self, model: Any, name: str, metadata: Optional[Dict] = None) -> str:
         """
         Convenience method to save a model with enhanced storage.
@@ -157,6 +183,8 @@ class BaseStep(ABC):
         """
         return self._save_enhanced_artifact(model, name, "model", metadata)
     
+    @memory_optimized(level=MemoryOptimizationLevel.AGGRESSIVE)
+    @smart_cache(ttl=3600, max_size=20)
     def _load_model(self, name: str) -> Any:
         """
         Convenience method to load a model with fallback support.

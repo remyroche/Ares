@@ -207,19 +207,83 @@ class FeatureGenerationFinalValidationStep(BaseStep):
         tprint_info(f"📦 Cached quality scores available: {cached_quality_scores is not None}")
         
         if cached_dataset is not None:
-            tprint_success("📦 Retrieved final dataset from cache - using cached result")
-            self.logger.info("📦 Retrieved final dataset from cache")
-            return {
-                'success': True,
-                'artifacts': ['final_dataset', 'final_validation_metrics', 'final_quality_scores'],
-                'metrics': {
-                    'validation_score': 1.0,
-                    'quality_level': "excellent",
-                    'validation_metadata': cached_metrics or {},
-                    'comprehensive_metrics': cached_quality_scores or {},
-                    'cache_hit': True
-                }
-            }
+            tprint_success("📦 Retrieved final dataset from artifact manager - using cached result")
+            self.logger.info("📦 Retrieved final dataset from artifact manager")
+            return FinalValidationResult(
+                success=True,
+                validation_score=1.0,
+                quality_level="excellent",
+                validation_metadata=cached_metrics or {},
+                quality_alerts=[],
+                comprehensive_metrics=cached_quality_scores or {},
+                validation_recommendations=[],
+                artifacts={'cache_hit': True},
+                final_dataset=cached_dataset,
+                error_message=None
+            )
+        
+        # Load required artifacts from previous steps for validation
+        tprint_info("📦 Loading artifacts from previous steps for validation")
+        
+        # Load final features from feature_generation_final_feature_selection_step
+        final_features = None
+        try:
+            final_features = artifact_manager.get_dataframe(
+                'feature_generation_final_feature_selection_step',
+                'selected_feature_dataframe_60'  # Use the 60-feature set as primary
+            )
+            if final_features is not None and not final_features.empty:
+                tprint_success(f"✅ Loaded final features: {final_features.shape}")
+            else:
+                tprint_warning("⚠️ No final features found, trying alternative names")
+                # Try alternative artifact names
+                for alt_name in ['selected_features_60', 'final_features', 'selected_features']:
+                    final_features = artifact_manager.get_dataframe(
+                        'feature_generation_final_feature_selection_step',
+                        alt_name
+                    )
+                    if final_features is not None and not final_features.empty:
+                        tprint_success(f"✅ Loaded final features from {alt_name}: {final_features.shape}")
+                        break
+        except Exception as e:
+            tprint_warning(f"⚠️ Failed to load final features: {e}")
+        
+        # Load targets from feature_generation_labeling_integration_step
+        targets = None
+        try:
+            targets = artifact_manager.get_series(
+                'feature_generation_labeling_integration_step',
+                'targets'
+            )
+            if targets is not None and not targets.empty:
+                tprint_success(f"✅ Loaded targets: {len(targets)} samples")
+            else:
+                tprint_warning("⚠️ No targets found, trying alternative names")
+                # Try alternative artifact names
+                for alt_name in ['target', 'labels', 'y']:
+                    targets = artifact_manager.get_series(
+                        'feature_generation_labeling_integration_step',
+                        alt_name
+                    )
+                    if targets is not None and not targets.empty:
+                        tprint_success(f"✅ Loaded targets from {alt_name}: {len(targets)} samples")
+                        break
+        except Exception as e:
+            tprint_warning(f"⚠️ Failed to load targets: {e}")
+        
+        # Use loaded artifacts if available
+        if final_features is not None:
+            data = final_features
+            tprint_info(f"📊 Using final features for validation: {data.shape}")
+        
+        if targets is not None:
+            # Align data and targets
+            aligned_data = data.join(targets.rename('target'), how='inner').dropna()
+            if not aligned_data.empty:
+                data = aligned_data
+                tprint_success(f"✅ Aligned data with targets: {data.shape}")
+            else:
+                tprint_warning("⚠️ No overlapping timestamps between features and targets")
 
         # Load data if not provided
         if data is None or (hasattr(data, 'empty') and data.empty):

@@ -491,10 +491,27 @@ class FeatureGenerationInteractionGenerationStepTactician(BaseStep):
                 error_message=f"Failed to load selected features: {e}"
             )
 
-        # Load optimized periods/lookbacks if available and pass in overrides
+        # Load optimized periods/lookbacks if available and pass in overrides (top2-3 for interactions)
         try:
-            opt_periods = artifact_manager.get_artifact('period_lookback_optimization', 'optimized_periods')
-            opt_lookbacks = artifact_manager.get_artifact('period_lookback_optimization', 'optimized_lookbacks')
+            # Try to load top periods/lookbacks first (top2-3 for interactions)
+            opt_periods = artifact_manager.get_artifact('feature_generation_period_lookback_optimization_step', 'top_periods')
+            opt_lookbacks = artifact_manager.get_artifact('feature_generation_period_lookback_optimization_step', 'top_lookbacks')
+            
+            # If top periods/lookbacks are not available, try optimized periods/lookbacks
+            if opt_periods is None:
+                opt_periods = artifact_manager.get_artifact('period_lookback_optimization', 'optimized_periods')
+                if opt_periods and isinstance(opt_periods, list) and len(opt_periods) >= 2:
+                    # Use top 2-3 periods for interactions
+                    opt_periods = opt_periods[:3] if len(opt_periods) >= 3 else opt_periods
+                    tprint(f"📊 Using top2-3 periods for interactions: {opt_periods}")
+            
+            if opt_lookbacks is None:
+                opt_lookbacks = artifact_manager.get_artifact('period_lookback_optimization', 'optimized_lookbacks')
+                if opt_lookbacks and isinstance(opt_lookbacks, list) and len(opt_lookbacks) >= 2:
+                    # Use top 2-3 lookbacks for interactions
+                    opt_lookbacks = opt_lookbacks[:3] if len(opt_lookbacks) >= 3 else opt_lookbacks
+                    tprint(f"📊 Using top2-3 lookbacks for interactions: {opt_lookbacks}")
+                    
         except Exception:
             opt_periods, opt_lookbacks = None, None
             

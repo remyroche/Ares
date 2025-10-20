@@ -18,6 +18,13 @@ from sklearn.random_projection import GaussianRandomProjection, SparseRandomProj
 from sklearn.preprocessing import StandardScaler
 import warnings
 
+# Import tprint utilities
+from src.utils.tprint import (
+    tprint, tprint_info, tprint_success, tprint_warning, tprint_error,
+    tprint_debug, tprint_performance, tprint_progress, tprint_timer,
+    tprint_logged, LogLevel
+)
+
 logger = logging.getLogger(__name__)
 
 @dataclass
@@ -86,6 +93,7 @@ class DimensionalityReducer:
     t-SNE, ICA, and other advanced methods.
     """
     
+    @tprint_logged(LogLevel.INFO, include_args=True)
     def __init__(self, config: Optional[DimensionalityReducerConfig] = None):
         """
         Initialize dimensionality reducer.
@@ -93,12 +101,18 @@ class DimensionalityReducer:
         Args:
             config: Configuration for dimensionality reduction
         """
+        tprint_info("Initializing DimensionalityReducer")
+        
         self.config = config or DimensionalityReducerConfig()
         self.model = None
         self.scaler = None
         self.feature_names = []
         self.reduction_stats = {}
         
+        tprint_debug(f"Config: method={self.config.method}, n_components={self.config.n_components}")
+        tprint_success("✅ DimensionalityReducer initialized")
+        
+    @tprint_logged(LogLevel.INFO, include_args=True)
     def reduce(self, 
                features: np.ndarray, 
                fit: bool = True,
@@ -115,55 +129,76 @@ class DimensionalityReducer:
             Tuple of (reduced_features, reduction_info)
         """
         try:
-            logger.info(f"📉 Starting dimensionality reduction using {self.config.method}...")
+            tprint_info(f"📉 Starting dimensionality reduction using {self.config.method}...")
+            tprint_debug(f"Input shape: {features.shape}, fit={fit}, target_shape={target.shape if target is not None else 'None'}")
             
             # Validate input
             if self.config.validate_input:
-                features = self._validate_input(features)
+                with tprint_timer("Input validation"):
+                    features = self._validate_input(features)
+                    tprint_debug(f"After validation: {features.shape}")
+            else:
+                tprint_debug("Input validation skipped")
             
             # Preprocess features
-            if fit:
-                features = self._preprocess_features(features, fit=True)
-            else:
-                features = self._preprocess_features(features, fit=False)
+            with tprint_timer("Feature preprocessing"):
+                if fit:
+                    features = self._preprocess_features(features, fit=True)
+                    tprint_debug(f"After preprocessing (fit): {features.shape}")
+                else:
+                    features = self._preprocess_features(features, fit=False)
+                    tprint_debug(f"After preprocessing (transform): {features.shape}")
             
             # Determine number of components
-            n_components = self._determine_n_components(features)
+            with tprint_timer("Component determination"):
+                n_components = self._determine_n_components(features)
+                tprint_debug(f"Determined n_components: {n_components}")
             
             # Apply dimensionality reduction
             if fit:
-                reduced_features, model = self._fit_reduction(features, n_components, target)
-                self.model = model
+                with tprint_timer(f"Dimensionality reduction fitting ({self.config.method})"):
+                    reduced_features, model = self._fit_reduction(features, n_components, target)
+                    self.model = model
+                    tprint_debug(f"After fitting: {reduced_features.shape}")
             else:
-                if self.model is None:
-                    raise ValueError("Model not fitted. Call with fit=True first.")
-                reduced_features = self._transform_features(features)
+                with tprint_timer(f"Dimensionality reduction transform ({self.config.method})"):
+                    if self.model is None:
+                        raise ValueError("Model not fitted. Call with fit=True first.")
+                    reduced_features = self._transform_features(features)
+                    tprint_debug(f"After transform: {reduced_features.shape}")
             
             # Calculate reduction statistics
-            reduction_info = self._calculate_reduction_stats(features, reduced_features)
-            self.reduction_stats = reduction_info
+            with tprint_timer("Reduction statistics calculation"):
+                reduction_info = self._calculate_reduction_stats(features, reduced_features)
+                self.reduction_stats = reduction_info
+                tprint_debug(f"Reduction info: {reduction_info}")
             
-            logger.info(f"✅ Dimensionality reduction completed. Shape: {features.shape} -> {reduced_features.shape}")
+            tprint_success(f"✅ Dimensionality reduction completed. Shape: {features.shape} -> {reduced_features.shape}")
             
             return reduced_features, reduction_info
             
         except Exception as e:
-            logger.error(f"❌ Dimensionality reduction failed: {e}")
+            tprint_error(f"❌ Dimensionality reduction failed: {e}")
             # Return original features as fallback
             return features, {'error': str(e)}
     
+    @tprint_logged(LogLevel.DEBUG, include_args=True)
     def _validate_input(self, features: np.ndarray) -> np.ndarray:
         """Validate input features."""
         try:
+            tprint_debug(f"Validating input features with shape: {features.shape}")
+            
             # Check for NaN values
             if np.isnan(features).any():
-                logger.warning("⚠️ Found NaN values, filling with 0")
+                tprint_warning("⚠️ Found NaN values, filling with 0")
                 features = np.nan_to_num(features, nan=0.0)
+                tprint_debug(f"After NaN handling: {features.shape}")
             
             # Check for infinite values
             if np.isinf(features).any():
-                logger.warning("⚠️ Found infinite values, clipping")
+                tprint_warning("⚠️ Found infinite values, clipping")
                 features = np.clip(features, -1e10, 1e10)
+                tprint_debug(f"After infinite handling: {features.shape}")
             
             # Check minimum samples
             if len(features) < self.config.min_samples:
@@ -173,9 +208,11 @@ class DimensionalityReducer:
             feature_vars = np.var(features, axis=0)
             constant_features = feature_vars < 1e-10
             if constant_features.any():
-                logger.warning(f"⚠️ Found {constant_features.sum()} constant features, removing them")
+                tprint_warning(f"⚠️ Found {constant_features.sum()} constant features, removing them")
                 features = features[:, ~constant_features]
+                tprint_debug(f"After constant feature removal: {features.shape}")
             
+            tprint_debug(f"Input validation completed. Final shape: {features.shape}")
             return features
             
         except Exception as e:

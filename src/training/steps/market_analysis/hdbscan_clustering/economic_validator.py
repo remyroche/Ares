@@ -14,6 +14,13 @@ from scipy import stats
 from sklearn.metrics import silhouette_score
 import logging
 
+# Import tprint utilities
+from src.utils.tprint import (
+    tprint, tprint_info, tprint_success, tprint_warning, tprint_error,
+    tprint_debug, tprint_performance, tprint_progress, tprint_timer,
+    tprint_logged, LogLevel
+)
+
 logger = logging.getLogger(__name__)
 
 @dataclass
@@ -48,6 +55,7 @@ class EconomicValidator:
     - Risk assessment and caveats
     """
     
+    @tprint_logged(LogLevel.INFO, include_args=True)
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         """
         Initialize economic validator.
@@ -55,6 +63,8 @@ class EconomicValidator:
         Args:
             config: Configuration parameters for economic validation
         """
+        tprint_info("Initializing EconomicValidator")
+        
         self.config = config or {}
         
         # Default configuration
@@ -64,6 +74,10 @@ class EconomicValidator:
         self.max_volatility = self.config.get('max_volatility', 0.3)
         self.min_regime_samples = self.config.get('min_regime_samples', 20)
         
+        tprint_debug(f"Config: min_regime_duration={self.min_regime_duration}, confidence_level={self.confidence_level}")
+        tprint_success("✅ EconomicValidator initialized")
+        
+    @tprint_logged(LogLevel.INFO, include_args=True)
     def validate_and_profile(self, 
                            cluster_labels: np.ndarray,
                            market_data: pd.DataFrame,
@@ -82,40 +96,55 @@ class EconomicValidator:
             EconomicValidationResult with profiles and validation metrics
         """
         try:
-            logger.info("🔍 Starting economic validation and profiling...")
+            tprint_info("🔍 Starting economic validation and profiling...")
+            tprint_debug(f"Input shapes: cluster_labels={cluster_labels.shape}, market_data={market_data.shape}")
             
             # Calculate returns if not provided
             if returns is None:
-                returns = self._calculate_returns(market_data)
+                with tprint_timer("Returns calculation"):
+                    returns = self._calculate_returns(market_data)
+                    tprint_debug(f"Calculated returns shape: {returns.shape}")
+            else:
+                tprint_debug(f"Using provided returns shape: {returns.shape}")
             
             # Get unique regimes (excluding noise)
             unique_regimes = np.unique(cluster_labels)
             unique_regimes = unique_regimes[unique_regimes != -1]
+            tprint_debug(f"Found {len(unique_regimes)} unique regimes: {unique_regimes}")
             
             if len(unique_regimes) == 0:
-                logger.warning("⚠️ No valid regimes found for economic validation")
+                tprint_warning("⚠️ No valid regimes found for economic validation")
                 return self._create_empty_result()
             
             # Create regime profiles
             profiles = []
-            for regime_id in unique_regimes:
-                profile = self._create_regime_profile(
-                    regime_id, cluster_labels, market_data, returns, features_df
-                )
-                profiles.append(profile)
+            with tprint_progress("Creating regime profiles", len(unique_regimes)):
+                for i, regime_id in enumerate(unique_regimes):
+                    tprint_debug(f"Creating profile for regime {regime_id} ({i+1}/{len(unique_regimes)})")
+                    profile = self._create_regime_profile(
+                        regime_id, cluster_labels, market_data, returns, features_df
+                    )
+                    profiles.append(profile)
+                    tprint_progress("Creating regime profiles", i + 1)
             
             # Calculate validation metrics
-            validation_metrics = self._calculate_validation_metrics(
-                cluster_labels, returns, features_df
-            )
+            with tprint_timer("Validation metrics calculation"):
+                validation_metrics = self._calculate_validation_metrics(
+                    cluster_labels, returns, features_df
+                )
+                tprint_debug(f"Validation metrics: {validation_metrics}")
             
             # Calculate regime quality score
-            regime_quality_score = self._calculate_regime_quality_score(profiles, validation_metrics)
+            with tprint_timer("Quality score calculation"):
+                regime_quality_score = self._calculate_regime_quality_score(profiles, validation_metrics)
+                tprint_debug(f"Regime quality score: {regime_quality_score:.3f}")
             
             # Generate trading recommendations
-            trading_recommendations = self._generate_trading_recommendations(profiles)
+            with tprint_timer("Trading recommendations generation"):
+                trading_recommendations = self._generate_trading_recommendations(profiles)
+                tprint_debug(f"Trading recommendations: {trading_recommendations}")
             
-            logger.info(f"✅ Economic validation completed. Quality score: {regime_quality_score:.3f}")
+            tprint_success(f"✅ Economic validation completed. Quality score: {regime_quality_score:.3f}")
             
             return EconomicValidationResult(
                 profiles=profiles,
@@ -125,31 +154,41 @@ class EconomicValidator:
             )
             
         except Exception as e:
-            logger.error(f"❌ Economic validation failed: {e}")
+            tprint_error(f"❌ Economic validation failed: {e}")
             return self._create_empty_result()
     
+    @tprint_logged(LogLevel.DEBUG, include_args=True)
     def _calculate_returns(self, market_data: pd.DataFrame) -> np.ndarray:
         """Calculate returns from market data."""
         try:
+            tprint_debug(f"Calculating returns from market data with shape: {market_data.shape}")
+            
             if 'close' in market_data.columns:
                 prices = market_data['close'].values
+                tprint_debug("Using 'close' column for price data")
             elif 'Close' in market_data.columns:
                 prices = market_data['Close'].values
+                tprint_debug("Using 'Close' column for price data")
             else:
                 # Try to find price column
                 price_cols = [col for col in market_data.columns if 'close' in col.lower()]
                 if price_cols:
                     prices = market_data[price_cols[0]].values
+                    tprint_debug(f"Using '{price_cols[0]}' column for price data")
                 else:
                     raise ValueError("No price column found in market data")
             
             returns = np.diff(prices) / prices[:-1]
-            return np.concatenate([[0], returns])  # Add 0 for first period
+            result = np.concatenate([[0], returns])  # Add 0 for first period
+            
+            tprint_debug(f"Returns calculated: shape={result.shape}, mean={np.mean(result):.6f}, std={np.std(result):.6f}")
+            return result
             
         except Exception as e:
-            logger.error(f"❌ Returns calculation failed: {e}")
+            tprint_error(f"❌ Returns calculation failed: {e}")
             return np.zeros(len(market_data))
     
+    @tprint_logged(LogLevel.DEBUG, include_args=True)
     def _create_regime_profile(self, 
                              regime_id: int,
                              cluster_labels: np.ndarray,
@@ -158,36 +197,56 @@ class EconomicValidator:
                              features_df: Optional[pd.DataFrame]) -> RegimeProfile:
         """Create detailed profile for a specific regime."""
         try:
+            tprint_debug(f"Creating profile for regime {regime_id}")
+            
             # Get regime mask
             regime_mask = cluster_labels == regime_id
             regime_data = market_data[regime_mask]
             regime_returns = returns[regime_mask]
             
+            tprint_debug(f"Regime {regime_id}: {len(regime_data)} samples, {len(regime_returns)} returns")
+            
             if len(regime_data) < self.min_regime_samples:
-                logger.warning(f"⚠️ Regime {regime_id} has insufficient samples: {len(regime_data)}")
+                tprint_warning(f"⚠️ Regime {regime_id} has insufficient samples: {len(regime_data)}")
             
             # Calculate key statistics
-            key_stats = self._calculate_key_stats(regime_returns, regime_data)
+            with tprint_timer(f"Key stats calculation for regime {regime_id}"):
+                key_stats = self._calculate_key_stats(regime_returns, regime_data)
+                tprint_debug(f"Key stats for regime {regime_id}: {key_stats}")
             
             # Calculate confidence intervals
-            confidence_intervals = self._calculate_confidence_intervals(regime_returns, key_stats)
+            with tprint_timer(f"Confidence intervals for regime {regime_id}"):
+                confidence_intervals = self._calculate_confidence_intervals(regime_returns, key_stats)
+                tprint_debug(f"Confidence intervals for regime {regime_id}: {confidence_intervals}")
             
             # Calculate average duration
-            avg_duration = self._calculate_avg_duration(cluster_labels, regime_id)
+            with tprint_timer(f"Duration calculation for regime {regime_id}"):
+                avg_duration = self._calculate_avg_duration(cluster_labels, regime_id)
+                tprint_debug(f"Average duration for regime {regime_id}: {avg_duration:.2f}")
             
             # Calculate transitions
-            transitions = self._calculate_transitions(cluster_labels, regime_id)
+            with tprint_timer(f"Transitions calculation for regime {regime_id}"):
+                transitions = self._calculate_transitions(cluster_labels, regime_id)
+                tprint_debug(f"Transitions for regime {regime_id}: {transitions}")
             
             # Generate trading recommendations
-            works_best_for, risk_caveats = self._analyze_regime_characteristics(
-                key_stats, regime_data, regime_returns
-            )
+            with tprint_timer(f"Regime analysis for regime {regime_id}"):
+                works_best_for, risk_caveats = self._analyze_regime_characteristics(
+                    key_stats, regime_data, regime_returns
+                )
+                tprint_debug(f"Works best for regime {regime_id}: {works_best_for}")
+                tprint_debug(f"Risk caveats for regime {regime_id}: {risk_caveats}")
             
             # Create radar plot data
-            radar_plot_data = self._create_radar_plot_data(key_stats, regime_data)
+            with tprint_timer(f"Radar plot data for regime {regime_id}"):
+                radar_plot_data = self._create_radar_plot_data(key_stats, regime_data)
+                tprint_debug(f"Radar plot data for regime {regime_id}: {radar_plot_data}")
             
             # Generate regime name
             regime_name = self._generate_regime_name(key_stats, regime_id)
+            tprint_debug(f"Generated name for regime {regime_id}: {regime_name}")
+            
+            tprint_success(f"✅ Profile created for regime {regime_id}: {regime_name}")
             
             return RegimeProfile(
                 regime_id=regime_id,
@@ -202,29 +261,38 @@ class EconomicValidator:
             )
             
         except Exception as e:
-            logger.error(f"❌ Failed to create profile for regime {regime_id}: {e}")
+            tprint_error(f"❌ Failed to create profile for regime {regime_id}: {e}")
             return self._create_empty_profile(regime_id)
     
+    @tprint_logged(LogLevel.DEBUG, include_args=True)
     def _calculate_key_stats(self, returns: np.ndarray, regime_data: pd.DataFrame) -> Dict[str, float]:
         """Calculate key statistical measures for a regime."""
         try:
+            tprint_debug(f"Calculating key stats for {len(returns)} returns")
+            
             # Basic return statistics
             avg_return = np.mean(returns)
             volatility = np.std(returns)
             sharpe_ratio = avg_return / volatility if volatility > 0 else 0
+            
+            tprint_debug(f"Basic stats: avg_return={avg_return:.6f}, volatility={volatility:.6f}, sharpe={sharpe_ratio:.3f}")
             
             # Additional statistics
             skewness = stats.skew(returns)
             kurtosis = stats.kurtosis(returns)
             max_drawdown = self._calculate_max_drawdown(returns)
             
+            tprint_debug(f"Distribution stats: skewness={skewness:.3f}, kurtosis={kurtosis:.3f}, max_dd={max_drawdown:.3f}")
+            
             # Volume statistics (if available)
             volume_stats = self._calculate_volume_stats(regime_data)
+            tprint_debug(f"Volume stats: {volume_stats}")
             
             # Volatility clustering
             volatility_clustering = self._calculate_volatility_clustering(returns)
+            tprint_debug(f"Volatility clustering: {volatility_clustering:.3f}")
             
-            return {
+            result = {
                 'avg_return': avg_return,
                 'volatility': volatility,
                 'sharpe_ratio': sharpe_ratio,
@@ -235,8 +303,11 @@ class EconomicValidator:
                 **volume_stats
             }
             
+            tprint_debug(f"Key stats calculation completed: {len(result)} metrics")
+            return result
+            
         except Exception as e:
-            logger.error(f"❌ Key stats calculation failed: {e}")
+            tprint_error(f"❌ Key stats calculation failed: {e}")
             return {
                 'avg_return': 0.0,
                 'volatility': 0.0,
@@ -492,12 +563,15 @@ class EconomicValidator:
             logger.error(f"❌ Max drawdown calculation failed: {e}")
             return 0.0
     
+    @tprint_logged(LogLevel.DEBUG, include_args=True)
     def _calculate_validation_metrics(self, 
                                     cluster_labels: np.ndarray,
                                     returns: np.ndarray,
                                     features_df: Optional[pd.DataFrame]) -> Dict[str, float]:
         """Calculate validation metrics for regime discovery."""
         try:
+            tprint_debug(f"Calculating validation metrics for {len(cluster_labels)} labels")
+            
             metrics = {}
             
             # Basic cluster metrics
@@ -507,29 +581,40 @@ class EconomicValidator:
             metrics['n_regimes'] = len(unique_regimes)
             metrics['noise_ratio'] = np.sum(cluster_labels == -1) / len(cluster_labels)
             
+            tprint_debug(f"Basic metrics: n_regimes={metrics['n_regimes']}, noise_ratio={metrics['noise_ratio']:.3f}")
+            
             # Calculate silhouette score if features available
             if features_df is not None and len(unique_regimes) > 1:
+                tprint_debug("Calculating silhouette score with features")
                 valid_mask = cluster_labels != -1
                 if valid_mask.sum() > 1:
                     valid_labels = cluster_labels[valid_mask]
                     valid_features = features_df[valid_mask]
                     
                     if len(np.unique(valid_labels)) > 1:
-                        metrics['silhouette_score'] = silhouette_score(valid_features, valid_labels)
+                        with tprint_timer("Silhouette score calculation"):
+                            metrics['silhouette_score'] = silhouette_score(valid_features, valid_labels)
+                        tprint_debug(f"Silhouette score: {metrics['silhouette_score']:.3f}")
                     else:
                         metrics['silhouette_score'] = 0.0
+                        tprint_debug("Silhouette score: 0.0 (only one cluster)")
                 else:
                     metrics['silhouette_score'] = 0.0
+                    tprint_debug("Silhouette score: 0.0 (insufficient valid samples)")
             else:
                 metrics['silhouette_score'] = 0.0
+                tprint_debug("Silhouette score: 0.0 (no features or insufficient regimes)")
             
             # Calculate regime stability
-            metrics['regime_stability'] = self._calculate_regime_stability(cluster_labels)
+            with tprint_timer("Regime stability calculation"):
+                metrics['regime_stability'] = self._calculate_regime_stability(cluster_labels)
+                tprint_debug(f"Regime stability: {metrics['regime_stability']:.3f}")
             
+            tprint_debug(f"Validation metrics completed: {metrics}")
             return metrics
             
         except Exception as e:
-            logger.error(f"❌ Validation metrics calculation failed: {e}")
+            tprint_error(f"❌ Validation metrics calculation failed: {e}")
             return {'n_regimes': 0, 'noise_ratio': 1.0, 'silhouette_score': 0.0, 'regime_stability': 0.0}
     
     def _calculate_regime_stability(self, cluster_labels: np.ndarray) -> float:

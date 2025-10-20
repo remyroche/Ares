@@ -18,6 +18,13 @@ from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
 import warnings
 
+# Import tprint utilities
+from src.utils.tprint import (
+    tprint, tprint_info, tprint_success, tprint_warning, tprint_error,
+    tprint_debug, tprint_performance, tprint_progress, tprint_timer,
+    tprint_logged, LogLevel
+)
+
 logger = logging.getLogger(__name__)
 
 @dataclass
@@ -79,6 +86,7 @@ class FeatureProcessor:
     dimensionality reduction capabilities.
     """
     
+    @tprint_logged(LogLevel.INFO, include_args=True)
     def __init__(self, config: Optional[FeatureProcessorConfig] = None):
         """
         Initialize feature processor.
@@ -86,12 +94,18 @@ class FeatureProcessor:
         Args:
             config: Configuration for feature processing
         """
+        tprint_info("Initializing FeatureProcessor")
+        
         self.config = config or FeatureProcessorConfig()
         self.scaler = None
         self.feature_selector = None
         self.dr_model = None
         self.processing_stats = {}
         
+        tprint_debug(f"Config: scaling_method={self.config.scaling_method}, enable_feature_selection={self.config.enable_feature_selection}")
+        tprint_success("✅ FeatureProcessor initialized")
+        
+    @tprint_logged(LogLevel.INFO, include_args=True)
     def process_features(self, 
                         features_df: pd.DataFrame,
                         target: Optional[np.ndarray] = None) -> ProcessedFeatures:
@@ -106,7 +120,8 @@ class FeatureProcessor:
             ProcessedFeatures with processed data and metadata
         """
         try:
-            logger.info("🔧 Starting feature processing pipeline...")
+            tprint_info("🔧 Starting feature processing pipeline...")
+            tprint_debug(f"Input shape: {features_df.shape}, target shape: {target.shape if target is not None else 'None'}")
             
             # Store original shape
             original_shape = features_df.shape
@@ -114,37 +129,63 @@ class FeatureProcessor:
             
             # Step 1: Data validation
             if self.config.validate_data:
-                features_df = self._validate_data(features_df)
+                with tprint_timer("Data validation"):
+                    features_df = self._validate_data(features_df)
+                    tprint_debug(f"After validation: {features_df.shape}")
+            else:
+                tprint_debug("Data validation skipped")
             
             # Step 2: Data cleaning
-            features_df = self._clean_data(features_df)
+            with tprint_timer("Data cleaning"):
+                features_df = self._clean_data(features_df)
+                tprint_debug(f"After cleaning: {features_df.shape}")
             
             # Step 3: Handle outliers
             if self.config.handle_outliers != 'none':
-                features_df = self._handle_outliers(features_df)
+                with tprint_timer("Outlier handling"):
+                    features_df = self._handle_outliers(features_df)
+                    tprint_debug(f"After outlier handling: {features_df.shape}")
+            else:
+                tprint_debug("Outlier handling skipped")
             
             # Step 4: Feature scaling
             if self.config.scaling_method != 'none':
-                features_df = self._scale_features(features_df)
+                with tprint_timer("Feature scaling"):
+                    features_df = self._scale_features(features_df)
+                    tprint_debug(f"After scaling: {features_df.shape}")
+            else:
+                tprint_debug("Feature scaling skipped")
             
             # Step 5: Feature engineering
             if self.config.enable_polynomial or self.config.enable_interactions:
-                features_df = self._engineer_features(features_df)
+                with tprint_timer("Feature engineering"):
+                    features_df = self._engineer_features(features_df)
+                    tprint_debug(f"After feature engineering: {features_df.shape}")
+            else:
+                tprint_debug("Feature engineering skipped")
             
             # Step 6: Feature selection
             if self.config.enable_feature_selection:
-                features_df, feature_importance = self._select_features(features_df, target)
+                with tprint_timer("Feature selection"):
+                    features_df, feature_importance = self._select_features(features_df, target)
+                    tprint_debug(f"After feature selection: {features_df.shape}")
             else:
                 feature_importance = None
+                tprint_debug("Feature selection skipped")
             
             # Step 7: Dimensionality reduction
             if self.config.enable_dr:
-                features_df, dr_model = self._reduce_dimensions(features_df)
+                with tprint_timer("Dimensionality reduction"):
+                    features_df, dr_model = self._reduce_dimensions(features_df)
+                    tprint_debug(f"After dimensionality reduction: {features_df.shape}")
             else:
                 dr_model = None
+                tprint_debug("Dimensionality reduction skipped")
             
             # Step 8: Final validation
-            features_df = self._final_validation(features_df)
+            with tprint_timer("Final validation"):
+                features_df = self._final_validation(features_df)
+                tprint_debug(f"After final validation: {features_df.shape}")
             
             # Calculate processing statistics
             self.processing_stats.update({
@@ -156,7 +197,8 @@ class FeatureProcessor:
                 'zero_variance_features': self._count_zero_variance_features(features_df)
             })
             
-            logger.info(f"✅ Feature processing completed. Final shape: {features_df.shape}")
+            tprint_success(f"✅ Feature processing completed. Final shape: {features_df.shape}")
+            tprint_debug(f"Processing stats: features_removed={self.processing_stats['features_removed']}, samples_removed={self.processing_stats['samples_removed']}")
             
             return ProcessedFeatures(
                 features_df=features_df,
@@ -167,7 +209,7 @@ class FeatureProcessor:
             )
             
         except Exception as e:
-            logger.error(f"❌ Feature processing failed: {e}")
+            tprint_error(f"❌ Feature processing failed: {e}")
             # Return original data as fallback
             return ProcessedFeatures(
                 features_df=features_df,
@@ -234,34 +276,42 @@ class FeatureProcessor:
             logger.error(f"❌ Data validation failed: {e}")
             return features_df
     
+    @tprint_logged(LogLevel.DEBUG, include_args=True)
     def _clean_data(self, features_df: pd.DataFrame) -> pd.DataFrame:
         """Clean data by handling missing and infinite values."""
         try:
-            logger.info("🧹 Cleaning data...")
+            tprint_info("🧹 Cleaning data...")
+            tprint_debug(f"Input shape: {features_df.shape}")
             
             # Handle missing values
             if self.config.handle_missing == 'drop':
                 features_df = features_df.dropna()
+                tprint_debug(f"After dropping missing values: {features_df.shape}")
             elif self.config.handle_missing == 'fill':
                 # Fill with median for numeric columns
                 numeric_cols = features_df.select_dtypes(include=[np.number]).columns
                 features_df[numeric_cols] = features_df[numeric_cols].fillna(features_df[numeric_cols].median())
+                tprint_debug(f"Filled missing values with median for {len(numeric_cols)} numeric columns")
             elif self.config.handle_missing == 'interpolate':
                 # Interpolate missing values
                 features_df = features_df.interpolate(method='linear')
+                tprint_debug("Interpolated missing values using linear method")
             
             # Handle infinite values
             if self.config.handle_infinite == 'drop':
                 features_df = features_df.replace([np.inf, -np.inf], np.nan).dropna()
+                tprint_debug(f"After dropping infinite values: {features_df.shape}")
             elif self.config.handle_infinite == 'clip':
                 # Clip infinite values to large finite values
                 features_df = features_df.replace([np.inf, -np.inf], [np.finfo(np.float64).max, np.finfo(np.float64).min])
+                tprint_debug("Clipped infinite values to max/min float values")
             elif self.config.handle_infinite == 'replace':
                 # Replace infinite values with NaN and then fill
                 features_df = features_df.replace([np.inf, -np.inf], np.nan)
                 features_df = features_df.fillna(features_df.median())
+                tprint_debug("Replaced infinite values with median")
             
-            logger.info(f"✅ Data cleaning completed. Shape: {features_df.shape}")
+            tprint_success(f"✅ Data cleaning completed. Shape: {features_df.shape}")
             return features_df
             
         except Exception as e:

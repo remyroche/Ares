@@ -30,9 +30,10 @@ from dataclasses import dataclass
 from enum import Enum
 
 from .base_component import BaseModelsTrainingComponent
-from ..unified_data_driven_pipeline.core.modular_architecture import (
-    ErrorInfo, ErrorSeverity, ErrorCategory, ValidationResult
-)
+from src.training.steps.base_step import BaseStep
+# from ..unified_data_driven_pipeline.core.modular_architecture import (
+#     ErrorInfo, ErrorSeverity, ErrorCategory, ValidationResult
+# )  # REMOVED - unified pipeline deleted
 
 
 class LabelingMethod(Enum):
@@ -78,7 +79,7 @@ class MLEntryTimingResult:
     labeling_history: Optional[Dict[str, Any]] = None
 
 
-class MLEntryTimingLabelerModular(BaseModelsTrainingComponent):
+class MLEntryTimingLabelerModular(BaseModelsTrainingComponent, BaseStep):
     """
     ModularComponent implementation of ML-Based Entry Timing Labeler.
     
@@ -135,7 +136,9 @@ class MLEntryTimingLabelerModular(BaseModelsTrainingComponent):
         if config:
             default_config.update(config)
         
-        super().__init__(name, default_config, logger)
+        # Initialize both parent classes
+        BaseModelsTrainingComponent.__init__(self, name, default_config, logger)
+        BaseStep.__init__(self, name, default_config)
         
         # ML labeling-specific configuration
         self.labeling_config = MLEntryTimingConfig(
@@ -627,6 +630,138 @@ class MLEntryTimingLabelerModular(BaseModelsTrainingComponent):
         })
         
         return summary
+    
+    async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Execute the ML entry timing labeling step (BaseStep interface).
+        
+        Args:
+            config: Configuration dictionary containing:
+                - symbol: Trading symbol (e.g., 'ETHUSDT')
+                - exchange: Exchange name (e.g., 'binance')
+                - timeframe: Timeframe (e.g., '15m')
+                - direction: Trading direction ('longs', 'shorts', 'both')
+                - execution_mode: Execution mode ('full', 'light', 'blank')
+        
+        Returns:
+            Execution result dictionary
+        """
+        try:
+            self.logger.info("🚀 Starting ML Entry Timing Labeling")
+            
+            # Set context for artifact management
+            self._set_context(
+                symbol=config.get('symbol'),
+                exchange=config.get('exchange'),
+                information='training',
+                direction=config.get('direction', 'longs'),
+                model='MLEntryTiming'
+            )
+            
+            # Load training data
+            training_data = self._load_dataframe('training_data')
+            if training_data is None:
+                training_data = self._load_dataframe('market_data')
+                if training_data is None:
+                    training_data = self._load_dataframe('processed_data')
+            
+            if training_data is None:
+                return {
+                    'success': False,
+                    'error': 'No training data found. Please ensure data is available in artifacts.',
+                    'artifacts': [],
+                    'metrics': {}
+                }
+            
+            # Load initial labels if available
+            initial_labels = self._load_dataframe('initial_labels')
+            if initial_labels is None:
+                # Try to extract labels from training data
+                label_columns = ['target', 'y', 'label', 'entry_timing', 'timing_label']
+                for col in label_columns:
+                    if col in training_data.columns:
+                        initial_labels = training_data[col]
+                        training_data = training_data.drop(columns=[col])
+                        break
+                
+                if initial_labels is None:
+                    return {
+                        'success': False,
+                        'error': 'No initial labels found for ML entry timing labeling',
+                        'artifacts': [],
+                        'metrics': {}
+                    }
+            
+            # Prepare data for component
+            component_data = {
+                'X_train': training_data,
+                'y_train': initial_labels
+            }
+            
+            # Initialize component
+            if not self.initialize():
+                return {
+                    'success': False,
+                    'error': 'Failed to initialize ML entry timing labeling component',
+                    'artifacts': [],
+                    'metrics': {}
+                }
+            
+            # Process data with component
+            result = self.process(component_data)
+            
+            if result.success:
+                # Save labeling model
+                if hasattr(result, 'labeling_model') and result.labeling_model:
+                    self._save_model(result.labeling_model, 'ml_entry_timing_model')
+                
+                # Save generated labels
+                if hasattr(result, 'ml_labels') and result.ml_labels is not None:
+                    self._save_dataframe(result.ml_labels, 'ml_entry_timing_labels')
+                
+                # Save quality metrics
+                if hasattr(result, 'quality_metrics') and result.quality_metrics:
+                    self._save_metadata(result.quality_metrics, 'ml_entry_timing_quality_metrics')
+                
+                # Save training summary
+                training_summary = self.get_training_summary()
+                self._save_metadata(training_summary, 'ml_entry_timing_summary')
+                
+                self.logger.info("✅ ML Entry Timing Labeling completed successfully")
+                
+                return {
+                    'success': True,
+                    'artifacts': [
+                        'ml_entry_timing_model',
+                        'ml_entry_timing_labels',
+                        'ml_entry_timing_quality_metrics',
+                        'ml_entry_timing_summary'
+                    ],
+                    'metrics': result.quality_metrics if hasattr(result, 'quality_metrics') else {},
+                    'labels_generated': len(result.ml_labels) if hasattr(result, 'ml_labels') and result.ml_labels is not None else 0,
+                    'iteration_count': getattr(result, 'iteration_count', 0),
+                    'training_time': result.training_time if hasattr(result, 'training_time') else 0
+                }
+            else:
+                return {
+                    'success': False,
+                    'error': f"ML entry timing labeling failed: {getattr(result, 'error_message', 'Unknown error')}",
+                    'artifacts': [],
+                    'metrics': {}
+                }
+                
+        except Exception as e:
+            self.logger.error(f"❌ ML Entry Timing Labeling failed: {e}")
+            return {
+                'success': False,
+                'error': f"Step execution failed: {str(e)}",
+                'artifacts': [],
+                'metrics': {}
+            }
+        finally:
+            # Cleanup component
+            if hasattr(self, 'cleanup'):
+                self.cleanup()
 
 
 def create_ml_entry_timing_labeler(

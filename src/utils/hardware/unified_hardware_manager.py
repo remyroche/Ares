@@ -29,6 +29,8 @@ except ImportError:
 from .m1_cpu_optimizer import M1CPUOptimizer
 from .m1_gpu_utils import M1GPUManager
 from .m1_memory_optimizer import M1MemoryOptimizer
+from .enhanced_caching_system import get_global_cache, CacheConfig, DataTypeOptimization
+from .optimization_decorators import smart_cache, auto_optimize, memory_efficient
 
 logger = logging.getLogger(__name__)
 
@@ -453,6 +455,15 @@ class UnifiedHardwareManager:
             
         self.config = config or HardwareConfig()
         self.logger = logger.getChild('UnifiedHardwareManager')
+        
+        # Initialize enhanced caching system
+        cache_config = CacheConfig(
+            max_memory_mb=512.0,
+            data_type_optimization=DataTypeOptimization.AGGRESSIVE,
+            enable_compression=True,
+            auto_optimize_dtypes=True
+        )
+        self.cache_system = get_global_cache(cache_config)
 
         # Initialize hardware components
         self.cpu_optimizer = M1CPUOptimizer()

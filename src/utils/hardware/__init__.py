@@ -1,124 +1,170 @@
-# Hardware-specific optimization utilities
-# Advanced hardware optimization system for Apple Silicon
+"""
+Enhanced Hardware Utilities with Caching and Optimization.
 
-__all__ = [
-    # Core hardware optimizers
-    'M1CPUOptimizer', 'M1GPUManager', 'M1MemoryOptimizer',
+This module provides a comprehensive hardware optimization and caching system
+that automatically optimizes data types, implements LRU caching, and provides
+memory-efficient operations throughout the codebase.
+"""
 
-    # Advanced hardware optimizers
-    'AdvancedM1CPUOptimizer', 'EnhancedM1GPUManager', 'AdvancedM1MemoryOptimizer',
+# Import core caching and optimization components
+from .enhanced_caching_system import (
+    EnhancedCacheSystem, CacheConfig, DataTypeOptimization, CacheStrategy,
+    get_global_cache, optimize_dataframe_default, optimize_numpy_array_default
+)
 
-    # Unified hardware management
-    'UnifiedHardwareManager', 'HardwareConfig', 'WorkloadType', 'OptimizationLevel',
+from .optimization_decorators import (
+    smart_cache, auto_optimize, memory_efficient, performance_tracked,
+    cache_dataframe_result, cache_numpy_result, optimize_heavy_computation,
+    memory_aware, optimize_all_dataframes, optimize_all_arrays,
+    get_optimization_stats, clear_optimization_cache
+)
 
-    # Adaptive optimization
-    'AdaptiveOptimizationEngine', 'OptimizationTarget', 'LearningAlgorithm',
+from .integrated_hardware_manager import (
+    IntegratedHardwareManager, IntegratedHardwareConfig,
+    get_integrated_hardware_manager, process_market_data,
+    process_ml_training_data, process_backtesting_data,
+    get_system_optimization_status, clear_optimization_caches
+)
 
-    # Convenience functions
-    'get_unified_hardware_manager', 'get_advanced_cpu_optimizer',
-    'get_enhanced_gpu_manager', 'get_advanced_memory_optimizer',
-    'get_adaptive_optimization_engine',
+from .optimization_patches import (
+    apply_optimization_patches, remove_optimization_patches,
+    optimize_dataframe_auto, optimize_numpy_array_auto, optimize_data_dict,
+    cache_function_result, optimize_heavy_function, make_memory_efficient,
+    auto_optimize_function, track_performance
+)
 
-    # Optimization functions
-    'optimize_for_workload', 'optimize_for_workload_adaptive',
-    'optimize_dataframe_advanced', 'record_performance_adaptive',
+# Import existing hardware utilities
+from .unified_hardware_manager import (
+    UnifiedHardwareManager, HardwareConfig, WorkloadType, OptimizationLevel,
+    get_unified_hardware_manager, optimize_for_workload, get_system_status
+)
 
-    # Legacy compatibility
-    'get_m1_cpu_optimizer', 'm1_gpu_manager', 'm1_memory_optimizer'
-]
+from .m1_memory_optimizer import (
+    M1MemoryOptimizer, get_m1_memory_optimizer, optimize_dataframe_memory,
+    start_m1_memory_monitoring, stop_m1_memory_monitoring, get_memory_usage
+)
 
-# Import core components
-from .m1_cpu_optimizer import M1CPUOptimizer, get_m1_cpu_optimizer
-from .m1_gpu_utils import M1GPUManager, m1_gpu_manager
-from .m1_memory_optimizer import M1MemoryOptimizer, m1_memory_optimizer
+from .m1_cpu_optimizer import (
+    M1CPUOptimizer, get_m1_cpu_optimizer, optimize_function_for_m1,
+    parallel_map_m1, create_m1_optimized_thread_pool, run_cpu_intensive_task
+)
 
-# Legacy compatibility aliases
-m1_cpu_optimizer = get_m1_cpu_optimizer()
+from .m1_gpu_utils import (
+    M1GPUManager, get_m1_gpu_manager, is_m1_available, is_mps_available
+)
 
-# Import advanced components
-try:
-    from .advanced_cpu_optimizer import AdvancedM1CPUOptimizer, get_advanced_cpu_optimizer
-    from .enhanced_gpu_manager import EnhancedM1GPUManager, get_enhanced_gpu_manager
-    from .advanced_memory_optimizer import AdvancedM1MemoryOptimizer, get_advanced_memory_optimizer
-    from .unified_hardware_manager import (
-        UnifiedHardwareManager, HardwareConfig, WorkloadType, OptimizationLevel,
-        get_unified_hardware_manager, optimize_for_workload
-    )
-    from .adaptive_optimization_engine import (
-        AdaptiveOptimizationEngine, OptimizationTarget, LearningAlgorithm,
-        get_adaptive_optimization_engine, optimize_for_workload_adaptive,
-        record_performance_adaptive
-    )
-    from .advanced_memory_optimizer import optimize_dataframe_advanced
+from .enhanced_gpu_manager import (
+    EnhancedM1GPUManager, get_enhanced_gpu_manager, GPUOperationType,
+    GPUMemoryPool, BatchOperationConfig, create_gpu_operation, batch_gpu_operations
+)
 
-    # Set availability flags
-    ADVANCED_CPU_AVAILABLE = True
-    ENHANCED_GPU_AVAILABLE = True
-    ADVANCED_MEMORY_AVAILABLE = True
-    UNIFIED_MANAGER_AVAILABLE = True
-    ADAPTIVE_ENGINE_AVAILABLE = True
-
-except ImportError as e:
-    # Set availability flags to False if imports fail
-    ADVANCED_CPU_AVAILABLE = False
-    ENHANCED_GPU_AVAILABLE = False
-    ADVANCED_MEMORY_AVAILABLE = False
-    UNIFIED_MANAGER_AVAILABLE = False
-    ADAPTIVE_ENGINE_AVAILABLE = False
-
-    # Create placeholder functions
-    def get_advanced_cpu_optimizer():
-        raise ImportError("Advanced CPU Optimizer not available")
-
-    def get_enhanced_gpu_manager():
-        raise ImportError("Enhanced GPU Manager not available")
-
-    def get_advanced_memory_optimizer():
-        raise ImportError("Advanced Memory Optimizer not available")
-
-    def get_unified_hardware_manager():
-        raise ImportError("Unified Hardware Manager not available")
-
-    def get_adaptive_optimization_engine():
-        raise ImportError("Adaptive Optimization Engine not available")
-
-    def optimize_for_workload(*args, **kwargs):
-        raise ImportError("Unified Hardware Manager not available")
-
-    def optimize_for_workload_adaptive(*args, **kwargs):
-        raise ImportError("Adaptive Optimization Engine not available")
-
-    def optimize_dataframe_advanced(*args, **kwargs):
-        raise ImportError("Advanced Memory Optimizer not available")
-
-    def record_performance_adaptive(*args, **kwargs):
-        raise ImportError("Adaptive Optimization Engine not available")
+# Import examples
+from .optimization_examples import run_all_examples
 
 # Version information
 __version__ = "2.0.0"
-__author__ = "Hardware Optimization Team"
-__description__ = "Advanced hardware optimization system for Apple Silicon"
+__author__ = "Ares Trading System"
+__description__ = "Enhanced Hardware Utilities with Caching and Optimization"
 
-# Feature availability
-FEATURES = {
-    'basic_cpu_optimization': True,
-    'basic_gpu_management': True,
-    'basic_memory_optimization': True,
-    'advanced_cpu_optimization': ADVANCED_CPU_AVAILABLE,
-    'enhanced_gpu_acceleration': ENHANCED_GPU_AVAILABLE,
-    'advanced_memory_management': ADVANCED_MEMORY_AVAILABLE,
-    'unified_hardware_management': UNIFIED_MANAGER_AVAILABLE,
-    'adaptive_optimization': ADAPTIVE_ENGINE_AVAILABLE
-}
+# Default configurations
+DEFAULT_CACHE_CONFIG = CacheConfig(
+    max_memory_mb=512.0,
+    strategy=CacheStrategy.LRU,
+    data_type_optimization=DataTypeOptimization.AGGRESSIVE,
+    enable_compression=True,
+    auto_optimize_dtypes=True,
+    prefer_int32=True,
+    prefer_float32=True
+)
 
-def get_feature_status():
-    """Get status of all hardware optimization features."""
-    return FEATURES.copy()
+DEFAULT_HARDWARE_CONFIG = HardwareConfig(
+    memory_limit_gb=8.0,
+    enable_adaptive_optimization=True,
+    performance_monitoring_enabled=True
+)
 
-def get_available_features():
-    """Get list of available features."""
-    return [feature for feature, available in FEATURES.items() if available]
+# Convenience functions for common operations
+def optimize_dataframe(df):
+    """Optimize DataFrame with default settings."""
+    return optimize_dataframe_default(df)
 
-def is_feature_available(feature_name: str) -> bool:
-    """Check if a specific feature is available."""
-    return FEATURES.get(feature_name, False)
+def optimize_array(arr):
+    """Optimize NumPy array with default settings."""
+    return optimize_numpy_array_default(arr)
+
+def cache_result(ttl=None, key_func=None):
+    """Cache function result with default settings."""
+    return smart_cache(ttl=ttl, key_func=key_func)
+
+def optimize_function(optimize_inputs=True, optimize_outputs=True):
+    """Apply automatic optimization to function."""
+    return auto_optimize(optimize_inputs=optimize_inputs, optimize_outputs=optimize_outputs)
+
+def make_efficient():
+    """Make function memory efficient."""
+    return memory_efficient()
+
+def track_perf():
+    """Track function performance."""
+    return performance_tracked()
+
+# Global initialization
+def initialize_optimization_system():
+    """Initialize the optimization system with default settings."""
+    # Apply patches to existing code
+    apply_optimization_patches()
+    
+    # Initialize integrated hardware manager
+    manager = get_integrated_hardware_manager()
+    
+    # Get cache system
+    cache = get_global_cache(DEFAULT_CACHE_CONFIG)
+    
+    return manager, cache
+
+def get_optimization_status():
+    """Get current optimization system status."""
+    manager = get_integrated_hardware_manager()
+    return manager.get_optimization_report()
+
+def clear_all_caches():
+    """Clear all optimization caches."""
+    manager = get_integrated_hardware_manager()
+    manager.clear_all_caches()
+
+# Auto-initialize on import
+try:
+    _manager, _cache = initialize_optimization_system()
+except Exception as e:
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.warning(f"Failed to initialize optimization system: {e}")
+
+# Export main classes and functions
+__all__ = [
+    # Core caching and optimization
+    'EnhancedCacheSystem', 'CacheConfig', 'DataTypeOptimization', 'CacheStrategy',
+    'get_global_cache', 'optimize_dataframe_default', 'optimize_numpy_array_default',
+    
+    # Decorators
+    'smart_cache', 'auto_optimize', 'memory_efficient', 'performance_tracked',
+    'cache_dataframe_result', 'cache_numpy_result', 'optimize_heavy_computation',
+    'memory_aware', 'optimize_all_dataframes', 'optimize_all_arrays',
+    
+    # Integrated management
+    'IntegratedHardwareManager', 'IntegratedHardwareConfig',
+    'get_integrated_hardware_manager', 'process_market_data',
+    'process_ml_training_data', 'process_backtesting_data',
+    
+    # Hardware utilities
+    'UnifiedHardwareManager', 'HardwareConfig', 'WorkloadType', 'OptimizationLevel',
+    'M1MemoryOptimizer', 'M1CPUOptimizer', 'M1GPUManager', 'EnhancedM1GPUManager',
+    
+    # Convenience functions
+    'optimize_dataframe', 'optimize_array', 'cache_result', 'optimize_function',
+    'make_efficient', 'track_perf', 'get_optimization_status', 'clear_all_caches',
+    
+    # Utilities
+    'apply_optimization_patches', 'remove_optimization_patches',
+    'run_all_examples', 'initialize_optimization_system'
+]

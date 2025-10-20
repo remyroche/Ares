@@ -33,6 +33,9 @@ except ImportError as e:
     print(f"❌ CRITICAL: Failed to import core ML utilities: {e}")
     raise
 
+# Import BaseStep for ares_launcher.py integration
+from src.training.steps.base_step import BaseStep
+
 # Import enhanced logging and utilities - CRITICAL: Fast fail if not available
 try:
     from src.utils.tprint import (
@@ -300,7 +303,7 @@ class TrainingMetrics:
             return time.time() - self.start_time
         return self.end_time - self.start_time
 
-class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
+class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep, BaseStep):
     """
     Enhanced Tactician Models Training Step with comprehensive error handling and reporting.
 
@@ -3130,6 +3133,140 @@ def create_tactician_models_training_step_refactored(
     except Exception as e:
         logger.error(f"❌ Failed to create tactician training step: {e}")
         raise
+    
+    async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Execute the tactician base training step (BaseStep interface).
+        
+        Args:
+            config: Configuration dictionary containing:
+                - symbol: Trading symbol (e.g., 'ETHUSDT')
+                - exchange: Exchange name (e.g., 'binance')
+                - timeframe: Timeframe (e.g., '15m')
+                - direction: Trading direction ('longs', 'shorts', 'both')
+                - execution_mode: Execution mode ('full', 'light', 'blank')
+        
+        Returns:
+            Execution result dictionary
+        """
+        try:
+            self.logger.info("🚀 Starting Tactician Base Training")
+            
+            # Set context for artifact management
+            self._set_context(
+                symbol=config.get('symbol'),
+                exchange=config.get('exchange'),
+                information='training',
+                direction=config.get('direction', 'longs'),
+                model='Tactician'
+            )
+            
+            # Load training data
+            training_data = self._load_dataframe('training_data')
+            if training_data is None:
+                training_data = self._load_dataframe('market_data')
+                if training_data is None:
+                    training_data = self._load_dataframe('processed_data')
+            
+            if training_data is None:
+                return {
+                    'success': False,
+                    'error': 'No training data found. Please ensure data is available in artifacts.',
+                    'artifacts': [],
+                    'metrics': {}
+                }
+            
+            # Load targets if available
+            targets = self._load_dataframe('tactician_targets')
+            if targets is None:
+                target_columns = ['target', 'y', 'label', 'tactician_target', 'entry_target', 'exit_target']
+                for col in target_columns:
+                    if col in training_data.columns:
+                        targets = training_data[col]
+                        training_data = training_data.drop(columns=[col])
+                        break
+                
+                if targets is None:
+                    return {
+                        'success': False,
+                        'error': 'No target data found for tactician training',
+                        'artifacts': [],
+                        'metrics': {}
+                    }
+            
+            # Load analyst predictions if available (for enhanced features)
+            analyst_predictions = self._load_dataframe('analyst_predictions')
+            if analyst_predictions is not None:
+                # Add analyst predictions as features
+                for col in analyst_predictions.columns:
+                    training_data[f'analyst_{col}'] = analyst_predictions[col]
+                self.logger.info(f"Enhanced training data with {len(analyst_predictions.columns)} analyst features")
+            
+            # Convert to numpy arrays for the existing execute method
+            X_train = training_data.values
+            y_train = targets.values if hasattr(targets, 'values') else targets
+            
+            # Create regime labels (placeholder - could be enhanced)
+            regime_labels = np.zeros(len(X_train))
+            
+            # Execute the existing training logic
+            result = self.execute(
+                X=X_train,
+                y=y_train,
+                regime_labels=regime_labels,
+                feature_names=list(training_data.columns),
+                analyst_signals=analyst_predictions.values if analyst_predictions is not None else None
+            )
+            
+            if result.get('success', False):
+                # Save trained models
+                if 'trained_models' in result:
+                    self._save_model(result['trained_models'], 'tactician_base_models')
+                
+                # Save metrics
+                if 'metrics' in result:
+                    self._save_metadata(result['metrics'], 'tactician_training_metrics')
+                
+                # Save training summary
+                training_summary = {
+                    'component_name': 'tactician_base_training',
+                    'status': 'completed',
+                    'models_trained': len(result.get('trained_models', {})),
+                    'training_time': result.get('training_time', 0),
+                    'performance_metrics': result.get('metrics', {}),
+                    'configuration': config
+                }
+                self._save_metadata(training_summary, 'tactician_training_summary')
+                
+                self.logger.info("✅ Tactician Base Training completed successfully")
+                
+                return {
+                    'success': True,
+                    'artifacts': [
+                        'tactician_base_models',
+                        'tactician_training_metrics',
+                        'tactician_training_summary'
+                    ],
+                    'metrics': result.get('metrics', {}),
+                    'models_trained': len(result.get('trained_models', {})),
+                    'training_time': result.get('training_time', 0)
+                }
+            else:
+                return {
+                    'success': False,
+                    'error': f"Tactician training failed: {result.get('error', 'Unknown error')}",
+                    'artifacts': [],
+                    'metrics': {}
+                }
+                
+        except Exception as e:
+            self.logger.error(f"❌ Tactician Base Training failed: {e}")
+            return {
+                'success': False,
+                'error': f"Step execution failed: {str(e)}",
+                'artifacts': [],
+                'metrics': {}
+            }
 
 def execute_tactician_models_training_refactored(
     X: np.ndarray,

@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any, Dict, Tuple
 
 from src.core.decorators import handles_errors
-from src.training.base_step import BaseStep
+from src.training.steps.base_step import BaseStep
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
 import pandas as pd
 import numpy as np

@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """
-Data Collection Orchestrator
+Data Collection Orchestrator - BaseStep Implementation
 
-This module orchestrates the complete data collection pipeline:
+This module orchestrates the complete data collection pipeline as an autonomous step:
 1. Download data using Binance API
 2. Detect and fill gaps
 3. Perform data quality checks
 4. Resample data to multiple timeframes
 5. Store processed data
 
-Ensures all components work together seamlessly.
+Refactored to inherit from BaseStep for autonomous execution.
 """
 
 import asyncio
@@ -24,6 +24,7 @@ import pandas as pd
 project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
+from src.training.steps.base_step import BaseStep
 from src.utils.logger import system_logger
 from src.utils.error_handler import handles_errors
 
@@ -34,12 +35,13 @@ from .unified_resampler import UnifiedResampler
 
 logger = system_logger.getChild("DataCollectionOrchestrator")
 
-class DataCollectionOrchestrator:
-    """Orchestrates the complete data collection pipeline."""
+class DataCollectionOrchestrator(BaseStep):
+    """Orchestrates the complete data collection pipeline as an autonomous step."""
 
-    def __init__(self, data_cache_path: str = "data_cache"):
-        """Initialize the data collection orchestrator."""
-        self.data_cache_path = Path(data_cache_path)
+    def __init__(self, step_name: str = "data_collection_orchestrator"):
+        """Initialize the data collection orchestrator as a BaseStep."""
+        super().__init__(step_name)
+        self.data_cache_path = Path("data_cache")
         self.data_cache_path.mkdir(exist_ok=True)
         self.logger = logger.getChild('Orchestrator')
 
@@ -59,6 +61,102 @@ class DataCollectionOrchestrator:
             'start_time': None,
             'end_time': None
         }
+
+    async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Execute the data collection orchestration step (required by BaseStep).
+        
+        Args:
+            config: Configuration containing symbol, exchange, timeframes, etc.
+            
+        Returns:
+            Execution result with artifacts and metrics
+        """
+        try:
+            self.logger.info("🚀 Starting data collection orchestration step execution")
+            
+            # Extract configuration
+            symbol = config.get('symbol', 'ETHUSDT')
+            exchange = config.get('exchange', 'BINANCE')
+            data_types = config.get('data_types', ['klines'])
+            timeframes = config.get('timeframes', ['1m', '5m', '15m', '30m', '1h'])
+            start_date = config.get('start_date')
+            end_date = config.get('end_date')
+            lookback_days = config.get('lookback_days', 30)
+            
+            if not symbol:
+                raise ValueError("Symbol is required for data collection orchestration")
+            
+            self.logger.info(f"Orchestrating data collection for {symbol} from {exchange}")
+            self.logger.info(f"Data types: {data_types}")
+            self.logger.info(f"Timeframes: {timeframes}")
+            
+            # Run the complete pipeline
+            result = await self.run_complete_pipeline(
+                symbol=symbol,
+                exchange=exchange,
+                data_types=data_types,
+                timeframes=timeframes,
+                start_date=start_date,
+                end_date=end_date,
+                lookback_days=lookback_days
+            )
+            
+            # Convert result to BaseStep format
+            success = result.get('success', False)
+            artifacts = []
+            metrics = {}
+            
+            if success:
+                # Add pipeline results as artifacts
+                for stage, stage_result in result.get('stages', {}).items():
+                    if stage_result.get('success', False):
+                        artifact_path = self._save_artifact(
+                            data=stage_result,
+                            artifact_name=f"pipeline_stage_{stage}",
+                            artifact_type="metadata",
+                            metadata={
+                                'symbol': symbol,
+                                'exchange': exchange,
+                                'stage': stage,
+                                'lookback_days': lookback_days
+                            }
+                        )
+                        artifacts.append({
+                            'name': f"pipeline_stage_{stage}",
+                            'path': artifact_path,
+                            'type': 'metadata',
+                            'description': f"Results from {stage} stage"
+                        })
+                
+                # Add pipeline statistics as metrics
+                metrics = {
+                    'pipeline_stats': result.get('pipeline_stats', {}),
+                    'execution_time': result.get('execution_time', '0:00:00'),
+                    'stages_completed': len([s for s in result.get('stages', {}).values() if s.get('success', False)]),
+                    'total_stages': len(result.get('stages', {}))
+                }
+                
+                self.logger.info(f"✅ Data collection orchestration completed successfully")
+            else:
+                self.logger.error("❌ Data collection orchestration failed")
+            
+            return {
+                'success': success,
+                'artifacts': artifacts,
+                'metrics': metrics,
+                'pipeline_result': result
+            }
+            
+        except Exception as e:
+            error_msg = f"Data collection orchestration step failed: {str(e)}"
+            self.logger.error(error_msg)
+            return {
+                'success': False,
+                'error': error_msg,
+                'artifacts': [],
+                'metrics': {}
+            }
 
     @handles_errors(context="data_collection_pipeline")
     async def run_complete_pipeline(
@@ -446,6 +544,18 @@ class DataCollectionOrchestrator:
         )
 
         return stats
+
+    def get_required_inputs(self) -> list:
+        """Get list of required inputs for this step."""
+        return ['symbol', 'exchange']
+
+    def get_produced_outputs(self) -> list:
+        """Get list of outputs produced by this step."""
+        return ['pipeline_result', 'pipeline_stats', 'stages_completed']
+
+    def get_dependencies(self) -> list:
+        """Get list of step dependencies."""
+        return []  # This is a top-level orchestrator
 
 # Convenience functions for backward compatibility
 @handles_errors()

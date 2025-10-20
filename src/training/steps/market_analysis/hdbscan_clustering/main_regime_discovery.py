@@ -26,7 +26,7 @@ from src.utils.tprint import (
     tprint_debug, tprint_performance, tprint_progress, tprint_timer,
     tprint_logged, LogLevel
 )
-from src.utils.common_operations import safe_dataframe_operation, optimize_dataframe_memory, get_memory_usage
+from src.utils.common_operations import safe_dataframe_operation, get_memory_usage
 from src.utils.common_utilities import safe_dataframe_operation as safe_df_op
 from src.utils.math_validation import validate_finite, safe_divide, safe_log, safe_sqrt
 from src.utils.serialization_utils import save_pickle, load_pickle

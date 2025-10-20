@@ -169,6 +169,7 @@ class SimplifiedAresLauncher:
             'MARKET_ANALYSIS': [
                 'sr_parameter_optimization', 'sr_detection', 'sr_clustering',
                 'hdbscan_regime_discovery',  # New HDBSCAN-based regime discovery
+                'regime_clustering',  # Bridge between clustering and model training
                 'regime_models_training', 'regime_ensemble_training', 'regime_data_splitting'
             ],
             'PRE_TRAINING': [

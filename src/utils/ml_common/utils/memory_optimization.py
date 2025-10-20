@@ -38,9 +38,18 @@ import tempfile
 from ..math_validation import safe_divide
 from ..common_operations import create_fallback_logger
 from src.utils.logger import system_logger
-from src.utils.hardware.m1_gpu_utils import M1GPUManager
-from src.utils.hardware.m1_memory_optimizer import M1MemoryOptimizer
 from src.utils.common_utilities import safe_dataframe_operation
+from src.utils.hardware import (
+    get_integrated_hardware_manager, 
+    get_comprehensive_optimizer,
+    memory_optimized, 
+    comprehensive_memory_optimization,
+    optimize_dataframe, 
+    optimize_array,
+    m1_optimized,
+    WorkloadCategory,
+    MemoryOptimizationLevel
+)
 
 logger = logging.getLogger(__name__)
 
@@ -85,14 +94,14 @@ class MemoryEfficientTraining:
 
         # Initialize utilities
         self.logger.debug("🔧 Initializing GPU manager...")
-        self.gpu_manager = M1GPUManager() if TORCH_AVAILABLE else None
+        self.gpu_manager = get_integrated_hardware_manager().gpu_manager() if TORCH_AVAILABLE else None
         if self.gpu_manager:
             self.logger.debug("✅ GPU manager initialized")
         else:
             self.logger.debug("ℹ️ GPU manager not initialized (PyTorch not available)")
 
         self.logger.debug("🔧 Initializing memory optimizer...")
-        self.memory_optimizer = M1MemoryOptimizer() if TORCH_AVAILABLE else None
+        self.memory_optimizer = get_integrated_hardware_manager().memory_manager() if TORCH_AVAILABLE else None
         if self.memory_optimizer:
             self.logger.debug("✅ Memory optimizer initialized")
         else:
@@ -553,7 +562,7 @@ class MemoryEfficientTraining:
 
             # Clear any cached data
             if hasattr(self, 'memory_optimizer') and self.memory_optimizer:
-                self.memory_optimizer.optimize_memory()
+                self.memory_optimizer.get_integrated_hardware_manager().clear_all_caches()
 
         except Exception as e:
             self.logger.debug(f"Periodic memory cleanup failed: {e}")
@@ -615,7 +624,7 @@ class MemoryEfficientProcessor:
     def __init__(self):
         """Initialize memory efficient processor."""
         self.logger = system_logger.getChild('MemoryEfficientProcessor')
-        self.memory_optimizer = M1MemoryOptimizer()
+        self.memory_optimizer = get_integrated_hardware_manager().memory_manager()
 
     def process_dataframe(self, df: pd.DataFrame, operation: str = "optimize") -> pd.DataFrame:
         """Process dataframe with memory optimization."""

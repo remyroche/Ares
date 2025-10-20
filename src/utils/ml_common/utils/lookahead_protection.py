@@ -37,14 +37,12 @@ from src.utils.common_operations import safe_dataframe_operation
 
 # Enhanced imports for new functionality
 try:
-    from src.utils.hardware.m1_gpu_utils import M1GPUManager
-    GPU_AVAILABLE = True
+        GPU_AVAILABLE = True
 except ImportError:
     GPU_AVAILABLE = False
 
 try:
-    from src.utils.hardware.m1_memory_optimizer import M1MemoryOptimizer  # type: ignore
-    MEMORY_OPTIMIZER_AVAILABLE = True
+        MEMORY_OPTIMIZER_AVAILABLE = True
 except ImportError:
     MEMORY_OPTIMIZER_AVAILABLE = False
 
@@ -88,6 +86,17 @@ class LookaheadBiasError(Exception):
 
 try:
     from src.utils.lookahead_bias_detector import LookaheadBiasDetector, LookaheadBiasError
+from src.utils.hardware import (
+    get_integrated_hardware_manager, 
+    get_comprehensive_optimizer,
+    memory_optimized, 
+    comprehensive_memory_optimization,
+    optimize_dataframe, 
+    optimize_array,
+    m1_optimized,
+    WorkloadCategory,
+    MemoryOptimizationLevel
+)
     EXISTING_DETECTOR_AVAILABLE = True
 except ImportError:
     logger.warning("⚠️ Existing lookahead detector not available - using fallback implementation")
@@ -129,14 +138,14 @@ class LookaheadProtection:
 
         # Initialize utilities
         self.logger.debug("🔧 Initializing GPU manager...")
-        self.gpu_manager = M1GPUManager() if self.enable_gpu else None
+        self.gpu_manager = get_integrated_hardware_manager().gpu_manager() if self.enable_gpu else None
         if self.gpu_manager:
             self.logger.debug("✅ GPU manager initialized")
         else:
             self.logger.debug("ℹ️ GPU manager not initialized")
 
         self.logger.debug("🔧 Initializing memory optimizer...")
-        self.memory_optimizer = M1MemoryOptimizer() if self.enable_memory_optimization else None
+        self.memory_optimizer = get_integrated_hardware_manager().memory_manager() if self.enable_memory_optimization else None
         if self.memory_optimizer:
             self.logger.debug("✅ Memory optimizer initialized")
         else:

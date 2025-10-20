@@ -36,7 +36,7 @@ except ImportError as error:  # pragma: no cover - import guard
     tprint(f"Hardware optimization not available: {error}", "WARNING")
 
 try:
-    from src.utils.hardware.m1_gpu_utils import (
+    from src.utils.hardware import (
 from src.utils.hardware import (
     get_integrated_hardware_manager, 
     get_comprehensive_optimizer,

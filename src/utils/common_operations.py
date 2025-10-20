@@ -10,6 +10,30 @@ import psutil
 import os
 from contextlib import contextmanager
 
+# Import enhanced hardware optimization tools
+try:
+    from src.utils.hardware import (
+        memory_optimized, 
+        comprehensive_memory_optimization,
+        optimize_dataframe, 
+        optimize_array,
+        m1_optimized,
+        WorkloadCategory,
+        MemoryOptimizationLevel
+    )
+    HARDWARE_OPTIMIZATION_AVAILABLE = True
+except ImportError:
+    HARDWARE_OPTIMIZATION_AVAILABLE = False
+    # Fallback decorators
+    def memory_optimized(*args, **kwargs):
+        def decorator(func):
+            return func
+        return decorator
+    def m1_optimized(*args, **kwargs):
+        def decorator(func):
+            return func
+        return decorator
+
 # Configure logging
 logger = logging.getLogger(__name__)
 
@@ -32,13 +56,12 @@ def get_memory_usage() -> Dict[str, float]:
         'percent': process.memory_percent()
     }
 
+@memory_optimized(optimization_level=MemoryOptimizationLevel.MODERATE, enable_chunking=True)
 def optimize_dataframe_memory(df: pd.DataFrame) -> pd.DataFrame:
     """Optimize DataFrame memory usage by downcasting numeric types."""
-    # Use enhanced optimization system if available
-    try:
-        from src.utils.hardware import optimize_dataframe_default
-        return optimize_dataframe_default(df)
-    except ImportError:
+    if HARDWARE_OPTIMIZATION_AVAILABLE:
+        return optimize_dataframe(df)
+    else:
         # Fallback to original implementation
         df_opt = df.copy()
         
@@ -54,8 +77,8 @@ def optimize_dataframe_memory(df: pd.DataFrame) -> pd.DataFrame:
         for col in df_opt.select_dtypes(include=['object']).columns:
             if df_opt[col].nunique() / len(df_opt) < 0.5:  # If less than 50% unique values
                 df_opt[col] = df_opt[col].astype('category')
-    
-    return df_opt
+        
+        return df_opt
 
 def safe_divide(a: Union[pd.Series, np.ndarray, float], 
                 b: Union[pd.Series, np.ndarray, float], 
@@ -1499,27 +1522,36 @@ def cleanup_m1_optimizers() -> bool:
     except Exception:
         return False
 
-def get_m1_gpu_manager():
+def get_integrated_hardware_manager():
     """Get M1 GPU manager."""
     try:
-        from src.utils.hardware.m1_gpu_utils import M1GPUManager
-        return M1GPUManager()
+                return get_integrated_hardware_manager().gpu_manager()
     except Exception:
         return None
 
-def get_m1_memory_optimizer():
+def get_integrated_hardware_manager():
     """Get M1 memory optimizer."""
     try:
-        from src.utils.hardware.m1_memory_optimizer import M1MemoryOptimizer
-        return M1MemoryOptimizer()
+        from src.utils.hardware import get_integrated_hardware_manager
+from src.utils.hardware import (
+    get_integrated_hardware_manager, 
+    get_comprehensive_optimizer,
+    memory_optimized, 
+    comprehensive_memory_optimization,
+    optimize_dataframe, 
+    optimize_array,
+    m1_optimized,
+    WorkloadCategory,
+    MemoryOptimizationLevel
+)
+        return get_integrated_hardware_manager().memory_manager()
     except Exception:
         return None
 
-def get_m1_cpu_optimizer():
+def get_comprehensive_optimizer():
     """Get M1 CPU optimizer."""
     try:
-        from src.utils.hardware.m1_cpu_optimizer import M1CPUOptimizer
-        return M1CPUOptimizer()
+                return get_comprehensive_optimizer().cpu_optimizer()
     except Exception:
         return None
 
@@ -1554,7 +1586,7 @@ def timed_operation(operation_name: str = "Operation"):
     
     return _timed_operation()
 
-def optimize_memory():
+def get_integrated_hardware_manager().clear_all_caches():
     """Optimize memory usage."""
     try:
         force_garbage_collection()
@@ -1614,9 +1646,9 @@ def safe_append(list_obj: List[Any], item: Any) -> bool:
 def integrate_with_m1_optimizers() -> Dict[str, Any]:
     """Integrate with M1 optimizers."""
     return {
-        'gpu_manager': get_m1_gpu_manager(),
-        'memory_optimizer': get_m1_memory_optimizer(),
-        'cpu_optimizer': get_m1_cpu_optimizer()
+        'gpu_manager': get_integrated_hardware_manager(),
+        'memory_optimizer': get_integrated_hardware_manager(),
+        'cpu_optimizer': get_comprehensive_optimizer()
     }
 
 # Missing functions for backward compatibility

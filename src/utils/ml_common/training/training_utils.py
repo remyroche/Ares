@@ -12,11 +12,18 @@ import time
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 
-# Use existing utilities
-from src.utils.hardware.m1_gpu_utils import get_m1_gpu_manager
-from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer
-from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer
-from src.utils.common_operations import get_m1_gpu_manager, get_m1_memory_optimizer, get_m1_cpu_optimizer
+# Use enhanced hardware utilities
+from src.utils.hardware import (
+    get_integrated_hardware_manager, 
+    get_comprehensive_optimizer,
+    memory_optimized, 
+    comprehensive_memory_optimization,
+    optimize_dataframe, 
+    optimize_array,
+    m1_optimized,
+    WorkloadCategory,
+    MemoryOptimizationLevel
+)
 from src.utils.logger import system_logger
 
 # Lazy import to avoid circular dependency
@@ -81,9 +88,9 @@ class TrainingUtils:
         )
 
         # Initialize hardware optimizers
-        self.gpu_manager = get_m1_gpu_manager()
-        self.memory_optimizer = get_m1_memory_optimizer()
-        self.cpu_optimizer = get_m1_cpu_optimizer()
+        self.gpu_manager = get_integrated_hardware_manager()
+        self.memory_optimizer = get_integrated_hardware_manager()
+        self.cpu_optimizer = get_comprehensive_optimizer()
 
         if self.gpu_manager:
             logger.info("🚀 M1 GPU optimization enabled")
@@ -115,6 +122,8 @@ class TrainingUtils:
 
         logger.info("✅ Universal validation integration initialized in TrainingUtils")
 
+    @memory_optimized(optimization_level=MemoryOptimizationLevel.AGGRESSIVE, enable_chunking=True)
+    @m1_optimized(operation_type="ml_training", workload_category=WorkloadCategory.MACHINE_LEARNING)
     def train_model_with_validation(self,
                                    model: Any,
                                    X_train: np.ndarray,
@@ -482,6 +491,17 @@ class TrainingUtils:
             ValueError: If model type string cannot be mapped
         """
         from src.utils.ml_common.models.model_factory import ModelType
+from src.utils.hardware import (
+    get_integrated_hardware_manager, 
+    get_comprehensive_optimizer,
+    memory_optimized, 
+    comprehensive_memory_optimization,
+    optimize_dataframe, 
+    optimize_array,
+    m1_optimized,
+    WorkloadCategory,
+    MemoryOptimizationLevel
+)
 
         # Create mapping from string to enum value
         string_to_enum_mapping = {}

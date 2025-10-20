@@ -144,7 +144,7 @@ from src.utils.ml_common.models.model_registry import ModelRegistry
 # Import hardware optimizations
 HARDWARE_OPTIMIZATIONS_AVAILABLE = False
 try:
-    from src.utils.hardware.m1_gpu_utils import get_m1_gpu_manager
+    from src.utils.hardware import get_integrated_hardware_manager
     from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer
     from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer
     HARDWARE_OPTIMIZATIONS_AVAILABLE = True

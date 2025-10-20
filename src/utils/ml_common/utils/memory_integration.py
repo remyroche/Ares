@@ -1,3 +1,15 @@
+from src.utils.hardware import (
+    get_integrated_hardware_manager, 
+    get_comprehensive_optimizer,
+    memory_optimized, 
+    comprehensive_memory_optimization,
+    optimize_dataframe, 
+    optimize_array,
+    m1_optimized,
+    WorkloadCategory,
+    MemoryOptimizationLevel
+)
+
 from __future__ import annotations
 
 """
@@ -24,7 +36,6 @@ from functools import wraps
 from contextlib import contextmanager
 
 # Import memory skimming utilities
-from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer
 
 # Define memory management functions with actual implementation
 def auto_skim_memory(memory_mb: float, operation_type: str) -> Dict[str, Any]:
@@ -34,7 +45,7 @@ def auto_skim_memory(memory_mb: float, operation_type: str) -> Dict[str, Any]:
 
     try:
         # Get the memory optimizer
-        memory_optimizer = get_m1_memory_optimizer()
+        memory_optimizer = get_integrated_hardware_manager()
 
         # Get initial memory stats
         initial_stats = memory_optimizer.get_memory_stats()
@@ -94,7 +105,7 @@ def smart_memory_allocation(memory_mb: float, operation_type: str) -> Dict[str, 
 
     try:
         # Get the memory optimizer
-        memory_optimizer = get_m1_memory_optimizer()
+        memory_optimizer = get_integrated_hardware_manager()
 
         # Get current memory stats
         current_stats = memory_optimizer.get_memory_stats()
@@ -178,7 +189,7 @@ def memory_skim_decorator(operation_type: str):
 
             # Pre-operation memory management
             try:
-                memory_optimizer = get_m1_memory_optimizer()
+                memory_optimizer = get_integrated_hardware_manager()
                 initial_stats = memory_optimizer.get_memory_stats()
                 initial_memory_mb = initial_stats.get('used_memory', 0) / (1024 * 1024)
 
@@ -216,7 +227,7 @@ def memory_skim_decorator(operation_type: str):
                 logger.error(f"❌ Memory error in {func.__name__}: {e}")
                 # Try emergency cleanup
                 try:
-                    memory_optimizer = get_m1_memory_optimizer()
+                    memory_optimizer = get_integrated_hardware_manager()
                     memory_optimizer._aggressive_memory_cleanup()
                 except Exception as cleanup_error:
                     logger.error(f"❌ Emergency cleanup failed: {cleanup_error}")
@@ -241,7 +252,7 @@ def auto_memory_skim_context(operation_type: str):
     # Pre-context memory management
     initial_stats = None
     try:
-        memory_optimizer = get_m1_memory_optimizer()
+        memory_optimizer = get_integrated_hardware_manager()
         initial_stats = memory_optimizer.get_memory_stats()
         initial_memory_mb = initial_stats.get('used_memory', 0) / (1024 * 1024)
 
@@ -323,7 +334,7 @@ def smart_memory_context(operation_type: str):
                 auto_skim_memory(estimated_memory * 0.5, operation_type)  # Clean up 50% of allocated memory
 
             # Log final memory stats
-            memory_optimizer = get_m1_memory_optimizer()
+            memory_optimizer = get_integrated_hardware_manager()
             final_stats = memory_optimizer.get_memory_stats()
             final_memory_mb = final_stats.get('used_memory', 0) / (1024 * 1024)
             memory_pressure = final_stats.get('memory_percent', 0)
@@ -345,7 +356,7 @@ class MLMemoryManager:
         self.logger.info("🚀 Initializing MLMemoryManager...")
         start_time = time.time()
 
-        self.memory_optimizer = get_m1_memory_optimizer()
+        self.memory_optimizer = get_integrated_hardware_manager()
         self.logger.debug("✅ Memory optimizer initialized")
 
         self.operation_memory_usage = {}

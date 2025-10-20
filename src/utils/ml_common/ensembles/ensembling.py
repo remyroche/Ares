@@ -1,3 +1,15 @@
+from src.utils.hardware import (
+    get_integrated_hardware_manager, 
+    get_comprehensive_optimizer,
+    memory_optimized, 
+    comprehensive_memory_optimization,
+    optimize_dataframe, 
+    optimize_array,
+    m1_optimized,
+    WorkloadCategory,
+    MemoryOptimizationLevel
+)
+
 """
 Ensembling utilities: blending, stacking, and dynamic regime ensembles.
 """
@@ -25,8 +37,7 @@ except Exception:
 
 # Import memory skimming utilities
 try:
-    from src.utils.hardware.m1_memory_optimizer import (  # type: ignore
-        auto_skim_memory, smart_memory_allocation,
+            auto_skim_memory, smart_memory_allocation,
         memory_skim_decorator, auto_memory_skim_decorator,
         auto_memory_skim_context, smart_memory_context
     )
@@ -36,15 +47,13 @@ except ImportError:
 
 # Import GPU utilities
 try:
-    from src.utils.hardware.m1_gpu_utils import M1GPUManager
-    GPU_AVAILABLE = True
+        GPU_AVAILABLE = True
 except ImportError:
     GPU_AVAILABLE = False
 
 # Import CPU optimizer
 try:
-    from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer  # type: ignore
-    CPU_OPTIMIZER_AVAILABLE = True
+        CPU_OPTIMIZER_AVAILABLE = True
 except ImportError:
     CPU_OPTIMIZER_AVAILABLE = False
 
@@ -130,7 +139,7 @@ def _simple_blend_gpu(
     _LOGGER.debug("🚀 Starting GPU-accelerated blending...")
     gpu_start_time = time.time()
 
-    gpu_manager = M1GPUManager()
+    gpu_manager = get_integrated_hardware_manager().gpu_manager()
     _LOGGER.debug("✅ GPU manager initialized")
 
     with gpu_manager.gpu_context("ensemble_blending"):
@@ -267,7 +276,7 @@ def _learn_blend_weights_parallel(
     _LOGGER.debug("🚀 Starting parallel blend weight learning...")
     parallel_start_time = time.time()
 
-    cpu_optimizer = get_m1_cpu_optimizer()
+    cpu_optimizer = get_comprehensive_optimizer()
     _LOGGER.debug("✅ CPU optimizer initialized")
 
     def evaluate_weight_combination(weights):

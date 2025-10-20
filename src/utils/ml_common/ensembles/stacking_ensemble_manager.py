@@ -21,7 +21,6 @@ import time
 from datetime import datetime
 
 # M1 Optimization imports
-from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer, M1MemoryOptimizer
 from src.utils.hardware.memory_optimization import get_memory_manager, MemoryMonitor
 
 # Common utilities
@@ -32,6 +31,17 @@ from src.utils.common_operations import (
     format_datetime, validate_file_path, get_file_size
 )
 from src.utils.math_validation import (
+from src.utils.hardware import (
+    get_integrated_hardware_manager, 
+    get_comprehensive_optimizer,
+    memory_optimized, 
+    comprehensive_memory_optimization,
+    optimize_dataframe, 
+    optimize_array,
+    m1_optimized,
+    WorkloadCategory,
+    MemoryOptimizationLevel
+)
     safe_divide, safe_log, safe_sqrt, safe_power, validate_finite,
     validate_positive, validate_range, safe_kelly_calculation,
     safe_weighted_average, safe_percentage_change, MathValidationError
@@ -153,7 +163,7 @@ class StackingEnsembleManager:
 
         # Initialize M1 optimizers
         self.logger.debug("🔧 Initializing M1 optimizers...")
-        self.m1_gpu = get_m1_memory_optimizer() if config.enable_gpu_acceleration else None
+        self.m1_gpu = get_integrated_hardware_manager() if config.enable_gpu_acceleration else None
         self.m1_memory = get_m1_memory_optimizer(
             memory_limit_gb=config.memory_limit_gb
         ) if config.enable_memory_optimization else None

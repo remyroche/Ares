@@ -15,9 +15,19 @@ import pandas as pd
 
 # Import hardware optimization tools
 from src.utils.hardware.unified_hardware_manager import UnifiedHardwareManager, HardwareConfig
-from src.utils.hardware.m1_memory_optimizer import M1MemoryOptimizer
 from src.utils.unified_cache import UnifiedCache, cached
 from src.utils.tprint import tprint, tprint_success, tprint_warning, tprint_error, tprint_performance
+from src.utils.hardware import (
+    get_integrated_hardware_manager, 
+    get_comprehensive_optimizer,
+    memory_optimized, 
+    comprehensive_memory_optimization,
+    optimize_dataframe, 
+    optimize_array,
+    m1_optimized,
+    WorkloadCategory,
+    MemoryOptimizationLevel
+)
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +69,7 @@ class IntelligentFeatureCache:
                 memory_optimization_level='balanced'
             )
             self.hardware_manager = UnifiedHardwareManager(hw_config)
-            self.memory_optimizer = M1MemoryOptimizer(self.config.memory_limit_gb)
+            self.memory_optimizer = get_integrated_hardware_manager().memory_manager(self.config.memory_limit_gb)
         else:
             self.hardware_manager = None
             self.memory_optimizer = None
@@ -247,7 +257,7 @@ class IntelligentFeatureCache:
                 cleared = self.invalidate_cache()
 
                 # Apply memory optimizations
-                optimization_result = self.memory_optimizer.optimize_memory()
+                optimization_result = self.memory_optimizer.get_integrated_hardware_manager().clear_all_caches()
 
                 tprint_success(f"🧠 Memory optimized: {cleared} entries cleared, "
                              f"pressure: {memory_pressure:.2f}")

@@ -14,9 +14,19 @@ import numpy as np
 import pandas as pd
 
 # Import hardware optimization tools
-from src.utils.hardware.m1_memory_optimizer import M1MemoryOptimizer
 from src.utils.hardware.unified_hardware_manager import UnifiedHardwareManager, HardwareConfig
 from src.utils.tprint import tprint, tprint_success, tprint_warning, tprint_performance, tprint_debug
+from src.utils.hardware import (
+    get_integrated_hardware_manager, 
+    get_comprehensive_optimizer,
+    memory_optimized, 
+    comprehensive_memory_optimization,
+    optimize_dataframe, 
+    optimize_array,
+    m1_optimized,
+    WorkloadCategory,
+    MemoryOptimizationLevel
+)
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +63,7 @@ class ChunkedFeatureProcessor:
 
         # Initialize hardware tools
         if self.config.enable_hardware_optimization:
-            self.memory_optimizer = M1MemoryOptimizer(self.config.memory_limit_gb)
+            self.memory_optimizer = get_integrated_hardware_manager().memory_manager(self.config.memory_limit_gb)
             if self.config.enable_memory_monitoring:
                 self.memory_optimizer.start_monitoring()
 
@@ -131,7 +141,7 @@ class ChunkedFeatureProcessor:
 
             if self.memory_optimizer:
                 # Apply memory optimizations
-                optimization_result = self.memory_optimizer.optimize_memory()
+                optimization_result = self.memory_optimizer.get_integrated_hardware_manager().clear_all_caches()
                 if optimization_result.get('optimized', False):
                     self.processing_stats['memory_optimizations'] += 1
                     tprint_success("🧠 Memory optimized")

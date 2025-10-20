@@ -16,9 +16,19 @@ from scipy.sparse.linalg import svds
 from sklearn.feature_selection import mutual_info_regression, f_regression
 
 # Import hardware optimization tools
-from src.utils.hardware.m1_memory_optimizer import M1MemoryOptimizer
 from src.utils.hardware.unified_hardware_manager import UnifiedHardwareManager, HardwareConfig
 from src.utils.tprint import tprint, tprint_success, tprint_warning, tprint_performance, tprint_debug
+from src.utils.hardware import (
+    get_integrated_hardware_manager, 
+    get_comprehensive_optimizer,
+    memory_optimized, 
+    comprehensive_memory_optimization,
+    optimize_dataframe, 
+    optimize_array,
+    m1_optimized,
+    WorkloadCategory,
+    MemoryOptimizationLevel
+)
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +63,7 @@ class SparseFeatureSelector:
 
         # Initialize hardware tools
         if self.config.enable_memory_monitoring:
-            self.memory_optimizer = M1MemoryOptimizer(self.config.memory_limit_gb)
+            self.memory_optimizer = get_integrated_hardware_manager().memory_manager(self.config.memory_limit_gb)
             hw_config = HardwareConfig(
                 memory_limit_gb=self.config.memory_limit_gb,
                 enable_compression=self.config.enable_compression,

@@ -350,8 +350,8 @@ class EnhancedMatrixOperations:
             from ..hardware.m1_memory_optimizer import get_m1_memory_optimizer
             from .vectorized_core import get_vectorized_processing_core
 
-            self.gpu_manager = get_m1_gpu_manager() if self.use_gpu else None
-            self.memory_optimizer = get_m1_memory_optimizer()
+            self.gpu_manager = get_integrated_hardware_manager() if self.use_gpu else None
+            self.memory_optimizer = get_integrated_hardware_manager()
             self.vectorized_core = get_vectorized_processing_core()
 
         except ImportError:

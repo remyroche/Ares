@@ -23,10 +23,7 @@ logger = logging.getLogger(__name__)
 
 # Import hardware optimization tools
 try:
-    from src.utils.hardware.m1_gpu_utils import M1GPUManager
-    from src.utils.hardware.m1_cpu_optimizer import M1CPUOptimizer
-    from src.utils.hardware.m1_memory_optimizer import M1MemoryOptimizer
-    HARDWARE_OPTIMIZATION_AVAILABLE = True
+                HARDWARE_OPTIMIZATION_AVAILABLE = True
 except ImportError as e:
     logger.warning(f"Hardware optimization tools not available: {e}")
     HARDWARE_OPTIMIZATION_AVAILABLE = False
@@ -96,9 +93,9 @@ class FeatureGenerators:
         # Initialize hardware optimization if available
         try:
             if HARDWARE_OPTIMIZATION_AVAILABLE:
-                self.gpu_manager = M1GPUManager()
-                self.cpu_optimizer = M1CPUOptimizer()
-                self.memory_optimizer = M1MemoryOptimizer()
+                self.gpu_manager = get_integrated_hardware_manager().gpu_manager()
+                self.cpu_optimizer = get_comprehensive_optimizer().cpu_optimizer()
+                self.memory_optimizer = get_integrated_hardware_manager().memory_manager()
                 self.logger.info("✅ Hardware optimization initialized")
             else:
                 self.gpu_manager = None
@@ -114,6 +111,17 @@ class FeatureGenerators:
         # Vectorized processing components
         try:
             from src.utils.matrix_operations import get_unified_matrix_operations
+from src.utils.hardware import (
+    get_integrated_hardware_manager, 
+    get_comprehensive_optimizer,
+    memory_optimized, 
+    comprehensive_memory_optimization,
+    optimize_dataframe, 
+    optimize_array,
+    m1_optimized,
+    WorkloadCategory,
+    MemoryOptimizationLevel
+)
             self.matrix_ops = get_unified_matrix_operations()
             self.vectorized_available = True
             self.logger.info("✅ Matrix operations available for vectorization")

@@ -1,3 +1,15 @@
+from src.utils.hardware import (
+    get_integrated_hardware_manager, 
+    get_comprehensive_optimizer,
+    memory_optimized, 
+    comprehensive_memory_optimization,
+    optimize_dataframe, 
+    optimize_array,
+    m1_optimized,
+    WorkloadCategory,
+    MemoryOptimizationLevel
+)
+
 """
 Stability utilities: selection stability across folds/time and aggregation helpers.
 
@@ -28,14 +40,12 @@ except Exception:
 
 # Import M1 utilities
 try:
-    from src.utils.hardware.m1_gpu_utils import M1GPUManager
-    GPU_AVAILABLE = True
+        GPU_AVAILABLE = True
 except ImportError:
     GPU_AVAILABLE = False
 
 try:
-    from src.utils.hardware.m1_memory_optimizer import (
-        auto_skim_memory, smart_memory_allocation,
+            auto_skim_memory, smart_memory_allocation,
         memory_skim_decorator, auto_memory_skim_decorator,
         auto_memory_skim_context, smart_memory_context
     )
@@ -44,8 +54,7 @@ except ImportError:
     MEMORY_OPTIMIZER_AVAILABLE = False
 
 try:
-    from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer
-    CPU_OPTIMIZER_AVAILABLE = True
+        CPU_OPTIMIZER_AVAILABLE = True
 except ImportError:
     CPU_OPTIMIZER_AVAILABLE = False
 
@@ -118,7 +127,7 @@ def _feature_selection_stability_parallel(
     n_folds: int,
 ) -> Dict[str, Any]:
     """Parallel implementation of feature selection stability calculation."""
-    cpu_optimizer = get_m1_cpu_optimizer()
+    cpu_optimizer = get_comprehensive_optimizer()
 
     # Initialize counts dictionary
     counts: Dict[str, int] = {f: 0 for f in all_features}
@@ -199,7 +208,7 @@ def _aggregate_time_blocks_gpu(
     keys: List[str],
 ) -> Dict[str, Any]:
     """GPU-accelerated time block aggregation."""
-    gpu_manager = M1GPUManager()
+    gpu_manager = get_integrated_hardware_manager().gpu_manager()
 
     with gpu_manager.gpu_context("time_block_aggregation"):
         agg: Dict[str, Any] = {}

@@ -15,7 +15,17 @@ import numpy as np
 from src.utils.logger import system_logger
 from src.utils.parquet_utils import get_parquet_utils
 from src.utils.hardware.memory_optimization import MemoryMonitor, optimize_dataframe_dtypes
-from src.utils.hardware.m1_optimizations import get_m1_memory_optimizer, M1DataManager
+from src.utils.hardware import (
+    get_integrated_hardware_manager, 
+    get_comprehensive_optimizer,
+    memory_optimized, 
+    comprehensive_memory_optimization,
+    optimize_dataframe, 
+    optimize_array,
+    m1_optimized,
+    WorkloadCategory,
+    MemoryOptimizationLevel
+)
 
 class OptimizedParquetStorage:
     """Optimized parquet storage with hardware-specific optimizations."""
@@ -32,7 +42,7 @@ class OptimizedParquetStorage:
         self.logger = system_logger.getChild("OptimizedParquetStorage")
         self.parquet_utils = get_parquet_utils()
         self.memory_monitor = MemoryMonitor()
-        self.m1_optimizer = get_m1_memory_optimizer()
+        self.m1_optimizer = get_integrated_hardware_manager()
         self.m1_data_manager = M1DataManager(self.m1_optimizer)
 
         # Create directories

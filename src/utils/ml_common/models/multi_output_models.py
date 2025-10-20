@@ -23,7 +23,6 @@ import time
 from datetime import datetime
 
 # M1 Optimization imports
-from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer, M1MemoryOptimizer
 from src.utils.hardware.memory_optimization import get_memory_manager, MemoryMonitor
 
 # Common utilities
@@ -61,6 +60,17 @@ except Exception:
 # Overfitting prevention (regularization/early stopping settings)
 try:
     from src.utils.ml_common.optimization.overfitting_prevention import (
+from src.utils.hardware import (
+    get_integrated_hardware_manager, 
+    get_comprehensive_optimizer,
+    memory_optimized, 
+    comprehensive_memory_optimization,
+    optimize_dataframe, 
+    optimize_array,
+    m1_optimized,
+    WorkloadCategory,
+    MemoryOptimizationLevel
+)
         OverfittingPrevention,
         OverfittingPreventionConfig,
     )
@@ -160,7 +170,7 @@ class MultiOutputModel(ABC):
         self.logger.info(f"🚀 Initializing MultiOutputModel: {config.model_name}")
 
         # Initialize M1 optimizers
-        self.m1_gpu = get_m1_memory_optimizer() if config.enable_gpu_acceleration else None
+        self.m1_gpu = get_integrated_hardware_manager() if config.enable_gpu_acceleration else None
         self.m1_memory = get_m1_memory_optimizer(
             memory_limit_gb=config.memory_limit_gb
         ) if config.enable_memory_optimization else None

@@ -36,6 +36,17 @@ import warnings
 import time
 
 from src.utils.common_utilities import safe_dataframe_operation
+from src.utils.hardware import (
+    get_integrated_hardware_manager, 
+    get_comprehensive_optimizer,
+    memory_optimized, 
+    comprehensive_memory_optimization,
+    optimize_dataframe, 
+    optimize_array,
+    m1_optimized,
+    WorkloadCategory,
+    MemoryOptimizationLevel
+)
 from ..math_validation import safe_divide, safe_log
 from ..common_operations import create_fallback_logger
 
@@ -51,14 +62,12 @@ except Exception as e:
 
 # Enhanced imports for new functionality
 try:
-    from src.utils.hardware.m1_gpu_utils import M1GPUManager
-    GPU_AVAILABLE = True
+        GPU_AVAILABLE = True
 except ImportError:
     GPU_AVAILABLE = False
 
 try:
-    from src.utils.hardware.m1_memory_optimizer import M1MemoryOptimizer
-    MEMORY_OPTIMIZER_AVAILABLE = True
+        MEMORY_OPTIMIZER_AVAILABLE = True
 except ImportError:
     MEMORY_OPTIMIZER_AVAILABLE = False
 
@@ -102,8 +111,8 @@ class DataQualityUtilities:
         })
 
         # Initialize utilities
-        self.gpu_manager = M1GPUManager() if self.enable_gpu else None
-        self.memory_optimizer = M1MemoryOptimizer() if self.enable_memory_optimization else None
+        self.gpu_manager = get_integrated_hardware_manager().gpu_manager() if self.enable_gpu else None
+        self.memory_optimizer = get_integrated_hardware_manager().memory_manager() if self.enable_memory_optimization else None
 
         _LOGGER.info(f"⚙️ Configuration - Outlier contamination: {self.outlier_contamination}")
         _LOGGER.info(f"⚙️ Configuration - Missing threshold: {self.missing_threshold}")

@@ -38,9 +38,17 @@ from src.utils.core.common import create_fallback_logger, create_fallback_decora
 from src.utils.parquet_utils import ParquetUtils
 from src.utils.parquet_utils import ParquetUtils as UniversalSerializer
 from src.utils.data_processing_utils import DataProcessingUtils
-from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer, M1MemoryOptimizer
-from src.utils.hardware.m1_gpu_utils import get_m1_gpu_manager
-from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer, M1CPUOptimizer
+from src.utils.hardware import (
+    get_integrated_hardware_manager, 
+    get_comprehensive_optimizer,
+    memory_optimized, 
+    comprehensive_memory_optimization,
+    optimize_dataframe, 
+    optimize_array,
+    m1_optimized,
+    WorkloadCategory,
+    MemoryOptimizationLevel
+)
 
 # Import ML Common utilities for cross-validation (use compatibility exports)
 from ..validation.cv_utils import TemporalCrossValidator, PurgedKFold
@@ -167,7 +175,7 @@ class EnhancedDataLabeler:
             # Try to import and initialize M1 GPU manager with fallback
             try:
                 self.logger.debug("🔧 Initializing M1 GPU manager...")
-                self.gpu_manager = get_m1_gpu_manager()
+                self.gpu_manager = get_integrated_hardware_manager()
                 self.logger.debug("✅ M1 GPU manager initialized")
             except NameError:
                 self.logger.warning("⚠️ get_m1_gpu_manager not available, using fallback")
@@ -179,7 +187,7 @@ class EnhancedDataLabeler:
             # Try to import and initialize M1 memory optimizer with fallback
             try:
                 self.logger.debug("🔧 Initializing M1 memory optimizer...")
-                self.memory_optimizer = get_m1_memory_optimizer()
+                self.memory_optimizer = get_integrated_hardware_manager()
                 self.logger.debug("✅ M1 memory optimizer initialized")
             except Exception as mem_e:
                 self.logger.warning(f"⚠️ M1 memory optimizer initialization failed: {mem_e}")
@@ -188,7 +196,7 @@ class EnhancedDataLabeler:
             # Try to import and initialize M1 CPU optimizer with fallback
             try:
                 self.logger.debug("🔧 Initializing M1 CPU optimizer...")
-                self.cpu_optimizer = get_m1_cpu_optimizer()
+                self.cpu_optimizer = get_comprehensive_optimizer()
                 self.logger.debug("✅ M1 CPU optimizer initialized")
             except Exception as cpu_e:
                 self.logger.warning(f"⚠️ M1 CPU optimizer initialization failed: {cpu_e}")

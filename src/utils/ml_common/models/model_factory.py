@@ -34,7 +34,6 @@ except ImportError:
     TORCH_AVAILABLE = False
 
 # M1 Optimization imports
-from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer, M1MemoryOptimizer
 from src.utils.hardware.memory_optimization import get_memory_manager, MemoryMonitor
 
 # Enhanced adaptive regularization imports
@@ -196,7 +195,7 @@ class EnhancedModelFactory:
 
         # Initialize M1 optimizers
         self.logger.debug("🔧 Initializing M1 optimizers...")
-        self.m1_gpu = get_m1_memory_optimizer() if self.config.get('enable_gpu_acceleration', True) else None
+        self.m1_gpu = get_integrated_hardware_manager() if self.config.get('enable_gpu_acceleration', True) else None
         self.m1_memory = get_m1_memory_optimizer(
             memory_limit_gb=self.config.get('memory_limit_gb', 8.0)
         ) if self.config.get('enable_memory_optimization', True) else None
@@ -2332,6 +2331,17 @@ class EnhancedModelFactory:
         """Create MultiScaleNBEATS model for multi-timeframe prediction."""
         try:
             from src.utils.ml_common.models.multiscale_nbeats import get_multiscale_nbeats_model
+from src.utils.hardware import (
+    get_integrated_hardware_manager, 
+    get_comprehensive_optimizer,
+    memory_optimized, 
+    comprehensive_memory_optimization,
+    optimize_dataframe, 
+    optimize_array,
+    m1_optimized,
+    WorkloadCategory,
+    MemoryOptimizationLevel
+)
 
             # MultiScaleNBEATS configuration optimized for 15m timeframe regime detection
             multiscale_config = {

@@ -73,177 +73,22 @@ from src.utils.logger import system_logger
 #     Step08Results, FeatureSelectionConfig
 # )
 # from src.utils.feature_selection.step08_optimized_methods import (
+from src.utils.hardware import (
+    get_integrated_hardware_manager, 
+    get_comprehensive_optimizer,
+    memory_optimized, 
+    comprehensive_memory_optimization,
+    optimize_dataframe, 
+    optimize_array,
+    m1_optimized,
+    WorkloadCategory,
+    MemoryOptimizationLevel
+)
 #     OptimizedFeatureSelectionMethods, AdvancedFeatureSelector
 # )
 
 # Hardware optimization tools
-from src.utils.hardware.m1_gpu_utils import get_m1_gpu_manager, M1GPUManager
-from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer, M1MemoryOptimizer
-from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer, M1CPUOptimizer
-from src.utils.hardware.m1_optimizations import M1MemoryOptimizer as AdvancedM1MemoryOptimizer
-
-# Parallel processing and caching
-from src.utils.parallel_processing_optimizer import MacM1ParallelOptimizer
-from src.utils.caching import IntelligentCache
-
-# Enhanced data processing
-from src.utils.enhanced_data_operations import EnhancedDataOperations
-from src.utils.data_processing_utils import DataProcessingUtils
-from src.utils.matrix_operations import VectorizedProcessingCore
-
-# Performance monitoring
-from src.utils.performance_utils import PerformanceMonitor
-from src.utils.model_performance_monitor import ModelPerformanceMonitor
-
-# Import the existing multi-timeframe components
-from src.analyst.multi_timeframe_feature_engineering import MultiTimeframeFeatureEngineering
-from src.analyst.predictive_ensembles.multi_timeframe_ensemble import MultiTimeframeEnsemble
-
-@dataclass
-class TimeframeConfig:
-    """Enhanced configuration for each timeframe in multi-timeframe training."""
-
-    timeframe: str
-    weight: float
-    min_samples: int = 50
-    enable_training: bool = True
-    feature_engineering_config: Dict[str, Any] = field(default_factory=dict)
-
-    # Advanced feature selection configuration
-    enable_advanced_feature_selection: bool = True
-    feature_selection_method: str = "unified"  # "unified", "optimized", "basic"
-    max_features: int = 100
-    feature_selection_threshold: float = 0.01
-
-    # Hardware optimization settings
-    enable_m1_optimization: bool = True
-    memory_limit_mb: int = 1024
-    enable_gpu_acceleration: bool = True
-
-    # Parallel processing settings
-    enable_parallel_processing: bool = True
-    max_workers: int = 4
-    chunk_size: int = 1000
-
-    def __post_init__(self):
-        """Validate timeframe configuration."""
-        valid_timeframes = ['1m', '5m', '15m', '30m', '1h']
-        if self.timeframe not in valid_timeframes:
-            raise ValueError(f"Invalid timeframe: {self.timeframe}. Must be one of {valid_timeframes}")
-
-        if not 0 <= self.weight <= 1:
-            raise ValueError(f"Weight must be between 0 and 1, got {self.weight}")
-
-        valid_feature_methods = ["unified", "optimized", "basic"]
-        if self.feature_selection_method not in valid_feature_methods:
-            raise ValueError(f"Invalid feature selection method: {self.feature_selection_method}. Must be one of {valid_feature_methods}")
-
-@dataclass
-class MultiTimeframeTrainingConfig:
-    """Enhanced configuration for multi-timeframe training."""
-
-    timeframes: List[TimeframeConfig]
-    enable_cross_timeframe_features: bool = True
-    enable_timeframe_ensemble: bool = True
-    ensemble_method: str = "weighted_average"  # "weighted_average", "meta_learner", "stacking"
-    min_confidence_threshold: float = 0.6
-    enable_dynamic_weighting: bool = True
-    weight_update_frequency: int = 100
-
-    # Advanced feature selection settings
-    enable_regime_aware_feature_selection: bool = True
-    enable_financial_metrics: bool = True
-    enable_risk_assessment: bool = True
-    feature_selection_validation: bool = True
-
-    # Hardware optimization settings
-    enable_m1_optimization: bool = True
-    enable_memory_optimization: bool = True
-    enable_gpu_acceleration: bool = True
-    memory_limit_gb: float = 8.0
-
-    # Caching and performance settings
-    enable_intelligent_caching: bool = True
-    cache_dir: str = "data_cache/multi_timeframe_cache"
-    max_cache_size_mb: int = 2048
-    enable_parallel_processing: bool = True
-    max_parallel_workers: int = 4
-
-    # Performance monitoring
-    enable_performance_monitoring: bool = True
-    enable_model_performance_tracking: bool = True
-
-    def __post_init__(self):
-        """Validate multi-timeframe training configuration."""
-        if not self.timeframes:
-            raise ValueError("At least one timeframe must be specified")
-
-        total_weight = sum(tf.weight for tf in self.timeframes)
-        if abs(total_weight - 1.0) > 0.01:
-            raise ValueError(f"Timeframe weights must sum to 1.0, got {total_weight}")
-
-        valid_ensemble_methods = ["weighted_average", "meta_learner", "stacking"]
-        if self.ensemble_method not in valid_ensemble_methods:
-            raise ValueError(f"Invalid ensemble method: {self.ensemble_method}. Must be one of {valid_ensemble_methods}")
-
-class MultiTimeframeTrainer:
-    """Enhanced multi-timeframe model trainer with advanced feature selection and hardware optimization."""
-
-    def __init__(self, config: MultiTimeframeTrainingConfig, symbol: str, exchange: str):
-        """Initialize the enhanced multi-timeframe trainer.
-
-        Args:
-            config: Multi-timeframe training configuration
-            symbol: Trading symbol
-            exchange: Exchange name
-        """
-        self.config = config
-        self.symbol = symbol
-        self.exchange = exchange
-        self.logger = system_logger.getChild(f'EnhancedMultiTimeframeTrainer_{symbol}_{exchange}')
-
-        # Initialize hardware optimization components
-        self._initialize_hardware_optimization()
-
-        # Initialize advanced feature selection components
-        self._initialize_feature_selection()
-
-        # Initialize caching and performance monitoring
-        self._initialize_caching_and_monitoring()
-
-        # Initialize parallel processing
-        self._initialize_parallel_processing()
-
-        # Initialize legacy components for compatibility
-        self._initialize_legacy_components()
-
-        # Training state
-        self.trained_models: Dict[str, Any] = {}
-        self.training_results: Dict[str, Any] = {}
-        self.trained = False
-        self.feature_cache: Dict[str, Any] = {}
-        self.performance_metrics: Dict[str, Any] = {}
-
-        # Apply intensity scaling
-        intensity_pct = get_intensity_from_environment()
-        if intensity_pct < 1.0:
-            self.config = self._apply_intensity_scaling(intensity_pct)
-            self.logger.info(f"🔧 Applied intensity scaling ({intensity_pct*100:.0f}%) to multi-timeframe training config")
-
-    def _initialize_hardware_optimization(self):
-        """Initialize hardware optimization components."""
-        try:
-            # M1 GPU Manager
-            if self.config.enable_gpu_acceleration:
-                self.gpu_manager = get_m1_gpu_manager()
-                self.logger.info("🚀 M1 GPU Manager initialized")
-            else:
-                self.gpu_manager = None
-
-            # M1 Memory Optimizer
-            if self.config.enable_memory_optimization:
-                self.memory_optimizer = get_m1_memory_optimizer()
-                self.advanced_memory_optimizer = AdvancedM1MemoryOptimizer(
+                self.advanced_memory_optimizer = Advancedget_integrated_hardware_manager().memory_manager(
                     memory_limit_gb=self.config.memory_limit_gb,
                     enable_gc_tuning=True,
                     enable_memory_leak_detection=True,
@@ -256,7 +101,7 @@ class MultiTimeframeTrainer:
 
             # M1 CPU Optimizer
             if self.config.enable_m1_optimization:
-                self.cpu_optimizer = get_m1_cpu_optimizer()
+                self.cpu_optimizer = get_comprehensive_optimizer()
                 self.logger.info("⚡ M1 CPU Optimizer initialized")
             else:
                 self.cpu_optimizer = None

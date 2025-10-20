@@ -591,9 +591,9 @@ class StepOptimizationManager:
 
             self.vectorized_core = get_vectorized_processing_core()
             self.data_manager = None  # Fallback since optimized_data_manager doesn't exist
-            self.gpu_manager = get_m1_gpu_manager()
-            self.memory_optimizer = get_m1_memory_optimizer()
-            self.cpu_optimizer = get_m1_cpu_optimizer()
+            self.gpu_manager = get_integrated_hardware_manager()
+            self.memory_optimizer = get_integrated_hardware_manager()
+            self.cpu_optimizer = get_comprehensive_optimizer()
 
             self.logger.info("🚀 All optimization components initialized successfully")
         except ImportError as e:
@@ -824,14 +824,14 @@ def optimized_step(operation_type: str = "general", enable_gpu: bool = True,
             with opt_manager.optimized_execution_context(step_name):
                 # Pre-optimization
                 if memory_efficient and opt_manager.memory_optimizer:
-                    opt_manager.memory_optimizer.optimize_memory()
+                    opt_manager.memory_optimizer.get_integrated_hardware_manager().clear_all_caches()
 
                 # Execute with optimizations
                 result = func(*args, **kwargs)
 
                 # Post-optimization cleanup
                 if memory_efficient and opt_manager.memory_optimizer:
-                    opt_manager.memory_optimizer.optimize_memory()
+                    opt_manager.memory_optimizer.get_integrated_hardware_manager().clear_all_caches()
 
                 return result
 

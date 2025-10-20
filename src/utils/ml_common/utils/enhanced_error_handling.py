@@ -1,3 +1,15 @@
+from src.utils.hardware import (
+    get_integrated_hardware_manager, 
+    get_comprehensive_optimizer,
+    memory_optimized, 
+    comprehensive_memory_optimization,
+    optimize_dataframe, 
+    optimize_array,
+    m1_optimized,
+    WorkloadCategory,
+    MemoryOptimizationLevel
+)
+
 """
 Enhanced Error Handling Utilities
 
@@ -27,25 +39,18 @@ logger = logging.getLogger(__name__)
 
 # Import M1 utilities
 try:
-    from src.utils.hardware.m1_gpu_utils import M1GPUManager
-    GPU_AVAILABLE = True
+        GPU_AVAILABLE = True
 except ImportError:
     GPU_AVAILABLE = False
 
 try:
-    from src.utils.hardware.m1_memory_optimizer import (  # type: ignore
-        auto_skim_memory, smart_memory_allocation,
-        memory_skim_decorator, auto_memory_skim_decorator,
-        auto_memory_skim_context, smart_memory_context,
-        get_m1_memory_optimizer
-    )
+        )
     MEMORY_OPTIMIZER_AVAILABLE = True
 except ImportError:
     MEMORY_OPTIMIZER_AVAILABLE = False
 
 try:
-    from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer  # type: ignore
-    CPU_OPTIMIZER_AVAILABLE = True
+        CPU_OPTIMIZER_AVAILABLE = True
 except ImportError:
     CPU_OPTIMIZER_AVAILABLE = False
 
@@ -538,9 +543,9 @@ class PerformanceMonitor:
         self.start_gpu_memory = None
 
         # Initialize M1 utilities if available
-        self.gpu_manager = M1GPUManager() if GPU_AVAILABLE else None
-        self.memory_optimizer = get_m1_memory_optimizer() if MEMORY_OPTIMIZER_AVAILABLE else None
-        self.cpu_optimizer = get_m1_cpu_optimizer() if CPU_OPTIMIZER_AVAILABLE else None
+        self.gpu_manager = get_integrated_hardware_manager().gpu_manager() if GPU_AVAILABLE else None
+        self.memory_optimizer = get_integrated_hardware_manager() if MEMORY_OPTIMIZER_AVAILABLE else None
+        self.cpu_optimizer = get_comprehensive_optimizer() if CPU_OPTIMIZER_AVAILABLE else None
 
     def __enter__(self):
         self.start_time = time.time()

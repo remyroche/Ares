@@ -39,10 +39,7 @@ from src.utils.math_validation import (
 # Hardware optimization imports
 HARDWARE_OPTIMIZATIONS_AVAILABLE = False
 try:
-    from src.utils.hardware.m1_gpu_utils import get_m1_gpu_manager, M1GPUManager
-    from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer, M1MemoryOptimizer
-    from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer, M1CPUOptimizer
-    HARDWARE_OPTIMIZATIONS_AVAILABLE = True
+                HARDWARE_OPTIMIZATIONS_AVAILABLE = True
 except ImportError:
     HARDWARE_OPTIMIZATIONS_AVAILABLE = False
 
@@ -102,6 +99,17 @@ except ImportError:
 # ML Commons
 try:
     from src.utils.ml_common import (
+from src.utils.hardware import (
+    get_integrated_hardware_manager, 
+    get_comprehensive_optimizer,
+    memory_optimized, 
+    comprehensive_memory_optimization,
+    optimize_dataframe, 
+    optimize_array,
+    m1_optimized,
+    WorkloadCategory,
+    MemoryOptimizationLevel
+)
         DataQualityUtilities, FeatureSelectionFramework,
         CrossValidationUtilities
     )
@@ -223,9 +231,9 @@ class OptimizedCrossTimeframeAnalysis:
         """Initialize hardware optimization components."""
         if HARDWARE_OPTIMIZATIONS_AVAILABLE and self.config.enable_m1_optimizations:
             try:
-                self.memory_optimizer = get_m1_memory_optimizer()
-                self.cpu_optimizer = get_m1_cpu_optimizer()
-                self.gpu_manager = get_m1_gpu_manager()
+                self.memory_optimizer = get_integrated_hardware_manager()
+                self.cpu_optimizer = get_comprehensive_optimizer()
+                self.gpu_manager = get_integrated_hardware_manager()
 
                 self.logger.info("✅ Hardware optimizers initialized")
             except Exception as e:

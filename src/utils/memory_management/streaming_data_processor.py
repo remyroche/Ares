@@ -17,8 +17,18 @@ import pandas as pd
 import numpy as np
 
 from src.utils.logger import system_logger
-from src.utils.hardware.m1_memory_optimizer import M1MemoryOptimizer
 from src.utils.hardware.memory_optimization import MemoryMonitor, MemoryConfig
+from src.utils.hardware import (
+    get_integrated_hardware_manager, 
+    get_comprehensive_optimizer,
+    memory_optimized, 
+    comprehensive_memory_optimization,
+    optimize_dataframe, 
+    optimize_array,
+    m1_optimized,
+    WorkloadCategory,
+    MemoryOptimizationLevel
+)
 
 logger = system_logger.getChild('StreamingDataProcessor')
 
@@ -40,7 +50,7 @@ class StreamingDataProcessor:
         self.logger = logger.getChild('StreamingDataProcessor')
 
         # Initialize memory optimization tools
-        self.memory_optimizer = M1MemoryOptimizer(memory_limit_gb=self.config.max_memory_mb / 1024)
+        self.memory_optimizer = get_integrated_hardware_manager().memory_manager(memory_limit_gb=self.config.max_memory_mb / 1024)
         self.memory_monitor = MemoryMonitor(MemoryConfig(
             max_memory_mb=self.config.max_memory_mb,
             warning_threshold=self.config.memory_pressure_threshold,

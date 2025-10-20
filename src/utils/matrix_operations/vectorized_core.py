@@ -22,6 +22,17 @@ import datetime
 # Import logger
 try:
     from src.utils.logger import get_logger
+from src.utils.hardware import (
+    get_integrated_hardware_manager, 
+    get_comprehensive_optimizer,
+    memory_optimized, 
+    comprehensive_memory_optimization,
+    optimize_dataframe, 
+    optimize_array,
+    m1_optimized,
+    WorkloadCategory,
+    MemoryOptimizationLevel
+)
     logger = get_logger(__name__)
 except ImportError:
     logger = logging.getLogger(__name__)
@@ -359,9 +370,9 @@ class VectorizedProcessingCore:
 
         # Initialize M1 optimizations if available
         try:
-            self.m1_gpu_manager = get_m1_gpu_manager()
-            self.m1_memory_optimizer = get_m1_memory_optimizer()
-            self.m1_cpu_optimizer = get_m1_cpu_optimizer()
+            self.m1_gpu_manager = get_integrated_hardware_manager()
+            self.m1_memory_optimizer = get_integrated_hardware_manager()
+            self.m1_cpu_optimizer = get_comprehensive_optimizer()
         except ImportError:
             pass
 
@@ -380,6 +391,7 @@ class VectorizedProcessingCore:
                 def get_performance_metrics(self): return {}
             self.performance_monitor = DummyPerformanceMonitor()
 
+    @memory_optimized(optimization_level=MemoryOptimizationLevel.AGGRESSIVE, enable_chunking=True)
     def optimize_dataframe_for_processing(self, df):
         """Optimize DataFrame for processing."""
         try:
@@ -438,9 +450,7 @@ except ImportError:
 
 # M1 optimizations
 try:
-    from src.utils.hardware.m1_optimizations import (
-        get_m1_gpu_manager, get_m1_memory_optimizer, get_m1_cpu_optimizer
-    )
+        )
     M1_OPTIMIZATIONS_AVAILABLE = True
 except ImportError:
     M1_OPTIMIZATIONS_AVAILABLE = False
@@ -452,9 +462,9 @@ class VectorizedCore:
         self.m1_available = False
         if M1_OPTIMIZATIONS_AVAILABLE:
             try:
-                self.m1_gpu_manager = get_m1_gpu_manager()
-                self.m1_memory_optimizer = get_m1_memory_optimizer()
-                self.m1_cpu_optimizer = get_m1_cpu_optimizer()
+                self.m1_gpu_manager = get_integrated_hardware_manager()
+                self.m1_memory_optimizer = get_integrated_hardware_manager()
+                self.m1_cpu_optimizer = get_comprehensive_optimizer()
                 self.m1_available = True
             except ImportError:
                 self.m1_gpu_manager = None
@@ -559,6 +569,8 @@ class VectorizedCore:
 
             return df
 
+    @memory_optimized(optimization_level=MemoryOptimizationLevel.AGGRESSIVE, enable_chunking=True)
+    @m1_optimized(operation_type="data_processing", workload_category=WorkloadCategory.DATA_PROCESSING)
     def vectorized_rolling_features(self, data: 'pd.DataFrame',
                                   windows: List[int] = [5, 10, 20, 50],
                                   features: List[str] = None) -> 'pd.DataFrame':
@@ -1160,11 +1172,14 @@ def get_vectorized_processing_core() -> VectorizedProcessingCore:
     return _vectorized_core
 
 # Convenience functions
+@memory_optimized(optimization_level=MemoryOptimizationLevel.AGGRESSIVE, enable_chunking=True)
 def optimize_dataframe(df: 'pd.DataFrame') -> 'pd.DataFrame':
     """Optimize DataFrame for processing."""
     core = get_vectorized_processing_core()
     return core.optimize_dataframe_for_processing(df)
 
+@memory_optimized(optimization_level=MemoryOptimizationLevel.AGGRESSIVE, enable_chunking=True)
+@m1_optimized(operation_type="data_processing", workload_category=WorkloadCategory.DATA_PROCESSING)
 def vectorized_rolling_features(data: 'pd.DataFrame',
                               windows: List[int] = None,
                               features: List[str] = None) -> 'pd.DataFrame':

@@ -21,7 +21,6 @@ import joblib
 from pathlib import Path
 
 # M1 Optimization imports
-from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer, M1MemoryOptimizer
 from src.utils.hardware.memory_optimization import get_memory_manager, MemoryMonitor
 
 # Common utilities
@@ -37,6 +36,17 @@ from src.utils.math_validation import (
     safe_weighted_average, safe_percentage_change, MathValidationError
 )
 from src.utils.parquet_utils import get_parquet_utils, ParquetUtils
+from src.utils.hardware import (
+    get_integrated_hardware_manager, 
+    get_comprehensive_optimizer,
+    memory_optimized, 
+    comprehensive_memory_optimization,
+    optimize_dataframe, 
+    optimize_array,
+    m1_optimized,
+    WorkloadCategory,
+    MemoryOptimizationLevel
+)
 from src.core.decorators import (
     handles_errors, validates, traced, log_execution_time,
     timeout, error_boundary, compose
@@ -175,7 +185,7 @@ class EnsembleManager:
 
         # Initialize M1 optimizers
         self.logger.debug("🔧 Initializing M1 optimizers...")
-        self.m1_gpu = get_m1_memory_optimizer() if config.enable_gpu_acceleration else None
+        self.m1_gpu = get_integrated_hardware_manager() if config.enable_gpu_acceleration else None
         self.m1_memory = get_m1_memory_optimizer(
             memory_limit_gb=config.memory_limit_gb
         ) if config.enable_memory_optimization else None

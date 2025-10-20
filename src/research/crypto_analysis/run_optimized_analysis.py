@@ -42,19 +42,19 @@ def print_optimization_status():
     optimizations = []
 
     try:
-        from src.utils.hardware.m1_gpu_utils import M1GPUManager
+        from src.utils.hardware import get_integrated_hardware_manager
         optimizations.append("✅ M1 GPU Acceleration")
     except ImportError:
         optimizations.append("❌ M1 GPU Acceleration")
 
     try:
-        from src.utils.hardware.m1_memory_optimizer import M1MemoryOptimizer
+        from src.utils.hardware import get_integrated_hardware_manager
         optimizations.append("✅ M1 Memory Optimization")
     except ImportError:
         optimizations.append("❌ M1 Memory Optimization")
 
     try:
-        from src.utils.hardware.m1_cpu_optimizer import M1CPUOptimizer
+        from src.utils.hardware import get_comprehensive_optimizer
         optimizations.append("✅ M1 CPU Optimization")
     except ImportError:
         optimizations.append("❌ M1 CPU Optimization")

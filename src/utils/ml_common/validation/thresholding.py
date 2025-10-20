@@ -1,6 +1,17 @@
 from __future__ import annotations
 
 from src.utils.tprint import tprint
+from src.utils.hardware import (
+    get_integrated_hardware_manager, 
+    get_comprehensive_optimizer,
+    memory_optimized, 
+    comprehensive_memory_optimization,
+    optimize_dataframe, 
+    optimize_array,
+    m1_optimized,
+    WorkloadCategory,
+    MemoryOptimizationLevel
+)
 
 """
 Threshold search and calibration helpers.
@@ -57,14 +68,12 @@ if not SKLEARN_AVAILABLE:
 
 # Import M1 utilities
 try:
-    from src.utils.hardware.m1_gpu_utils import M1GPUManager
-    GPU_AVAILABLE = True
+        GPU_AVAILABLE = True
 except ImportError:
     GPU_AVAILABLE = False
 
 try:
-    from src.utils.hardware.m1_memory_optimizer import (
-        auto_skim_memory, smart_memory_allocation,
+            auto_skim_memory, smart_memory_allocation,
         memory_skim_decorator, auto_memory_skim_decorator,
         auto_memory_skim_context, smart_memory_context
     )
@@ -73,8 +82,7 @@ except ImportError:
     MEMORY_OPTIMIZER_AVAILABLE = False
 
 try:
-    from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer
-    CPU_OPTIMIZER_AVAILABLE = True
+        CPU_OPTIMIZER_AVAILABLE = True
 except ImportError:
     CPU_OPTIMIZER_AVAILABLE = False
 
@@ -165,7 +173,7 @@ def _optimize_threshold_parallel(
     use_gpu: bool = True,
 ) -> Dict[str, Any]:
     """Parallel threshold optimization using M1 CPU optimizer."""
-    cpu_optimizer = get_m1_cpu_optimizer()
+    cpu_optimizer = get_comprehensive_optimizer()
 
     # Prepare data for parallel processing
     if y_prob.ndim == 2 and y_prob.shape[1] == 2:

@@ -728,7 +728,7 @@ def get_enhanced_gpu_manager(config: Optional[GPUConfig] = None) -> M1EnhancedGP
     
     return _enhanced_gpu_manager
 
-def gpu_accelerated(operation_type: GPUOperationType = GPUOperationType.GENERAL):
+def gpu_accelerated(operation_type: GPUOperationType = None):
     """Decorator for GPU acceleration."""
     def decorator(func):
         @wraps(func)
@@ -737,6 +737,10 @@ def gpu_accelerated(operation_type: GPUOperationType = GPUOperationType.GENERAL)
             
             if not gpu_manager.is_available():
                 return func(*args, **kwargs)
+            
+            # Set default operation type if not provided
+            if operation_type is None:
+                operation_type = GPUOperationType.DATA_PROCESSING
             
             # Execute with GPU acceleration
             if operation_type == GPUOperationType.MATRIX_MULTIPLICATION:

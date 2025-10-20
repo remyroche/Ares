@@ -145,3 +145,13 @@ def safe_deserialize(filepath: str) -> Optional[Any]:
     except Exception as e:
         logger.error(f"Failed to deserialize data: {e}")
         return None
+
+
+def save_pickle(data: Any, filepath: str) -> bool:
+    """Save data as pickle file."""
+    return PickleSerializer.save(data, filepath)
+
+
+def load_pickle(filepath: str) -> Optional[Any]:
+    """Load data from pickle file."""
+    return PickleSerializer.load(filepath)

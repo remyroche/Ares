@@ -12,8 +12,9 @@ from dataclasses import dataclass
 from enum import Enum
 
 from .unified_hardware_manager import (
-    UnifiedHardwareManager, HardwareConfig, WorkloadType, OptimizationLevel
+    UnifiedHardwareManager, HardwareConfig, OptimizationLevel
 )
+from .unified_hardware_manager import WorkloadType
 from .enhanced_caching_system import (
     EnhancedCacheSystem, CacheConfig, DataTypeOptimization, CacheStrategy
 )
@@ -199,8 +200,12 @@ class IntegratedHardwareManager:
         enable_pools=True
     )
     def process_data_with_optimization(self, data: Any, 
-                                     workload_type: WorkloadType = WorkloadType.GENERAL) -> Any:
+                                     workload_type: WorkloadType = None) -> Any:
         """Process data with automatic optimization and caching."""
+        # Set default workload type if not provided
+        if workload_type is None:
+            workload_type = WorkloadType.GENERAL
+        
         # Optimize for workload if not already done
         self.optimize_for_workload(workload_type)
         

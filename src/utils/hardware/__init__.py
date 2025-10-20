@@ -6,6 +6,8 @@ that automatically optimizes data types, implements LRU caching, and provides
 memory-efficient operations throughout the codebase.
 """
 
+from typing import Optional, Dict, Any
+
 # Import core caching and optimization components
 from .enhanced_caching_system import (
     EnhancedCacheSystem, CacheConfig, DataTypeOptimization, CacheStrategy,
@@ -57,7 +59,7 @@ from .optimization_patches import (
 
 # Import existing hardware utilities
 from .unified_hardware_manager import (
-    UnifiedHardwareManager, HardwareConfig, WorkloadType, OptimizationLevel,
+    UnifiedHardwareManager, HardwareConfig, WorkloadType as UnifiedWorkloadType, OptimizationLevel,
     get_unified_hardware_manager, optimize_for_workload, get_system_status
 )
 
@@ -267,7 +269,7 @@ __all__ = [
     'process_ml_training_data', 'process_backtesting_data',
     
     # Hardware utilities
-    'UnifiedHardwareManager', 'HardwareConfig', 'WorkloadType', 'OptimizationLevel',
+    'UnifiedHardwareManager', 'HardwareConfig', 'UnifiedWorkloadType', 'OptimizationLevel',
     'M1MemoryOptimizer', 'M1CPUOptimizer', 'M1GPUManager', 'EnhancedM1GPUManager',
     
     # Comprehensive M1 enhancements

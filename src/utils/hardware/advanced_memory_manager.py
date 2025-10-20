@@ -732,3 +732,108 @@ def track_memory_usage(func: Callable) -> Callable:
         return result
     
     return wrapper
+
+
+def force_garbage_collection(aggressive: bool = False) -> Dict[str, Any]:
+    """
+    Force garbage collection and return collection statistics.
+    
+    Args:
+        aggressive: If True, perform multiple collection cycles
+        
+    Returns:
+        Dictionary with collection statistics
+    """
+    manager = get_advanced_memory_manager()
+    
+    # Get memory stats before collection
+    before_stats = manager.get_memory_stats()
+    
+    # Perform garbage collection
+    collected_objects = 0
+    if aggressive:
+        # Multiple collection cycles for aggressive cleanup
+        for generation in range(3):
+            collected = gc.collect()
+            collected_objects += collected
+    else:
+        collected_objects = gc.collect()
+    
+    # Get memory stats after collection
+    after_stats = manager.get_memory_stats()
+    
+    # Calculate memory freed
+    memory_freed_mb = before_stats.used_memory_mb - after_stats.used_memory_mb
+    
+    stats = {
+        'objects_collected': collected_objects,
+        'memory_freed_mb': memory_freed_mb,
+        'before_memory_mb': before_stats.used_memory_mb,
+        'after_memory_mb': after_stats.used_memory_mb,
+        'aggressive': aggressive
+    }
+    
+    if memory_freed_mb > 0:
+        tprint_success(f"Garbage collection freed {memory_freed_mb:.1f}MB ({collected_objects} objects)")
+    else:
+        tprint_info(f"Garbage collection completed ({collected_objects} objects)")
+    
+    return stats
+
+
+def cleanup_all_memory(aggressive: bool = True) -> Dict[str, Any]:
+    """
+    Comprehensive memory cleanup including garbage collection and cache clearing.
+    
+    Args:
+        aggressive: If True, perform aggressive cleanup
+        
+    Returns:
+        Dictionary with cleanup statistics
+    """
+    manager = get_advanced_memory_manager()
+    
+    # Get initial memory stats
+    initial_stats = manager.get_memory_stats()
+    
+    # Perform garbage collection
+    gc_stats = force_garbage_collection(aggressive=aggressive)
+    
+    # Clear memory pools if available
+    pool_cleanup_stats = {}
+    try:
+        if hasattr(manager, 'memory_pool'):
+            pool_cleanup_stats = manager.memory_pool.cleanup_all()
+    except Exception as e:
+        tprint_warning(f"Memory pool cleanup failed: {e}")
+    
+    # Clear caches
+    cache_cleanup_stats = {}
+    try:
+        if hasattr(manager, 'clear_all_caches'):
+            cache_cleanup_stats = manager.clear_all_caches()
+    except Exception as e:
+        tprint_warning(f"Cache cleanup failed: {e}")
+    
+    # Get final memory stats
+    final_stats = manager.get_memory_stats()
+    
+    # Calculate total memory freed
+    total_memory_freed = initial_stats.used_memory_mb - final_stats.used_memory_mb
+    
+    cleanup_stats = {
+        'initial_memory_mb': initial_stats.used_memory_mb,
+        'final_memory_mb': final_stats.used_memory_mb,
+        'total_memory_freed_mb': total_memory_freed,
+        'gc_stats': gc_stats,
+        'pool_cleanup_stats': pool_cleanup_stats,
+        'cache_cleanup_stats': cache_cleanup_stats,
+        'aggressive': aggressive
+    }
+    
+    if total_memory_freed > 0:
+        tprint_success(f"Memory cleanup freed {total_memory_freed:.1f}MB total")
+    else:
+        tprint_info("Memory cleanup completed (no significant memory freed)")
+    
+    return cleanup_stats

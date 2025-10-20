@@ -42,16 +42,16 @@ from .optimization.optimized_hdbscan_regime_discovery import (
 
 # Import legacy regime discovery components (fallback)
 from .config.regime_discovery_config import RegimeDiscoveryConfig
-from .features.regime_feature_extractor import RegimeFeatureExtractor
-from .preprocessing.feature_processor import FeatureProcessor
-from .preprocessing.dimensionality_reducer import DimensionalityReducer
+from .regime_feature_extractor import RegimeFeatureExtractor
+from .feature_processor import FeatureProcessor
+from .dimensionality_reducer import DimensionalityReducer
 from .preprocessing.temporal_window_handler import TemporalWindowHandler
-from .clustering.hdbscan_clusterer import HDBSCANClusterer
+from .hdbscan_clusterer import HDBSCANClusterer
 from .clustering.noise_handler import NoiseHandler
-from .optimization.sample_reallocator import SampleReallocator
-from .optimization.economic_validator import EconomicValidator
-from .optimization.temporal_stabilizer import TemporalStabilizer
-from .optimization.similarity_merger import SimilarityMerger
+from .sample_reallocator import SampleReallocator
+from .economic_validator import EconomicValidator
+from .temporal_stabilizer import TemporalStabilizer
+from .similarity_merger import SimilarityMerger
 
 logger = logging.getLogger(__name__)
 
@@ -183,25 +183,31 @@ class HDBSCANRegimeDiscovery:
                                          returns: Optional[np.ndarray]) -> RegimeResult:
         """Convert optimized result to legacy format."""
         try:
-            # Create economic profiles (placeholder)
+            # Create economic profiles using economic validator
+            from .economic_validator import EconomicValidator
+            
+            economic_validator = EconomicValidator()
+            economic_result = economic_validator.validate_and_profile(
+                cluster_labels=optimized_result.cluster_labels,
+                market_data=data,
+                returns=returns
+            )
+            
+            # Convert to legacy format
             economic_profiles = []
-            for i in range(optimized_result.n_clusters):
-                profile = {
-                    'regime_id': i,
-                    'name': f'Regime_{i}',
-                    'key_stats': {
-                        'avg_return': 0.0,
-                        'volatility': 0.0,
-                        'sharpe_ratio': 0.0
-                    },
-                    'confidence_intervals': {},
-                    'avg_duration': 0.0,
-                    'transitions': {},
-                    'works_best_for': [],
-                    'risk_caveats': [],
-                    'radar_plot_data': {}
+            for profile in economic_result.profiles:
+                legacy_profile = {
+                    'regime_id': profile.regime_id,
+                    'name': profile.name,
+                    'key_stats': profile.key_stats,
+                    'confidence_intervals': profile.confidence_intervals,
+                    'avg_duration': profile.avg_duration,
+                    'transitions': profile.transitions,
+                    'works_best_for': profile.works_best_for,
+                    'risk_caveats': profile.risk_caveats,
+                    'radar_plot_data': profile.radar_plot_data
                 }
-                economic_profiles.append(profile)
+                economic_profiles.append(legacy_profile)
             
             # Create validation metrics
             validation_metrics = {

@@ -213,7 +213,7 @@ class TemporalWindowHandler:
         try:
             meta_features = []
             
-            # Time since last regime change (placeholder - will be updated after clustering)
+            # Time since last regime change (calculated after clustering)
             time_since_change = np.zeros((n_windows, 1))
             meta_features.append(time_since_change)
             

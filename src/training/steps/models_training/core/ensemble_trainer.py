@@ -26,9 +26,18 @@ from src.utils.common_operations import (
 )
 from src.utils.common_utilities import calculate_data_quality_metrics, get_dataframe_info
 from src.utils.math_validation import validate_finite, validate_positive, validate_range
-from src.utils.hardware.m1_memory_optimizer import optimize_memory
-from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer
-from src.utils.hardware.m1_gpu_utils import get_m1_gpu_manager
+from src.utils.hardware.unified_hardware_manager import (
+    get_unified_hardware_manager, WorkloadType, OptimizationLevel
+)
+from src.utils.hardware.integrated_hardware_manager import (
+    get_integrated_hardware_manager, WorkloadType as IntegratedWorkloadType
+)
+from src.utils.hardware.m1_comprehensive_optimizer import (
+    get_comprehensive_optimizer, WorkloadCategory, OptimizationStrategy
+)
+from src.utils.matrix_operations.hardware_integration import (
+    get_hardware_optimized_processor, HardwareConfig
+)
 from src.utils.ml_common.optimization.bayesian_tpe_optimizer import BayesianTPEOptimizer
 from src.utils.kline_parquet import KlinesParquetManager
 from src.core.decorators import handles_errors, traced, log_execution_time

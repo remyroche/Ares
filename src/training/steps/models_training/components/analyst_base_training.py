@@ -28,6 +28,7 @@ from src.training.steps.base_step import BaseStep
 from src.utils.logger import system_logger
 from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success, tprint_debug, tprint_performance
 from src.core.decorators import handles_errors, traced, log_execution_time
+from src.utils.hardware.integrated_hardware_manager import WorkloadType as IntegratedWorkloadType
 
 
 @dataclass
@@ -184,14 +185,25 @@ class AnalystBaseTraining(BaseStep):
             Training result dictionary
         """
         try:
-            tprint_info("📊 Starting Analyst base training...")
-            self.logger.info("Starting Analyst base training...")
+            tprint_info("📊 Starting Analyst base training with hardware optimization...")
+            self.logger.info("Starting Analyst base training with hardware optimization...")
             
             start_time = time.time()
             
             # Extract data
             X_train = data.get('X_train')
             y_train = data.get('y_train')
+            
+            # Apply hardware optimization to training data
+            if hasattr(self._trainer, '_hardware_processor') and self._trainer._hardware_processor:
+                X_train = self._trainer._hardware_processor.optimize_data_for_processing(X_train)
+                tprint_debug("🚀 Training data hardware optimized")
+            
+            if hasattr(self._trainer, '_integrated_hardware_manager') and self._trainer._integrated_hardware_manager:
+                X_train = self._trainer._integrated_hardware_manager.process_data_with_optimization(
+                    X_train, IntegratedWorkloadType.ML_TRAINING
+                )
+                tprint_debug("🧠 Training data integrated hardware optimized")
             
             if X_train is None or y_train is None:
                 return {

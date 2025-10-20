@@ -32,9 +32,18 @@ from src.utils.common_operations import (
 )
 from src.utils.common_utilities import calculate_data_quality_metrics, get_dataframe_info
 from src.utils.math_validation import validate_finite, validate_positive, validate_range
-from src.utils.hardware.m1_memory_optimizer import optimize_memory
-from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer
-from src.utils.hardware.m1_gpu_utils import get_m1_gpu_manager
+from src.utils.hardware.unified_hardware_manager import (
+    get_unified_hardware_manager, WorkloadType, OptimizationLevel
+)
+from src.utils.hardware.integrated_hardware_manager import (
+    get_integrated_hardware_manager, WorkloadType as IntegratedWorkloadType
+)
+from src.utils.hardware.m1_comprehensive_optimizer import (
+    get_comprehensive_optimizer, WorkloadCategory, OptimizationStrategy
+)
+from src.utils.matrix_operations.hardware_integration import (
+    get_hardware_optimized_processor, HardwareConfig
+)
 from src.utils.ml_common.optimization.bayesian_tpe_optimizer import BayesianTPEOptimizer
 from src.utils.kline_parquet import KlinesParquetManager
 from src.core.decorators import handles_errors, traced, log_execution_time
@@ -168,11 +177,75 @@ class TrainingPipelineOrchestrator:
             'error_counts': {}
         }
         
+        # Initialize enhanced hardware managers
+        self._unified_hardware_manager = None
+        self._integrated_hardware_manager = None
+        self._comprehensive_optimizer = None
+        self._hardware_processor = None
+        
         # Monitoring
         self._monitoring_task = None
         self._health_check_interval = config.monitoring_interval
         
+        # Initialize hardware optimization systems
+        self._initialize_hardware_optimization()
+        
         self.logger.info(f"Initialized TrainingPipelineOrchestrator for {config.symbol}")
+    
+    def _initialize_hardware_optimization(self):
+        """Initialize enhanced hardware optimization systems."""
+        try:
+            # Initialize unified hardware manager
+            self._unified_hardware_manager = get_unified_hardware_manager()
+            
+            # Initialize integrated hardware manager with caching
+            self._integrated_hardware_manager = get_integrated_hardware_manager()
+            
+            # Initialize comprehensive M1 optimizer
+            self._comprehensive_optimizer = get_comprehensive_optimizer()
+            
+            # Initialize hardware-optimized matrix processor
+            hardware_config = HardwareConfig(
+                max_memory_gb=self.config.memory_limit_mb / 1024 if self.config.memory_limit_mb else 8.0,
+                enable_gpu=True,
+                auto_optimize_dtypes=True,
+                auto_chunk_large_data=True
+            )
+            self._hardware_processor = get_hardware_optimized_processor(hardware_config)
+            
+            # Configure for ML training workload
+            self._configure_hardware_for_training()
+            
+            self.logger.info("✅ Enhanced hardware optimization systems initialized")
+            
+        except Exception as e:
+            self.logger.warning(f"Hardware optimization initialization failed: {e}")
+    
+    def _configure_hardware_for_training(self):
+        """Configure hardware systems for ML training workload."""
+        try:
+            # Configure unified hardware manager for ML training
+            if self._unified_hardware_manager:
+                self._unified_hardware_manager.optimize_for_workload(
+                    WorkloadType.ML_TRAINING, 
+                    OptimizationLevel.AGGRESSIVE
+                )
+            
+            # Configure integrated hardware manager
+            if self._integrated_hardware_manager:
+                self._integrated_hardware_manager.optimize_for_workload(
+                    IntegratedWorkloadType.ML_TRAINING
+                )
+            
+            # Configure comprehensive optimizer for machine learning
+            if self._comprehensive_optimizer:
+                self._comprehensive_optimizer.config.workload_category = WorkloadCategory.MACHINE_LEARNING
+                self._comprehensive_optimizer.config.optimization_strategy = OptimizationStrategy.MAXIMUM_PERFORMANCE
+            
+            self.logger.info("🎯 Hardware configured for ML training workload")
+            
+        except Exception as e:
+            self.logger.warning(f"Hardware configuration failed: {e}")
     
     @handles_errors(
         exceptions=(ValueError, RuntimeError, MemoryError),
@@ -889,6 +962,21 @@ class TrainingPipelineOrchestrator:
             # Update performance metrics
             self._performance_metrics['memory_usage'][time.time()] = memory_usage
             self._performance_metrics['cpu_usage'][time.time()] = cpu_usage
+            
+            # Use enhanced hardware monitoring
+            if self._unified_hardware_manager:
+                system_status = self._unified_hardware_manager.get_system_status()
+                if 'performance_report' in system_status:
+                    perf_report = system_status['performance_report']
+                    if 'current_metrics' in perf_report:
+                        current_metrics = perf_report['current_metrics']
+                        if 'performance_score' in current_metrics:
+                            self.logger.debug(f"Hardware performance score: {current_metrics['performance_score']:.2f}")
+            
+            # Trigger hardware optimization if memory usage is high
+            if memory_usage > 90 and self._integrated_hardware_manager:
+                self._integrated_hardware_manager.clear_all_caches()
+                self.logger.info("🧹 Cleared caches due to high memory usage")
             
             # Check for issues
             if memory_usage > 90:

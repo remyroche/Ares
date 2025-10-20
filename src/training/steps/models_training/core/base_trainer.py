@@ -31,9 +31,18 @@ from src.utils.common_operations import (
 )
 from src.utils.common_utilities import calculate_data_quality_metrics, get_dataframe_info
 from src.utils.math_validation import validate_finite, validate_positive, validate_range
-from src.utils.hardware.m1_memory_optimizer import optimize_memory
-from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer
-from src.utils.hardware.m1_gpu_utils import get_m1_gpu_manager
+from src.utils.hardware.unified_hardware_manager import (
+    get_unified_hardware_manager, WorkloadType, OptimizationLevel
+)
+from src.utils.hardware.integrated_hardware_manager import (
+    get_integrated_hardware_manager, WorkloadType as IntegratedWorkloadType
+)
+from src.utils.hardware.m1_comprehensive_optimizer import (
+    get_comprehensive_optimizer, WorkloadCategory, OptimizationStrategy
+)
+from src.utils.matrix_operations.hardware_integration import (
+    get_hardware_optimized_processor, HardwareConfig
+)
 from src.utils.ml_common.optimization.bayesian_tpe_optimizer import BayesianTPEOptimizer
 from src.utils.kline_parquet import KlinesParquetManager
 from src.core.decorators import handles_errors, traced, log_execution_time
@@ -169,10 +178,11 @@ class BaseTrainer(ABC):
             'checkpoints': []
         }
         
-        # Initialize hardware optimizers
-        self._memory_optimizer = None
-        self._cpu_optimizer = None
-        self._gpu_manager = None
+        # Initialize enhanced hardware managers
+        self._unified_hardware_manager = None
+        self._integrated_hardware_manager = None
+        self._comprehensive_optimizer = None
+        self._hardware_processor = None
         self._parquet_manager = None
         
         tprint_info(f"🔧 Initializing {self.__class__.__name__} for {config.role.value}")
@@ -279,27 +289,67 @@ class BaseTrainer(ABC):
             return False
     
     async def _initialize_hardware_optimizers(self):
-        """Initialize hardware optimizers."""
+        """Initialize enhanced hardware optimization systems."""
         try:
-            tprint_debug("🔧 Initializing hardware optimizers...")
+            tprint_debug("🔧 Initializing enhanced hardware optimization systems...")
             
-            # Initialize memory optimizer
-            self._memory_optimizer = optimize_memory()
+            # Initialize unified hardware manager
+            self._unified_hardware_manager = get_unified_hardware_manager()
             
-            # Initialize CPU optimizer
-            self._cpu_optimizer = get_m1_cpu_optimizer()
+            # Initialize integrated hardware manager with caching
+            self._integrated_hardware_manager = get_integrated_hardware_manager()
             
-            # Initialize GPU manager
-            self._gpu_manager = get_m1_gpu_manager()
+            # Initialize comprehensive M1 optimizer
+            self._comprehensive_optimizer = get_comprehensive_optimizer()
+            
+            # Initialize hardware-optimized matrix processor
+            hardware_config = HardwareConfig(
+                max_memory_gb=self.config.memory_limit_mb / 1024 if self.config.memory_limit_mb else 8.0,
+                enable_gpu=True,
+                auto_optimize_dtypes=True,
+                auto_chunk_large_data=True
+            )
+            self._hardware_processor = get_hardware_optimized_processor(hardware_config)
             
             # Initialize parquet manager
             self._parquet_manager = KlinesParquetManager()
             
-            tprint_success("✅ Hardware optimizers initialized")
+            # Configure for ML training workload
+            await self._configure_hardware_for_training()
+            
+            tprint_success("✅ Enhanced hardware optimization systems initialized")
             
         except Exception as e:
-            tprint_warning(f"⚠️ Hardware optimizer initialization failed: {e}")
-            self.logger.warning(f"Hardware optimizer initialization failed: {e}")
+            tprint_warning(f"⚠️ Hardware optimization initialization failed: {e}")
+            self.logger.warning(f"Hardware optimization initialization failed: {e}")
+    
+    async def _configure_hardware_for_training(self):
+        """Configure hardware systems for ML training workload."""
+        try:
+            # Configure unified hardware manager for ML training
+            if self._unified_hardware_manager:
+                self._unified_hardware_manager.optimize_for_workload(
+                    WorkloadType.ML_TRAINING, 
+                    OptimizationLevel.AGGRESSIVE
+                )
+            
+            # Configure integrated hardware manager
+            if self._integrated_hardware_manager:
+                self._integrated_hardware_manager.optimize_for_workload(
+                    IntegratedWorkloadType.ML_TRAINING
+                )
+            
+            # Configure comprehensive optimizer for machine learning
+            if self._comprehensive_optimizer:
+                # Set workload category to machine learning
+                self._comprehensive_optimizer.config.workload_category = WorkloadCategory.MACHINE_LEARNING
+                self._comprehensive_optimizer.config.optimization_strategy = OptimizationStrategy.MAXIMUM_PERFORMANCE
+            
+            tprint_info("🎯 Hardware configured for ML training workload")
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Hardware configuration failed: {e}")
+            self.logger.warning(f"Hardware configuration failed: {e}")
     
     def _validate_config(self) -> bool:
         """Validate training configuration."""
@@ -404,10 +454,17 @@ class BaseTrainer(ABC):
                 data = data.replace([np.inf, -np.inf], np.nan)
                 data = data.fillna(data.median())
             
-            # Optimize memory usage
-            if self._memory_optimizer:
-                data = optimize_dataframe_memory(data)
-                tprint_debug("🧠 Memory optimization applied")
+            # Apply comprehensive hardware optimization
+            if self._hardware_processor:
+                data = self._hardware_processor.optimize_data_for_processing(data)
+                tprint_debug("🚀 Hardware optimization applied")
+            
+            # Apply integrated hardware optimization
+            if self._integrated_hardware_manager:
+                data = self._integrated_hardware_manager.process_data_with_optimization(
+                    data, IntegratedWorkloadType.ML_TRAINING
+                )
+                tprint_debug("🧠 Integrated hardware optimization applied")
             
             # Feature selection if enabled
             if self.config.max_features < len(data.columns):

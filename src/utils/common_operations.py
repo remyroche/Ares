@@ -10,6 +10,21 @@ import psutil
 import os
 from contextlib import contextmanager
 
+# Enhanced hardware optimization imports
+try:
+    from src.utils.hardware.optimization_decorators import (
+        smart_cache, auto_optimize, memory_efficient, performance_tracked
+    )
+    from src.utils.hardware.memory_optimized_decorators import (
+        memory_optimized, comprehensive_memory_optimization, MemoryOptimizationLevel
+    )
+    from src.utils.hardware.integrated_hardware_manager import (
+        get_integrated_hardware_manager, WorkloadType
+    )
+    HARDWARE_OPTIMIZATION_AVAILABLE = True
+except ImportError:
+    HARDWARE_OPTIMIZATION_AVAILABLE = False
+
 # Configure logging
 logger = logging.getLogger(__name__)
 
@@ -22,8 +37,9 @@ def safe_dataframe_operation(operation_func: Callable[..., pd.DataFrame], *args,
         raise TypeError("operation_func must return a pandas DataFrame")
     return df
 
+@performance_tracked(log_performance=True, track_memory=True) if HARDWARE_OPTIMIZATION_AVAILABLE else lambda x: x
 def get_memory_usage() -> Dict[str, float]:
-    """Get current memory usage statistics."""
+    """Get current memory usage statistics with enhanced tracking."""
     process = psutil.Process(os.getpid())
     memory_info = process.memory_info()
     return {
@@ -32,22 +48,32 @@ def get_memory_usage() -> Dict[str, float]:
         'percent': process.memory_percent()
     }
 
+@comprehensive_memory_optimization(
+    optimization_level=MemoryOptimizationLevel.AGGRESSIVE,
+    enable_caching=True,
+    enable_chunking=True,
+    enable_gc=True,
+    enable_pools=True
+) if HARDWARE_OPTIMIZATION_AVAILABLE else lambda x: x
 def optimize_dataframe_memory(df: pd.DataFrame) -> pd.DataFrame:
-    """Optimize DataFrame memory usage by downcasting numeric types."""
+    """Optimize DataFrame memory usage with enhanced hardware optimization."""
     # Use enhanced optimization system if available
-    try:
-        from src.utils.hardware import optimize_dataframe_default
-        return optimize_dataframe_default(df)
-    except ImportError:
-        # Fallback to original implementation
-        df_opt = df.copy()
-        
-        # Downcast integers
-        for col in df_opt.select_dtypes(include=['int']).columns:
-            df_opt[col] = pd.to_numeric(df_opt[col], downcast='integer')
-        
-        # Downcast floats
-        for col in df_opt.select_dtypes(include=['float']).columns:
+    if HARDWARE_OPTIMIZATION_AVAILABLE:
+        try:
+            hardware_manager = get_integrated_hardware_manager()
+            return hardware_manager.process_data_with_optimization(df, WorkloadType.DATA_PROCESSING)
+        except Exception as e:
+            logger.warning(f"Enhanced optimization failed, falling back to basic: {e}")
+    
+    # Fallback to original implementation
+    df_opt = df.copy()
+    
+    # Downcast integers
+    for col in df_opt.select_dtypes(include=['int']).columns:
+        df_opt[col] = pd.to_numeric(df_opt[col], downcast='integer')
+    
+    # Downcast floats
+    for col in df_opt.select_dtypes(include=['float']).columns:
             df_opt[col] = pd.to_numeric(df_opt[col], downcast='float')
         
         # Convert object columns to category if beneficial

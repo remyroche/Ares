@@ -26,8 +26,7 @@ import numpy as np
 from src.utils.logger import system_logger
 from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success, tprint_debug, tprint_performance
 from src.utils.common_operations import (
-    safe_divide, safe_correlation, safe_mean, safe_std, safe_float, safe_int,
-    get_memory_usage, optimize_dataframe_memory, memory_checkpoint
+    safe_divide, safe_correlation, safe_mean, safe_std, safe_float, safe_int
 )
 from src.utils.common_utilities import calculate_data_quality_metrics, get_dataframe_info
 from src.utils.math_validation import validate_finite, validate_positive, validate_range
@@ -391,7 +390,6 @@ class BaseTrainer(ABC):
         enable_gc=True,
         enable_pools=True
     )
-    @memory_checkpoint
     def _preprocess_data(self, data: pd.DataFrame, targets: Optional[pd.Series] = None) -> Tuple[pd.DataFrame, pd.Series]:
         """
         Preprocess data for training using our utilities.
@@ -407,9 +405,7 @@ class BaseTrainer(ABC):
             tprint_info("🔧 Preprocessing data...")
             self.logger.info("Preprocessing data...")
             
-            # Get initial memory usage
-            initial_memory = get_memory_usage()
-            tprint_debug(f"📊 Initial memory usage: {initial_memory['rss']:.2f} MB")
+            # Memory usage is now tracked by enhanced hardware managers
             
             # Calculate data quality metrics
             quality_metrics = calculate_data_quality_metrics(data)
@@ -455,12 +451,7 @@ class BaseTrainer(ABC):
             if targets is not None:
                 validate_finite(targets, "targets")
             
-            # Get final memory usage
-            final_memory = get_memory_usage()
-            memory_delta = final_memory['rss'] - initial_memory['rss']
-            
             tprint_success(f"✅ Data preprocessed: {data.shape[0]} samples, {data.shape[1]} features")
-            tprint_performance(f"📊 Memory delta: {memory_delta:.2f} MB")
             
             return data, targets
             

@@ -21,8 +21,7 @@ import numpy as np
 from src.utils.logger import system_logger
 from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success, tprint_debug, tprint_performance
 from src.utils.common_operations import (
-    safe_divide, safe_correlation, safe_mean, safe_std, safe_float, safe_int,
-    get_memory_usage, optimize_dataframe_memory, memory_checkpoint
+    safe_divide, safe_correlation, safe_mean, safe_std, safe_float, safe_int
 )
 from src.utils.common_utilities import calculate_data_quality_metrics, get_dataframe_info
 from src.utils.math_validation import validate_finite, validate_positive, validate_range

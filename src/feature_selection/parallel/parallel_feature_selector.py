@@ -15,8 +15,14 @@ import pandas as pd
 
 # Import hardware optimization tools
 from src.utils.parallel_processing_optimizer import MacM1ParallelOptimizer
-from src.utils.hardware.m1_cpu_optimizer import M1CPUOptimizer
-from src.utils.hardware.unified_hardware_manager import UnifiedHardwareManager, HardwareConfig
+from src.utils.hardware import (
+    get_integrated_hardware_manager,
+    memory_efficient,
+    performance_tracked,
+    smart_cache,
+    WorkloadType,
+    OptimizationLevel
+)
 from src.utils.tprint import tprint, tprint_success, tprint_warning, tprint_performance, tprint_debug
 
 logger = logging.getLogger(__name__)
@@ -57,15 +63,9 @@ class ParallelFeatureSelector:
 
         # Initialize hardware tools
         if self.config.enable_hardware_optimization:
-            # Initialize CPU optimizer
-            if self.config.enable_cpu_optimization:
-                self.cpu_optimizer = M1CPUOptimizer()
-                optimal_workers = self.cpu_optimizer.get_optimal_worker_count()
-                if self.config.max_workers is None:
-                    self.config.max_workers = optimal_workers
-            else:
-                self.cpu_optimizer = None
-
+            # Get integrated hardware manager
+            self.hardware_manager = get_integrated_hardware_manager()
+            
             # Initialize parallel optimizer
             self.parallel_optimizer = MacM1ParallelOptimizer(
                 max_workers=self.config.max_workers,
@@ -73,15 +73,7 @@ class ParallelFeatureSelector:
                 use_process_pool=self.config.use_process_pool,
                 memory_limit_mb=self.config.memory_limit_mb
             )
-
-            # Initialize hardware manager
-            hw_config = HardwareConfig(
-                cpu_optimization_level='balanced',
-                enable_adaptive_optimization=True
-            )
-            self.hardware_manager = UnifiedHardwareManager(hw_config)
         else:
-            self.cpu_optimizer = None
             self.parallel_optimizer = None
             self.hardware_manager = None
 
@@ -125,6 +117,8 @@ class ParallelFeatureSelector:
                 'success': False
             }
 
+    @memory_efficient(memory_threshold_mb=1000.0, auto_cleanup=True)
+    @performance_tracked(log_performance=True, track_memory=True)
     def parallel_selection(self, X: np.ndarray, y: np.ndarray,
                           methods: List[str], **kwargs) -> Dict[str, Any]:
         """Run multiple feature selection methods in parallel."""
@@ -260,6 +254,8 @@ class ParallelFeatureSelector:
 
         return method_results
 
+    @memory_efficient(memory_threshold_mb=800.0, auto_cleanup=True)
+    @performance_tracked(log_performance=True, track_memory=True)
     def parallel_cross_validation(self, X: np.ndarray, y: np.ndarray,
                                  method: str, cv_folds: int = 5, **kwargs) -> Dict[str, Any]:
         """Run cross-validation in parallel."""

@@ -15,8 +15,14 @@ import pandas as pd
 from scipy.sparse import csr_matrix, issparse
 
 # Import hardware optimization tools
-from src.utils.hardware.m1_memory_optimizer import M1MemoryOptimizer
-from src.utils.hardware.unified_hardware_manager import UnifiedHardwareManager, HardwareConfig
+from src.utils.hardware import (
+    get_integrated_hardware_manager,
+    memory_efficient,
+    performance_tracked,
+    smart_cache,
+    WorkloadType,
+    OptimizationLevel
+)
 from src.utils.tprint import tprint, tprint_success, tprint_warning, tprint_performance, tprint_debug
 
 logger = logging.getLogger(__name__)
@@ -54,17 +60,8 @@ class MemoryEfficientFeatureSelector:
 
         # Initialize hardware tools
         if self.config.enable_memory_monitoring:
-            self.memory_optimizer = M1MemoryOptimizer(self.config.memory_limit_gb)
-            self.memory_optimizer.start_monitoring()
-
-            hw_config = HardwareConfig(
-                memory_limit_gb=self.config.memory_limit_gb,
-                enable_compression=self.config.enable_compression,
-                memory_optimization_level='aggressive'
-            )
-            self.hardware_manager = UnifiedHardwareManager(hw_config)
+            self.hardware_manager = get_integrated_hardware_manager()
         else:
-            self.memory_optimizer = None
             self.hardware_manager = None
 
         # Memory tracking
@@ -80,8 +77,9 @@ class MemoryEfficientFeatureSelector:
     def _check_memory_usage(self) -> float:
         """Check current memory usage."""
         try:
-            if self.memory_optimizer:
-                return self.memory_optimizer.get_memory_pressure()
+            if self.hardware_manager:
+                memory_report = self.hardware_manager.get_memory_report()
+                return memory_report.get('total_memory_usage_mb', 0) / (1024 * 1024)  # Convert to ratio
             else:
                 import psutil
                 return psutil.virtual_memory().percent / 100.0
@@ -101,13 +99,12 @@ class MemoryEfficientFeatureSelector:
                 collected = gc.collect()
                 tprint_debug(f"🗑️ Garbage collected {collected} objects")
 
-            if self.memory_optimizer:
+            if self.hardware_manager:
                 # Apply memory optimizations
-                optimization_result = self.memory_optimizer.optimize_memory()
-                if optimization_result.get('optimized', False):
-                    self.memory_stats['memory_optimizations'] += 1
-                    tprint_success("🧠 Memory optimized")
-                    return True
+                self.hardware_manager.clear_all_caches()
+                self.memory_stats['memory_optimizations'] += 1
+                tprint_success("🧠 Memory optimized")
+                return True
 
             return False
         return True
@@ -155,6 +152,8 @@ class MemoryEfficientFeatureSelector:
             self.logger.warning(f"Chunk processing failed: {e}")
             return {'success': False, 'error': str(e)}
 
+    @memory_efficient(memory_threshold_mb=200.0, auto_cleanup=True)
+    @performance_tracked(log_performance=True, track_memory=True)
     def select_features_chunked(self, X: np.ndarray, y: np.ndarray,
                                method: str = 'comprehensive', **kwargs) -> Dict[str, Any]:
         """Select features using chunked processing for memory efficiency."""
@@ -278,6 +277,8 @@ class SparseFeatureSelector:
         zero_ratio = np.count_nonzero(X == 0) / X.size
         return zero_ratio > self.sparse_threshold
 
+    @memory_efficient(memory_threshold_mb=100.0, auto_cleanup=True)
+    @performance_tracked(log_performance=True, track_memory=True)
     def select_features_sparse(self, X: Union[np.ndarray, csr_matrix],
                               y: np.ndarray, method: str = 'comprehensive',
                               **kwargs) -> Dict[str, Any]:

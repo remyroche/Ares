@@ -5,14 +5,6 @@ This module provides chunked processing capabilities for large datasets
 with memory-efficient algorithms and hardware optimization.
 """
 
-from .chunked_processor import (
-    ChunkedFeatureProcessor,
-    AdaptiveChunkProcessor,
-    create_chunked_processor
-)
+# Chunked processing is now handled by the integrated hardware manager
 
-__all__ = [
-    'ChunkedFeatureProcessor',
-    'AdaptiveChunkProcessor',
-    'create_chunked_processor'
-]
+__all__ = []

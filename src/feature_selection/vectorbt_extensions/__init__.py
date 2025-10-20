@@ -20,7 +20,6 @@ from .vectorbt_stability_selection import VectorBTStabilitySelection
 from .vectorbt_mrmr_selector import VectorBTMRMRSelector, create_vectorbt_mrmr_selector
 from .vectorbt_regularization import VectorBTRegularizationSelector
 from .vectorbt_rfe_selector import VectorBTRFESelector
-from .vectorbt_memory_optimizer import VectorBTMemoryOptimizer, create_vectorbt_memory_optimizer
 from .vectorbt_rolling_operations import VectorBTRollingOperations, create_vectorbt_rolling_operations
 from .vectorbt_config import VectorBTFeatureSelectionConfig
 
@@ -37,8 +36,6 @@ __all__ = [
     'create_vectorbt_mrmr_selector',
     'VectorBTRegularizationSelector',
     'VectorBTRFESelector',
-    'VectorBTMemoryOptimizer',
-    'create_vectorbt_memory_optimizer',
     'VectorBTRollingOperations',
     'create_vectorbt_rolling_operations',
     'VectorBTFeatureSelectionConfig'

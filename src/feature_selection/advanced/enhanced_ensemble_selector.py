@@ -13,8 +13,14 @@ import numpy as np
 
 # Import project utilities
 from src.utils.tprint import tprint, tprint_success, tprint_warning, tprint_performance, tprint_debug
-from src.utils.hardware.m1_cpu_optimizer import M1CPUOptimizer
-from src.utils.hardware.unified_hardware_manager import UnifiedHardwareManager, HardwareConfig
+from src.utils.hardware import (
+    get_integrated_hardware_manager,
+    memory_efficient,
+    performance_tracked,
+    smart_cache,
+    WorkloadType,
+    OptimizationLevel
+)
 
 # Import enhanced components
 from .enhanced_config import EnhancedEnsembleConfig
@@ -42,14 +48,8 @@ class EnhancedEnsembleAdvancedSelector:
 
         # Initialize hardware optimization
         if self.config.enable_hardware_optimization:
-            self.cpu_optimizer = M1CPUOptimizer()
-            hw_config = HardwareConfig(
-                cpu_optimization_level='aggressive',
-                enable_adaptive_optimization=True
-            )
-            self.hardware_manager = UnifiedHardwareManager(hw_config)
+            self.hardware_manager = get_integrated_hardware_manager()
         else:
-            self.cpu_optimizer = None
             self.hardware_manager = None
 
         # Initialize enhanced components
@@ -98,6 +98,9 @@ class EnhancedEnsembleAdvancedSelector:
         except ImportError:
             return False
 
+    @memory_efficient(memory_threshold_mb=1000.0, auto_cleanup=True)
+    @performance_tracked(log_performance=True, track_memory=True)
+    @smart_cache(ttl=1800)  # Cache for 30 minutes
     def select_features(self, X: np.ndarray, y: np.ndarray,
                        target_features: Optional[int] = None,
                        target_percentage: Optional[float] = None,
@@ -110,6 +113,13 @@ class EnhancedEnsembleAdvancedSelector:
         start_time = time.time()
 
         try:
+            # Optimize hardware for ensemble workload
+            if self.hardware_manager:
+                self.hardware_manager.optimize_for_workload(WorkloadType.ML_TRAINING, OptimizationLevel.AGGRESSIVE)
+                # Pre-optimize data
+                X = self.hardware_manager.process_data_with_optimization(X, WorkloadType.ML_TRAINING)
+                y = self.hardware_manager.process_data_with_optimization(y, WorkloadType.ML_TRAINING)
+            
             # Prepare feature names
             if feature_names is None:
                 feature_names = [f"feature_{i}" for i in range(X.shape[1])]

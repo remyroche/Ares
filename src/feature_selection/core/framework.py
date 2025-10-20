@@ -2,7 +2,7 @@
 VectorBT Feature Selection Core Framework
 
 This module provides the core feature selection framework using VectorBT
-for high-performance feature selection operations.
+for high-performance feature selection operations with hardware optimization.
 """
 
 from __future__ import annotations
@@ -15,6 +15,16 @@ import logging
 # Import VectorBT framework
 from ..vectorbt_extensions.vectorbt_unified_framework import VectorBTUnifiedFramework, create_vectorbt_unified_framework
 from ..vectorbt_extensions.vectorbt_config import VectorBTFeatureSelectionConfig
+
+# Import hardware optimization tools
+from src.utils.hardware import (
+    get_integrated_hardware_manager,
+    memory_efficient,
+    performance_tracked,
+    smart_cache,
+    WorkloadType,
+    OptimizationLevel
+)
 
 # Import tprint for consistent logging
 from src.utils.tprint import tprint, tprint_success, tprint_warning, tprint_performance, tprint_debug
@@ -64,6 +74,9 @@ def _ensure_feature_names(X: Union[np.ndarray, pd.DataFrame], feature_names: Opt
     tprint_debug(f"📊 Feature matrix shape: {X_np.shape}, {len(names)} feature names")
     return X_np, names
 
+@memory_efficient(memory_threshold_mb=500.0, auto_cleanup=True)
+@performance_tracked(log_performance=True, track_memory=True)
+@smart_cache(ttl=3600)  # Cache for 1 hour
 def select_features(
     X: Union[np.ndarray, pd.DataFrame],
     y: Union[np.ndarray, pd.Series, List[float], List[int]],
@@ -93,12 +106,34 @@ def select_features(
     tprint(f"🚀 Starting VectorBT feature selection: method={method}, max_features={max_features}")
 
     try:
+        # Get integrated hardware manager for optimization
+        hardware_manager = get_integrated_hardware_manager()
+        
+        # Determine workload type based on data size and method
+        data_size_mb = X.nbytes / (1024 * 1024) if hasattr(X, 'nbytes') else 0
+        if data_size_mb > 1000 or method in ['comprehensive', 'stability_selection']:
+            workload_type = WorkloadType.ML_TRAINING
+            optimization_level = OptimizationLevel.AGGRESSIVE
+        elif method in ['correlation', 'mutual_information']:
+            workload_type = WorkloadType.DATA_PROCESSING
+            optimization_level = OptimizationLevel.BALANCED
+        else:
+            workload_type = WorkloadType.GENERAL
+            optimization_level = OptimizationLevel.MINIMAL
+        
+        # Optimize hardware for workload
+        hardware_manager.optimize_for_workload(workload_type, optimization_level)
+        
+        # Pre-optimize data with hardware manager
+        X_optimized = hardware_manager.process_data_with_optimization(X, workload_type)
+        y_optimized = hardware_manager.process_data_with_optimization(y, workload_type)
+
         # Get VectorBT framework
         framework = get_feature_selection_framework(framework_config)
 
         # Normalize inputs
-        X_np, names = _ensure_feature_names(X, feature_names)
-        y_arr = np.asarray(y)
+        X_np, names = _ensure_feature_names(X_optimized, feature_names)
+        y_arr = np.asarray(y_optimized)
 
         # Map legacy method names to VectorBT methods
         method_mapping = {
@@ -174,6 +209,8 @@ def select_features(
             'execution_time': 0.0
         }
 
+@memory_efficient(memory_threshold_mb=1000.0, auto_cleanup=True)
+@performance_tracked(log_performance=True, track_memory=True)
 def benchmark_methods(
     X: Union[np.ndarray, pd.DataFrame],
     y: Union[np.ndarray, pd.Series, List[float], List[int]],

@@ -11,6 +11,8 @@ import logging
 from typing import Dict, List, Any, Optional, Tuple, Union, Callable
 from dataclasses import dataclass
 import time
+import gc
+import psutil
 
 # Import VectorBT optimization components
 from src.utils.ml_common.unified_vectorization_manager import (
@@ -40,6 +42,14 @@ try:
 except ImportError:
     HDBSCAN_AVAILABLE = False
     hdbscan = None
+
+# Import tprint utilities
+from src.utils.tprint import (
+    tprint, tprint_info, tprint_success, tprint_warning, tprint_error,
+    tprint_debug, tprint_performance, tprint_progress, tprint_timer,
+    tprint_logged, LogLevel
+)
+from src.utils.common_operations import optimize_dataframe_memory, get_memory_usage
 
 logger = logging.getLogger(__name__)
 
@@ -76,31 +86,43 @@ class EnhancedVectorizedProcessor:
     - HDBSCAN clustering optimization
     """
     
+    @tprint_logged(LogLevel.INFO, include_args=True)
     def __init__(self, config: Optional[VectorizedProcessingConfig] = None):
         """Initialize the enhanced vectorized processor."""
+        start_time = time.perf_counter()
+        initial_memory = get_memory_usage()
+        
         self.config = config or VectorizedProcessingConfig()
         
+        tprint_info("Initializing EnhancedVectorizedProcessor")
+        tprint_debug(f"Config: enable_vectorbt={self.config.enable_vectorbt}, enable_gpu={self.config.enable_gpu}")
+        
         # Initialize UnifiedVectorizationManager
-        vectorization_config = VectorizationConfig(
-            enable_vectorbt=self.config.enable_vectorbt,
-            enable_gpu=self.config.enable_gpu,
-            memory_efficient=self.config.memory_efficient,
-            max_memory_gb=self.config.max_memory_gb,
-            chunk_size=self.config.chunk_size,
-            enable_parallel=self.config.enable_parallel
-        )
-        self.vectorization_manager = get_unified_vectorization_manager(vectorization_config)
+        with tprint_timer("Vectorization manager initialization"):
+            vectorization_config = VectorizationConfig(
+                enable_vectorbt=self.config.enable_vectorbt,
+                enable_gpu=self.config.enable_gpu,
+                memory_efficient=self.config.memory_efficient,
+                max_memory_gb=self.config.max_memory_gb,
+                chunk_size=self.config.chunk_size,
+                enable_parallel=self.config.enable_parallel
+            )
+            self.vectorization_manager = get_unified_vectorization_manager(vectorization_config)
+            tprint_debug(f"Vectorization manager initialized: vectorbt={self.config.enable_vectorbt}, gpu={self.config.enable_gpu}")
         
         # Initialize VectorBTRollingOptimizer
-        if VECTORBT_ROLLING_AVAILABLE and self.config.enable_rolling_optimization:
-            self.rolling_optimizer = get_vectorbt_rolling_optimizer(
-                enable_gpu=self.config.enable_gpu,
-                enable_parallel=self.config.enable_parallel,
-                memory_efficient=self.config.memory_efficient,
-                chunk_size=self.config.chunk_size
-            )
-        else:
-            self.rolling_optimizer = None
+        with tprint_timer("VectorBT rolling optimizer initialization"):
+            if VECTORBT_ROLLING_AVAILABLE and self.config.enable_rolling_optimization:
+                self.rolling_optimizer = get_vectorbt_rolling_optimizer(
+                    enable_gpu=self.config.enable_gpu,
+                    enable_parallel=self.config.enable_parallel,
+                    memory_efficient=self.config.memory_efficient,
+                    chunk_size=self.config.chunk_size
+                )
+                tprint_debug("VectorBT rolling optimizer initialized successfully")
+            else:
+                self.rolling_optimizer = None
+                tprint_debug("VectorBT rolling optimizer not available or disabled")
         
         # Performance tracking
         self.performance_stats = {
@@ -111,8 +133,20 @@ class EnhancedVectorizedProcessor:
             'vectorbt_usage_rate': 0.0,
             'gpu_usage_rate': 0.0,
             'memory_optimizations': 0,
-            'processing_time': 0.0
+            'processing_time': 0.0,
+            'initialization_time': 0.0,
+            'initial_memory_mb': initial_memory
         }
+        
+        # Track initialization performance
+        init_time = time.perf_counter() - start_time
+        final_memory = get_memory_usage()
+        self.performance_stats['initialization_time'] = init_time
+        self.performance_stats['memory_usage_mb'] = final_memory
+        
+        tprint_success("✅ EnhancedVectorizedProcessor initialized")
+        tprint_performance("Vectorized processor initialization", init_time)
+        tprint_debug(f"Memory usage: {initial_memory:.2f}MB -> {final_memory:.2f}MB (delta: {final_memory - initial_memory:+.2f}MB)")
         
         logger.info("✅ EnhancedVectorizedProcessor initialized")
     

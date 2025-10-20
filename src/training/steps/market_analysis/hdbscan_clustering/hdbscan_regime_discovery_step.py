@@ -12,6 +12,9 @@ import numpy as np
 from typing import Dict, Any, Optional, List
 from datetime import datetime
 from pathlib import Path
+import time
+import gc
+import psutil
 
 # Import BaseClass and step registry
 from src.training.steps.base_step import BaseStep
@@ -24,9 +27,14 @@ from src.training.steps.market_analysis.hdbscan_clustering import (
 )
 
 # Import utilities
-from src.utils.tprint import tprint, tprint_info, tprint_success, tprint_warning, tprint_error
+from src.utils.tprint import (
+    tprint, tprint_info, tprint_success, tprint_warning, tprint_error, 
+    tprint_debug, tprint_performance, tprint_progress, tprint_timer,
+    tprint_logged, LogLevel
+)
 from src.utils.data.klines_parquet import get_klines_manager
 from src.utils.serialization_utils import save_pickle, load_pickle
+from src.utils.common_operations import optimize_dataframe_memory, get_memory_usage
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +56,9 @@ class HDBSCANRegimeDiscoveryStep(BaseStep):
     
     def __init__(self, step_name: str = "hdbscan_regime_discovery"):
         """Initialize the HDBSCAN regime discovery step."""
+        tprint_debug(f"Initializing HDBSCANRegimeDiscoveryStep with name: {step_name}")
+        start_time = time.perf_counter()
+        
         super().__init__(step_name)
         self.logger = logging.getLogger(self.__class__.__name__)
         
@@ -55,8 +66,22 @@ class HDBSCANRegimeDiscoveryStep(BaseStep):
         self.regime_discovery = None
         self.config = None
         
-        tprint("🚀 HDBSCANRegimeDiscoveryStep initialized", "SUCCESS")
+        # Performance tracking
+        self.performance_stats = {
+            'initialization_time': 0.0,
+            'memory_usage_mb': 0.0,
+            'total_operations': 0
+        }
+        
+        # Track initialization time
+        init_time = time.perf_counter() - start_time
+        self.performance_stats['initialization_time'] = init_time
+        self.performance_stats['memory_usage_mb'] = get_memory_usage()
+        
+        tprint_success(f"🚀 HDBSCANRegimeDiscoveryStep initialized in {init_time:.3f}s")
+        tprint_debug(f"Initial memory usage: {self.performance_stats['memory_usage_mb']:.2f}MB")
     
+    @tprint_logged(LogLevel.INFO, include_args=True, include_result=True)
     async def run(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """
         Execute HDBSCAN regime discovery step.
@@ -76,54 +101,101 @@ class HDBSCANRegimeDiscoveryStep(BaseStep):
             Dictionary with execution results, artifacts, and metrics
         """
         start_time = datetime.now()
+        perf_start = time.perf_counter()
         
         try:
-            tprint(f"🔍 Starting HDBSCAN regime discovery for {config.get('symbol', 'UNKNOWN')}", "INFO")
+            symbol = config.get('symbol', 'UNKNOWN')
+            tprint_info(f"🔍 Starting HDBSCAN regime discovery for {symbol}")
+            tprint_debug(f"Configuration: {config}")
+            
+            # Memory optimization: Clean up before starting
+            gc.collect()
+            initial_memory = get_memory_usage()
+            tprint_debug(f"Initial memory usage: {initial_memory:.2f}MB")
             
             # Validate required parameters
-            self._validate_config(config)
+            with tprint_timer("Configuration validation"):
+                self._validate_config(config)
             
             # Create regime discovery configuration
-            self.config = self._create_regime_discovery_config(config)
+            with tprint_timer("Regime discovery configuration creation"):
+                self.config = self._create_regime_discovery_config(config)
+                tprint_debug(f"Created config with execution_mode: {config.get('execution_mode', 'light')}")
             
             # Initialize regime discovery system
-            self.regime_discovery = HDBSCANRegimeDiscovery(self.config)
+            with tprint_timer("Regime discovery system initialization"):
+                self.regime_discovery = HDBSCANRegimeDiscovery(self.config)
+                tprint_debug("Regime discovery system initialized successfully")
             
             # Load market data
-            market_data = self._load_market_data(config)
-            if market_data is None or len(market_data) == 0:
-                raise ValueError("Failed to load market data")
+            with tprint_timer("Market data loading"):
+                market_data = self._load_market_data(config)
+                if market_data is None or len(market_data) == 0:
+                    raise ValueError("Failed to load market data")
+                
+                # Optimize memory usage
+                market_data = optimize_dataframe_memory(market_data)
+                tprint_success(f"✅ Loaded market data: {market_data.shape[0]} rows, {market_data.shape[1]} columns")
+                tprint_debug(f"Data memory usage: {market_data.memory_usage(deep=True).sum() / 1024**2:.2f}MB")
             
-            tprint(f"✅ Loaded market data: {market_data.shape[0]} rows, {market_data.shape[1]} columns", "SUCCESS")
+            # Extract returns for economic validation
+            with tprint_timer("Returns extraction"):
+                returns = self._extract_returns(market_data)
+                if returns is not None:
+                    tprint_debug(f"Extracted returns: {len(returns)} samples")
+                else:
+                    tprint_warning("No returns data available for economic validation")
             
             # Execute regime discovery
-            regime_result = await self.regime_discovery.discover_regimes(
-                data=market_data,
-                fit=True,
-                is_live=config.get('live_mode', False),
-                returns=self._extract_returns(market_data)
-            )
-            
-            if not regime_result.success:
-                raise ValueError(f"Regime discovery failed: {regime_result.error_message}")
+            with tprint_timer("Regime discovery execution"):
+                regime_result = await self.regime_discovery.discover_regimes(
+                    data=market_data,
+                    fit=True,
+                    is_live=config.get('live_mode', False),
+                    returns=returns
+                )
+                
+                if not regime_result.success:
+                    raise ValueError(f"Regime discovery failed: {regime_result.error_message}")
+                
+                tprint_success(f"✅ Regime discovery completed: {regime_result.validation_metrics['n_regimes']} regimes")
             
             # Create artifacts
-            artifacts = self._create_artifacts(regime_result, config)
+            with tprint_timer("Artifacts creation"):
+                artifacts = self._create_artifacts(regime_result, config)
+                tprint_debug(f"Created {len(artifacts)} artifact categories")
             
             # Save artifacts
-            self._save_artifacts(artifacts, config)
+            with tprint_timer("Artifacts saving"):
+                self._save_artifacts(artifacts, config)
+                tprint_debug("Artifacts saved successfully")
             
             # Calculate metrics
-            metrics = self._calculate_metrics(regime_result, start_time)
+            with tprint_timer("Metrics calculation"):
+                metrics = self._calculate_metrics(regime_result, start_time)
+                tprint_debug(f"Calculated metrics: {list(metrics.keys())}")
             
             # Create comprehensive outcome report
-            outcome_report = self._create_outcome_report(regime_result, metrics, config)
+            with tprint_timer("Outcome report creation"):
+                outcome_report = self._create_outcome_report(regime_result, metrics, config)
+                tprint_debug(f"Outcome report created: {len(outcome_report)} characters")
             
             # Save outcome report to outcomes/ directory
-            report_path = self._save_outcome_report(outcome_report, config)
+            with tprint_timer("Outcome report saving"):
+                report_path = self._save_outcome_report(outcome_report, config)
+                tprint_info(f"📊 Comprehensive report saved to: {report_path}")
             
-            tprint(f"✅ HDBSCAN regime discovery completed: {regime_result.validation_metrics['n_regimes']} regimes", "SUCCESS")
-            tprint(f"📊 Comprehensive report saved to: {report_path}", "INFO")
+            # Final performance metrics
+            total_time = (datetime.now() - start_time).total_seconds()
+            perf_time = time.perf_counter() - perf_start
+            final_memory = get_memory_usage()
+            
+            tprint_performance("HDBSCAN regime discovery", total_time)
+            tprint_success(f"✅ HDBSCAN regime discovery completed: {regime_result.validation_metrics['n_regimes']} regimes")
+            tprint_debug(f"Memory usage: {initial_memory:.2f}MB -> {final_memory:.2f}MB (delta: {final_memory - initial_memory:+.2f}MB)")
+            
+            # Update performance stats
+            self.performance_stats['total_operations'] += 1
             
             return {
                 'success': True,
@@ -132,36 +204,55 @@ class HDBSCANRegimeDiscoveryStep(BaseStep):
                 'outcome_report': outcome_report,
                 'report_path': report_path,
                 'regime_result': regime_result,
-                'processing_time': (datetime.now() - start_time).total_seconds()
+                'processing_time': total_time,
+                'performance_time': perf_time,
+                'memory_usage': {
+                    'initial_mb': initial_memory,
+                    'final_mb': final_memory,
+                    'delta_mb': final_memory - initial_memory
+                }
             }
             
         except Exception as e:
             error_msg = f"HDBSCAN regime discovery failed: {str(e)}"
-            tprint(f"❌ {error_msg}", "ERROR")
+            tprint_error(error_msg)
             self.logger.error(error_msg)
+            
+            # Clean up on error
+            gc.collect()
             
             return {
                 'success': False,
                 'error': error_msg,
                 'artifacts': {},
                 'metrics': {},
-                'processing_time': (datetime.now() - start_time).total_seconds()
+                'processing_time': (datetime.now() - start_time).total_seconds(),
+                'performance_time': time.perf_counter() - perf_start
             }
     
+    @tprint_logged(LogLevel.DEBUG, include_args=True)
     def _validate_config(self, config: Dict[str, Any]) -> None:
         """Validate configuration parameters."""
+        tprint_debug("Validating configuration parameters")
+        
         required_params = ['symbol', 'exchange', 'timeframe']
         missing_params = [param for param in required_params if param not in config]
         
         if missing_params:
-            raise ValueError(f"Missing required parameters: {missing_params}")
+            error_msg = f"Missing required parameters: {missing_params}"
+            tprint_error(error_msg)
+            raise ValueError(error_msg)
+        
+        tprint_debug(f"Configuration validation passed. Symbol: {config.get('symbol')}, Exchange: {config.get('exchange')}, Timeframe: {config.get('timeframe')}")
     
+    @tprint_logged(LogLevel.INFO, include_args=True, include_result=True)
     def _create_regime_discovery_config(self, config: Dict[str, Any]) -> RegimeDiscoveryConfig:
         """Create regime discovery configuration from step config."""
-        # Map execution mode to regime discovery parameters
         execution_mode = config.get('execution_mode', 'light')
+        tprint_info(f"Creating regime discovery config for execution mode: {execution_mode}")
         
         if execution_mode == 'full':
+            tprint_debug("Using FULL execution mode configuration")
             # Full mode: comprehensive regime discovery
             return RegimeDiscoveryConfig(
                 # Feature extraction
@@ -213,6 +304,7 @@ class HDBSCANRegimeDiscoveryStep(BaseStep):
             )
             
         elif execution_mode == 'light':
+            tprint_debug("Using LIGHT execution mode configuration")
             # Light mode: essential regime discovery
             return RegimeDiscoveryConfig(
                 # Feature extraction
@@ -258,6 +350,7 @@ class HDBSCANRegimeDiscoveryStep(BaseStep):
             )
             
         else:  # blank mode
+            tprint_debug("Using BLANK execution mode configuration")
             # Blank mode: minimal regime discovery
             return RegimeDiscoveryConfig(
                 # Feature extraction
@@ -300,13 +393,17 @@ class HDBSCANRegimeDiscoveryStep(BaseStep):
                 pin_blas_threads=False
             )
     
+    @tprint_logged(LogLevel.INFO, include_args=True, include_result=True)
+    @tprint_logged(LogLevel.INFO, include_args=True, include_result=True)
     def _load_market_data(self, config: Dict[str, Any]) -> Optional[pd.DataFrame]:
-        """Load market data using klines manager."""
+        """Load market data using klines manager with comprehensive optimization."""
         try:
-            tprint("📂 Loading market data...", "INFO")
+            tprint_info("📂 Loading market data...")
             
             # Get klines manager
-            klines_manager = get_klines_manager(data_dir=config.get('data_dir', 'historical_data'))
+            data_dir = config.get('data_dir', 'historical_data')
+            tprint_debug(f"Using data directory: {data_dir}")
+            klines_manager = get_klines_manager(data_dir=data_dir)
             
             # Parse date filters if provided
             start_date = None
@@ -314,38 +411,63 @@ class HDBSCANRegimeDiscoveryStep(BaseStep):
             
             if 'start_date' in config and config['start_date']:
                 start_date = pd.to_datetime(config['start_date'])
-                tprint(f"📅 Using start_date filter: {start_date}", "INFO")
+                tprint_info(f"📅 Using start_date filter: {start_date}")
             
             if 'end_date' in config and config['end_date']:
                 end_date = pd.to_datetime(config['end_date'])
-                tprint(f"📅 Using end_date filter: {end_date}", "INFO")
+                tprint_info(f"📅 Using end_date filter: {end_date}")
             
             # Load data
-            market_data = klines_manager.read_data(
-                symbol=config['symbol'],
-                interval=config['timeframe'],
-                data_type="processed",
-                start_date=start_date,
-                end_date=end_date
-            )
+            symbol = config['symbol']
+            timeframe = config['timeframe']
+            tprint_debug(f"Loading data for {symbol} {timeframe}")
+            
+            with tprint_timer("Market data loading"):
+                market_data = klines_manager.read_data(
+                    symbol=symbol,
+                    interval=timeframe,
+                    data_type="processed",
+                    start_date=start_date,
+                    end_date=end_date
+                )
             
             if market_data is not None and len(market_data) > 0:
+                # Memory optimization
+                initial_memory = market_data.memory_usage(deep=True).sum() / 1024**2
+                tprint_debug(f"Initial data memory usage: {initial_memory:.2f}MB")
+                
                 # Ensure timestamp column exists
                 if 'timestamp' not in market_data.columns and isinstance(market_data.index, pd.DatetimeIndex):
                     market_data = market_data.copy()
                     market_data['timestamp'] = market_data.index
-                    tprint("✅ Added timestamp column from DatetimeIndex", "SUCCESS")
+                    tprint_success("✅ Added timestamp column from DatetimeIndex")
                 
-                tprint(f"✅ Market data loaded: {market_data.shape[0]} rows, {market_data.shape[1]} columns", "SUCCESS")
-                tprint(f"📅 Date range: {market_data.index.min()} to {market_data.index.max()}", "INFO")
+                # Comprehensive memory optimization
+                with tprint_timer("DataFrame memory optimization"):
+                    market_data = optimize_dataframe_memory(market_data)
+                    final_memory = market_data.memory_usage(deep=True).sum() / 1024**2
+                    memory_saved = initial_memory - final_memory
+                    
+                    # Additional memory cleanup
+                    gc.collect()
+                    post_gc_memory = get_memory_usage()
+                    
+                    tprint_debug(f"Memory optimization: {initial_memory:.2f}MB -> {final_memory:.2f}MB (saved {memory_saved:.2f}MB)")
+                    tprint_debug(f"System memory after GC: {post_gc_memory:.2f}MB")
+                
+                # Data quality validation
+                tprint_debug(f"Data quality check: {market_data.isnull().sum().sum()} null values, {market_data.isin([np.inf, -np.inf]).sum().sum()} infinite values")
+                
+                tprint_success(f"✅ Market data loaded: {market_data.shape[0]} rows, {market_data.shape[1]} columns")
+                tprint_info(f"📅 Date range: {market_data.index.min()} to {market_data.index.max()}")
                 
                 return market_data
             else:
-                tprint("❌ No market data loaded", "ERROR")
+                tprint_error("❌ No market data loaded")
                 return None
                 
         except Exception as e:
-            tprint(f"❌ Failed to load market data: {e}", "ERROR")
+            tprint_error(f"❌ Failed to load market data: {e}")
             return None
     
     def _extract_returns(self, market_data: pd.DataFrame) -> Optional[np.ndarray]:

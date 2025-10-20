@@ -311,27 +311,37 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
         self.performance_stats['hardware_optimizations_applied'] += 1
         return optimized_df
     
-    async def execute(self, model_type: str, direction: str, symbol: str, timeframe: str, config: Optional[Dict[str, Any]] = None) -> FinalFeatureSelectionResult:
+    async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """
         Execute final feature selection step.
         
         Args:
-            model_type: 'analyst' or 'tactician'
-            direction: 'long' or 'short'
-            symbol: Trading symbol
-            timeframe: Trading timeframe
-            
+            config: Configuration dictionary containing all necessary parameters
+                   (symbol, exchange, timeframes, execution_mode, model_type, direction, etc.)
+        
         Returns:
-            FinalFeatureSelectionResult with 3 feature sets (60, 50, 40)
+            Dict containing:
+            - 'success': bool indicating if step completed successfully
+            - 'artifacts': list of artifact paths/metadata created
+            - 'metrics': dict of performance metrics
+            - 'error': error message if step failed (optional)
+            - 'execution_time': float seconds taken to execute
         """
         start_time = time.time()
+        
+        # Extract parameters from config
+        model_type = config.get('model_type', 'analyst')
+        direction = config.get('direction', 'long')
+        symbol = config.get('symbol', 'ETHUSDT')
+        timeframe = config.get('timeframe', '15m')
+        
         tprint_info(f"🎯 Starting final feature selection for {model_type}_{direction}")
         
         # Set up enhanced artifact manager with context
-        context = get_step_context_from_config(self.config)
+        context = get_step_context_from_config(config)
         context.update({
             'symbol': symbol,
-            'exchange': 'binance',  # Default exchange
+            'exchange': config.get('exchange', 'binance'),
             'direction': direction,
             'model': model_type.title()  # Convert to proper case
         })
@@ -453,29 +463,42 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             # Final cleanup
             force_cleanup()
             
-            return result
+            # Convert result to BaseStep format
+            return {
+                'success': True,
+                'artifacts': [
+                    f'selected_features_60_{model_type}_{direction}',
+                    f'selected_features_50_{model_type}_{direction}',
+                    f'selected_features_40_{model_type}_{direction}',
+                    f'feature_scores_{model_type}_{direction}',
+                    f'shap_values_{model_type}_{direction}'
+                ],
+                'metrics': {
+                    'execution_time': execution_time,
+                    'performance_stats': self.performance_stats,
+                    'feature_reduction': f"{features_df.shape[1]} → 60/50/40",
+                    'gc_runs': self.performance_stats['gc_runs'],
+                    'hardware_optimizations': self.performance_stats['hardware_optimizations_applied']
+                },
+                'execution_time': execution_time,
+                'result_data': result  # Store the actual result for internal use
+            }
             
         except Exception as e:
             execution_time = time.time() - start_time
             tprint_error(f"❌ Final feature selection failed: {e}")
             self.logger.error(f"Final feature selection failed: {e}", exc_info=True)
             
-            return FinalFeatureSelectionResult(
-                success=False,
-                selected_features_60=[],
-                selected_features_50=[],
-                selected_features_40=[],
-                selected_feature_dataframe_60=pd.DataFrame(),
-                selected_feature_dataframe_50=pd.DataFrame(),
-                selected_feature_dataframe_40=pd.DataFrame(),
-                feature_scores={},
-                shap_values_60=None,
-                shap_values_50=None,
-                shap_values_40=None,
-                selection_metadata={},
-                execution_time=execution_time,
-                error_message=str(e)
-            )
+            return {
+                'success': False,
+                'artifacts': [],
+                'metrics': {
+                    'execution_time': execution_time,
+                    'error': str(e)
+                },
+                'execution_time': execution_time,
+                'error': str(e)
+            }
     
     async def _load_artifacts(self, artifact_manager, model_type: str, direction: str) -> Tuple[Optional[pd.DataFrame], Optional[pd.Series]]:
         """Load features and targets from previous steps."""
@@ -737,8 +760,10 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             relevance_scores = {}
             for i, col in enumerate(X.columns):
                 try:
+                    # Optimize data before MI calculation
+                    col_data = optimize_dataframe(X[[col]])
                     mi_score = mutual_info_regression(
-                        X[[col]], y, random_state=42, n_neighbors=self.mi_neighbors
+                        col_data, y, random_state=42, n_neighbors=self.mi_neighbors
                     )[0]
                     relevance_scores[col] = float(mi_score)
                 except:
@@ -749,8 +774,11 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             for i in range(n_features):
                 for j in range(i + 1, n_features):
                     try:
+                        # Optimize data before MI calculation
+                        feat_i = optimize_dataframe(X.iloc[:, [i]])
+                        feat_j = optimize_dataframe(X.iloc[:, [j]])
                         mi_score = mutual_info_regression(
-                            X.iloc[:, [i]], X.iloc[:, j], random_state=42, n_neighbors=self.mi_neighbors
+                            feat_i, feat_j, random_state=42, n_neighbors=self.mi_neighbors
                         )[0]
                         mi_matrix[i, j] = mi_matrix[j, i] = float(mi_score)
                     except:

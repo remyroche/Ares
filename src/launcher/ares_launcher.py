@@ -72,7 +72,7 @@ class SimplifiedAresLauncher:
         self.step_registry.register(step_name, step_class)
         self.logger.info(f"Registered step: {step_name}")
     
-    async def run_step(self, step_name: str, config: Dict[str, Any]) -> Dict[str, Any]:
+    def run_step(self, step_name: str, config: Dict[str, Any]) -> Dict[str, Any]:
         """
         Run a single autonomous step.
         
@@ -92,8 +92,8 @@ class SimplifiedAresLauncher:
             # Create step instance
             step_instance = step_class(step_name)
             
-            # Run the step (async)
-            result = await step_instance.run(config)
+            # Run the step
+            result = step_instance.run(config)
             
             # Log completion
             if result.get('success', False):
@@ -122,7 +122,7 @@ class SimplifiedAresLauncher:
                 'metrics': {}
             }
     
-    async def run_steps(self, step_names: List[str], config: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    def run_steps(self, step_names: List[str], config: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
         """
         Run multiple steps sequentially.
         
@@ -138,7 +138,7 @@ class SimplifiedAresLauncher:
         for step_name in step_names:
             self.logger.info(f"Running step {step_names.index(step_name) + 1}/{len(step_names)}: {step_name}")
             
-            result = await self.run_step(step_name, config)
+            result = self.run_step(step_name, config)
             results[step_name] = result
             
             # Stop on first failure unless configured otherwise
@@ -148,7 +148,7 @@ class SimplifiedAresLauncher:
         
         return results
     
-    async def run_stage(self, stage_name: str, config: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    def run_stage(self, stage_name: str, config: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
         """
         Run all steps in a specific stage.
         
@@ -202,7 +202,7 @@ class SimplifiedAresLauncher:
         step_names = stage_steps[stage_name]
         self.logger.info(f"Running stage '{stage_name}' with {len(step_names)} steps")
         
-        return await self.run_steps(step_names, config)
+        return self.run_steps(step_names, config)
     
     def list_steps(self) -> List[str]:
         """
@@ -289,7 +289,7 @@ Examples:
     return parser
 
 
-async def main():
+def main():
     """Main entry point."""
     logger.info("🎯 Starting Simplified Ares Launcher...")
     
@@ -333,14 +333,14 @@ async def main():
         if args.step:
             # Single step execution
             logger.info(f"Running single step: {args.step}")
-            result = await launcher.run_step(args.step, config)
+            result = launcher.run_step(args.step, config)
             print(f"Step '{args.step}' completed: {'✅ Success' if result.get('success') else '❌ Failed'}")
             
         elif args.steps:
             # Multiple steps execution
             step_names = [s.strip() for s in args.steps.split(',')]
             logger.info(f"Running multiple steps: {step_names}")
-            results = await launcher.run_steps(step_names, config)
+            results = launcher.run_steps(step_names, config)
             
             # Print summary
             successful = sum(1 for r in results.values() if r.get('success', False))
@@ -350,7 +350,7 @@ async def main():
         elif args.stage:
             # Stage execution
             logger.info(f"Running stage: {args.stage}")
-            results = await launcher.run_stage(args.stage, config)
+            results = launcher.run_stage(args.stage, config)
             
             # Print summary
             successful = sum(1 for r in results.values() if r.get('success', False))
@@ -360,7 +360,7 @@ async def main():
         elif args.mode == 'sequential' and args.sub_pipeline:
             # Legacy sequential sub-pipeline execution
             logger.info(f"Running legacy sub-pipeline: {args.sub_pipeline}")
-            result = await launcher.run_step(args.sub_pipeline, config)
+            result = launcher.run_step(args.sub_pipeline, config)
             print(f"Sub-pipeline '{args.sub_pipeline}' completed: {'✅ Success' if result.get('success') else '❌ Failed'}")
             
         elif any([args.train_analyst_base, args.train_analyst_ensemble, args.train_tactician_base, args.train_tactician_ensemble]):
@@ -375,20 +375,20 @@ async def main():
                 step_name = 'tactician_ensemble_training'
             
             logger.info(f"Running model training: {step_name}")
-            result = await launcher.run_step(step_name, config)
+            result = launcher.run_step(step_name, config)
             print(f"Model training '{step_name}' completed: {'✅ Success' if result.get('success') else '❌ Failed'}")
             
         elif args.hdbscan_regime_discovery:
             # HDBSCAN regime discovery execution
             logger.info("Running HDBSCAN regime discovery (replaces NAS/TAS)")
-            result = await launcher.run_step('hdbscan_regime_discovery', config)
+            result = launcher.run_step('hdbscan_regime_discovery', config)
             print(f"HDBSCAN regime discovery completed: {'✅ Success' if result.get('success') else '❌ Failed'}")
             
         elif args.legacy_nas_tas:
             # Legacy NAS/TAS regime discovery execution (deprecated)
             logger.warning("Running legacy NAS/TAS regime discovery (deprecated - use --hdbscan-regime-discovery instead)")
             # For now, redirect to HDBSCAN until legacy is fully removed
-            result = await launcher.run_step('hdbscan_regime_discovery', config)
+            result = launcher.run_step('hdbscan_regime_discovery', config)
             print(f"Legacy NAS/TAS regime discovery (redirected to HDBSCAN) completed: {'✅ Success' if result.get('success') else '❌ Failed'}")
             
         else:
@@ -402,4 +402,4 @@ async def main():
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()

@@ -108,9 +108,37 @@ except ImportError as e:
     MATRIX_OPERATIONS_AVAILABLE = False
     tprint(f"Matrix operations not available: {e}", "WARNING")
 
+# Import hardware optimization decorators
+try:
+    from src.utils.hardware.memory_optimized_decorators import (
+        memory_optimized,
+        MemoryOptimizationLevel
+    )
+    from src.utils.hardware.optimization_decorators import (
+        performance_tracked
+    )
+    HARDWARE_DECORATORS_AVAILABLE = True
+except ImportError as e:
+    HARDWARE_DECORATORS_AVAILABLE = False
+    tprint(f"Hardware decorators not available: {e}", "WARNING")
+    # Create fallback decorators
+    def memory_optimized(optimization_level=None):
+        def decorator(func):
+            return func
+        return decorator
+    
+    def performance_tracked(log_performance=False, track_memory=False):
+        def decorator(func):
+            return func
+        return decorator
+    
+    class MemoryOptimizationLevel:
+        AGGRESSIVE = "aggressive"
+
 try:
     from src.utils.hardware import (
         get_unified_hardware_manager,
+        get_integrated_hardware_manager,
         get_advanced_cpu_optimizer,
         get_enhanced_gpu_manager,
         get_advanced_memory_optimizer,
@@ -882,13 +910,35 @@ class RegimeClusteringComponent(BaseStep):
             # Standardize features
             from sklearn.preprocessing import StandardScaler
             scaler = StandardScaler()
-            features_scaled = scaler.fit_transform(features)
+            
+            # Use hardware optimization for feature scaling if available
+            if HARDWARE_OPTIMIZATION_AVAILABLE and self.hardware_manager:
+                try:
+                    features_scaled = self.hardware_manager.optimize_dataframe_processing(
+                        features, operation='standardize'
+                    )
+                except Exception as e:
+                    tprint(f"Hardware optimization failed, using standard scaling: {e}", "WARNING")
+                    features_scaled = scaler.fit_transform(features)
+            else:
+                features_scaled = scaler.fit_transform(features)
             
             # Apply PCA for dimensionality reduction
             from sklearn.decomposition import PCA
             n_components = min(features.shape[1], len(features) - 1, config.n_regimes * 2)
             pca = PCA(n_components=n_components)
-            features_pca = pca.fit_transform(features_scaled)
+            
+            # Use hardware optimization for PCA if available
+            if HARDWARE_OPTIMIZATION_AVAILABLE and self.hardware_manager:
+                try:
+                    features_pca = self.hardware_manager.optimize_dataframe_processing(
+                        features_scaled, operation='pca', n_components=n_components
+                    )
+                except Exception as e:
+                    tprint(f"Hardware optimization failed, using standard PCA: {e}", "WARNING")
+                    features_pca = pca.fit_transform(features_scaled)
+            else:
+                features_pca = pca.fit_transform(features_scaled)
             
             # Perform GMM clustering - ENHANCED with better parameters for convergence and silhouette
             from sklearn.mixture import GaussianMixture
@@ -2192,7 +2242,18 @@ class RegimeClusteringComponent(BaseStep):
         from sklearn.decomposition import PCA
 
         scaler = StandardScaler()
-        scaled_features = scaler.fit_transform(selected_features)
+        
+        # Use hardware optimization for feature scaling if available
+        if HARDWARE_OPTIMIZATION_AVAILABLE and self.hardware_manager:
+            try:
+                scaled_features = self.hardware_manager.optimize_dataframe_processing(
+                    selected_features, operation='standardize'
+                )
+            except Exception as e:
+                tprint(f"Hardware optimization failed, using standard scaling: {e}", "WARNING")
+                scaled_features = scaler.fit_transform(selected_features)
+        else:
+            scaled_features = scaler.fit_transform(selected_features)
         clip_threshold = float(max(0.0, getattr(self.config, 'zscore_clip_threshold', 0.0)))
         if clip_threshold > 0.0:
             scaled_features = np.clip(scaled_features, -clip_threshold, clip_threshold)
@@ -2205,7 +2266,18 @@ class RegimeClusteringComponent(BaseStep):
             n_components = min(1, scaled_features.shape[1])
 
         pca = PCA(n_components=n_components, svd_solver='auto', random_state=42)
-        projected_features = pca.fit_transform(scaled_features)
+        
+        # Use hardware optimization for PCA if available
+        if HARDWARE_OPTIMIZATION_AVAILABLE and self.hardware_manager:
+            try:
+                projected_features = self.hardware_manager.optimize_dataframe_processing(
+                    scaled_features, operation='pca', n_components=n_components
+                )
+            except Exception as e:
+                tprint(f"Hardware optimization failed, using standard PCA: {e}", "WARNING")
+                projected_features = pca.fit_transform(scaled_features)
+        else:
+            projected_features = pca.fit_transform(scaled_features)
 
         explained_ratio = getattr(pca, 'explained_variance_ratio_', np.array([]))
         explained_ratio_list = explained_ratio.tolist() if explained_ratio.size else []
@@ -3229,7 +3301,17 @@ class RegimeClusteringComponent(BaseStep):
             context.pre_pca_feature_names = list(feature_names)
             context.pre_pca_feature_count = len(feature_names)
 
-            features_scaled = scaler.fit_transform(context.original_features)
+            # Use hardware optimization for feature scaling if available
+            if HARDWARE_OPTIMIZATION_AVAILABLE and self.hardware_manager:
+                try:
+                    features_scaled = self.hardware_manager.optimize_dataframe_processing(
+                        context.original_features, operation='standardize'
+                    )
+                except Exception as e:
+                    tprint(f"Hardware optimization failed, using standard scaling: {e}", "WARNING")
+                    features_scaled = scaler.fit_transform(context.original_features)
+            else:
+                features_scaled = scaler.fit_transform(context.original_features)
             tprint(f"Feature standardization completed: {context.original_features.shape}", "SUCCESS")
 
             if context.original_features.shape[1] < 2:
@@ -3350,7 +3432,18 @@ class RegimeClusteringComponent(BaseStep):
                     }
 
                 scaler = StandardScaler()
-                features_scaled = scaler.fit_transform(context.original_features)
+                
+                # Use hardware optimization for feature scaling if available
+                if HARDWARE_OPTIMIZATION_AVAILABLE and self.hardware_manager:
+                    try:
+                        features_scaled = self.hardware_manager.optimize_dataframe_processing(
+                            context.original_features, operation='standardize'
+                        )
+                    except Exception as e:
+                        tprint(f"Hardware optimization failed, using standard scaling: {e}", "WARNING")
+                        features_scaled = scaler.fit_transform(context.original_features)
+                else:
+                    features_scaled = scaler.fit_transform(context.original_features)
                 pca, features_pca = _fit_pca(features_scaled)
                 loading_scores = _compute_loading_scores(pca, context.original_features.shape[1])
             else:
@@ -3473,7 +3566,10 @@ class RegimeClusteringComponent(BaseStep):
             
             # Check for perfect correlation between features
             if features.shape[1] > 1:
-                corr_matrix = np.corrcoef(features.T)
+                if MATRIX_OPERATIONS_AVAILABLE:
+                    corr_matrix = safe_correlation_matrix(features.T)
+                else:
+                    corr_matrix = np.corrcoef(features.T)
                 # Find perfectly correlated features (correlation = 1.0)
                 perfect_corr_mask = np.triu(np.abs(corr_matrix - 1.0) < 1e-10, k=1)
                 if np.any(perfect_corr_mask):
@@ -5005,7 +5101,10 @@ class RegimeClusteringComponent(BaseStep):
             variance_factor = min(variance_factor, 1.0)
             
             # Complexity factor 3: Feature correlation
-            correlation_matrix = np.corrcoef(features.T)
+            if MATRIX_OPERATIONS_AVAILABLE:
+                correlation_matrix = safe_correlation_matrix(features.T)
+            else:
+                correlation_matrix = np.corrcoef(features.T)
             correlation_strength = np.mean(np.abs(correlation_matrix[np.triu_indices_from(correlation_matrix, k=1)]))
             correlation_factor = min(correlation_strength, 1.0)
             
@@ -6074,7 +6173,10 @@ class RegimeClusteringComponent(BaseStep):
             # Check for highly correlated features (shouldn't be needed after earlier steps but safety check)
             if features.shape[1] > 1:
                 try:
-                    corr_matrix = np.corrcoef(features.T)
+                    if MATRIX_OPERATIONS_AVAILABLE:
+                        corr_matrix = safe_correlation_matrix(features.T)
+                    else:
+                        corr_matrix = np.corrcoef(features.T)
                     # Remove features with correlation > 0.99
                     high_corr_mask = np.triu(np.abs(corr_matrix) > 0.99, k=1)
                     if np.any(high_corr_mask):

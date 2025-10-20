@@ -42,12 +42,22 @@ from .factories import (
     UnifiedFactory, create_optimized_component
 )
 
-from .vectorbt import (
+from .vectorbt_extensions import (
     UnifiedVectorBTManager, get_unified_vectorbt_manager,
     VectorBTOptimizationEngine, get_optimization_engine,
     GPUAccelerator, get_gpu_accelerator,
     VectorBTPerformanceMonitor, get_performance_monitor
 )
+
+# Hardware optimization imports
+try:
+    from .mixins.optimization_mixin import OptimizationMixin as HardwareOptimizedMixin
+    from .vectorbt_extensions.unified_manager import UnifiedVectorBTManager as HardwareOptimizedVectorBTManager
+    from .transforms.vectorbt_scaler import VectorBTScaler as HardwareOptimizedVectorBTScaler
+    from .transforms.vectorbt_scaler import VectorBTBatchScaler as HardwareOptimizedVectorBTBatchScaler
+    HARDWARE_OPTIMIZATION_AVAILABLE = True
+except ImportError:
+    HARDWARE_OPTIMIZATION_AVAILABLE = False
 
 # Note: Normalization feature generators removed from direct imports to avoid circular dependencies
 # They will be imported lazily when needed
@@ -119,6 +129,9 @@ __all__ = [
     'VectorBTPerformanceMonitor',
     'get_performance_monitor',
 
+    # Hardware Optimization (if available)
+    'HARDWARE_OPTIMIZATION_AVAILABLE',
+
     # Error handling and logging
     'FeaturesCommonError',
     'ValidationError',
@@ -150,6 +163,15 @@ if VECTORBT_OPTIMIZER_AVAILABLE:
         'get_vectorbt_rolling_optimizer',
         'UnifiedVectorizationManager',
         'get_unified_vectorization_manager',
+    ])
+
+# Add hardware optimization components to __all__ if available
+if HARDWARE_OPTIMIZATION_AVAILABLE:
+    __all__.extend([
+        'HardwareOptimizedMixin',
+        'HardwareOptimizedVectorBTManager',
+        'HardwareOptimizedVectorBTScaler',
+        'HardwareOptimizedVectorBTBatchScaler',
     ])
 
 if TPRINT_AVAILABLE:

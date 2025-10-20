@@ -88,17 +88,19 @@ class VectorBTScaler(BaseScaler):
 
     def __init__(self, method: str = 'zscore', enable_gpu: bool = False,
                  enable_batch: bool = True, memory_efficient: bool = True,
-                 use_optimizer: bool = True, use_unified_manager: bool = True, **kwargs):
+                 use_optimizer: bool = True, use_unified_manager: bool = True,
+                 enable_hardware_optimization: bool = True, **kwargs):
         """
-        Initialize VectorBT scaler with enhanced optimization.
+        Initialize VectorBT scaler with enhanced optimization and hardware utilities.
 
         Args:
             method: Scaling method ('zscore', 'minmax', 'robust', 'quantile', 'winsorize', 'rank', 'clip', 'robust_zscore', 'adaptive', 'quantile_robust')
-            enable_gpu: Enable
+            enable_gpu: Enable GPU processing
             enable_batch: Enable batch processing optimization
             memory_efficient: Enable memory optimization
             use_optimizer: Whether to use VectorBTRollingOptimizer
             use_unified_manager: Whether to use UnifiedVectorizationManager
+            enable_hardware_optimization: Enable hardware utility integration
             **kwargs: Additional parameters for the scaling method
         """
         super().__init__(use_vectorbt=True, enable_gpu=enable_gpu,
@@ -108,22 +110,106 @@ class VectorBTScaler(BaseScaler):
         self.scaling_params = {}
         self.enable_batch = enable_batch
         self.memory_efficient = memory_efficient
+        self.enable_hardware_optimization = enable_hardware_optimization
+
+        # Hardware utility availability
+        self.hardware_available = self._check_hardware_availability()
 
         # Enhanced performance tracking
         self.performance_stats.update({
             'gpu_operations': 0,
             'batch_operations': 0,
             'adaptive_scaling_decisions': 0,
-            'unified_manager_operations': 0
+            'unified_manager_operations': 0,
+            'hardware_operations': 0,
+            'memory_optimizations': 0,
+            'adaptive_decisions': 0
         })
+
+        # Initialize hardware managers if available
+        if self.hardware_available and self.enable_hardware_optimization:
+            self._initialize_hardware_managers()
 
         # Get common utilities (lazy import to avoid circular dependencies)
         self._utils = _get_common_utils()
         if not self._utils['VECTORBT_AVAILABLE']:
             logger.warning("VectorBT not available, using fallback scaler")
 
+    def _check_hardware_availability(self) -> bool:
+        """Check if hardware utilities are available."""
+        try:
+            from src.utils.hardware.integrated_hardware_manager import get_integrated_hardware_manager
+            from src.utils.hardware.adaptive_optimization_engine import get_adaptive_optimization_engine
+            from src.utils.hardware.advanced_memory_manager import get_advanced_memory_manager
+            from src.utils.hardware.enhanced_gpu_manager import get_enhanced_gpu_manager
+            return True
+        except ImportError:
+            return False
+
+    def _initialize_hardware_managers(self):
+        """Initialize hardware managers."""
+        try:
+            from src.utils.hardware.integrated_hardware_manager import get_integrated_hardware_manager
+            from src.utils.hardware.adaptive_optimization_engine import get_adaptive_optimization_engine
+            from src.utils.hardware.advanced_memory_manager import get_advanced_memory_manager
+            from src.utils.hardware.enhanced_gpu_manager import get_enhanced_gpu_manager
+            
+            # Initialize hardware managers
+            self.integrated_manager = get_integrated_hardware_manager()
+            self.adaptive_engine = get_adaptive_optimization_engine()
+            self.memory_manager = get_advanced_memory_manager()
+            self.gpu_manager = get_enhanced_gpu_manager()
+            
+            logger.debug("Hardware managers initialized for VectorBT scaler")
+            
+        except Exception as e:
+            logger.warning(f"Failed to initialize hardware managers: {e}")
+            self.hardware_available = False
+
+    def _apply_hardware_optimization(self, data: pd.Series) -> pd.Series:
+        """Apply hardware optimization to the data."""
+        if not self.hardware_available or not self.enable_hardware_optimization:
+            return data
+        
+        try:
+            # Use advanced memory manager for optimization
+            optimized_data = self.memory_manager.process_data_with_optimization(
+                data, 'data_processing'  # Default workload type
+            )
+            
+            self.performance_stats['memory_optimizations'] += 1
+            return optimized_data
+            
+        except Exception as e:
+            logger.warning(f"Hardware optimization failed: {e}")
+            return data
+
+    def _get_optimal_scaling_strategy(self, data: pd.Series) -> Dict[str, Any]:
+        """Get optimal scaling strategy using adaptive optimization engine."""
+        if not self.hardware_available or not self.enable_hardware_optimization:
+            return {'method': self.method, 'use_gpu': self.enable_gpu}
+        
+        try:
+            # Get memory pressure
+            memory_pressure = self.memory_manager.get_memory_stats().memory_percent
+            
+            # Get optimal strategy from adaptive engine
+            strategy = self.adaptive_engine.get_optimal_strategy('scaling', {
+                'memory_pressure': memory_pressure,
+                'data_size': len(data),
+                'scaling_method': self.method,
+                'workload_type': 'data_processing'
+            })
+            
+            self.performance_stats['adaptive_decisions'] += 1
+            return strategy
+            
+        except Exception as e:
+            logger.warning(f"Failed to get optimal scaling strategy: {e}")
+            return {'method': self.method, 'use_gpu': self.enable_gpu}
+
     def fit_transform(self, data: pd.Series) -> pd.Series:
-        """Fit scaler parameters and transform data using VectorBT with enhanced optimization."""
+        """Fit scaler parameters and transform data using VectorBT with enhanced optimization and hardware utilities."""
         if self._utils['TPRINT_AVAILABLE']:
             self._utils['tprint'](f"🔧 [VectorBTScaler] Starting fit_transform with method={self.method} on {len(data)} samples", color="cyan")
 
@@ -132,6 +218,13 @@ class VectorBTScaler(BaseScaler):
 
         # Validate input
         self._validate_numeric_input(data, "input data")
+
+        # Apply hardware optimization if enabled
+        if self.hardware_available and self.enable_hardware_optimization:
+            if self._utils['TPRINT_AVAILABLE']:
+                self._utils['tprint']("🚀 [VectorBTScaler] Applying hardware optimization", color="magenta")
+            data = self._apply_hardware_optimization(data)
+            self.performance_stats['hardware_operations'] += 1
 
         # Optimize data for VectorBT processing
         if self.memory_efficient:

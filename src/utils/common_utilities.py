@@ -12,6 +12,21 @@ import numpy as np
 from typing import Any, Dict, List, Optional, Union, Callable
 from pathlib import Path
 
+# Enhanced hardware optimization imports
+try:
+    from src.utils.hardware.optimization_decorators import (
+        smart_cache, auto_optimize, memory_efficient, performance_tracked
+    )
+    from src.utils.hardware.memory_optimized_decorators import (
+        memory_optimized, comprehensive_memory_optimization, MemoryOptimizationLevel
+    )
+    from src.utils.hardware.integrated_hardware_manager import (
+        get_integrated_hardware_manager, WorkloadType
+    )
+    HARDWARE_OPTIMIZATION_AVAILABLE = True
+except ImportError:
+    HARDWARE_OPTIMIZATION_AVAILABLE = False
+
 # Setup logging
 logger = logging.getLogger(__name__)
 
@@ -213,6 +228,8 @@ def format_nan_analysis_report(analysis_results: Dict[str, Any], prefix: str = "
         logger.error(f"Error formatting NaN analysis report: {e}")
         return f"{prefix}❌ Error formatting NaN analysis report: {e}"
 
+@memory_efficient(memory_threshold_mb=100.0, auto_cleanup=True) if HARDWARE_OPTIMIZATION_AVAILABLE else lambda x: x
+@performance_tracked(log_performance=True, track_memory=True) if HARDWARE_OPTIMIZATION_AVAILABLE else lambda x: x
 def calculate_data_quality_metrics(df: Union[pd.DataFrame, np.ndarray]) -> Dict[str, Any]:
     """Calculate data quality metrics for DataFrame or numpy array."""
     try:
@@ -327,6 +344,8 @@ def safe_timestamp_conversion(df: pd.DataFrame, column: str) -> pd.DataFrame:
         logger.warning(f"Error converting timestamp column {column}: {e}")
         return df
 
+@memory_efficient(memory_threshold_mb=50.0, auto_cleanup=True) if HARDWARE_OPTIMIZATION_AVAILABLE else lambda x: x
+@performance_tracked(log_performance=True, track_memory=True) if HARDWARE_OPTIMIZATION_AVAILABLE else lambda x: x
 def get_dataframe_info(df: pd.DataFrame) -> Dict[str, Any]:
     """Get comprehensive DataFrame information."""
     try:

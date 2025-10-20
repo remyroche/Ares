@@ -13,7 +13,13 @@ from contextlib import contextmanager
 # Enhanced hardware optimization imports
 try:
     from src.utils.hardware.optimization_decorators import (
-        memory_efficient, auto_optimize, OptimizationConfig, OptimizationLevel
+        smart_cache, auto_optimize, memory_efficient, performance_tracked
+    )
+    from src.utils.hardware.memory_optimized_decorators import (
+        memory_optimized, comprehensive_memory_optimization, MemoryOptimizationLevel
+    )
+    from src.utils.hardware.integrated_hardware_manager import (
+        get_integrated_hardware_manager, WorkloadType
     )
     HARDWARE_OPTIMIZATION_AVAILABLE = True
 except ImportError:

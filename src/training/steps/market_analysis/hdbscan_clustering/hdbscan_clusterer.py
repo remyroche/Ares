@@ -14,6 +14,9 @@ import logging
 import time
 from sklearn.metrics import silhouette_score, calinski_harabasz_score, davies_bouldin_score
 from sklearn.neighbors import NearestNeighbors
+from sklearn.mixture import GaussianMixture
+from sklearn.kernel_approximation import RBFSampler
+from scipy.stats import multivariate_normal
 import warnings
 
 # Import enhanced hardware optimization tools
@@ -56,6 +59,13 @@ class HDBSCANClustererConfig:
     optimization_metric: str = 'silhouette'  # 'silhouette', 'calinski_harabasz', 'davies_bouldin'
     param_search_space: Dict[str, List] = None
     
+    # Enhanced probability estimation
+    enable_gmm_fallback: bool = True
+    gmm_max_components: int = 10
+    gmm_covariance_type: str = 'full'  # 'full', 'tied', 'diag', 'spherical'
+    enable_kde_fallback: bool = True
+    kde_bandwidth: float = 0.1
+    
     # Validation
     validate_input: bool = True
     min_samples_for_clustering: int = 10
@@ -80,6 +90,12 @@ class HDBSCANClusterer:
         self.clustering_stats = {}
         self.best_params = None
         self.best_score = -np.inf
+        
+        # Enhanced probability estimation models
+        self.gmm_models = {}
+        self.kde_models = {}
+        self.cluster_centers = None
+        self.cluster_covariances = None
         
         # Set default parameter search space
         if self.config.param_search_space is None:
@@ -136,6 +152,10 @@ class HDBSCANClusterer:
             
             # Calculate clustering statistics
             self.clustering_stats = self._calculate_clustering_stats(cluster_labels, features, clustering_info)
+            
+            # Train enhanced probability estimation models
+            if self.config.enable_gmm_fallback or self.config.enable_kde_fallback:
+                self._train_enhanced_probability_models(cluster_labels, features)
             
             logger.info(f"✅ HDBSCAN clustering completed. Found {len(np.unique(cluster_labels[cluster_labels != -1]))} clusters")
             
@@ -542,7 +562,7 @@ class HDBSCANClusterer:
     
     def approximate_predict_with_fallback(self, features: np.ndarray) -> Tuple[np.ndarray, np.ndarray, str]:
         """
-        Predict cluster labels and probabilities for new data points.
+        Enhanced prediction with multiple fallback strategies including GMM and KDE.
         
         This method provides approximate prediction capabilities for HDBSCAN,
         which doesn't have a direct predict method.
@@ -566,6 +586,20 @@ class HDBSCANClusterer:
                 except Exception as e:
                     logger.debug(f"HDBSCAN approximate_predict failed: {e}")
             
+            # Try GMM-based prediction if available
+            if self.config.enable_gmm_fallback and self.gmm_models:
+                try:
+                    return self._gmm_based_prediction(features)
+                except Exception as e:
+                    logger.debug(f"GMM-based prediction failed: {e}")
+            
+            # Try KDE-based prediction if available
+            if self.config.enable_kde_fallback and self.kde_models:
+                try:
+                    return self._kde_based_prediction(features)
+                except Exception as e:
+                    logger.debug(f"KDE-based prediction failed: {e}")
+            
             # Fallback to distance-based assignment
             return self._distance_based_prediction(features)
             
@@ -574,16 +608,13 @@ class HDBSCANClusterer:
             return self._random_fallback(features)
     
     def _distance_based_prediction(self, features: np.ndarray) -> Tuple[np.ndarray, np.ndarray, str]:
-        """Predict using distance-based assignment."""
+        """Enhanced distance-based prediction using stored cluster statistics."""
         try:
             # Get cluster centers from training
-            if hasattr(self, 'cluster_centers') and self.cluster_centers is not None:
+            if self.cluster_centers is not None and len(self.cluster_centers) > 0:
                 centers = self.cluster_centers
             else:
                 logger.warning("⚠️ No cluster centers available, using random assignment")
-                return self._random_fallback(features)
-            
-            if len(centers) == 0:
                 return self._random_fallback(features)
             
             # Calculate distances to cluster centers
@@ -592,16 +623,59 @@ class HDBSCANClusterer:
             # Assign to closest cluster
             labels = np.argmin(distances, axis=1)
             
-            # Calculate probabilities based on distance
-            min_distances = np.min(distances, axis=1, keepdims=True)
-            probabilities = min_distances / (distances + 1e-10)
-            probabilities = np.max(probabilities, axis=1)
+            # Enhanced probability calculation using Mahalanobis distance if covariances available
+            if self.cluster_covariances is not None and len(self.cluster_covariances) > 0:
+                probabilities = self._calculate_mahalanobis_probabilities(features, centers, self.cluster_covariances)
+            else:
+                # Fallback to simple distance-based probabilities
+                min_distances = np.min(distances, axis=1, keepdims=True)
+                probabilities = min_distances / (distances + 1e-10)
+                probabilities = np.max(probabilities, axis=1)
             
             return labels, probabilities, "distance_based"
             
         except Exception as e:
             logger.error(f"❌ Distance-based prediction failed: {e}")
             return self._random_fallback(features)
+    
+    def _calculate_mahalanobis_probabilities(self, features: np.ndarray, centers: np.ndarray, covariances: np.ndarray) -> np.ndarray:
+        """Calculate probabilities using Mahalanobis distance for better accuracy."""
+        try:
+            n_samples = len(features)
+            probabilities = np.zeros(n_samples)
+            
+            for i in range(n_samples):
+                sample = features[i]
+                min_mahalanobis_dist = np.inf
+                
+                for j, (center, cov) in enumerate(zip(centers, covariances)):
+                    try:
+                        # Calculate Mahalanobis distance
+                        diff = sample - center
+                        inv_cov = np.linalg.pinv(cov)
+                        mahalanobis_dist = np.sqrt(diff.T @ inv_cov @ diff)
+                        
+                        if mahalanobis_dist < min_mahalanobis_dist:
+                            min_mahalanobis_dist = mahalanobis_dist
+                            
+                    except np.linalg.LinAlgError:
+                        # Fallback to Euclidean distance if covariance is singular
+                        euclidean_dist = np.linalg.norm(sample - center)
+                        if euclidean_dist < min_mahalanobis_dist:
+                            min_mahalanobis_dist = euclidean_dist
+                
+                # Convert distance to probability (inverse relationship)
+                probabilities[i] = 1.0 / (1.0 + min_mahalanobis_dist)
+            
+            return probabilities
+            
+        except Exception as e:
+            logger.debug(f"Mahalanobis probability calculation failed: {e}")
+            # Fallback to simple distance-based probabilities
+            distances = np.sqrt(((features[:, np.newaxis] - centers[np.newaxis, :]) ** 2).sum(axis=2))
+            min_distances = np.min(distances, axis=1, keepdims=True)
+            probabilities = min_distances / (distances + 1e-10)
+            return np.max(probabilities, axis=1)
     
     def _random_fallback(self, features: np.ndarray) -> Tuple[np.ndarray, np.ndarray, str]:
         """Fallback to random assignment when all other methods fail."""
@@ -634,3 +708,205 @@ class HDBSCANClusterer:
     def get_best_score(self) -> float:
         """Get best score from optimization."""
         return self.best_score
+    
+    def _train_enhanced_probability_models(self, cluster_labels: np.ndarray, features: np.ndarray):
+        """Train GMM and KDE models for enhanced probability estimation."""
+        try:
+            logger.info("🔧 Training enhanced probability estimation models...")
+            
+            # Get unique clusters (excluding noise)
+            unique_labels = np.unique(cluster_labels)
+            unique_labels = unique_labels[unique_labels != -1]
+            
+            if len(unique_labels) == 0:
+                logger.warning("⚠️ No valid clusters found for probability model training")
+                return
+            
+            # Train GMM models for each cluster
+            if self.config.enable_gmm_fallback:
+                self._train_gmm_models(cluster_labels, features, unique_labels)
+            
+            # Train KDE models for each cluster
+            if self.config.enable_kde_fallback:
+                self._train_kde_models(cluster_labels, features, unique_labels)
+            
+            # Store cluster statistics
+            self._store_cluster_statistics(cluster_labels, features, unique_labels)
+            
+            logger.info("✅ Enhanced probability estimation models trained successfully")
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to train enhanced probability models: {e}")
+    
+    def _train_gmm_models(self, cluster_labels: np.ndarray, features: np.ndarray, unique_labels: np.ndarray):
+        """Train GMM models for each cluster."""
+        try:
+            for cluster_id in unique_labels:
+                cluster_mask = cluster_labels == cluster_id
+                cluster_features = features[cluster_mask]
+                
+                if len(cluster_features) < 2:
+                    continue
+                
+                # Determine number of components (min of 1, max of config limit)
+                n_components = min(
+                    max(1, len(cluster_features) // 10),
+                    self.config.gmm_max_components
+                )
+                
+                # Train GMM
+                gmm = GaussianMixture(
+                    n_components=n_components,
+                    covariance_type=self.config.gmm_covariance_type,
+                    random_state=42
+                )
+                
+                try:
+                    gmm.fit(cluster_features)
+                    self.gmm_models[cluster_id] = gmm
+                    logger.debug(f"✅ Trained GMM for cluster {cluster_id} with {n_components} components")
+                except Exception as e:
+                    logger.debug(f"⚠️ Failed to train GMM for cluster {cluster_id}: {e}")
+                    continue
+                    
+        except Exception as e:
+            logger.error(f"❌ GMM training failed: {e}")
+    
+    def _train_kde_models(self, cluster_labels: np.ndarray, features: np.ndarray, unique_labels: np.ndarray):
+        """Train KDE models for each cluster."""
+        try:
+            for cluster_id in unique_labels:
+                cluster_mask = cluster_labels == cluster_id
+                cluster_features = features[cluster_mask]
+                
+                if len(cluster_features) < 2:
+                    continue
+                
+                # Use RBF sampler for KDE approximation
+                rbf_sampler = RBFSampler(
+                    gamma=self.config.kde_bandwidth,
+                    n_components=min(100, len(cluster_features))
+                )
+                
+                try:
+                    # Transform features
+                    rbf_features = rbf_sampler.fit_transform(cluster_features)
+                    
+                    # Store the sampler and cluster features for prediction
+                    self.kde_models[cluster_id] = {
+                        'sampler': rbf_sampler,
+                        'cluster_features': cluster_features,
+                        'rbf_features': rbf_features
+                    }
+                    logger.debug(f"✅ Trained KDE for cluster {cluster_id}")
+                except Exception as e:
+                    logger.debug(f"⚠️ Failed to train KDE for cluster {cluster_id}: {e}")
+                    continue
+                    
+        except Exception as e:
+            logger.error(f"❌ KDE training failed: {e}")
+    
+    def _store_cluster_statistics(self, cluster_labels: np.ndarray, features: np.ndarray, unique_labels: np.ndarray):
+        """Store cluster centers and covariances for distance-based prediction."""
+        try:
+            centers = []
+            covariances = []
+            
+            for cluster_id in unique_labels:
+                cluster_mask = cluster_labels == cluster_id
+                cluster_features = features[cluster_mask]
+                
+                if len(cluster_features) > 0:
+                    center = np.mean(cluster_features, axis=0)
+                    cov = np.cov(cluster_features.T)
+                    
+                    centers.append(center)
+                    covariances.append(cov)
+                else:
+                    centers.append(np.zeros(features.shape[1]))
+                    covariances.append(np.eye(features.shape[1]))
+            
+            self.cluster_centers = np.array(centers)
+            self.cluster_covariances = np.array(covariances)
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to store cluster statistics: {e}")
+    
+    def _gmm_based_prediction(self, features: np.ndarray) -> Tuple[np.ndarray, np.ndarray, str]:
+        """Predict using GMM models for better probability estimation."""
+        try:
+            n_samples = len(features)
+            labels = np.zeros(n_samples, dtype=int)
+            probabilities = np.zeros(n_samples)
+            
+            # Calculate probabilities for each cluster using GMM
+            cluster_probs = np.zeros((n_samples, len(self.gmm_models)))
+            
+            for i, (cluster_id, gmm) in enumerate(self.gmm_models.items()):
+                try:
+                    cluster_probs[:, i] = gmm.score_samples(features)
+                except Exception as e:
+                    logger.debug(f"GMM prediction failed for cluster {cluster_id}: {e}")
+                    cluster_probs[:, i] = -np.inf
+            
+            # Convert log probabilities to probabilities
+            cluster_probs = np.exp(cluster_probs - np.max(cluster_probs, axis=1, keepdims=True))
+            cluster_probs = cluster_probs / np.sum(cluster_probs, axis=1, keepdims=True)
+            
+            # Assign labels and probabilities
+            labels = np.argmax(cluster_probs, axis=1)
+            probabilities = np.max(cluster_probs, axis=1)
+            
+            # Map back to original cluster IDs
+            cluster_ids = list(self.gmm_models.keys())
+            labels = np.array([cluster_ids[i] for i in labels])
+            
+            return labels, probabilities, "gmm_based"
+            
+        except Exception as e:
+            logger.error(f"❌ GMM-based prediction failed: {e}")
+            return self._distance_based_prediction(features)
+    
+    def _kde_based_prediction(self, features: np.ndarray) -> Tuple[np.ndarray, np.ndarray, str]:
+        """Predict using KDE models for probability estimation."""
+        try:
+            n_samples = len(features)
+            labels = np.zeros(n_samples, dtype=int)
+            probabilities = np.zeros(n_samples)
+            
+            # Calculate probabilities for each cluster using KDE
+            cluster_probs = np.zeros((n_samples, len(self.kde_models)))
+            
+            for i, (cluster_id, kde_data) in enumerate(self.kde_models.items()):
+                try:
+                    # Transform features using the stored sampler
+                    rbf_features = kde_data['sampler'].transform(features)
+                    cluster_rbf_features = kde_data['rbf_features']
+                    
+                    # Calculate distances to cluster features in RBF space
+                    distances = np.sqrt(((rbf_features[:, np.newaxis] - cluster_rbf_features[np.newaxis, :]) ** 2).sum(axis=2))
+                    min_distances = np.min(distances, axis=1)
+                    
+                    # Convert distances to probabilities (inverse relationship)
+                    cluster_probs[:, i] = 1.0 / (1.0 + min_distances)
+                    
+                except Exception as e:
+                    logger.debug(f"KDE prediction failed for cluster {cluster_id}: {e}")
+                    cluster_probs[:, i] = 0.0
+            
+            # Normalize probabilities
+            cluster_probs = cluster_probs / (np.sum(cluster_probs, axis=1, keepdims=True) + 1e-10)
+            
+            # Assign labels and probabilities
+            labels = np.argmax(cluster_probs, axis=1)
+            probabilities = np.max(cluster_probs, axis=1)
+            
+            # Map back to original cluster IDs
+            cluster_ids = list(self.kde_models.keys())
+            labels = np.array([cluster_ids[i] for i in labels])
+            
+            return labels, probabilities, "kde_based"
+            
+        except Exception as e:
+            logger.error(f"❌ KDE-based prediction failed: {e}")
+            return self._distance_based_prediction(features)

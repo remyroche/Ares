@@ -113,6 +113,40 @@ from .m1_comprehensive_optimizer import (
     m1_optimized, get_m1_comprehensive_metrics
 )
 
+# Import enhanced hardware optimizations
+from .vectorbt_gpu_accelerator import (
+    VectorBTGPUAccelerator, VectorBTGPUConfig, VectorBTOperationType,
+    get_vectorbt_gpu_accelerator, gpu_vectorbt_optimization,
+    get_vectorbt_gpu_performance_metrics, gpu_accelerated_vectorbt
+)
+
+from .enhanced_cpu_optimizer import (
+    EnhancedCPUOptimizer, EnhancedCPUConfig, CPUIntensity, PowerMode,
+    get_enhanced_cpu_optimizer, cpu_optimized_feature_correlation,
+    get_enhanced_cpu_performance_metrics, optimize_cpu_execution_enhanced
+)
+
+from .enhanced_unified_memory_manager import (
+    EnhancedUnifiedMemoryManager, EnhancedUnifiedMemoryConfig, MemoryComponent,
+    MemoryAccessPattern, MemoryCompressionType, get_enhanced_unified_memory_manager,
+    unified_memory_feature_processing, get_enhanced_unified_memory_stats
+)
+
+from .adaptive_optimization_engine import (
+    AdaptiveOptimizationEngine, OptimizationStrategy, WorkloadCategory,
+    get_adaptive_optimization_engine, adaptive_feature_selection,
+    get_adaptive_optimization_metrics
+)
+
+# Import backward compatibility layer
+from .backward_compatibility import (
+    get_hardware_optimization_manager, get_hardware_optimization_status,
+    clear_optimization_caches, initialize_optimization_system,
+    gpu_accelerated, optimize_cpu_execution, unified_memory_optimized,
+    adaptive_optimization, smart_cache, performance_tracked,
+    comprehensive_memory_optimization
+)
+
 # Import examples
 from .optimization_examples import run_all_examples
 
@@ -292,6 +326,26 @@ __all__ = [
     'M1ComprehensiveOptimizer', 'ComprehensiveConfig', 'OptimizationStrategy',
     'WorkloadCategory', 'OptimizationResult', 'get_comprehensive_optimizer',
     'm1_optimized', 'get_m1_comprehensive_metrics',
+    
+    # Enhanced hardware optimizations
+    'VectorBTGPUAccelerator', 'VectorBTGPUConfig', 'VectorBTOperationType',
+    'get_vectorbt_gpu_accelerator', 'gpu_vectorbt_optimization',
+    'get_vectorbt_gpu_performance_metrics', 'gpu_accelerated_vectorbt',
+    
+    'EnhancedCPUOptimizer', 'EnhancedCPUConfig', 'CPUIntensity', 'PowerMode',
+    'get_enhanced_cpu_optimizer', 'cpu_optimized_feature_correlation',
+    'get_enhanced_cpu_performance_metrics', 'optimize_cpu_execution_enhanced',
+    
+    'EnhancedUnifiedMemoryManager', 'EnhancedUnifiedMemoryConfig', 'MemoryComponent',
+    'MemoryAccessPattern', 'MemoryCompressionType', 'get_enhanced_unified_memory_manager',
+    'unified_memory_feature_processing', 'get_enhanced_unified_memory_stats',
+    
+    'AdaptiveOptimizationEngine', 'get_adaptive_optimization_engine',
+    'adaptive_feature_selection', 'get_adaptive_optimization_metrics',
+    
+    # Backward compatibility
+    'get_hardware_optimization_manager', 'get_hardware_optimization_status',
+    'clear_optimization_caches', 'initialize_optimization_system',
     
     # Convenience functions
     'optimize_dataframe', 'optimize_array', 'cache_result', 'optimize_function',

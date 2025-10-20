@@ -196,7 +196,7 @@ class UnifiedVectorBTManager(OptimizationMixin, PerformanceMixin, VectorBTMixin,
                          data: Union[pd.Series, pd.DataFrame],
                          *args, **kwargs) -> Any:
         """
-        Execute a VectorBT operation with full optimization.
+        Execute a VectorBT operation with full optimization including hardware utilities.
 
         Args:
             operation_name: Name of the registered operation
@@ -225,11 +225,22 @@ class UnifiedVectorBTManager(OptimizationMixin, PerformanceMixin, VectorBTMixin,
         operation_func = self._operation_registry[operation_name]
 
         try:
-            # Use the unified optimization system
-            if TPRINT_AVAILABLE:
-                tprint(f"🚀 [UnifiedVectorBTManager] Using unified optimization for {operation_name}", color="green")
+            # Determine operation type for hardware optimization
+            operation_type = self._determine_operation_type(operation_name, data)
+            
+            # Set workload type based on data characteristics
+            self._set_workload_type_for_operation(operation_name, data)
 
-            result = self.auto_optimize_operation(operation_func, data, *args, **kwargs)
+            # Use the unified optimization system with hardware optimization
+            if TPRINT_AVAILABLE:
+                tprint(f"🚀 [UnifiedVectorBTManager] Using unified optimization with hardware utilities for {operation_name}", color="green")
+
+            result = self.auto_optimize_operation(operation_func, data, operation_type, *args, **kwargs)
+
+            # Update operation stats
+            self._operation_stats['total_operations'] += 1
+            if self.hardware_available and self._hardware_optimization_enabled:
+                self._operation_stats['vectorbt_operations'] += 1
 
             if TPRINT_AVAILABLE:
                 tprint(f"✅ [UnifiedVectorBTManager] Operation {operation_name} completed successfully", color="green")
@@ -241,6 +252,7 @@ class UnifiedVectorBTManager(OptimizationMixin, PerformanceMixin, VectorBTMixin,
             if TPRINT_AVAILABLE:
                 tprint(f"❌ [UnifiedVectorBTManager] {error_msg}", color="red")
             self._log_error(error_msg)
+            self._operation_stats['optimization_failures'] += 1
             raise RuntimeError(error_msg) from e
 
     def rolling_mean(self, data: Union[pd.Series, pd.DataFrame], window: int = 20, **kwargs) -> Any:
@@ -392,8 +404,49 @@ class UnifiedVectorBTManager(OptimizationMixin, PerformanceMixin, VectorBTMixin,
             'overall_health': self._assess_overall_health()
         }
 
+    def _determine_operation_type(self, operation_name: str, data: Union[pd.Series, pd.DataFrame]) -> str:
+        """Determine the operation type for hardware optimization."""
+        # Map operation names to operation types
+        operation_type_mapping = {
+            'rolling_mean': 'data_processing',
+            'rolling_std': 'data_processing',
+            'rolling_var': 'data_processing',
+            'rolling_min': 'data_processing',
+            'rolling_max': 'data_processing',
+            'rolling_sum': 'data_processing',
+            'rolling_apply': 'data_processing',
+            'scale': 'tensor_operations',
+            'rank': 'tensor_operations',
+            'zscore': 'tensor_operations',
+            'winsorize': 'tensor_operations',
+            'clip': 'tensor_operations',
+            'quantile': 'tensor_operations'
+        }
+        
+        return operation_type_mapping.get(operation_name, 'data_processing')
+
+    def _set_workload_type_for_operation(self, operation_name: str, data: Union[pd.Series, pd.DataFrame]) -> None:
+        """Set workload type based on operation and data characteristics."""
+        if not self.hardware_available:
+            return
+        
+        from src.utils.hardware.integrated_hardware_manager import WorkloadType
+        
+        data_size = len(data) if hasattr(data, '__len__') else 0
+        
+        # Determine workload type based on operation and data size
+        if 'rolling' in operation_name:
+            if data_size > 100000:  # Large datasets
+                self.set_workload_type(WorkloadType.DATA_PROCESSING)
+            else:
+                self.set_workload_type(WorkloadType.GENERAL)
+        elif operation_name in ['scale', 'rank', 'zscore']:
+            self.set_workload_type(WorkloadType.ML_TRAINING)
+        else:
+            self.set_workload_type(WorkloadType.GENERAL)
+
     def _assess_overall_health(self) -> str:
-        """Assess overall system health."""
+        """Assess overall system health including hardware optimization."""
         op_stats = self.get_operation_stats()
 
         if not op_stats['vectorbt_available']:
@@ -404,7 +457,20 @@ class UnifiedVectorBTManager(OptimizationMixin, PerformanceMixin, VectorBTMixin,
         elif op_stats['pandas_fallback_rate'] > 0.5:
             return 'warning'
         else:
-            return 'healthy'
+            # Check hardware optimization health
+            if self.hardware_available:
+                hardware_stats = self.get_hardware_stats()
+                memory_rate = hardware_stats.get('memory_optimization_rate', 0)
+                gpu_rate = hardware_stats.get('gpu_operation_rate', 0)
+                
+                if memory_rate > 0.8 and gpu_rate > 0.3:
+                    return 'excellent'
+                elif memory_rate > 0.5 or gpu_rate > 0.1:
+                    return 'good'
+                else:
+                    return 'fair'
+            else:
+                return 'healthy'
 
     def optimize_settings(self) -> None:
         """Optimize settings based on current performance."""

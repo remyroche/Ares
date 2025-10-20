@@ -657,12 +657,30 @@ def get_advanced_cpu_optimizer(config: Optional[CPUConfig] = None) -> M1Advanced
     return _advanced_cpu_optimizer
 
 def optimize_cpu_execution(workload_type: WorkloadType = WorkloadType.MIXED):
-    """Decorator to optimize CPU execution."""
+    """Enhanced decorator to optimize CPU execution with advanced features."""
     def decorator(func):
         @wraps(func)
         def wrapper(*args, **kwargs):
-            optimizer = get_advanced_cpu_optimizer()
-            return optimizer.execute_with_optimization(func, *args, workload_type=workload_type, **kwargs)
+            # Try enhanced CPU optimizer first
+            try:
+                from .enhanced_cpu_optimizer import get_enhanced_cpu_optimizer, CPUIntensity, PowerMode
+                enhanced_optimizer = get_enhanced_cpu_optimizer()
+                
+                # Determine CPU intensity based on workload type
+                cpu_intensity = CPUIntensity.HIGH if workload_type in [WorkloadType.CPU_INTENSIVE, WorkloadType.MATRIX_OPERATIONS] else CPUIntensity.MEDIUM
+                
+                # Use enhanced optimization
+                return enhanced_optimizer.execute_with_enhanced_optimization(
+                    func, *args, 
+                    workload_id=f"{func.__name__}_{workload_type.value}",
+                    workload_type=workload_type,
+                    cpu_intensity=cpu_intensity,
+                    **kwargs
+                )
+            except ImportError:
+                # Fallback to standard CPU optimizer
+                optimizer = get_advanced_cpu_optimizer()
+                return optimizer.execute_with_optimization(func, *args, workload_type=workload_type, **kwargs)
         return wrapper
     return decorator
 

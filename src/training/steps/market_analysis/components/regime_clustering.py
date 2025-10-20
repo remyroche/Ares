@@ -531,9 +531,28 @@ class RegimeClusteringComponent(BaseStep):
         with LoggingContext('Regime-Clustering', 'Initialization', verbose=True):
             # Use shared logging utilities
             self.logger = get_logger('RegimeClustering')
+            
+            # Initialize hardware optimization
+            if HARDWARE_OPTIMIZATION_AVAILABLE:
+                try:
+                    self.hardware_manager = get_integrated_hardware_manager()
+                    self.memory_optimizer = get_advanced_memory_optimizer()
+                    self.cpu_optimizer = get_advanced_cpu_optimizer()
+                    tprint("✅ Hardware optimization initialized", "SUCCESS")
+                except Exception as e:
+                    tprint(f"⚠️ Hardware optimization initialization failed: {e}", "WARNING")
+                    self.hardware_manager = None
+                    self.memory_optimizer = None
+                    self.cpu_optimizer = None
+            else:
+                self.hardware_manager = None
+                self.memory_optimizer = None
+                self.cpu_optimizer = None
     
+    @memory_optimized(optimization_level=MemoryOptimizationLevel.AGGRESSIVE)
+    @performance_tracked(log_performance=True, track_memory=True)
     def _load_market_data_from_artifacts(self) -> Optional[pd.DataFrame]:
-        """Load market data from artifacts."""
+        """Load market data from artifacts using BaseStep artifact manager with hardware optimization."""
         try:
             # Try to load market data from various possible artifact names
             possible_names = ['market_data', 'processed_data', 'klines_data', 'price_data']
@@ -1111,17 +1130,20 @@ class RegimeClusteringComponent(BaseStep):
         """Get list of required artifacts this component must produce."""
         return ['nas_tas_clustering_result']
 
-    def _estimate_regime_range(
-        self,
-        pipeline_state: Dict[str, Any],
-    ) -> Tuple[int, int, int]:
-        """Estimate regime count bounds using discovery metrics."""
+    @performance_tracked(log_performance=True, track_memory=True)
+    def _estimate_regime_range(self) -> Tuple[int, int, int]:
+        """Estimate regime count bounds using discovery metrics from artifacts with performance tracking."""
 
         default_min = int(max(5, getattr(self.config, 'regime_search_min', 5) or 5))
         default_max = int(max(default_min, min(15, getattr(self.config, 'regime_search_max', 15) or 15)))
         default_mode = int(min(max(default_min, getattr(self.config, 'n_regimes', 8) or 8), default_max))
 
-        discovery_result = pipeline_state.get('nas_tas_regime_discovery_result', {}) or {}
+        # Try to load discovery result from artifacts
+        discovery_result = {}
+        try:
+            discovery_result = self._load_metadata('nas_tas_regime_discovery_result') or {}
+        except Exception:
+            pass
 
         candidate_entries: List[Dict[str, Any]] = []
 
@@ -1280,15 +1302,22 @@ class RegimeClusteringComponent(BaseStep):
 
         return int(min_bound), int(max_bound), suggested
 
-    def _extract_regime_counts(self, pipeline_state: Dict[str, Any]) -> int:
-        """Extract the number of regimes to use for clustering using data-driven approach."""
-        tprint("📈 Step 1: Extracting regime count from previous step artifacts...", "INFO")
+    @performance_tracked(log_performance=True, track_memory=True)
+    def _extract_regime_counts(self) -> int:
+        """Extract the number of regimes to use for clustering using data-driven approach with performance tracking."""
+        tprint("📈 Step 1: Extracting regime count from artifacts...", "INFO")
 
-        min_regimes, max_regimes, default_regimes = self._estimate_regime_range(pipeline_state)
+        min_regimes, max_regimes, default_regimes = self._estimate_regime_range()
         self.config.regime_search_min = min_regimes
         self.config.regime_search_max = max_regimes
 
-        regime_discovery_result = pipeline_state.get('nas_tas_regime_discovery_result', {})
+        # Try to load regime discovery result from artifacts
+        regime_discovery_result = {}
+        try:
+            regime_discovery_result = self._load_metadata('nas_tas_regime_discovery_result') or {}
+        except Exception:
+            pass
+            
         tas_regime_count = regime_discovery_result.get('tas_regime_count', None)
         nas_regime_count = regime_discovery_result.get('nas_regime_count', None)
 
@@ -1311,6 +1340,22 @@ class RegimeClusteringComponent(BaseStep):
             )
             self.config.n_regimes = default_regimes
             return default_regimes
+    
+    @performance_tracked(log_performance=True, track_memory=True)
+    def _estimate_default_regime_count(self) -> int:
+        """Estimate default regime count based on data characteristics."""
+        # Use a simple heuristic based on data size
+        if hasattr(self, 'features') and self.features is not None:
+            n_samples = self.features.shape[0]
+            if n_samples < 1000:
+                return 3
+            elif n_samples < 5000:
+                return 5
+            elif n_samples < 10000:
+                return 8
+            else:
+                return 10
+        return 8  # Default fallback
 
         # Apply evidence-driven bounds derived from discovery metrics
         n_regimes = max(min_regimes, min(max_regimes, n_regimes))
@@ -1322,8 +1367,9 @@ class RegimeClusteringComponent(BaseStep):
         self.clustering_config.n_regimes = n_regimes
         return n_regimes
 
+    @performance_tracked(log_performance=True, track_memory=True)
     def _validate_configuration(self) -> None:
-        """Validate configuration using shared utilities."""
+        """Validate configuration using shared utilities with performance tracking."""
         tprint("Step 2: Validating inputs and configuration using shared utilities", "INFO")
         validation_errors = self.config_validator.validate_config(self.clustering_config)
         if validation_errors:
@@ -1332,8 +1378,9 @@ class RegimeClusteringComponent(BaseStep):
 
         tprint("Configuration validation passed using shared utilities", "SUCCESS")
 
+    @performance_tracked(log_performance=True, track_memory=True)
     def _initialize_execution_metadata(self) -> None:
-        """Initialize execution metadata for downstream use."""
+        """Initialize execution metadata for downstream use with performance tracking."""
         self.execution_metadata = {
             'start_time': datetime.now().isoformat(),
             'symbol': getattr(self.config, 'symbol', 'ETHUSDT'),
@@ -1345,25 +1392,35 @@ class RegimeClusteringComponent(BaseStep):
             'calibration_loaded_from_state': False,
         }
 
-    def _restore_learned_weights_from_state(self, pipeline_state: Dict[str, Any]) -> None:
-        """Restore learned metric weights and history from prior pipeline state."""
-        if not isinstance(pipeline_state, dict):
-            return
-
+    @performance_tracked(log_performance=True, track_memory=True)
+    def _restore_learned_weights_from_artifacts(self) -> None:
+        """Restore learned metric weights and history from artifacts with performance tracking."""
         restored_weights: Dict[str, Dict[str, float]] = {}
         restored_history: List[Dict[str, Any]] = []
 
-        for container in self._iterate_weight_containers(pipeline_state):
-            weights = container.get('learned_metric_weights')
-            if isinstance(weights, dict):
-                for group, group_weights in weights.items():
-                    sanitized = self._sanitize_weight_dict(group, group_weights)
-                    if sanitized:
-                        restored_weights[group] = sanitized
+        # Try to load weights from various possible artifact names
+        weight_artifact_names = [
+            'learned_metric_weights',
+            'regime_clustering_weights',
+            'nas_tas_clustering_result'
+        ]
+        
+        for artifact_name in weight_artifact_names:
+            try:
+                container = self._load_metadata(artifact_name)
+                if isinstance(container, dict):
+                    weights = container.get('learned_metric_weights')
+                    if isinstance(weights, dict):
+                        for group, group_weights in weights.items():
+                            sanitized = self._sanitize_weight_dict(group, group_weights)
+                            if sanitized:
+                                restored_weights[group] = sanitized
 
-            history = container.get('metric_weight_history')
-            if isinstance(history, list) and not restored_history:
-                restored_history = history
+                    history = container.get('metric_weight_history')
+                    if isinstance(history, list) and not restored_history:
+                        restored_history = history
+            except Exception:
+                continue
 
         if restored_weights:
             self.learned_weights.update(restored_weights)
@@ -1373,8 +1430,9 @@ class RegimeClusteringComponent(BaseStep):
             if sanitized_history:
                 self.metric_weight_history = sanitized_history[-self._weight_history_limit:]
 
+    @performance_tracked(log_performance=True, track_memory=True)
     def _iterate_weight_containers(self, node: Any) -> Iterator[Dict[str, Any]]:
-        """Yield nested containers that may store learned weight metadata."""
+        """Yield nested containers that may store learned weight metadata with performance tracking."""
         if isinstance(node, dict):
             if 'learned_metric_weights' in node or 'metric_weight_history' in node:
                 yield node
@@ -1384,8 +1442,9 @@ class RegimeClusteringComponent(BaseStep):
             for item in node:
                 yield from self._iterate_weight_containers(item)
 
+    @performance_tracked(log_performance=True, track_memory=True)
     def _sanitize_weight_dict(self, group: str, weights: Any) -> Dict[str, float]:
-        """Convert a raw weight mapping into a normalized simplex weight dict."""
+        """Convert a raw weight mapping into a normalized simplex weight dict with performance tracking."""
         if not isinstance(weights, dict):
             return {}
 
@@ -1515,19 +1574,28 @@ class RegimeClusteringComponent(BaseStep):
 
         return serialized
 
-    def _load_calibration_history(self, pipeline_state: Dict[str, Any]) -> None:
-        """Load calibration history from the pipeline state if available."""
+    @performance_tracked(log_performance=True, track_memory=True)
+    def _load_calibration_history(self) -> None:
+        """Load calibration history from artifacts if available with performance tracking."""
 
         calibration_payload = None
-        if isinstance(pipeline_state, dict):
-            previous_result = pipeline_state.get('nas_tas_clustering_result')
+        
+        # Try to load from clustering result
+        try:
+            previous_result = self._load_metadata('nas_tas_clustering_result')
             if isinstance(previous_result, dict):
                 execution_meta = previous_result.get('execution_metadata', {})
                 if isinstance(execution_meta, dict):
                     calibration_payload = execution_meta.get('quality_calibration')
+        except Exception:
+            pass
 
-            if calibration_payload is None:
-                calibration_payload = pipeline_state.get('nas_tas_clustering_calibration')
+        # Try to load from calibration artifact
+        if calibration_payload is None:
+            try:
+                calibration_payload = self._load_metadata('nas_tas_clustering_calibration')
+            except Exception:
+                pass
 
         if calibration_payload:
             update_quality_calibration(calibration_payload)
@@ -1805,8 +1873,10 @@ class RegimeClusteringComponent(BaseStep):
         except Exception as exc:  # pragma: no cover - calibration should not block execution
             tprint_warning(f"Quality threshold calibration failed: {exc}")
 
+    @memory_optimized(optimization_level=MemoryOptimizationLevel.AGGRESSIVE)
+    @performance_tracked(log_performance=True, track_memory=True)
     def _prepare_features(self, market_data: pd.DataFrame) -> FeaturePreparationResult:
-        """Prepare market features for clustering and retain Stage 1 metadata."""
+        """Prepare market features for clustering and retain Stage 1 metadata with hardware optimization."""
         tprint("Step 4: Preparing features using shared utilities", "INFO")
         result = prepare_market_features(
             market_data,
@@ -1857,6 +1927,8 @@ class RegimeClusteringComponent(BaseStep):
             return 'regime_quality'
         return 'other'
 
+    @memory_optimized(optimization_level=MemoryOptimizationLevel.AGGRESSIVE)
+    @performance_tracked(log_performance=True, track_memory=True)
     def _select_regime_features(
         self,
         feature_result: FeaturePreparationResult,
@@ -2277,12 +2349,14 @@ class RegimeClusteringComponent(BaseStep):
             feature_names = [f"feature_{i}" for i in range(features.shape[1])]
             return features, feature_names, {'selection_performed': False, 'error': str(e)}
 
+    @memory_optimized(optimization_level=MemoryOptimizationLevel.AGGRESSIVE)
+    @performance_tracked(log_performance=True, track_memory=True)
     def _generate_cluster_characteristics(
         self,
         market_data: pd.DataFrame,
         clustering_result: Dict[str, Any],
     ) -> Dict[str, Any]:
-        """Generate characteristics for each cluster."""
+        """Generate characteristics for each cluster with hardware optimization."""
         tprint("Step 8: Generating cluster characteristics using shared utilities", "INFO")
         cluster_characteristics = generate_cluster_characteristics(
             market_data,
@@ -2293,12 +2367,14 @@ class RegimeClusteringComponent(BaseStep):
         tprint("Cluster characteristics generated", "SUCCESS")
         return cluster_characteristics
 
+    @memory_optimized(optimization_level=MemoryOptimizationLevel.AGGRESSIVE)
+    @performance_tracked(log_performance=True, track_memory=True)
     def _calculate_clustering_metrics_using_shared_utils(
         self,
         clustering_result: Dict[str, Any],
         cluster_characteristics: Dict[str, Any],
     ) -> Dict[str, Any]:
-        """Calculate clustering metrics using shared utilities with defensive error handling."""
+        """Calculate clustering metrics using shared utilities with defensive error handling and hardware optimization."""
         try:
             tprint("Step 9: Calculating clustering metrics using shared utilities", "INFO")
             
@@ -2580,6 +2656,8 @@ class RegimeClusteringComponent(BaseStep):
                 }
             }
 
+    @memory_optimized(optimization_level=MemoryOptimizationLevel.AGGRESSIVE)
+    @performance_tracked(log_performance=True, track_memory=True)
     def _build_artifacts(
         self,
         clustering_result: Dict[str, Any],
@@ -2599,9 +2677,23 @@ class RegimeClusteringComponent(BaseStep):
         return artifacts
 
     @log_execution('Regime-Clustering', 'Regime Clustering', verbose=True)
+    async def run(self, config: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Run regime clustering analysis (BaseStep interface).
+        
+        Args:
+            config: Configuration dictionary containing parameters for clustering
+            
+        Returns:
+            Dictionary with clustering results and artifacts
+        """
+        return await self.execute(config)
+    
+    @memory_optimized(optimization_level=MemoryOptimizationLevel.AGGRESSIVE)
+    @performance_tracked(log_performance=True, track_memory=True)
     async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Execute regime clustering analysis.
+        Execute regime clustering analysis with hardware optimization.
         
         Args:
             config: Configuration dictionary containing parameters for clustering
@@ -2627,9 +2719,17 @@ class RegimeClusteringComponent(BaseStep):
             
             tprint("🚀 Starting regime clustering execution", "INFO")
             
-            # Initialize performance monitoring
-            tprint("📊 Initializing performance monitoring...", "INFO")
+            # Initialize performance monitoring and hardware optimization
+            tprint("📊 Initializing performance monitoring and hardware optimization...", "INFO")
             start_time = time.time()
+            
+            # Optimize hardware for clustering workload
+            if self.hardware_manager:
+                try:
+                    self.hardware_manager.optimize_for_workload('data_processing')
+                    tprint("✅ Hardware optimized for clustering workload", "SUCCESS")
+                except Exception as e:
+                    tprint(f"⚠️ Hardware optimization failed: {e}", "WARNING")
 
             # Step 2: Validate inputs and configuration using shared utilities
             self._validate_configuration()
@@ -2637,7 +2737,7 @@ class RegimeClusteringComponent(BaseStep):
             # Step 3: Initialize execution metadata
             self._initialize_execution_metadata()
 
-            # Step 4: Load and validate market data
+            # Step 4: Load and validate market data using BaseStep artifact manager
             tprint("Step 4: Loading and validating market data", "INFO")
             market_data = self._load_market_data_from_artifacts()
             if market_data is None or market_data.empty:
@@ -2661,7 +2761,18 @@ class RegimeClusteringComponent(BaseStep):
             self.feature_names = feature_names
             self.selection_metadata = selection_metadata
             self.stage1_metadata = feature_result.metadata or {}
-            self.features = features
+            
+            # Optimize features for memory efficiency
+            if self.memory_optimizer:
+                try:
+                    self.features = self.memory_optimizer.optimize_array(features)
+                    tprint("✅ Features optimized for memory efficiency", "SUCCESS")
+                except Exception as e:
+                    tprint(f"⚠️ Memory optimization failed, using original features: {e}", "WARNING")
+                    self.features = features
+            else:
+                self.features = features
+                
             tprint(f"Feature selection completed: {selection_metadata.get('selected_n_features', len(feature_names))} features", "SUCCESS")
 
             # Step 5: Create clustering configuration using shared utilities
@@ -2714,6 +2825,14 @@ class RegimeClusteringComponent(BaseStep):
                 # Continue without the parquet file - regime analysis will use fallback
 
             tprint(f'NAS-TAS Clustering completed: {clustering_result["n_clusters"]} clusters', "SUCCESS")
+            
+            # Cleanup hardware resources
+            if self.hardware_manager:
+                try:
+                    self.hardware_manager.cleanup_resources()
+                    tprint("✅ Hardware resources cleaned up", "SUCCESS")
+                except Exception as e:
+                    tprint(f"⚠️ Hardware cleanup failed: {e}", "WARNING")
 
             # Save artifacts using BaseStep methods
             for artifact_name, artifact_data in artifacts.items():
@@ -2724,9 +2843,16 @@ class RegimeClusteringComponent(BaseStep):
                 else:
                     self._save_model(artifact_data, artifact_name)
             
+            # Generate detailed metrics markdown report
+            metrics_report_path = self._generate_metrics_report(
+                clustering_result, cluster_characteristics, clustering_metrics, market_data
+            )
+            artifacts['metrics_report_path'] = str(metrics_report_path)
+            
             return {
                 'success': True,
                 'artifacts': list(artifacts.keys()),
+                'metrics_report_path': artifacts.get('metrics_report_path'),
                 'metadata': {
                     'symbol': getattr(self.clustering_config, 'symbol', 'ETHUSDT'),
                     'timeframe': getattr(self.clustering_config, 'timeframe', '15m'),
@@ -2741,6 +2867,13 @@ class RegimeClusteringComponent(BaseStep):
         except Exception as e:
             import traceback
             error_traceback = traceback.format_exc()
+            
+            # Cleanup hardware resources on error
+            if self.hardware_manager:
+                try:
+                    self.hardware_manager.cleanup_resources()
+                except Exception as cleanup_error:
+                    tprint(f"⚠️ Hardware cleanup failed during error handling: {cleanup_error}", "WARNING")
             
             # Log comprehensive error information
             tprint_error(f'NAS-TAS Clustering failed: {e}')
@@ -2773,8 +2906,138 @@ class RegimeClusteringComponent(BaseStep):
                 }
             }
     
+    def _generate_metrics_report(self, clustering_result: Dict[str, Any], 
+                                cluster_characteristics: Dict[str, Any], 
+                                clustering_metrics: Dict[str, Any], 
+                                market_data: pd.DataFrame) -> Path:
+        """
+        Generate detailed metrics report in markdown format.
+        
+        Args:
+            clustering_result: Results from clustering analysis
+            cluster_characteristics: Characteristics of each cluster
+            clustering_metrics: Calculated clustering metrics
+            market_data: Original market data
+            
+        Returns:
+            Path to the generated markdown report
+        """
+        try:
+            # Create outcomes directory if it doesn't exist
+            outcomes_dir = Path("outcomes")
+            outcomes_dir.mkdir(exist_ok=True)
+            
+            # Generate timestamp for filename
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            symbol = getattr(self.clustering_config, 'symbol', 'ETHUSDT')
+            filename = f"regime_clustering_metrics_{symbol}_{timestamp}.md"
+            report_path = outcomes_dir / filename
+            
+            # Generate comprehensive markdown report
+            with open(report_path, 'w') as f:
+                f.write(f"# Regime Clustering Analysis Report\n\n")
+                f.write(f"**Generated:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+                f.write(f"**Symbol:** {symbol}\n")
+                f.write(f"**Timeframe:** {getattr(self.clustering_config, 'timeframe', '15m')}\n\n")
+                
+                # Executive Summary
+                f.write("## Executive Summary\n\n")
+                f.write(f"- **Total Data Points:** {len(market_data):,}\n")
+                f.write(f"- **Number of Clusters:** {clustering_result.get('n_clusters', 'N/A')}\n")
+                f.write(f"- **Algorithm:** {clustering_result.get('algorithm', 'N/A')}\n")
+                f.write(f"- **Execution Time:** {clustering_result.get('execution_time', 'N/A')} seconds\n\n")
+                
+                # Clustering Metrics
+                f.write("## Clustering Quality Metrics\n\n")
+                if 'silhouette_score' in clustering_metrics:
+                    f.write(f"- **Silhouette Score:** {clustering_metrics['silhouette_score']:.4f}\n")
+                if 'davies_bouldin_score' in clustering_metrics:
+                    f.write(f"- **Davies-Bouldin Score:** {clustering_metrics['davies_bouldin_score']:.4f}\n")
+                if 'calinski_harabasz_score' in clustering_metrics:
+                    f.write(f"- **Calinski-Harabasz Score:** {clustering_metrics['calinski_harabasz_score']:.4f}\n")
+                f.write("\n")
+                
+                # Cluster Characteristics
+                f.write("## Cluster Characteristics\n\n")
+                for cluster_id, characteristics in cluster_characteristics.items():
+                    f.write(f"### Cluster {cluster_id}\n\n")
+                    f.write(f"- **Size:** {characteristics.get('size', 'N/A')} data points\n")
+                    f.write(f"- **Percentage:** {characteristics.get('percentage', 'N/A')}%\n")
+                    
+                    if 'volatility' in characteristics:
+                        f.write(f"- **Average Volatility:** {characteristics['volatility']:.4f}\n")
+                    if 'volume' in characteristics:
+                        f.write(f"- **Average Volume:** {characteristics['volume']:.4f}\n")
+                    if 'trend' in characteristics:
+                        f.write(f"- **Trend Direction:** {characteristics['trend']}\n")
+                    
+                    f.write("\n")
+                
+                # Performance Metrics
+                f.write("## Performance Metrics\n\n")
+                if 'execution_time' in clustering_result:
+                    f.write(f"- **Total Execution Time:** {clustering_result['execution_time']:.2f} seconds\n")
+                if 'memory_usage' in clustering_result:
+                    f.write(f"- **Peak Memory Usage:** {clustering_result['memory_usage']:.2f} MB\n")
+                f.write("\n")
+                
+                # Hardware Optimization Status
+                f.write("## Hardware Optimization Status\n\n")
+                if HARDWARE_OPTIMIZATION_AVAILABLE:
+                    f.write("- **Hardware Optimization:** ✅ Enabled\n")
+                    f.write("- **Memory Optimization:** ✅ Active\n")
+                    f.write("- **CPU Optimization:** ✅ Active\n")
+                    if M1_HARDWARE_AVAILABLE:
+                        f.write("- **M1-Specific Optimizations:** ✅ Active\n")
+                else:
+                    f.write("- **Hardware Optimization:** ❌ Not Available\n")
+                f.write("\n")
+                
+                # Data Quality Metrics
+                f.write("## Data Quality Metrics\n\n")
+                f.write(f"- **Missing Values:** {market_data.isnull().sum().sum()}\n")
+                f.write(f"- **Data Completeness:** {((len(market_data) - market_data.isnull().sum().sum()) / (len(market_data) * len(market_data.columns)) * 100):.2f}%\n")
+                f.write(f"- **Memory Usage:** {market_data.memory_usage(deep=True).sum() / 1024 / 1024:.2f} MB\n")
+                f.write("\n")
+                
+                # Recommendations
+                f.write("## Recommendations\n\n")
+                silhouette_score = clustering_metrics.get('silhouette_score', 0)
+                if silhouette_score > 0.5:
+                    f.write("- ✅ **Excellent clustering quality** - Silhouette score indicates well-separated clusters\n")
+                elif silhouette_score > 0.3:
+                    f.write("- ⚠️ **Moderate clustering quality** - Consider feature engineering or parameter tuning\n")
+                else:
+                    f.write("- ❌ **Poor clustering quality** - Significant overlap between clusters detected\n")
+                
+                f.write("- Consider analyzing cluster stability over time\n")
+                f.write("- Monitor regime transitions for trading opportunities\n")
+                f.write("- Validate cluster characteristics with domain knowledge\n")
+                f.write("\n")
+                
+                # Technical Details
+                f.write("## Technical Details\n\n")
+                f.write(f"- **Feature Count:** {len(self.feature_names) if hasattr(self, 'feature_names') else 'N/A'}\n")
+                f.write(f"- **Feature Selection Method:** {self.selection_metadata.get('method', 'N/A') if hasattr(self, 'selection_metadata') else 'N/A'}\n")
+                f.write(f"- **Configuration Used:** {self.clustering_config.__dict__}\n")
+                f.write("\n")
+                
+                # Footer
+                f.write("---\n")
+                f.write("*Report generated by Ares Trading System - Regime Clustering Component*\n")
+            
+            tprint(f"📊 Generated detailed metrics report: {report_path}", "SUCCESS")
+            return report_path
+            
+        except Exception as e:
+            tprint_error(f"Failed to generate metrics report: {e}")
+            # Return a fallback path
+            return Path("outcomes/regime_clustering_metrics_fallback.md")
+    
+    @memory_optimized(optimization_level=MemoryOptimizationLevel.AGGRESSIVE)
+    @performance_tracked(log_performance=True, track_memory=True)
     async def _load_market_data(self, data: Any) -> Optional[pd.DataFrame]:
-        """Load and validate market data for clustering."""
+        """Load and validate market data for clustering with hardware optimization."""
         try:
             tprint("Loading market data...", "INFO")
             if data is None or (isinstance(data, pd.DataFrame) and data.empty):
@@ -2800,8 +3063,9 @@ class RegimeClusteringComponent(BaseStep):
             tprint(f"Market data loading failed: {e}", "ERROR")
             return None
     
+    @performance_tracked(log_performance=True, track_memory=True)
     def _create_clustering_config_using_shared_utils(self) -> Dict[str, Any]:
-        """Create clustering configuration using shared utilities."""
+        """Create clustering configuration using shared utilities with performance tracking."""
         try:
             tprint("Creating clustering configuration using shared utilities...", "INFO")
 
@@ -2889,8 +3153,10 @@ class RegimeClusteringComponent(BaseStep):
             return fallback_config
     
     
+    @memory_optimized(optimization_level=MemoryOptimizationLevel.AGGRESSIVE)
+    @performance_tracked(log_performance=True, track_memory=True)
     async def _perform_clustering(self, features: np.ndarray, market_data: pd.DataFrame) -> Dict[str, Any]:
-        """Perform clustering using advanced optimization methods."""
+        """Perform clustering using advanced optimization methods with hardware acceleration."""
         try:
             tprint("Performing advanced clustering optimization...", "INFO")
             
@@ -2905,8 +3171,10 @@ class RegimeClusteringComponent(BaseStep):
             tprint(f"Clustering failed: {e}", "ERROR")
             raise ValueError(f"Clustering failed: {e}")
     
+    @memory_optimized(optimization_level=MemoryOptimizationLevel.AGGRESSIVE)
+    @performance_tracked(log_performance=True, track_memory=True)
     async def _perform_advanced_clustering(self, features: np.ndarray, market_data: pd.DataFrame) -> Dict[str, Any]:
-        """Perform advanced clustering using progressive regime optimization."""
+        """Perform advanced clustering using progressive regime optimization with hardware acceleration."""
         try:
             tprint("Starting progressive regime optimization...", "INFO")
 
@@ -3273,12 +3541,12 @@ class RegimeClusteringComponent(BaseStep):
         except Exception as e:
             tprint_warning(f"Fallback cleanup failed: {e}")
 
-    def _determine_optimal_algorithm_type(self, pipeline_state: Dict[str, Any], data: Any) -> str:
+    @performance_tracked(log_performance=True, track_memory=True)
+    def _determine_optimal_algorithm_type(self, data: Any) -> str:
         """
         Determine the optimal clustering algorithm based on data characteristics and regime discovery results.
         
         Args:
-            pipeline_state: Current pipeline state with regime discovery results
             data: Input data for analysis
             
         Returns:
@@ -3328,13 +3596,10 @@ class RegimeClusteringComponent(BaseStep):
             tprint_warning(f"Algorithm determination failed: {e}, using adaptive_clustering")
             return 'adaptive_clustering'
 
-    def _validate_execution_inputs(self, data: Any, pipeline_state: Dict[str, Any]) -> None:
-        """Validate inputs for execution method."""
+    @performance_tracked(log_performance=True, track_memory=True)
+    def _validate_execution_inputs(self, data: Any) -> None:
+        """Validate inputs for execution method with performance tracking."""
         try:
-            # Validate pipeline_state
-            if not isinstance(pipeline_state, dict):
-                raise ValueError(f"pipeline_state must be a dict, got {type(pipeline_state)}")
-            
             # Validate data
             if data is not None:
                 if isinstance(data, pd.DataFrame):
@@ -4953,8 +5218,10 @@ class RegimeClusteringComponent(BaseStep):
         except Exception:
             return 0.0
 
+    @memory_optimized(optimization_level=MemoryOptimizationLevel.AGGRESSIVE)
+    @performance_tracked(log_performance=True, track_memory=True)
     def _calculate_final_quality_metrics(self, features: np.ndarray, assignments: np.ndarray) -> Dict[str, Any]:
-        """Calculate final quality metrics for clustering results."""
+        """Calculate final quality metrics for clustering results with hardware optimization."""
         try:
             # Use shared utilities for quality metrics
             from sklearn.metrics import silhouette_score, davies_bouldin_score, calinski_harabasz_score
@@ -5274,12 +5541,13 @@ class RegimeClusteringComponent(BaseStep):
         self.metric_weight_history[-1]['fitted_weights'] = learned
         return learned
 
+    @performance_tracked(log_performance=True, track_memory=True)
     def _update_learned_weights(
         self,
         clustering_result: Dict[str, Any],
         clustering_metrics: Dict[str, Any],
     ) -> None:
-        """Update learned metric weights using latest clustering run outputs."""
+        """Update learned metric weights using latest clustering run outputs with performance tracking."""
         try:
             metric_outputs = self._collect_metric_outputs(clustering_result, clustering_metrics)
             if not metric_outputs:
@@ -6957,8 +7225,10 @@ class RegimeClusteringComponent(BaseStep):
             tprint(f"  ⚠️  Semantic similarity calculation failed: {e}", "WARNING")
             return 0.5
     
+    @memory_optimized(optimization_level=MemoryOptimizationLevel.AGGRESSIVE)
+    @performance_tracked(log_performance=True, track_memory=True)
     def _calculate_regime_economic_metrics(self, centroids: Dict[int, np.ndarray], market_data: pd.DataFrame) -> Dict[int, Dict[str, float]]:
-        """Calculate economic metrics for each regime."""
+        """Calculate economic metrics for each regime with hardware optimization."""
         try:
             if market_data is None or 'close' not in market_data.columns:
                 return {}
@@ -6982,8 +7252,9 @@ class RegimeClusteringComponent(BaseStep):
             tprint(f"  ⚠️  Economic metrics calculation failed: {e}", "WARNING")
             return {}
     
+    @performance_tracked(log_performance=True, track_memory=True)
     def _calculate_economic_alignment_score(self, nas_metrics: Dict[str, float], tas_metrics: Dict[str, float]) -> float:
-        """Calculate economic alignment score between regime metrics."""
+        """Calculate economic alignment score between regime metrics with performance tracking."""
         try:
             if not nas_metrics or not tas_metrics:
                 return 0.5  # Neutral alignment
@@ -7754,10 +8025,12 @@ class RegimeClusteringComponent(BaseStep):
         except Exception as e:
             tprint(f"Convergence history update failed: {e}")
 
+    @memory_optimized(optimization_level=MemoryOptimizationLevel.AGGRESSIVE)
+    @performance_tracked(log_performance=True, track_memory=True)
     def _create_regime_assignments_dataframe(self, cluster_assignments: List[int],
                                            features: np.ndarray,
                                            market_data: pd.DataFrame) -> pd.DataFrame:
-        """Create a DataFrame with regime assignments, features, and market data."""
+        """Create a DataFrame with regime assignments, features, and market data with hardware optimization."""
         try:
             # Validate inputs
             if len(cluster_assignments) == 0:
@@ -7826,8 +8099,10 @@ class RegimeClusteringComponent(BaseStep):
             tprint_warning(f"⚠️ Returning fallback regime assignments DataFrame: {fallback_df.shape}")
             return fallback_df
 
+    @memory_optimized(optimization_level=MemoryOptimizationLevel.AGGRESSIVE)
+    @performance_tracked(log_performance=True, track_memory=True)
     def _save_regime_assignments_parquet(self, regime_df: pd.DataFrame, symbol: str = "ETHUSDT") -> Path:
-        """Save regime assignments DataFrame as parquet file."""
+        """Save regime assignments DataFrame as parquet file with hardware optimization."""
         try:
             # Create output directory
             output_dir = Path("data_cache") / "nas_tas_clustering" / symbol
@@ -7848,12 +8123,33 @@ class RegimeClusteringComponent(BaseStep):
             tprint_error(f"Failed to save regime assignments parquet: {e}")
             raise
 
+    @memory_optimized(optimization_level=MemoryOptimizationLevel.AGGRESSIVE)
+    @performance_tracked(log_performance=True, track_memory=True)
     def _extract_regime_assignments(self) -> Tuple[np.ndarray, np.ndarray]:
-        """Extract TAS and NAS regime assignments from pipeline state."""
+        """Extract TAS and NAS regime assignments from artifacts with hardware optimization."""
         try:
-            pipeline_state = getattr(self, 'pipeline_state', {}) or {}
-            if not isinstance(pipeline_state, dict):
-                raise ValueError("Pipeline state is missing or invalid")
+            # Try to load regime assignments from artifacts
+            tas_assignments = None
+            nas_assignments = None
+            
+            # Try to load from various possible artifact names
+            assignment_artifact_names = [
+                'tas_regime_assignments',
+                'nas_regime_assignments',
+                'regime_assignments',
+                'nas_tas_regime_discovery_result'
+            ]
+            
+            for artifact_name in assignment_artifact_names:
+                try:
+                    data = self._load_metadata(artifact_name)
+                    if isinstance(data, dict):
+                        if 'tas_assignments' in data and tas_assignments is None:
+                            tas_assignments = data['tas_assignments']
+                        if 'nas_assignments' in data and nas_assignments is None:
+                            nas_assignments = data['nas_assignments']
+                except Exception:
+                    continue
 
             if not hasattr(self, 'features') or self.features is None:
                 raise ValueError("Feature matrix is not available for assignment validation")

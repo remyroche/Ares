@@ -24,28 +24,166 @@ from src.utils.matrix_operations import safe_matrix_multiply, optimize_dataframe
 
 
 # Import advanced validation components
-try:
-    from src.utils.data.quality.quality_alert_system import QualityAlertSystem
-    from src.utils.data.quality.comprehensive_quality_scorer import (
-        ComprehensiveQualityScorer, QualityScore, QualityScoreLevel
-    )
-    from src.utils.data.quality.advanced_quality_metrics import (
-        AdvancedQualityMetrics, QualityAssessment
-    )
-    from src.utils.ml_common.validation import (
-        ValidationManager, ValidationResult
-    )
-    VALIDATION_COMPONENTS_AVAILABLE = True
-except ImportError:
-    VALIDATION_COMPONENTS_AVAILABLE = False
-    QualityAlertSystem = None
-    ComprehensiveQualityScorer = None
-    QualityScore = None
-    QualityScoreLevel = None
-    AdvancedQualityMetrics = None
-    QualityAssessment = None
-    ValidationManager = None
-    ValidationResult = None
+# Self-contained validation components
+from enum import Enum
+
+class QualityScoreLevel(Enum):
+    """Quality score levels."""
+    EXCELLENT = "excellent"
+    GOOD = "good"
+    FAIR = "fair"
+    POOR = "poor"
+    CRITICAL = "critical"
+
+@dataclass
+class QualityScore:
+    """Quality score result."""
+    score: float
+    level: QualityScoreLevel
+    details: Dict[str, Any]
+
+@dataclass
+class QualityAssessment:
+    """Quality assessment result."""
+    overall_score: float
+    metrics: Dict[str, float]
+    recommendations: List[str]
+
+class ComprehensiveQualityScorer:
+    """Self-contained comprehensive quality scorer."""
+    
+    def __init__(self):
+        pass
+    
+    def score_dataframe(self, df: pd.DataFrame) -> QualityScore:
+        """Score dataframe quality."""
+        if df.empty:
+            return QualityScore(0.0, QualityScoreLevel.CRITICAL, {"error": "Empty dataframe"})
+        
+        # Calculate basic quality metrics
+        nan_ratio = df.isnull().sum().sum() / (len(df) * len(df.columns))
+        duplicate_ratio = df.duplicated().sum() / len(df)
+        
+        # Calculate quality score (0-100)
+        score = 100.0
+        
+        # Penalize for NaN values
+        if nan_ratio > 0.05:
+            score -= (nan_ratio - 0.05) * 200
+        
+        # Penalize for duplicates
+        if duplicate_ratio > 0.1:
+            score -= (duplicate_ratio - 0.1) * 100
+        
+        # Penalize for insufficient data
+        if len(df) < 100:
+            score -= (100 - len(df)) * 0.5
+        
+        score = max(0.0, min(100.0, score))
+        
+        # Determine quality level
+        if score >= 90:
+            level = QualityScoreLevel.EXCELLENT
+        elif score >= 75:
+            level = QualityScoreLevel.GOOD
+        elif score >= 60:
+            level = QualityScoreLevel.FAIR
+        elif score >= 40:
+            level = QualityScoreLevel.POOR
+        else:
+            level = QualityScoreLevel.CRITICAL
+        
+        return QualityScore(score, level, {
+            "nan_ratio": nan_ratio,
+            "duplicate_ratio": duplicate_ratio,
+            "row_count": len(df),
+            "column_count": len(df.columns)
+        })
+
+class AdvancedQualityMetrics:
+    """Self-contained advanced quality metrics."""
+    
+    def assess(self, df: pd.DataFrame) -> QualityAssessment:
+        """Assess advanced quality metrics."""
+        if df.empty:
+            return QualityAssessment(0.0, {}, ["Empty dataframe"])
+        
+        # Basic statistics
+        numeric_cols = df.select_dtypes(include=[np.number]).columns
+        categorical_cols = df.select_dtypes(include=['object', 'category']).columns
+        
+        metrics = {
+            "completeness": 1 - (df.isnull().sum().sum() / (len(df) * len(df.columns))),
+            "uniqueness": len(df.drop_duplicates()) / len(df),
+            "numeric_ratio": len(numeric_cols) / len(df.columns)
+        }
+        
+        overall_score = sum(metrics.values()) / len(metrics) * 100
+        
+        recommendations = []
+        if metrics["completeness"] < 0.9:
+            recommendations.append("Improve data completeness")
+        if metrics["uniqueness"] < 0.8:
+            recommendations.append("Address duplicate data")
+        
+        return QualityAssessment(overall_score, metrics, recommendations)
+
+class QualityAlertSystem:
+    """Self-contained quality alert system."""
+    
+    def __init__(self):
+        pass
+    
+    def check_alerts(self, quality_score: QualityScore, validation_result: Dict[str, Any]) -> List[str]:
+        """Check for quality alerts."""
+        alerts = []
+        
+        if quality_score.level in [QualityScoreLevel.POOR, QualityScoreLevel.CRITICAL]:
+            alerts.append(f"Quality level is {quality_score.level.value} (score: {quality_score.score:.1f})")
+        
+        if not validation_result.get("valid", True):
+            alerts.extend(validation_result.get("issues", []))
+        
+        return alerts
+
+@dataclass
+class ValidationResult:
+    """Validation result."""
+    success: bool
+    score: float
+    issues: List[str]
+    recommendations: List[str]
+
+class ValidationManager:
+    """Self-contained validation manager."""
+    
+    def __init__(self):
+        pass
+    
+    def validate(self, data: pd.DataFrame, **kwargs) -> ValidationResult:
+        """Validate data."""
+        if data.empty:
+            return ValidationResult(False, 0.0, ["Empty dataframe"], ["Provide valid data"])
+        
+        # Basic validation
+        issues = []
+        recommendations = []
+        
+        if len(data) < 100:
+            issues.append("Insufficient data rows")
+            recommendations.append("Collect more data")
+        
+        if data.isnull().sum().sum() > len(data) * len(data.columns) * 0.1:
+            issues.append("High missing data ratio")
+            recommendations.append("Clean missing data")
+        
+        success = len(issues) == 0
+        score = 100.0 - len(issues) * 20
+        
+        return ValidationResult(success, score, issues, recommendations)
+
+# Set availability flag
+VALIDATION_COMPONENTS_AVAILABLE = True
 
 # Import tprint utilities for enhanced logging
 try:

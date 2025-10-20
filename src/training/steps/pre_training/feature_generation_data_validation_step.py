@@ -20,24 +20,179 @@ from dataclasses import dataclass
 from src.training.steps.base_step import BaseStep
 
 # Import advanced quality validation components
-try:
-    from src.utils.data.quality.comprehensive_quality_scorer import (
-        ComprehensiveQualityScorer, QualityScore, QualityScoreLevel
-    )
-    from src.utils.data.quality.data_quality import (
-        DataQualityFramework, QualityThresholds, QualityResult
-    )
-    from src.utils.data.quality.advanced_quality_metrics import (
-        AdvancedQualityMetrics, QualityAssessment
-    )
-    from src.utils.data.quality.quality_alert_system import QualityAlertSystem
-    QUALITY_COMPONENTS_AVAILABLE = True
-except ImportError:
-    QUALITY_COMPONENTS_AVAILABLE = False
-    ComprehensiveQualityScorer = None
-    DataQualityFramework = None
-    AdvancedQualityMetrics = None
-    QualityAlertSystem = None
+# Quality validation components - self-contained implementation
+from enum import Enum
+
+class QualityScoreLevel(Enum):
+    """Quality score levels."""
+    EXCELLENT = "excellent"
+    GOOD = "good"
+    FAIR = "fair"
+    POOR = "poor"
+    CRITICAL = "critical"
+
+@dataclass
+class QualityScore:
+    """Quality score result."""
+    score: float
+    level: QualityScoreLevel
+    details: Dict[str, Any]
+
+class QualityThresholds:
+    """Quality validation thresholds."""
+    def __init__(self, max_nan_ratio=0.05, min_rows=100, max_duplicate_ratio=0.1, max_infinite_count=0, min_unique_values=2):
+        self.max_nan_ratio = max_nan_ratio
+        self.min_rows = min_rows
+        self.max_duplicate_ratio = max_duplicate_ratio
+        self.max_infinite_count = max_infinite_count
+        self.min_unique_values = min_unique_values
+
+class ComprehensiveQualityScorer:
+    """Self-contained quality scorer."""
+    
+    def __init__(self):
+        self.thresholds = QualityThresholds()
+    
+    def score_dataframe(self, df: pd.DataFrame) -> QualityScore:
+        """Score dataframe quality."""
+        if df.empty:
+            return QualityScore(0.0, QualityScoreLevel.CRITICAL, {"error": "Empty dataframe"})
+        
+        # Calculate basic quality metrics
+        nan_ratio = df.isnull().sum().sum() / (len(df) * len(df.columns))
+        duplicate_ratio = df.duplicated().sum() / len(df)
+        
+        # Calculate quality score (0-100)
+        score = 100.0
+        
+        # Penalize for NaN values
+        if nan_ratio > self.thresholds.max_nan_ratio:
+            score -= (nan_ratio - self.thresholds.max_nan_ratio) * 200
+        
+        # Penalize for duplicates
+        if duplicate_ratio > self.thresholds.max_duplicate_ratio:
+            score -= (duplicate_ratio - self.thresholds.max_duplicate_ratio) * 100
+        
+        # Penalize for insufficient data
+        if len(df) < self.thresholds.min_rows:
+            score -= (self.thresholds.min_rows - len(df)) * 0.5
+        
+        score = max(0.0, min(100.0, score))
+        
+        # Determine quality level
+        if score >= 90:
+            level = QualityScoreLevel.EXCELLENT
+        elif score >= 75:
+            level = QualityScoreLevel.GOOD
+        elif score >= 60:
+            level = QualityScoreLevel.FAIR
+        elif score >= 40:
+            level = QualityScoreLevel.POOR
+        else:
+            level = QualityScoreLevel.CRITICAL
+        
+        return QualityScore(score, level, {
+            "nan_ratio": nan_ratio,
+            "duplicate_ratio": duplicate_ratio,
+            "row_count": len(df),
+            "column_count": len(df.columns)
+        })
+
+class DataQualityFramework:
+    """Self-contained data quality framework."""
+    
+    def validate(self, df: pd.DataFrame, thresholds: QualityThresholds) -> Dict[str, Any]:
+        """Validate dataframe against quality thresholds."""
+        if df.empty:
+            return {"valid": False, "issues": ["Empty dataframe"]}
+        
+        issues = []
+        warnings = []
+        
+        # Check for sufficient data
+        if len(df) < thresholds.min_rows:
+            issues.append(f"Insufficient data: {len(df)} rows < {thresholds.min_rows} required")
+        
+        # Check for excessive NaN values
+        nan_ratio = df.isnull().sum().sum() / (len(df) * len(df.columns))
+        if nan_ratio > thresholds.max_nan_ratio:
+            issues.append(f"Excessive NaN values: {nan_ratio:.2%} > {thresholds.max_nan_ratio:.2%}")
+        
+        # Check for excessive duplicates
+        duplicate_ratio = df.duplicated().sum() / len(df)
+        if duplicate_ratio > thresholds.max_duplicate_ratio:
+            warnings.append(f"High duplicate ratio: {duplicate_ratio:.2%} > {thresholds.max_duplicate_ratio:.2%}")
+        
+        return {
+            "valid": len(issues) == 0,
+            "issues": issues,
+            "warnings": warnings,
+            "metrics": {
+                "nan_ratio": nan_ratio,
+                "duplicate_ratio": duplicate_ratio,
+                "row_count": len(df),
+                "column_count": len(df.columns)
+            }
+        }
+
+class AdvancedQualityMetrics:
+    """Self-contained advanced quality metrics."""
+    
+    def assess(self, df: pd.DataFrame) -> Dict[str, Any]:
+        """Assess advanced quality metrics."""
+        if df.empty:
+            return {"error": "Empty dataframe"}
+        
+        # Basic statistics
+        numeric_cols = df.select_dtypes(include=[np.number]).columns
+        categorical_cols = df.select_dtypes(include=['object', 'category']).columns
+        
+        assessment = {
+            "data_types": {
+                "numeric": len(numeric_cols),
+                "categorical": len(categorical_cols),
+                "datetime": len(df.select_dtypes(include=['datetime64']).columns)
+            },
+            "completeness": {
+                "total_cells": len(df) * len(df.columns),
+                "missing_cells": df.isnull().sum().sum(),
+                "completeness_ratio": 1 - (df.isnull().sum().sum() / (len(df) * len(df.columns)))
+            },
+            "uniqueness": {
+                "total_rows": len(df),
+                "unique_rows": len(df.drop_duplicates()),
+                "duplicate_ratio": df.duplicated().sum() / len(df)
+            }
+        }
+        
+        # Add numeric column statistics if available
+        if len(numeric_cols) > 0:
+            assessment["numeric_stats"] = {
+                "mean": df[numeric_cols].mean().to_dict(),
+                "std": df[numeric_cols].std().to_dict(),
+                "min": df[numeric_cols].min().to_dict(),
+                "max": df[numeric_cols].max().to_dict()
+            }
+        
+        return assessment
+
+class QualityAlertSystem:
+    """Self-contained quality alert system."""
+    
+    def check_alerts(self, quality_score: QualityScore, validation_result: Dict[str, Any]) -> List[str]:
+        """Check for quality alerts."""
+        alerts = []
+        
+        if quality_score.level in [QualityScoreLevel.POOR, QualityScoreLevel.CRITICAL]:
+            alerts.append(f"Quality level is {quality_score.level.value} (score: {quality_score.score:.1f})")
+        
+        if not validation_result.get("valid", True):
+            alerts.extend(validation_result.get("issues", []))
+        
+        return alerts
+
+# Set availability flag
+QUALITY_COMPONENTS_AVAILABLE = True
 
 @dataclass
 class DataValidationResult:

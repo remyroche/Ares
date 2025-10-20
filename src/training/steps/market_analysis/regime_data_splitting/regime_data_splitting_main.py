@@ -1,4 +1,4 @@
-from src.utils.tprint import tprint
+from src.utils.tprint import tprint, tprint_info, tprint_success, tprint_warning, tprint_error
 import warnings
 
 from typing import Dict, List, Optional, Union, Any, Tuple, Callable
@@ -8,6 +8,9 @@ import gc
 import json
 import pickle
 import random
+
+# Import BaseStep
+from src.training.steps.base_step import BaseStep
 
 # Import pipeline standards early to avoid usage before import
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
@@ -830,11 +833,12 @@ class DataTypeOptimizer:
             }
         return info
 
-class RegimeDataSplittingStep:
-    """Step 4: Regime Data Splitting with standardized data quality management."""
+class RegimeDataSplittingStep(BaseStep):
+    """Step 4: Regime Data Splitting with standardized data quality management using BaseStep pattern."""
 
-    def __init__(self, config: dict[str, Any]) -> None:
-        self.config = config
+    def __init__(self, step_name: str = "regime_data_splitting") -> None:
+        super().__init__(step_name)
+        self.config = {}
 
         # Initialize dependency injection container for step04 utilities
         self.utility_config = create_step04_config(
@@ -1098,78 +1102,117 @@ class RegimeDataSplittingStep:
         self.logger.info('✅ Regime Data Splitting Step initialized successfully')
 
     @comprehensive_function_monitor
-    async def execute(self, training_input: Dict[str, Any], pipeline_state: Dict[str, Any]) -> Dict[str, Any]:
+    async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """Execute the regime data splitting step with extensive utility usage.
 
         Args:
-            training_input: Training input parameters
-            pipeline_state: Current pipeline state
+            config: Configuration dictionary with parameters:
+                - symbol: Trading symbol (e.g., 'ETHUSDT')
+                - exchange: Exchange name (e.g., 'binance')
+                - timeframe: Timeframe (e.g., '15m')
+                - data_dir: Data directory path
+                - start_date: Start date (optional)
+                - end_date: End date (optional)
+                - regime_labels: Regime labels to split on
+                - split_ratios: Train/validation/test ratios (default: [0.7, 0.15, 0.15])
 
         Returns:
-            Dictionary with execution results
+            Dictionary with execution results and split datasets
         """
-        tprint('🚀 Starting regime data splitting execution')
+        start_time = datetime.now()
+        tprint(f"🔍 Starting regime data splitting for {config.get('symbol', 'UNKNOWN')}", "INFO")
+        
+        # Set context for artifact management
+        self._set_context(
+            symbol=config.get('symbol', 'ETHUSDT'),
+            exchange=config.get('exchange', 'binance'),
+            direction=config.get('direction', 'both'),
+            model=config.get('model', 'default')
+        )
+
+        # Update config
+        self.config = config
 
         # Get utility functions
         safe_dict_get = self.utils.get_function('common_operations', 'safe_dict_get')
         safe_float = self.utils.get_function('common_operations', 'safe_float')
         validate_positive = self.utils.get_function('math_validation', 'validate_positive')
-        tprint('📊 Utility functions loaded successfully')
+        tprint('📊 Utility functions loaded successfully', "INFO")
 
         # Use utility functions for parameter extraction and validation
-        symbol = safe_dict_get(training_input, 'symbol', None)
-        exchange = safe_dict_get(training_input, 'exchange', None)
-        timeframe = safe_dict_get(training_input, 'timeframe', '1m')
-        data_dir = safe_dict_get(training_input, 'data_dir', None)
-        tprint(f'📋 Extracted parameters: symbol={symbol}, exchange={exchange}, timeframe={timeframe}')
+        symbol = safe_dict_get(config, 'symbol', None)
+        exchange = safe_dict_get(config, 'exchange', None)
+        timeframe = safe_dict_get(config, 'timeframe', '1m')
+        data_dir = safe_dict_get(config, 'data_dir', None)
+        tprint(f'📋 Extracted parameters: symbol={symbol}, exchange={exchange}, timeframe={timeframe}', "INFO")
 
         # Validate required parameters using utility functions
         if not all([symbol, exchange, timeframe]):
-            tprint('❌ Missing required parameters: symbol, exchange, timeframe')
+            tprint('❌ Missing required parameters: symbol, exchange, timeframe', "ERROR")
             return {
                 'success': False,
-                'step04_regime_data_splitting_completed': False,
-                'step04_regime_data_splitting_failure_reason': 'Missing required parameters: symbol, exchange, timeframe'
+                'error': 'Missing required parameters: symbol, exchange, timeframe',
+                'split_datasets': {},
+                'metrics': {},
+                'processing_time': (datetime.now() - start_time).total_seconds()
             }
 
         try:
+            # Load market data
+            market_data = self._load_market_data(config)
+            if market_data is None:
+                raise ValueError("No market data found")
+            
+            tprint(f"✅ Loaded market data: {market_data.shape[0]} rows, {market_data.shape[1]} columns", "SUCCESS")
+
+            # Load regime labels
+            regime_labels = self._load_regime_labels(config)
+            if regime_labels is None:
+                raise ValueError("No regime labels found")
+            
+            tprint(f"✅ Loaded regime labels: {len(regime_labels)} labels", "SUCCESS")
+
             # Initialize if not already done
             if not self.start_time:
-                tprint('🔧 Initializing regime data splitting step')
+                tprint('🔧 Initializing regime data splitting step', "INFO")
                 await self.initialize()
-                tprint('✅ Initialization completed')
+                tprint('✅ Initialization completed', "SUCCESS")
 
             # Execute the main functionality
-            tprint('🔄 Starting regime data splitting process')
+            tprint('🔄 Starting regime data splitting process', "INFO")
             result = await self.split_data_by_regimes(symbol, exchange, timeframe, data_dir)
-            tprint('✅ Regime data splitting process completed')
+            tprint('✅ Regime data splitting process completed', "SUCCESS")
 
             # Generate comprehensive function call summary
             log_function_call_summary()
-            tprint('📊 Function call summary generated')
+            tprint('📊 Function call summary generated', "INFO")
 
             # Calculate execution time using utility functions
             execution_time = time.time() - self.start_time
             execution_time = validate_positive(safe_float(execution_time, 0.0), "execution_time")
-            tprint(f'⏱️ Execution time: {execution_time:.2f} seconds')
+            tprint(f'⏱️ Execution time: {execution_time:.2f} seconds', "INFO")
 
             if result.success:
-                tprint('✅ Regime data splitting completed successfully')
-                # Generate advanced metrics report
-                advanced_report = self.generate_advanced_metrics_report(result, training_input)
-                tprint('📊 Advanced metrics report generated')
+                tprint('✅ Regime data splitting completed successfully', "SUCCESS")
+                
+                # Save split datasets using artifact manager
+                self._save_split_datasets(result.data, config)
+                
+                # Calculate metrics
+                metrics = self._calculate_split_metrics(result.data, start_time, config)
+                
+                # Create outcome report
+                outcome_report = self._create_outcome_report(result.data, metrics, config)
+                
                 return {
                     'success': True,
-                    'step04_regime_data_splitting_completed': True,
-                    'regime_data': result.data,
-                    'regime_metadata': result.metadata,
-                    'regime_splits': result.data,  # For compatibility with step 05 expectations
-                    'execution_time': execution_time,
-                    'step_name': 'step04_regime_data_splitting',
-                    'advanced_metrics_report': advanced_report
+                    'split_datasets': result.data,
+                    'metrics': metrics,
+                    'outcome_report': outcome_report,
+                    'processing_time': (datetime.now() - start_time).total_seconds()
                 }
             else:
-                tprint(f'❌ Regime data splitting failed: {result.error}')
+                tprint(f'❌ Regime data splitting failed: {result.error}', "ERROR")
                 return {
                     'success': False,
                     'step04_regime_data_splitting_completed': False,
@@ -3068,7 +3111,7 @@ class RegimeDataSplittingStep:
             }
 
     @comprehensive_function_monitor
-    async def execute(self, training_input: Dict[str, Any], pipeline_state: Dict[str, Any]) -> Dict[str, Any]:
+    async def execute_streamlined(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """Execute the regime data splitting step using streamlined implementation.
 
         This method delegates to the streamlined regime data splitting component
@@ -3315,3 +3358,143 @@ if __name__ == '__main__':
         except Exception as e:
             logger.warning(f"VectorBT rolling apply failed: {e}, using pandas fallback")
             return data.rolling(window=window).apply(func, **kwargs)
+
+    def _load_market_data(self, config: Dict[str, Any]) -> Optional[pd.DataFrame]:
+        """Load market data from artifacts or config."""
+        try:
+            # Try to load from artifacts first
+            market_data = self._load_dataframe('market_data')
+            if market_data is not None:
+                return market_data
+            
+            # Try alternative artifact names
+            market_data = self._load_dataframe('processed_data') or self._load_dataframe('data')
+            if market_data is not None:
+                return market_data
+            
+            # Try to load from config
+            if 'market_data' in config:
+                return pd.DataFrame(config['market_data'])
+            
+            return None
+            
+        except Exception as e:
+            tprint(f"⚠️ Failed to load market data: {e}", "WARNING")
+            return None
+
+    def _load_regime_labels(self, config: Dict[str, Any]) -> Optional[np.ndarray]:
+        """Load regime labels from artifacts or config."""
+        try:
+            # Try to load from artifacts first
+            regime_data = self._get_artifact('regime_labels')
+            if regime_data is not None:
+                if isinstance(regime_data, dict) and 'labels' in regime_data:
+                    return np.array(regime_data['labels'])
+                elif isinstance(regime_data, (list, np.ndarray)):
+                    return np.array(regime_data)
+            
+            # Try alternative artifact names
+            regime_data = self._get_artifact('regime_assignments') or self._get_artifact('cluster_assignments')
+            if regime_data is not None:
+                return np.array(regime_data)
+            
+            # Try to load from config
+            if 'regime_labels' in config:
+                return np.array(config['regime_labels'])
+            
+            return None
+            
+        except Exception as e:
+            tprint(f"⚠️ Failed to load regime labels: {e}", "WARNING")
+            return None
+
+    def _save_split_datasets(self, split_datasets: Dict[str, Any], config: Dict[str, Any]) -> None:
+        """Save split datasets using artifact manager."""
+        try:
+            for split_name, split_data in split_datasets.items():
+                if isinstance(split_data, pd.DataFrame):
+                    self._save_dataframe(f'{split_name}_data', split_data)
+                else:
+                    self._save_artifact(f'{split_name}_data', split_data)
+            
+            tprint(f"✅ Saved {len(split_datasets)} split datasets", "SUCCESS")
+            
+        except Exception as e:
+            tprint(f"⚠️ Failed to save split datasets: {e}", "WARNING")
+
+    def _calculate_split_metrics(self, split_datasets: Dict[str, Any], start_time: datetime, config: Dict[str, Any]) -> Dict[str, Any]:
+        """Calculate split metrics."""
+        try:
+            processing_time = (datetime.now() - start_time).total_seconds()
+            
+            metrics = {
+                'processing_time_seconds': processing_time,
+                'n_splits': len(split_datasets),
+                'split_names': list(split_datasets.keys()),
+                'success': True
+            }
+            
+            # Calculate split sizes
+            for split_name, split_data in split_datasets.items():
+                if isinstance(split_data, pd.DataFrame):
+                    metrics[f'{split_name}_size'] = len(split_data)
+                elif isinstance(split_data, dict) and 'data' in split_data:
+                    metrics[f'{split_name}_size'] = len(split_data['data'])
+            
+            return metrics
+            
+        except Exception as e:
+            tprint(f"⚠️ Failed to calculate metrics: {e}", "WARNING")
+            return {'success': False, 'error': str(e)}
+
+    def _create_outcome_report(self, split_datasets: Dict[str, Any], metrics: Dict[str, Any], config: Dict[str, Any]) -> str:
+        """Create outcome report markdown."""
+        try:
+            report = f"""# Regime Data Splitting Outcome Report
+
+## Execution Summary
+- **Symbol**: {config.get('symbol', 'UNKNOWN')}
+- **Exchange**: {config.get('exchange', 'UNKNOWN')}
+- **Timeframe**: {config.get('timeframe', 'UNKNOWN')}
+- **Processing Time**: {metrics.get('processing_time_seconds', 0):.2f} seconds
+- **Success**: {'✅ Yes' if metrics.get('success', False) else '❌ No'}
+
+## Split Results
+- **Number of Splits**: {metrics.get('n_splits', 0)}
+- **Split Names**: {', '.join(metrics.get('split_names', []))}
+
+## Split Sizes
+"""
+            
+            for split_name in metrics.get('split_names', []):
+                size = metrics.get(f'{split_name}_size', 0)
+                report += f"- **{split_name}**: {size:,} samples\n"
+            
+            report += f"""
+## Generated Artifacts
+- Split datasets (train, validation, test)
+- Split metadata
+- Regime statistics
+
+---
+*Generated by Regime Data Splitting Step at {datetime.now().isoformat()}*
+"""
+            
+            return report
+            
+        except Exception as e:
+            tprint(f"⚠️ Failed to create outcome report: {e}", "WARNING")
+            return f"# Regime Data Splitting Outcome Report\n\nError creating report: {str(e)}"
+
+
+# Register the step
+def register_regime_data_splitting_step():
+    """Register the regime data splitting step."""
+    from src.training.steps.base_step import step_registry
+    
+    step_registry.register("regime_data_splitting", RegimeDataSplittingStep)
+    tprint("✅ Regime data splitting step registered", "SUCCESS")
+
+
+# Auto-register when module is imported
+register_regime_data_splitting_step()

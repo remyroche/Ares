@@ -33,7 +33,7 @@ except ImportError:
     def tprint(*args, **kwargs): 
         print(f"[TPRINT] {' '.join(map(str, args))}")
     def tprint_debug(*args, **kwargs): 
-        print(f"[DEBUG] {' '.join(map(str, args))}")
+        # Debug logging removed for production
     def tprint_info(*args, **kwargs): 
         print(f"[INFO] {' '.join(map(str, args))}")
     def tprint_warning(*args, **kwargs): 

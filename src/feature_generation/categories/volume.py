@@ -28,6 +28,12 @@ from ..core.feature_generator import FeatureGenerator, FeatureResult, Vectorized
 from ..core.vectorbt_feature_generator import VectorBTFeatureGenerator
 from ..core.vectorbt_optimization_mixin import VectorBTOptimizationMixin
 
+# Import hardware optimization decorators
+from src.utils.hardware import (
+    memory_optimized, gc_optimized, auto_optimize, performance_tracked,
+    MemoryOptimizationLevel, WorkloadType
+)
+
 # VectorBT imports for optimization
 try:
     import vectorbt as vbt
@@ -241,6 +247,8 @@ class VolumeFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMix
     def create_default(cls) -> 'VolumeFeatureGenerator':
         return cls()
 
+    @memory_optimized(optimization_level=MemoryOptimizationLevel.AGGRESSIVE)
+    @performance_tracked
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         """Generate comprehensive volume features using VectorBT optimization."""
         if len(data) == 0 or 'volume' not in data.columns:

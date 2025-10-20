@@ -32,8 +32,9 @@ try:
         auto_optimize, smart_cache, performance_tracked, WorkloadCategory
     )
     HARDWARE_OPTIMIZATION_AVAILABLE = True
-except ImportError:
+except ImportError as e:
     HARDWARE_OPTIMIZATION_AVAILABLE = False
+    logger.warning(f"Hardware optimization not available: {e}")
 
 logger = system_logger.getChild('AutoTuner')
 
@@ -437,43 +438,56 @@ class AutoTuner:
         self,
         dataset_chars: DatasetCharacteristics
     ) -> Dict[str, Any]:
-        """Determine hardware optimization settings with VectorBT enhancements."""
+        """Determine hardware optimization settings with enhanced M1 and VectorBT optimizations."""
 
         n_samples = dataset_chars.n_samples
         n_features = dataset_chars.n_features
 
-        # Enable hardware optimization for larger datasets
-        enable_hw = n_samples > 5000 or n_features > 100
+        # Enhanced hardware optimization detection
+        enable_hw = n_samples > 1000 or n_features > 50  # Lower threshold for M1 optimization
+
+        # M1-specific optimizations
+        enable_m1_optimization = HARDWARE_OPTIMIZATION_AVAILABLE and n_samples > 500
+        enable_m1_memory_optimization = enable_m1_optimization and n_samples > 2000
+        enable_m1_gpu_acceleration = enable_m1_optimization and n_samples > 5000
 
         # VectorBT-specific optimizations
         use_vectorbt = n_samples > 1000  # Enable VectorBT for medium+ datasets
         vectorbt_chunk_size = min(10000, n_samples // 4)  # Adaptive chunk size
 
         # GPU acceleration for large datasets or neural networks
-        use_gpu = (n_samples > 10000 and n_features > 200)
+        use_gpu = (n_samples > 10000 and n_features > 200) or enable_m1_gpu_acceleration
 
         # Batch processing for parallel evaluation
         use_batch = n_samples > 1000
 
-        # Batch size based on dataset with VectorBT optimization
+        # Enhanced batch size calculation with M1 optimization
         if n_samples < 1000:
             batch_size = 16
         elif n_samples < 10000:
-            batch_size = 32
+            batch_size = 32 if not enable_m1_optimization else 64  # M1 can handle larger batches
         elif n_samples < 100000:
-            batch_size = 64
+            batch_size = 64 if not enable_m1_optimization else 128
         else:
-            batch_size = 128  # Larger batches for very large datasets
+            batch_size = 128 if not enable_m1_optimization else 256  # M1 unified memory allows larger batches
 
-        # Memory limit based on dataset size with VectorBT considerations
-        # VectorBT is memory-efficient, so we can be more generous
+        # Enhanced memory limit calculation with M1 considerations
         bytes_needed = n_samples * n_features * 8 * 3  # Reduced overhead for VectorBT
         gb_needed = bytes_needed / (1024**3)
-        memory_limit = max(2.0, min(gb_needed * 1.2, 32.0))  # 2-32 GB range
+        
+        if enable_m1_optimization:
+            # M1 unified memory is more efficient
+            memory_limit = max(1.0, min(gb_needed * 1.1, 64.0))  # M1 can use more memory efficiently
+        else:
+            memory_limit = max(2.0, min(gb_needed * 1.2, 32.0))  # Traditional systems
 
         # VectorBT parallel processing settings
         vectorbt_parallel = n_samples > 5000
         vectorbt_threads = min(8, max(2, n_samples // 10000))  # Adaptive thread count
+
+        # M1-specific thread optimization
+        if enable_m1_optimization:
+            vectorbt_threads = min(12, max(4, n_samples // 5000))  # M1 has more cores
 
         return {
             'enable': enable_hw,
@@ -484,7 +498,10 @@ class AutoTuner:
             'use_vectorbt': use_vectorbt,
             'vectorbt_chunk_size': vectorbt_chunk_size,
             'vectorbt_parallel': vectorbt_parallel,
-            'vectorbt_threads': vectorbt_threads
+            'vectorbt_threads': vectorbt_threads,
+            'enable_m1_optimization': enable_m1_optimization,
+            'enable_m1_memory_optimization': enable_m1_memory_optimization,
+            'enable_m1_gpu_acceleration': enable_m1_gpu_acceleration
         }
 
     def _log_auto_tuned_config(
@@ -790,9 +807,10 @@ class AutoTuner:
 
         return config
 
-# Convenience function
+# Convenience function with enhanced hardware optimization
 @performance_tracked(log_performance=True, track_memory=True)
 @m1_optimized(workload_category=WorkloadCategory.MACHINE_LEARNING)
+@memory_optimized(aggressive_cleanup=True, enable_gc_optimization=True)
 def auto_tune_and_optimize(
     X: np.ndarray,
     y: np.ndarray,

@@ -231,7 +231,11 @@ class VectorBTUnifiedFramework:
             if hasattr(df, 'vbt'):
                 try:
                     # Analyze data sparsity using VectorBT
-                    analytics['sparsity'] = df.vbt.isna().sum().sum() / (n_samples * n_features)
+                    # Avoid division by zero
+                    if n_samples > 0 and n_features > 0:
+                        analytics['sparsity'] = df.vbt.isna().sum().sum() / (n_samples * n_features)
+                    else:
+                        analytics['sparsity'] = 0.0
 
                     # Analyze correlation structure using VectorBT rolling operations
                     if n_features > 1:
@@ -280,7 +284,11 @@ class VectorBTUnifiedFramework:
 
                                 # Calculate ranking stability (lower is more stable)
                                 ranking_std = np.std(feature_rankings, axis=0)
-                                stability_score = 1.0 - np.mean(ranking_std) / n_features  # Normalize by number of features
+                                # Avoid division by zero
+                                if n_features > 0:
+                                    stability_score = 1.0 - np.mean(ranking_std) / n_features  # Normalize by number of features
+                                else:
+                                    stability_score = 0.5
                                 analytics['stability_score'] = max(0.0, min(1.0, stability_score))
                             else:
                                 analytics['stability_score'] = 0.5

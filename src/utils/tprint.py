@@ -37,11 +37,38 @@ from enum import Enum
 import functools
 import io
 
-# Import enhanced hardware optimization tools
-from .hardware import (
-    memory_optimized, m1_optimized, memory_efficient_function,
-    gc_optimized_function, force_cleanup, get_memory_stats
-)
+# Import enhanced hardware optimization tools (optional to avoid circular imports)
+try:
+    from .hardware import (
+        memory_optimized, m1_optimized, memory_efficient_function,
+        gc_optimized_function, force_cleanup, get_memory_stats
+    )
+    HARDWARE_OPTIMIZATION_AVAILABLE = True
+except ImportError:
+    HARDWARE_OPTIMIZATION_AVAILABLE = False
+    # Create dummy functions
+    def memory_optimized(*args, **kwargs): 
+        def decorator(f):
+            return f
+        return decorator
+    def m1_optimized(*args, **kwargs): 
+        def decorator(f):
+            return f
+        return decorator
+    def memory_efficient_function(func=None, *args, **kwargs): 
+        def decorator(f):
+            return f
+        if func is None:
+            return decorator
+        return decorator(func)
+    def gc_optimized_function(func=None, *args, **kwargs): 
+        def decorator(f):
+            return f
+        if func is None:
+            return decorator
+        return decorator(func)
+    def force_cleanup(): pass
+    def get_memory_stats(): return {}
 
 # Try to import colorama for colored output
 try:

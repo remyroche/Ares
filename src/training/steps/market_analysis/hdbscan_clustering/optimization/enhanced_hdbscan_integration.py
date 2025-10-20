@@ -36,6 +36,9 @@ from src.feature_generation.categories.entropy import create_default_entropy_gen
 from src.feature_generation.categories.spectral_features import create_default_spectral_wavelet_generators
 from src.feature_generation.categories.regime_features import create_default_regime_generators
 
+# Import hardware optimization
+from src.utils.hardware import optimize_dataframe_default
+
 logger = logging.getLogger(__name__)
 
 @dataclass
@@ -158,7 +161,7 @@ class EnhancedHDBSCANIntegration:
         # Step 1: Memory optimization
         if self.memory_optimizer:
             with self.memory_optimizer.memory_monitor("data_processing"):
-                data = self.memory_optimizer.optimize_dataframe_memory(data)
+                data = optimize_dataframe_default(data)
                 self.performance_stats['memory_optimizations'] += 1
         
         # Step 2: Feature generation using feature_generation/ system
@@ -172,7 +175,7 @@ class EnhancedHDBSCANIntegration:
         
         # Step 4: Final memory optimization
         if self.memory_optimizer:
-            features_df = self.memory_optimizer.optimize_dataframe_memory(features_df)
+            features_df = optimize_dataframe_default(features_df)
         
         # Update performance stats
         processing_time = time.time() - start_time

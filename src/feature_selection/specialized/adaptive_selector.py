@@ -32,6 +32,14 @@ import warnings
 # Import utilities
 from src.utils.tprint import tprint, tprint_warning, tprint_error, tprint_success, tprint_debug
 from src.utils.math_validation import validate_numeric_array, validate_finite, validate_positive
+from src.utils.hardware import (
+    get_integrated_hardware_manager,
+    memory_efficient,
+    performance_tracked,
+    smart_cache,
+    WorkloadType,
+    OptimizationLevel
+)
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -94,6 +102,8 @@ class AdaptiveFeatureSelector:
         self.logger.info(f"Configuration: min_samples={self.config.min_samples_absolute}, "
                         f"min_samples_per_feature={self.config.min_samples_per_feature}")
 
+    @memory_efficient(memory_threshold_mb=200.0, auto_cleanup=True)
+    @performance_tracked(log_performance=True, track_memory=True)
     def select_features(self, X: pd.DataFrame, y: np.ndarray,
                        feature_names: Optional[List[str]] = None) -> FeatureSelectionResult:
         """

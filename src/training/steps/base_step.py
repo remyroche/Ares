@@ -78,10 +78,11 @@ from src.utils.artifact_manager import ArtifactManager
 from src.utils.hardware import (
     get_integrated_hardware_manager, IntegratedHardwareConfig,
     m1_optimized, memory_optimized, optimize_dataframe, force_cleanup,
-    WorkloadCategory
+    WorkloadCategory, OptimizationLevel, get_memory_stats
 )
 from src.utils.hardware.memory_optimized_decorators import (
-    MemoryOptimizationLevel, comprehensive_memory_optimization
+    MemoryOptimizationLevel, comprehensive_memory_optimization,
+    memory_efficient, OptimizationConfig
 )
 from src.utils.hardware.optimization_decorators import (
     smart_cache, auto_optimize, performance_tracked
@@ -148,11 +149,7 @@ class BaseStep(ABC):
         
         self.logger.info(f"🔧 BaseStep initialized: {step_name} with enhanced artifact management and hardware optimization")
     
-    @memory_efficient(OptimizationConfig(
-        enable_dtype_optimization=True,
-        optimization_level=OptimizationLevel.BALANCED,
-        enable_compression=True
-    ))
+    @memory_optimized(optimization_level=MemoryOptimizationLevel.BALANCED)
     def _save_dataframe(self, df: Any, name: str, metadata: Optional[Dict] = None) -> str:
         """
         Convenience method to save a DataFrame with automatic optimization and hardware acceleration.
@@ -166,16 +163,10 @@ class BaseStep(ABC):
             Path where artifact was saved
         """
         # Optimize DataFrame with hardware manager
-        optimized_df = self.hardware_manager.process_data_with_optimization(
-            df, WorkloadCategory.DATA_PROCESSING
-        )
+        optimized_df = self.hardware_manager.optimize_dataframe(df)
         return self._save_enhanced_artifact(optimized_df, name, "data", metadata)
     
-    @auto_optimize(OptimizationConfig(
-        enable_caching=True,
-        enable_dtype_optimization=True,
-        optimization_level=OptimizationLevel.BALANCED
-    ))
+    @smart_cache(ttl=1800, max_size=50)
     def _load_dataframe(self, name: str) -> Any:
         """
         Convenience method to load a DataFrame with fallback support and memory optimization.
@@ -189,15 +180,10 @@ class BaseStep(ABC):
         data = self._get_enhanced_artifact(name, "data")
         if data is not None:
             # Apply hardware optimization to loaded data
-            return self.hardware_manager.process_data_with_optimization(
-                data, WorkloadCategory.DATA_PROCESSING
-            )
+            return self.hardware_manager.optimize_dataframe(data)
         return data
     
-    @memory_efficient(OptimizationConfig(
-        enable_compression=True,
-        optimization_level=OptimizationLevel.AGGRESSIVE
-    ))
+    @memory_optimized(optimization_level=MemoryOptimizationLevel.AGGRESSIVE)
     def _save_model(self, model: Any, name: str, metadata: Optional[Dict] = None) -> str:
         """
         Convenience method to save a model with enhanced storage.
@@ -212,10 +198,7 @@ class BaseStep(ABC):
         """
         return self._save_enhanced_artifact(model, name, "model", metadata)
     
-    @auto_optimize(OptimizationConfig(
-        enable_caching=True,
-        optimization_level=OptimizationLevel.BALANCED
-    ))
+    @smart_cache(ttl=1800, max_size=50)
     def _load_model(self, name: str) -> Any:
         """
         Convenience method to load a model with fallback support.
@@ -254,7 +237,7 @@ class BaseStep(ABC):
         return self._get_enhanced_artifact(name, "metadata")
     
     @abstractmethod
-    async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
+    def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """
         Execute the step logic.
         
@@ -683,7 +666,7 @@ class BaseStep(ABC):
             self.logger.warning(f"Failed to get hardware stats: {e}")
             return {}
     
-    async def run(self, config: Dict[str, Any]) -> Dict[str, Any]:
+    def run(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """
         Run the step with error handling and outcome generation with hardware optimization.
         
@@ -702,7 +685,7 @@ class BaseStep(ABC):
             self.logger.info(f"🚀 Starting execution of {self.step_name}")
             
             # Optimize hardware for step execution
-            self.hardware_manager.optimize_for_workload(WorkloadCategory.DATA_PROCESSING)
+            self.hardware_manager.optimize_for_workload('data_processing')
             
             # Set context from config if available
             symbol = config.get('symbol')
@@ -714,8 +697,8 @@ class BaseStep(ABC):
             if any([symbol, exchange, information]):
                 self._set_context(symbol, exchange, information, direction, model)
             
-            # Execute the step (async)
-            execution_result = await self.execute(config)
+            # Execute the step
+            execution_result = self.execute(config)
             
             # Calculate execution time
             execution_time = (datetime.now() - start_time).total_seconds()

@@ -456,14 +456,36 @@ class UnifiedHardwareManager:
         self.config = config or HardwareConfig()
         self.logger = logger.getChild('UnifiedHardwareManager')
         
-        # Initialize enhanced caching system
+        # Initialize enhanced caching system with dynamic memory allocation
+        import psutil
+        total_memory_gb = psutil.virtual_memory().total / (1024**3)
+        
+        # Dynamic memory allocation based on system resources
+        if total_memory_gb >= 32:
+            # High-end systems: Use 25% of total memory
+            cache_memory_mb = total_memory_gb * 1024 * 0.25
+        elif total_memory_gb >= 16:
+            # Mid-range systems: Use 30% of total memory
+            cache_memory_mb = total_memory_gb * 1024 * 0.30
+        elif total_memory_gb >= 8:
+            # Standard systems: Use 40% of total memory
+            cache_memory_mb = total_memory_gb * 1024 * 0.40
+        else:
+            # Low-memory systems: Use 50% of total memory
+            cache_memory_mb = total_memory_gb * 1024 * 0.50
+        
+        # Ensure minimum and maximum bounds
+        cache_memory_mb = max(1024.0, min(cache_memory_mb, 16384.0))  # 1GB to 16GB
+        
         cache_config = CacheConfig(
-            max_memory_mb=512.0,
+            max_memory_mb=cache_memory_mb,
             data_type_optimization=DataTypeOptimization.AGGRESSIVE,
             enable_compression=True,
             auto_optimize_dtypes=True
         )
         self.cache_system = get_global_cache(cache_config)
+        
+        tprint_info(f"Dynamic cache allocation: {cache_memory_mb:.0f}MB ({total_memory_gb:.1f}GB total system memory)")
 
         # Initialize hardware components
         self.cpu_optimizer = M1CPUOptimizer()

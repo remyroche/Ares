@@ -29,6 +29,10 @@ from .memory_optimized_decorators import (
 from .advanced_memory_manager import (
     get_advanced_memory_manager, MemoryConfig as AdvancedMemoryConfig
 )
+from .dynamic_memory_allocator import (
+    get_dynamic_allocator, get_optimal_memory_allocation, WorkloadType,
+    get_system_recommendations, update_memory_usage
+)
 from .m1_memory_optimizer import M1MemoryOptimizer
 from .m1_cpu_optimizer import M1CPUOptimizer
 from .enhanced_gpu_manager import EnhancedM1GPUManager
@@ -99,7 +103,31 @@ class IntegratedHardwareManager:
         
         # Initialize hardware components
         self.hardware_manager = UnifiedHardwareManager(self.config.hardware_config)
-        self.cache_system = EnhancedCacheSystem(self.config.cache_config)
+        
+        # Initialize enhanced caching system with dynamic allocation
+        # Get optimal allocation based on system and workload
+        allocation = get_optimal_memory_allocation(
+            workload_type=WorkloadType.MODERATE,
+            data_size_mb=None,
+            user_preferences={'memory_usage_factor': 1.0}
+        )
+        
+        # Create dynamic cache config
+        dynamic_cache_config = CacheConfig(
+            max_memory_mb=allocation.cache_memory_mb,
+            strategy=CacheStrategy.LRU,
+            data_type_optimization=DataTypeOptimization.AGGRESSIVE,
+            enable_compression=True,
+            auto_optimize_dtypes=True,
+            prefer_int32=True,
+            prefer_float32=True
+        )
+        
+        self.cache_system = EnhancedCacheSystem(dynamic_cache_config)
+        
+        # Store allocation info for monitoring
+        self.current_allocation = allocation
+        self.dynamic_allocator = get_dynamic_allocator()
         
         # Initialize advanced memory manager
         memory_config = AdvancedMemoryConfig(

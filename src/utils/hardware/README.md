@@ -23,6 +23,14 @@ This module provides a comprehensive hardware optimization and caching system th
 - **Memory Management**: Intelligent memory cleanup and optimization
 - **Performance Monitoring**: Real-time performance tracking
 
+### 🧠 Dynamic Memory Allocation
+- **Intelligent System Detection**: Automatically detects system tier (Enterprise/High-end/Mid-range/Standard/Low-end)
+- **Workload-Based Allocation**: Adapts memory allocation based on workload type (Light/Moderate/Heavy/Extreme/Streaming)
+- **Data Size Adaptation**: Scales memory allocation based on actual data size
+- **User Preference Support**: Allows custom memory usage preferences
+- **Adaptive Learning**: Learns from performance patterns and adjusts allocation
+- **Real-Time Pressure Monitoring**: Continuously monitors memory pressure and adjusts allocation
+
 ## Quick Start
 
 ### Basic Usage
@@ -71,6 +79,33 @@ def tracked_operation(data):
 # Integrated hardware management
 manager = get_integrated_hardware_manager()
 optimized_data = process_market_data(raw_data)
+```
+
+### Dynamic Memory Allocation
+
+```python
+from src.utils.hardware import (
+    get_optimal_memory_allocation, get_system_recommendations,
+    WorkloadType, update_memory_usage
+)
+
+# Get system recommendations
+recommendations = get_system_recommendations()
+print(f"System tier: {recommendations['system_tier']}")
+print(f"Total memory: {recommendations['total_memory_gb']:.1f}GB")
+
+# Get optimal allocation for specific workload and data size
+allocation = get_optimal_memory_allocation(
+    workload_type=WorkloadType.HEAVY,
+    data_size_mb=5000,  # 5GB dataset
+    user_preferences={'memory_usage_factor': 1.2}
+)
+print(f"Cache memory: {allocation.cache_memory_mb:.0f}MB")
+print(f"Processing memory: {allocation.processing_memory_mb:.0f}MB")
+print(f"Total allocated: {allocation.total_allocated_mb:.0f}MB")
+
+# Update memory usage for adaptive learning
+update_memory_usage(used_memory_mb=8000, pressure_level='high')
 ```
 
 ## Configuration

@@ -19,6 +19,13 @@ from .advanced_memory_manager import (
     track_memory_usage, force_garbage_collection, cleanup_all_memory
 )
 
+# Import dynamic memory allocation
+from .dynamic_memory_allocator import (
+    DynamicMemoryAllocator, SystemTier, WorkloadType, MemoryAllocation,
+    get_dynamic_allocator, get_optimal_memory_allocation, get_system_recommendations,
+    update_memory_usage
+)
+
 # Import memory-optimized decorators
 from .memory_optimized_decorators import (
     memory_optimized, gc_optimized, chunked_processing_auto,
@@ -81,16 +88,26 @@ __version__ = "2.0.0"
 __author__ = "Ares Trading System"
 __description__ = "Enhanced Hardware Utilities with Caching and Optimization"
 
-# Default configurations
-DEFAULT_CACHE_CONFIG = CacheConfig(
-    max_memory_mb=512.0,
-    strategy=CacheStrategy.LRU,
-    data_type_optimization=DataTypeOptimization.AGGRESSIVE,
-    enable_compression=True,
-    auto_optimize_dtypes=True,
-    prefer_int32=True,
-    prefer_float32=True
-)
+# Default configurations with intelligent dynamic memory allocation
+def get_dynamic_cache_config(workload_type: WorkloadType = WorkloadType.MODERATE,
+                           data_size_mb: Optional[float] = None,
+                           user_preferences: Optional[Dict[str, Any]] = None) -> CacheConfig:
+    """Get cache configuration with intelligent dynamic memory allocation."""
+    # Get optimal memory allocation
+    allocation = get_optimal_memory_allocation(workload_type, data_size_mb, user_preferences)
+    
+    return CacheConfig(
+        max_memory_mb=allocation.cache_memory_mb,
+        strategy=CacheStrategy.LRU,
+        data_type_optimization=DataTypeOptimization.AGGRESSIVE,
+        enable_compression=True,
+        auto_optimize_dtypes=True,
+        prefer_int32=True,
+        prefer_float32=True
+    )
+
+# Default configuration for moderate workloads
+DEFAULT_CACHE_CONFIG = get_dynamic_cache_config()
 
 DEFAULT_HARDWARE_CONFIG = HardwareConfig(
     memory_limit_gb=8.0,

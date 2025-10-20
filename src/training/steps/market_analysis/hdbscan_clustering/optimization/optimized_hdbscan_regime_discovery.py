@@ -435,9 +435,14 @@ class OptimizedHDBSCANRegimeDiscovery:
             if total_variance > 0:
                 feature_importance = (feature_variance / total_variance).to_dict()
         
+        # Calculate cluster probabilities using the clusterer's method
+        cluster_probabilities = self._calculate_cluster_probabilities(
+            cluster_labels, clustering_info, features_df
+        )
+        
         return OptimizedRegimeResult(
             cluster_labels=cluster_labels,
-            cluster_probabilities=np.ones(len(cluster_labels)),  # Placeholder
+            cluster_probabilities=cluster_probabilities,
             n_clusters=n_clusters,
             n_noise_points=n_noise_points,
             cluster_persistence=clustering_info.get('cluster_persistence'),
@@ -453,6 +458,52 @@ class OptimizedHDBSCANRegimeDiscovery:
             optimization_stats=optimization_stats,
             feature_importance=feature_importance
         )
+    
+    def _calculate_cluster_probabilities(self, 
+                                       cluster_labels: np.ndarray,
+                                       clustering_info: Dict[str, Any],
+                                       features_df: pd.DataFrame) -> np.ndarray:
+        """Calculate cluster probabilities for each sample."""
+        try:
+            # Get cluster centers
+            cluster_centers = clustering_info.get('cluster_centers')
+            if cluster_centers is None or len(cluster_centers) == 0:
+                # Fallback to uniform probabilities
+                return np.ones(len(cluster_labels))
+            
+            # Calculate distances to cluster centers
+            distances = np.sqrt(((features_df.values[:, np.newaxis] - cluster_centers[np.newaxis, :]) ** 2).sum(axis=2))
+            
+            # Convert distances to probabilities using softmax
+            # Lower distance = higher probability
+            max_distances = np.max(distances, axis=1, keepdims=True)
+            normalized_distances = distances / (max_distances + 1e-10)
+            
+            # Apply softmax to get probabilities
+            exp_distances = np.exp(-normalized_distances)
+            probabilities = exp_distances / np.sum(exp_distances, axis=1, keepdims=True)
+            
+            # For each sample, get the probability of its assigned cluster
+            cluster_probabilities = np.zeros(len(cluster_labels))
+            for i, label in enumerate(cluster_labels):
+                if label != -1:  # Not noise
+                    # Find the index of the assigned cluster
+                    unique_labels = np.unique(cluster_labels)
+                    unique_labels = unique_labels[unique_labels != -1]
+                    if label in unique_labels:
+                        cluster_idx = np.where(unique_labels == label)[0][0]
+                        cluster_probabilities[i] = probabilities[i, cluster_idx]
+                    else:
+                        cluster_probabilities[i] = 0.0
+                else:
+                    cluster_probabilities[i] = 0.0  # Noise has zero probability
+            
+            return cluster_probabilities
+            
+        except Exception as e:
+            logger.error(f"❌ Cluster probability calculation failed: {e}")
+            # Fallback to uniform probabilities
+            return np.ones(len(cluster_labels))
     
     def get_performance_stats(self) -> Dict[str, Any]:
         """Get comprehensive performance statistics."""

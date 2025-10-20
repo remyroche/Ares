@@ -447,6 +447,414 @@ class EconomicValidator:
                 works_best_for.append("General trading strategies")
             
             return works_best_for, risk_caveats
+    
+    def validate_regime_quality(self, market_data: pd.DataFrame, 
+                              regime_labels: np.ndarray) -> Dict[str, Any]:
+        """
+        Enhanced validation of regime quality with comprehensive metrics.
+        
+        Args:
+            market_data: Market data DataFrame
+            regime_labels: Regime labels from clustering
+            
+        Returns:
+            Dictionary with comprehensive validation results
+        """
+        try:
+            logger.info("🔍 Starting comprehensive regime quality validation")
+            
+            validation_results = {
+                'regime_profiling': {},
+                'statistical_analysis': {},
+                'economic_validation': {},
+                'cross_validation': {},
+                'overall_score': 0.0,
+                'is_valid': True,
+                'issues': []
+            }
+            
+            # Validate regime profiling logic
+            regime_profiling_results = self._validate_regime_profiling_logic(
+                market_data, regime_labels
+            )
+            validation_results['regime_profiling'] = regime_profiling_results
+            
+            # Validate statistical analysis
+            statistical_results = self._validate_statistical_analysis(
+                market_data, regime_labels
+            )
+            validation_results['statistical_analysis'] = statistical_results
+            
+            # Validate economic metrics
+            economic_results = self._validate_economic_metrics(
+                market_data, regime_labels
+            )
+            validation_results['economic_validation'] = economic_results
+            
+            # Cross-validation
+            cv_results = self._cross_validate_regime_discovery(
+                market_data, regime_labels
+            )
+            validation_results['cross_validation'] = cv_results
+            
+            # Calculate overall score
+            overall_score = self._calculate_overall_validation_score(validation_results)
+            validation_results['overall_score'] = overall_score
+            
+            # Determine if system is valid
+            validation_results['is_valid'] = (
+                regime_profiling_results.get('is_valid', False) and
+                statistical_results.get('is_valid', False) and
+                economic_results.get('is_valid', False) and
+                overall_score > 0.5
+            )
+            
+            logger.info(f"✅ Regime quality validation completed. Overall score: {overall_score:.3f}")
+            return validation_results
+            
+        except Exception as e:
+            logger.error(f"❌ Regime quality validation failed: {e}")
+            return {'error': str(e), 'is_valid': False}
+    
+    def _validate_regime_profiling_logic(self, 
+                                       market_data: pd.DataFrame,
+                                       regime_labels: np.ndarray) -> Dict[str, Any]:
+        """Validate regime profiling logic."""
+        try:
+            results = {
+                'regime_count': 0,
+                'regime_durations': [],
+                'regime_transitions': 0,
+                'regime_stability': 0.0,
+                'is_valid': True,
+                'issues': []
+            }
+            
+            # Count regimes
+            unique_regimes = np.unique(regime_labels)
+            unique_regimes = unique_regimes[unique_regimes != -1]  # Remove noise
+            results['regime_count'] = len(unique_regimes)
+            
+            if results['regime_count'] == 0:
+                results['issues'].append("No valid regimes found")
+                results['is_valid'] = False
+                return results
+            
+            # Calculate regime durations
+            regime_durations = []
+            for regime in unique_regimes:
+                regime_mask = regime_labels == regime
+                regime_indices = np.where(regime_mask)[0]
+                
+                if len(regime_indices) > 0:
+                    # Find consecutive periods
+                    consecutive_periods = self._find_consecutive_periods(regime_indices)
+                    regime_durations.extend(consecutive_periods)
+            
+            results['regime_durations'] = regime_durations
+            
+            # Check minimum duration
+            min_duration = min(regime_durations) if regime_durations else 0
+            if min_duration < self.config.min_regime_duration:
+                results['issues'].append(f"Minimum regime duration too short: {min_duration}")
+                results['is_valid'] = False
+            
+            # Calculate regime transitions
+            transitions = self._calculate_regime_transitions(regime_labels)
+            results['regime_transitions'] = transitions
+            
+            # Calculate regime stability
+            stability = self._calculate_regime_stability(regime_labels)
+            results['regime_stability'] = stability
+            
+            if stability < 0.8:
+                results['issues'].append(f"Regime stability too low: {stability:.3f}")
+                results['is_valid'] = False
+            
+            return results
+            
+        except Exception as e:
+            logger.error(f"❌ Regime profiling logic validation failed: {e}")
+            return {'error': str(e), 'is_valid': False}
+    
+    def _validate_statistical_analysis(self, 
+                                     market_data: pd.DataFrame,
+                                     regime_labels: np.ndarray) -> Dict[str, Any]:
+        """Validate statistical analysis of regime characteristics."""
+        try:
+            results = {
+                'confidence_intervals': {},
+                'statistical_tests': {},
+                'is_valid': True,
+                'issues': []
+            }
+            
+            # Test confidence interval calculations
+            try:
+                validation_result = self.validate_and_profile(market_data, regime_labels)
+                
+                if validation_result and 'regime_profiles' in validation_result:
+                    for profile in validation_result['regime_profiles']:
+                        regime_name = profile['regime_name']
+                        
+                        # Check if confidence intervals are present
+                        if 'confidence_intervals' in profile:
+                            ci_data = profile['confidence_intervals']
+                            results['confidence_intervals'][regime_name] = ci_data
+                        else:
+                            results['issues'].append(f"No confidence intervals for regime {regime_name}")
+                            results['is_valid'] = False
+                
+            except Exception as e:
+                results['issues'].append(f"Statistical analysis validation failed: {e}")
+                results['is_valid'] = False
+            
+            # Test statistical significance
+            results['statistical_tests'] = self._test_statistical_significance(
+                market_data, regime_labels
+            )
+            
+            return results
+            
+        except Exception as e:
+            logger.error(f"❌ Statistical analysis validation failed: {e}")
+            return {'error': str(e), 'is_valid': False}
+    
+    def _validate_economic_metrics(self, 
+                                 market_data: pd.DataFrame,
+                                 regime_labels: np.ndarray) -> Dict[str, Any]:
+        """Validate economic metrics and calculations."""
+        try:
+            results = {
+                'sharpe_ratios': {},
+                'volatilities': {},
+                'drawdowns': {},
+                'is_valid': True,
+                'issues': []
+            }
+            
+            # Test economic validator
+            try:
+                validation_result = self.validate_and_profile(market_data, regime_labels)
+                
+                if validation_result and 'regime_profiles' in validation_result:
+                    for profile in validation_result['regime_profiles']:
+                        regime_name = profile['regime_name']
+                        
+                        # Validate Sharpe ratios
+                        if 'sharpe_ratio' in profile:
+                            sharpe = profile['sharpe_ratio']
+                            results['sharpe_ratios'][regime_name] = sharpe
+                            
+                            if sharpe < 0.5:
+                                results['issues'].append(f"Low Sharpe ratio for {regime_name}: {sharpe:.3f}")
+                                results['is_valid'] = False
+                        
+                        # Validate volatilities
+                        if 'volatility' in profile:
+                            vol = profile['volatility']
+                            results['volatilities'][regime_name] = vol
+                            
+                            if vol < 0.01 or vol > 0.5:
+                                results['issues'].append(f"Volatility out of range for {regime_name}: {vol:.3f}")
+                                results['is_valid'] = False
+                        
+                        # Validate drawdowns
+                        if 'max_drawdown' in profile:
+                            dd = abs(profile['max_drawdown'])
+                            results['drawdowns'][regime_name] = dd
+                            
+                            if dd > 0.2:
+                                results['issues'].append(f"High drawdown for {regime_name}: {dd:.3f}")
+                                results['is_valid'] = False
+                
+            except Exception as e:
+                results['issues'].append(f"Economic metrics validation failed: {e}")
+                results['is_valid'] = False
+            
+            return results
+            
+        except Exception as e:
+            logger.error(f"❌ Economic metrics validation failed: {e}")
+            return {'error': str(e), 'is_valid': False}
+    
+    def _cross_validate_regime_discovery(self, 
+                                       market_data: pd.DataFrame,
+                                       regime_labels: np.ndarray) -> Dict[str, Any]:
+        """Perform cross-validation for regime discovery."""
+        try:
+            results = {
+                'cv_scores': [],
+                'stability_scores': [],
+                'mean_cv_score': 0.0,
+                'cv_std': 0.0,
+                'is_valid': True
+            }
+            
+            # Simple cross-validation using time series split
+            n_samples = len(regime_labels)
+            n_splits = 5
+            
+            cv_scores = []
+            stability_scores = []
+            
+            for i in range(n_splits):
+                try:
+                    # Split data
+                    split_size = n_samples // n_splits
+                    start_idx = i * split_size
+                    end_idx = (i + 1) * split_size if i < n_splits - 1 else n_samples
+                    
+                    train_labels = regime_labels[start_idx:end_idx]
+                    
+                    # Calculate stability
+                    stability = self._calculate_regime_stability(train_labels)
+                    stability_scores.append(stability)
+                    
+                    # Calculate CV score (simplified)
+                    cv_score = stability
+                    cv_scores.append(cv_score)
+                    
+                except Exception as e:
+                    logger.debug(f"CV fold {i} failed: {e}")
+                    continue
+            
+            if cv_scores:
+                results['cv_scores'] = cv_scores
+                results['stability_scores'] = stability_scores
+                results['mean_cv_score'] = np.mean(cv_scores)
+                results['cv_std'] = np.std(cv_scores)
+                
+                # Validate CV scores
+                if results['mean_cv_score'] < 0.5:
+                    results['is_valid'] = False
+            else:
+                results['is_valid'] = False
+            
+            return results
+            
+        except Exception as e:
+            logger.error(f"❌ Cross-validation failed: {e}")
+            return {'error': str(e), 'is_valid': False}
+    
+    def _find_consecutive_periods(self, indices: np.ndarray) -> List[int]:
+        """Find consecutive periods in regime indices."""
+        if len(indices) == 0:
+            return []
+        
+        consecutive_periods = []
+        current_length = 1
+        
+        for i in range(1, len(indices)):
+            if indices[i] == indices[i-1] + 1:
+                current_length += 1
+            else:
+                consecutive_periods.append(current_length)
+                current_length = 1
+        
+        consecutive_periods.append(current_length)
+        return consecutive_periods
+    
+    def _calculate_regime_transitions(self, regime_labels: np.ndarray) -> int:
+        """Calculate number of regime transitions."""
+        transitions = 0
+        for i in range(1, len(regime_labels)):
+            if regime_labels[i] != regime_labels[i-1]:
+                transitions += 1
+        return transitions
+    
+    def _calculate_regime_stability(self, regime_labels: np.ndarray) -> float:
+        """Calculate regime stability score."""
+        if len(regime_labels) == 0:
+            return 0.0
+        
+        # Calculate stability as 1 - (transitions / total_periods)
+        transitions = self._calculate_regime_transitions(regime_labels)
+        stability = 1.0 - (transitions / len(regime_labels))
+        return max(0.0, stability)
+    
+    def _test_statistical_significance(self, 
+                                     market_data: pd.DataFrame,
+                                     regime_labels: np.ndarray) -> Dict[str, Any]:
+        """Test statistical significance of regime differences."""
+        try:
+            results = {
+                't_tests': {},
+                'is_significant': True
+            }
+            
+            # Test returns across regimes
+            if 'close' in market_data.columns:
+                returns = market_data['close'].pct_change().dropna()
+                
+                # Align returns with regime labels
+                min_len = min(len(returns), len(regime_labels))
+                returns = returns.iloc[:min_len]
+                labels = regime_labels[:min_len]
+                
+                # Remove noise
+                non_noise_mask = labels != -1
+                if np.sum(non_noise_mask) < 2:
+                    return results
+                
+                returns_clean = returns[non_noise_mask]
+                labels_clean = labels[non_noise_mask]
+                
+                # T-tests between regimes
+                unique_regimes = np.unique(labels_clean)
+                if len(unique_regimes) >= 2:
+                    regime_returns = [returns_clean[labels_clean == regime] for regime in unique_regimes]
+                    
+                    # Pairwise t-tests
+                    for i, regime1 in enumerate(unique_regimes):
+                        for j, regime2 in enumerate(unique_regimes[i+1:], i+1):
+                            try:
+                                from scipy import stats
+                                t_stat, p_value = stats.ttest_ind(regime_returns[i], regime_returns[j])
+                                results['t_tests'][f'regime_{regime1}_vs_regime_{regime2}'] = {
+                                    't_statistic': t_stat,
+                                    'p_value': p_value,
+                                    'is_significant': p_value < 0.05
+                                }
+                            except Exception as e:
+                                logger.debug(f"T-test failed for regimes {regime1} vs {regime2}: {e}")
+            
+            return results
+            
+        except Exception as e:
+            logger.error(f"❌ Statistical significance testing failed: {e}")
+            return {'error': str(e), 'is_significant': False}
+    
+    def _calculate_overall_validation_score(self, validation_results: Dict[str, Any]) -> float:
+        """Calculate overall validation score."""
+        try:
+            scores = []
+            
+            # Regime profiling score
+            regime_score = 1.0 if validation_results['regime_profiling'].get('is_valid', False) else 0.0
+            scores.append(regime_score)
+            
+            # Statistical analysis score
+            stat_score = 1.0 if validation_results['statistical_analysis'].get('is_valid', False) else 0.0
+            scores.append(stat_score)
+            
+            # Economic validation score
+            econ_score = 1.0 if validation_results['economic_validation'].get('is_valid', False) else 0.0
+            scores.append(econ_score)
+            
+            # Cross-validation score
+            cv_score = validation_results['cross_validation'].get('mean_cv_score', 0.0)
+            scores.append(cv_score)
+            
+            # Calculate weighted average
+            weights = [0.3, 0.3, 0.2, 0.2]  # Regime, Statistical, Economic, CV
+            overall_score = np.average(scores, weights=weights)
+            
+            return overall_score
+            
+        except Exception as e:
+            logger.error(f"❌ Overall score calculation failed: {e}")
+            return 0.0
             
         except Exception as e:
             logger.error(f"❌ Regime analysis failed: {e}")

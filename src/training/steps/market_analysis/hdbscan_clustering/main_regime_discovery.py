@@ -29,8 +29,15 @@ from src.utils.tprint import (
 from src.utils.common_operations import safe_dataframe_operation, optimize_dataframe_memory, get_memory_usage
 from src.utils.common_utilities import safe_dataframe_operation as safe_df_op
 from src.utils.math_validation import validate_finite, safe_divide, safe_log, safe_sqrt
-from src.utils.matrix_operations import get_unified_matrix_operations
 from src.utils.serialization_utils import save_pickle, load_pickle
+
+# Import enhanced hardware optimization tools
+from src.utils.hardware import (
+    get_unified_hardware_manager, get_comprehensive_optimizer,
+    smart_cache, auto_optimize, memory_efficient, performance_tracked,
+    optimize_dataframe_default, optimize_numpy_array_default,
+    WorkloadType, OptimizationLevel, ComprehensiveConfig, OptimizationStrategy
+)
 
 # Import optimized regime discovery components (default)
 from .optimization.optimized_hdbscan_regime_discovery import (
@@ -95,6 +102,10 @@ class HDBSCANRegimeDiscovery:
         self.logger = logging.getLogger(self.__class__.__name__)
         self.use_optimized = use_optimized
         
+        # Initialize enhanced hardware optimization
+        with tprint_timer("Enhanced hardware optimization initialization"):
+            self._initialize_enhanced_hardware_optimization()
+        
         # Performance tracking
         self.performance_stats = {
             'initialization_time': 0.0,
@@ -126,10 +137,6 @@ class HDBSCANRegimeDiscovery:
             tprint_success("🚀 Optimized HDBSCAN regime discovery initialized")
         else:
             tprint_debug("Using legacy implementation")
-            # Initialize hardware optimization
-            with tprint_timer("Hardware optimization initialization"):
-                self._initialize_hardware_optimization()
-            
             # Initialize components
             with tprint_timer("Components initialization"):
                 self._initialize_components()
@@ -155,13 +162,15 @@ class HDBSCANRegimeDiscovery:
                                         fit: bool = True, 
                                         is_live: bool = False,
                                         returns: Optional[np.ndarray] = None) -> RegimeResult:
-        """Discover regimes using optimized implementation."""
+        """Discover regimes using optimized implementation with enhanced hardware optimization."""
         try:
-            # Use optimized regime discovery
-            optimized_result = self.optimized_discovery.discover_regimes(data)
-            
-            # Convert to legacy format
-            return self._convert_optimized_result_to_legacy(optimized_result, data, fit, is_live, returns)
+            # Use hardware optimization context for the entire discovery process
+            with self.hardware_manager.optimization_context(WorkloadType.ML_TRAINING, OptimizationLevel.MAXIMUM):
+                # Use optimized regime discovery
+                optimized_result = self.optimized_discovery.discover_regimes(data)
+                
+                # Convert to legacy format
+                return self._convert_optimized_result_to_legacy(optimized_result, data, fit, is_live, returns)
             
         except Exception as e:
             tprint(f"❌ Optimized regime discovery failed: {e}", "ERROR")
@@ -260,42 +269,43 @@ class HDBSCANRegimeDiscovery:
             )
     
     @tprint_logged(LogLevel.INFO, include_result=True)
-    def _initialize_hardware_optimization(self):
-        """Initialize hardware optimization utilities."""
+    def _initialize_enhanced_hardware_optimization(self):
+        """Initialize enhanced hardware optimization utilities."""
         try:
-            tprint_info("Initializing hardware optimization utilities")
+            tprint_info("Initializing enhanced hardware optimization utilities")
             
-            # Initialize unified matrix operations
-            with tprint_timer("Matrix operations initialization"):
-                self.matrix_ops = get_unified_matrix_operations()
-                
-                if self.matrix_ops:
-                    tprint_success("✅ Matrix operations available for regime discovery")
-                    tprint_debug(f"Matrix operations type: {type(self.matrix_ops).__name__}")
-                else:
-                    tprint_warning("⚠️ Matrix operations not available, using standard operations")
+            # Initialize unified hardware manager
+            with tprint_timer("Unified hardware manager initialization"):
+                self.hardware_manager = get_unified_hardware_manager()
+                self.hardware_manager.configure_workload(WorkloadType.ML_TRAINING, OptimizationLevel.AGGRESSIVE)
+                tprint_success("✅ Unified hardware manager initialized")
             
-            # Initialize additional hardware optimizations
-            try:
-                import psutil
-                cpu_count = psutil.cpu_count(logical=False)
-                logical_cpu_count = psutil.cpu_count(logical=True)
-                memory_gb = psutil.virtual_memory().total / (1024**3)
-                
-                tprint_debug(f"Hardware specs: {cpu_count} physical CPUs, {logical_cpu_count} logical CPUs, {memory_gb:.1f}GB RAM")
-                
-                # Set optimal thread counts based on hardware
-                if hasattr(self.config, 'numba_threads'):
-                    optimal_threads = min(logical_cpu_count, 8)  # Cap at 8 for stability
-                    self.config.numba_threads = optimal_threads
-                    tprint_debug(f"Set optimal Numba threads: {optimal_threads}")
-                    
-            except ImportError:
-                tprint_warning("psutil not available, using default hardware settings")
+            # Initialize comprehensive optimizer
+            with tprint_timer("Comprehensive optimizer initialization"):
+                comprehensive_config = ComprehensiveConfig(
+                    optimization_strategy=OptimizationStrategy.MAXIMUM_PERFORMANCE,
+                    workload_category=WorkloadType.MACHINE_LEARNING,
+                    enable_adaptive_optimization=True,
+                    enable_cross_component_optimization=True,
+                    enable_thermal_management=True,
+                    enable_power_management=True
+                )
+                self.comprehensive_optimizer = get_comprehensive_optimizer(comprehensive_config)
+                tprint_success("✅ Comprehensive optimizer initialized")
+            
+            # Initialize caching system
+            with tprint_timer("Enhanced caching system initialization"):
+                self.cache_system = self.hardware_manager.cache_system
+                tprint_success("✅ Enhanced caching system initialized")
+            
+            tprint_success("🚀 Enhanced hardware optimization complete")
                 
         except Exception as e:
-            tprint_error(f"❌ Hardware optimization initialization failed: {e}")
-            self.matrix_ops = None
+            tprint_error(f"❌ Enhanced hardware optimization initialization failed: {e}")
+            # Fallback to basic hardware manager
+            self.hardware_manager = get_unified_hardware_manager(conservative_mode=True)
+            self.comprehensive_optimizer = None
+            self.cache_system = None
     
     def _initialize_components(self):
         """Initialize all regime discovery components."""
@@ -324,13 +334,17 @@ class HDBSCANRegimeDiscovery:
             tprint(f"❌ Component initialization failed: {e}", "ERROR")
             raise
     
+    @smart_cache(ttl=3600)  # Cache results for 1 hour
+    @auto_optimize(optimize_inputs=True, optimize_outputs=True)
+    @memory_efficient(memory_threshold_mb=200.0, auto_cleanup=True)
+    @performance_tracked(log_performance=True, track_memory=True)
     @tprint_logged(LogLevel.INFO, include_args=True, include_result=True)
     async def discover_regimes(self, data: pd.DataFrame, 
                               fit: bool = True, 
                               is_live: bool = False,
                               returns: Optional[np.ndarray] = None) -> RegimeResult:
         """
-        Discover regimes using HDBSCAN-based approach.
+        Discover regimes using HDBSCAN-based approach with enhanced hardware optimization.
         
         Args:
             data: Market data with datetime index
@@ -349,10 +363,11 @@ class HDBSCANRegimeDiscovery:
             tprint_info(f"🔍 Starting regime discovery: fit={fit}, live={is_live}")
             tprint_debug(f"Data shape: {data.shape}, Memory usage: {initial_memory:.2f}MB")
             
-            # Memory optimization
-            data = optimize_dataframe_memory(data)
-            optimized_memory = get_memory_usage()
-            tprint_debug(f"Memory after optimization: {optimized_memory:.2f}MB (saved {initial_memory - optimized_memory:.2f}MB)")
+            # Enhanced memory optimization using hardware tools
+            with self.hardware_manager.optimization_context(WorkloadType.ML_TRAINING, OptimizationLevel.AGGRESSIVE):
+                data = optimize_dataframe_default(data)
+                optimized_memory = get_memory_usage()
+                tprint_debug(f"Memory after enhanced optimization: {optimized_memory:.2f}MB (saved {initial_memory - optimized_memory:.2f}MB)")
             
             # Use optimized implementation if enabled
             if self.use_optimized:
@@ -362,45 +377,48 @@ class HDBSCANRegimeDiscovery:
             # Validate input
             self._validate_input(data)
             
-            # Step 1: Feature extraction
+            # Step 1: Feature extraction with hardware optimization
             tprint("📊 Step 1: Feature extraction", "INFO")
-            feature_result = self.feature_extractor.extract_features(data)
-            if not feature_result.success:
-                return RegimeResult(
-                    labels=np.array([]),
-                    probabilities=np.array([]),
-                    cluster_persistence=np.array([]),
-                    economic_profiles=[],
-                    validation_metrics={},
-                    metadata={},
-                    processing_time=(datetime.now() - start_time).total_seconds(),
-                    success=False,
-                    error_message=f"Feature extraction failed: {feature_result.error_message}"
-                )
+            with self.hardware_manager.optimization_context(WorkloadType.FEATURE_ENGINEERING, OptimizationLevel.AGGRESSIVE):
+                feature_result = self.feature_extractor.extract_features(data)
+                if not feature_result.success:
+                    return RegimeResult(
+                        labels=np.array([]),
+                        probabilities=np.array([]),
+                        cluster_persistence=np.array([]),
+                        economic_profiles=[],
+                        validation_metrics={},
+                        metadata={},
+                        processing_time=(datetime.now() - start_time).total_seconds(),
+                        success=False,
+                        error_message=f"Feature extraction failed: {feature_result.error_message}"
+                    )
             
-            # Step 2: Preprocessing
+            # Step 2: Preprocessing with enhanced optimization
             tprint("⚙️ Step 2: Preprocessing", "INFO")
-            processed_result = self.feature_processor.process(
-                feature_result.features_df, fit=fit
-            )
-            if not processed_result.success:
-                return RegimeResult(
-                    labels=np.array([]),
-                    probabilities=np.array([]),
-                    cluster_persistence=np.array([]),
-                    economic_profiles=[],
-                    validation_metrics={},
-                    metadata={},
-                    processing_time=(datetime.now() - start_time).total_seconds(),
-                    success=False,
-                    error_message=f"Preprocessing failed: {processed_result.error_message}"
+            with self.hardware_manager.optimization_context(WorkloadType.DATA_PROCESSING, OptimizationLevel.AGGRESSIVE):
+                processed_result = self.feature_processor.process(
+                    feature_result.features_df, fit=fit
                 )
+                if not processed_result.success:
+                    return RegimeResult(
+                        labels=np.array([]),
+                        probabilities=np.array([]),
+                        cluster_persistence=np.array([]),
+                        economic_profiles=[],
+                        validation_metrics={},
+                        metadata={},
+                        processing_time=(datetime.now() - start_time).total_seconds(),
+                        success=False,
+                        error_message=f"Preprocessing failed: {processed_result.error_message}"
+                    )
             
-            # Step 3: Dimensionality reduction
+            # Step 3: Dimensionality reduction with hardware acceleration
             tprint("📉 Step 3: Dimensionality reduction", "INFO")
-            reduced_features, dr_metadata = self.dimensionality_reducer.reduce(
-                processed_result.processed_features_df.values, fit=fit
-            )
+            with self.hardware_manager.optimization_context(WorkloadType.ML_TRAINING, OptimizationLevel.AGGRESSIVE):
+                reduced_features, dr_metadata = self.dimensionality_reducer.reduce(
+                    processed_result.processed_features_df.values, fit=fit
+                )
             
             # Step 4: Temporal windowing
             tprint("🔄 Step 4: Temporal windowing", "INFO")
@@ -408,11 +426,12 @@ class HDBSCANRegimeDiscovery:
                 data, processed_result.feature_names
             )
             
-            # Step 5: HDBSCAN clustering
+            # Step 5: HDBSCAN clustering with comprehensive optimization
             tprint("🔍 Step 5: HDBSCAN clustering", "INFO")
-            cluster_result = self.hdbscan_clusterer.fit_predict(
-                reduced_features, window_metadata['n_effective_samples']
-            )
+            with self.hardware_manager.optimization_context(WorkloadType.ML_TRAINING, OptimizationLevel.MAXIMUM):
+                cluster_result = self.hdbscan_clusterer.fit_predict(
+                    reduced_features, window_metadata['n_effective_samples']
+                )
             
             # Step 6: Noise handling
             tprint("🔧 Step 6: Noise handling", "INFO")
@@ -509,9 +528,12 @@ class HDBSCANRegimeDiscovery:
                 error_message=str(e)
             )
     
+    @smart_cache(ttl=1800)  # Cache predictions for 30 minutes
+    @auto_optimize(optimize_inputs=True, optimize_outputs=True)
+    @performance_tracked(log_performance=True)
     def predict_regimes(self, data: pd.DataFrame) -> Tuple[np.ndarray, np.ndarray, str]:
         """
-        Predict regimes for new data using fitted models.
+        Predict regimes for new data using fitted models with enhanced hardware optimization.
         
         Args:
             data: New market data
@@ -525,25 +547,27 @@ class HDBSCANRegimeDiscovery:
             if self.last_result is None:
                 raise ValueError("No fitted models available. Call discover_regimes with fit=True first.")
             
-            # Extract features
-            feature_result = self.feature_extractor.extract_features(data)
-            if not feature_result.success:
-                raise ValueError(f"Feature extraction failed: {feature_result.error_message}")
-            
-            # Preprocess features
-            processed_result = self.feature_processor.process(feature_result.features_df, fit=False)
-            if not processed_result.success:
-                raise ValueError(f"Preprocessing failed: {processed_result.error_message}")
-            
-            # Reduce dimensionality
-            reduced_features, _ = self.dimensionality_reducer.reduce(
-                processed_result.processed_features_df.values, fit=False
-            )
-            
-            # Predict using HDBSCAN
-            labels, probabilities, method_used = self.hdbscan_clusterer.approximate_predict_with_fallback(
-                reduced_features
-            )
+            # Use hardware optimization context for prediction
+            with self.hardware_manager.optimization_context(WorkloadType.ML_TRAINING, OptimizationLevel.BALANCED):
+                # Extract features
+                feature_result = self.feature_extractor.extract_features(data)
+                if not feature_result.success:
+                    raise ValueError(f"Feature extraction failed: {feature_result.error_message}")
+                
+                # Preprocess features
+                processed_result = self.feature_processor.process(feature_result.features_df, fit=False)
+                if not processed_result.success:
+                    raise ValueError(f"Preprocessing failed: {processed_result.error_message}")
+                
+                # Reduce dimensionality
+                reduced_features, _ = self.dimensionality_reducer.reduce(
+                    processed_result.processed_features_df.values, fit=False
+                )
+                
+                # Predict using HDBSCAN
+                labels, probabilities, method_used = self.hdbscan_clusterer.approximate_predict_with_fallback(
+                    reduced_features
+                )
             
             tprint(f"✅ Regime prediction completed using {method_used}", "SUCCESS")
             
@@ -622,8 +646,8 @@ class HDBSCANRegimeDiscovery:
             raise ValueError(f"Insufficient data: {len(data)} < {self.config.window_size}")
     
     def get_discovery_summary(self) -> Dict[str, Any]:
-        """Get summary of regime discovery system."""
-        return {
+        """Get summary of regime discovery system with enhanced hardware optimization stats."""
+        summary = {
             'last_result_available': self.last_result is not None,
             'discovery_history_count': len(self.discovery_history),
             'components_initialized': {
@@ -640,3 +664,33 @@ class HDBSCANRegimeDiscovery:
             },
             'config': self.config.__dict__ if hasattr(self.config, '__dict__') else {}
         }
+        
+        # Add enhanced hardware optimization statistics
+        if hasattr(self, 'hardware_manager'):
+            summary['hardware_optimization'] = {
+                'hardware_manager_status': self.hardware_manager.get_system_status(),
+                'cache_statistics': self.cache_system.get_statistics() if self.cache_system else None,
+                'comprehensive_optimizer_metrics': self.comprehensive_optimizer.get_comprehensive_metrics() if self.comprehensive_optimizer else None
+            }
+        
+        return summary
+    
+    def get_hardware_optimization_stats(self) -> Dict[str, Any]:
+        """Get comprehensive hardware optimization statistics."""
+        if not hasattr(self, 'hardware_manager'):
+            return {'error': 'Hardware manager not initialized'}
+        
+        return {
+            'hardware_manager': self.hardware_manager.get_system_status(),
+            'cache_system': self.cache_system.get_statistics() if self.cache_system else None,
+            'comprehensive_optimizer': self.comprehensive_optimizer.get_comprehensive_metrics() if self.comprehensive_optimizer else None,
+            'performance_stats': self.performance_stats
+        }
+    
+    def optimize_for_workload(self, workload_type: WorkloadType, optimization_level: OptimizationLevel = OptimizationLevel.AGGRESSIVE):
+        """Optimize hardware for specific workload type."""
+        if hasattr(self, 'hardware_manager'):
+            self.hardware_manager.configure_workload(workload_type, optimization_level)
+            tprint_info(f"🔧 Hardware optimized for {workload_type.value} workload ({optimization_level.value})")
+        else:
+            tprint_warning("⚠️ Hardware manager not available for optimization")

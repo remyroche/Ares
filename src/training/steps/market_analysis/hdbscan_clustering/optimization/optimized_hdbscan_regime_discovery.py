@@ -13,6 +13,14 @@ from dataclasses import dataclass
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+# Import enhanced hardware optimization tools
+from src.utils.hardware import (
+    get_unified_hardware_manager, get_comprehensive_optimizer,
+    smart_cache, auto_optimize, memory_efficient, performance_tracked,
+    optimize_dataframe_default, optimize_numpy_array_default,
+    WorkloadType, OptimizationLevel, ComprehensiveConfig, OptimizationStrategy
+)
+
 # Import optimization components
 from .enhanced_memory_optimizer import (
     EnhancedMemoryOptimizer,
@@ -136,6 +144,9 @@ class OptimizedHDBSCANRegimeDiscovery:
         """Initialize the optimized HDBSCAN regime discovery."""
         self.config = config or OptimizedHDBSCANRegimeDiscoveryConfig()
         
+        # Initialize enhanced hardware optimization
+        self._initialize_enhanced_hardware_optimization()
+        
         # Initialize optimization components
         self._initialize_optimization_components()
         
@@ -156,6 +167,36 @@ class OptimizedHDBSCANRegimeDiscovery:
         }
         
         logger.info("✅ OptimizedHDBSCANRegimeDiscovery initialized")
+    
+    def _initialize_enhanced_hardware_optimization(self):
+        """Initialize enhanced hardware optimization tools."""
+        try:
+            # Initialize unified hardware manager
+            self.hardware_manager = get_unified_hardware_manager()
+            self.hardware_manager.configure_workload(WorkloadType.ML_TRAINING, OptimizationLevel.AGGRESSIVE)
+            
+            # Initialize comprehensive optimizer
+            comprehensive_config = ComprehensiveConfig(
+                optimization_strategy=OptimizationStrategy.MAXIMUM_PERFORMANCE,
+                workload_category=WorkloadType.MACHINE_LEARNING,
+                enable_adaptive_optimization=True,
+                enable_cross_component_optimization=True,
+                enable_thermal_management=True,
+                enable_power_management=True
+            )
+            self.comprehensive_optimizer = get_comprehensive_optimizer(comprehensive_config)
+            
+            # Initialize caching system
+            self.cache_system = self.hardware_manager.cache_system
+            
+            logger.info("✅ Enhanced hardware optimization initialized")
+            
+        except Exception as e:
+            logger.warning(f"⚠️ Enhanced hardware optimization initialization failed: {e}")
+            # Fallback to basic hardware manager
+            self.hardware_manager = get_unified_hardware_manager(conservative_mode=True)
+            self.comprehensive_optimizer = None
+            self.cache_system = None
     
     def _initialize_optimization_components(self):
         """Initialize all optimization components."""
@@ -230,10 +271,14 @@ class OptimizedHDBSCANRegimeDiscovery:
             regime_generators = create_default_regime_generators()
             self.feature_generators.extend(regime_generators)
     
+    @smart_cache(ttl=3600)  # Cache results for 1 hour
+    @auto_optimize(optimize_inputs=True, optimize_outputs=True)
+    @memory_efficient(memory_threshold_mb=200.0, auto_cleanup=True)
+    @performance_tracked(log_performance=True, track_memory=True)
     def discover_regimes(self, data: pd.DataFrame, 
                         labels: Optional[np.ndarray] = None) -> OptimizedRegimeResult:
         """
-        Discover regimes using optimized HDBSCAN clustering.
+        Discover regimes using optimized HDBSCAN clustering with enhanced hardware optimization.
         
         Args:
             data: Input data for regime discovery
@@ -246,36 +291,38 @@ class OptimizedHDBSCANRegimeDiscovery:
         
         logger.info(f"🚀 Starting optimized regime discovery for {data.shape[0]} samples")
         
-        # Step 1: Feature generation with optimization
-        features_df = self._generate_optimized_features(data)
-        feature_generation_time = time.time() - start_time
-        self.performance_stats['feature_generation_time'] += feature_generation_time
-        
-        # Step 2: Hyperparameter optimization
-        hyperparameter_start = time.time()
-        best_params = self._optimize_hyperparameters(features_df, labels)
-        hyperparameter_time = time.time() - hyperparameter_start
-        self.performance_stats['hyperparameter_optimization_time'] += hyperparameter_time
-        
-        # Step 3: Feature selection
-        if self.config.enable_feature_selection:
-            features_df = self._select_optimal_features(features_df, labels)
-        
-        # Step 4: Optimized clustering
-        clustering_start = time.time()
-        cluster_labels, clustering_info = self._perform_optimized_clustering(
-            features_df, best_params
-        )
-        clustering_time = time.time() - clustering_start
-        self.performance_stats['clustering_time'] += clustering_time
-        
-        # Step 5: Post-processing and evaluation
-        post_processing_start = time.time()
-        result = self._create_optimized_result(
-            cluster_labels, clustering_info, features_df, labels
-        )
-        post_processing_time = time.time() - post_processing_start
-        self.performance_stats['post_processing_time'] += post_processing_time
+        # Use hardware optimization context for the entire discovery process
+        with self.hardware_manager.optimization_context(WorkloadType.ML_TRAINING, OptimizationLevel.MAXIMUM):
+            # Step 1: Feature generation with optimization
+            features_df = self._generate_optimized_features(data)
+            feature_generation_time = time.time() - start_time
+            self.performance_stats['feature_generation_time'] += feature_generation_time
+            
+            # Step 2: Hyperparameter optimization
+            hyperparameter_start = time.time()
+            best_params = self._optimize_hyperparameters(features_df, labels)
+            hyperparameter_time = time.time() - hyperparameter_start
+            self.performance_stats['hyperparameter_optimization_time'] += hyperparameter_time
+            
+            # Step 3: Feature selection
+            if self.config.enable_feature_selection:
+                features_df = self._select_optimal_features(features_df, labels)
+            
+            # Step 4: Optimized clustering
+            clustering_start = time.time()
+            cluster_labels, clustering_info = self._perform_optimized_clustering(
+                features_df, best_params
+            )
+            clustering_time = time.time() - clustering_start
+            self.performance_stats['clustering_time'] += clustering_time
+            
+            # Step 5: Post-processing and evaluation
+            post_processing_start = time.time()
+            result = self._create_optimized_result(
+                cluster_labels, clustering_info, features_df, labels
+            )
+            post_processing_time = time.time() - post_processing_start
+            self.performance_stats['post_processing_time'] += post_processing_time
         
         # Update total processing time
         total_time = time.time() - start_time
@@ -288,20 +335,21 @@ class OptimizedHDBSCANRegimeDiscovery:
         return result
     
     def _generate_optimized_features(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Generate features with comprehensive optimization."""
+        """Generate features with comprehensive optimization and enhanced hardware tools."""
         if self.features_common_integration:
             # Use features_common integration for maximum optimization
             return self.features_common_integration.process_data_with_features_common(data)
         else:
-            # Fallback to basic feature generation
-            features_df = data.copy()
+            # Fallback to basic feature generation with hardware optimization
+            features_df = optimize_dataframe_default(data.copy())
             
             for generator in self.feature_generators:
                 try:
                     feature_result = generator.generate(data)
                     
                     if isinstance(feature_result, pd.DataFrame):
-                        features_df = pd.concat([features_df, feature_result], axis=1)
+                        optimized_result = optimize_dataframe_default(feature_result)
+                        features_df = pd.concat([features_df, optimized_result], axis=1)
                     elif isinstance(feature_result, pd.Series):
                         features_df[feature_result.name] = feature_result
                     
@@ -309,7 +357,7 @@ class OptimizedHDBSCANRegimeDiscovery:
                     logger.warning(f"⚠️ Feature generation failed: {e}")
                     continue
             
-            return features_df
+            return optimize_dataframe_default(features_df)
     
     def _optimize_hyperparameters(self, features_df: pd.DataFrame, 
                                  labels: Optional[np.ndarray] = None) -> Dict[str, Any]:
@@ -554,6 +602,26 @@ class OptimizedHDBSCANRegimeDiscovery:
         
         if self.features_common_integration:
             self.features_common_integration.reset_performance_stats()
+    
+    def get_hardware_optimization_stats(self) -> Dict[str, Any]:
+        """Get comprehensive hardware optimization statistics."""
+        if not hasattr(self, 'hardware_manager'):
+            return {'error': 'Hardware manager not initialized'}
+        
+        return {
+            'hardware_manager': self.hardware_manager.get_system_status(),
+            'cache_system': self.cache_system.get_statistics() if self.cache_system else None,
+            'comprehensive_optimizer': self.comprehensive_optimizer.get_comprehensive_metrics() if self.comprehensive_optimizer else None,
+            'performance_stats': self.performance_stats
+        }
+    
+    def optimize_for_workload(self, workload_type: WorkloadType, optimization_level: OptimizationLevel = OptimizationLevel.AGGRESSIVE):
+        """Optimize hardware for specific workload type."""
+        if hasattr(self, 'hardware_manager'):
+            self.hardware_manager.configure_workload(workload_type, optimization_level)
+            logger.info(f"🔧 Hardware optimized for {workload_type.value} workload ({optimization_level.value})")
+        else:
+            logger.warning("⚠️ Hardware manager not available for optimization")
 
 # Convenience function
 def create_optimized_hdbscan_regime_discovery(

@@ -103,12 +103,7 @@ from .optimized_hdbscan_regime_discovery import (
     create_optimized_hdbscan_regime_discovery
 )
 
-# Feature inventory and usage guide
-from .feature_inventory import (
-    HDBSCANFeatureInventory,
-    get_hdbscan_feature_inventory
-)
-
+# Feature usage guide
 from .feature_usage_guide import (
     HDBSCANFeatureUsageGuide,
     get_hdbscan_feature_usage_guide
@@ -170,8 +165,6 @@ __all__ = [
     'EnhancedHDBSCANIntegration',
     'EnhancedHDBSCANConfig',
     'create_enhanced_hdbscan_integration',
-    'HDBSCANFeatureInventory',
-    'get_hdbscan_feature_inventory',
     'HDBSCANFeatureUsageGuide',
     'get_hdbscan_feature_usage_guide',
     'FeaturesCommonHDBSCANIntegration',

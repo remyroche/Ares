@@ -3,60 +3,26 @@
 Provides a single place to resolve data, reports, cache, optimization, and tmp
 paths based on configuration. Ensures directories exist before use.
 
-Enhanced with:
-- Robust error handling with retry mechanisms
-- Compression support for storage optimization
-- Comprehensive metadata tracking and artifact lineage
-- Thread safety and concurrent access protection
-- Performance monitoring and metrics collection
-- Intelligent caching strategies with memory management
-- Step-category based artifact organization
+This is a simplified wrapper around the refactored artifact manager components.
 """
 
 from __future__ import annotations
 
-import gc
-import hashlib
-import io
-import json
-import pickle
-import time
+import sys
 import threading
 import asyncio
-import psutil
-import uuid
-import shutil
-from contextlib import nullcontext, asynccontextmanager, contextmanager
-from dataclasses import dataclass, field, asdict
 from pathlib import Path
-from typing import Optional, Any, Dict, List, Union, Callable, Set, Tuple
-from collections import OrderedDict, defaultdict, deque
-from datetime import datetime, timedelta
-from enum import Enum
+from typing import Optional, Any, Dict
+from dataclasses import dataclass
+from contextlib import nullcontext
 
-# Optional dependencies for optimization
-try:
-    import pandas as pd
-    import numpy as np
-    PANDAS_AVAILABLE = True
-    NUMPY_AVAILABLE = True
-except ImportError:
-    PANDAS_AVAILABLE = False
-    NUMPY_AVAILABLE = False
-
-try:
-    import lz4.frame
-    LZ4_AVAILABLE = True
-except ImportError:
-    LZ4_AVAILABLE = False
-
-try:
-    import gzip
-    GZIP_AVAILABLE = True
-except ImportError:
-    GZIP_AVAILABLE = False
-
+from .artifact_storage import ArtifactStorage
+from .compression_manager import CompressionManager, CompressionConfig
+from .cache_manager import CacheManager, CacheConfig
+from .memory_manager import MemoryManager, MemoryConfig
+from .path_manager import PathManager
 from .logger import system_logger
+from .tprint import tprint, tprint_success, tprint_info, tprint_warning, tprint_error
 from .common_operations import ensure_directory
 from .version_manager import get_version_manager
 
@@ -204,320 +170,410 @@ def get_step_category(step_name: str) -> str:
             return category
     return 'pre_training'  # Default fallback
 
-@dataclass
-class SpillStrategy:
-    """Configuration for artifact spill strategies."""
-    enable_spilling: bool = True
-    spill_threshold_mb: float = 100.0
-    compression_type: str = "lz4"  # lz4, gzip, zstd, snappy
-    enable_column_pruning: bool = True
-    prune_threshold: float = 0.1  # Remove columns with >90% nulls
-    enable_parquet_optimization: bool = True
-    parquet_compression: str = "snappy"
-    enable_lazy_loading: bool = True
-    lazy_cache_size_mb: int = 256
-    lazy_ttl_hours: int = 24
-    enable_version_checks: bool = True
 
-@dataclass
-class MemoryProfile:
-    """Memory usage profile for artifacts."""
-    artifact_id: str
-    memory_usage_mb: float
-    spilled: bool = False
-    compression_ratio: float = 1.0
-    column_count: int = 0
-    row_count: int = 0
-    access_count: int = 0
-    last_accessed: datetime = field(default_factory=datetime.now)
-    created_at: datetime = field(default_factory=datetime.now)
+def _format_data_preview(data: Any, artifact_name: str) -> str:
+    """Format a data preview for tprint output."""
+    try:
+        # Try to import pandas for DataFrame handling
+        import pandas as pd
+        import numpy as np
+        
+        if isinstance(data, pd.DataFrame):
+            rows, cols = data.shape
+            file_size_mb = data.memory_usage(deep=True).sum() / (1024 * 1024)
+            
+            # Get first 10 columns and 5 rows
+            preview_cols = data.columns[:10].tolist()
+            preview_data = data.iloc[:5, :10]
+            
+            preview_str = f"DataFrame: {rows:,} rows × {cols:,} cols | {file_size_mb:.2f}MB\n"
+            preview_str += f"Columns: {', '.join(preview_cols[:5])}{'...' if len(preview_cols) > 5 else ''}\n"
+            preview_str += f"Preview (5×10):\n{preview_data.to_string(max_cols=10, max_rows=5)}"
+            
+            return preview_str
+            
+        elif isinstance(data, np.ndarray):
+            shape = data.shape
+            file_size_mb = data.nbytes / (1024 * 1024)
+            
+            preview_str = f"NumPy Array: {shape} | {file_size_mb:.2f}MB\n"
+            if len(shape) == 2:
+                preview_str += f"Preview (5×10):\n{data[:5, :10]}"
+            else:
+                preview_str += f"Preview: {data.flat[:10]}..."
+            
+            return preview_str
+            
+        elif isinstance(data, (list, tuple)):
+            length = len(data)
+            file_size_mb = sum(sys.getsizeof(item) for item in data[:100]) / (1024 * 1024)  # Estimate
+            
+            preview_str = f"List/Tuple: {length:,} items | ~{file_size_mb:.2f}MB\n"
+            preview_str += f"Preview: {data[:5]}{'...' if length > 5 else ''}"
+            
+            return preview_str
+            
+        elif isinstance(data, dict):
+            length = len(data)
+            file_size_mb = sum(sys.getsizeof(k) + sys.getsizeof(v) for k, v in list(data.items())[:50]) / (1024 * 1024)  # Estimate
+            
+            preview_str = f"Dict: {length:,} keys | ~{file_size_mb:.2f}MB\n"
+            preview_str += f"Keys: {list(data.keys())[:5]}{'...' if length > 5 else ''}"
+            
+            return preview_str
+            
+        else:
+            file_size_mb = sys.getsizeof(data) / (1024 * 1024)
+            return f"{type(data).__name__}: {file_size_mb:.2f}MB"
+            
+    except Exception as e:
+        return f"Preview unavailable: {str(e)[:50]}..."
 
-@dataclass
+
 class ArtifactManager:
-	config: dict
-	
-	# Memory optimization settings
-	max_cache_size_mb: int = 512
-	enable_compression: bool = True
-	compression_threshold_mb: float = 1.0
-	enable_data_type_optimization: bool = True
-	enable_aggressive_cleanup: bool = True
-	cleanup_interval_seconds: int = 300
-	
-	# Enhanced spill and profiling settings
-	spill_strategy: SpillStrategy = field(default_factory=SpillStrategy)
-	enable_memory_profiling: bool = True
-	enable_lazy_loading: bool = True
-	enable_thread_safety: bool = True
-	
-	# Enhanced configuration options
-	compression: CompressionConfig = field(default_factory=CompressionConfig)
-	memory: MemoryConfig = field(default_factory=MemoryConfig)
-	retry: RetryConfig = field(default_factory=RetryConfig)
-	
-	# Performance and monitoring
-	enable_metrics: bool = True
-	enable_caching: bool = True
-	
-	# Cleanup and maintenance
-	enable_health_checks: bool = True
-	
-	# Enhanced file naming and path management
-	include_symbol_in_filename: bool = True
-	include_exchange_in_filename: bool = True
-	include_datetime_in_filename: bool = True
-	include_information_in_filename: bool = True
-	include_direction_in_filename: bool = True
-	include_model_in_filename: bool = True
-	use_joint_parquet_format: bool = True
-	generate_json_metadata: bool = True
-
-	def __post_init__(self) -> None:
-		self.logger = system_logger.getChild("ArtifactManager")
-		paths = self.config.get("paths", {}) if isinstance(self.config, dict) else {}
-		self._data_dir = Path(paths.get("data_dir", "data"))
-		self._reports_dir = Path(paths.get("reports_dir", "reports"))
-		self._cache_dir = Path(paths.get("cache_dir", "data_cache"))
-		self._optimization_dir = Path(paths.get("optimization_dir", self._data_dir / "optimization"))
-		self._tmp_dir = Path(paths.get("tmp_dir", "tmp"))
-		
-		# Enhanced artifacts directory with step categories
-		self._artifacts_dir = Path("artifacts")
-		self._artifacts_dir.mkdir(parents=True, exist_ok=True)
-
-		# Ensure base directories exist
-		for d in (self._data_dir, self._reports_dir, self._cache_dir, self._optimization_dir, self._tmp_dir):
-			ensure_directory(str(d))
-
-		# Initialize version manager
-		self.version_manager = get_version_manager()
-		
-		# Initialize memory optimization components
-		self._cache = OrderedDict()  # LRU cache
-		self._cache_lru = deque()  # LRU queue for cache management
-		self._cache_size_bytes = 0
-		self._max_cache_size_bytes = self.max_cache_size_mb * 1024 * 1024
-		# Thread safety with nullcontext fallback
-		if self.enable_thread_safety:
-			self._lock = threading.RLock()
-			self._lock_context = nullcontext
-		else:
-			self._lock = None
-			self._lock_context = nullcontext
-		self._last_cleanup = time.time()
-		
-		# Track compression method per key
-		self._compression_method: Dict[str, str] = {}
-		self._performance_metrics = {
-			'cache_hits': 0,
-			'cache_misses': 0,
-			'compression_savings_mb': 0.0,
-			'optimization_savings_mb': 0.0,
-			'spill_operations': 0,
-			'lazy_loads': 0,
-			'memory_profiling_enabled': self.enable_memory_profiling
-		}
-		
-		# Enhanced features
-		self._memory_profiles: Dict[str, MemoryProfile] = {}
-		self._lazy_cache = OrderedDict() if self.enable_lazy_loading else None
-		self._lazy_cache_size_bytes = 0
-		self._max_lazy_cache_size_bytes = self.spill_strategy.lazy_cache_size_mb * 1024 * 1024
-		self._spill_dir = self._cache_dir / "spilled"
-		self._spill_dir.mkdir(parents=True, exist_ok=True)
-		
-		# Enhanced artifact storage
-		self._artifacts: Dict[str, Dict[str, Any]] = {}
-		self._metadata: Dict[str, Dict[str, Any]] = {}
-		self._artifact_registry: Dict[str, ArtifactMetadata] = {}
-		self._current_run_id: Optional[str] = None
-		self._run_dir: Optional[Path] = None
-		
-		# Performance monitoring
-		self._metrics: List[OperationMetrics] = []
-		self._operation_counts: Dict[OperationType, int] = defaultdict(int)
-		self._error_counts: Dict[str, int] = defaultdict(int)
-		
-		# Memory management
-		self._memory_usage_mb = 0.0
-		
-		# Compression utilities
-		self._compressor = self.ArtifactCompressor()
-		
-		# Enhanced file naming and path management
-		self._current_symbol: Optional[str] = None
-		self._current_exchange: Optional[str] = None
-		self._current_datetime: Optional[datetime] = None
-		self._current_information: Optional[str] = None
-		self._current_direction: str = "long"  # Default direction
-		self._current_model: str = "Analyst"  # Default model
-		self._current_step_name: Optional[str] = None
-		
-		# Initialize KlinesParquetManager for large dataframes
-		try:
-			from src.utils.data.klines_parquet import KlinesParquetManager
-			self._parquet_manager = KlinesParquetManager(str(self._spill_dir))
-		except ImportError:
-			self._parquet_manager = None
-			self.logger.warning("KlinesParquetManager not available - parquet optimization disabled")
-		
-		# Thread safety
-		self._async_lock = asyncio.Lock() if self.enable_thread_safety else None
-		
-		# Start background tasks
-		self._start_background_tasks()
-		
-		self.reset_run()
-
-	def get_data_dir(self, *subdirs: str) -> Path:
-		return self._ensure(self._data_dir, *subdirs)
-
-	def get_reports_dir(self, *subdirs: str) -> Path:
-		return self._ensure(self._reports_dir, *subdirs)
-
-	def get_cache_dir(self, *subdirs: str) -> Path:
-		return self._ensure(self._cache_dir, *subdirs)
-
-	def get_optimization_dir(self, *subdirs: str) -> Path:
-		return self._ensure(self._optimization_dir, *subdirs)
-
-	def get_tmp_dir(self, *subdirs: str) -> Path:
-		return self._ensure(self._tmp_dir, *subdirs)
-
-	def get_tmp_path(self, filename: str) -> Path:
-		return self.get_tmp_dir() / filename
-
-	def _ensure(self, base: Path, *subdirs: str) -> Path:
-		path = base
-		for s in subdirs:
-			path = path / s
-		ensure_directory(str(path))
-		return path
-	
-	# ------------------------------------------------------------------
-	# Enhanced Context Management for Step-Category Organization
-	# ------------------------------------------------------------------
-	
-	def set_context(self, step_name: str, symbol: Optional[str] = None, exchange: Optional[str] = None, 
-	               datetime: Optional[datetime] = None, information: Optional[str] = None,
-	               direction: str = "long", model: str = "Analyst") -> None:
-		"""Set the current context for file naming and path management."""
-		self._current_step_name = step_name
-		self._current_symbol = symbol
-		self._current_exchange = exchange
-		from datetime import datetime as dt
-		self._current_datetime = datetime or dt.utcnow()
-		self._current_information = information
-		self._current_direction = direction
-		self._current_model = model
-		
-		self.logger.info(f"📁 Context set: step={step_name}, symbol={symbol}, exchange={exchange}, datetime={self._current_datetime}, information={information}, direction={direction}, model={model}")
-
-	def _generate_enhanced_filename(self, key: str, step_name: str, file_extension: str = "parquet") -> str:
-		"""Generate enhanced filename with information + symbol + exchange + datetime + direction + model."""
-		parts = []
-		
-		# Add information prefix if configured and available
-		if self.include_information_in_filename and self._current_information:
-			parts.append(self._current_information)
-		
-		# Add step name
-		parts.append(step_name)
-		
-		# Add key
-		parts.append(key)
-		
-		# Add symbol if configured and available
-		if self.include_symbol_in_filename and self._current_symbol:
-			parts.append(self._current_symbol)
-		
-		# Add exchange if configured and available
-		if self.include_exchange_in_filename and self._current_exchange:
-			parts.append(self._current_exchange)
-		
-		# Add direction if configured
-		if self.include_direction_in_filename and self._current_direction:
-			parts.append(self._current_direction)
-		
-		# Add model if configured
-		if self.include_model_in_filename and self._current_model:
-			parts.append(self._current_model)
-		
-		# Add datetime if configured
-		if self.include_datetime_in_filename and self._current_datetime:
-			datetime_str = self._current_datetime.strftime("%Y%m%d_%H%M%S")
-			parts.append(datetime_str)
-		
-		# Join parts with underscores and add extension
-		filename = "_".join(parts) + f".{file_extension}"
-		
-		self.logger.debug(f"📁 Generated filename: {filename}")
-		return filename
-
-	def _get_enhanced_path(self, step_name: str, key: str, file_extension: str = "parquet") -> Path:
-		"""Get enhanced path with proper directory structure and filename using step categories."""
-		# Determine step category
-		step_category = get_step_category(step_name)
-		
-		# Create directory structure: artifacts/step_category/symbol/exchange/direction/model/step_name/
-		path_parts = [self._artifacts_dir, step_category]
-		
-		if self._current_symbol:
-			path_parts.append(self._current_symbol)
-		
-		if self._current_exchange:
-			path_parts.append(self._current_exchange)
-		
-		if self._current_direction:
-			path_parts.append(self._current_direction)
-		
-		if self._current_model:
-			path_parts.append(self._current_model)
-		
-		path_parts.append(step_name)
-		
-		step_dir = Path(*path_parts)
-		step_dir.mkdir(parents=True, exist_ok=True)
-		
-		# Generate enhanced filename
-		filename = self._generate_enhanced_filename(key, step_name, file_extension)
-		full_path = step_dir / filename
-		
-		self.logger.info(f"📁 Full path created: {full_path}")
-		return full_path
-	
-	def ensure_step_category_directories(self) -> None:
-		"""Ensure all step category directories exist."""
-		try:
-			# Ensure base artifacts directory exists
-			self._artifacts_dir.mkdir(parents=True, exist_ok=True)
-			
-			# Ensure all step category directories exist
-			for category in STEP_CATEGORIES.keys():
-				category_dir = self._artifacts_dir / category
-				category_dir.mkdir(parents=True, exist_ok=True)
-				self.logger.debug(f"📁 Ensured directory exists: {category_dir}")
-			
-			self.logger.info(f"📁 All step category directories ensured in: {self._artifacts_dir}")
-		except Exception as e:
-			self.logger.error(f"Failed to ensure step category directories: {e}")
-			raise
-
-	def _log_file_operation(self, operation: str, path: Path, success: bool = True) -> None:
-		"""Log file operations with full path information."""
-		status = "✅" if success else "❌"
-		self.logger.info(f"{status} {operation}: {path}")
-		
-		# Also print to console for visibility
-		print(f"{status} {operation}: {path}")
-
-	def get_versioned_filename(self, base_name: str, extension: str = ".pkl") -> str:
-		"""Generate a versioned filename with timestamp.
-
-		Args:
-			base_name: Base name for the file
-			extension: File extension
-
+    """Simplified artifact manager that uses refactored components."""
+    
+    def __init__(self, config: dict):
+        """Initialize the artifact manager.
+        
+        Args:
+            config: Configuration dictionary
+        """
+        self.logger = system_logger.getChild("ArtifactManager")
+        
+        # Initialize base directory
+        self.base_dir = Path(config.get("paths", {}).get("data_dir", "data"))
+        self.base_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Initialize components
+        self._storage = ArtifactStorage(self.base_dir)
+        self._path_manager = PathManager(self.base_dir)
+        
+        # Initialize optional components
+        if config.get("enable_compression", True):
+            compression_config = CompressionConfig()
+            self._compression = CompressionManager(compression_config)
+        else:
+            self._compression = None
+        
+        if config.get("enable_caching", True):
+            cache_config = CacheConfig(
+                max_size_mb=config.get("max_cache_size_mb", 512.0),
+                enable_thread_safety=config.get("enable_thread_safety", True)
+            )
+            self._cache = CacheManager(cache_config)
+        else:
+            self._cache = None
+        
+        if config.get("enable_memory_optimization", True):
+            memory_config = MemoryConfig(
+                max_memory_mb=config.get("max_memory_mb", 2000.0),
+                spill_threshold_mb=config.get("spill_threshold_mb", 150.0)
+            )
+            spill_dir = self.base_dir / "spilled"
+            self._memory = MemoryManager(memory_config, spill_dir)
+        else:
+            self._memory = None
+        
+        # Thread safety
+        if config.get("enable_thread_safety", True):
+            import threading
+            import asyncio
+            self._lock = threading.RLock()
+            self._async_lock = asyncio.Lock()
+        else:
+            self._lock = None
+            self._async_lock = None
+        
+        # Store original config for compatibility
+        self.config = config
+    
+    def _lock_context(self):
+        """Get lock context manager."""
+        if self._lock is not None:
+            return self._lock
+        return nullcontext()
+    
+    async def _async_lock_context(self):
+        """Get async lock context manager."""
+        if self._async_lock is not None:
+            return self._async_lock
+        return nullcontext()
+    
+    def set_context(self, step_name: str, symbol: Optional[str] = None, 
+                   exchange: Optional[str] = None, datetime: Optional[Any] = None, 
+                   information: Optional[str] = None, direction: str = "long", 
+                   model: str = "Analyst") -> None:
+        """Set the current context for path generation."""
+        tprint_info(f"📁 SETTING CONTEXT: {step_name} | {symbol} | {exchange} | {direction} | {model}")
+        with self._lock_context():
+            self._path_manager.set_context(
+                step_name=step_name,
+                symbol=symbol,
+                exchange=exchange,
+                datetime=datetime,
+                information=information,
+                direction=direction,
+                model=model
+            )
+    
+    def save(self, data: Any, artifact_name: str, 
+             artifact_type: str = "data", 
+             compression: str = "auto",
+             metadata: Optional[Dict] = None) -> str:
+        """Save an artifact."""
+        with self._lock_context():
+            try:
+                # Print data preview before saving
+                preview = _format_data_preview(data, artifact_name)
+                tprint_info(f"💾 SAVING ARTIFACT: {artifact_name}")
+                tprint_info(f"📊 Data Preview:\n{preview}")
+                
+                # Get current step name from path manager
+                step_name = self._path_manager._current_step_name or "unknown"
+                
+                # Generate path
+                file_path = self._path_manager.get_artifact_path(
+                    step_name=step_name,
+                    key=artifact_name,
+                    file_extension="parquet"
+                )
+                
+                # Optimize data if memory manager is available
+                if self._memory and hasattr(data, 'memory_usage'):  # DataFrame
+                    data = self._memory.optimize_dataframe(data)
+                
+                # Save artifact
+                success = self._storage.save_artifact(
+                    data=data,
+                    file_path=file_path,
+                    artifact_type=artifact_type,
+                    metadata=metadata
+                )
+                
+                if not success:
+                    raise Exception(f"Failed to save artifact {artifact_name}")
+                
+                # Cache if enabled
+                if self._cache:
+                    self._cache.put(artifact_name, data)
+                
+                # Profile memory usage if memory manager is available
+                if self._memory:
+                    self._memory.profile_memory_usage(artifact_name, data)
+                
+                # Print success message
+                tprint_success(f"✅ ARTIFACT SAVED: {artifact_name} → {file_path}")
+                
+                return str(file_path)
+                
+            except Exception as e:
+                tprint_error(f"❌ FAILED TO SAVE ARTIFACT: {artifact_name} - {str(e)}")
+                raise
+    
+    def get_artifact(self, artifact_name: str, 
+                    artifact_type: str = "data") -> Optional[Any]:
+        """Retrieve an artifact."""
+        with self._lock_context():
+            try:
+                tprint_info(f"🔍 LOADING ARTIFACT: {artifact_name}")
+                
+                # Check cache first
+                if self._cache:
+                    cached_data = self._cache.get(artifact_name)
+                    if cached_data is not None:
+                        tprint_success(f"✅ ARTIFACT LOADED FROM CACHE: {artifact_name}")
+                        preview = _format_data_preview(cached_data, artifact_name)
+                        tprint_info(f"📊 Data Preview:\n{preview}")
+                        return cached_data
+                
+                # Get current step name from path manager
+                step_name = self._path_manager._current_step_name or "unknown"
+                
+                # Find artifact file
+                file_path = self._path_manager.find_artifact(
+                    step_name=step_name,
+                    key=artifact_name,
+                    artifact_type=artifact_type
+                )
+                
+                if file_path is None:
+                    tprint_warning(f"⚠️  ARTIFACT NOT FOUND: {artifact_name}")
+                    return None
+                
+                # Load artifact
+                data = self._storage.load_artifact(file_path)
+                
+                if data is not None:
+                    # Cache if enabled
+                    if self._cache:
+                        self._cache.put(artifact_name, data)
+                    
+                    # Profile memory usage if memory manager is available
+                    if self._memory:
+                        self._memory.profile_memory_usage(artifact_name, data)
+                    
+                    # Print data preview after loading
+                    preview = _format_data_preview(data, artifact_name)
+                    tprint_success(f"✅ ARTIFACT LOADED: {artifact_name}")
+                    tprint_info(f"📊 Data Preview:\n{preview}")
+                else:
+                    tprint_warning(f"⚠️  FAILED TO LOAD ARTIFACT DATA: {artifact_name}")
+                
+                return data
+                
+            except Exception as e:
+                tprint_error(f"❌ FAILED TO LOAD ARTIFACT: {artifact_name} - {str(e)}")
+                return None
+    
+    def delete_artifact(self, artifact_name: str, artifact_type: str = "data") -> bool:
+        """Delete an artifact."""
+        with self._lock_context():
+            try:
+                tprint_info(f"🗑️  DELETING ARTIFACT: {artifact_name}")
+                
+                # Get current step name from path manager
+                step_name = self._path_manager._current_step_name or "unknown"
+                
+                # Find artifact file
+                file_path = self._path_manager.find_artifact(
+                    step_name=step_name,
+                    key=artifact_name,
+                    artifact_type=artifact_type
+                )
+                
+                if file_path is None:
+                    tprint_warning(f"⚠️  ARTIFACT NOT FOUND FOR DELETION: {artifact_name}")
+                    return False
+                
+                # Delete from storage
+                success = self._storage.delete_artifact(file_path)
+                
+                # Remove from cache if enabled
+                if self._cache:
+                    self._cache.remove(artifact_name)
+                
+                # Remove from memory profiles if memory manager is available
+                if self._memory and artifact_name in self._memory._memory_profiles:
+                    profile = self._memory._memory_profiles.pop(artifact_name)
+                    self._memory._total_memory_mb -= profile.memory_usage_mb
+                
+                if success:
+                    tprint_success(f"✅ ARTIFACT DELETED: {artifact_name}")
+                else:
+                    tprint_warning(f"⚠️  FAILED TO DELETE ARTIFACT: {artifact_name}")
+                
+                return success
+                
+            except Exception as e:
+                tprint_error(f"❌ FAILED TO DELETE ARTIFACT: {artifact_name} - {str(e)}")
+                return False
+    
+    def list_artifacts(self, pattern: str = "*") -> list[Path]:
+        """List artifacts matching a pattern."""
+        return self._storage.list_artifacts(pattern)
+    
+    def clear_cache(self) -> None:
+        """Clear the cache."""
+        tprint_info("🧹 CLEARING CACHE")
+        if self._cache:
+            self._cache.clear()
+        tprint_success("✅ CACHE CLEARED")
+    
+    def get_stats(self) -> Dict[str, Any]:
+        """Get comprehensive statistics."""
+        stats = {
+            "config": {
+                "base_dir": str(self.base_dir),
+                "enable_compression": self._compression is not None,
+                "enable_caching": self._cache is not None,
+                "enable_memory_optimization": self._memory is not None,
+                "enable_thread_safety": self._lock is not None
+            }
+        }
+        
+        # Add cache stats
+        if self._cache:
+            stats["cache"] = self._cache.get_stats()
+        
+        # Add memory stats
+        if self._memory:
+            stats["memory"] = self._memory.get_memory_stats()
+        
+        # Add compression stats
+        if self._compression:
+            stats["compression"] = self._compression.get_compression_stats()
+        
+        return stats
+    
+    def cleanup(self) -> None:
+        """Perform cleanup operations."""
+        tprint_info("🧹 PERFORMING CLEANUP")
+        
+        # Cleanup cache
+        if self._cache:
+            self._cache.periodic_cleanup()
+        
+        # Cleanup memory
+        if self._memory:
+            self._memory.periodic_cleanup()
+        
+        tprint_success("✅ CLEANUP COMPLETED")
+    
+    async def run_context(self, run_id: str):
+        """Async context manager for automatic cleanup."""
+        async with await self._async_lock_context():
+            run_dir = self.base_dir / f"run_{run_id}"
+            run_dir.mkdir(parents=True, exist_ok=True)
+            
+            try:
+                yield run_dir
+            finally:
+                # Auto-cleanup run directory
+                try:
+                    import shutil
+                    shutil.rmtree(run_dir, ignore_errors=True)
+                    tprint_info(f"Cleaned up run directory: {run_dir}")
+                except Exception as e:
+                    tprint_warning(f"Failed to cleanup run directory {run_dir}: {e}")
+    
+    # Compatibility methods for existing code
+    def get_data_dir(self, *subdirs: str) -> Path:
+        """Get data directory path."""
+        return self._manager.base_dir / "data" / Path(*subdirs)
+    
+    def get_reports_dir(self, *subdirs: str) -> Path:
+        """Get reports directory path."""
+        return self._manager.base_dir / "reports" / Path(*subdirs)
+    
+    def get_cache_dir(self, *subdirs: str) -> Path:
+        """Get cache directory path."""
+        return self._manager.base_dir / "cache" / Path(*subdirs)
+    
+    def get_optimization_dir(self, *subdirs: str) -> Path:
+        """Get optimization directory path."""
+        return self._manager.base_dir / "optimization" / Path(*subdirs)
+    
+    def get_tmp_dir(self, *subdirs: str) -> Path:
+        """Get temporary directory path."""
+        return self._manager.base_dir / "tmp" / Path(*subdirs)
+    
+    def get_tmp_path(self, filename: str) -> Path:
+        """Get temporary file path."""
+        return self.get_tmp_dir() / filename
+    
+    def reset_run(self) -> None:
+        """Reset run state (compatibility method)."""
+        # The refactored manager handles this automatically
+        pass
+    
+    def get_run_id(self) -> Optional[str]:
+        """Get current run ID (compatibility method)."""
+        return None
+    
+    def get_run_dir(self) -> Optional[Path]:
+        """Get current run directory (compatibility method)."""
+        return self._manager.base_dir
 		Returns:
 			Versioned filename
 		"""

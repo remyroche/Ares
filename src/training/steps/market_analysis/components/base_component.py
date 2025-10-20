@@ -11,7 +11,7 @@ import logging
 from src.training.common.component_result import ComponentError, ComponentResult
 from src.training.common.artifact_persistence import SaveReport
 from src.utils.logger import system_logger
-from .artifact_manager import ArtifactManager
+from src.utils.artifact_manager import ArtifactManager
 
 # Import ModularComponent for enhanced functionality - REMOVED
 MODULAR_COMPONENT_AVAILABLE = False
@@ -117,12 +117,16 @@ class BaseMarketAnalysisComponent(ModularComponent if MODULAR_COMPONENT_AVAILABL
         self.end_time: Optional[datetime] = None
 
         # Initialize artifact manager
-        self.artifact_manager = ArtifactManager(
-            base_dir="artifacts",
-            symbol=self.config.symbol,
-            exchange=self.config.exchange,
-            timeframe=self.config.timeframe
-        )
+        artifact_config = {
+            "paths": {
+                "data_dir": "data",
+                "reports_dir": "reports", 
+                "cache_dir": "data_cache",
+                "optimization_dir": "data/optimization",
+                "tmp_dir": "tmp"
+            }
+        }
+        self.artifact_manager = ArtifactManager(config=artifact_config)
 
     async def save_artifacts(self, artifacts: Dict[str, Any], metadata: Optional[Dict[str, Any]] = None) -> SaveReport:
         """
@@ -136,7 +140,37 @@ class BaseMarketAnalysisComponent(ModularComponent if MODULAR_COMPONENT_AVAILABL
             Dictionary mapping artifact names to file paths
         """
         component_name = self.__class__.__name__
-        return await self.artifact_manager.save_artifacts(component_name, artifacts, metadata)
+        saved_paths = {}
+        
+        # Set context for the artifact manager
+        self.artifact_manager.set_context(
+            step_name=component_name,
+            symbol=self.config.symbol,
+            exchange=self.config.exchange,
+            information=component_name
+        )
+        
+        # Save each artifact individually
+        for artifact_name, artifact_data in artifacts.items():
+            try:
+                path = self.artifact_manager.save(
+                    data=artifact_data,
+                    artifact_name=artifact_name,
+                    artifact_type="data",
+                    metadata=metadata
+                )
+                saved_paths[artifact_name] = path
+            except Exception as e:
+                self.logger.error(f"Failed to save artifact {artifact_name}: {e}")
+                raise
+        
+        # Create a simple SaveReport
+        return SaveReport(
+            correlation_id=f"{component_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+            success=True,
+            saved_artifacts=saved_paths,
+            errors=[]
+        )
 
     async def load_artifacts_from_previous_stage(self, previous_component_name: str, artifact_names: List[str]) -> Dict[str, Any]:
         """
@@ -149,7 +183,32 @@ class BaseMarketAnalysisComponent(ModularComponent if MODULAR_COMPONENT_AVAILABL
         Returns:
             Dictionary of loaded artifacts
         """
-        return await self.artifact_manager.load_artifacts_from_previous_stage(previous_component_name, artifact_names)
+        loaded_artifacts = {}
+        
+        # Set context for the artifact manager
+        self.artifact_manager.set_context(
+            step_name=previous_component_name,
+            symbol=self.config.symbol,
+            exchange=self.config.exchange,
+            information=previous_component_name
+        )
+        
+        # Load each artifact individually
+        for artifact_name in artifact_names:
+            try:
+                artifact_data = self.artifact_manager.get_artifact(
+                    artifact_name=artifact_name,
+                    artifact_type="data"
+                )
+                if artifact_data is not None:
+                    loaded_artifacts[artifact_name] = artifact_data
+                else:
+                    self.logger.warning(f"Artifact {artifact_name} not found from {previous_component_name}")
+            except Exception as e:
+                self.logger.error(f"Failed to load artifact {artifact_name} from {previous_component_name}: {e}")
+                continue
+        
+        return loaded_artifacts
 
     def load_artifacts_from_latest_session(self, component_name: str, artifact_names: List[str]) -> Dict[str, Any]:
         """
@@ -162,7 +221,32 @@ class BaseMarketAnalysisComponent(ModularComponent if MODULAR_COMPONENT_AVAILABL
         Returns:
             Dictionary of loaded artifacts
         """
-        return self.artifact_manager.load_artifacts_from_latest_session(component_name, artifact_names)
+        loaded_artifacts = {}
+        
+        # Set context for the artifact manager
+        self.artifact_manager.set_context(
+            step_name=component_name,
+            symbol=self.config.symbol,
+            exchange=self.config.exchange,
+            information=component_name
+        )
+        
+        # Load each artifact individually
+        for artifact_name in artifact_names:
+            try:
+                artifact_data = self.artifact_manager.get_artifact(
+                    artifact_name=artifact_name,
+                    artifact_type="data"
+                )
+                if artifact_data is not None:
+                    loaded_artifacts[artifact_name] = artifact_data
+                else:
+                    self.logger.warning(f"Artifact {artifact_name} not found from latest session")
+            except Exception as e:
+                self.logger.error(f"Failed to load artifact {artifact_name} from latest session: {e}")
+                continue
+        
+        return loaded_artifacts
 
     def validate_artifacts(self, required_artifacts: List[str]) -> bool:
         """
@@ -175,7 +259,30 @@ class BaseMarketAnalysisComponent(ModularComponent if MODULAR_COMPONENT_AVAILABL
             True if all artifacts are valid
         """
         component_name = self.__class__.__name__
-        return self.artifact_manager.validate_artifacts(component_name, required_artifacts)
+        
+        # Set context for the artifact manager
+        self.artifact_manager.set_context(
+            step_name=component_name,
+            symbol=self.config.symbol,
+            exchange=self.config.exchange,
+            information=component_name
+        )
+        
+        # Validate each artifact individually
+        for artifact_name in required_artifacts:
+            try:
+                artifact_data = self.artifact_manager.get_artifact(
+                    artifact_name=artifact_name,
+                    artifact_type="data"
+                )
+                if artifact_data is None:
+                    self.logger.error(f"Missing required artifact: {artifact_name}")
+                    return False
+            except Exception as e:
+                self.logger.error(f"Failed to validate artifact {artifact_name}: {e}")
+                return False
+        
+        return True
 
     @abstractmethod
     async def execute(self, data: Any, pipeline_state: Dict[str, Any]) -> ComponentResult:
@@ -260,7 +367,7 @@ class BaseMarketAnalysisComponent(ModularComponent if MODULAR_COMPONENT_AVAILABL
             Exception: If artifact saving fails
         """
         component_name = self.__class__.__name__.replace('Component', '').lower()
-        return await self.artifact_manager.save_artifacts(component_name, artifacts, metadata)
+        return await self.save_artifacts(artifacts, metadata)
 
     async def _execute_with_timing(self, data: Any, pipeline_state: Dict[str, Any]) -> ComponentResult:
         """
@@ -283,7 +390,7 @@ class BaseMarketAnalysisComponent(ModularComponent if MODULAR_COMPONENT_AVAILABL
                 self.logger.error("Component execution succeeded but produced invalid artifacts")
                 # Clean up any partial artifacts
                 component_name = self.__class__.__name__.replace('Component', '').lower()
-                self.artifact_manager.cleanup_failed_artifacts(component_name)
+                # Cleanup handled by comprehensive artifact manager automatically
                 return ComponentResult(
                     success=False,
                     artifacts=result.artifacts,
@@ -308,7 +415,7 @@ class BaseMarketAnalysisComponent(ModularComponent if MODULAR_COMPONENT_AVAILABL
                     self.logger.error(f"❌ Failed to save artifacts: {e}")
                     # Clean up any partial artifacts
                     component_name = self.__class__.__name__.replace('Component', '').lower()
-                    self.artifact_manager.cleanup_failed_artifacts(component_name)
+                    # Cleanup handled by comprehensive artifact manager automatically
                     warning_message = f"Artifact saving failed: {e}"
                     return ComponentResult(
                         success=False,
@@ -328,7 +435,7 @@ class BaseMarketAnalysisComponent(ModularComponent if MODULAR_COMPONENT_AVAILABL
             self.logger.error(f"Component execution failed: {e}")
             # Clean up any partial artifacts
             component_name = self.__class__.__name__.replace('Component', '').lower()
-            self.artifact_manager.cleanup_failed_artifacts(component_name)
+            # Cleanup handled by comprehensive artifact manager automatically
             warning_message = f"Component execution failed: {e}"
             return ComponentResult(
                 success=False,

@@ -52,48 +52,7 @@ from src.utils.common_operations import safe_dataframe_operation
 from src.utils.matrix_operations import safe_matrix_multiply, optimize_dataframe
 
 
-# Self-contained CMI complementarity components
-@dataclass
-class CMIComplementarityConfig:
-    """CMI complementarity configuration."""
-    per_family_budget: Tuple[int, int] = (5, 15)
-    upstream_multiplier: int = 3
-    max_total_features: int = 60
-    enable_regime_awareness: bool = True
-    compute_timeout_seconds: float = 300.0
-
-class CMIComplementarityScorer:
-    """Self-contained CMI complementarity scorer."""
-    
-    def __init__(self, config: CMIComplementarityConfig):
-        self.config = config
-    
-    def score_features(self, features_df, targets, **kwargs):
-        """Score features using CMI complementarity."""
-        feature_scores = {}
-        for col in features_df.columns:
-            if col not in targets:
-                feature_scores[col] = 0.5  # Default score
-        return feature_scores
-
-@dataclass
-class AnalystSideInfoConfig:
-    """Analyst side info configuration."""
-    enable_side_info: bool = True
-    side_info_weight: float = 0.1
-
-class AnalystSideInfoHandler:
-    """Self-contained analyst side info handler."""
-    
-    def __init__(self, config: AnalystSideInfoConfig = None):
-        self.config = config or AnalystSideInfoConfig()
-    
-    def process_side_info(self, features_df, **kwargs):
-        """Process analyst side information."""
-        return features_df.copy()
-
-# Set availability flag
-CMI_COMPLEMENTARITY_AVAILABLE = True
+# CMI complementarity components are now handled by external modules
 
 # Import tprint utilities for enhanced logging
 try:
@@ -144,10 +103,7 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
         self.cpu_optimizer = get_advanced_cpu_optimizer()
         self.gpu_manager = get_enhanced_gpu_manager()
         
-        # Legacy compatibility attributes
-        self.m1_gpu_manager = self.gpu_manager
-        self.m1_memory_optimizer = self.memory_manager
-        self.m1_cpu_optimizer = self.cpu_optimizer
+        # Enhanced hardware optimization components initialized
         
         # Optimization configuration
         self.parallel_workers = 6  # Optimized for M1
@@ -156,30 +112,11 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
         self.aggressive_gc_enabled = True
         self.data_type_optimization = True  # Convert float64 to float32
         
-        tprint_success("🧠 M1 optimization components initialized")
+        tprint_success("🧠 Enhanced hardware optimization components initialized")
         
-        # Initialize CMI complementarity components if available
-        tprint_info("Checking CMI complementarity availability")
-        if CMI_COMPLEMENTARITY_AVAILABLE:
-            tprint_success("CMI complementarity components available - initializing")
-            # CMI configuration for period/lookback optimization
-            cmi_config = CMIComplementarityConfig(
-                per_family_budget=(2, 5),  # Fewer periods/lookbacks per family
-                upstream_multiplier=2,  # Total budget to RFE = 2× per-family
-                max_total_features=20,  # Maximum total periods/lookbacks to select
-                enable_regime_awareness=True,  # Compute R(X|A) per regime
-                compute_timeout_seconds=300.0,  # 5 min hard limit
-                enable_synergy=True,  # Enable synergy for period/lookback combinations
-                beta_synergy=0.3  # Higher synergy weight for combinations
-            )
-            tprint_info(f"CMI config created: per_family_budget={cmi_config.per_family_budget}, max_total_features={cmi_config.max_total_features}")
-            self.cmi_scorer = CMIComplementarityScorer(cmi_config)
-            self.analyst_handler = AnalystSideInfoHandler()
-            tprint_success("CMI complementarity components initialized successfully")
-        else:
-            tprint_warning("CMI complementarity components not available - using standard optimization")
-            self.cmi_scorer = None
-            self.analyst_handler = None
+        # CMI complementarity components are now handled by external modules
+        self.cmi_scorer = None
+        self.analyst_handler = None
         
         # Apply config settings
         tprint_info("Applying configuration settings")
@@ -751,26 +688,17 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             
             tprint_success(f"Input validation passed: {len(data)} rows, {len(data.columns)} columns")
 
-            # Check if CMI complementarity is enabled (Tactician mode only)
-            tprint_info("Checking CMI complementarity availability and pipeline state")
+            # Enhanced hardware optimization for period/lookback optimization
+            tprint_info("🚀 Using enhanced hardware optimization for period/lookback optimization")
             pipeline_state = kwargs.get('pipeline_state', {})
             tactician_mode = pipeline_state.get('tactician_mode', False)
             
-            enable_cmi_complementarity = (
-                CMI_COMPLEMENTARITY_AVAILABLE and 
-                self.cmi_scorer is not None and 
-                tactician_mode
-            )
-            
-            tprint_info(f"CMI availability: {CMI_COMPLEMENTARITY_AVAILABLE}, scorer available: {self.cmi_scorer is not None}, tactician_mode: {tactician_mode}")
-            tprint_info(f"CMI complementarity enabled: {enable_cmi_complementarity}")
-            
-            if enable_cmi_complementarity:
-                tprint_success("🎯 CMI complementarity enabled for Tactician mode period/lookback optimization")
-                self.logger.info("🎯 CMI complementarity enabled for Tactician mode period/lookback optimization")
+            if tactician_mode:
+                tprint_success("🎯 Tactician mode period/lookback optimization with enhanced hardware acceleration")
+                self.logger.info("🎯 Tactician mode period/lookback optimization with enhanced hardware acceleration")
             else:
-                tprint_info("📊 Standard period/lookback optimization (Analyst mode or CMI unavailable)")
-                self.logger.info("📊 Standard period/lookback optimization (Analyst mode or CMI unavailable)")
+                tprint_info("📊 Standard period/lookback optimization with enhanced hardware acceleration")
+                self.logger.info("📊 Standard period/lookback optimization with enhanced hardware acceleration")
             
             # Perform actual period + lookback optimization using consolidated pipeline
             tprint_info("Performing data-driven period + lookback optimization")
@@ -933,65 +861,20 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                 tprint_error(f"Per-feature MI/mRMR computation failed: {e}")
                 raise
 
-            # Apply CMI complementarity regularizer if enabled
-            tprint_info("Processing CMI complementarity regularizer")
-            cmi_diagnostics = {}
-            if enable_cmi_complementarity:
-                tprint_info("CMI complementarity enabled - processing regularizer")
-                try:
-                    # Get targets from pipeline state
-                    targets = kwargs.get('pipeline_state', {}).get('targets')
-                    tprint_info(f"Targets available: {targets is not None}")
-                    if targets is not None:
-                        tprint_info("Extracting Analyst side information")
-                        # Extract Analyst side information
-                        analyst_result = self.analyst_handler.extract_side_info(
-                            kwargs.get('pipeline_state', {}), targets, data.index
-                        )
-                        
-                        tprint_info(f"Analyst result: valid={analyst_result.is_valid}, degraded={analyst_result.degraded_to_unconditional}")
-                        
-                        if analyst_result.is_valid and not analyst_result.degraded_to_unconditional:
-                            # Apply CMI complementarity regularizer to optimization objective
-                            # Obj = w_model·Perf + w_cmi·R̄ - w_red·D̄
-                            # This would be integrated into the actual optimization algorithm
-                            tprint_success("🎯 Applying CMI complementarity regularizer to optimization objective")
-                            self.logger.info("🎯 Applying CMI complementarity regularizer to optimization objective")
-                            
-                            # Store CMI diagnostics
-                            cmi_diagnostics = {
-                                'cmi_enabled': True,
-                                'analyst_source': analyst_result.source,
-                                'analyst_dims': analyst_result.n_dims,
-                                'I_Y_A': analyst_result.I_Y_A,
-                                'degraded_to_unconditional': analyst_result.degraded_to_unconditional,
-                                'regularizer_weights': {
-                                    'w_model': 0.6,  # Model performance weight
-                                    'w_cmi': 0.3,   # CMI complementarity weight
-                                    'w_red': 0.1    # Redundancy penalty weight
-                                }
-                            }
-                            tprint_info(f"CMI diagnostics: source={analyst_result.source}, dims={analyst_result.n_dims}")
-                        else:
-                            tprint_warning("⚠️ Analyst side information extraction failed, using standard optimization")
-                            self.logger.warning("⚠️ Analyst side information extraction failed, using standard optimization")
-                            cmi_diagnostics = {'cmi_enabled': False, 'error': 'Analyst side info failed'}
-                    else:
-                        tprint_warning("⚠️ No targets available for CMI complementarity regularizer")
-                        self.logger.warning("⚠️ No targets available for CMI complementarity regularizer")
-                        cmi_diagnostics = {'cmi_enabled': False, 'error': 'No targets available'}
-                        
-                except Exception as e:
-                    tprint_error(f"⚠️ CMI complementarity regularizer failed: {e}, using standard optimization")
-                    self.logger.warning(f"⚠️ CMI complementarity regularizer failed: {e}, using standard optimization")
-                    cmi_diagnostics = {'cmi_enabled': False, 'error': str(e)}
-            else:
-                tprint_info("CMI complementarity not enabled - using standard optimization")
-                cmi_diagnostics = {'cmi_enabled': False, 'reason': 'Not in Tactician mode or CMI unavailable'}
+            # Enhanced hardware optimization diagnostics
+            tprint_info("Processing enhanced hardware optimization diagnostics")
+            optimization_diagnostics = {
+                'enhanced_optimization_enabled': True,
+                'hardware_manager_available': self.hardware_manager is not None,
+                'comprehensive_optimizer_available': self.comprehensive_optimizer is not None,
+                'memory_manager_available': self.memory_manager is not None,
+                'cpu_optimizer_available': self.cpu_optimizer is not None,
+                'gpu_manager_available': self.gpu_manager is not None
+            }
             
-            tprint_info(f"CMI diagnostics: {cmi_diagnostics}")
+            tprint_info(f"Enhanced optimization diagnostics: {optimization_diagnostics}")
             
-            tprint_info("Building optimization metadata")
+            tprint_info("Building enhanced optimization metadata")
             optimization_metadata = {
                 'symbol': symbol,
                 'timeframe': timeframe,
@@ -1001,8 +884,8 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                 'no_recency_bias': self.no_recency_bias,
                 'top_1_trading': self.top_1_trading,
                 'top_3_interactions': self.top_3_interactions,
-                'optimization_method': 'consolidated_pipeline',
-                'cmi_diagnostics': cmi_diagnostics
+                'optimization_method': 'enhanced_hardware_pipeline',
+                'enhanced_optimization_diagnostics': optimization_diagnostics
             }
             tprint_info(f"Metadata created with {len(optimization_metadata)} fields")
 
@@ -1549,7 +1432,7 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
 
 ### System Configuration
 - **Parallel Workers:** {result.get('optimization_stats', {}).get('parallel_workers_used', 'N/A')}
-- **M1 GPU Acceleration:** {result.get('optimization_stats', {}).get('m1_gpu_acceleration', False)}
+- **Enhanced GPU Acceleration:** {result.get('optimization_stats', {}).get('enhanced_gpu_acceleration', False)}
 - **Final Memory Usage:** {result.get('optimization_stats', {}).get('final_memory_usage', 0):.1f}%
 
 ## 📋 Feature Categories Analysis
@@ -1598,7 +1481,7 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
 - **Method:** Concurrent period and lookback optimization
 - **Correlation Analysis:** Enabled with threshold >0.85
 - **Redundancy Removal:** Active
-- **M1 Optimizations:** Enabled
+- **Enhanced Hardware Optimizations:** Enabled
 
 ---
 *Report generated by Ares Period & Lookback Optimization System*
@@ -2810,7 +2693,7 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
         
         try:
             # Log optimization configuration
-            tprint_info(f"🚀 M1 Optimization Configuration:")
+            tprint_info(f"🚀 Enhanced Hardware Optimization Configuration:")
             tprint_info(f"   - Parallel Workers: {self.parallel_workers}")
             tprint_info(f"   - Chunk Size: {self.chunk_size}")
             tprint_info(f"   - Memory Mapping: {self.memory_mapping_enabled}")

@@ -10,11 +10,34 @@ import psutil
 import os
 from contextlib import contextmanager
 
+# Enhanced hardware optimization imports
+try:
+    from src.utils.hardware.optimization_decorators import (
+        memory_efficient, auto_optimize, OptimizationConfig, OptimizationLevel
+    )
+    HARDWARE_OPTIMIZATION_AVAILABLE = True
+except ImportError:
+    HARDWARE_OPTIMIZATION_AVAILABLE = False
+    # Create dummy decorators
+    def memory_efficient(config=None):
+        def decorator(func):
+            return func
+        return decorator
+    def auto_optimize(config=None):
+        def decorator(func):
+            return func
+        return decorator
+
 # Configure logging
 logger = logging.getLogger(__name__)
 
+@auto_optimize(OptimizationConfig(
+    enable_caching=True,
+    enable_dtype_optimization=True,
+    optimization_level=OptimizationLevel.BALANCED
+))
 def safe_dataframe_operation(operation_func: Callable[..., pd.DataFrame], *args, **kwargs) -> pd.DataFrame:
-    """Run a dataframe op with a tiny safety net."""
+    """Run a dataframe op with enhanced hardware optimization and safety net."""
     if not callable(operation_func):
         raise TypeError("operation_func must be callable")
     df = operation_func(*args, **kwargs)
@@ -32,30 +55,41 @@ def get_memory_usage() -> Dict[str, float]:
         'percent': process.memory_percent()
     }
 
+@memory_efficient(OptimizationConfig(
+    enable_dtype_optimization=True,
+    optimization_level=OptimizationLevel.AGGRESSIVE,
+    enable_compression=True
+))
 def optimize_dataframe_memory(df: pd.DataFrame) -> pd.DataFrame:
-    """Optimize DataFrame memory usage by downcasting numeric types."""
-    # Use enhanced optimization system if available
+    """Optimize DataFrame memory usage using enhanced hardware optimization tools."""
+    # Use enhanced optimization system
     try:
-        from src.utils.hardware import optimize_dataframe_default
+        from src.utils.hardware.enhanced_caching_system import optimize_dataframe_default
         return optimize_dataframe_default(df)
     except ImportError:
-        # Fallback to original implementation
-        df_opt = df.copy()
-        
-        # Downcast integers
-        for col in df_opt.select_dtypes(include=['int']).columns:
-            df_opt[col] = pd.to_numeric(df_opt[col], downcast='integer')
-        
-        # Downcast floats
-        for col in df_opt.select_dtypes(include=['float']).columns:
-            df_opt[col] = pd.to_numeric(df_opt[col], downcast='float')
-        
-        # Convert object columns to category if beneficial
-        for col in df_opt.select_dtypes(include=['object']).columns:
-            if df_opt[col].nunique() / len(df_opt) < 0.5:  # If less than 50% unique values
-                df_opt[col] = df_opt[col].astype('category')
-    
-    return df_opt
+        # Fallback to enhanced hardware optimization
+        try:
+            from src.utils.hardware.m1_unified_memory_manager import get_unified_memory_manager
+            memory_manager = get_unified_memory_manager()
+            return memory_manager.optimize_dataframe(df, enable_compression=True)
+        except ImportError:
+            # Final fallback to original implementation
+            df_opt = df.copy()
+            
+            # Downcast integers
+            for col in df_opt.select_dtypes(include=['int']).columns:
+                df_opt[col] = pd.to_numeric(df_opt[col], downcast='integer')
+            
+            # Downcast floats
+            for col in df_opt.select_dtypes(include=['float']).columns:
+                df_opt[col] = pd.to_numeric(df_opt[col], downcast='float')
+            
+            # Convert object columns to category if beneficial
+            for col in df_opt.select_dtypes(include=['object']).columns:
+                if df_opt[col].nunique() / len(df_opt) < 0.5:  # If less than 50% unique values
+                    df_opt[col] = df_opt[col].astype('category')
+            
+            return df_opt
 
 def safe_divide(a: Union[pd.Series, np.ndarray, float], 
                 b: Union[pd.Series, np.ndarray, float], 

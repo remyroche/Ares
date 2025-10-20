@@ -80,7 +80,47 @@ except ImportError:
     def tprint_error(*args, **kwargs): print("ERROR:", *args, **kwargs)
     def tprint_debug(*args, **kwargs): print("DEBUG:", *args, **kwargs)
 
-from src.training.steps.pre_training.utils.artifact_manager import get_pretraining_artifact_manager, ArtifactKeys
+# Import artifact management functions
+from src.utils.artifact_manager import ArtifactManager
+
+# Define ArtifactKeys for pre-training steps
+class ArtifactKeys:
+    """Artifact keys for pre-training steps."""
+    GENERATED_FEATURES = "generated_features"
+    INTERACTION_FEATURES = "interaction_features"
+    INTERACTION_METADATA = "interaction_metadata"
+    INTERACTION_GENERATION_METRICS = "interaction_generation_metrics"
+    FEATURE_DATAFRAME = "feature_dataframe"
+    TARGETS = "targets"
+    SELECTED_FEATURES = "selected_features"
+    MI_BEST_LOOKBACKS_PER_FEATURE = "mi_best_lookbacks_per_feature"
+    MRMR_TOP_LOOKBACKS_PER_FEATURE = "mrmr_top_lookbacks_per_feature"
+    MI_SCORES_BY_FEATURE = "mi_scores_by_feature"
+    OOS_SHARPE_BY_FEATURE_WINDOW = "oos_sharpe_by_feature_window"
+    SELECTED_FEATURES_METADATA = "selected_features_metadata"
+    FAMILY_DIAGNOSTICS = "family_diagnostics"
+    OPTIMIZATION_CONFIG = "optimization_config"
+    OPTIMIZED_FEATURE_DATAFRAME = "optimized_feature_dataframe"
+
+def get_pretraining_artifact_manager() -> ArtifactManager:
+    """Get pre-training artifact manager with enhanced hardware optimization."""
+    from src.utils.hardware import get_integrated_hardware_manager
+    
+    # Create artifact manager with hardware optimization
+    config = {
+        'base_dir': 'artifacts/pre_training',
+        'compression': 'auto',
+        'memory_optimization': True,
+        'hardware_optimization': True
+    }
+    
+    manager = ArtifactManager(config=config)
+    
+    # Integrate with hardware manager for enhanced performance
+    hardware_manager = get_integrated_hardware_manager()
+    manager._hardware_manager = hardware_manager
+    
+    return manager
 
 
 logger = logging.getLogger(__name__)

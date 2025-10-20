@@ -60,6 +60,26 @@ from .logger import system_logger
 from .common_operations import ensure_directory
 from .version_manager import get_version_manager
 
+# Import hardware optimization tools
+try:
+    from .hardware import (
+        get_integrated_hardware_manager, memory_optimized, 
+        performance_tracked, force_cleanup, get_memory_stats,
+        optimize_dataframe, optimize_array, cache_result
+    )
+    HARDWARE_OPTIMIZATION_AVAILABLE = True
+except ImportError:
+    HARDWARE_OPTIMIZATION_AVAILABLE = False
+    # Create dummy functions for compatibility
+    def get_integrated_hardware_manager(): return None
+    def memory_optimized(*args, **kwargs): return lambda f: f
+    def performance_tracked(*args, **kwargs): return lambda f: f
+    def force_cleanup(): pass
+    def get_memory_stats(): return {}
+    def optimize_dataframe(df): return df
+    def optimize_array(arr): return arr
+    def cache_result(*args, **kwargs): return lambda f: f
+
 
 class CompressionType(Enum):
     """Supported compression algorithms."""
@@ -511,6 +531,7 @@ class ArtifactManager:
 	# Enhanced Artifact Storage and Retrieval (BaseStep Compatible)
 	# ------------------------------------------------------------------
 	
+	@memory_optimized(optimization_level=MemoryOptimizationLevel.AGGRESSIVE)
 	def save(self, data: Any, artifact_name: str, 
 	         artifact_type: str = "data", 
 	         compression: str = "auto",
@@ -1413,11 +1434,14 @@ class ArtifactManager:
 			}
 	
 	def clear_cache(self):
-		"""Clear the cache."""
+		"""Clear the cache with enhanced hardware optimization."""
 		with self._lock_context():
 			self._cache.clear()
 			self._cache_size_bytes = 0
 			self._compression_method.clear()
+			# Use enhanced cleanup
+			if HARDWARE_OPTIMIZATION_AVAILABLE:
+				force_cleanup()
 		self.logger.debug("Cache cleared")
 	
 	# Enhanced memory profiling and spill strategies
@@ -1649,6 +1673,8 @@ class ArtifactManager:
 				self.logger.warning(f"Failed to cleanup run directory {run_dir}: {e}")
 	
 	# Enhanced store method with profiling and spilling
+	@memory_optimized(optimization_level=MemoryOptimizationLevel.AGGRESSIVE)
+	@performance_tracked(log_performance=True, track_memory=True)
 	def store_enhanced(self, key: str, data: Any, metadata: Optional[Dict[str, Any]] = None) -> bool:
 		"""Store artifact with enhanced profiling and spill strategies."""
 		try:
@@ -1675,6 +1701,8 @@ class ArtifactManager:
 			return False
 	
 	# Enhanced retrieve method with lazy loading
+	@memory_optimized(optimization_level=MemoryOptimizationLevel.AGGRESSIVE)
+	@performance_tracked(log_performance=True, track_memory=True)
 	def retrieve_enhanced(self, key: str) -> Optional[Any]:
 		"""Retrieve artifact with lazy loading and spill support."""
 		try:
@@ -1702,10 +1730,35 @@ class ArtifactManager:
 	
 	# Memory profiling and analytics
 	def get_memory_analytics(self) -> Dict[str, Any]:
-		"""Get comprehensive memory analytics."""
+		"""Get comprehensive memory analytics with hardware optimization stats."""
 		total_memory_mb = sum(profile.memory_usage_mb for profile in self._memory_profiles.values())
 		spilled_count = sum(1 for profile in self._memory_profiles.values() if profile.spilled)
 		avg_compression_ratio = np.mean([p.compression_ratio for p in self._memory_profiles.values() if p.spilled]) if spilled_count > 0 else 1.0
+		
+		# Add hardware optimization stats
+		analytics = {
+			'total_memory_mb': total_memory_mb,
+			'spilled_count': spilled_count,
+			'avg_compression_ratio': avg_compression_ratio
+		}
+		
+		if HARDWARE_OPTIMIZATION_AVAILABLE and hasattr(self, '_hardware_manager'):
+			hardware_stats = get_memory_stats()
+			analytics.update(hardware_stats)
+		
+		return analytics
+	
+	def get_hardware_optimization_status(self) -> Dict[str, Any]:
+		"""Get hardware optimization status."""
+		if HARDWARE_OPTIMIZATION_AVAILABLE and hasattr(self, '_hardware_manager'):
+			return self._hardware_manager.get_optimization_report()
+		return {"error": "Hardware optimization not available"}
+	
+	def clear_all_caches(self) -> None:
+		"""Clear all caches with enhanced hardware optimization."""
+		self.clear_cache()
+		if HARDWARE_OPTIMIZATION_AVAILABLE and hasattr(self, '_hardware_manager'):
+			self._hardware_manager.clear_all_caches()
 		
 		return {
 			'total_artifacts': len(self._memory_profiles),

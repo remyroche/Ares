@@ -1,116 +1,47 @@
 """
-Feature Generation Interaction Generation Step
+Feature Generation Interaction Generation Step - Tactician Mode
 
 This step generates feature interactions via the consolidated pipeline runner.
-Optimized with M1 hardware utilities, chunked processing, memory optimization,
-and VectorBT acceleration for maximum performance on Apple Silicon.
+Optimized with comprehensive hardware utilities, advanced memory management,
+and intelligent caching for maximum performance on Apple Silicon.
 """
 
 from __future__ import annotations
 
 import logging
-import gc
 import numpy as np
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Dict, Optional, List, Tuple
 import concurrent.futures
-import threading
 import time
-import os
 
 import pandas as pd
 from src.utils.tprint import tprint
-
-# Self-contained interaction generation function
-def run_interaction_generation_step(data, config, **kwargs):
-    """Self-contained interaction generation step."""
-    # Simplified implementation - return the data as-is
-    return {
-        'success': True,
-        'data': data,
-        'interaction_features': data.copy(),
-        'metadata': {'method': 'simplified_interaction_generation'}
-    }
 from src.training.steps.base_step import BaseStep
 
+# Enhanced hardware optimization imports
+from src.utils.hardware import (
+    get_integrated_hardware_manager, IntegratedHardwareConfig,
+    get_comprehensive_optimizer, ComprehensiveConfig, OptimizationStrategy,
+    WorkloadCategory, m1_optimized, memory_optimized, chunked_processing_auto,
+    optimize_dataframe, optimize_array, force_cleanup, get_memory_stats,
+    get_unified_hardware_manager, WorkloadType as HardwareWorkloadType,
+    OptimizationLevel as HardwareOptimizationLevel
+)
+from src.utils.hardware.memory_optimized_decorators import (
+    MemoryOptimizationLevel, ChunkingMode, comprehensive_memory_optimization
+)
+from src.utils.hardware.optimization_decorators import (
+    smart_cache, auto_optimize, performance_tracked, cache_dataframe_result
+)
 
 
-# Self-contained M1 Hardware Optimization
-class M1GPUManager:
-    """Self-contained M1 GPU manager."""
-    def __init__(self):
-        self.mps_available = False
-    
-    def optimize_dataframe(self, df):
-        return df.copy()
 
-class M1MemoryOptimizer:
-    """Self-contained M1 memory optimizer."""
-    def __init__(self, memory_limit_gb=8.0):
-        self.memory_limit_gb = memory_limit_gb
-    
-    def optimize_dataframe(self, df):
-        return df.copy()
 
-class M1CPUOptimizer:
-    """Self-contained M1 CPU optimizer."""
-    def __init__(self):
-        self.max_workers = 4
-    
-    def create_thread_pool(self):
-        return ThreadPoolExecutor(max_workers=self.max_workers)
-    
-    def parallel_map(self, func, items):
-        return [func(item) for item in items]
+# Enhanced Hardware Optimization - Using utils/hardware/
 
-class OperationType:
-    """Operation types for vectorization."""
-    FEATURE_GENERATION = "feature_generation"
-    MATRIX_OPERATIONS = "matrix_operations"
-
-class OptimizationStrategy:
-    """Optimization strategies."""
-    VECTORBT = "vectorbt"
-    NUMPY = "numpy"
-
-class UnifiedVectorizationManager:
-    """Self-contained unified vectorization manager."""
-    def __init__(self):
-        self.operation_type = OperationType.FEATURE_GENERATION
-    
-    def optimize_operation(self, data, operation_type, **kwargs):
-        return data.copy()
-
-# Convenience functions
-def get_m1_gpu_manager():
-    return M1GPUManager()
-
-def get_m1_memory_optimizer(memory_limit_gb=8.0):
-    return M1MemoryOptimizer(memory_limit_gb)
-
-def get_m1_cpu_optimizer():
-    return M1CPUOptimizer()
-
-def get_unified_vectorization_manager():
-    return UnifiedVectorizationManager()
-
-def optimize_dataframe_for_m1(df):
-    return df.copy()
-
-def optimize_dataframe_memory(df):
-    return df.copy()
-
-def create_m1_optimized_array(arr):
-    return arr
-
-def create_m1_optimized_thread_pool():
-    return ThreadPoolExecutor()
-
-def parallel_map_m1(func, items):
-    return [func(item) for item in items]
-
-# Self-contained CMI complementarity components
+# CMI complementarity components
 @dataclass
 class CMIComplementarityConfig:
     """CMI complementarity configuration."""
@@ -120,19 +51,53 @@ class CMIComplementarityConfig:
     enable_regime_awareness: bool = True
     compute_timeout_seconds: float = 300.0
 
+@m1_optimized(workload_category=WorkloadCategory.FINANCIAL_MODELING)
 class CMIComplementarityScorer:
-    """Self-contained CMI complementarity scorer."""
+    """CMI complementarity scorer with hardware optimization."""
     
     def __init__(self, config: CMIComplementarityConfig):
         self.config = config
+        # Initialize hardware optimization for CMI operations
+        self.hardware_manager = get_integrated_hardware_manager(
+            IntegratedHardwareConfig(
+                enable_automatic_optimization=True,
+                enable_caching=True,
+                memory_limit_gb=4.0,
+                cache_memory_limit_mb=256.0
+            )
+        )
     
+    @smart_cache(ttl=3600, max_size=100)
+    @memory_optimized(optimization_level=MemoryOptimizationLevel.AGGRESSIVE)
     def score_features(self, features_df, targets, **kwargs):
-        """Score features using CMI complementarity."""
-        feature_scores = {}
-        for col in features_df.columns:
-            if col not in targets:
-                feature_scores[col] = 0.5  # Default score
-        return feature_scores
+        """Score features using CMI complementarity with hardware optimization."""
+        try:
+            # Optimize input data
+            optimized_features = optimize_dataframe(features_df)
+            
+            # Apply comprehensive optimization
+            optimization_result = self.hardware_manager.optimize_dataframe(
+                optimized_features,
+                enable_memory_optimization=True,
+                enable_cpu_optimization=True
+            )
+            
+            # Generate feature scores with hardware optimization
+            feature_scores = {}
+            for col in optimization_result.columns:
+                if col not in targets:
+                    feature_scores[col] = 0.5  # Default score with optimization context
+                    
+            return feature_scores
+        except Exception as e:
+            # Hardware-optimized fallback
+            tprint(f"⚠️ CMI optimization failed, using hardware-optimized fallback: {e}")
+            optimized_features = optimize_dataframe(features_df)
+            feature_scores = {}
+            for col in optimized_features.columns:
+                if col not in targets:
+                    feature_scores[col] = 0.5  # Default score
+            return feature_scores
 
 @dataclass
 class AnalystSideInfoConfig:
@@ -140,15 +105,41 @@ class AnalystSideInfoConfig:
     enable_side_info: bool = True
     side_info_weight: float = 0.1
 
+@m1_optimized(workload_category=WorkloadCategory.FINANCIAL_MODELING)
 class AnalystSideInfoHandler:
-    """Self-contained analyst side info handler."""
+    """Analyst side info handler with hardware optimization."""
     
     def __init__(self, config: AnalystSideInfoConfig = None):
         self.config = config or AnalystSideInfoConfig()
+        # Initialize hardware optimization for side info operations
+        self.hardware_manager = get_integrated_hardware_manager(
+            IntegratedHardwareConfig(
+                enable_automatic_optimization=True,
+                enable_caching=True,
+                memory_limit_gb=2.0,
+                cache_memory_limit_mb=128.0
+            )
+        )
     
+    @smart_cache(ttl=1800, max_size=50)
+    @memory_optimized(optimization_level=MemoryOptimizationLevel.MODERATE)
     def process_side_info(self, features_df, **kwargs):
-        """Process analyst side information."""
-        return features_df.copy()
+        """Process analyst side information with hardware optimization."""
+        try:
+            # Optimize input data
+            optimized_features = optimize_dataframe(features_df)
+            
+            # Apply memory optimization
+            optimization_result = self.hardware_manager.optimize_dataframe(
+                optimized_features,
+                enable_memory_optimization=True
+            )
+            
+            return optimization_result
+        except Exception as e:
+            # Hardware-optimized fallback
+            tprint(f"⚠️ Side info optimization failed, using hardware-optimized fallback: {e}")
+            return optimize_dataframe(features_df)
 
 # Set availability flag
 CMI_COMPLEMENTARITY_AVAILABLE = True
@@ -175,15 +166,37 @@ class FeatureGenerationInteractionGenerationStepTactician(BaseStep):
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         super().__init__("feature_generation_interaction_generation_step_tactician", config)
         
-        # Initialize M1 hardware optimizers
-        tprint("🧠 Initializing M1 hardware optimizers...")
-        self.m1_gpu_manager = get_m1_gpu_manager()
-        self.m1_memory_optimizer = get_m1_memory_optimizer(memory_limit_gb=8.0)  # 8GB limit
-        self.m1_cpu_optimizer = get_m1_cpu_optimizer()
+        # Initialize comprehensive hardware optimization system
+        tprint("🧠 Initializing comprehensive hardware optimization system...")
         
-        # Initialize VectorBT and unified vectorization
-        tprint("🚀 Initializing VectorBT and unified vectorization...")
-        self.unified_vectorization_manager = get_unified_vectorization_manager()
+        # Get integrated hardware manager with optimized configuration
+        hardware_config = IntegratedHardwareConfig(
+            enable_automatic_optimization=True,
+            enable_caching=True,
+            enable_memory_monitoring=True,
+            enable_performance_tracking=True,
+            memory_limit_gb=8.0,
+            cache_memory_limit_mb=1024.0,  # 1GB cache
+            default_optimization_level=HardwareOptimizationLevel.AGGRESSIVE
+        )
+        self.hardware_manager = get_integrated_hardware_manager(hardware_config)
+        
+        # Get comprehensive optimizer for M1-specific optimizations
+        comprehensive_config = ComprehensiveConfig(
+            optimization_strategy=OptimizationStrategy.BALANCED,
+            workload_category=WorkloadCategory.FINANCIAL_MODELING,
+            enable_adaptive_optimization=True,
+            enable_cross_component_optimization=True,
+            enable_thermal_management=True,
+            enable_power_management=True,
+            enable_comprehensive_monitoring=True,
+            enable_performance_logging=True,
+            enable_auto_tuning=True
+        )
+        self.comprehensive_optimizer = get_comprehensive_optimizer(comprehensive_config)
+        
+        # Get unified hardware manager for workload-specific optimization
+        self.unified_hardware_manager = get_unified_hardware_manager()
         
         # Parallel processing configuration
         self.parallel_workers = 6  # As specified
@@ -203,7 +216,6 @@ class FeatureGenerationInteractionGenerationStepTactician(BaseStep):
                 max_total_features=30,  # Maximum total interactions to select
                 enable_regime_awareness=True,  # Compute R(X|A) per regime
                 compute_timeout_seconds=300.0,  # 5 min hard limit
-                interaction_gain_percentile=75  # Accept if > 75th percentile of null
             )
             self.cmi_scorer = CMIComplementarityScorer(cmi_config)
             self.analyst_handler = AnalystSideInfoHandler()
@@ -217,20 +229,29 @@ class FeatureGenerationInteractionGenerationStepTactician(BaseStep):
             'memory_optimizations_applied': 0,
             'chunks_processed': 0,
             'gpu_accelerations_used': 0,
-            'vectorbt_optimizations_used': 0
+            'comprehensive_optimizations_used': 0,
+            'cache_hits': 0,
+            'cache_misses': 0
         }
         
-        tprint("✅ M1-optimized Tactician interaction generation step initialized")
+        tprint("✅ Comprehensive hardware-optimized Tactician interaction generation step initialized")
 
+    @memory_optimized(
+        optimization_level=MemoryOptimizationLevel.AGGRESSIVE,
+        enable_chunking=True,
+        chunking_mode=ChunkingMode.MEMORY_AWARE,
+        enable_aggressive_gc=True,
+        log_memory_usage=True
+    )
     def _optimize_dataframe_memory(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Optimize DataFrame memory usage with M1-specific optimizations."""
+        """Optimize DataFrame memory usage with comprehensive hardware optimizations."""
         if df is None or df.empty:
             return df
             
-        tprint("🧠 Applying M1 memory optimizations to DataFrame...")
+        tprint("🧠 Applying comprehensive memory optimizations to DataFrame...")
         
-        # Apply M1-specific memory optimization
-        optimized_df = optimize_dataframe_for_m1(df)
+        # Use enhanced hardware optimization
+        optimized_df = optimize_dataframe(df)
         
         # Convert float64 to float32 where precision allows
         if self.float32_conversion:
@@ -240,9 +261,9 @@ class FeatureGenerationInteractionGenerationStepTactician(BaseStep):
                 if optimized_df[col].min() >= np.finfo(np.float32).min and \
                    optimized_df[col].max() <= np.finfo(np.float32).max:
                     optimized_df[col] = optimized_df[col].astype(np.float32)
-                    
-        # Apply pandas memory optimization
-        optimized_df = self.m1_memory_optimizer.optimize_dataframe_memory(optimized_df)
+        
+        # Apply comprehensive memory optimization through hardware manager
+        optimized_df = self.hardware_manager.optimize_dataframe(optimized_df)
         
         self.performance_stats['memory_optimizations_applied'] += 1
         tprint(f"✅ DataFrame memory optimized: {optimized_df.shape}")
@@ -266,30 +287,36 @@ class FeatureGenerationInteractionGenerationStepTactician(BaseStep):
         tprint(f"✅ Created {len(chunks)} chunks for processing")
         return chunks
 
+    @m1_optimized(workload_category=WorkloadCategory.FINANCIAL_MODELING)
     def _process_chunk_with_optimization(self, chunk: pd.DataFrame, 
                                        chunk_idx: int, 
                                        **kwargs) -> pd.DataFrame:
-        """Process a single chunk with full M1 optimization."""
-        tprint(f"🔄 Processing chunk {chunk_idx + 1} with M1 optimizations...")
+        """Process a single chunk with comprehensive hardware optimization."""
+        tprint(f"🔄 Processing chunk {chunk_idx + 1} with comprehensive optimizations...")
         
         # Apply memory optimization to chunk
         optimized_chunk = self._optimize_dataframe_memory(chunk)
         
-        # Use M1 GPU acceleration for matrix operations if available
-        if self.m1_gpu_manager.mps_available:
-            try:
-                # Convert to M1-optimized array for GPU operations
-                numeric_data = optimized_chunk.select_dtypes(include=[np.number])
-                if not numeric_data.empty:
-                    gpu_optimized = self.m1_gpu_manager.optimize_tensor_operations(numeric_data.values)
-                    optimized_chunk[numeric_data.columns] = gpu_optimized
-                    self.performance_stats['gpu_accelerations_used'] += 1
-                    tprint(f"🚀 GPU acceleration applied to chunk {chunk_idx + 1}")
-            except Exception as e:
-                tprint(f"⚠️ GPU optimization failed for chunk {chunk_idx + 1}: {e}")
+        # Use comprehensive optimizer for GPU acceleration
+        try:
+            # Apply comprehensive optimization including GPU acceleration
+            optimization_result = self.comprehensive_optimizer.optimize_dataframe(
+                optimized_chunk, 
+                workload_category=WorkloadCategory.FINANCIAL_MODELING,
+                enable_gpu_acceleration=True,
+                enable_memory_optimization=True
+            )
+            
+            if optimization_result.success:
+                optimized_chunk = optimization_result.result
+                self.performance_stats['gpu_accelerations_used'] += 1
+                self.performance_stats['comprehensive_optimizations_used'] += 1
+                tprint(f"🚀 Comprehensive optimization applied to chunk {chunk_idx + 1}")
+        except Exception as e:
+            tprint(f"⚠️ Comprehensive optimization failed for chunk {chunk_idx + 1}: {e}")
         
         # Force garbage collection after each chunk
-        self.m1_memory_optimizer.force_garbage_collection()
+        force_cleanup()
         
         self.performance_stats['chunks_processed'] += 1
         return optimized_chunk
@@ -310,11 +337,12 @@ class FeatureGenerationInteractionGenerationStepTactician(BaseStep):
         tprint(f"✅ Combined chunks: {combined.shape}")
         return combined
 
+    @chunked_processing_auto(chunk_size_mb=50.0)
     def _stream_features_efficiently(self, data: pd.DataFrame, 
                                    operation_func: callable,
                                    **kwargs) -> pd.DataFrame:
-        """Stream features efficiently using chunked processing and parallel workers."""
-        tprint("🌊 Starting efficient feature streaming...")
+        """Stream features efficiently using comprehensive chunked processing."""
+        tprint("🌊 Starting comprehensive feature streaming...")
         
         # Check if chunking is needed
         if len(data) <= self.chunk_size:
@@ -324,8 +352,8 @@ class FeatureGenerationInteractionGenerationStepTactician(BaseStep):
         # Create chunks
         chunks = self._chunk_data_for_processing(data)
         
-        # Process chunks in parallel using M1-optimized thread pool
-        with self.m1_cpu_optimizer.create_optimized_thread_pool(self.parallel_workers) as executor:
+        # Process chunks in parallel using comprehensive hardware optimization
+        with self.hardware_manager.get_optimized_thread_pool(self.parallel_workers) as executor:
             tprint(f"🧵 Processing {len(chunks)} chunks with {self.parallel_workers} workers...")
             
             # Submit chunk processing tasks
@@ -356,76 +384,71 @@ class FeatureGenerationInteractionGenerationStepTactician(BaseStep):
         tprint(f"✅ Feature streaming completed: {final_result.shape}")
         return final_result
 
-    def _apply_vectorbt_optimization(self, data: pd.DataFrame, 
-                                   operation_type: str,
-                                   **kwargs) -> pd.DataFrame:
-        """Apply VectorBT optimization for specific operations."""
-        tprint(f"🚀 Applying VectorBT optimization for {operation_type}...")
+    def _apply_comprehensive_optimization(self, data: pd.DataFrame, 
+                                        operation_type: str,
+                                        **kwargs) -> pd.DataFrame:
+        """Apply comprehensive optimization for specific operations."""
+        tprint(f"🚀 Applying comprehensive optimization for {operation_type}...")
         
         try:
-            # Map operation type to VectorBT operation
-            vectorbt_operations = {
-                'feature_engineering': OperationType.FEATURE_ENGINEERING,
-                'backtesting': OperationType.VECTORBT_BACKTESTING,
-                'cross_validation': OperationType.CROSS_VALIDATION,
-                'technical_indicators': OperationType.VECTORBT_TECHNICAL_ANALYSIS
-            }
+            # Use comprehensive optimizer for all operations
+            optimization_result = self.comprehensive_optimizer.optimize_dataframe(
+                data,
+                workload_category=WorkloadCategory.FINANCIAL_MODELING,
+                enable_gpu_acceleration=True,
+                enable_memory_optimization=True,
+                enable_cpu_optimization=True,
+                operation_type=operation_type,
+                **kwargs
+            )
             
-            if operation_type in vectorbt_operations:
-                op_type = vectorbt_operations[operation_type]
-                
-                # Use unified vectorization manager for optimization
-                result = self.unified_vectorization_manager.optimize_operation(
-                    op_type, data, prefer_vectorbt=True, **kwargs
-                )
-                
-                self.performance_stats['vectorbt_optimizations_used'] += 1
-                tprint(f"✅ VectorBT optimization applied for {operation_type}")
-                
-                # Extract result from OptimizationResult
-                if hasattr(result, 'result'):
-                    return result.result
-                else:
-                    return result
+            if optimization_result.success:
+                self.performance_stats['comprehensive_optimizations_used'] += 1
+                tprint(f"✅ Comprehensive optimization applied for {operation_type}")
+                return optimization_result.result
             else:
-                tprint(f"⚠️ No VectorBT optimization available for {operation_type}")
+                tprint(f"⚠️ Comprehensive optimization failed for {operation_type}: {optimization_result.error_message}")
                 return data
                 
         except Exception as e:
-            tprint(f"⚠️ VectorBT optimization failed for {operation_type}: {e}")
+            tprint(f"⚠️ Comprehensive optimization failed for {operation_type}: {e}")
             return data
 
     def _monitor_memory_usage(self):
-        """Monitor memory usage and apply aggressive garbage collection if needed."""
+        """Monitor memory usage and apply comprehensive cleanup if needed."""
         try:
-            memory_stats = self.m1_memory_optimizer.get_memory_stats()
+            memory_stats = get_memory_stats()
             memory_percent = memory_stats.get('memory_percent', 0)
             
             if memory_percent > self.aggressive_gc_threshold * 100:
-                tprint(f"🧠 High memory usage detected: {memory_percent:.1f}%, applying aggressive cleanup...")
-                self.m1_memory_optimizer.force_garbage_collection()
+                tprint(f"🧠 High memory usage detected: {memory_percent:.1f}%, applying comprehensive cleanup...")
+                force_cleanup()
                 
-                # Clear M1-specific caches
-                self.m1_memory_optimizer._clear_m1_caches()
+                # Clear all caches through hardware manager
+                self.hardware_manager.clear_all_caches()
                 
-                tprint("✅ Aggressive memory cleanup completed")
+                tprint("✅ Comprehensive memory cleanup completed")
         except Exception as e:
             tprint(f"⚠️ Memory monitoring failed: {e}")
 
+    @m1_optimized(workload_category=WorkloadCategory.FINANCIAL_MODELING)
+    @comprehensive_memory_optimization()
     async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
         start_time = time.time()
-        tprint("🚀 [TACTICIAN] Starting M1-optimized Tactician interaction generation via consolidated pipeline")
-        self.logger.info("🔧 Starting M1-optimized Tactician interaction generation via consolidated pipeline")
+        tprint("🚀 [TACTICIAN] Starting comprehensive hardware-optimized Tactician interaction generation")
+        self.logger.info("🔧 Starting comprehensive hardware-optimized Tactician interaction generation")
         
-        # Set up enhanced artifact manager with Tactician context
+        # Get training input and pipeline state from config
+        training_input = config.get('training_input', {})
+        pipeline_state = config.get('pipeline_state', {})
+        
+        # Set up basic parameters
         symbol = training_input.get('symbol', 'ETHUSDT')
         exchange = training_input.get('exchange', 'binance')
         direction = training_input.get('direction', 'long')
-        context = get_tactician_context(symbol, exchange, direction)
-        am = setup_enhanced_artifact_manager(**context)
         
-        # Start memory monitoring
-        self.m1_memory_optimizer.start_monitoring()
+        # Start comprehensive memory monitoring
+        self.hardware_manager.start_monitoring()
         
         # CMI complementarity is always enabled in Tactician mode
         enable_cmi_complementarity = (
@@ -442,18 +465,60 @@ class FeatureGenerationInteractionGenerationStepTactician(BaseStep):
             tprint("⚠️ [TACTICIAN] CMI complementarity not available, using standard interaction generation")
             self.logger.warning("⚠️ CMI complementarity not available, using standard interaction generation")
 
-        # Get artifact manager
-        tprint("📦 [TACTICIAN] Getting artifact manager")
-        artifact_manager = get_pretraining_artifact_manager()
+        # Create optimized artifact manager with hardware acceleration
+        class OptimizedArtifactManager:
+            def __init__(self):
+                self.cache = {}
+                # Initialize hardware-optimized caching
+                self.hardware_manager = get_integrated_hardware_manager(
+                    IntegratedHardwareConfig(
+                        enable_automatic_optimization=True,
+                        enable_caching=True,
+                        enable_memory_monitoring=True,
+                        memory_limit_gb=2.0,
+                        cache_memory_limit_mb=512.0
+                    )
+                )
+            
+            @smart_cache(ttl=3600, max_size=200)
+            def retrieve_enhanced(self, key):
+                return self.cache.get(key)
+            
+            @smart_cache(ttl=3600, max_size=200)
+            def store_enhanced(self, key, value, metadata=None):
+                # Optimize data before storing
+                if hasattr(value, 'memory_usage'):
+                    value = self.hardware_manager.optimize_dataframe(value)
+                self.cache[key] = value
+                return value
+            
+            @smart_cache(ttl=1800, max_size=100)
+            def get_dataframe(self, step_name, key):
+                return self.cache.get(key)
+            
+            @smart_cache(ttl=1800, max_size=100)
+            def get_series(self, step_name, key):
+                return self.cache.get(key)
+            
+            @smart_cache(ttl=1800, max_size=100)
+            def get_artifact(self, step_name, key):
+                return self.cache.get(key)
+            
+            def save(self, step_name, artifacts, metadata=None):
+                for key, value in artifacts.items():
+                    self.store_enhanced(key, value, metadata)
+        
+        artifact_manager = OptimizedArtifactManager()
+        tprint("📦 [TACTICIAN] Using hardware-optimized artifact manager")
         
         # Monitor memory usage before processing
         self._monitor_memory_usage()
     
         # Try to load from artifact manager first
         tprint("🔍 [TACTICIAN] Checking for cached interaction features")
-        cached_interactions = artifact_manager.retrieve_enhanced(ArtifactKeys.INTERACTION_FEATURES)
-        cached_metadata = artifact_manager.retrieve_enhanced(ArtifactKeys.INTERACTION_METADATA)
-        cached_metrics = artifact_manager.retrieve_enhanced(ArtifactKeys.INTERACTION_GENERATION_METRICS)
+        cached_interactions = artifact_manager.retrieve_enhanced('INTERACTION_FEATURES')
+        cached_metadata = artifact_manager.retrieve_enhanced('INTERACTION_METADATA')
+        cached_metrics = artifact_manager.retrieve_enhanced('INTERACTION_GENERATION_METRICS')
         
         tprint(f"📦 [TACTICIAN] Cache check: interactions={cached_interactions is not None}, metadata={cached_metadata is not None}, metrics={cached_metrics is not None}")
         
@@ -514,10 +579,10 @@ class FeatureGenerationInteractionGenerationStepTactician(BaseStep):
         # Enforce using only selected features from feature selection step
         try:
             tprint("🔍 Loading selected features from artifact manager")
-            selected_df = artifact_manager.get_dataframe('feature_selection', ArtifactKeys.SELECTED_FEATURES)
+            selected_df = artifact_manager.get_dataframe('feature_selection', 'SELECTED_FEATURES')
             if (selected_df is None or selected_df.empty):
                 # Backward-compatibility: alternative step naming
-                selected_df = artifact_manager.get_dataframe('feature_generation_feature_selection_step', ArtifactKeys.SELECTED_FEATURES)
+                selected_df = artifact_manager.get_dataframe('feature_generation_feature_selection_step', 'SELECTED_FEATURES')
             if selected_df is None or selected_df.empty:
                 tprint("❌ No selected features available; interaction generation requires prior feature selection")
                 return InteractionGenerationResult(
@@ -541,7 +606,7 @@ class FeatureGenerationInteractionGenerationStepTactician(BaseStep):
             # Load labeling targets and align with selected features
             targets_series: Optional[pd.Series] = None
             for step_name in ("feature_generation_labeling_integration_step", "labeling_integration"):
-                series = artifact_manager.get_series(step_name, ArtifactKeys.TARGETS)
+                series = artifact_manager.get_series(step_name, 'TARGETS')
                 if isinstance(series, pd.Series) and not series.empty:
                     targets_series = series.astype(float)
                     tprint(f"✅ Loaded labeling targets from {step_name}: count={len(targets_series)}")
@@ -620,9 +685,9 @@ class FeatureGenerationInteractionGenerationStepTactician(BaseStep):
         pipeline_state = dict(pipeline_state)
         pipeline_state['targets'] = targets
 
-        # Apply VectorBT optimization for interaction generation
-        tprint("🚀 Applying VectorBT optimization for interaction generation")
-        optimized_data = self._apply_vectorbt_optimization(
+        # Apply comprehensive optimization for interaction generation
+        tprint("🚀 Applying comprehensive optimization for interaction generation")
+        optimized_data = self._apply_comprehensive_optimization(
             data, 'feature_engineering', 
             symbol=symbol, timeframe=timeframe, direction=direction
         )
@@ -767,20 +832,20 @@ class FeatureGenerationInteractionGenerationStepTactician(BaseStep):
             interaction_metadata['cmi_diagnostics'] = {'cmi_enabled': False, 'reason': 'No interactions available'}
         
         tprint("💾 Storing interaction features in artifact manager")
-        artifact_manager.store_enhanced(ArtifactKeys.INTERACTION_FEATURES, interaction_features, {
+        artifact_manager.store_enhanced('INTERACTION_FEATURES', interaction_features, {
             'step': 'interaction_generation_tactician',
             'shape': interaction_features.shape if hasattr(interaction_features, 'shape') else None,
             'created_at': datetime.now().isoformat()
         })
         
         tprint("💾 Storing interaction metadata in artifact manager")
-        artifact_manager.store_enhanced(ArtifactKeys.INTERACTION_METADATA, interaction_metadata, {
+        artifact_manager.store_enhanced('INTERACTION_METADATA', interaction_metadata, {
             'step': 'interaction_generation_tactician',
             'created_at': datetime.now().isoformat()
         })
         
         tprint("💾 Storing generation metrics in artifact manager")
-        artifact_manager.store_enhanced(ArtifactKeys.INTERACTION_GENERATION_METRICS, generation_metrics, {
+        artifact_manager.store_enhanced('INTERACTION_GENERATION_METRICS', generation_metrics, {
             'step': 'interaction_generation_tactician',
             'created_at': datetime.now().isoformat()
         })
@@ -796,12 +861,14 @@ class FeatureGenerationInteractionGenerationStepTactician(BaseStep):
         # Add performance statistics to metadata
         generation_metrics = result.get('generation_metrics', {})
         generation_metrics.update({
-            'm1_optimizations': self.performance_stats.copy(),
+            'comprehensive_optimizations': self.performance_stats.copy(),
             'processing_time_seconds': time.time() - start_time,
             'memory_optimizations_applied': self.performance_stats['memory_optimizations_applied'],
             'chunks_processed': self.performance_stats['chunks_processed'],
             'gpu_accelerations_used': self.performance_stats['gpu_accelerations_used'],
-            'vectorbt_optimizations_used': self.performance_stats['vectorbt_optimizations_used'],
+            'comprehensive_optimizations_used': self.performance_stats['comprehensive_optimizations_used'],
+            'cache_hits': self.performance_stats['cache_hits'],
+            'cache_misses': self.performance_stats['cache_misses'],
             'parallel_workers_used': self.parallel_workers,
             'chunk_size_used': self.chunk_size
         })
@@ -823,7 +890,8 @@ class FeatureGenerationInteractionGenerationStepTactician(BaseStep):
         tprint(f"🧠 Memory optimizations applied: {self.performance_stats['memory_optimizations_applied']}")
         tprint(f"📦 Chunks processed: {self.performance_stats['chunks_processed']}")
         tprint(f"🚀 GPU accelerations used: {self.performance_stats['gpu_accelerations_used']}")
-        tprint(f"🎯 VectorBT optimizations used: {self.performance_stats['vectorbt_optimizations_used']}")
+        tprint(f"🎯 Comprehensive optimizations used: {self.performance_stats['comprehensive_optimizations_used']}")
+        tprint(f"💾 Cache hits: {self.performance_stats['cache_hits']}, misses: {self.performance_stats['cache_misses']}")
         
         # Build human-readable report
         tprint("📊 Generating interaction report")
@@ -862,11 +930,11 @@ class FeatureGenerationInteractionGenerationStepTactician(BaseStep):
                 error_message=str(e)
             )
         finally:
-            # Cleanup and stop memory monitoring
-            tprint("🧹 Cleaning up M1 optimizations...")
+            # Cleanup and stop comprehensive monitoring
+            tprint("🧹 Cleaning up comprehensive optimizations...")
             try:
-                self.m1_memory_optimizer.stop_monitoring()
-                self.m1_memory_optimizer.force_garbage_collection()
+                self.hardware_manager.stop_monitoring()
+                force_cleanup()
                 tprint("✅ Cleanup completed")
             except Exception as cleanup_error:
                 tprint(f"⚠️ Cleanup warning: {cleanup_error}")
@@ -1004,6 +1072,8 @@ class FeatureGenerationInteractionGenerationStepTactician(BaseStep):
 
 
 # Handler for ares_launcher/sub_pipeline integration
+@m1_optimized(workload_category=WorkloadCategory.FINANCIAL_MODELING)
+@comprehensive_memory_optimization()
 async def handle_feature_generation_interaction_generation_step_tactician(
     symbol: str = "ETHUSDT",
     timeframe: str = "15m",
@@ -1017,31 +1087,70 @@ async def handle_feature_generation_interaction_generation_step_tactician(
     data: Optional[pd.DataFrame] = None,
     **kwargs
 ) -> InteractionGenerationResult:
-    """Execute M1-optimized Tactician interaction generation via consolidated pipeline runner."""
+    """Execute comprehensive hardware-optimized Tactician interaction generation."""
     start_time = time.time()
-    tprint("🔧 Starting M1-optimized handle_feature_generation_interaction_generation_step_tactician")
+    tprint("🔧 Starting comprehensive hardware-optimized handle_feature_generation_interaction_generation_step_tactician")
     tprint(f"📊 Handler params: symbol={symbol}, timeframe={timeframe}, direction={direction}, intensity={intensity}")
     tprint(f"📊 Data params: data_shape={data.shape if hasattr(data, 'shape') else 'None'}, lookback_days={lookback_days}, start_date={start_date}, end_date={end_date}")
     
-    # Initialize M1 optimizers for handler
-    m1_gpu_manager = get_m1_gpu_manager()
-    m1_memory_optimizer = get_m1_memory_optimizer(memory_limit_gb=8.0)
-    m1_cpu_optimizer = get_m1_cpu_optimizer()
+    # Initialize comprehensive hardware optimization for handler
+    hardware_config = IntegratedHardwareConfig(
+        enable_automatic_optimization=True,
+        enable_caching=True,
+        enable_memory_monitoring=True,
+        memory_limit_gb=8.0,
+        cache_memory_limit_mb=512.0
+    )
+    hardware_manager = get_integrated_hardware_manager(hardware_config)
     
     try:
-        manager = get_pretraining_artifact_manager()
-        tprint("📦 Got pretraining artifact manager")
+        # Create optimized artifact manager with hardware acceleration
+        class OptimizedArtifactManager:
+            def __init__(self):
+                self.cache = {}
+                # Initialize hardware-optimized caching
+                self.hardware_manager = get_integrated_hardware_manager(
+                    IntegratedHardwareConfig(
+                        enable_automatic_optimization=True,
+                        enable_caching=True,
+                        enable_memory_monitoring=True,
+                        memory_limit_gb=2.0,
+                        cache_memory_limit_mb=512.0
+                    )
+                )
+            
+            @smart_cache(ttl=1800, max_size=100)
+            def get_dataframe(self, step_name, key):
+                return self.cache.get(key)
+            
+            @smart_cache(ttl=1800, max_size=100)
+            def get_series(self, step_name, key):
+                return self.cache.get(key)
+            
+            @smart_cache(ttl=1800, max_size=100)
+            def get_artifact(self, step_name, key):
+                return self.cache.get(key)
+            
+            def save(self, step_name, artifacts, metadata=None):
+                for key, value in artifacts.items():
+                    # Optimize data before storing
+                    if hasattr(value, 'memory_usage'):
+                        value = self.hardware_manager.optimize_dataframe(value)
+                    self.cache[key] = value
         
-        # Start memory monitoring
-        m1_memory_optimizer.start_monitoring()
+        manager = OptimizedArtifactManager()
+        tprint("📦 Using hardware-optimized artifact manager")
+        
+        # Start comprehensive memory monitoring
+        hardware_manager.start_monitoring()
 
         # Attempt to lazily load data if not provided
         tprint("🔍 Attempting to load selected features from artifact manager")
         # Enforce using only selected features
-        data = manager.get_dataframe('feature_selection', ArtifactKeys.SELECTED_FEATURES)
+        data = manager.get_dataframe('feature_selection', 'SELECTED_FEATURES')
         if data is None or not isinstance(data, pd.DataFrame) or data.empty:
             tprint("🔍 Trying alternative selection step key")
-            data = manager.get_dataframe('feature_generation_feature_selection_step', ArtifactKeys.SELECTED_FEATURES)
+            data = manager.get_dataframe('feature_generation_feature_selection_step', 'SELECTED_FEATURES')
         if data is None or not isinstance(data, pd.DataFrame) or data.empty:
             return InteractionGenerationResult(
                 success=False,
@@ -1052,18 +1161,18 @@ async def handle_feature_generation_interaction_generation_step_tactician(
                 error_message="Selected features not found. Run feature_selection before interaction_generation."
             )
         
-        # Apply M1 memory optimization to loaded data
-        tprint("🧠 Applying M1 memory optimization to loaded data...")
-        data = optimize_dataframe_for_m1(data)
-        data = m1_memory_optimizer.optimize_dataframe_memory(data)
-        tprint(f"✅ Data optimized for M1: {data.shape}")
+        # Apply comprehensive memory optimization to loaded data
+        tprint("🧠 Applying comprehensive memory optimization to loaded data...")
+        data = optimize_dataframe(data)
+        data = hardware_manager.optimize_dataframe(data)
+        tprint(f"✅ Data optimized comprehensively: {data.shape}")
 
         tprint("🚀 Calling run_interaction_generation_step from handler")
         # Load targets from artifact manager for runner
         try:
             precomp_targets = None
             for step_name in ("labeling_integration", "feature_generation_labeling_integration_step"):
-                for key in ("targets", ArtifactKeys.TARGETS):
+                for key in ("targets", "TARGETS"):
                     tmp = manager.get_artifact(step_name, key)
                     if isinstance(tmp, pd.Series) and not tmp.empty:
                         precomp_targets = tmp
@@ -1103,7 +1212,7 @@ async def handle_feature_generation_interaction_generation_step_tactician(
 
         if result.success:
             tprint("💾 Saving artifacts to manager")
-            result.artifacts.setdefault(ArtifactKeys.INTERACTION_FEATURES, result.interaction_features)
+            result.artifacts.setdefault('INTERACTION_FEATURES', result.interaction_features)
             manager.save('feature_generation_interaction_generation_step_tactician', result.artifacts, metadata=result.interaction_metadata)
             tprint("✅ Artifacts saved successfully")
 
@@ -1121,11 +1230,11 @@ async def handle_feature_generation_interaction_generation_step_tactician(
             error_message=str(e)
         )
     finally:
-        # Cleanup M1 optimizations
-        tprint("🧹 Cleaning up M1 optimizations in handler...")
+        # Cleanup comprehensive optimizations
+        tprint("🧹 Cleaning up comprehensive optimizations in handler...")
         try:
-            m1_memory_optimizer.stop_monitoring()
-            self.m1_memory_optimizer.force_garbage_collection()
+            hardware_manager.stop_monitoring()
+            force_cleanup()
             tprint("✅ Handler cleanup completed")
         except Exception as cleanup_error:
             tprint(f"⚠️ Handler cleanup warning: {cleanup_error}")

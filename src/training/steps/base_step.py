@@ -74,36 +74,17 @@ from datetime import datetime
 import traceback
 
 from src.utils.artifact_manager import ArtifactManager
-from src.utils.hardware import (
-    get_integrated_hardware_manager, memory_optimized, 
-    performance_tracked, force_cleanup, get_memory_stats
-)
-
-# Import enhanced hardware optimization tools
-from src.utils.hardware import (
-    memory_optimized, m1_optimized, memory_efficient_function,
-    gc_optimized_function, force_cleanup, get_memory_stats,
-    get_integrated_hardware_manager, WorkloadCategory
-)
-
 # Enhanced hardware optimization imports
-try:
-    from src.utils.hardware.unified_hardware_manager import get_unified_hardware_manager
-    from src.utils.hardware.optimization_decorators import (
-        auto_optimize, memory_efficient, OptimizationConfig, OptimizationLevel
-    )
-    HARDWARE_OPTIMIZATION_AVAILABLE = True
-except ImportError:
-    HARDWARE_OPTIMIZATION_AVAILABLE = False
-    # Create dummy decorators
-    def auto_optimize(config=None):
-        def decorator(func):
-            return func
-        return decorator
-    def memory_efficient(config=None):
-        def decorator(func):
-            return func
-        return decorator
+from src.utils.hardware import (
+    get_integrated_hardware_manager, IntegratedHardwareConfig,
+    m1_optimized, memory_optimized, optimize_dataframe, force_cleanup
+)
+from src.utils.hardware.memory_optimized_decorators import (
+    MemoryOptimizationLevel, comprehensive_memory_optimization
+)
+from src.utils.hardware.optimization_decorators import (
+    smart_cache, auto_optimize, performance_tracked
+)
 
 
 class BaseStep(ABC):
@@ -130,16 +111,15 @@ class BaseStep(ABC):
         self.step_name = step_name
         self.logger = logging.getLogger(f"ares.step.{step_name}")
         
-        # Initialize enhanced hardware optimization if available
-        if HARDWARE_OPTIMIZATION_AVAILABLE:
-            try:
-                self.hardware_manager = get_unified_hardware_manager()
-                self.logger.info("Enhanced hardware optimization initialized")
-            except Exception as e:
-                self.logger.warning(f"Failed to initialize hardware optimization: {e}")
-                self.hardware_manager = None
-        else:
-            self.hardware_manager = None
+        # Initialize hardware optimization for all steps
+        hardware_config = IntegratedHardwareConfig(
+            enable_automatic_optimization=True,
+            enable_caching=True,
+            enable_memory_monitoring=True,
+            memory_limit_gb=4.0,
+            cache_memory_limit_mb=256.0
+        )
+        self.hardware_manager = get_integrated_hardware_manager(hardware_config)
         
         # Initialize artifact manager with enhanced configuration
         artifact_config = config or {}
@@ -659,33 +639,49 @@ class BaseStep(ABC):
     
     def _clear_cache(self) -> None:
         """
-        Clear the artifact manager cache with enhanced hardware optimization.
+        Clear the artifact manager cache and hardware caches.
         """
         try:
             self.artifact_manager.clear_cache()
-            # Use enhanced cleanup
+            self.hardware_manager.clear_all_caches()
             force_cleanup()
-            self.logger.info("🧹 Artifact cache cleared with enhanced cleanup")
+            self.logger.info("🧹 Artifact and hardware caches cleared")
         except Exception as e:
             self.logger.error(f"Failed to clear cache: {e}")
     
-    def get_hardware_optimization_status(self) -> Dict[str, Any]:
-        """Get current hardware optimization status."""
+    @memory_optimized(optimization_level=MemoryOptimizationLevel.AGGRESSIVE)
+    def _optimize_dataframe(self, df) -> Any:
+        """
+        Optimize DataFrame using hardware acceleration.
+        
+        Args:
+            df: DataFrame to optimize
+            
+        Returns:
+            Optimized DataFrame
+        """
+        if df is None:
+            return df
         try:
-            return self.hardware_manager.get_optimization_report()
+            return self.hardware_manager.optimize_dataframe(df)
         except Exception as e:
-            self.logger.error(f"Failed to get hardware optimization status: {e}")
-            return {"error": "Hardware manager not available"}
+            self.logger.warning(f"Hardware optimization failed, using fallback: {e}")
+            return optimize_dataframe(df)
     
-    def get_memory_optimization_stats(self) -> Dict[str, Any]:
-        """Get memory optimization statistics."""
+    @smart_cache(ttl=1800, max_size=50)
+    def _get_hardware_stats(self) -> Dict[str, Any]:
+        """
+        Get comprehensive hardware statistics.
+        
+        Returns:
+            Dictionary containing hardware performance metrics
+        """
         try:
-            return get_memory_stats()
+            return self.hardware_manager.get_performance_metrics()
         except Exception as e:
-            self.logger.error(f"Failed to get memory stats: {e}")
-            return {"error": "Memory stats not available"}
+            self.logger.warning(f"Failed to get hardware stats: {e}")
+            return {}
     
-    @performance_tracked(log_performance=True, track_memory=True)
     async def run(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """
         Run the step with error handling and outcome generation with hardware optimization.

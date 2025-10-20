@@ -37,11 +37,11 @@ except ImportError:
 # Configure logging
 logger = logging.getLogger(__name__)
 
-@auto_optimize(OptimizationConfig(
-    enable_caching=True,
-    enable_dtype_optimization=True,
-    optimization_level=OptimizationLevel.BALANCED
-))
+# @auto_optimize(OptimizationConfig(
+#     enable_caching=True,
+#     enable_dtype_optimization=True,
+#     optimization_level=OptimizationLevel.BALANCED
+# ))
 def safe_dataframe_operation(operation_func: Callable[..., pd.DataFrame], *args, **kwargs) -> pd.DataFrame:
     """Run a dataframe op with enhanced hardware optimization and safety net."""
     if not callable(operation_func):
@@ -51,7 +51,6 @@ def safe_dataframe_operation(operation_func: Callable[..., pd.DataFrame], *args,
         raise TypeError("operation_func must return a pandas DataFrame")
     return df
 
-@performance_tracked
 def get_memory_usage() -> Dict[str, float]:
     """Get current memory usage statistics with enhanced monitoring."""
     try:
@@ -78,11 +77,11 @@ def get_memory_usage() -> Dict[str, float]:
         'optimized': False
     }
 
-@memory_efficient(OptimizationConfig(
-    enable_dtype_optimization=True,
-    optimization_level=OptimizationLevel.AGGRESSIVE,
-    enable_compression=True
-))
+# @memory_efficient(OptimizationConfig(
+#     enable_dtype_optimization=True,
+#     optimization_level=OptimizationLevel.AGGRESSIVE,
+#     enable_compression=True
+# ))
 def optimize_dataframe_memory(df: pd.DataFrame) -> pd.DataFrame:
     """Optimize DataFrame memory usage using enhanced hardware optimization tools."""
     # Use enhanced optimization system
@@ -114,8 +113,8 @@ def optimize_dataframe_memory(df: pd.DataFrame) -> pd.DataFrame:
             
             return df_opt
 
-@auto_optimize(optimize_inputs=True, optimize_outputs=True)
-@performance_tracked
+# @auto_optimize(optimize_inputs=True, optimize_outputs=True)
+# @performance_tracked
 def safe_divide(a: Union[pd.Series, np.ndarray, float], 
                 b: Union[pd.Series, np.ndarray, float], 
                 fill_value: float = 0.0) -> Union[pd.Series, np.ndarray]:
@@ -152,8 +151,8 @@ def safe_divide(a: Union[pd.Series, np.ndarray, float],
         else:
             return np.divide(a, b, out=np.full_like(a, fill_value), where=b!=0)
 
-@auto_optimize(optimize_inputs=True, optimize_outputs=True)
-@performance_tracked
+# @auto_optimize(optimize_inputs=True, optimize_outputs=True)
+# @performance_tracked
 def safe_mean(x: Union[pd.Series, np.ndarray]) -> float:
     """Fast nan-safe mean for arrays/Series with enhanced optimization."""
     try:
@@ -168,8 +167,8 @@ def safe_mean(x: Union[pd.Series, np.ndarray]) -> float:
             return float(x.mean())
         return float(np.mean(x))
 
-@auto_optimize(optimize_inputs=True, optimize_outputs=True)
-@performance_tracked
+# @auto_optimize(optimize_inputs=True, optimize_outputs=True)
+# @performance_tracked
 def safe_std(x: Union[pd.Series, np.ndarray], ddof: int = 0) -> float:
     """Fast nan-safe std for arrays/Series with enhanced optimization."""
     try:
@@ -184,8 +183,8 @@ def safe_std(x: Union[pd.Series, np.ndarray], ddof: int = 0) -> float:
             return float(x.std(ddof=ddof))
         return float(np.std(x, ddof=ddof))
 
-@auto_optimize(optimize_inputs=True, optimize_outputs=True)
-@performance_tracked
+# @auto_optimize(optimize_inputs=True, optimize_outputs=True)
+# @performance_tracked
 def safe_log(x: Union[pd.Series, np.ndarray], 
              base: float = np.e, 
              fill_value: float = 0.0) -> Union[pd.Series, np.ndarray]:

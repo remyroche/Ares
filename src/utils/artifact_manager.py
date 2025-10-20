@@ -531,7 +531,7 @@ class ArtifactManager:
 	# Enhanced Artifact Storage and Retrieval (BaseStep Compatible)
 	# ------------------------------------------------------------------
 	
-	@memory_optimized(optimization_level=MemoryOptimizationLevel.AGGRESSIVE)
+	# @memory_optimized(optimization_level=MemoryOptimizationLevel.AGGRESSIVE)
 	def save(self, data: Any, artifact_name: str, 
 	         artifact_type: str = "data", 
 	         compression: str = "auto",
@@ -1673,8 +1673,8 @@ class ArtifactManager:
 				self.logger.warning(f"Failed to cleanup run directory {run_dir}: {e}")
 	
 	# Enhanced store method with profiling and spilling
-	@memory_optimized(optimization_level=MemoryOptimizationLevel.AGGRESSIVE)
-	@performance_tracked(log_performance=True, track_memory=True)
+	# @memory_optimized(optimization_level=MemoryOptimizationLevel.AGGRESSIVE)
+	# @performance_tracked(log_performance=True, track_memory=True)
 	def store_enhanced(self, key: str, data: Any, metadata: Optional[Dict[str, Any]] = None) -> bool:
 		"""Store artifact with enhanced profiling and spill strategies."""
 		try:
@@ -1701,8 +1701,8 @@ class ArtifactManager:
 			return False
 	
 	# Enhanced retrieve method with lazy loading
-	@memory_optimized(optimization_level=MemoryOptimizationLevel.AGGRESSIVE)
-	@performance_tracked(log_performance=True, track_memory=True)
+	# @memory_optimized(optimization_level=MemoryOptimizationLevel.AGGRESSIVE)
+	# @performance_tracked(log_performance=True, track_memory=True)
 	def retrieve_enhanced(self, key: str) -> Optional[Any]:
 		"""Retrieve artifact with lazy loading and spill support."""
 		try:

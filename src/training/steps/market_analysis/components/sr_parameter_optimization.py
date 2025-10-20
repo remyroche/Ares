@@ -1,7 +1,8 @@
 """
-SR Parameter Optimization Component.
+SR Parameter Optimization Step.
 
-This component optimizes Support/Resistance detection parameters using backtesting.
+BaseStep-based implementation for optimizing Support/Resistance detection parameters.
+Migrated from the component pattern to use the new BaseStep architecture.
 """
 
 import asyncio
@@ -26,8 +27,9 @@ except ImportError:
     PANDAS_AVAILABLE = False
     pd = None
 
-from .base_component import BaseMarketAnalysisComponent, ComponentConfig, ComponentResult
+from src.training.steps.base_step import BaseStep
 from src.utils.logger import system_logger
+from src.utils.tprint import tprint, tprint_info, tprint_success, tprint_warning, tprint_error
 
 # Import SR clustering components
 try:
@@ -42,56 +44,78 @@ except ImportError as e:
     ParameterOptimizationConfig = None
     print(f"Warning: SR clustering components not available: {e}")
 
-class SRParameterOptimizationComponent(BaseMarketAnalysisComponent):
+class SRParameterOptimizationStep(BaseStep):
     """
-    SR Parameter Optimization Component.
+    SR Parameter Optimization Step using BaseStep pattern.
 
     Optimizes Support/Resistance detection parameters using backtesting engine.
     """
 
-    def __init__(self, config: Optional[ComponentConfig] = None):
-        """Initialize the SR parameter optimization component."""
-        super().__init__(config)
+    def __init__(self, step_name: str = "sr_parameter_optimization"):
+        """Initialize the SR parameter optimization step."""
+        super().__init__(step_name)
         self.logger = system_logger.getChild('SRParameterOptimization')
 
-    def get_required_artifacts(self) -> List[str]:
-        """Get list of required artifacts this component must produce."""
-        return ['sr_parameter_optimization_result']
-
-    async def execute(self, data: Any, pipeline_state: Dict[str, Any]) -> ComponentResult:
+    async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """
         Execute SR parameter optimization.
 
         Args:
-            data: Market data for optimization
-            pipeline_state: Current pipeline state
+            config: Configuration dictionary with parameters:
+                - symbol: Trading symbol (e.g., 'ETHUSDT')
+                - exchange: Exchange name (e.g., 'binance')
+                - timeframe: Timeframe (e.g., '15m')
+                - data_dir: Data directory path
+                - start_date: Start date (optional)
+                - end_date: End date (optional)
+                - market_data: Market data (optional)
+                - sr_levels: SR levels (optional)
+                - parameter_grid: Parameter grid for optimization (optional)
+                - optimization_metric: Metric to optimize (default: 'accuracy')
 
         Returns:
-            ComponentResult with optimization results
+            Dictionary with optimization results and best parameters
         """
-        self.logger.info('🎯 Starting SR Parameter Optimization')
-
+        start_time = datetime.now()
+        
         try:
+            tprint(f"🔍 Starting SR parameter optimization for {config.get('symbol', 'UNKNOWN')}", "INFO")
+            
+            # Set context for artifact management
+            self._set_context(
+                symbol=config.get('symbol', 'ETHUSDT'),
+                exchange=config.get('exchange', 'binance'),
+                direction=config.get('direction', 'both'),
+                model=config.get('model', 'default')
+            )
+
             # Check if SR clustering components are available
             if not SR_CLUSTERING_AVAILABLE:
                 error_msg = "SR clustering components not available"
-                self.logger.error(error_msg)
-                return ComponentResult(
-                    success=False,
-                    artifacts={},
-                    error_message=error_msg
-                )
+                tprint(f"❌ {error_msg}", "ERROR")
+                return {
+                    'success': False,
+                    'error': error_msg,
+                    'optimization_results': {},
+                    'processing_time': (datetime.now() - start_time).total_seconds()
+                }
 
-            # Get and validate market data
-            market_data = await self._load_market_data(data)
-            if not self._validate_market_data(market_data):
-                error_msg = "Invalid market data for parameter optimization"
-                self.logger.error(error_msg)
-                return ComponentResult(
-                    success=False,
-                    artifacts={},
-                    error_message=error_msg
-                )
+            # Load market data
+            market_data = self._load_market_data(config)
+            if market_data is None:
+                raise ValueError("No market data found")
+            
+            tprint(f"✅ Loaded market data: {market_data.shape[0]} rows, {market_data.shape[1]} columns", "SUCCESS")
+
+            # Load SR levels
+            sr_levels = self._load_sr_levels(config)
+            if sr_levels is None:
+                raise ValueError("No SR levels found")
+            
+            tprint(f"✅ Loaded SR levels: {len(sr_levels)} levels", "SUCCESS")
+
+            # Get parameter grid
+            parameter_grid = self._get_parameter_grid(config)
 
             # Configure enhanced parameter optimization with validation
             param_config = self._create_validated_param_config()
@@ -121,56 +145,53 @@ class SRParameterOptimizationComponent(BaseMarketAnalysisComponent):
             if not optimized_parameters or not quality_thresholds:
                 raise ValueError("Parameter optimization failed to produce required data")
 
-            # Create single consolidated artifact
-            artifacts = {
-                'sr_parameter_optimization_result': {
-                    'optimized_parameters': optimized_parameters,
-                    'quality_thresholds': quality_thresholds,
-                    'parameter_optimization_metrics': parameter_optimization_metrics,
-                    'optimization_summary': {
-                        'total_combinations_tested': optimization_result.get('total_combinations_tested', 0),
-                        'best_score': optimization_result.get('best_score', 0.0),
-                        'optimization_time': optimization_result.get('optimization_time', 0.0)
-                    },
-                    'metadata': {
-                        'symbol': self.config.symbol,
-                        'exchange': self.config.exchange,
-                        'timeframe': self.config.timeframe,
-                        'data_points': len(market_data) if market_data is not None else 0,
-                        'execution_timestamp': datetime.now().isoformat()
-                    }
+            # Save optimization results using artifact manager
+            self._save_artifact('sr_parameter_optimization_result', {
+                'optimized_parameters': optimized_parameters,
+                'quality_thresholds': quality_thresholds,
+                'parameter_optimization_metrics': parameter_optimization_metrics,
+                'optimization_summary': {
+                    'total_combinations_tested': optimization_result.get('total_combinations_tested', 0),
+                    'best_score': optimization_result.get('best_score', 0.0),
+                    'optimization_time': optimization_result.get('optimization_time', 0.0)
+                },
+                'metadata': {
+                    'symbol': config.get('symbol', 'ETHUSDT'),
+                    'exchange': config.get('exchange', 'binance'),
+                    'timeframe': config.get('timeframe', '15m'),
+                    'data_points': len(market_data) if market_data is not None else 0,
+                    'execution_timestamp': datetime.now().isoformat()
                 }
+            })
+
+            # Calculate metrics
+            metrics = self._calculate_optimization_metrics(optimization_result, start_time, config)
+
+            # Create outcome report
+            outcome_report = self._create_outcome_report(optimization_result, metrics, config)
+
+            tprint(f"✅ SR parameter optimization completed", "SUCCESS")
+
+            return {
+                'success': True,
+                'optimization_results': optimization_result,
+                'metrics': metrics,
+                'outcome_report': outcome_report,
+                'processing_time': (datetime.now() - start_time).total_seconds()
             }
 
-            self.logger.info('✅ SR Parameter Optimization completed successfully')
-            return ComponentResult(
-                success=True,
-                artifacts=artifacts,
-                metadata={
-                    'symbol': self.config.symbol,
-                    'exchange': self.config.exchange,
-                    'timeframe': self.config.timeframe,
-                    'data_points': len(market_data)
-                }
-            )
-
         except Exception as e:
-            error_type = type(e).__name__
-            error_msg = str(e)
-            self.logger.error(f'❌ SR Parameter Optimization failed: {error_type}: {error_msg}')
-            import traceback
-            self.logger.error(f'❌ Error details: {traceback.format_exc()}')
-
-            # Return more informative error message
-            return ComponentResult(
-                success=False,
-                artifacts={},
-                error_message=f"SR Parameter Optimization failed: {error_type}: {error_msg}",
-                metadata={
-                    'error_type': error_type,
-                    'error_details': traceback.format_exc()
-                }
-            )
+            error_msg = f"SR parameter optimization failed: {str(e)}"
+            tprint(f"❌ {error_msg}", "ERROR")
+            self.logger.error(error_msg)
+            
+            return {
+                'success': False,
+                'error': error_msg,
+                'optimization_results': {},
+                'metrics': {},
+                'processing_time': (datetime.now() - start_time).total_seconds()
+            }
 
     async def _load_market_data(self, data: Any) -> Optional[Any]:
         """Load and prepare market data for optimization with memory optimization."""
@@ -543,3 +564,146 @@ class SRParameterOptimizationComponent(BaseMarketAnalysisComponent):
     def _get_current_data(self):
         """Get current data reference for configuration methods."""
         return getattr(self, '_current_data', None)
+
+    def _load_market_data(self, config: Dict[str, Any]) -> Optional[Any]:
+        """Load market data from artifacts or config."""
+        try:
+            # Try to load from artifacts first
+            market_data = self._load_dataframe('market_data')
+            if market_data is not None:
+                return market_data
+            
+            # Try alternative artifact names
+            market_data = self._load_dataframe('processed_data') or self._load_dataframe('data')
+            if market_data is not None:
+                return market_data
+            
+            # Try to load from config
+            if 'market_data' in config:
+                return pd.DataFrame(config['market_data'])
+            
+            return None
+            
+        except Exception as e:
+            tprint(f"⚠️ Failed to load market data: {e}", "WARNING")
+            return None
+
+    def _load_sr_levels(self, config: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Load SR levels from artifacts or config."""
+        try:
+            # Try to load from artifacts first
+            sr_levels = self._get_artifact('sr_levels')
+            if sr_levels is not None:
+                return sr_levels
+            
+            # Try alternative artifact names
+            sr_levels = self._get_artifact('support_resistance_levels') or self._get_artifact('sr_data')
+            if sr_levels is not None:
+                return sr_levels
+            
+            # Try to load from config
+            if 'sr_levels' in config:
+                return config['sr_levels']
+            
+            return None
+            
+        except Exception as e:
+            tprint(f"⚠️ Failed to load SR levels: {e}", "WARNING")
+            return None
+
+    def _get_parameter_grid(self, config: Dict[str, Any]) -> Dict[str, List[Any]]:
+        """Get parameter grid for optimization."""
+        default_grid = {
+            'min_touches': [2, 3, 4, 5],
+            'tolerance_pct': [0.3, 0.5, 0.7, 1.0],
+            'lookback_periods': [50, 100, 150, 200],
+            'min_strength': [0.1, 0.2, 0.3, 0.4],
+            'max_levels': [10, 20, 30, 50]
+        }
+        
+        # Use config parameter grid if provided
+        if 'parameter_grid' in config:
+            return config['parameter_grid']
+        
+        return default_grid
+
+    def _calculate_optimization_metrics(self, results: Dict[str, Any], start_time: datetime, config: Dict[str, Any]) -> Dict[str, Any]:
+        """Calculate optimization metrics."""
+        try:
+            processing_time = (datetime.now() - start_time).total_seconds()
+            
+            metrics = {
+                'processing_time_seconds': processing_time,
+                'best_score': results.get('best_score', 0.0),
+                'total_combinations_tested': results.get('total_combinations_tested', 0),
+                'optimization_time': results.get('optimization_time', 0.0),
+                'success': True
+            }
+            
+            return metrics
+            
+        except Exception as e:
+            tprint(f"⚠️ Failed to calculate metrics: {e}", "WARNING")
+            return {'success': False, 'error': str(e)}
+
+    def _create_outcome_report(self, results: Dict[str, Any], metrics: Dict[str, Any], config: Dict[str, Any]) -> str:
+        """Create outcome report markdown."""
+        try:
+            report = f"""# SR Parameter Optimization Outcome Report
+
+## Execution Summary
+- **Symbol**: {config.get('symbol', 'UNKNOWN')}
+- **Exchange**: {config.get('exchange', 'UNKNOWN')}
+- **Timeframe**: {config.get('timeframe', 'UNKNOWN')}
+- **Processing Time**: {metrics.get('processing_time_seconds', 0):.2f} seconds
+- **Success**: {'✅ Yes' if metrics.get('success', False) else '❌ No'}
+
+## Optimization Results
+- **Best Score**: {metrics.get('best_score', 0):.3f}
+- **Combinations Tested**: {metrics.get('total_combinations_tested', 0)}
+- **Optimization Time**: {metrics.get('optimization_time', 0):.2f} seconds
+
+## Best Parameters
+"""
+            
+            optimized_params = results.get('optimized_parameters', {})
+            for param, value in optimized_params.items():
+                report += f"- **{param}**: {value}\n"
+            
+            report += f"""
+## Quality Thresholds
+"""
+            
+            quality_thresholds = results.get('quality_thresholds', {})
+            for threshold, value in quality_thresholds.items():
+                report += f"- **{threshold}**: {value}\n"
+            
+            report += f"""
+## Generated Artifacts
+- Optimization results
+- Best parameters
+- Quality thresholds
+- Optimization metadata
+
+---
+*Generated by SR Parameter Optimization Step at {datetime.now().isoformat()}*
+"""
+            
+            return report
+            
+        except Exception as e:
+            tprint(f"⚠️ Failed to create outcome report: {e}", "WARNING")
+            return f"# SR Parameter Optimization Outcome Report\n\nError creating report: {str(e)}"
+
+
+# Register the step
+def register_sr_parameter_optimization_step():
+    """Register the SR parameter optimization step."""
+    from src.training.steps.base_step import step_registry
+    
+    step_registry.register("sr_parameter_optimization", SRParameterOptimizationStep)
+    tprint("✅ SR parameter optimization step registered", "SUCCESS")
+
+
+# Auto-register when module is imported
+register_sr_parameter_optimization_step()

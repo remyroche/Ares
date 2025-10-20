@@ -26,6 +26,7 @@ try:
 except ImportError:
     TORCH_AVAILABLE = False
     torch = None
+    nn = None
 
 try:
     import coremltools as ct
@@ -196,8 +197,8 @@ class ModelOptimizer:
         self.config = config
         self.logger = logger.getChild('ModelOptimizer')
     
-    def optimize_pytorch_model(self, model: nn.Module, 
-                              input_shape: Tuple[int, ...]) -> nn.Module:
+    def optimize_pytorch_model(self, model: "nn.Module", 
+                              input_shape: Tuple[int, ...]) -> "nn.Module":
         """Optimize PyTorch model for Neural Engine."""
         if not TORCH_AVAILABLE:
             self.logger.warning("⚠️ PyTorch not available for optimization")
@@ -221,7 +222,7 @@ class ModelOptimizer:
             self.logger.error(f"PyTorch model optimization failed: {e}")
             return model
     
-    def _apply_quantization(self, model: nn.Module) -> nn.Module:
+    def _apply_quantization(self, model: "nn.Module") -> "nn.Module":
         """Apply quantization to model."""
         try:
             if self.config.quantization_bits == 8:

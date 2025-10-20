@@ -729,7 +729,7 @@ def get_enhanced_gpu_manager(config: Optional[GPUConfig] = None) -> M1EnhancedGP
     return _enhanced_gpu_manager
 
 def gpu_accelerated(operation_type: GPUOperationType = GPUOperationType.GENERAL):
-    """Enhanced decorator for GPU acceleration with VectorBT integration."""
+    """Decorator for GPU acceleration."""
     def decorator(func):
         @wraps(func)
         def wrapper(*args, **kwargs):
@@ -816,6 +816,7 @@ def gpu_accelerated(operation_type: GPUOperationType = GPUOperationType.GENERAL)
             except Exception as e:
                 logger.warning(f"Enhanced GPU acceleration failed: {e}, falling back to standard implementation")
                 return func(*args, **kwargs)
+
         
         return wrapper
     return decorator

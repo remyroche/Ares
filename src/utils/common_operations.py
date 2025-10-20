@@ -2236,5 +2236,57 @@ __all__ = [
     'get_file_size',
     'create_summary_statistics',
     'validate_file_size',
-    'with_tracing_span'
+    'with_tracing_span',
+    'safe_resample',
+    'align_dataframes',
+    'safe_deepcopy'
 ]
+
+def safe_resample(df: pd.DataFrame, freq: str, method: str = 'mean') -> pd.DataFrame:
+    """Safely resample DataFrame to different frequency."""
+    try:
+        if method == 'mean':
+            return df.resample(freq).mean()
+        elif method == 'sum':
+            return df.resample(freq).sum()
+        elif method == 'last':
+            return df.resample(freq).last()
+        elif method == 'first':
+            return df.resample(freq).first()
+        else:
+            raise ValueError(f"Unknown resampling method: {method}")
+    except Exception as e:
+        logger.warning(f"Resampling failed: {e}")
+        return df
+
+def align_dataframes(df1: pd.DataFrame, df2: pd.DataFrame, 
+                    on: Optional[str] = None, 
+                    how: str = 'inner') -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """Align two DataFrames on their index or a common column."""
+    try:
+        if on is not None and on in df1.columns and on in df2.columns:
+            # Align on a common column
+            merged = pd.merge(df1, df2, on=on, how=how, suffixes=('_1', '_2'))
+            return merged, merged
+        else:
+            # Align on index
+            common_index = df1.index.intersection(df2.index)
+            if len(common_index) == 0:
+                logger.warning("No common index found between DataFrames")
+                return df1, df2
+            
+            df1_aligned = df1.loc[common_index]
+            df2_aligned = df2.loc[common_index]
+            return df1_aligned, df2_aligned
+    except Exception as e:
+        logger.warning(f"DataFrame alignment failed: {e}")
+        return df1, df2
+
+def safe_deepcopy(obj: Any) -> Any:
+    """Safely perform deep copy of an object."""
+    try:
+        import copy
+        return copy.deepcopy(obj)
+    except Exception as e:
+        logger.warning(f"Deep copy failed: {e}")
+        return obj

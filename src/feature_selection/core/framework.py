@@ -299,10 +299,16 @@ def reset_framework():
     _GLOBAL_VECTORBT_FRAMEWORK = None
     tprint_success("✅ Framework reset complete")
 
-# Legacy compatibility functions
+# Legacy compatibility functions - DEPRECATED
 def get_enhanced_framework(config: Optional[Dict[str, Any]] = None) -> VectorBTUnifiedFramework:
-    """Legacy compatibility function."""
-    tprint("⚠️ Using legacy get_enhanced_framework - consider using get_feature_selection_framework")
+    """DEPRECATED: Use get_feature_selection_framework instead."""
+    import warnings
+    warnings.warn(
+        "get_enhanced_framework is deprecated and will be removed in a future version. "
+        "Use get_feature_selection_framework instead.",
+        DeprecationWarning,
+        stacklevel=2
+    )
     return get_feature_selection_framework(config)
 
 def enhanced_select_features(
@@ -312,8 +318,14 @@ def enhanced_select_features(
     max_features: Optional[int] = None,
     **kwargs
 ) -> Dict[str, Any]:
-    """Legacy compatibility function."""
-    tprint("⚠️ Using legacy enhanced_select_features - consider using select_features")
+    """DEPRECATED: Use select_features instead."""
+    import warnings
+    warnings.warn(
+        "enhanced_select_features is deprecated and will be removed in a future version. "
+        "Use select_features instead.",
+        DeprecationWarning,
+        stacklevel=2
+    )
     return select_features(X, y, method, max_features, **kwargs)
 
 def run_comprehensive_feature_selection(

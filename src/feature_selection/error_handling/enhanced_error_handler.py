@@ -7,6 +7,7 @@ feature selection operations with enhanced logging using tprint.
 
 import logging
 import traceback
+import time
 from typing import Any, Dict, List, Optional, Union, Callable, Tuple
 from dataclasses import dataclass
 from enum import Enum

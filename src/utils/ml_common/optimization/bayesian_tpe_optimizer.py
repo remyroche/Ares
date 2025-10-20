@@ -198,6 +198,10 @@ class BayesianTPEOptimizer:
         self.hardware_manager = None
         self.matrix_processor = None
         self.batch_processor = None
+        
+        # Initialize hardware optimization if available
+        if HARDWARE_OPTIMIZATION_AVAILABLE and self.config.enable_hardware_optimization:
+            self._initialize_hardware_optimization()
         self.performance_monitor = None
 
         # VectorBT optimization components

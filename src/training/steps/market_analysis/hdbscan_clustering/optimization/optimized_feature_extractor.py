@@ -37,7 +37,7 @@ from src.utils.tprint import (
     tprint_debug, tprint_performance, tprint_progress, tprint_timer,
     tprint_logged, LogLevel
 )
-from src.utils.common_operations import optimize_dataframe_memory, get_memory_usage
+from src.utils.hardware import optimize_dataframe_default, get_memory_usage
 
 logger = logging.getLogger(__name__)
 

@@ -65,6 +65,10 @@ from .feature_generation_final_validation_step import (
     handle_feature_generation_final_validation_step
 )
 
+from .feature_generation_period_lookback_optimization_step import (
+    FeatureGenerationPeriodLookbackOptimizationStep
+)
+
 # Import step registry for registration
 from src.training.steps.base_step import step_registry
 
@@ -74,6 +78,7 @@ step_registry.register("feature_generation_feature_generation_step", FeatureGene
 step_registry.register("feature_generation_feature_selection_step", FeatureGenerationFeatureSelectionStep)
 step_registry.register("feature_generation_period_optimization_step", FeatureGenerationPeriodOptimizationStep)
 step_registry.register("feature_generation_lookback_optimization_step", FeatureGenerationLookbackOptimizationStep)
+step_registry.register("feature_generation_period_lookback_optimization_step", FeatureGenerationPeriodLookbackOptimizationStep)
 step_registry.register("feature_generation_interaction_generation_step_analyst", FeatureGenerationInteractionGenerationStepAnalyst)
 step_registry.register("feature_generation_interaction_generation_step_tactician", FeatureGenerationInteractionGenerationStepTactician)
 step_registry.register("feature_generation_labeling_integration_step", FeatureGenerationLabelingIntegrationStep)
@@ -88,6 +93,7 @@ __all__ = [
     "FeatureGenerationFeatureSelectionStep",
     "FeatureGenerationPeriodOptimizationStep",
     "FeatureGenerationLookbackOptimizationStep",
+    "FeatureGenerationPeriodLookbackOptimizationStep",
     "FeatureGenerationInteractionGenerationStepAnalyst",
     "FeatureGenerationInteractionGenerationStepTactician",
     "FeatureGenerationLabelingIntegrationStep",

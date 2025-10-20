@@ -199,6 +199,8 @@ class EnhancedEnsembleAdvancedSelector:
                 'execution_time': end_time - start_time
             }
 
+    @memory_efficient(memory_threshold_mb=500.0, auto_cleanup=True)
+    @performance_tracked(log_performance=True, track_memory=True)
     def _run_individual_methods(self, X: np.ndarray, y: np.ndarray,
                               target_count: int, feature_names: List[str],
                               **kwargs) -> Dict[str, Dict[str, Any]]:
@@ -243,6 +245,8 @@ class EnhancedEnsembleAdvancedSelector:
 
         return method_performances
 
+    @memory_efficient(memory_threshold_mb=300.0, auto_cleanup=True)
+    @performance_tracked(log_performance=True, track_memory=True)
     def _create_ensemble_selection(self, individual_results: Dict[str, Dict[str, Any]],
                                  confidence_scores: Dict[str, Dict[str, Any]],
                                  target_count: int, feature_names: List[str]) -> Dict[str, Any]:

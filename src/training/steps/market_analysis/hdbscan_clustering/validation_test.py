@@ -140,7 +140,7 @@ def test_tprint_logging():
             time.sleep(0.1)
         
         # Test memory monitoring
-        from src.utils.common_operations import get_memory_usage
+        from src.utils.hardware import get_memory_usage
         memory = get_memory_usage()
         tprint_debug(f"Current memory usage: {memory:.2f}MB")
         
@@ -156,7 +156,7 @@ def test_memory_optimizations():
     tprint_info("🧪 Testing Memory Optimizations")
     
     try:
-        from src.utils.common_operations import optimize_dataframe_memory, get_memory_usage
+        from src.utils.hardware import optimize_dataframe_default, get_memory_usage
         
         # Create test data
         np.random.seed(42)
@@ -171,7 +171,7 @@ def test_memory_optimizations():
         tprint_debug(f"Initial DataFrame memory: {initial_memory:.2f}MB")
         
         # Optimize memory
-        optimized_data = optimize_dataframe_memory(test_data)
+        optimized_data = optimize_dataframe_default(test_data)
         final_memory = optimized_data.memory_usage(deep=True).sum() / 1024**2
         
         memory_saved = initial_memory - final_memory

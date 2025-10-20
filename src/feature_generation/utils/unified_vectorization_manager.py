@@ -203,7 +203,6 @@ class OperationType(Enum):
     FEATURE_ENGINEERING = "feature_engineering"
     CROSS_VALIDATION = "cross_validation"
     BACKTESTING = "backtesting"
-    HMM_TRAINING = "hmm_training"
     MODEL_TRAINING = "model_training"
     FEATURE_SELECTION = "feature_selection"
     TECHNICAL_INDICATORS = "technical_indicators"
@@ -382,6 +381,10 @@ class UnifiedVectorizationManager:
         # Validate configuration
         self._validate_config(self.config)
 
+        # Initialize hardware optimization components first
+        tprint_info("🔧 Initializing hardware optimization components")
+        self._initialize_hardware_components()
+
         # Initialize components with error handling
         tprint_info("🔧 Initializing vectorization components")
 
@@ -450,6 +453,8 @@ class UnifiedVectorizationManager:
             'rolling_operations': 0,
             'scaling_operations': 0,
             'memory_optimizations': 0,
+            'hardware_optimizations': 0,
+            'm1_optimizations': 0,
             'total_time': 0.0,
             'memory_savings': 0.0,
             'cache_hits': 0,
@@ -503,6 +508,43 @@ class UnifiedVectorizationManager:
             logger.info(f"UnifiedVectorizationManager initialized: VectorBT={self.config.enable_vectorbt}, GPU={self.config.enable_gpu}, Memory={self.config.memory_efficient}")
             UnifiedVectorizationManager._logged_initialization = True
 
+    def _initialize_hardware_components(self):
+        """Initialize hardware optimization components."""
+        tprint_info("🔄 Initializing hardware optimization components...")
+        
+        try:
+            # Initialize integrated hardware manager
+            from ...utils.hardware.integrated_hardware_manager import get_integrated_hardware_manager
+            self.hardware_manager = get_integrated_hardware_manager()
+            self.hardware_available = True
+            tprint_success("✅ Integrated hardware manager loaded")
+        except Exception as e:
+            tprint_warning(f"⚠️ Integrated hardware manager not available: {e}")
+            self.hardware_manager = None
+            self.hardware_available = False
+
+        try:
+            # Initialize M1 comprehensive optimizer
+            from ...utils.hardware.m1_comprehensive_optimizer import get_comprehensive_optimizer
+            self.m1_optimizer = get_comprehensive_optimizer()
+            self.m1_optimizer_available = True
+            tprint_success("✅ M1 comprehensive optimizer loaded")
+        except Exception as e:
+            tprint_warning(f"⚠️ M1 comprehensive optimizer not available: {e}")
+            self.m1_optimizer = None
+            self.m1_optimizer_available = False
+
+        try:
+            # Initialize VectorBT GPU accelerator
+            from ...utils.hardware.vectorbt_gpu_accelerator import VectorBTGPUAccelerator
+            self.vectorbt_gpu_accelerator = VectorBTGPUAccelerator()
+            self.vectorbt_gpu_available = self.vectorbt_gpu_accelerator.gpu_available
+            tprint_success("✅ VectorBT GPU accelerator loaded")
+        except Exception as e:
+            tprint_warning(f"⚠️ VectorBT GPU accelerator not available: {e}")
+            self.vectorbt_gpu_accelerator = None
+            self.vectorbt_gpu_available = False
+
     def rolling_operation(self, data: Union[pd.Series, pd.DataFrame],
                          operation: str, window: int, **kwargs) -> Union[pd.Series, pd.DataFrame]:
         """
@@ -551,6 +593,20 @@ class UnifiedVectorizationManager:
                 return self._pandas_fallback_rolling(data, operation, window, **kwargs)
 
         try:
+            # Try hardware optimization first if available
+            if self.hardware_available and self.hardware_manager:
+                try:
+                    tprint_debug(f"🎯 Executing rolling {operation} with hardware optimization")
+                    result = self.hardware_manager.process_data_with_optimization(
+                        {'data': data, 'operation': operation, 'window': window, **kwargs},
+                        workload_type='data_processing'
+                    )
+                    metadata['hardware_optimization_used'] = True
+                    self.performance_stats['hardware_optimizations'] += 1
+                    return result
+                except Exception as e:
+                    tprint_warning(f"⚠️ Hardware optimization failed: {e}, falling back to VectorBT")
+
             # Use VectorBT rolling optimizer with detailed logging
             tprint_debug(f"🎯 Executing rolling {operation} with VectorBT optimizer")
 
@@ -653,6 +709,20 @@ class UnifiedVectorizationManager:
             return self._pandas_fallback_scaling(data, method, **kwargs)
 
         try:
+            # Try hardware optimization first if available
+            if self.hardware_available and self.hardware_manager:
+                try:
+                    tprint_debug(f"🎯 Executing {method} scaling with hardware optimization")
+                    result = self.hardware_manager.process_data_with_optimization(
+                        {'data': data, 'method': method, **kwargs},
+                        workload_type='data_processing'
+                    )
+                    metadata['hardware_optimization_used'] = True
+                    self.performance_stats['hardware_optimizations'] += 1
+                    return result
+                except Exception as e:
+                    tprint_warning(f"⚠️ Hardware optimization failed: {e}, falling back to VectorBT")
+
             tprint_debug(f"🎯 Executing {method} scaling with VectorBT")
 
             if method == 'zscore':
@@ -2047,6 +2117,8 @@ class UnifiedVectorizationManager:
             stats['batch_usage_rate'] = stats['batch_operations'] / stats['total_operations']
             stats['rolling_usage_rate'] = stats['rolling_operations'] / stats['total_operations']
             stats['scaling_usage_rate'] = stats['scaling_operations'] / stats['total_operations']
+            stats['hardware_optimization_rate'] = stats['hardware_optimizations'] / stats['total_operations']
+            stats['m1_optimization_rate'] = stats['m1_optimizations'] / stats['total_operations']
 
             # Cache statistics
             total_cache_ops = stats['cache_hits'] + stats['cache_misses']
@@ -2061,7 +2133,24 @@ class UnifiedVectorizationManager:
             stats['batch_usage_rate'] = 0
             stats['rolling_usage_rate'] = 0
             stats['scaling_usage_rate'] = 0
+            stats['hardware_optimization_rate'] = 0
+            stats['m1_optimization_rate'] = 0
             stats['cache_hit_rate'] = 0
+
+        # Add hardware-specific statistics if available
+        if hasattr(self, 'hardware_available') and self.hardware_available and self.hardware_manager:
+            try:
+                hardware_stats = self.hardware_manager.get_optimization_report()
+                stats['hardware_optimization_stats'] = hardware_stats
+            except Exception as e:
+                logger.warning(f"Failed to get hardware optimization stats: {e}")
+
+        if hasattr(self, 'm1_optimizer_available') and self.m1_optimizer_available and self.m1_optimizer:
+            try:
+                m1_stats = self.m1_optimizer.get_performance_metrics()
+                stats['m1_optimization_stats'] = m1_stats
+            except Exception as e:
+                logger.warning(f"Failed to get M1 optimization stats: {e}")
 
         return stats
 

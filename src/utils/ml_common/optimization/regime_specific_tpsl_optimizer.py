@@ -7,9 +7,9 @@ from src.utils.logger import system_logger
 from ....core.decorators import handles_errors
 from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 
-# TPSL OPTIMIZER - TEMPORARILY DISABLED
-# This file is temporarily disabled as TPSL parameters are commented out in config.yaml
-# Uncomment when TPSL optimization is re-enabled
+# TPSL OPTIMIZER - Enhanced with Hardware Optimization
+# This file provides regime-specific optimization of Stop Loss (SL) and Take Profit (TP)
+# parameters with full hardware optimization integration
 
 """Regime-Specific SL/TP Optimizer.
 
@@ -43,7 +43,7 @@ class RegimeSpecificTPSLOptimizer:
     and then applies regime-specific optimization based on backtest performance.
     """
     @log_important_calls
-
+    @performance_tracked(log_performance=True, track_memory=True)
     def __init__(self, config: dict[str, Any]) -> None:
         """Initialize the regime-specific TP/SL optimizer.
 
@@ -67,7 +67,8 @@ class RegimeSpecificTPSLOptimizer:
             self.logger.warning('MetaLabelingSystem not available, will use HMM regimes only')
             self.meta_labeling_system = None
 
-        self.regime_parameters = {'hmm_cluster_0': {'target_pct': 0.5, 'stop_pct': 0.2, 'risk_reward_ratio': 2.5, 'avg_duration_minutes': 45.0, 'success_rate': 7.0, 'frequency_score': 100.0}, 'hmm_cluster_1': {'target_pct': 0.4, 'stop_pct': 0.15, 'risk_reward_ratio': 2.67, 'avg_duration_minutes': 35.0, 'success_rate': 6.5, 'frequency_score': 80.0}, 'hmm_cluster_2': {'target_pct': 0.3, 'stop_pct': 0.2, 'risk_reward_ratio': 1.5, 'avg_duration_minutes': 60.0, 'success_rate': 7.5, 'frequency_score': 100.0}, 'hmm_cluster_3': {'target_pct': 0.6, 'stop_pct': 0.15, 'risk_reward_ratio': 4.0, 'avg_duration_minutes': 30.0, 'success_rate': 6.0, 'frequency_score': 70.0}, 'hmm_cluster_4': {'target_pct': 0.35, 'stop_pct': 0.2, 'risk_reward_ratio': 1.75, 'avg_duration_minutes': 25.0, 'success_rate': 5.5, 'frequency_score': 60.0}, 'hmm_cluster_5': {'target_pct': 0.5, 'stop_pct': 0.15, 'risk_reward_ratio': 3.33, 'avg_duration_minutes': 20.0, 'success_rate': 5.5, 'frequency_score': 70.0}, 'hmm_cluster_6': {'target_pct': 0.25, 'stop_pct': 0.2, 'risk_reward_ratio': 1.25, 'avg_duration_minutes': 90.0, 'success_rate': 6.0, 'frequency_score': 90.0}, 'hmm_cluster_7': {'target_pct': 0.5, 'stop_pct': 0.25, 'risk_reward_ratio': 2.0, 'avg_duration_minutes': 35.0, 'success_rate': 5.8, 'frequency_score': 70.0}, 'VOLATILE': {'target_pct': 0.6, 'stop_pct': 0.4, 'risk_reward_ratio': 1.5, 'avg_duration_minutes': 45.0, 'success_rate': 6.0, 'frequency_score': 100.0}, 'SIDEWAYS_RANGE': {'target_pct': 0.5, 'stop_pct': 0.3, 'risk_reward_ratio': 1.67, 'avg_duration_minutes': 67.4, 'success_rate': 7.81, 'frequency_score': 100.0}, 'DEFAULT': {'target_pct': 0.4, 'stop_pct': 0.2, 'risk_reward_ratio': 2.0, 'avg_duration_minutes': 40.0, 'success_rate': 6.5, 'frequency_score': 100.0}}
+        # Load regime parameters from config or use defaults
+        self.regime_parameters = self._load_regime_parameters()
         self.optimization_config = config.get('regime_specific_tpsl_optimizer', {})
         self.n_trials = self.optimization_config.get('n_trials', 100)
         self.min_trades = self.optimization_config.get('min_trades', 20)
@@ -80,6 +81,29 @@ class RegimeSpecificTPSLOptimizer:
         os.makedirs(self.model_dir, exist_ok = True)
         self.optimization_results: dict[str, dict[str, Any]] = {}
         self.last_optimization_time: datetime | None = None
+
+    def _load_regime_parameters(self) -> dict[str, dict[str, Any]]:
+        """Load regime parameters from config or use defaults."""
+        default_params = {
+            'hmm_cluster_0': {'target_pct': 0.5, 'stop_pct': 0.2, 'risk_reward_ratio': 2.5, 'avg_duration_minutes': 45.0, 'success_rate': 7.0, 'frequency_score': 100.0},
+            'hmm_cluster_1': {'target_pct': 0.4, 'stop_pct': 0.15, 'risk_reward_ratio': 2.67, 'avg_duration_minutes': 35.0, 'success_rate': 6.5, 'frequency_score': 80.0},
+            'hmm_cluster_2': {'target_pct': 0.3, 'stop_pct': 0.2, 'risk_reward_ratio': 1.5, 'avg_duration_minutes': 60.0, 'success_rate': 7.5, 'frequency_score': 100.0},
+            'hmm_cluster_3': {'target_pct': 0.6, 'stop_pct': 0.15, 'risk_reward_ratio': 4.0, 'avg_duration_minutes': 30.0, 'success_rate': 6.0, 'frequency_score': 70.0},
+            'hmm_cluster_4': {'target_pct': 0.35, 'stop_pct': 0.2, 'risk_reward_ratio': 1.75, 'avg_duration_minutes': 25.0, 'success_rate': 5.5, 'frequency_score': 60.0},
+            'hmm_cluster_5': {'target_pct': 0.5, 'stop_pct': 0.15, 'risk_reward_ratio': 3.33, 'avg_duration_minutes': 20.0, 'success_rate': 5.5, 'frequency_score': 70.0},
+            'hmm_cluster_6': {'target_pct': 0.25, 'stop_pct': 0.2, 'risk_reward_ratio': 1.25, 'avg_duration_minutes': 90.0, 'success_rate': 6.0, 'frequency_score': 90.0},
+            'hmm_cluster_7': {'target_pct': 0.5, 'stop_pct': 0.25, 'risk_reward_ratio': 2.0, 'avg_duration_minutes': 35.0, 'success_rate': 5.8, 'frequency_score': 70.0},
+            'VOLATILE': {'target_pct': 0.6, 'stop_pct': 0.4, 'risk_reward_ratio': 1.5, 'avg_duration_minutes': 45.0, 'success_rate': 6.0, 'frequency_score': 100.0},
+            'SIDEWAYS_RANGE': {'target_pct': 0.5, 'stop_pct': 0.3, 'risk_reward_ratio': 1.67, 'avg_duration_minutes': 67.4, 'success_rate': 7.81, 'frequency_score': 100.0},
+            'DEFAULT': {'target_pct': 0.4, 'stop_pct': 0.2, 'risk_reward_ratio': 2.0, 'avg_duration_minutes': 40.0, 'success_rate': 6.5, 'frequency_score': 100.0}
+        }
+        
+        # Try to load from config
+        config_params = self.optimization_config.get('regime_parameters', {})
+        if config_params:
+            return {**default_params, **config_params}
+        
+        return default_params
 
     @handle_specific_errors(error_handlers={ValueError: (False, 'Invalid regime-specific TP/SL optimization configuration'), AttributeError: (False, 'Missing required optimization parameters')}, default_return = False, context='regime-specific TP/SL optimizer initialization')
     async def initialize(self) -> bool:

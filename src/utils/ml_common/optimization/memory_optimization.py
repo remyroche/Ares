@@ -1,10 +1,14 @@
 """
 ML Common - Optimization Memory Optimization Module
 
-Compatibility shim that re-exports MemoryEfficientTraining from utils.memory_optimization
-to avoid duplication and keep existing imports working.
+This module now re-exports memory optimization from the hardware optimization system
+to maintain compatibility while using the new hardware-aware optimizations.
 """
 
-from ..utils.memory_optimization import MemoryEfficientTraining
+from ..hardware_optimized_parallel_processor import HardwareOptimizedMLProcessor
+from ..gpu_acceleration_utils import GPUAccelerationUtils
 
-__all__ = ['MemoryEfficientTraining']
+# Compatibility alias
+MemoryEfficientTraining = HardwareOptimizedMLProcessor
+
+__all__ = ['MemoryEfficientTraining', 'HardwareOptimizedMLProcessor', 'GPUAccelerationUtils']

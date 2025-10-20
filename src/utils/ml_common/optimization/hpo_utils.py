@@ -35,6 +35,12 @@ from concurrent.futures import ThreadPoolExecutor
 import time
 
 from src.utils.parallel_processing_optimizer import ParallelProcessor
+from ..hardware_optimized_parallel_processor import (
+    HardwareOptimizedMLProcessor,
+    get_hardware_optimized_ml_processor,
+    ml_training_optimized,
+    hpo_optimized
+)
 from src.utils.ml_common.validation.unified_cv import perform_cross_validation as unified_perform_cv
 from sklearn.metrics import get_scorer
 from .grid_utils import build_coarse_grid_from_search_space, build_fine_grid_around_best
@@ -96,15 +102,22 @@ except ImportError as e:
 class HyperparameterOptimization:
     """Enhanced hyperparameter optimization utilities with monitoring and failure detection."""
 
-    def __init__(self, config: Optional[Dict[str, Any]] = None, nonlinear_config: Optional[NonLinearConfig] = None):
-        """Initialize hyperparameter optimization utilities with configuration."""
+    def __init__(self, config: Optional[Dict[str, Any]] = None, nonlinear_config: Optional[NonLinearConfig] = None, enable_hardware_optimization: bool = True):
+        """Initialize hyperparameter optimization utilities with configuration and hardware optimization."""
         self.config = config or {}
         self.logger = logger.getChild('HPOUtils')
+        self.enable_hardware_optimization = enable_hardware_optimization
 
         # Non-linear optimization configuration
         self.nonlinear_config = nonlinear_config or NonLinearConfig()
         self.parameter_sampler = NonLinearParameterSampler(self.nonlinear_config)
         self.use_nonlinear_optimization = self.config.get('use_nonlinear_optimization', True)
+        
+        # Initialize hardware-optimized ML processor
+        if self.enable_hardware_optimization:
+            self.hardware_ml_processor = get_hardware_optimized_ml_processor()
+        else:
+            self.hardware_ml_processor = None
 
         _LOGGER.info("🚀 Initializing Enhanced HyperparameterOptimization...")
 

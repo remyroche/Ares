@@ -94,6 +94,17 @@ except ImportError as e:
     FEATURE_GENERATION_AVAILABLE = False
     tprint(f"⚠️ [REGIME_MODELS] Feature generation system not available: {e}", color="yellow")
 
+# Import SHAP explainability utilities
+try:
+    from src.utils.ml_common.explainability import (
+        SHAPLIMEExplainer, ExplanationConfig, create_explainer, explain_model
+    )
+    SHAP_AVAILABLE = True
+    tprint("✅ [REGIME_MODELS] SHAP explainability utilities imported successfully", color="green")
+except ImportError as e:
+    SHAP_AVAILABLE = False
+    tprint(f"⚠️ [REGIME_MODELS] SHAP explainability utilities not available: {e}", color="yellow")
+
 class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
     """
     Regime Detection Models Training Component.
@@ -1318,6 +1329,43 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
 
                 catboost_time = time.time() - catboost_start
                 tprint(f"⏱️ [REGIME_MODELS] CatBoost training completed in {catboost_time:.3f} seconds", color="blue")
+                
+                # Generate SHAP explanations for CatBoost
+                if SHAP_AVAILABLE:
+                    try:
+                        tprint("🔍 [REGIME_MODELS] Generating SHAP explanations for CatBoost", color="cyan")
+                        shap_config = ExplanationConfig(
+                            enable_shap=True,
+                            enable_lime=False,  # Focus on SHAP for now
+                            shap_sample_size=min(100, len(X_train_scaled)),
+                            shap_max_features=min(50, X_train_scaled.shape[1])
+                        )
+                        explainer = create_explainer(shap_config)
+                        
+                        # Generate feature names if not available
+                        feature_names = [f"feature_{i}" for i in range(X_train_scaled.shape[1])]
+                        output_names = [f"regime_{i}" for i in range(len(np.unique(y_train)))]
+                        
+                        shap_result = explainer.explain_model(
+                            model=catboost_model,
+                            X=X_train_scaled,
+                            model_name="CatBoost",
+                            output_names=output_names,
+                            feature_names=feature_names
+                        )
+                        
+                        # Store SHAP results
+                        models['CatBoost_shap'] = {
+                            'shap_values': shap_result.shap_values,
+                            'base_values': shap_result.shap_base_values,
+                            'feature_names': shap_result.shap_feature_names,
+                            'explanation_time': shap_result.explanation_time
+                        }
+                        
+                        tprint(f"✅ [REGIME_MODELS] CatBoost SHAP explanations generated in {shap_result.explanation_time:.3f}s", color="green")
+                    except Exception as e:
+                        tprint(f"⚠️ [REGIME_MODELS] CatBoost SHAP explanation failed: {e}", color="yellow")
+                        models['CatBoost_shap'] = None
             except Exception as e:
                 tprint(f"❌ [REGIME_MODELS] CatBoost training failed: {e}", color="red")
                 models['CatBoost'] = None
@@ -1338,6 +1386,41 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                 grl_time = time.time() - grl_start
                 tprint(f"⏱️ [REGIME_MODELS] Greedy Rule Lists training completed in {grl_time:.3f} seconds", color="blue")
                 tprint(f"📊 [REGIME_MODELS] Greedy Rule Lists: Supports multi-class with {n_classes} classes", color="green")
+                
+                # Generate SHAP explanations for Greedy Rule Lists
+                if SHAP_AVAILABLE:
+                    try:
+                        tprint("🔍 [REGIME_MODELS] Generating SHAP explanations for Greedy Rule Lists", color="cyan")
+                        shap_config = ExplanationConfig(
+                            enable_shap=True,
+                            enable_lime=False,
+                            shap_sample_size=min(100, len(X_train_scaled)),
+                            shap_max_features=min(50, X_train_scaled.shape[1])
+                        )
+                        explainer = create_explainer(shap_config)
+                        
+                        feature_names = [f"feature_{i}" for i in range(X_train_scaled.shape[1])]
+                        output_names = [f"regime_{i}" for i in range(n_classes)]
+                        
+                        shap_result = explainer.explain_model(
+                            model=grl_model,
+                            X=X_train_scaled,
+                            model_name="Greedy Rule Lists",
+                            output_names=output_names,
+                            feature_names=feature_names
+                        )
+                        
+                        models['Greedy Rule Lists_shap'] = {
+                            'shap_values': shap_result.shap_values,
+                            'base_values': shap_result.shap_base_values,
+                            'feature_names': shap_result.shap_feature_names,
+                            'explanation_time': shap_result.explanation_time
+                        }
+                        
+                        tprint(f"✅ [REGIME_MODELS] Greedy Rule Lists SHAP explanations generated in {shap_result.explanation_time:.3f}s", color="green")
+                    except Exception as e:
+                        tprint(f"⚠️ [REGIME_MODELS] Greedy Rule Lists SHAP explanation failed: {e}", color="yellow")
+                        models['Greedy Rule Lists_shap'] = None
             except Exception as e:
                 tprint(f"❌ [REGIME_MODELS] Greedy Rule Lists training failed: {e}", color="red")
                 tprint(f"🔍 [REGIME_MODELS] Error details: {type(e).__name__}: {str(e)}", color="yellow")
@@ -1354,6 +1437,41 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
 
                 extratrees_time = time.time() - extratrees_start
                 tprint(f"⏱️ [REGIME_MODELS] ExtraTrees training completed in {extratrees_time:.3f} seconds", color="blue")
+                
+                # Generate SHAP explanations for ExtraTrees
+                if SHAP_AVAILABLE:
+                    try:
+                        tprint("🔍 [REGIME_MODELS] Generating SHAP explanations for ExtraTrees", color="cyan")
+                        shap_config = ExplanationConfig(
+                            enable_shap=True,
+                            enable_lime=False,
+                            shap_sample_size=min(100, len(X_train_scaled)),
+                            shap_max_features=min(50, X_train_scaled.shape[1])
+                        )
+                        explainer = create_explainer(shap_config)
+                        
+                        feature_names = [f"feature_{i}" for i in range(X_train_scaled.shape[1])]
+                        output_names = [f"regime_{i}" for i in range(len(np.unique(y_train)))]
+                        
+                        shap_result = explainer.explain_model(
+                            model=extratrees_model,
+                            X=X_train_scaled,
+                            model_name="ExtraTrees",
+                            output_names=output_names,
+                            feature_names=feature_names
+                        )
+                        
+                        models['ExtraTrees_shap'] = {
+                            'shap_values': shap_result.shap_values,
+                            'base_values': shap_result.shap_base_values,
+                            'feature_names': shap_result.shap_feature_names,
+                            'explanation_time': shap_result.explanation_time
+                        }
+                        
+                        tprint(f"✅ [REGIME_MODELS] ExtraTrees SHAP explanations generated in {shap_result.explanation_time:.3f}s", color="green")
+                    except Exception as e:
+                        tprint(f"⚠️ [REGIME_MODELS] ExtraTrees SHAP explanation failed: {e}", color="yellow")
+                        models['ExtraTrees_shap'] = None
             except Exception as e:
                 tprint(f"❌ [REGIME_MODELS] ExtraTrees training failed: {e}", color="red")
                 models['ExtraTrees'] = None
@@ -1406,6 +1524,43 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                         meta_time = time.time() - meta_start
                         tprint(f"⏱️ [REGIME_MODELS] Meta-learner training completed in {meta_time:.3f} seconds", color="blue")
                         tprint(f"📊 [REGIME_MODELS] Meta-learner features: {enhanced_features.shape[1]}", color="blue")
+                        
+                        # Generate SHAP explanations for meta-learner
+                        if SHAP_AVAILABLE:
+                            try:
+                                tprint("🔍 [REGIME_MODELS] Generating SHAP explanations for stacker_lgbm_calibrated", color="cyan")
+                                shap_config = ExplanationConfig(
+                                    enable_shap=True,
+                                    enable_lime=False,
+                                    shap_sample_size=min(100, len(enhanced_features)),
+                                    shap_max_features=min(50, enhanced_features.shape[1])
+                                )
+                                explainer = create_explainer(shap_config)
+                                
+                                # Create feature names for enhanced features
+                                base_feature_names = [f"feature_{i}" for i in range(X_train_scaled.shape[1])]
+                                meta_feature_names = base_feature_names + [f"base_model_{i}_pred" for i in range(len(base_models))]
+                                output_names = [f"regime_{i}" for i in range(len(np.unique(y_train)))]
+                                
+                                shap_result = explainer.explain_model(
+                                    model=meta_learner,
+                                    X=enhanced_features,
+                                    model_name="stacker_lgbm_calibrated",
+                                    output_names=output_names,
+                                    feature_names=meta_feature_names
+                                )
+                                
+                                models['stacker_lgbm_calibrated_shap'] = {
+                                    'shap_values': shap_result.shap_values,
+                                    'base_values': shap_result.shap_base_values,
+                                    'feature_names': shap_result.shap_feature_names,
+                                    'explanation_time': shap_result.explanation_time
+                                }
+                                
+                                tprint(f"✅ [REGIME_MODELS] stacker_lgbm_calibrated SHAP explanations generated in {shap_result.explanation_time:.3f}s", color="green")
+                            except Exception as e:
+                                tprint(f"⚠️ [REGIME_MODELS] stacker_lgbm_calibrated SHAP explanation failed: {e}", color="yellow")
+                                models['stacker_lgbm_calibrated_shap'] = None
                     else:
                         tprint("⚠️ [REGIME_MODELS] Failed to generate out-of-fold predictions", color="yellow")
                         models['stacker_lgbm_calibrated'] = None

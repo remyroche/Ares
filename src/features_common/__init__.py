@@ -49,12 +49,9 @@ from .vectorbt_extensions import (
     VectorBTPerformanceMonitor, get_performance_monitor
 )
 
-# Hardware optimization imports
+# Hardware optimization availability check
 try:
-    from .mixins.optimization_mixin import OptimizationMixin as HardwareOptimizedMixin
-    from .vectorbt_extensions.unified_manager import UnifiedVectorBTManager as HardwareOptimizedVectorBTManager
-    from .transforms.vectorbt_scaler import VectorBTScaler as HardwareOptimizedVectorBTScaler
-    from .transforms.vectorbt_scaler import VectorBTBatchScaler as HardwareOptimizedVectorBTBatchScaler
+    from src.utils.hardware.integrated_hardware_manager import get_integrated_hardware_manager
     HARDWARE_OPTIMIZATION_AVAILABLE = True
 except ImportError:
     HARDWARE_OPTIMIZATION_AVAILABLE = False
@@ -165,14 +162,8 @@ if VECTORBT_OPTIMIZER_AVAILABLE:
         'get_unified_vectorization_manager',
     ])
 
-# Add hardware optimization components to __all__ if available
-if HARDWARE_OPTIMIZATION_AVAILABLE:
-    __all__.extend([
-        'HardwareOptimizedMixin',
-        'HardwareOptimizedVectorBTManager',
-        'HardwareOptimizedVectorBTScaler',
-        'HardwareOptimizedVectorBTBatchScaler',
-    ])
+# Hardware optimization is now integrated into existing components
+# No additional exports needed as all components now have hardware optimization built-in
 
 if TPRINT_AVAILABLE:
     tprint(f"🚀 [features_common] Enhanced module initialized with {len(__all__)} exports", color="cyan")

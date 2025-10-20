@@ -1,5 +1,5 @@
 """
-Hardware Optimization Example for features_common.
+Enhanced features_common Demo with Hardware Optimization
 
 This example demonstrates the enhanced features_common system with
 hardware utility integration for maximum performance optimization.
@@ -13,8 +13,11 @@ from typing import Dict, Any
 # Import enhanced components
 from ..vectorbt_extensions.unified_manager import get_unified_vectorbt_manager
 from ..transforms.vectorbt_scaler import VectorBTScaler, VectorBTBatchScaler
+from ..transforms.base_scaler import BaseScaler
 from ..mixins.optimization_mixin import OptimizationMixin
 from ..vectorbt_extensions.performance_monitor import get_performance_monitor
+from ..vectorbt_extensions.optimization_engine import get_optimization_engine
+from ..vectorbt_extensions.gpu_accelerator import get_gpu_accelerator
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +47,14 @@ def demonstrate_enhanced_features():
     print("\n📈 Demonstrating enhanced performance monitoring...")
     demonstrate_enhanced_performance_monitoring()
     
+    # Demonstrate optimization engine
+    print("\n⚙️ Demonstrating optimization engine...")
+    demonstrate_optimization_engine(test_data)
+    
+    # Demonstrate GPU accelerator
+    print("\n🚀 Demonstrating GPU accelerator...")
+    demonstrate_gpu_accelerator(test_data)
+    
     print("\n✅ Enhanced features demonstration completed!")
 
 def generate_test_data(rows: int = 10000, columns: int = 10) -> pd.DataFrame:
@@ -69,6 +80,9 @@ def demonstrate_enhanced_vectorbt_operations(data: pd.DataFrame) -> None:
     """Demonstrate enhanced VectorBT operations with hardware optimization."""
     # Get enhanced manager
     manager = get_unified_vectorbt_manager()
+    
+    # Enable hardware optimization
+    manager.enable_hardware_optimization()
     
     # Test different operations
     operations = [
@@ -206,6 +220,78 @@ def demonstrate_enhanced_performance_monitoring() -> None:
         print(f"    💡 Recommendations:")
         for i, rec in enumerate(summary.recommendations[:3], 1):
             print(f"      {i}. {rec}")
+
+def demonstrate_optimization_engine(data: pd.DataFrame) -> None:
+    """Demonstrate optimization engine capabilities."""
+    print(f"\n  ⚙️ Testing optimization engine...")
+    
+    # Get optimization engine
+    engine = get_optimization_engine()
+    
+    # Test different operations
+    operations = ['rolling_mean', 'scaling', 'ranking']
+    
+    for operation in operations:
+        print(f"\n    🔧 Testing {operation} optimization...")
+        
+        # Test on first column
+        test_column = data.iloc[:, 0]
+        
+        # Optimize operation
+        result = engine.optimize_operation(operation, test_column, workload_type='data_processing')
+        
+        print(f"      ✅ {operation} optimization completed")
+        print(f"      📊 Result shape: {result.shape if hasattr(result, 'shape') else 'N/A'}")
+    
+    # Get optimization summary
+    summary = engine.get_optimization_summary()
+    print(f"\n    📊 Optimization Summary:")
+    print(f"      Total optimizations: {summary['total_optimizations']}")
+    print(f"      Hardware optimization rate: {summary['hardware_optimization_rate']:.2%}")
+    print(f"      Memory optimization rate: {summary['memory_optimization_rate']:.2%}")
+    print(f"      Hardware available: {summary['hardware_available']}")
+    
+    # Show recommendations
+    if summary['recommendations']:
+        print(f"      💡 Recommendations:")
+        for i, rec in enumerate(summary['recommendations'][:3], 1):
+            print(f"        {i}. {rec}")
+
+def demonstrate_gpu_accelerator(data: pd.DataFrame) -> None:
+    """Demonstrate GPU accelerator capabilities."""
+    print(f"\n  🚀 Testing GPU accelerator...")
+    
+    # Get GPU accelerator
+    accelerator = get_gpu_accelerator()
+    
+    # Test different operations
+    operations = ['rolling_mean', 'scaling', 'ranking', 'matrix_multiplication']
+    
+    for operation in operations:
+        print(f"\n    🔧 Testing {operation} GPU acceleration...")
+        
+        # Test on first column
+        test_column = data.iloc[:, 0]
+        
+        # Accelerate operation
+        result = accelerator.accelerate_operation(operation, test_column, operation_type='data_processing')
+        
+        print(f"      ✅ {operation} acceleration completed")
+        print(f"      📊 Result shape: {result.shape if hasattr(result, 'shape') else 'N/A'}")
+    
+    # Get acceleration summary
+    summary = accelerator.get_acceleration_summary()
+    print(f"\n    📊 Acceleration Summary:")
+    print(f"      Total operations: {summary['total_operations']}")
+    print(f"      GPU acceleration rate: {summary['gpu_acceleration_rate']:.2%}")
+    print(f"      GPU available: {summary['gpu_available']}")
+    print(f"      Hardware available: {summary['hardware_available']}")
+    
+    # Show recommendations
+    if summary['recommendations']:
+        print(f"      💡 Recommendations:")
+        for i, rec in enumerate(summary['recommendations'][:3], 1):
+            print(f"        {i}. {rec}")
 
 def demonstrate_batch_operations(data: pd.DataFrame) -> None:
     """Demonstrate enhanced batch operations."""

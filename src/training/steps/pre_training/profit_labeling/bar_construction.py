@@ -12,6 +12,29 @@ import pandas as pd
 import numpy as np
 import logging
 
+# Import tprint utilities for enhanced troubleshooting
+try:
+    from src.utils.tprint import (
+        tprint, tprint_info, tprint_warning, tprint_error, tprint_success, 
+        tprint_debug, tprint_data_preview, tprint_data_format, tprint_performance,
+        tprint_structured, tprint_step, tprint_result
+    )
+    TPRINT_AVAILABLE = True
+except ImportError:
+    TPRINT_AVAILABLE = False
+    def tprint(*args, **kwargs): print("TPRINT:", *args, **kwargs)
+    def tprint_info(*args, **kwargs): print("INFO:", *args, **kwargs)
+    def tprint_success(*args, **kwargs): print("SUCCESS:", *args, **kwargs)
+    def tprint_warning(*args, **kwargs): print("WARNING:", *args, **kwargs)
+    def tprint_error(*args, **kwargs): print("ERROR:", *args, **kwargs)
+    def tprint_debug(*args, **kwargs): print("DEBUG:", *args, **kwargs)
+    def tprint_data_preview(*args, **kwargs): print("DATA_PREVIEW:", *args, **kwargs)
+    def tprint_data_format(*args, **kwargs): print("DATA_FORMAT:", *args, **kwargs)
+    def tprint_performance(*args, **kwargs): print("PERFORMANCE:", *args, **kwargs)
+    def tprint_structured(*args, **kwargs): print("STRUCTURED:", *args, **kwargs)
+    def tprint_step(*args, **kwargs): print("STEP:", *args, **kwargs)
+    def tprint_result(*args, **kwargs): print("RESULT:", *args, **kwargs)
+
 
 class BarType(Enum):
     """Types of bars for construction."""
@@ -67,16 +90,29 @@ class BarConstructor:
         Returns:
             Constructed bars
         """
+        tprint_step("🔨 Starting bar construction")
+        tprint_data_preview(data, "bar_construction_input_data", level="DEBUG")
+        tprint_info(f"📊 Input data type: {type(data)}")
+        tprint_info(f"🎯 Bar type: {self.config.bar_type.value}")
+        tprint_info(f"📏 Bar size: {self.config.bar_size}")
+        tprint_info(f"📋 Min bars required: {self.config.min_bars_required}")
+        
         # Validate input data
+        tprint_debug("🔍 Validating input data")
         validation_results = self.validate_data(data)
         if not validation_results['is_valid']:
+            tprint_error(f"❌ Data validation failed: {validation_results['issues']}")
             raise ValueError(f"Data validation failed: {validation_results['issues']}")
         
         if validation_results['warnings']:
             for warning in validation_results['warnings']:
                 self.logger.warning(warning)
+                tprint_warning(f"⚠️ {warning}")
+        
+        tprint_success("✅ Data validation passed")
         
         # Construct bars based on type
+        tprint_debug(f"🔨 Constructing {self.config.bar_type.value} bars")
         if self.config.bar_type == BarType.TIME:
             result = self._construct_time_bars(data, **kwargs)
         elif self.config.bar_type == BarType.VOLUME:
@@ -88,17 +124,24 @@ class BarConstructor:
         elif self.config.bar_type == BarType.RANGE:
             result = self._construct_range_bars(data, **kwargs)
         else:
+            tprint_error(f"❌ Unsupported bar type: {self.config.bar_type}")
             raise ValueError(f"Unsupported bar type: {self.config.bar_type}")
+        
+        tprint_success(f"✅ Bar construction completed: {len(result)} bars created")
+        tprint_data_preview(result, "constructed_bars", level="DEBUG")
         
         # Validate minimum bars requirement
         if len(result) < self.config.min_bars_required:
+            tprint_warning(f"⚠️ Only {len(result)} bars constructed, minimum required: {self.config.min_bars_required}")
             self.logger.warning(f"Only {len(result)} bars constructed, minimum required: {self.config.min_bars_required}")
         
         # Apply maximum bars limit if specified
         if self.config.max_bars is not None and len(result) > self.config.max_bars:
+            tprint_info(f"📏 Limiting bars to {self.config.max_bars} as specified in config")
             result = result.iloc[:self.config.max_bars]
             self.logger.info(f"Limited bars to {self.config.max_bars} as specified in config")
         
+        tprint_result(f"🎯 Bar construction complete: {len(result)} final bars")
         return result
     
     def _construct_time_bars(self, data, **kwargs):

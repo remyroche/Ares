@@ -20,7 +20,11 @@ from dataclasses import dataclass, field
 from enum import Enum
 
 from src.utils.logger import system_logger
-from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success
+from src.utils.tprint import (
+    tprint, tprint_info, tprint_warning, tprint_error, tprint_success, 
+    tprint_debug, tprint_data_preview, tprint_data_format, tprint_performance,
+    tprint_structured, tprint_step, tprint_result
+)
 
 
 class GateFeatureType(Enum):
@@ -368,18 +372,32 @@ class GateFeaturePipelineManager:
         Args:
             config: Configuration dictionary
         """
+        tprint_step("🔧 Initializing GateFeaturePipelineManager")
+        tprint_debug(f"⚙️ Config provided: {config is not None}")
+        
         self.config = GateFeatureConfig(**(config or {}))
         self.logger = system_logger.getChild("GateFeaturePipelineManager")
         self.state = GateFeatureState(configuration=self.config)
         
+        tprint_info(f"🛡️ Gate protection enabled: {self.config.enable_gate_protection}")
+        tprint_info(f"📊 Max gate features per base: {self.config.max_gate_features_per_base}")
+        tprint_info(f"🎯 Min gate IC improvement: {self.config.min_gate_ic_improvement}")
+        tprint_info(f"🔒 Min gate stability: {self.config.min_gate_stability}")
+        
         # Initialize components
+        tprint_debug("🔧 Initializing gate feature components")
         self.validator = GateFeatureValidator(self.config)
         self.selector = GateFeatureSelector(self.config)
         self.monitor = GateFeatureMonitor(self.config)
+        tprint_success("✅ Gate feature components initialized")
         
         # Load persisted state if available
         if self.config.enable_gate_persistence:
+            tprint_debug("💾 Loading persisted gate state")
             self._load_gate_state()
+            tprint_success("✅ Gate state loaded from persistence")
+        
+        tprint_success("🎉 GateFeaturePipelineManager initialization complete")
     
     def enable_gate_protection(self) -> None:
         """Enable gate feature protection."""
@@ -399,54 +417,86 @@ class GateFeaturePipelineManager:
     
     def evaluate_gate_features(self, features: pd.DataFrame, targets: pd.Series) -> List[GateFeatureResult]:
         """Evaluate all gate features."""
+        tprint_step("🔍 Starting gate feature evaluation")
+        tprint_data_preview(features, "gate_evaluation_input_features", level="DEBUG")
+        tprint_data_preview(targets, "gate_evaluation_input_targets", level="DEBUG")
+        tprint_info(f"📊 Features shape: {features.shape}, Targets length: {len(targets)}")
+        
         if not self.state.enabled:
+            tprint_warning("⚠️ Gate protection disabled - skipping evaluation")
             return []
         
         tprint_info("🔍 Evaluating gate features...")
+        tprint_debug(f"🛡️ Gate protection enabled: {self.state.enabled}")
+        tprint_debug(f"📋 Active gates count: {len(self.state.active_gates)}")
         
         gate_results = []
         
         # Quality gate
+        tprint_debug("🔍 Evaluating quality gate")
         quality_result = self.validator.validate_quality_gate(features, targets)
         gate_results.append(quality_result)
+        tprint_debug(f"✅ Quality gate result: {quality_result.status.value} (score: {quality_result.score:.3f})")
         
         # Correlation gate
+        tprint_debug("🔍 Evaluating correlation gate")
         correlation_result = self.validator.validate_correlation_gate(features)
         gate_results.append(correlation_result)
+        tprint_debug(f"✅ Correlation gate result: {correlation_result.status.value} (score: {correlation_result.score:.3f})")
         
         # Variance gate
+        tprint_debug("🔍 Evaluating variance gate")
         variance_result = self.validator.validate_variance_gate(features)
         gate_results.append(variance_result)
+        tprint_debug(f"✅ Variance gate result: {variance_result.status.value} (score: {variance_result.score:.3f})")
         
         # Update state
+        tprint_debug("💾 Updating gate state")
         for result in gate_results:
             self.state.active_gates[result.feature_name] = result
             self.state.gate_history.append(result)
+        tprint_success(f"✅ Updated state with {len(gate_results)} gate results")
         
         # Monitor performance
         if self.config.enable_gate_monitoring:
+            tprint_debug("📊 Monitoring gate performance")
             monitoring_stats = self.monitor.monitor_gate_performance(gate_results)
             self.logger.info(f"Gate monitoring stats: {monitoring_stats}")
+            tprint_structured(monitoring_stats, "gate_monitoring_stats", level="DEBUG")
         
         # Generate report
         if self.config.enable_gate_reporting:
+            tprint_debug("📋 Generating gate report")
             report = self.monitor.generate_gate_report(gate_results)
             if report:
                 tprint_info(f"\n{report}")
+            else:
+                tprint_warning("⚠️ No gate report generated")
         
         # Persist state
         if self.config.enable_gate_persistence:
+            tprint_debug("💾 Persisting gate state")
             self._save_gate_state()
+            tprint_success("✅ Gate state persisted")
         
+        tprint_result(f"🎯 Gate evaluation complete: {len(gate_results)} gates evaluated")
         return gate_results
     
     def select_gate_features(self, features: pd.DataFrame, targets: pd.Series) -> List[str]:
         """Select gate features for the pipeline."""
+        tprint_step("🎯 Starting gate feature selection")
+        tprint_data_preview(features, "gate_selection_input_features", level="DEBUG")
+        tprint_data_preview(targets, "gate_selection_input_targets", level="DEBUG")
+        tprint_info(f"📊 Features shape: {features.shape}, Targets length: {len(targets)}")
+        
         if not self.state.enabled:
+            tprint_warning("⚠️ Gate protection disabled - no features selected")
             return []
         
+        tprint_debug("🔍 Selecting gate features using selector")
         selected_features = self.selector.select_gate_features(features, targets)
         tprint_info(f"🎯 Selected {len(selected_features)} gate features: {selected_features}")
+        tprint_result(f"✅ Gate feature selection complete: {len(selected_features)} features selected")
         
         return selected_features
     

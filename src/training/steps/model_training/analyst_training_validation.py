@@ -14,7 +14,7 @@ from src.utils.common_operations import (
     safe_divide, validate_dataframe, validate_dataframe_columns,
     check_disk_space, get_memory_usage, sanitize_string, ensure_directory
 )
-from src.utils.ml_common.config import PerRegimeTrainingConfig
+from src.utils.ml_common.config import BaseTrainingConfig
 
 from .analyst_training_constants import (
     NAN_CRITICAL_PERCENT, NAN_WARNING_PERCENT, INF_CRITICAL_PERCENT, INF_WARNING_PERCENT,
@@ -28,7 +28,7 @@ from .analyst_training_constants import (
 class ValidationManager:
     """Manages all validation operations for analyst training."""
 
-    def __init__(self, config: PerRegimeTrainingConfig):
+    def __init__(self, config: BaseTrainingConfig):
         """
         Initialize validation manager.
 

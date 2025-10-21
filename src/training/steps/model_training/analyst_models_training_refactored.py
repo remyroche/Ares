@@ -32,7 +32,7 @@ from src.training.steps.base_step import BaseStep
 # Enhanced imports with comprehensive error handling
 try:
     from src.utils.logger import system_logger
-    from src.utils.ml_common.config import PerRegimeTrainingConfig
+    from src.utils.ml_common.config import BaseTrainingConfig
     from src.utils.ml_common.training import PerRegimeTrainingStep
 except ImportError as e:
     print(f"❌ CRITICAL: Failed to import core ML utilities: {e}")
@@ -151,7 +151,7 @@ class AnalystModelType(Enum):
     CATBOOST = "catboost"
 
 @dataclass
-class AnalystTrainingConfig(PerRegimeTrainingConfig):
+class AnalystTrainingConfig(BaseTrainingConfig):
     """
     Configuration for Analyst models training with specific parameters.
 

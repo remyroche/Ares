@@ -123,7 +123,6 @@ class TacticianEnsembleTrainer(BaseTrainer):
         ),
         context="tactician ensemble training"
     )
-    @log_execution_time
     async def train(self, data: pd.DataFrame, targets: Optional[pd.Series] = None) -> TrainingResult:
         """
         Train Tactician ensemble models.

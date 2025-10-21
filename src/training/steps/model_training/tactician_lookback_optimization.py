@@ -81,7 +81,7 @@ from src.utils.serialization_utils import (
 
 # Import ML utilities
 try:
-    from src.utils.ml_common.config import PerRegimeTrainingConfig
+    from src.utils.ml_common.config import BaseTrainingConfig
     from src.utils.ml_common.validation.cv import (
         purged_time_series_splits, PurgedSplitConfig
     )

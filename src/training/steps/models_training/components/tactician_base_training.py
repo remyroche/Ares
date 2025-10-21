@@ -192,7 +192,6 @@ class TacticianBaseTraining(BaseStep):
         enable_pools=True
     )
     @performance_tracked(log_performance=True, track_memory=True)
-    @traced
     async def run(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """
         Run the Tactician base training.

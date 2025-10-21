@@ -32,7 +32,7 @@ from src.training.steps.market_analysis.regime_discovery import (
 )
 
 # Import utilities
-from src.utils.tprint import tprint, tprint_info, tprint_success, tprint_warning, tprint_error
+from src.utils.tprint import tprint, tprint_info, tprint_success, tprint_warning, tprint_error, tprint_data_preview
 from src.utils.data.klines_parquet import get_klines_manager
 from src.utils.serialization_utils import save_pickle, load_pickle
 
@@ -134,11 +134,19 @@ class HDBSCANRegimeDiscoveryStep(BaseStep):
             # Execute regime discovery
             if self.use_optimized:
                 # Use optimized regime discovery (synchronous)
+                tprint_data_preview(market_data, "optimized_discovery_input", max_rows=5, level="DEBUG")
                 regime_result = self.optimized_regime_discovery.discover_regimes(market_data)
+                
+                # Data preview of regime discovery results
+                if hasattr(regime_result, 'cluster_labels'):
+                    tprint_data_preview(regime_result.cluster_labels, "optimized_cluster_labels", max_rows=10, level="INFO")
+                if hasattr(regime_result, 'cluster_probabilities'):
+                    tprint_data_preview(regime_result.cluster_probabilities, "optimized_cluster_probabilities", max_rows=10, level="DEBUG")
                 
                 # Convert to legacy format for compatibility
                 regime_result = self._convert_optimized_result_to_legacy(regime_result, market_data)
             else:
+                tprint_data_preview(market_data, "legacy_discovery_input", max_rows=5, level="DEBUG")
                 regime_result = await self.regime_discovery.discover_regimes(
                     data=market_data,
                     fit=True,
@@ -176,6 +184,14 @@ class HDBSCANRegimeDiscoveryStep(BaseStep):
             error_msg = f"HDBSCAN regime discovery failed: {str(e)}"
             tprint(f"❌ {error_msg}", "ERROR")
             self.logger.error(error_msg)
+            
+            # Data preview for error case
+            error_data = {
+                'error_message': error_msg,
+                'config': config,
+                'processing_time': (datetime.now() - start_time).total_seconds()
+            }
+            tprint_data_preview(error_data, "error_case_data", level="ERROR")
             
             return {
                 'success': False,
@@ -437,6 +453,9 @@ class HDBSCANRegimeDiscoveryStep(BaseStep):
                     market_data['timestamp'] = market_data.index
                     tprint("✅ Added timestamp column from DatetimeIndex", "SUCCESS")
                 
+                # Data preview for debugging
+                tprint_data_preview(market_data, "raw_market_data", max_rows=10, level="INFO")
+                
                 tprint(f"✅ Market data loaded: {market_data.shape[0]} rows, {market_data.shape[1]} columns", "SUCCESS")
                 tprint(f"📅 Date range: {market_data.index.min()} to {market_data.index.max()}", "INFO")
                 
@@ -454,6 +473,7 @@ class HDBSCANRegimeDiscoveryStep(BaseStep):
         try:
             if 'close' in market_data.columns:
                 returns = market_data['close'].pct_change().dropna().values
+                tprint_data_preview(returns, "extracted_returns", max_rows=10, level="DEBUG")
                 return returns
             else:
                 tprint("⚠️ No 'close' column found for returns calculation", "WARNING")
@@ -465,6 +485,11 @@ class HDBSCANRegimeDiscoveryStep(BaseStep):
     def _create_artifacts(self, regime_result: RegimeResult, config: Dict[str, Any]) -> Dict[str, Any]:
         """Create artifacts from regime discovery result."""
         try:
+            # Preview regime result data before creating artifacts
+            tprint_data_preview(regime_result.labels, "regime_labels_for_artifacts", max_rows=10, level="DEBUG")
+            if hasattr(regime_result, 'probabilities') and regime_result.probabilities is not None:
+                tprint_data_preview(regime_result.probabilities, "regime_probabilities_for_artifacts", max_rows=10, level="DEBUG")
+            
             artifacts = {
                 # Core regime data
                 'regime_labels': regime_result.labels,
@@ -502,6 +527,9 @@ class HDBSCANRegimeDiscoveryStep(BaseStep):
                 'exchange': config['exchange'],
                 'timeframe': config['timeframe']
             }
+            
+            # Preview final artifacts before returning
+            tprint_data_preview(artifacts, "final_artifacts", level="INFO")
             
             return artifacts
             

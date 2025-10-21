@@ -20,7 +20,7 @@ import warnings
 from src.utils.tprint import (
     tprint, tprint_info, tprint_success, tprint_warning, tprint_error, 
     tprint_debug, tprint_performance, tprint_progress, tprint_timer,
-    tprint_logged, LogLevel
+    tprint_logged, tprint_data_preview, LogLevel
 )
 
 # Import enhanced hardware optimization tools
@@ -142,6 +142,10 @@ class HDBSCANClusterer:
             # Convert to numpy array
             features = features_df.values
             
+            # Data preview for clustering input
+            tprint_data_preview(features_df, "clustering_input_features", max_rows=5, level="DEBUG")
+            tprint_data_preview(features, "clustering_input_array", max_rows=5, level="DEBUG")
+            
             # Check minimum samples
             if len(features) < self.config.min_samples_for_clustering:
                 logger.warning(f"⚠️ Insufficient samples for clustering: {len(features)} < {self.config.min_samples_for_clustering}")
@@ -156,15 +160,24 @@ class HDBSCANClusterer:
             # Perform clustering
             cluster_labels, clustering_info = self._perform_clustering(features, best_params)
             
+            # Data preview of clustering results
+            tprint_data_preview(cluster_labels, "raw_cluster_labels", max_rows=10, level="INFO")
+            tprint_data_preview(clustering_info, "clustering_info", level="DEBUG")
+            
             # Handle noise if enabled
             if self.config.handle_noise:
                 cluster_labels = self._handle_noise_points(cluster_labels, features)
+                tprint_data_preview(cluster_labels, "post_noise_handling_labels", max_rows=10, level="DEBUG")
             
             # Validate clustering results
             self._validate_clustering(cluster_labels, features)
             
             # Calculate clustering statistics
             self.clustering_stats = self._calculate_clustering_stats(cluster_labels, features, clustering_info)
+            
+            # Final data preview
+            tprint_data_preview(cluster_labels, "final_cluster_labels", max_rows=10, level="INFO")
+            tprint_data_preview(self.clustering_stats, "clustering_stats", level="DEBUG")
             
             logger.info(f"✅ HDBSCAN clustering completed. Found {len(np.unique(cluster_labels[cluster_labels != -1]))} clusters")
             
@@ -220,8 +233,14 @@ class HDBSCANClusterer:
             # Use safe dataframe operation
             validated_df = safe_dataframe_operation(features_df, validate_and_clean_dataframe)
             
+            # Data preview after validation
+            tprint_data_preview(validated_df, "validated_features", max_rows=5, level="DEBUG")
+            
             # Optimize memory usage
             optimized_df = optimize_dataframe_memory(validated_df)
+            
+            # Data preview after optimization
+            tprint_data_preview(optimized_df, "optimized_features", max_rows=5, level="DEBUG")
             
             tprint_success(f"✅ Input validation completed: {optimized_df.shape}")
             return optimized_df
@@ -1122,6 +1141,9 @@ class HDBSCANClusterer:
         try:
             n_samples = len(features)
             
+            # Data preview for fallback case
+            tprint_data_preview(features, "fallback_input_features", max_rows=5, level="WARNING")
+            
             # Random labels (assuming 2-5 clusters)
             n_clusters = np.random.randint(2, 6)
             labels = np.random.randint(0, n_clusters, n_samples)
@@ -1129,13 +1151,24 @@ class HDBSCANClusterer:
             # Random probabilities
             probabilities = np.random.uniform(0.1, 0.9, n_samples)
             
+            # Data preview of fallback results
+            tprint_data_preview(labels, "fallback_labels", max_rows=10, level="WARNING")
+            tprint_data_preview(probabilities, "fallback_probabilities", max_rows=10, level="WARNING")
+            
             return labels, probabilities, "random_fallback"
             
         except Exception as e:
             logger.error(f"❌ Random fallback failed: {e}")
             # Ultimate fallback
             n_samples = len(features)
-            return np.zeros(n_samples), np.ones(n_samples), "ultimate_fallback"
+            ultimate_labels = np.zeros(n_samples)
+            ultimate_probabilities = np.ones(n_samples)
+            
+            # Data preview of ultimate fallback
+            tprint_data_preview(ultimate_labels, "ultimate_fallback_labels", max_rows=10, level="ERROR")
+            tprint_data_preview(ultimate_probabilities, "ultimate_fallback_probabilities", max_rows=10, level="ERROR")
+            
+            return ultimate_labels, ultimate_probabilities, "ultimate_fallback"
     
     @tprint_logged(LogLevel.DEBUG, include_result=True)
     def get_clustering_stats(self) -> Dict[str, Any]:

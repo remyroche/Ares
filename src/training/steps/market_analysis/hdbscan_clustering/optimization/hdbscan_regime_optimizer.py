@@ -43,7 +43,7 @@ from src.utils.common_operations import (
 )
 from src.utils.hardware import optimize_dataframe_default, get_memory_usage
 from src.utils.math_validation import validate_positive, validate_range
-from src.utils.tprint import tprint_info, tprint_success, tprint_warning, tprint_error, tprint_performance
+from src.utils.tprint import tprint_info, tprint_success, tprint_warning, tprint_error, tprint_performance, tprint_data_preview
 
 logger = logging.getLogger(__name__)
 
@@ -198,10 +198,14 @@ class HDBSCANRegimeOptimizer:
                 processing_time = time.time() - processing_start
                 self.performance_stats['feature_processing_time'] = processing_time
                 
+                # Data preview of processed features
+                tprint_data_preview(features_df, "processed_features", max_rows=5, level="DEBUG")
+                
                 tprint_success(f"✅ Feature processing completed: {features_df.shape[1]} features in {processing_time:.2f}s")
             else:
                 # Use raw data as features
                 features_df = data.select_dtypes(include=[np.number])
+                tprint_data_preview(features_df, "raw_numeric_features", max_rows=5, level="DEBUG")
                 self.performance_stats['feature_processing_time'] = 0.0
                 tprint_info("ℹ️ Feature processing disabled, using raw numeric data")
             
@@ -209,9 +213,16 @@ class HDBSCANRegimeOptimizer:
             if self.config.enable_dimensionality_reduction:
                 tprint_info("🔄 Step 2: Dimensionality Reduction")
                 reduction_start = time.time()
+                
+                # Data preview before reduction
+                tprint_data_preview(features_df, "pre_reduction_features", max_rows=5, level="DEBUG")
+                
                 reduced_features = self.dimensionality_reducer.reduce_dimensions(features_df)
                 reduction_time = time.time() - reduction_start
                 self.performance_stats['dimensionality_reduction_time'] = reduction_time
+                
+                # Data preview after reduction
+                tprint_data_preview(reduced_features, "post_reduction_features", max_rows=5, level="DEBUG")
                 
                 tprint_success(f"✅ Dimensionality reduction completed: {reduced_features.shape[1]} features in {reduction_time:.2f}s")
             else:
@@ -226,8 +237,14 @@ class HDBSCANRegimeOptimizer:
             # Prepare data for clustering
             clustering_data = self._prepare_clustering_data(reduced_features)
             
+            # Data preview before clustering
+            tprint_data_preview(clustering_data, "clustering_input", max_rows=5, level="DEBUG")
+            
             # Perform clustering
             cluster_labels = self.clusterer.fit_predict(clustering_data)
+            
+            # Data preview of clustering results
+            tprint_data_preview(cluster_labels, "cluster_labels", max_rows=10, level="INFO")
             
             clustering_time = time.time() - clustering_start
             self.performance_stats['clustering_time'] = clustering_time
@@ -258,6 +275,9 @@ class HDBSCANRegimeOptimizer:
             # Step 5: Create regime labels
             regime_labels = self._create_regime_labels(cluster_labels, data.index)
             
+            # Data preview of final regime labels
+            tprint_data_preview(regime_labels, "final_regime_labels", max_rows=10, level="INFO")
+            
             # Update performance stats
             total_time = time.time() - start_time
             self._update_performance_stats(features_df, reduced_features, total_time, quality_metrics)
@@ -275,6 +295,9 @@ class HDBSCANRegimeOptimizer:
                 'performance_stats': self.performance_stats.copy(),
                 'config': self.config
             }
+            
+            # Final data preview of results
+            tprint_data_preview(results, "optimization_results", level="INFO")
             
             tprint_success(f"✅ Optimized regime discovery completed in {total_time:.2f}s")
             

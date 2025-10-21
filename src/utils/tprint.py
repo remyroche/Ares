@@ -1324,6 +1324,7 @@ class DataFormatConfig:
 def _get_caller_chain(max_depth: int = 3) -> str:
     """Get a more detailed caller chain for better debugging."""
     frame = None
+    current_frame = None
     try:
         import inspect
         frame = inspect.currentframe()
@@ -1351,19 +1352,62 @@ def _get_caller_chain(max_depth: int = 3) -> str:
     except Exception:
         return ""
     finally:
-        # Clean up frame references to avoid memory leaks
+        # Clean up both frame references to avoid memory leaks
+        if current_frame is not None:
+            del current_frame
         if frame is not None:
             del frame
+
+def _timeout_guard(timeout_seconds: float, operation_name: str = "operation"):
+    """Context manager for timeout enforcement."""
+    class TimeoutGuard:
+        def __init__(self, timeout_seconds, operation_name):
+            self.timeout_seconds = timeout_seconds
+            self.operation_name = operation_name
+            self.start_time = None
+            
+        def __enter__(self):
+            self.start_time = time.time()
+            return self
+            
+        def __exit__(self, exc_type, exc_val, exc_tb):
+            if self.start_time:
+                elapsed = time.time() - self.start_time
+                if elapsed > self.timeout_seconds:
+                    print(f"⚠️  {self.operation_name} timed out after {elapsed:.2f}s (limit: {self.timeout_seconds}s)")
+            return False
+    
+    return TimeoutGuard(timeout_seconds, operation_name)
 
 def _safe_repr(obj: Any, max_chars: int = 100) -> str:
     """Safe representation that won't explode on large objects."""
     try:
         import reprlib
-        return reprlib.repr(obj)
+        import textwrap
+        
+        # Create a custom reprlib.Repr with tuned limits
+        repr_obj = reprlib.Repr()
+        repr_obj.maxstring = max_chars
+        repr_obj.maxother = max_chars
+        repr_obj.maxlist = 10
+        repr_obj.maxdict = 10
+        repr_obj.maxset = 10
+        repr_obj.maxtuple = 10
+        
+        # Use the custom repr
+        safe_repr = repr_obj.repr(obj)
+        
+        # Further truncate if still too long
+        if len(safe_repr) > max_chars:
+            safe_repr = textwrap.shorten(safe_repr, width=max_chars, placeholder="...")
+        return safe_repr
     except Exception:
+        # Fallback to basic repr with truncation
         try:
-            import textwrap
-            return textwrap.shorten(str(obj), width=max_chars, placeholder="...")
+            basic_repr = repr(obj)
+            if len(basic_repr) > max_chars:
+                return basic_repr[:max_chars-3] + "..."
+            return basic_repr
         except Exception:
             return f"<{type(obj).__name__} (repr failed)>"
 
@@ -1388,8 +1432,11 @@ def _check_pandas_dataframe(data, name: str, config: DataFormatConfig, caller_in
         # Dtypes summary
         dtypes = data.dtypes
         dtype_counts = dtypes.value_counts().to_dict()
-        tprint_with_level(level, f"  Dtypes: {dict(dtypes)}")
-        tprint_with_level(level, f"  Dtype counts: {dtype_counts}")
+        # Cast to strings for JSON compatibility
+        dtypes_dict = {str(k): str(v) for k, v in dict(dtypes).items()}
+        dtype_counts_str = {str(k): v for k, v in dtype_counts.items()}
+        tprint_with_level(level, f"  Dtypes: {dtypes_dict}")
+        tprint_with_level(level, f"  Dtype counts: {dtype_counts_str}")
         
         # Index info
         index_type = type(data.index).__name__
@@ -1399,7 +1446,9 @@ def _check_pandas_dataframe(data, name: str, config: DataFormatConfig, caller_in
             # Null analysis
             null_counts = data.isnull().sum()
             total_nulls = null_counts.sum()
-            null_pct = (total_nulls / (data.shape[0] * data.shape[1])) * 100
+            # Zero-division guard
+            total_cells = data.shape[0] * data.shape[1]
+            null_pct = (total_nulls / total_cells) * 100 if total_cells > 0 else 0.0
             tprint_with_level(level, f"  Nulls: {total_nulls} total ({null_pct:.1f}%)")
             
             # Column analysis
@@ -1414,9 +1463,10 @@ def _check_pandas_dataframe(data, name: str, config: DataFormatConfig, caller_in
         
         if config.include_memory:
             try:
-                memory_mb = data.memory_usage(deep=True).sum() / 1024**2
-                tprint_with_level(level, f"  Memory: {memory_mb:.2f} MB")
-                summary["memory_mb"] = memory_mb
+                with _timeout_guard(config.timeout_seconds, "DataFrame memory calculation"):
+                    memory_mb = data.memory_usage(deep=True).sum() / 1024**2
+                    tprint_with_level(level, f"  Memory: {memory_mb:.2f} MB")
+                    summary["memory_mb"] = memory_mb
             except Exception:
                 tprint_with_level(level, f"  Memory: (unable to calculate)")
         
@@ -1427,8 +1477,8 @@ def _check_pandas_dataframe(data, name: str, config: DataFormatConfig, caller_in
         tprint_with_level(level, f"  Columns: {sample_cols}")
         
         summary.update({
-            "dtypes": dict(dtypes),
-            "dtype_counts": dtype_counts,
+            "dtypes": dtypes_dict,
+            "dtype_counts": dtype_counts_str,
             "null_pct": null_pct,
             "object_cols": len(object_cols),
             "categorical_cols": len(categorical_cols)
@@ -1457,12 +1507,14 @@ def _check_pandas_series(data, name: str, config: DataFormatConfig, caller_info:
         if config.include_semantics:
             # Null analysis
             null_count = data.isnull().sum()
-            null_pct = (null_count / len(data)) * 100
+            # Zero-division guard
+            null_pct = (null_count / len(data)) * 100 if len(data) > 0 else 0.0
             tprint_with_level(level, f"  Nulls: {null_count} ({null_pct:.1f}%)")
             
             # Uniqueness
             unique_count = data.nunique()
-            unique_pct = (unique_count / len(data)) * 100
+            # Zero-division guard
+            unique_pct = (unique_count / len(data)) * 100 if len(data) > 0 else 0.0
             tprint_with_level(level, f"  Unique: {unique_count} ({unique_pct:.1f}%)")
             
             # Monotonicity using proper pandas API
@@ -1481,9 +1533,10 @@ def _check_pandas_series(data, name: str, config: DataFormatConfig, caller_info:
         
         if config.include_memory:
             try:
-                memory_mb = data.memory_usage(deep=True) / 1024**2
-                tprint_with_level(level, f"  Memory: {memory_mb:.2f} MB")
-                summary["memory_mb"] = memory_mb
+                with _timeout_guard(config.timeout_seconds, "Series memory calculation"):
+                    memory_mb = data.memory_usage(deep=True) / 1024**2
+                    tprint_with_level(level, f"  Memory: {memory_mb:.2f} MB")
+                    summary["memory_mb"] = memory_mb
             except Exception:
                 tprint_with_level(level, f"  Memory: (unable to calculate)")
         
@@ -1522,6 +1575,9 @@ def _check_numpy_array(data, name: str, config: DataFormatConfig, caller_info: s
                 sample_data = np.asarray(data.flat[sample_indices])
             else:
                 sample_data = np.asarray(data.flat)
+            
+            # Limit statistics calculation based on max_stat_items
+            max_stats = min(config.max_stat_items, len(sample_data))
             
             # Numeric analysis
             if np.issubdtype(data.dtype, np.number):
@@ -1652,8 +1708,8 @@ def tprint_data_format(data: Any, name: str = "data", level: LogLevel = LogLevel
             summary["length"] = len(data)
             return summary if return_summary else None
         
-        # Handle bytes/bytearray
-        elif isinstance(data, (bytes, bytearray)):
+        # Handle bytes/bytearray/memoryview
+        elif isinstance(data, (bytes, bytearray, memoryview)):
             tprint_with_level(level, f"🔍 {name} format{caller_info}:")
             tprint_with_level(level, f"  Type: {type(data).__name__}")
             tprint_with_level(level, f"  Length: {len(data)} bytes")
@@ -1802,42 +1858,7 @@ def tprint_data_format(data: Any, name: str = "data", level: LogLevel = LogLevel
                 summary["error"] = str(e)
                 return summary if return_summary else None
         
-        # Handle collections.abc types
-        elif hasattr(data, '__iter__') and not isinstance(data, (str, bytes, bytearray)):
-            # Check for iterators/generators
-            if hasattr(data, '__next__'):
-                tprint_with_level(level, f"🔍 {name} format{caller_info}:")
-                tprint_with_level(level, f"  Type: {type(data).__name__} (iterator)")
-                tprint_with_level(level, f"  Note: Iterator not consumed")
-                summary["type"] = f"{type(data).__name__} (iterator)"
-                return summary if return_summary else None
-            
-            # Handle sequences
-            elif hasattr(data, '__getitem__') and hasattr(data, '__len__'):
-                try:
-                    length = len(data)
-                    tprint_with_level(level, f"🔍 {name} format{caller_info}:")
-                    tprint_with_level(level, f"  Type: {type(data).__name__}")
-                    tprint_with_level(level, f"  Length: {length}")
-                    
-                    if length > 0 and config.include_values:
-                        sample_size = min(config.max_rows, length)
-                        try:
-                            sample_items = [data[i] for i in range(sample_size)]
-                            element_types = [type(item).__name__ for item in sample_items]
-                            tprint_with_level(level, f"  Element types: {element_types}{'...' if length > sample_size else ''}")
-                            summary["element_types"] = element_types
-                        except Exception as e:
-                            tprint_with_level(level, f"  Element types: (error sampling: {e})")
-                    
-                    summary["length"] = length
-                    return summary if return_summary else None
-                except Exception as e:
-                    tprint_with_level(level, f"🔍 {name} format{caller_info}: {type(data).__name__} (error: {e})")
-                    summary["error"] = str(e)
-                    return summary if return_summary else None
-        
-        # Handle mappings (dict, etc.)
+        # Handle mappings (dict, etc.) - BEFORE sequences to prevent KeyError
         elif hasattr(data, 'keys') and hasattr(data, '__getitem__'):
             try:
                 length = len(data)
@@ -1864,6 +1885,43 @@ def tprint_data_format(data: Any, name: str = "data", level: LogLevel = LogLevel
                 tprint_with_level(level, f"🔍 {name} format{caller_info}: {type(data).__name__} (error: {e})")
                 summary["error"] = str(e)
                 return summary if return_summary else None
+        
+        # Handle collections.abc types
+        elif hasattr(data, '__iter__') and not isinstance(data, (str, bytes, bytearray)):
+            # Check for iterators/generators
+            if hasattr(data, '__next__'):
+                tprint_with_level(level, f"🔍 {name} format{caller_info}:")
+                tprint_with_level(level, f"  Type: {type(data).__name__} (iterator)")
+                tprint_with_level(level, f"  Note: Iterator not consumed")
+                summary["type"] = f"{type(data).__name__} (iterator)"
+                return summary if return_summary else None
+            
+            # Handle sequences - AFTER mappings
+            elif hasattr(data, '__getitem__') and hasattr(data, '__len__'):
+                try:
+                    length = len(data)
+                    tprint_with_level(level, f"🔍 {name} format{caller_info}:")
+                    tprint_with_level(level, f"  Type: {type(data).__name__}")
+                    tprint_with_level(level, f"  Length: {length}")
+                    
+                    if length > 0 and config.include_values:
+                        sample_size = min(config.max_rows, length)
+                        try:
+                            # Use itertools.islice for safer sampling
+                            import itertools
+                            sample_items = list(itertools.islice(data, sample_size))
+                            element_types = [type(item).__name__ for item in sample_items]
+                            tprint_with_level(level, f"  Element types: {element_types}{'...' if length > sample_size else ''}")
+                            summary["element_types"] = element_types
+                        except Exception as e:
+                            tprint_with_level(level, f"  Element types: (error sampling: {e})")
+                    
+                    summary["length"] = length
+                    return summary if return_summary else None
+                except Exception as e:
+                    tprint_with_level(level, f"🔍 {name} format{caller_info}: {type(data).__name__} (error: {e})")
+                    summary["error"] = str(e)
+                    return summary if return_summary else None
         
         # Handle other objects
         else:

@@ -71,7 +71,7 @@ class VectorBTConfig:
 
     # Advanced settings
     enable_experimental_features: bool = False
-    enable_debug_mode: bool = False
+    enable_debug_mode: bool = True
     verbose_logging: bool = False
 
     # Method-specific settings

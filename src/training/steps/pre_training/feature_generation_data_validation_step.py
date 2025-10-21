@@ -217,7 +217,7 @@ class FeatureGenerationDataValidationStep(BaseStep):
         super().__init__(step_name, config)
         
         # Enable data preview via environment variable
-        self.enable_data_preview = os.getenv('ENABLE_DATA_PREVIEW', 'false').lower() == 'true'
+        self.enable_data_preview = os.getenv('ENABLE_DATA_PREVIEW', 'true').lower() == 'true'
         
         # Initialize quality assessment components
         if QUALITY_COMPONENTS_AVAILABLE:

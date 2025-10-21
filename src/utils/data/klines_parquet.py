@@ -1381,7 +1381,7 @@ def load_klines_from_parquet(
     result = manager.read_data(symbol, interval, start_date, end_date, data_type, columns)
     
     # Preview loaded data for debugging
-    if os.getenv('ENABLE_DATA_PREVIEW', 'false').lower() == 'true' and result is not None:
+    if os.getenv('ENABLE_DATA_PREVIEW', 'true').lower() == 'true' and result is not None:
         tprint_data_preview(result, f"loaded_klines_{symbol}_{interval}", max_rows=5, level="DEBUG")
     
     return result

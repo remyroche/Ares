@@ -1324,7 +1324,7 @@ def tprint_data_preview(data: Any, name: str = "data", max_rows: int = None,
     # Check if data preview is enabled
     try:
         import os
-        if not os.getenv('ENABLE_DATA_PREVIEW', 'false').lower() == 'true':
+        if not os.getenv('ENABLE_DATA_PREVIEW', 'true').lower() == 'true':
             return
     except:
         pass

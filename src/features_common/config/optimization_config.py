@@ -56,7 +56,7 @@ class OptimizationConfig:
 
     # Advanced settings
     enable_experimental_features: bool = False
-    debug_mode: bool = False
+    debug_mode: bool = True
     verbose_logging: bool = False
 
     # Environment-specific overrides

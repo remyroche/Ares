@@ -142,7 +142,7 @@ class SecurityConfig:
 class SystemConfig:
     """System-wide configuration"""
     environment: str = "development"
-    debug_mode: bool = False
+    debug_mode: bool = True
     enable_metrics: bool = True
     metrics_endpoint: Optional[str] = None
     enable_health_checks: bool = True

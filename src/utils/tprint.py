@@ -1306,6 +1306,799 @@ def enhanced_traceback(depth: int = 0, show_locals: bool = True, compact: bool =
         _global_manager.config.show_locals = old_locals
         _global_manager.config.compact_traceback = old_compact
 
+@dataclass
+class DataFormatConfig:
+    """Configuration for data format checking."""
+    max_cols: int = 10
+    max_rows: int = 5
+    max_keys: int = 10
+    max_preview_chars: int = 100
+    max_stat_items: int = 1000
+    timeout_seconds: float = 1.0
+    include_values: bool = True
+    include_memory: bool = True
+    include_semantics: bool = True
+    safe_sampling: bool = True
+    sample_size: int = 1000
+
+def _get_caller_chain(max_depth: int = 3) -> str:
+    """Get a more detailed caller chain for better debugging."""
+    frame = None
+    current_frame = None
+    try:
+        import inspect
+        frame = inspect.currentframe()
+        chain = []
+        current_frame = frame
+        
+        for _ in range(max_depth):
+            if current_frame is None:
+                break
+            current_frame = current_frame.f_back
+            if current_frame is None:
+                break
+                
+            filename = current_frame.f_code.co_filename
+            lineno = current_frame.f_lineno
+            function = current_frame.f_code.co_name
+            
+            # Extract just the filename from the full path
+            caller_filename = filename.split('/')[-1] if '/' in filename else filename.split('\\')[-1]
+            chain.append(f"{caller_filename}:{lineno} in {function}")
+        
+        if chain:
+            return f" (called from {' -> '.join(reversed(chain))})"
+        return ""
+    except Exception:
+        return ""
+    finally:
+        # Clean up both frame references to avoid memory leaks
+        if current_frame is not None:
+            del current_frame
+        if frame is not None:
+            del frame
+
+def _fmt_bytes(n):
+    """Format bytes in human-readable format."""
+    units = ["B", "KB", "MB", "GB", "TB"]
+    i = 0
+    x = float(n)
+    while x >= 1024 and i < len(units) - 1:
+        x /= 1024
+        i += 1
+    return f"{x:.2f} {units[i]} ({n:,} B)"
+
+def _fmt_mtime(ts):
+    """Format modification time with age."""
+    try:
+        from datetime import datetime, timezone
+        dt = datetime.fromtimestamp(ts, tz=timezone.utc).astimezone()
+        age = datetime.now(dt.tzinfo) - dt
+        secs = int(age.total_seconds())
+        if secs < 60:
+            age_str = f"{secs}s ago"
+        elif secs < 3600:
+            age_str = f"{secs//60}m ago"
+        elif secs < 86400:
+            age_str = f"{secs//3600}h ago"
+        else:
+            age_str = f"{secs//86400}d ago"
+        return f"{dt:%Y-%m-%d %H:%M:%S %Z} ({age_str})"
+    except Exception:
+        return str(ts)
+
+def _check_pathlike(data, name: str, level: LogLevel, caller_info: str, list_cap: int = 10) -> Optional[Dict[str, Any]]:
+    """Check if data is a path-like object and provide file diagnostics."""
+    try:
+        import os
+        import mimetypes
+        from pathlib import Path
+        
+        p = Path(os.fspath(data))
+    except Exception:
+        return None
+
+    looks_like = isinstance(data, (str, os.PathLike))
+    if not looks_like:
+        return None
+
+    exists_or_likely = p.exists() or p.is_symlink() or (isinstance(data, str) and any(sep in data for sep in ("/", "\\")) or (p.suffix))
+    if not exists_or_likely:
+        return None
+
+    # Special handling for Parquet files
+    if str(p).lower().endswith('.parquet'):
+        try:
+            from src.utils.tprint import PYARROW_AVAILABLE
+            if PYARROW_AVAILABLE:
+                import pyarrow.parquet as pq
+                pf = pq.ParquetFile(data)
+                tprint_with_level(level, f"🔍 {name} format{caller_info}:")
+                tprint_with_level(level, "  Type: Parquet file")
+                tprint_with_level(level, f"  Path: {p}")
+                tprint_with_level(level, f"  Shape: {pf.metadata.num_rows} rows × {len(pf.schema_arrow)} cols")
+                tprint_with_level(level, f"  Row groups: {pf.num_row_groups}")
+                field_info = [(pf.schema_arrow.names[i], str(pf.schema_arrow.types[i])) for i in range(len(pf.schema_arrow))]
+                tprint_with_level(level, f"  Schema: {field_info}")
+                summary = {"type": "Parquet file", "path": str(p), "shape": (pf.metadata.num_rows, len(pf.schema_arrow)),
+                           "row_groups": pf.num_row_groups, "schema": field_info}
+                return summary
+        except Exception as err:
+            tprint_with_level(level, f"🔍 {name} format{caller_info}: Parquet file (error: {err})")
+            return {"type": "Parquet file", "path": str(p), "error": str(err)}
+
+    tprint_with_level(level, f"🔍 {name} format{caller_info}:")
+    tprint_with_level(level, f"  Type: path")
+    tprint_with_level(level, f"  Path: {p}")
+    tprint_with_level(level, f"  Exists: {p.exists()}")
+
+    summary = {"type": "path", "path": str(p), "exists": p.exists()}
+
+    try:
+        kind = "file" if p.is_file() else "directory" if p.is_dir() else "symlink" if p.is_symlink() else "other"
+        tprint_with_level(level, f"  Kind: {kind}")
+        summary["kind"] = kind
+        if p.is_symlink():
+            try:
+                target = os.readlink(p)
+                tprint_with_level(level, f"  Symlink → {target}")
+                summary["symlink_target"] = target
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+    try:
+        st = p.stat(follow_symlinks=False)
+        tprint_with_level(level, f"  Size: {_fmt_bytes(st.st_size)}")
+        tprint_with_level(level, f"  Modified: {_fmt_mtime(st.st_mtime)}")
+        summary.update({"size_bytes": st.st_size, "mtime": st.st_mtime})
+    except Exception:
+        pass
+
+    if p.exists() and p.is_file():
+        mime, _ = mimetypes.guess_type(str(p))
+        if mime:
+            tprint_with_level(level, f"  MIME: {mime}")
+            summary["mime"] = mime
+
+    if p.exists() and p.is_dir():
+        try:
+            count = 0
+            names = []
+            for i, child in enumerate(p.iterdir()):
+                count += 1
+                if len(names) < list_cap:
+                    names.append(child.name)
+            if count > list_cap:
+                names.append("...")  # indicate more
+            tprint_with_level(level, f"  Entries: {min(count, list_cap)}/{count}")
+            if names:
+                tprint_with_level(level, f"  Sample: {names}")
+            summary.update({"entries_total": count, "entries_sample": names})
+        except Exception:
+            pass
+
+    return summary
+
+def _timeout_guard(timeout_seconds: float, operation_name: str = "operation"):
+    """Context manager for timeout enforcement.
+    
+    Soft timeout: logs a warning if an operation exceeds the budget; does not interrupt execution.
+    """
+    class TimeoutGuard:
+        def __init__(self, timeout_seconds, operation_name):
+            self.timeout_seconds = timeout_seconds
+            self.operation_name = operation_name
+            self.start_time = None
+            
+        def __enter__(self):
+            self.start_time = time.time()
+            return self
+            
+        def __exit__(self, exc_type, exc_val, exc_tb):
+            if self.start_time:
+                elapsed = time.time() - self.start_time
+                if elapsed > self.timeout_seconds:
+                    # Use proper logging instead of direct print
+                    try:
+                        tprint_with_level(LogLevel.WARNING, 
+                            f"⚠️  {self.operation_name} timed out after {elapsed:.2f}s (limit: {self.timeout_seconds}s)")
+                    except Exception:
+                        print(f"⚠️  {self.operation_name} timed out after {elapsed:.2f}s (limit: {self.timeout_seconds}s)")
+            return False
+    
+    return TimeoutGuard(timeout_seconds, operation_name)
+
+def _safe_repr(obj: Any, max_chars: int = 100) -> str:
+    """Safe representation that won't explode on large objects."""
+    try:
+        import reprlib
+        import textwrap
+        
+        # Create a custom reprlib.Repr with tuned limits
+        repr_obj = reprlib.Repr()
+        repr_obj.maxstring = max_chars
+        repr_obj.maxother = max_chars
+        repr_obj.maxlist = 10
+        repr_obj.maxdict = 10
+        repr_obj.maxset = 10
+        repr_obj.maxtuple = 10
+        
+        # Use the custom repr
+        safe_repr = repr_obj.repr(obj)
+        
+        # Further truncate if still too long
+        if len(safe_repr) > max_chars:
+            safe_repr = textwrap.shorten(safe_repr, width=max_chars, placeholder="...")
+        return safe_repr
+    except Exception:
+        # Fallback to basic repr with truncation
+        try:
+            basic_repr = repr(obj)
+            if len(basic_repr) > max_chars:
+                return basic_repr[:max_chars-3] + "..."
+            return basic_repr
+        except Exception:
+            return f"<{type(obj).__name__} (repr failed)>"
+
+def _check_pandas_dataframe(data, name: str, config: DataFormatConfig, caller_info: str, level: LogLevel) -> Dict[str, Any]:
+    """Comprehensive pandas DataFrame analysis."""
+    summary = {"type": "DataFrame", "shape": data.shape}
+    
+    # Initialize defaults for variables that might not be set
+    null_pct = None
+    object_cols = []
+    categorical_cols = []
+    
+    try:
+        import pandas as pd
+        import numpy as np
+        
+        # Basic info
+        tprint_with_level(level, f"🔍 {name} format{caller_info}:")
+        tprint_with_level(level, f"  Type: DataFrame")
+        tprint_with_level(level, f"  Shape: {data.shape}")
+        
+        # Dtypes summary
+        dtypes = data.dtypes
+        dtype_counts = dtypes.value_counts().to_dict()
+        # Cast to strings for JSON compatibility
+        dtypes_dict = {str(k): str(v) for k, v in dict(dtypes).items()}
+        dtype_counts_str = {str(k): v for k, v in dtype_counts.items()}
+        tprint_with_level(level, f"  Dtypes: {dtypes_dict}")
+        tprint_with_level(level, f"  Dtype counts: {dtype_counts_str}")
+        
+        # Index info with diagnostics
+        idx = data.index
+        info = {
+            "class": type(idx).__name__,
+            "dtype": str(getattr(idx, "dtype", "")),
+            "length": len(idx),
+            "is_unique": bool(getattr(idx, "is_unique", False)),
+            "is_monotonic": bool(getattr(idx, "is_monotonic_increasing", False)),
+        }
+        tprint_with_level(level, f"  Index info: {info}")
+        summary["index"] = info
+        
+        if config.include_semantics:
+            # Null analysis
+            null_counts = data.isnull().sum()
+            total_nulls = null_counts.sum()
+            # Zero-division guard
+            total_cells = data.shape[0] * data.shape[1]
+            null_pct = (total_nulls / total_cells) * 100 if total_cells > 0 else 0.0
+            tprint_with_level(level, f"  Nulls: {total_nulls} total ({null_pct:.1f}%)")
+            
+            # Column analysis
+            object_cols = data.select_dtypes(include=['object']).columns
+            categorical_cols = data.select_dtypes(include=['category']).columns
+            tprint_with_level(level, f"  Object cols: {len(object_cols)}, Categorical: {len(categorical_cols)}")
+            
+            # Suspicious columns
+            high_null_cols = null_counts[null_counts > data.shape[0] * 0.5].index.tolist()
+            if high_null_cols:
+                tprint_with_level(level, f"  ⚠️  High null cols: {high_null_cols[:5]}")
+            
+            # Mixed object types detection
+            from collections import Counter
+            suspicious = []
+            for c in data.select_dtypes(include=["object"]).columns[:config.max_cols]:
+                try:
+                    types = Counter(type(x).__name__ for x in data[c].dropna().head(100))
+                    if len(types) > 1:
+                        suspicious.append((c, dict(types)))
+                except Exception:
+                    pass
+            if suspicious:
+                tprint_with_level(level, f"  ⚠️ Mixed-type object cols (sample): {suspicious[:5]}{'...' if len(suspicious) > 5 else ''}")
+                summary["mixed_type_cols"] = suspicious[:5]
+        
+        if config.include_memory:
+            try:
+                with _timeout_guard(config.timeout_seconds, "DataFrame memory calculation"):
+                    memory_mb = data.memory_usage(deep=True).sum() / 1024**2
+                    tprint_with_level(level, f"  Memory: {memory_mb:.2f} MB")
+                    summary["memory_mb"] = memory_mb
+            except Exception:
+                tprint_with_level(level, f"  Memory: (unable to calculate)")
+        
+        # Sample columns
+        sample_cols = data.columns[:config.max_cols].tolist()
+        if len(data.columns) > config.max_cols:
+            sample_cols.append(f"... and {len(data.columns) - config.max_cols} more")
+        tprint_with_level(level, f"  Columns: {sample_cols}")
+        
+        summary.update({
+            "dtypes": dtypes_dict,
+            "dtype_counts": dtype_counts_str,
+            "null_pct": null_pct,
+            "object_cols": len(object_cols),
+            "categorical_cols": len(categorical_cols)
+        })
+        
+    except Exception as e:
+        tprint_with_level(level, f"  ⚠️  DataFrame analysis error: {e}")
+        summary["error"] = str(e)
+    
+    return summary
+
+def _check_pandas_series(data, name: str, config: DataFormatConfig, caller_info: str, level: LogLevel) -> Dict[str, Any]:
+    """Comprehensive pandas Series analysis."""
+    summary = {"type": "Series", "length": len(data)}
+    
+    try:
+        import pandas as pd
+        import numpy as np
+        
+        tprint_with_level(level, f"🔍 {name} format{caller_info}:")
+        tprint_with_level(level, f"  Type: Series")
+        tprint_with_level(level, f"  Length: {len(data)}")
+        tprint_with_level(level, f"  Dtype: {data.dtype}")
+        tprint_with_level(level, f"  Index: {type(data.index).__name__}")
+        
+        if config.include_semantics:
+            # Null analysis
+            null_count = data.isnull().sum()
+            # Zero-division guard
+            null_pct = (null_count / len(data)) * 100 if len(data) > 0 else 0.0
+            tprint_with_level(level, f"  Nulls: {null_count} ({null_pct:.1f}%)")
+            
+            # Uniqueness (with sampling for large series)
+            n = len(data)
+            if config.include_semantics:
+                if config.safe_sampling and n > config.sample_size:
+                    sample = data.sample(config.sample_size, random_state=0) if hasattr(data, "sample") else data.head(config.sample_size)
+                    unique_count = sample.nunique(dropna=True)
+                    unique_pct = (unique_count / len(sample) * 100.0) if len(sample) else 0.0
+                    tprint_with_level(level, f"  Unique (sampled {len(sample)}): {unique_count} ({unique_pct:.1f}%)")
+                else:
+                    unique_count = data.nunique(dropna=True)
+                    unique_pct = (unique_count / n * 100.0) if n else 0.0
+                    tprint_with_level(level, f"  Unique: {unique_count} ({unique_pct:.1f}%)")
+            
+            # Monotonicity using proper pandas API
+            try:
+                from pandas.api.types import is_numeric_dtype, is_datetime64_any_dtype
+                if is_numeric_dtype(data) or is_datetime64_any_dtype(data):
+                    is_monotonic = data.is_monotonic_increasing or data.is_monotonic_decreasing
+                    tprint_with_level(level, f"  Monotonic: {is_monotonic}")
+                    summary["is_monotonic"] = is_monotonic
+            except ImportError:
+                # Fallback for older pandas versions
+                if str(data.dtype) in ['int64', 'float64', 'datetime64[ns]']:
+                    is_monotonic = data.is_monotonic_increasing or data.is_monotonic_decreasing
+                    tprint_with_level(level, f"  Monotonic: {is_monotonic}")
+                    summary["is_monotonic"] = is_monotonic
+        
+        if config.include_memory:
+            try:
+                with _timeout_guard(config.timeout_seconds, "Series memory calculation"):
+                    memory_mb = data.memory_usage(deep=True) / 1024**2
+                    tprint_with_level(level, f"  Memory: {memory_mb:.2f} MB")
+                    summary["memory_mb"] = memory_mb
+            except Exception:
+                tprint_with_level(level, f"  Memory: (unable to calculate)")
+        
+        summary.update({
+            "dtype": str(data.dtype),
+            "null_pct": null_pct if config.include_semantics else None,
+            "unique_pct": unique_pct if config.include_semantics else None
+        })
+        
+    except Exception as e:
+        tprint_with_level(level, f"  ⚠️  Series analysis error: {e}")
+        summary["error"] = str(e)
+    
+    return summary
+
+def _check_numpy_array(data, name: str, config: DataFormatConfig, caller_info: str, level: LogLevel) -> Dict[str, Any]:
+    """Comprehensive numpy array analysis."""
+    summary = {"type": "ndarray", "shape": data.shape, "dtype": str(data.dtype)}
+    
+    try:
+        import numpy as np
+        
+        tprint_with_level(level, f"🔍 {name} format{caller_info}:")
+        tprint_with_level(level, f"  Type: ndarray")
+        tprint_with_level(level, f"  Shape: {data.shape}")
+        tprint_with_level(level, f"  Dtype: {data.dtype}")
+        tprint_with_level(level, f"  Size: {data.size}")
+        tprint_with_level(level, f"  Itemsize: {data.itemsize} bytes")
+        tprint_with_level(level, f"  Strides: {data.strides}")
+        tprint_with_level(level, f"  Contiguous: C={data.flags.c_contiguous}, F={data.flags.f_contiguous}")
+        
+        if config.include_semantics and data.size > 0:
+            # Safe sampling for large arrays
+            if config.safe_sampling and data.size > config.sample_size:
+                sample_indices = np.random.choice(data.size, min(config.sample_size, data.size), replace=False)
+                sample_data = data.ravel()[sample_indices]
+            else:
+                sample_data = data.ravel()
+            
+            # Limit statistics calculation based on max_stat_items
+            max_stats = min(config.max_stat_items, len(sample_data))
+            
+            # Numeric analysis
+            if np.issubdtype(data.dtype, np.number):
+                try:
+                    # Actually use max_stat_items
+                    finite_mask = np.isfinite(sample_data[:max_stats])
+                    finite_pct = float(np.mean(finite_mask) * 100.0)
+                    tprint_with_level(level, f"  Finite: {finite_pct:.1f}%")
+                    
+                    if np.any(finite_mask):
+                        finite_data = sample_data[:max_stats][finite_mask]
+                        vmin = float(np.min(finite_data))
+                        vmax = float(np.max(finite_data))
+                        tprint_with_level(level, f"  Range: [{vmin:.3f}, {vmax:.3f}]")
+                        summary.update({"finite_pct": finite_pct, "min_val": vmin, "max_val": vmax})
+                except Exception:
+                    pass
+        
+        if config.include_memory:
+            try:
+                memory_mb = data.nbytes / 1024**2
+                tprint_with_level(level, f"  Memory: {memory_mb:.2f} MB")
+                summary["memory_mb"] = memory_mb
+            except Exception:
+                tprint_with_level(level, f"  Memory: (unable to calculate)")
+        
+    except Exception as e:
+        tprint_with_level(level, f"  ⚠️  Array analysis error: {e}")
+        summary["error"] = str(e)
+    
+    return summary
+
+def tprint_data_format(data: Any, name: str = "data", level: LogLevel = LogLevel.DEBUG, 
+                      config: Optional[DataFormatConfig] = None, return_summary: bool = False) -> Optional[Dict[str, Any]]:
+    """
+    Universal data format checker - comprehensive version for fast troubleshooting.
+    
+    Provides detailed analysis of data formatting including:
+    - Data types (int64 vs int32, dict, string, etc.)
+    - Shapes and dimensions
+    - Memory usage and performance characteristics
+    - Data quality indicators (nulls, uniqueness, etc.)
+    - Schema analysis and potential issues
+    
+    Args:
+        data: Data to check format for
+        name: Name/description of the data
+        level: Log level for the output
+        config: Configuration for analysis parameters
+        return_summary: If True, returns a dict summary in addition to printing
+    
+    Returns:
+        Optional dict with summary information if return_summary=True
+    
+    Example:
+        tprint_data_format(my_dataframe, "training_data")  # Quick format check
+        summary = tprint_data_format(42, "my_int", return_summary=True)  # Get summary
+    """
+    if config is None:
+        config = DataFormatConfig()
+    
+    caller_info = _get_caller_chain()
+    summary = {"name": name, "type": type(data).__name__}
+    
+    try:
+        # Import libraries with individual tracking
+        PANDAS_AVAILABLE = False
+        NUMPY_AVAILABLE = False
+        PYARROW_AVAILABLE = False
+        SCIPY_AVAILABLE = False
+        
+        try:
+            import pandas as pd
+            PANDAS_AVAILABLE = True
+        except ImportError:
+            pass
+        
+        try:
+            import numpy as np
+            NUMPY_AVAILABLE = True
+        except ImportError:
+            pass
+        
+        try:
+            import pyarrow as pa
+            PYARROW_AVAILABLE = True
+        except ImportError:
+            pass
+        
+        try:
+            import scipy.sparse as sp
+            SCIPY_AVAILABLE = True
+        except ImportError:
+            SCIPY_AVAILABLE = False
+        
+        # Check for path-like objects first (before main type ladder)
+        if isinstance(data, (str, os.PathLike)):
+            path_summary = _check_pathlike(data, name, level, caller_info, config.max_rows)
+            if path_summary is not None:
+                return path_summary if return_summary else None
+
+        # Handle None first
+        if data is None:
+            tprint_with_level(level, f"🔍 {name} format{caller_info}:")
+            tprint_with_level(level, f"  Type: NoneType")
+            tprint_with_level(level, f"  Value: None")
+            summary["type"] = "NoneType"
+            return summary if return_summary else None
+        
+        # Handle booleans before numbers (bool is subclass of int)
+        elif isinstance(data, bool):
+            tprint_with_level(level, f"🔍 {name} format{caller_info}:")
+            tprint_with_level(level, f"  Type: bool")
+            tprint_with_level(level, f"  Value: {data}")
+            summary["value"] = data
+            return summary if return_summary else None
+        
+        # Handle strings (non-path)
+        elif isinstance(data, str):
+            tprint_with_level(level, f"🔍 {name} format{caller_info}:")
+            tprint_with_level(level, f"  Type: str")
+            tprint_with_level(level, f"  Length: {len(data)}")
+            
+            if config.include_values:
+                preview = data[:config.max_preview_chars]
+                tprint_with_level(level, f"  Preview: {_safe_repr(preview, config.max_preview_chars)}")
+            
+            if config.include_semantics:
+                is_ascii = data.isascii()
+                printable_ratio = sum(1 for c in data if c.isprintable()) / len(data) if data else 0
+                tprint_with_level(level, f"  ASCII: {is_ascii}, Printable: {printable_ratio:.1%}")
+                summary["is_ascii"] = is_ascii
+                summary["printable_ratio"] = printable_ratio
+            
+            summary["length"] = len(data)
+            return summary if return_summary else None
+        
+        # Handle bytes/bytearray/memoryview
+        elif isinstance(data, (bytes, bytearray, memoryview)):
+            # Convert memoryview to bytes for safe operations
+            buf = bytes(data) if isinstance(data, memoryview) else data
+            tprint_with_level(level, f"🔍 {name} format{caller_info}:")
+            tprint_with_level(level, f"  Type: {type(data).__name__}")
+            tprint_with_level(level, f"  Length: {len(buf)} bytes")
+            
+            if config.include_values and len(buf) > 0:
+                # Show first 16 bytes as hex
+                preview_bytes = buf[:16]
+                hex_preview = ' '.join(f'{b:02x}' for b in preview_bytes)
+                tprint_with_level(level, f"  Hex preview: {hex_preview}{'...' if len(buf) > 16 else ''}")
+                
+                # Try to decode as UTF-8 for text preview
+                try:
+                    text_preview = buf[:config.max_preview_chars].decode('utf-8', errors='ignore')
+                    tprint_with_level(level, f"  Text preview: {_safe_repr(text_preview, config.max_preview_chars)}")
+                except Exception:
+                    pass
+            
+            summary["length"] = len(buf)
+            return summary if return_summary else None
+        
+        # Handle numbers (after bool check)
+        elif isinstance(data, (int, float, complex)):
+            tprint_with_level(level, f"🔍 {name} format{caller_info}:")
+            tprint_with_level(level, f"  Type: {type(data).__name__}")
+            tprint_with_level(level, f"  Value: {data}")
+            
+            if isinstance(data, int):
+                tprint_with_level(level, f"  Bits: {data.bit_length()}")
+                summary["bits"] = data.bit_length()
+            elif isinstance(data, float):
+                if config.include_semantics:
+                    import math
+                    is_finite = math.isfinite(data)
+                    tprint_with_level(level, f"  Finite: {is_finite}")
+                    summary["is_finite"] = is_finite
+            
+            summary["value"] = data
+            return summary if return_summary else None
+        
+        # CRITICAL: Handle library-specific types BEFORE generic iterable/sequence checks
+        # This prevents pandas DataFrames/Series from being caught by generic sequence logic
+        
+        # Handle pandas DataFrames
+        elif PANDAS_AVAILABLE and isinstance(data, pd.DataFrame):
+            summary = _check_pandas_dataframe(data, name, config, caller_info, level)
+            return summary if return_summary else None
+        
+        # Handle pandas Series
+        elif PANDAS_AVAILABLE and isinstance(data, pd.Series):
+            summary = _check_pandas_series(data, name, config, caller_info, level)
+            return summary if return_summary else None
+        
+        # Handle numpy arrays
+        elif NUMPY_AVAILABLE and isinstance(data, np.ndarray):
+            summary = _check_numpy_array(data, name, config, caller_info, level)
+            return summary if return_summary else None
+        
+        # Handle scipy sparse matrices
+        elif SCIPY_AVAILABLE and sp.issparse(data):
+            tprint_with_level(level, f"🔍 {name} format{caller_info}:")
+            tprint_with_level(level, f"  Type: {type(data).__name__} (sparse)")
+            tprint_with_level(level, f"  Shape: {data.shape}")
+            tprint_with_level(level, f"  Dtype: {data.dtype}")
+            tprint_with_level(level, f"  NNZ: {data.nnz}")
+            
+            # Correct density calculation: nnz / (rows * cols), not nnz / size
+            density = data.nnz / (data.shape[0] * data.shape[1]) if data.shape[0] > 0 and data.shape[1] > 0 else 0.0
+            tprint_with_level(level, f"  Density: {density:.2%}")
+            
+            summary.update({
+                "type": f"{type(data).__name__} (sparse)",
+                "shape": data.shape,
+                "dtype": str(data.dtype),
+                "nnz": data.nnz,
+                "density": density
+            })
+            return summary if return_summary else None
+        
+        # Handle PyArrow Tables
+        elif PYARROW_AVAILABLE and isinstance(data, pa.Table):
+            tprint_with_level(level, f"🔍 {name} format{caller_info}:")
+            tprint_with_level(level, f"  Type: Arrow Table")
+            tprint_with_level(level, f"  Shape: {data.num_rows} rows × {data.num_columns} cols")
+            
+            # Schema details (capped to max_cols)
+            cols = data.num_columns
+            show = min(cols, config.max_cols)
+            field_info = [(data.schema[i].name, str(data.schema[i].type)) for i in range(show)]
+            if cols > show:
+                field_info.append(f"... and {cols - show} more")
+            tprint_with_level(level, f"  Schema: {field_info}")
+            
+            if config.include_semantics:
+                # Null counts per column (capped to max_cols)
+                null_counts = {data.schema[i].name: data.column(i).null_count for i in range(show)}
+                if cols > show:
+                    null_counts["..."] = f"{cols - show} more"
+                tprint_with_level(level, f"  Null counts: {null_counts}")
+                summary["null_counts"] = null_counts
+            
+            summary.update({
+                "type": "Arrow Table",
+                "shape": (data.num_rows, data.num_columns),
+                "schema": field_info
+            })
+            return summary if return_summary else None
+        
+        
+        # Handle sets specifically
+        elif isinstance(data, set):
+            try:
+                length = len(data)
+                tprint_with_level(level, f"🔍 {name} format{caller_info}:")
+                tprint_with_level(level, f"  Type: set")
+                tprint_with_level(level, f"  Length: {length}")
+                
+                if length > 0 and config.include_values:
+                    sample_size = min(config.max_rows, length)
+                    sample_items = list(data)[:sample_size]
+                    element_types = [type(item).__name__ for item in sample_items]
+                    tprint_with_level(level, f"  Element types: {element_types}{'...' if length > sample_size else ''}")
+                    summary["element_types"] = element_types
+                
+                summary["length"] = length
+                return summary if return_summary else None
+            except Exception as e:
+                tprint_with_level(level, f"🔍 {name} format{caller_info}: set (error: {e})")
+                summary["error"] = str(e)
+                return summary if return_summary else None
+        
+        # Handle mappings (dict, etc.) - BEFORE sequences to prevent KeyError
+        elif hasattr(data, 'keys') and hasattr(data, '__getitem__'):
+            try:
+                length = len(data)
+                tprint_with_level(level, f"🔍 {name} format{caller_info}:")
+                tprint_with_level(level, f"  Type: {type(data).__name__}")
+                tprint_with_level(level, f"  Keys: {length}")
+                
+                if length > 0 and config.include_values:
+                    sample_keys = list(data.keys())[:config.max_keys]
+                    tprint_with_level(level, f"  Sample keys: {sample_keys}{'...' if length > config.max_keys else ''}")
+                    
+                    # Show value types for sample keys
+                    try:
+                        value_types = {k: type(data[k]).__name__ for k in sample_keys}
+                        tprint_with_level(level, f"  Value types: {value_types}")
+                        summary["sample_keys"] = sample_keys
+                        summary["value_types"] = value_types
+                    except Exception as e:
+                        tprint_with_level(level, f"  Value types: (error accessing: {e})")
+                
+                summary["length"] = length
+                return summary if return_summary else None
+            except Exception as e:
+                tprint_with_level(level, f"🔍 {name} format{caller_info}: {type(data).__name__} (error: {e})")
+                summary["error"] = str(e)
+                return summary if return_summary else None
+        
+        # Handle iterators/generators - BEFORE generic sequence handling
+        elif hasattr(data, '__next__') and not isinstance(data, (str, bytes, bytearray)):
+            tprint_with_level(level, f"🔍 {name} format{caller_info}:")
+            tprint_with_level(level, f"  Type: {type(data).__name__} (iterator)")
+            tprint_with_level(level, f"  Note: Iterator not consumed")
+            summary["type"] = f"{type(data).__name__} (iterator)"
+            return summary if return_summary else None
+        
+        # Handle collections.abc types
+        elif hasattr(data, '__iter__') and not isinstance(data, (str, bytes, bytearray)):
+            # Handle sequences - AFTER mappings
+            if hasattr(data, '__getitem__') and hasattr(data, '__len__'):
+                try:
+                    length = len(data)
+                    tprint_with_level(level, f"🔍 {name} format{caller_info}:")
+                    tprint_with_level(level, f"  Type: {type(data).__name__}")
+                    tprint_with_level(level, f"  Length: {length}")
+                    
+                    if length > 0 and config.include_values:
+                        sample_size = min(config.max_rows, length)
+                        try:
+                            # Use itertools.islice for safer sampling
+                            import itertools
+                            sample_items = list(itertools.islice(data, sample_size))
+                            element_types = [type(item).__name__ for item in sample_items]
+                            tprint_with_level(level, f"  Element types: {element_types}{'...' if length > sample_size else ''}")
+                            summary["element_types"] = element_types
+                        except Exception as e:
+                            tprint_with_level(level, f"  Element types: (error sampling: {e})")
+                    
+                    summary["length"] = length
+                    return summary if return_summary else None
+                except Exception as e:
+                    tprint_with_level(level, f"🔍 {name} format{caller_info}: {type(data).__name__} (error: {e})")
+                    summary["error"] = str(e)
+                    return summary if return_summary else None
+        
+        # Handle other objects
+        else:
+            tprint_with_level(level, f"🔍 {name} format{caller_info}:")
+            tprint_with_level(level, f"  Type: {type(data).__name__}")
+            
+            if hasattr(data, '__len__'):
+                try:
+                    length = len(data)
+                    tprint_with_level(level, f"  Length: {length}")
+                    summary["length"] = length
+                except Exception:
+                    pass
+            
+            if config.include_values:
+                preview = _safe_repr(data, config.max_preview_chars)
+                tprint_with_level(level, f"  Preview: {preview}")
+                summary["preview"] = preview
+            
+            return summary if return_summary else None
+    
+    except Exception as e:
+        tprint_with_level(level, f"🔍 {name} format (error){caller_info}: {e}")
+        summary["error"] = str(e)
+        return summary if return_summary else None
+
 def tprint_data_preview(data: Any, name: str = "data", max_rows: int = None, 
                        max_cols: int = None, level: LogLevel = LogLevel.DEBUG, 
                        include_metadata: bool = True, force_log: bool = False) -> None:
@@ -1632,6 +2425,8 @@ __all__ = [
     'tprint_batch',
     'tprint_numba_compatible',
     'tprint_data_preview',
+    'tprint_data_format',
+    'DataFormatConfig',
 
     # Enhanced print functions
     'enhanced_print',

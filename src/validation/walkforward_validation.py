@@ -20,6 +20,9 @@ from sklearn.metrics import mean_squared_error, roc_auc_score
 from sklearn.linear_model import LinearRegression
 import itertools
 
+# Import tprint_data_preview for enhanced data troubleshooting
+from src.utils.tprint import tprint_data_preview
+
 class ValidationType(Enum):
     """Types of validation."""
     WALK_FORWARD = "walk_forward"
@@ -88,6 +91,11 @@ class WalkForwardValidator:
                 model_configs: Dict[str, Any]) -> ValidationResult:
         """Run complete walk-forward validation."""
 
+        # Data preview for troubleshooting
+        tprint_data_preview(features, "validation_features", level="INFO")
+        tprint_data_preview(targets, "validation_targets", level="INFO")
+        tprint_data_preview(model_configs, "model_configs", level="DEBUG")
+
         fold_results = []
         ic_scores = []
         auc_scores = []
@@ -107,6 +115,12 @@ class WalkForwardValidator:
                 # Split data
                 X_train, X_val = features.iloc[train_idx], features.iloc[val_idx]
                 y_train, y_val = targets.iloc[train_idx], targets.iloc[val_idx]
+
+                # Data preview for troubleshooting
+                tprint_data_preview(X_train, f"X_train_fold_{fold_idx}", level="DEBUG")
+                tprint_data_preview(X_val, f"X_val_fold_{fold_idx}", level="DEBUG")
+                tprint_data_preview(y_train, f"y_train_fold_{fold_idx}", level="DEBUG")
+                tprint_data_preview(y_val, f"y_val_fold_{fold_idx}", level="DEBUG")
 
                 # Nested CV for hyperparameter selection
                 best_config = self._nested_cv_selection(X_train, y_train, model_configs)
@@ -165,6 +179,10 @@ class WalkForwardValidator:
                     X_inner_val = X_train.iloc[inner_val_idx]
                     y_inner_val = y_train.iloc[inner_val_idx]
 
+                    # Data preview for troubleshooting
+                    tprint_data_preview(X_inner_train, f"inner_X_train_{config_name}", level="DEBUG")
+                    tprint_data_preview(X_inner_val, f"inner_X_val_{config_name}", level="DEBUG")
+
                     # Train model
                     model = self._train_model(X_inner_train, y_inner_train, config)
 
@@ -209,6 +227,10 @@ class WalkForwardValidator:
 
         predictions = model.predict(X_val)
 
+        # Data preview for troubleshooting
+        tprint_data_preview(predictions, f"predictions_fold_{fold_idx}", level="DEBUG")
+        tprint_data_preview(y_val, f"actual_values_fold_{fold_idx}", level="DEBUG")
+
         # Calculate metrics
         ic_score = self._calculate_ic(predictions, y_val)
         auc_score = self._calculate_auc(predictions, y_val)
@@ -220,7 +242,7 @@ class WalkForwardValidator:
             for i, feature in enumerate(X_val.columns):
                 feature_importance[feature] = abs(model.coef_[i]) if i < len(model.coef_) else 0.0
 
-        return FoldResult(
+        fold_result = FoldResult(
             train_start=train_idx[0],
             train_end=train_idx[-1],
             val_start=val_idx[0],
@@ -232,6 +254,11 @@ class WalkForwardValidator:
             predictions=predictions,
             actual=y_val.values
         )
+
+        # Data preview for troubleshooting
+        tprint_data_preview(fold_result, f"fold_result_{fold_idx}", level="DEBUG")
+
+        return fold_result
 
     def _calculate_ic(self, predictions: np.ndarray, actual: np.ndarray) -> float:
         """Calculate Information Coefficient."""
@@ -304,6 +331,9 @@ class AblationValidator:
             try:
                 # Create feature subset based on ablation step
                 feature_subset = self._create_feature_subset(features, step)
+
+                # Data preview for troubleshooting
+                tprint_data_preview(feature_subset, f"ablation_features_{step}", level="DEBUG")
 
                 if feature_subset.empty:
                     continue
@@ -378,6 +408,10 @@ class SPAValidator:
                     model_config: Dict[str, Any]) -> float:
         """Run SPA test for data-snooping protection."""
 
+        # Data preview for troubleshooting
+        tprint_data_preview(features, "spa_original_features", level="DEBUG")
+        tprint_data_preview(targets, "spa_original_targets", level="DEBUG")
+
         # Calculate actual performance
         validator = WalkForwardValidator(self.config)
         actual_result = validator.validate(features, targets, {'default': model_config})
@@ -390,6 +424,9 @@ class SPAValidator:
             try:
                 # Randomly permute targets
                 permuted_targets = targets.sample(frac=1.0).reset_index(drop=True)
+
+                # Data preview for troubleshooting
+                tprint_data_preview(permuted_targets, f"spa_permuted_targets_{_}", level="DEBUG")
 
                 # Run validation on permuted data
                 permuted_result = validator.validate(features, permuted_targets, {'default': model_config})

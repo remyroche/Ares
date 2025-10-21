@@ -352,6 +352,9 @@ class FinalParametersOptimizer(BaseStep):
             direction = config.get('direction', 'longs')
             execution_mode = config.get('execution_mode', 'light')
             
+            # Data preview for troubleshooting
+            tprint_data_preview(config, "optimization_config", level="INFO")
+            
             if not symbol:
                 raise ValueError("Symbol is required for final parameters optimization")
             
@@ -373,13 +376,16 @@ class FinalParametersOptimizer(BaseStep):
                 model='FinalParameters'
             )
             
+            # Data preview for troubleshooting
+            tprint_data_preview(self.artifact_manager.context, "artifact_manager_context", level="DEBUG")
+            
             # Perform final parameters optimization
             optimization_result = await self._perform_final_parameters_optimization(
                 symbol, timeframe, direction, execution_mode, config
             )
 
-            # Preview optimization results
-            tprint_data_preview(optimization_result, "optimization_result", max_rows=5, level="INFO")
+            # Data preview for troubleshooting
+            tprint_data_preview(optimization_result, "final_optimization_result", level="INFO")
 
             # Save optimization result as artifact (will auto-generate CSV if < 2000 rows)
             artifact_path = self._save_artifact(
@@ -761,6 +767,9 @@ class FinalParametersOptimizer(BaseStep):
             Tuple of (mean_score, cv_results_dict)
         """
         try:
+            # Data preview for troubleshooting
+            tprint_data_preview(data, "cv_input_data", level="DEBUG")
+            
             # Check for data leakage if enabled
             if self.use_cv and 'features' in data and 'targets' in data:
                 X = ensure_array(data['features'])
@@ -807,6 +816,9 @@ class FinalParametersOptimizer(BaseStep):
                     for key, value in data.items():
                         if key not in ['features', 'targets']:
                             fold_data[key] = value
+
+                    # Data preview for troubleshooting
+                    tprint_data_preview(fold_data, f"fold_data_{fold_idx}", level="DEBUG")
 
                     # Evaluate on this fold
                     fold_score, fold_metrics = evaluation_func(params, fold_data)
@@ -1032,6 +1044,9 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
             regime_id: Regime identifier
         """
 
+        # Data preview for troubleshooting
+        tprint_data_preview(regime_data, f"regime_data_{regime_id}", level="DEBUG")
+
         # Check if regime has enough samples for directional split
         total_samples = len(regime_data.get('signals', []))
         directions = regime_data.get('directions', np.array([]))
@@ -1071,6 +1086,7 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
 
         # Optimize long parameters
         long_data = self._filter_data_by_mask(regime_data, long_mask)
+        tprint_data_preview(long_data, f"long_data_{regime_id}", level="DEBUG")
 
         long_study = optuna.create_study(
             direction='maximize',
@@ -1093,6 +1109,7 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
 
         # Optimize short parameters
         short_data = self._filter_data_by_mask(regime_data, short_mask)
+        tprint_data_preview(short_data, f"short_data_{regime_id}", level="DEBUG")
 
         short_study = optuna.create_study(
             direction='maximize',
@@ -3190,8 +3207,7 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
             optimized_data = None
             if hasattr(self, 'training_data') and self.training_data is not None:
                 optimized_data = self._optimize_data_for_vectorbt_enhanced(self.training_data)
-                # Preview optimized data
-                tprint_data_preview(optimized_data, "optimized_training_data", max_rows=3, level="DEBUG")
+                tprint_data_preview(optimized_data, "vectorbt_optimized_data_context", level="DEBUG")
 
             # Create operation context for VectorBT optimization
             operation_context = {
@@ -3257,6 +3273,7 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
             optimized_data = None
             if hasattr(self, 'training_data') and self.training_data is not None:
                 optimized_data = self._optimize_data_for_vectorbt_enhanced(self.training_data)
+                tprint_data_preview(optimized_data, "vectorbt_batch_optimized_data", level="DEBUG")
 
             # Create operation context for VectorBT optimization
             operation_context = {
@@ -3431,6 +3448,9 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
         if not self.vectorbt_enabled:
             return data
 
+        # Data preview for troubleshooting
+        tprint_data_preview(data, "vectorbt_input_data", level="DEBUG")
+
         try:
             # Preview input data
             tprint_data_preview(data, "input_data_vectorbt", max_rows=3, level="DEBUG")
@@ -3465,6 +3485,9 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
         if not self.vectorbt_enabled or self.rolling_optimizer is None:
             return data
 
+        # Data preview for troubleshooting
+        tprint_data_preview(data, "vectorbt_enhanced_input_data", level="DEBUG")
+
         try:
             # Preview input data
             tprint_data_preview(data, "input_data_vectorbt_optimization", max_rows=3, level="DEBUG")
@@ -3489,6 +3512,9 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 # Memory optimization
                 if hasattr(self.rolling_optimizer, 'optimize_memory_usage'):
                     data = self.rolling_optimizer.optimize_memory_usage(data)
+
+            # Data preview for troubleshooting
+            tprint_data_preview(data, "vectorbt_optimized_data", level="DEBUG")
 
             return data
 

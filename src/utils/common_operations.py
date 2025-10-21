@@ -40,74 +40,49 @@ class OptimizationLevel:
     CONSERVATIVE = "CONSERVATIVE"
     MAXIMUM = "MAXIMUM"
 
-# Enhanced hardware optimization imports
-try:
-    from src.utils.hardware.optimization_decorators import (
-        smart_cache, auto_optimize, memory_efficient, performance_tracked,
-        OptimizationConfig
-    )
-    from src.utils.hardware.memory_optimized_decorators import (
-        memory_optimized, comprehensive_memory_optimization, MemoryOptimizationLevel,
-        get_memory_optimization_stats
-    )
-    from src.utils.hardware.integrated_hardware_manager import (
-        get_integrated_hardware_manager, WorkloadType
-    )
-    HARDWARE_OPTIMIZATION_AVAILABLE = True
-except ImportError:
-    HARDWARE_OPTIMIZATION_AVAILABLE = False
-    # Create dummy decorators and classes
-    class OptimizationConfig:
-        def __init__(self, enable_caching=True, enable_dtype_optimization=True, 
-                     optimization_level=None, enable_compression=False, **kwargs):
-            self.enable_caching = enable_caching
-            self.enable_dtype_optimization = enable_dtype_optimization
-            self.optimization_level = optimization_level
-            self.enable_compression = enable_compression
-    
-    class OptimizationLevel:
-        BALANCED = "BALANCED"
-        AGGRESSIVE = "AGGRESSIVE"
-        CONSERVATIVE = "CONSERVATIVE"
-        NONE = "NONE"
-        BASIC = "BASIC"
-        MAXIMUM = "MAXIMUM"
-    
-    def memory_efficient(config=None):
-        def decorator(func):
-            return func
+# Hardware optimization availability flag
+HARDWARE_OPTIMIZATION_AVAILABLE = False
+
+# Dummy decorators and classes to avoid circular imports
+class OptimizationConfig:
+    def __init__(self, enable_caching=True, enable_dtype_optimization=True, 
+                 optimization_level=None, enable_compression=False, **kwargs):
+        self.enable_caching = enable_caching
+        self.enable_dtype_optimization = enable_dtype_optimization
+        self.optimization_level = optimization_level
+        self.enable_compression = enable_compression
+
+def memory_efficient(config=None):
+    def decorator(func):
+        return func
+    return decorator
+
+def performance_tracked(func=None, **kwargs):
+    def decorator(f):
+        return f
+    if func is None:
         return decorator
-    
-    def performance_tracked(func=None, **kwargs):
-        def decorator(f):
-            return f
-        if func is None:
-            return decorator
-        return decorator(func)
-    
-    def get_memory_optimization_stats():
-        return {}
-    
-    def auto_optimize(func=None, **kwargs):
-        def decorator(f):
-            return f
-        if func is None:
-            return decorator
-        return decorator(func)
-        return decorator
-    def auto_optimize(config=None):
-        def decorator(func):
-            return func
-        return decorator
+    return decorator(func)
+
+def get_memory_optimization_stats():
+    return {}
+
+def auto_optimize(config=None):
+    def decorator(func):
+        return func
+    return decorator
+
+def is_m1_available():
+    """Check if M1 hardware is available."""
+    return False
+
+def is_mps_available():
+    """Check if MPS (Metal Performance Shaders) is available."""
+    return False
 
 # Configure logging
 logger = logging.getLogger(__name__)
 
-@auto_optimize(OptimizationConfig(
-    enable_caching=True,
-    enable_dtype_optimization=True,
-    optimization_level=OptimizationLevel.BALANCED
-))
 def safe_dataframe_operation(operation_func: Callable[..., pd.DataFrame], *args, **kwargs) -> pd.DataFrame:
     """Run a dataframe op with enhanced hardware optimization and safety net."""
     if not callable(operation_func):

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from src.utils.tprint import tprint
 from src.utils.hardware.memory_optimized_decorators import memory_optimized, MemoryOptimizationLevel
+from src.utils.hardware.optimization_decorators import performance_tracked
 
 """
 Advanced Hyperparameter Optimization Utilities

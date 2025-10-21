@@ -20,6 +20,7 @@ import time
 import numpy as np
 from ...nonlinear_optimization_helpers import NonLinearConfig
 from ...hardware.memory_optimized_decorators import memory_optimized, MemoryOptimizationLevel
+from ...hardware.optimization_decorators import performance_tracked
 
 # Import torch for GPU acceleration
 try:

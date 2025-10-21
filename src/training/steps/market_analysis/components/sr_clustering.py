@@ -20,7 +20,7 @@ from src.utils.logger import system_logger
 # Hardware optimization imports
 from src.utils.hardware import (
     get_integrated_hardware_manager, IntegratedHardwareConfig,
-    memory_optimized, smart_cache, performance_tracked,
+    memory_optimized, smart_cache,
     comprehensive_memory_optimization, MemoryOptimizationLevel,
     optimize_dataframe, force_cleanup, get_memory_stats
 )
@@ -28,7 +28,7 @@ from src.utils.hardware.memory_optimized_decorators import (
     MemoryOptimizationLevel as MemOptLevel, chunked_processing_auto
 )
 from src.utils.hardware.optimization_decorators import (
-    OptimizationConfig, OptimizationLevel as DecoratorOptLevel
+    OptimizationConfig, OptimizationLevel as DecoratorOptLevel, performance_tracked
 )
 
 class SRClusteringComponent(BaseStep):

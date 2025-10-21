@@ -15,6 +15,71 @@ from functools import wraps
 from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error
 
 
+def safe_execute_with_cleanup(func: Callable, 
+                             cleanup_funcs: List[Callable] = None,
+                             error_message: str = "Operation failed",
+                             verbose: bool = True) -> Any:
+    """
+    Safely execute function with automatic cleanup.
+    
+    Args:
+        func: Function to execute
+        cleanup_funcs: List of cleanup functions to call on error
+        error_message: Error message prefix
+        verbose: Whether to print error messages
+        
+    Returns:
+        Function result or raises exception
+    """
+    try:
+        return func()
+    except Exception as e:
+        if verbose:
+            tprint_error(f"{error_message}: {e}")
+        
+        # Execute cleanup functions
+        if cleanup_funcs:
+            for cleanup_func in cleanup_funcs:
+                try:
+                    cleanup_func()
+                except Exception as cleanup_error:
+                    if verbose:
+                        tprint_error(f"Cleanup failed: {cleanup_error}")
+        
+        raise
+
+
+def performance_timer(operation_name: str = None):
+    """
+    Performance timer decorator for clustering operations.
+    
+    Args:
+        operation_name: Name of the operation being timed
+        
+    Returns:
+        Decorator function
+    """
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            start_time = time.time()
+            try:
+                result = func(*args, **kwargs)
+                end_time = time.time()
+                duration = end_time - start_time
+                op_name = operation_name or func.__name__
+                tprint_info(f"⏱️ {op_name} completed in {duration:.3f}s")
+                return result
+            except Exception as e:
+                end_time = time.time()
+                duration = end_time - start_time
+                op_name = operation_name or func.__name__
+                tprint_error(f"⏱️ {op_name} failed after {duration:.3f}s: {e}")
+                raise
+        return wrapper
+    return decorator
+
+
 class ClusteringCommonUtils:
     """Common utilities for clustering operations."""
     

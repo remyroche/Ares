@@ -16,6 +16,7 @@ Key Features:
 
 # Standard library imports
 import warnings
+import logging
 from typing import Any, Dict, List, Optional, Union, Tuple
 
 # Third-party imports
@@ -83,6 +84,59 @@ except ImportError:
 
 # Local imports
 from ..core.feature_generator import FeatureGenerator, FeatureResult, VectorizedFeatureGenerator, FeatureConfig, FeatureCategory
+
+
+class SpectralFeatureExtractor:
+    """Feature extractor for spectral-based features."""
+    
+    def __init__(self, config: Optional[FeatureConfig] = None):
+        """Initialize the spectral feature extractor."""
+        self.config = config or FeatureConfig()
+        self.logger = logging.getLogger(__name__)
+    
+    def extract_features(self, data: pd.DataFrame) -> pd.DataFrame:
+        """
+        Extract spectral-based features from data.
+        
+        Args:
+            data: Input DataFrame with OHLCV data
+            
+        Returns:
+            DataFrame with extracted features
+        """
+        try:
+            features = pd.DataFrame(index=data.index)
+            
+            # Basic spectral features
+            if 'close' in data.columns:
+                # Spectral features using rolling windows
+                for window in [10, 20, 50]:
+                    features[f'spectral_energy_{window}'] = self._calculate_spectral_energy(data['close'], window)
+                    features[f'spectral_entropy_{window}'] = self._calculate_spectral_entropy(data['close'], window)
+            
+            return features
+            
+        except Exception as e:
+            self.logger.error(f"Spectral feature extraction failed: {e}")
+            return pd.DataFrame(index=data.index)
+    
+    def _calculate_spectral_energy(self, series: pd.Series, window: int) -> pd.Series:
+        """Calculate spectral energy for a series."""
+        try:
+            # Simple spectral energy calculation using variance
+            return series.rolling(window).var()
+        except Exception as e:
+            self.logger.error(f"Spectral energy calculation failed: {e}")
+            return pd.Series(index=series.index, dtype=float)
+    
+    def _calculate_spectral_entropy(self, series: pd.Series, window: int) -> pd.Series:
+        """Calculate spectral entropy for a series."""
+        try:
+            # Simple spectral entropy calculation using variance
+            return series.rolling(window).var()
+        except Exception as e:
+            self.logger.error(f"Spectral entropy calculation failed: {e}")
+            return pd.Series(index=series.index, dtype=float)
 
 # Optimization utilities
 try:

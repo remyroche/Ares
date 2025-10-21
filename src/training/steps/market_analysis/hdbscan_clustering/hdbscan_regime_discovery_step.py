@@ -793,7 +793,7 @@ class HDBSCANRegimeDiscoveryStep(BaseStep):
 ### Data Quality Metrics
 - **Effective Sample Size**: {processing_metadata.get('n_effective_samples', 'N/A')}
 - **Window Size**: {processing_metadata.get('window_size', 'N/A')}
-- **Overlap Percentage**: {processing_metadata.get('overlap_pct', 'N/A'):.1%} if 'overlap_pct' in processing_metadata else 'N/A'}
+- **Overlap Percentage**: {processing_metadata.get('overlap_pct', 'N/A'):.1% if 'overlap_pct' in processing_metadata else 'N/A'}
 
 ---
 

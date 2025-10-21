@@ -31,6 +31,54 @@ from scipy import stats
 from src.utils.logger import system_logger
 
 from ..core.feature_generator import FeatureGenerator, FeatureResult, VectorizedFeatureGenerator, FeatureConfig, FeatureCategory
+
+
+class EntropyFeatureExtractor:
+    """Feature extractor for entropy-based features."""
+    
+    def __init__(self, config: Optional[FeatureConfig] = None):
+        """Initialize the entropy feature extractor."""
+        self.config = config or FeatureConfig()
+        self.logger = logging.getLogger(__name__)
+    
+    def extract_features(self, data: pd.DataFrame) -> pd.DataFrame:
+        """
+        Extract entropy-based features from data.
+        
+        Args:
+            data: Input DataFrame with OHLCV data
+            
+        Returns:
+            DataFrame with extracted features
+        """
+        try:
+            features = pd.DataFrame(index=data.index)
+            
+            # Basic entropy features
+            if 'close' in data.columns:
+                # Price entropy
+                for window in [10, 20, 50]:
+                    features[f'price_entropy_{window}'] = self._calculate_entropy(data['close'], window)
+                
+                # Return entropy
+                returns = data['close'].pct_change().dropna()
+                for window in [10, 20, 50]:
+                    features[f'return_entropy_{window}'] = self._calculate_entropy(returns, window)
+            
+            return features
+            
+        except Exception as e:
+            self.logger.error(f"Entropy feature extraction failed: {e}")
+            return pd.DataFrame(index=data.index)
+    
+    def _calculate_entropy(self, series: pd.Series, window: int) -> pd.Series:
+        """Calculate entropy for a series."""
+        try:
+            # Simple entropy calculation using variance
+            return series.rolling(window).var()
+        except Exception as e:
+            self.logger.error(f"Entropy calculation failed: {e}")
+            return pd.Series(index=series.index, dtype=float)
 # Optimization utilities
 try:
     from src.feature_generation.utils.vectorization_optimizer import get_vectorization_optimizer

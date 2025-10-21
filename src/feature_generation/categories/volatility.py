@@ -18,6 +18,7 @@ import pandas as pd
 import warnings
 import logging
 import time
+from typing import Optional
 from typing import Any, Dict, List, Optional, Union
 
 # Import tprint for consistent logging
@@ -28,6 +29,63 @@ except ImportError:
         print(*args, **kwargs)
 
 from ..core.feature_generator import FeatureGenerator, FeatureResult, VectorizedFeatureGenerator, FeatureConfig, FeatureCategory
+
+
+class VolatilityFeatureExtractor:
+    """Feature extractor for volatility-based features."""
+    
+    def __init__(self, config: Optional[FeatureConfig] = None):
+        """Initialize the volatility feature extractor."""
+        self.config = config or FeatureConfig()
+        self.logger = logging.getLogger(__name__)
+    
+    def extract_features(self, data: pd.DataFrame) -> pd.DataFrame:
+        """
+        Extract volatility-based features from data.
+        
+        Args:
+            data: Input DataFrame with OHLCV data
+            
+        Returns:
+            DataFrame with extracted features
+        """
+        try:
+            features = pd.DataFrame(index=data.index)
+            
+            # Basic volatility features
+            if 'close' in data.columns:
+                # Rolling volatility
+                for window in [5, 10, 20, 50]:
+                    features[f'volatility_{window}d'] = data['close'].rolling(window).std()
+                
+                # ATR-like volatility
+                if 'high' in data.columns and 'low' in data.columns:
+                    features['atr_14'] = self._calculate_atr(data, 14)
+                    features['atr_21'] = self._calculate_atr(data, 21)
+            
+            return features
+            
+        except Exception as e:
+            self.logger.error(f"Volatility feature extraction failed: {e}")
+            return pd.DataFrame(index=data.index)
+    
+    def _calculate_atr(self, data: pd.DataFrame, period: int) -> pd.Series:
+        """Calculate Average True Range."""
+        try:
+            high = data['high']
+            low = data['low']
+            close = data['close']
+            
+            tr1 = high - low
+            tr2 = abs(high - close.shift(1))
+            tr3 = abs(low - close.shift(1))
+            
+            true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+            return true_range.rolling(period).mean()
+            
+        except Exception as e:
+            self.logger.error(f"ATR calculation failed: {e}")
+            return pd.Series(index=data.index, dtype=float)
 
 # Import hardware optimization decorators
 from src.utils.hardware import (

@@ -211,9 +211,9 @@ class DataValidationResult:
 class FeatureGenerationDataValidationStep(BaseStep):
     """Enhanced data validation step using comprehensive quality assessment."""
 
-    def __init__(self, config: Optional[Dict[str, Any]] = None):
+    def __init__(self, step_name: str, config: Optional[Dict[str, Any]] = None):
         """Initialize the enhanced data validation step."""
-        super().__init__("feature_generation_data_validation_step", config)
+        super().__init__(step_name, config)
         
         # Initialize quality assessment components
         if QUALITY_COMPONENTS_AVAILABLE:

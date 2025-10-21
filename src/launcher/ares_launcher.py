@@ -84,8 +84,8 @@ class SimplifiedAresLauncher:
             # Get step class from registry
             step_class = self.step_registry.get_step(step_name)
             
-            # Create step instance
-            step_instance = step_class(step_name)
+            # Create step instance with config
+            step_instance = step_class(step_name, config)
             
             # Run the step
             result = step_instance.run(config)

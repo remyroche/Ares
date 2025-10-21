@@ -25,6 +25,13 @@ from sklearn.cluster import HDBSCAN
 from sklearn.decomposition import PCA
 import umap
 
+# Import tprint utilities for extensive logging
+from src.utils.tprint import (
+    tprint, tprint_info, tprint_success, tprint_warning, tprint_error, 
+    tprint_debug, tprint_performance, tprint_progress, tprint_timer,
+    tprint_logged, LogLevel
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -96,6 +103,7 @@ class CanaryRollbackSystem:
     - Promotion confidence scoring
     """
     
+    @tprint_logged(LogLevel.INFO, include_args=True)
     def __init__(self, config: CanaryConfig = None):
         """
         Initialize canary rollback system.
@@ -103,7 +111,11 @@ class CanaryRollbackSystem:
         Args:
             config: Configuration object
         """
+        tprint_info("🔧 Initializing Canary Rollback System")
+        start_time = time.perf_counter()
+        
         self.config = config or CanaryConfig()
+        tprint_debug(f"Configuration: shadow_run_days={self.config.shadow_run_days}, max_churn={self.config.max_label_churn_pct}%")
         
         # Canary tracking
         self.active_canaries: Dict[str, CanaryResult] = {}
@@ -122,6 +134,10 @@ class CanaryRollbackSystem:
         # Baseline metrics for comparison
         self.baseline_metrics: Dict[str, Any] = {}
         
+        init_time = time.perf_counter() - start_time
+        tprint_success(f"✅ Canary Rollback System initialized in {init_time:.3f}s")
+        
+    @tprint_logged(LogLevel.INFO, include_args=True, include_result=True)
     def start_canary(self, 
                     canary_id: str,
                     clustering_func: Callable,
@@ -141,7 +157,8 @@ class CanaryRollbackSystem:
         Returns:
             CanaryResult
         """
-        logger.info(f"Starting canary deployment: {canary_id}")
+        tprint_info(f"🚀 Starting canary deployment: {canary_id}")
+        tprint_debug(f"Market data shape: {market_data.shape}, Features shape: {features.shape}")
         
         # Create canary result
         canary_result = CanaryResult(
@@ -162,10 +179,12 @@ class CanaryRollbackSystem:
         # Update performance metrics
         self.performance_metrics['total_canaries'] += 1
         
-        logger.info(f"Canary {canary_id} started, will run until {canary_result.end_time}")
+        tprint_success(f"✅ Canary {canary_id} started, will run until {canary_result.end_time}")
+        tprint_debug(f"Active canaries: {len(self.active_canaries)}")
         
         return canary_result
     
+    @tprint_logged(LogLevel.DEBUG, include_args=True, include_result=True)
     def evaluate_canary_metrics(self, 
                               canary_id: str,
                               cluster_labels: np.ndarray,
@@ -185,30 +204,41 @@ class CanaryRollbackSystem:
         Returns:
             CanaryMetrics
         """
+        tprint_debug(f"📊 Evaluating metrics for canary {canary_id}")
+        start_time = time.perf_counter()
+        
         # Calculate label churn percentage
         if previous_labels is not None and len(previous_labels) == len(cluster_labels):
             label_churn_pct = np.mean(cluster_labels != previous_labels) * 100
+            tprint_debug(f"Label churn: {label_churn_pct:.2f}%")
         else:
             label_churn_pct = 0.0
+            tprint_debug("No previous labels for churn calculation")
         
         # Calculate economic score
         economic_score = self._calculate_economic_score(cluster_labels, market_data, features)
+        tprint_debug(f"Economic score: {economic_score:.3f}")
         
         # Calculate silhouette score
         silhouette_score = self._calculate_silhouette_score(cluster_labels, features)
+        tprint_debug(f"Silhouette score: {silhouette_score:.3f}")
         
         # Calculate cluster stability
         cluster_stability = self._calculate_cluster_stability(cluster_labels, previous_labels)
+        tprint_debug(f"Cluster stability: {cluster_stability:.3f}")
         
         # Count clusters and noise
         n_clusters = len(np.unique(cluster_labels[cluster_labels != -1]))
         n_noise = np.sum(cluster_labels == -1)
+        tprint_debug(f"Clusters: {n_clusters}, Noise: {n_noise}")
         
         # Calculate data quality score
         data_quality_score = self._calculate_data_quality_score(cluster_labels, market_data)
+        tprint_debug(f"Data quality score: {data_quality_score:.3f}")
         
         # Calculate performance score
         performance_score = self._calculate_performance_score(cluster_labels, features, market_data)
+        tprint_debug(f"Performance score: {performance_score:.3f}")
         
         # Create metrics
         metrics = CanaryMetrics(
@@ -226,6 +256,10 @@ class CanaryRollbackSystem:
         # Store metrics
         if canary_id in self.active_canaries:
             self.active_canaries[canary_id].metrics_history.append(metrics)
+            tprint_debug(f"Stored metrics for canary {canary_id} (total: {len(self.active_canaries[canary_id].metrics_history)})")
+        
+        eval_time = time.perf_counter() - start_time
+        tprint_success(f"✅ Canary metrics evaluation completed in {eval_time:.3f}s")
         
         return metrics
     

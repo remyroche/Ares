@@ -15,6 +15,13 @@ import os
 import json
 from pathlib import Path
 
+# Import tprint utilities for extensive logging
+from src.utils.tprint import (
+    tprint, tprint_info, tprint_success, tprint_warning, tprint_error, 
+    tprint_debug, tprint_performance, tprint_progress, tprint_timer,
+    tprint_logged, LogLevel
+)
+
 # Import the economic validation system
 from src.training.steps.market_analysis.hdbscan_clustering.optimization.economic_validator import (
     EconomicValidator, EconomicValidationConfig, EconomicValidationResult

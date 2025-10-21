@@ -10,6 +10,13 @@ from typing import Dict, List, Tuple, Union, Optional, Any
 from datetime import datetime
 import os
 
+# Import tprint utilities for extensive logging
+from src.utils.tprint import (
+    tprint, tprint_info, tprint_success, tprint_warning, tprint_error, 
+    tprint_debug, tprint_performance, tprint_progress, tprint_timer,
+    tprint_logged, LogLevel
+)
+
 
 @dataclass
 class RegimeDiscoveryConfig:
@@ -170,19 +177,28 @@ class RegimeDiscoveryConfig:
         'econ.uplift_deflated_sharpe', 'step.latency_ms', 'step.memory_peak_mb'
     ])
     
+    @tprint_logged(LogLevel.INFO, include_result=True)
     def __post_init__(self):
         """Validate configuration and set derived parameters."""
+        tprint_info("🔧 Initializing RegimeDiscoveryConfig")
         self._validate_config()
         self._set_derived_parameters()
+        tprint_success("✅ RegimeDiscoveryConfig initialization completed")
     
+    @tprint_logged(LogLevel.DEBUG, include_result=True)
     def _validate_config(self):
         """Validate configuration parameters."""
+        tprint_debug("🔍 Validating RegimeDiscoveryConfig parameters")
+        
         if self.mode_live:
+            tprint_debug("Validating live mode constraints")
             assert self.noise_handling_mode in ['causal_smooth', 'keep'], \
                 "mode_live requires causal noise handling"
             assert self.min_dwell_bars >= 3, "min_dwell_bars must be ≥3 in live mode"
             assert self.cooldown_bars >= 1, "cooldown_bars must be ≥1 in live mode"
+            tprint_debug("Live mode validation passed")
         
+        tprint_debug("Validating core parameters")
         assert 0 < self.min_cluster_size_pct < 0.5, "min_cluster_size_pct must be in (0, 0.5)"
         assert 0 < self.change_budget_pct <= 0.5, "change_budget_pct must be in (0, 0.5]"
         assert 0 < self.window_overlap_pct < 1, "window_overlap_pct must be in (0, 1)"
@@ -192,17 +208,26 @@ class RegimeDiscoveryConfig:
         valid_modes = {'pca_only', 'umap', 'densmap'}
         assert self.dim_reduction_mode in valid_modes, \
             f"dim_reduction_mode must be in {valid_modes}"
+        
+        tprint_debug(f"Core parameters validation passed: dim_reduction_mode={self.dim_reduction_mode}")
+        tprint_success("✅ RegimeDiscoveryConfig validation completed successfully")
     
+    @tprint_logged(LogLevel.DEBUG, include_result=True)
     def _set_derived_parameters(self):
         """Set derived parameters based on configuration."""
+        tprint_debug("🔧 Setting derived parameters")
+        
         # Set noise handling mode based on live mode
         if self.mode_live and self.noise_handling_mode == 'acausal_smooth':
             self.noise_handling_mode = 'causal_smooth'
-            print("⚠️ Overriding noise_handling_mode to 'causal_smooth' for live mode")
+            tprint_warning("⚠️ Overriding noise_handling_mode to 'causal_smooth' for live mode")
         
         # Set OOS assignment mode based on live mode
         if self.mode_live:
             self.log_oos_assignment_mode = True  # Always log in live mode
+            tprint_debug("Enabled OOS assignment logging for live mode")
+        
+        tprint_debug(f"Derived parameters set: noise_handling_mode={self.noise_handling_mode}, log_oos_assignment_mode={self.log_oos_assignment_mode}")
     
     @property
     def is_production_safe(self) -> bool:
@@ -214,21 +239,36 @@ class RegimeDiscoveryConfig:
             assert self.cooldown_bars >= 1, "cooldown_bars must be ≥1 in live mode"
         return True
     
+    @tprint_logged(LogLevel.DEBUG, include_args=True, include_result=True)
     def get_effective_min_cluster_size(self, n_effective_samples: int) -> int:
         """Calculate effective min_cluster_size based on N_eff."""
+        tprint_debug(f"📊 Calculating effective min_cluster_size for {n_effective_samples} samples")
+        
         pct_based = max(int(self.min_cluster_size_pct * n_effective_samples), self.min_cluster_size_floor)
-        return min(pct_based, n_effective_samples // 2)  # Cap at 50% of samples
+        effective_size = min(pct_based, n_effective_samples // 2)  # Cap at 50% of samples
+        
+        tprint_debug(f"Effective min_cluster_size: {effective_size} (pct_based: {pct_based}, floor: {self.min_cluster_size_floor})")
+        return effective_size
     
+    @tprint_logged(LogLevel.DEBUG, include_args=True, include_result=True)
     def get_min_samples_value(self, min_cluster_size: int) -> Optional[int]:
         """Get min_samples value based on min_cluster_size."""
+        tprint_debug(f"📊 Calculating min_samples value for min_cluster_size={min_cluster_size}")
+        
         if self.min_samples_options[0] is None:
+            tprint_debug("min_samples set to None")
             return None
         elif self.min_samples_options[0] == 'half':
-            return max(1, min_cluster_size // 2)
+            value = max(1, min_cluster_size // 2)
+            tprint_debug(f"min_samples set to half: {value}")
+            return value
         elif self.min_samples_options[0] == 'same':
+            tprint_debug(f"min_samples set to same as min_cluster_size: {min_cluster_size}")
             return min_cluster_size
         else:
-            return int(self.min_samples_options[0])
+            value = int(self.min_samples_options[0])
+            tprint_debug(f"min_samples set to fixed value: {value}")
+            return value
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert config to dictionary for serialization."""

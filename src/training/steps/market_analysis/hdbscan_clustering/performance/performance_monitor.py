@@ -24,6 +24,13 @@ from collections import defaultdict, deque
 import warnings
 warnings.filterwarnings('ignore')
 
+# Import tprint utilities for extensive logging
+from src.utils.tprint import (
+    tprint, tprint_info, tprint_success, tprint_warning, tprint_error, 
+    tprint_debug, tprint_performance, tprint_progress, tprint_timer,
+    tprint_logged, LogLevel
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -39,6 +46,7 @@ class PerformanceMonitor:
     - Optimization effectiveness
     """
     
+    @tprint_logged(LogLevel.INFO, include_args=True)
     def __init__(self, 
                  monitoring_interval: float = 1.0,  # seconds
                  max_history: int = 1000,

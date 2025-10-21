@@ -11,6 +11,13 @@ from typing import Dict, List, Tuple, Optional, Any, Union, Callable
 import numpy as np
 from enum import Enum
 
+# Import tprint utilities for extensive logging
+from src.utils.tprint import (
+    tprint, tprint_info, tprint_success, tprint_warning, tprint_error, 
+    tprint_debug, tprint_performance, tprint_progress, tprint_timer,
+    tprint_logged, LogLevel
+)
+
 
 class OptimizationStrategy(Enum):
     """Strategy for parameter optimization."""
@@ -253,34 +260,50 @@ class DataDrivenClusteringConfig:
     max_optimization_time_hours: float = 2.0
     memory_limit_gb: float = 8.0
     
+    @tprint_logged(LogLevel.DEBUG, include_result=True)
     def validate(self) -> None:
         """Validate configuration parameters."""
+        tprint_debug("🔍 Validating DataDrivenClusteringConfig parameters")
+        
         # Validate feature weights
         if self.feature_weights.enable_optimization:
+            tprint_debug("Validating feature weights configuration")
             assert 0 < self.feature_weights.min_weight < self.feature_weights.max_weight < 1.0
             assert self.feature_weights.n_trials > 0
             assert self.feature_weights.n_startup_trials < self.feature_weights.n_trials
+            tprint_debug(f"Feature weights validation passed: {self.feature_weights.n_trials} trials")
         
         # Validate merging thresholds
         if self.merging_thresholds.enable_optimization:
+            tprint_debug("Validating merging thresholds configuration")
             assert 0 < self.merging_thresholds.similarity_threshold_range[0] < self.merging_thresholds.similarity_threshold_range[1] < 1.0
             assert 0 < self.merging_thresholds.distance_threshold_range[0] < self.merging_thresholds.distance_threshold_range[1] < 1.0
             assert 0 < self.merging_thresholds.p_value_threshold_range[0] < self.merging_thresholds.p_value_threshold_range[1] < 1.0
+            tprint_debug(f"Merging thresholds validation passed: {self.merging_thresholds.similarity_threshold_range}")
         
         # Validate temporal windows
         if self.temporal_windows.enable_optimization:
+            tprint_debug("Validating temporal windows configuration")
             assert 0 < self.temporal_windows.window_size_range[0] < self.temporal_windows.window_size_range[1]
             assert 0 < self.temporal_windows.smoothing_window_range[0] < self.temporal_windows.smoothing_window_range[1]
+            tprint_debug(f"Temporal windows validation passed: {self.temporal_windows.window_size_range}")
         
         # Validate validation thresholds
         if self.validation_thresholds.enable_optimization:
+            tprint_debug("Validating validation thresholds configuration")
             assert 0 < self.validation_thresholds.min_silhouette_range[0] < self.validation_thresholds.min_silhouette_range[1] < 1.0
             assert 0 < self.validation_thresholds.max_dbi_range[0] < self.validation_thresholds.max_dbi_range[1]
             assert 0 < self.validation_thresholds.min_stability_range[0] < self.validation_thresholds.min_stability_range[1] < 1.0
+            tprint_debug(f"Validation thresholds validation passed: {self.validation_thresholds.min_silhouette_range}")
+        
+        tprint_success("✅ DataDrivenClusteringConfig validation completed successfully")
     
+    @tprint_logged(LogLevel.DEBUG, include_result=True)
     def to_dict(self) -> Dict[str, Any]:
         """Convert configuration to dictionary."""
-        return {
+        tprint_debug("📋 Converting DataDrivenClusteringConfig to dictionary")
+        
+        config_dict = {
             'feature_weights': self.feature_weights.__dict__,
             'merging_thresholds': self.merging_thresholds.__dict__,
             'temporal_windows': self.temporal_windows.__dict__,
@@ -299,18 +322,32 @@ class DataDrivenClusteringConfig:
             'max_optimization_time_hours': self.max_optimization_time_hours,
             'memory_limit_gb': self.memory_limit_gb
         }
+        
+        tprint_debug(f"Configuration converted to dictionary with {len(config_dict)} top-level keys")
+        return config_dict
     
     @classmethod
+    @tprint_logged(LogLevel.DEBUG, include_args=True, include_result=True)
     def from_dict(cls, config_dict: Dict[str, Any]) -> 'DataDrivenClusteringConfig':
         """Create configuration from dictionary."""
+        tprint_debug("🔧 Creating DataDrivenClusteringConfig from dictionary")
+        
         # Create sub-configurations
+        tprint_debug("Creating feature weights configuration")
         feature_weights = FeatureGroupWeightConfig(**config_dict.get('feature_weights', {}))
+        
+        tprint_debug("Creating merging thresholds configuration")
         merging_thresholds = RegimeMergingThresholdConfig(**config_dict.get('merging_thresholds', {}))
+        
+        tprint_debug("Creating temporal windows configuration")
         temporal_windows = TemporalWindowConfig(**config_dict.get('temporal_windows', {}))
+        
+        tprint_debug("Creating validation thresholds configuration")
         validation_thresholds = ClusterValidationThresholdConfig(**config_dict.get('validation_thresholds', {}))
         
         # Create main configuration
-        return cls(
+        tprint_debug("Creating main configuration object")
+        config = cls(
             feature_weights=feature_weights,
             merging_thresholds=merging_thresholds,
             temporal_windows=temporal_windows,
@@ -331,3 +368,6 @@ class DataDrivenClusteringConfig:
             max_optimization_time_hours=config_dict.get('max_optimization_time_hours', 2.0),
             memory_limit_gb=config_dict.get('memory_limit_gb', 8.0)
         )
+        
+        tprint_success("✅ DataDrivenClusteringConfig created from dictionary successfully")
+        return config

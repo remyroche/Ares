@@ -12,7 +12,7 @@ import logging
 from datetime import datetime, timedelta
 
 # Import existing utilities
-from src.utils.tprint import tprint, tprint_info, tprint_success, tprint_warning, tprint_error
+from src.utils.tprint import tprint, tprint_info, tprint_success, tprint_warning, tprint_error, tprint_debug, tprint_performance, tprint_progress, tprint_timer, tprint_logged, LogLevel
 from src.utils.common_operations import safe_dataframe_operation
 from src.utils.common_utilities import safe_dataframe_operation as safe_df_op
 from src.utils.math_validation import validate_finite, safe_divide, safe_log, safe_sqrt

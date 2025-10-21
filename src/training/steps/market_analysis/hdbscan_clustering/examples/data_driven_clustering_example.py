@@ -12,6 +12,13 @@ import logging
 import time
 from pathlib import Path
 
+# Import tprint utilities for extensive logging
+from src.utils.tprint import (
+    tprint, tprint_info, tprint_success, tprint_warning, tprint_error, 
+    tprint_debug, tprint_performance, tprint_progress, tprint_timer,
+    tprint_logged, LogLevel
+)
+
 # Import data-driven optimization components
 from ..config.data_driven_config import DataDrivenClusteringConfig
 from ..optimization.data_driven_clustering_optimizer import DataDrivenClusteringOptimizer
@@ -37,11 +44,19 @@ class DataDrivenClusteringExample:
     alternatives for better clustering performance.
     """
     
+    @tprint_logged(LogLevel.INFO, include_args=True)
     def __init__(self, config: Optional[DataDrivenClusteringConfig] = None):
         """Initialize the example with configuration."""
+        tprint_info("🔧 Initializing DataDrivenClusteringExample")
+        start_time = time.perf_counter()
+        
         self.config = config or DataDrivenClusteringConfig()
         self.optimization_results = {}
         
+        init_time = time.perf_counter() - start_time
+        tprint_success(f"✅ DataDrivenClusteringExample initialized in {init_time:.3f}s")
+        
+    @tprint_logged(LogLevel.INFO, include_args=True, include_result=True)
     def run_complete_example(self, 
                            market_data: pd.DataFrame,
                            features: np.ndarray,
@@ -58,7 +73,8 @@ class DataDrivenClusteringExample:
             Dictionary with optimization results and recommendations
         """
         try:
-            logger.info("🚀 Starting complete data-driven clustering example...")
+            tprint_info("🚀 Starting complete data-driven clustering example...")
+            tprint_debug(f"Market data shape: {market_data.shape}, Features shape: {features.shape}")
             
             results = {
                 'start_time': time.time(),
@@ -69,50 +85,62 @@ class DataDrivenClusteringExample:
             }
             
             # Step 1: Data-driven feature weight optimization
-            logger.info("📊 Step 1: Optimizing feature group weights...")
-            feature_weight_results = self._optimize_feature_weights(
-                features, feature_names, market_data
-            )
+            tprint_info("📊 Step 1: Optimizing feature group weights...")
+            with tprint_timer("Feature weight optimization"):
+                feature_weight_results = self._optimize_feature_weights(
+                    features, feature_names, market_data
+                )
             results['steps_completed'].append('feature_weights')
             results['optimization_results']['feature_weights'] = feature_weight_results
+            tprint_success("✅ Feature weight optimization completed")
             
             # Step 2: Data-driven temporal window optimization
-            logger.info("⏰ Step 2: Optimizing temporal window sizes...")
-            temporal_window_results = self._optimize_temporal_windows(market_data)
+            tprint_info("⏰ Step 2: Optimizing temporal window sizes...")
+            with tprint_timer("Temporal window optimization"):
+                temporal_window_results = self._optimize_temporal_windows(market_data)
             results['steps_completed'].append('temporal_windows')
             results['optimization_results']['temporal_windows'] = temporal_window_results
+            tprint_success("✅ Temporal window optimization completed")
             
             # Step 3: Data-driven merging threshold optimization
-            logger.info("🔗 Step 3: Optimizing regime merging thresholds...")
-            merging_threshold_results = self._optimize_merging_thresholds(features)
+            tprint_info("🔗 Step 3: Optimizing regime merging thresholds...")
+            with tprint_timer("Merging threshold optimization"):
+                merging_threshold_results = self._optimize_merging_thresholds(features)
             results['steps_completed'].append('merging_thresholds')
             results['optimization_results']['merging_thresholds'] = merging_threshold_results
+            tprint_success("✅ Merging threshold optimization completed")
             
             # Step 4: Data-driven validation threshold optimization
-            logger.info("📊 Step 4: Optimizing cluster validation thresholds...")
-            validation_threshold_results = self._optimize_validation_thresholds(features)
+            tprint_info("📊 Step 4: Optimizing cluster validation thresholds...")
+            with tprint_timer("Validation threshold optimization"):
+                validation_threshold_results = self._optimize_validation_thresholds(features)
             results['steps_completed'].append('validation_thresholds')
             results['optimization_results']['validation_thresholds'] = validation_threshold_results
+            tprint_success("✅ Validation threshold optimization completed")
             
             # Step 5: Generate recommendations
-            logger.info("💡 Step 5: Generating recommendations...")
-            recommendations = self._generate_recommendations(results['optimization_results'])
+            tprint_info("💡 Step 5: Generating recommendations...")
+            with tprint_timer("Recommendation generation"):
+                recommendations = self._generate_recommendations(results['optimization_results'])
             results['recommendations'] = recommendations
+            tprint_success("✅ Recommendations generated")
             
             # Step 6: Calculate performance metrics
-            logger.info("📈 Step 6: Calculating performance metrics...")
-            performance_metrics = self._calculate_performance_metrics(results)
+            tprint_info("📈 Step 6: Calculating performance metrics...")
+            with tprint_timer("Performance metrics calculation"):
+                performance_metrics = self._calculate_performance_metrics(results)
             results['performance_metrics'] = performance_metrics
+            tprint_success("✅ Performance metrics calculated")
             
             results['end_time'] = time.time()
             results['total_time'] = results['end_time'] - results['start_time']
             
-            logger.info(f"✅ Complete example finished in {results['total_time']:.2f} seconds")
+            tprint_success(f"✅ Complete example finished in {results['total_time']:.2f} seconds")
             
             return results
             
         except Exception as e:
-            logger.error(f"❌ Complete example failed: {e}")
+            tprint_error(f"❌ Complete example failed: {e}")
             raise
     
     def _optimize_feature_weights(self, 

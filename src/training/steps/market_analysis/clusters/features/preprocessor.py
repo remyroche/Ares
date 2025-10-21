@@ -120,25 +120,34 @@ class FeaturePreprocessor:
     - Return reduced, clean matrix
     """
 
-    def __init__(self, config: FeaturePreprocessorConfig = None):
+    def __init__(self, config: FeaturePreprocessorConfig = None) -> None:
         """Initialize the FeaturePreprocessor."""
+        tprint("🚀 Initializing FeaturePreprocessor", "INFO")
         self.config = config or FeaturePreprocessorConfig()
-        self.preprocessing_metadata = {}
+        self.preprocessing_metadata: Dict[str, Any] = {}
+        tprint_debug(f"Preprocessor config: {self.config.__dict__}")
 
         # Initialize hardware optimization components
+        tprint("⚡ Initializing hardware optimization components", "INFO")
         self._initialize_hardware_optimization()
 
         # Initialize matrix operations for efficient computations
+        tprint("🔢 Initializing matrix operations", "INFO")
         self.matrix_ops = get_unified_matrix_operations(
             enable_gpu=True,
             enable_memory_optimization=True,
             enable_parallel=True
         )
+        tprint_debug("Matrix operations initialized with GPU and parallel processing")
 
         # Initialize data processing utilities if available
+        tprint("📊 Initializing data processing utilities", "INFO")
         if DATA_PROCESSING_AVAILABLE:
             self.data_processor = DataProcessor()
+            tprint_debug("DataProcessor initialized")
             self.data_transformer = DataTransformer()
+            tprint_debug("DataTransformer initialized")
+            tprint("✅ Data processing utilities initialized", "SUCCESS")
         else:
             self.data_processor = None
             self.data_transformer = None

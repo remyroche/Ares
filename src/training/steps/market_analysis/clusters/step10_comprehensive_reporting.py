@@ -81,16 +81,20 @@ class ComprehensiveReport:
 class ComprehensiveReporter:
     """Comprehensive clustering reporter with economic and statistical analysis."""
 
-    def __init__(self, verbose: bool = True):
+    def __init__(self, verbose: bool = True) -> None:
         """Initialize the comprehensive reporter."""
+        tprint("🚀 Initializing ComprehensiveReporter", "INFO")
         self.verbose = verbose
         self.logger = get_logger('ComprehensiveReporter')
+        tprint_debug(f"Reporter verbose mode: {verbose}")
 
         # Set up plotting style
+        tprint("🎨 Setting up plotting style", "INFO")
         plt.style.use('seaborn-v0_8')
         # sns.set_palette("husl")  # This function doesn't exist in newer seaborn versions
+        tprint_debug("Plotting style configured")
 
-        tprint("📊 Comprehensive Reporter initialized", "INFO")
+        tprint("📊 Comprehensive Reporter initialized", "SUCCESS")
 
     def generate_comprehensive_report(
         self,
@@ -104,10 +108,14 @@ class ComprehensiveReporter:
         try:
             tprint("📊 Generating comprehensive clustering report...", "INFO")
             self.logger.info("📊 Generating comprehensive clustering report...")
+            tprint_debug(f"Test size: {test_size}, n_splits: {n_splits}")
+            tprint_debug(f"Market data shape: {market_data.shape}")
 
             # Extract basic information
             assignments = clustering_result.get('cluster_assignments', [])
             n_clusters = len(np.unique(assignments))
+            tprint_debug(f"Number of clusters: {n_clusters}")
+            tprint_debug(f"Assignments shape: {len(assignments)}")
 
             # Calculate cluster statistics
             cluster_stats = self._calculate_cluster_statistics(

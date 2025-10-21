@@ -7,7 +7,7 @@ and iterative optimization loops, orchestrating the three main steps.
 
 import numpy as np
 import pandas as pd
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union, Awaitable, Callable
 from dataclasses import dataclass
 import time
 from datetime import datetime
@@ -78,27 +78,36 @@ class ClusteringEngine:
     coordinating Step 1 (local), Step 2 (global), and Step 3 (split).
     """
 
-    def __init__(self, config: Optional[EngineConfig] = None):
+    def __init__(self, config: Optional[EngineConfig] = None) -> None:
         """Initialize the clustering engine."""
+        tprint("🚀 Initializing ClusteringEngine", "INFO")
         self.config = config or EngineConfig()
         self.logger = get_logger('ClusteringEngine')
+        tprint_debug(f"Engine config: {self.config.__dict__}")
 
         # Initialize components
+        tprint("🔧 Initializing engine components", "INFO")
         self.step1 = InitialClusteringStep(verbose=self.config.verbose)
+        tprint_debug("Step1 (InitialClusteringStep) initialized")
         self.step2 = None  # Will be initialized based on optimization method
+        tprint_debug("Step2 will be initialized based on optimization method")
         self.step3 = None  # Will be initialized based on optimization method
+        tprint_debug("Step3 will be initialized based on optimization method")
 
         # Hardware service integration
+        tprint("⚡ Initializing hardware service integration", "INFO")
         try:
             from .hardware_service import HardwareService
             self.hardware_service = HardwareService(verbose=self.config.verbose)
             self.hardware_integration_enabled = True
-        except ImportError:
+            tprint("✅ Hardware service integration enabled", "SUCCESS")
+        except ImportError as e:
             self.hardware_service = None
             self.hardware_integration_enabled = False
+            tprint(f"⚠️ Hardware service integration disabled: {e}", "WARNING")
 
         # Performance tracking
-        self.performance_metrics = {
+        self.performance_metrics: Dict[str, Any] = {
             "start_time": None,
             "end_time": None,
             "step_times": {},
@@ -108,6 +117,7 @@ class ClusteringEngine:
             "hardware_accelerations": 0,
             "memory_optimizations": 0
         }
+        tprint("✅ ClusteringEngine initialization completed", "SUCCESS")
 
         # Results storage
         self.results = {}

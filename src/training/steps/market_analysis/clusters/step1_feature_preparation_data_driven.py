@@ -7,7 +7,7 @@ feature integration for the clustering process with data-driven parameter optimi
 
 import numpy as np
 import pandas as pd
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union, Awaitable, Callable
 from dataclasses import dataclass, field
 from sklearn.preprocessing import RobustScaler
 from sklearn.decomposition import PCA
@@ -124,26 +124,39 @@ class ClusteringContext:
 class DataDrivenFeaturePreparationStep:
     """Step 1: Data-driven feature preparation and optimization."""
 
-    def __init__(self, verbose: bool = True, enable_data_driven: bool = True):
+    def __init__(self, verbose: bool = True, enable_data_driven: bool = True) -> None:
         """Initialize the data-driven feature preparation step."""
+        tprint("🚀 Initializing DataDrivenFeaturePreparationStep", "INFO")
         self.verbose = verbose
         self.enable_data_driven = enable_data_driven and DATA_DRIVEN_AVAILABLE
         self.logger = get_logger('DataDrivenFeaturePreparationStep')
+        tprint_debug(f"Verbose mode: {verbose}")
+        tprint_debug(f"Data-driven optimization enabled: {self.enable_data_driven}")
         
         # Initialize data-driven optimizer if available
         if self.enable_data_driven:
+            tprint("🧠 Initializing data-driven feature weight optimizer", "INFO")
             self.feature_weight_optimizer = DataDrivenFeatureWeightOptimizer(
                 FeatureGroupWeightConfig()
             )
+            tprint_debug("DataDrivenFeatureWeightOptimizer initialized")
+        else:
+            tprint("⚠️ Data-driven optimization not available, using hardcoded weights", "WARNING")
+            self.feature_weight_optimizer = None
         
         # Initialize enhanced utilities
+        tprint("🔧 Initializing enhanced utilities", "INFO")
         try:
             self.hardware_manager = get_integrated_hardware_manager()
+            tprint_debug("Hardware manager initialized")
             self.vectorization_manager = UnifiedVectorizationManager(VectorizationConfig())
+            tprint_debug("Vectorization manager initialized")
             self.data_utils = UnifiedDataUtils()
-            tprint_debug("Enhanced utilities initialized for feature preparation")
+            tprint_debug("Data utilities initialized")
+            tprint("✅ Enhanced utilities initialized for feature preparation", "SUCCESS")
         except Exception as e:
             tprint_warning(f"Failed to initialize enhanced utilities: {e}")
+            tprint_debug(f"Utility initialization error details: {e}")
             self.hardware_manager = None
             self.vectorization_manager = None
             self.data_utils = None

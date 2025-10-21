@@ -5,7 +5,7 @@ This module provides shared utility functions and decorators to eliminate
 code duplication across the clustering codebase.
 """
 
-from typing import Any, Dict, List, Optional, Callable, Union, Tuple
+from typing import Any, Dict, List, Optional, Callable, Union, Tuple, Awaitable
 import time
 import gc
 import numpy as np
@@ -15,8 +15,8 @@ from functools import wraps
 from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error
 
 
-def safe_execute_with_cleanup(func: Callable, 
-                             cleanup_funcs: List[Callable] = None,
+def safe_execute_with_cleanup(func: Callable[[], Any], 
+                             cleanup_funcs: Optional[List[Callable[[], None]]] = None,
                              error_message: str = "Operation failed",
                              verbose: bool = True) -> Any:
     """
@@ -49,7 +49,7 @@ def safe_execute_with_cleanup(func: Callable,
         raise
 
 
-def performance_timer(operation_name: str = None):
+def performance_timer(operation_name: Optional[str] = None) -> Callable[[Callable], Callable]:
     """
     Performance timer decorator for clustering operations.
     
@@ -84,8 +84,8 @@ class ClusteringCommonUtils:
     """Common utilities for clustering operations."""
     
     @staticmethod
-    def safe_execute_with_cleanup(func: Callable, 
-                                 cleanup_funcs: List[Callable] = None,
+    def safe_execute_with_cleanup(func: Callable[[], Any], 
+                                 cleanup_funcs: Optional[List[Callable[[], None]]] = None,
                                  error_message: str = "Operation failed",
                                  verbose: bool = True) -> Any:
         """
@@ -118,7 +118,7 @@ class ClusteringCommonUtils:
             raise
     
     @staticmethod
-    def memory_cleanup(*arrays):
+    def memory_cleanup(*arrays: Any) -> None:
         """
         Safely clean up memory by deleting arrays.
         
@@ -134,7 +134,7 @@ class ClusteringCommonUtils:
             tprint_warning(f"Memory cleanup warning: {e}")
     
     @staticmethod
-    def performance_timer(operation_name: str):
+    def performance_timer(operation_name: str) -> Any:
         """
         Context manager for performance timing.
         
@@ -257,7 +257,7 @@ class ClusteringCommonUtils:
     @staticmethod
     def chunked_processing(data: Union[np.ndarray, pd.DataFrame], 
                           chunk_size: int,
-                          process_func: Callable,
+                          process_func: Callable[..., Any],
                           **kwargs) -> List[Any]:
         """
         Process data in chunks to manage memory usage.
@@ -329,8 +329,8 @@ class ClusteringCommonUtils:
 
 # Decorator for automatic error handling and logging
 def clustering_operation(operation_name: str, 
-                        cleanup_funcs: List[Callable] = None,
-                        verbose: bool = True):
+                        cleanup_funcs: Optional[List[Callable[[], None]]] = None,
+                        verbose: bool = True) -> Callable[[Callable], Callable]:
     """
     Decorator for clustering operations with error handling.
     
@@ -371,7 +371,7 @@ def clustering_operation(operation_name: str,
 
 
 # Memory optimization decorator
-def memory_optimized(level: str = "moderate"):
+def memory_optimized(level: str = "moderate") -> Callable[[Callable], Callable]:
     """
     Decorator for memory-optimized operations.
     
@@ -400,7 +400,7 @@ def memory_optimized(level: str = "moderate"):
 
 
 # Performance tracking decorator
-def performance_tracked(operation_name: str = None):
+def performance_tracked(operation_name: Optional[str] = None) -> Callable[[Callable], Callable]:
     """
     Decorator for performance tracking.
     
@@ -422,8 +422,8 @@ def performance_tracked(operation_name: str = None):
 
 # Safe execution decorator
 def safe_execution(error_message: str = "Operation failed", 
-                  cleanup_funcs: List[Callable] = None,
-                  verbose: bool = True):
+                  cleanup_funcs: Optional[List[Callable[[], None]]] = None,
+                  verbose: bool = True) -> Callable[[Callable], Callable]:
     """
     Decorator for safe execution with error handling.
     

@@ -7,7 +7,7 @@ manages initial clustering, and coordinates the iterative optimization loop.
 
 import numpy as np
 import pandas as pd
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union, Awaitable
 from dataclasses import dataclass
 import time
 import asyncio
@@ -48,22 +48,32 @@ class ClusteringService:
     - Return cluster assignments + metrics
     """
 
-    def __init__(self, verbose: bool = True):
+    def __init__(self, verbose: bool = True) -> None:
         """Initialize the clustering service."""
+        tprint("🚀 Initializing ClusteringService", "INFO")
         self.verbose = verbose
         self.logger = get_logger('ClusteringService')
+        tprint_debug(f"Service verbose mode: {verbose}")
 
         # Initialize all components
+        tprint("🔧 Initializing clustering components", "INFO")
         self.initial_clustering = InitialClusteringStep(verbose=verbose)
+        tprint_debug("InitialClusteringStep initialized")
         self.iterative_optimizer = IterativeOptimization(verbose=verbose)
+        tprint_debug("IterativeOptimization initialized")
         self.validator = ValidationStep(verbose=verbose)
+        tprint_debug("ValidationStep initialized")
         self.results_consolidator = ResultsConsolidationStep(verbose=verbose)
+        tprint_debug("ResultsConsolidationStep initialized")
         self.reporter = ComprehensiveReporter(verbose=verbose)
+        tprint_debug("ComprehensiveReporter initialized")
         self.risk_mitigator = RiskMitigationSystem()
+        tprint_debug("RiskMitigationSystem initialized")
         self.framework_validator = ClusteringValidator()
+        tprint_debug("ClusteringValidator initialized")
 
         # Performance tracking
-        self.performance_metrics = {
+        self.performance_metrics: Dict[str, Any] = {
             "total_execution_time": 0.0,
             "initial_clustering_time": 0.0,
             "optimization_time": 0.0,
@@ -72,6 +82,7 @@ class ClusteringService:
             "optimization_rounds": 0,
             "convergence_achieved": False
         }
+        tprint("✅ ClusteringService initialization completed", "SUCCESS")
 
     async def run_clustering(
         self,

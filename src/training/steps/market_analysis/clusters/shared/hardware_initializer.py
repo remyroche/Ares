@@ -6,7 +6,7 @@ across the clustering codebase by providing a unified interface to the
 enhanced hardware utilities.
 """
 
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Union, Callable, Awaitable
 from contextlib import contextmanager
 from src.utils.tprint import tprint, tprint_warning, tprint_error
 

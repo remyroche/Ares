@@ -8,7 +8,7 @@ kNN graph building, centroid updates, and incremental BCSS/WCSS calculations.
 import logging
 import numpy as np
 import pandas as pd
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union, Callable, Awaitable
 from collections import defaultdict
 import time
 from datetime import datetime
@@ -63,9 +63,11 @@ logger = logging.getLogger(__name__)
 class ClusteringUtils:
     """Utility functions for clustering operations and calculations."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize clustering utilities."""
+        tprint("🚀 Initializing ClusteringUtils", "INFO")
         self.logger = logger
+        tprint_debug("Clustering utilities initialized")
 
     def calculate_euclidean_distance(self, point1: np.ndarray, point2: np.ndarray) -> float:
         """Calculate Euclidean distance between two points."""

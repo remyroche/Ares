@@ -44,7 +44,11 @@ def get_base_step():
 # Use lazy import
 BaseStep = get_base_step()
 from src.utils.logger import system_logger
-from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success, tprint_data_preview
+from src.utils.tprint import (
+    tprint, tprint_info, tprint_warning, tprint_error, tprint_success, tprint_data_preview,
+    tprint_debug, tprint_exception, tprint_progress, tprint_performance, tprint_structured,
+    tprint_timer, tprint_data_format, tprint_batch
+)
 from src.utils.data.quality.comprehensive_duplicate_analyzer import (
     ComprehensiveDuplicateAnalyzer,
     analyze_duplicates_comprehensive
@@ -105,10 +109,12 @@ class KlinesDataProcessingPipeline(BaseStep):
             from src.trading.execution.exchange_interface import ExchangeInterface, create_exchange_interface
             EXCHANGE_INTERFACE_AVAILABLE = True
             self.exchange_interface_available = True
+            tprint_success("✅ Exchange interface available")
             self.logger.info("Exchange interface available")
         except ImportError as e:
             EXCHANGE_INTERFACE_AVAILABLE = False
             self.exchange_interface_available = False
+            tprint_warning(f"⚠️ Exchange interface not available: {e}")
             self.logger.warning(f"Exchange interface not available: {e}")
         
         # Try to import and initialize OHLCV standardizer
@@ -116,10 +122,12 @@ class KlinesDataProcessingPipeline(BaseStep):
             from exchanges.shared.unified_ohlcv_standardizer import UnifiedOHLCVStandardizer
             OHLCV_STANDARDIZER_AVAILABLE = True
             self.data_standardizer = UnifiedOHLCVStandardizer()
+            tprint_success("✅ OHLCV standardizer available")
             self.logger.info("OHLCV standardizer available")
         except ImportError as e:
             OHLCV_STANDARDIZER_AVAILABLE = False
             self.data_standardizer = None
+            tprint_warning(f"⚠️ OHLCV standardizer not available: {e}")
             self.logger.warning(f"OHLCV standardizer not available: {e}")
         
         # Try to import and initialize enhanced pipeline
@@ -134,10 +142,12 @@ class KlinesDataProcessingPipeline(BaseStep):
             # Create proper config for enhanced pipeline
             config = PipelineConfig(data_dir=data_dir, exchange=exchange)
             self.enhanced_pipeline = EnhancedKlinesProcessingPipeline(config)
+            tprint_success("✅ Enhanced pipeline available")
             self.logger.info("Enhanced pipeline available")
         except ImportError as e:
             ENHANCED_PIPELINE_AVAILABLE = False
             self.enhanced_pipeline = None
+            tprint_warning(f"⚠️ Enhanced pipeline not available: {e}")
             self.logger.warning(f"Enhanced pipeline not available: {e}")
 
     @property
@@ -343,6 +353,7 @@ class KlinesDataProcessingPipeline(BaseStep):
             Execution result with artifacts and metrics
         """
         try:
+            tprint_info("🚀 Starting data download step execution")
             self.logger.info("🚀 Starting data download step execution")
             
             # Extract configuration
@@ -354,6 +365,15 @@ class KlinesDataProcessingPipeline(BaseStep):
             
             if not symbol:
                 raise ValueError("Symbol is required for data download")
+            
+            tprint_structured({
+                "operation": "data_download_start",
+                "symbol": symbol,
+                "exchange": exchange,
+                "timeframes": timeframes,
+                "execution_mode": execution_mode,
+                "years": years
+            }, level="INFO")
             
             self.logger.info(f"Downloading data for {symbol} from {exchange}")
             self.logger.info(f"Timeframes: {timeframes}")
@@ -368,6 +388,7 @@ class KlinesDataProcessingPipeline(BaseStep):
             total_downloads = 0
             
             for timeframe in timeframes:
+                tprint_info(f"📥 Downloading {timeframe} data for {symbol}")
                 self.logger.info(f"📥 Downloading {timeframe} data for {symbol}")
                 
                 try:
@@ -386,6 +407,8 @@ class KlinesDataProcessingPipeline(BaseStep):
                     if result.get('success', False):
                         downloaded_data[timeframe] = result
                         total_downloads += 1
+                        
+                        tprint_success(f"✅ Successfully downloaded {timeframe} data for {symbol}")
                         
                         # Set context for klines operations
                         self._set_context(
@@ -438,11 +461,15 @@ class KlinesDataProcessingPipeline(BaseStep):
                             'size': f"Downloaded successfully"
                         })
                         
+                        tprint_success(f"✅ Downloaded {timeframe} data successfully")
                         self.logger.info(f"✅ Downloaded {timeframe} data successfully")
                     else:
+                        tprint_warning(f"⚠️ Failed to download {timeframe} data")
                         self.logger.warning(f"⚠️ Failed to download {timeframe} data")
                         
                 except Exception as e:
+                    tprint_error(f"❌ Failed to download {timeframe} data: {e}")
+                    tprint_exception(e, f"Error downloading {timeframe} data for {symbol}")
                     self.logger.error(f"❌ Failed to download {timeframe} data: {e}")
                     continue
             
@@ -522,15 +549,25 @@ class KlinesDataProcessingPipeline(BaseStep):
                 years = mode_config.lookback_years
 
             tprint_info(f"🚀 Starting enhanced klines processing pipeline for {symbol}")
+            tprint_structured({
+                "operation": "enhanced_pipeline_start",
+                "symbol": symbol,
+                "interval": interval,
+                "years": years,
+                "exchange": self.exchange
+            }, level="INFO")
 
             # Validate parameters
             if not symbol or not interval or years <= 0:
+                tprint_error("❌ Invalid parameters: symbol, interval, and years must be valid")
                 raise ValueError("Invalid parameters: symbol, interval, and years must be valid")
 
             if not api_key or not api_secret:
+                tprint_error("❌ API credentials are required for data processing")
                 raise ValueError("API credentials are required for data processing")
 
             # Create ExchangeInterface for exchange-agnostic data access
+            tprint_info(f"🔗 Creating exchange interface for {self.exchange}")
             exchange_config = {
                 'exchange_type': self.exchange,
                 'api_key': api_key,
@@ -538,39 +575,57 @@ class KlinesDataProcessingPipeline(BaseStep):
                 'testnet': False
             }
             exchange_interface = create_exchange_interface(exchange_config)
-            await exchange_interface.connect()
+            
+            with tprint_timer("exchange_connection", level="PERFORMANCE"):
+                await exchange_interface.connect()
+            tprint_success(f"✅ Connected to {self.exchange} exchange")
 
             # Configure resampling if requested
             resampling_config = None
             if resampling_intervals:
+                tprint_info(f"🔄 Configuring resampling for intervals: {resampling_intervals}")
                 resampling_config = ResamplingConfig(
                     target_intervals=resampling_intervals,
                     method='ohlc',
                     preserve_volume=True,
                     validate_continuity=True
                 )
+                tprint_success(f"✅ Resampling configured for {len(resampling_intervals)} intervals")
 
             # Use enhanced pipeline for processing
-            results = await self.enhanced_pipeline.process_klines_data(
-                symbol=symbol,
-                interval=interval,
-                years=years,
-                exchange_interface=exchange_interface,
-                resampling_config=resampling_config,
-                max_gap_minutes=max_gap_minutes,
-                create_consolidated=create_consolidated
-            )
+            tprint_info(f"⚙️ Starting enhanced pipeline processing for {symbol} {interval}")
+            with tprint_timer("enhanced_pipeline_processing", level="PERFORMANCE"):
+                results = await self.enhanced_pipeline.process_klines_data(
+                    symbol=symbol,
+                    interval=interval,
+                    years=years,
+                    exchange_interface=exchange_interface,
+                    resampling_config=resampling_config,
+                    max_gap_minutes=max_gap_minutes,
+                    create_consolidated=create_consolidated
+                )
+            tprint_success(f"✅ Enhanced pipeline processing completed for {symbol} {interval}")
 
             # Cleanup exchange interface
             try:
+                tprint_info("🔌 Disconnecting from exchange interface")
                 await exchange_interface.disconnect()
+                tprint_success("✅ Exchange interface disconnected successfully")
             except Exception as e:
-                tprint_warning(f"Error disconnecting exchange interface: {e}")
+                tprint_warning(f"⚠️ Error disconnecting exchange interface: {e}")
 
             # Add legacy compatibility fields
             results["steps_completed"] = results.get("steps_completed", [])
             results["completion_time"] = datetime.now().isoformat()
 
+            tprint_structured({
+                "operation": "enhanced_pipeline_completed",
+                "steps_completed": len(results['steps_completed']),
+                "errors": len(results.get('errors', [])),
+                "warnings": len(results.get('warnings', [])),
+                "completion_time": results["completion_time"]
+            }, level="SUCCESS")
+            
             tprint_info(f"🎉 Enhanced pipeline completed: {len(results['steps_completed'])} steps, {len(results['errors'])} errors, {len(results['warnings'])} warnings")
 
             return results
@@ -578,6 +633,16 @@ class KlinesDataProcessingPipeline(BaseStep):
         except Exception as e:
             error_msg = f"Enhanced pipeline failed: {str(e)}"
             tprint_error(f"❌ {error_msg}")
+            tprint_exception(e, "Enhanced pipeline execution failed")
+            
+            tprint_structured({
+                "operation": "enhanced_pipeline_failed",
+                "symbol": symbol,
+                "interval": interval,
+                "years": years,
+                "error": str(e),
+                "error_type": type(e).__name__
+            }, level="ERROR")
 
             # Return error result in legacy format
             return {
@@ -603,18 +668,27 @@ class KlinesDataProcessingPipeline(BaseStep):
         """
         try:
             tprint_info(f"🧹 Removing columns {self.columns_to_remove} from {symbol} {interval} data")
+            tprint_structured({
+                "operation": "column_removal_start",
+                "symbol": symbol,
+                "interval": interval,
+                "columns_to_remove": self.columns_to_remove
+            }, level="INFO")
 
             # Get data directory
             data_path = Path(self.data_dir) / "binance" / symbol.lower() / "raw" / f"{symbol.lower()}_{interval}"
 
             if not data_path.exists():
+                tprint_warning(f"⚠️ No data directory found: {data_path}")
                 return {"files_processed": 0, "columns_removed": 0, "message": "No data directory found"}
 
             # Find all parquet files
             parquet_files = list(data_path.glob("*.parquet"))
             if not parquet_files:
+                tprint_warning(f"⚠️ No parquet files found in {data_path}")
                 return {"files_processed": 0, "columns_removed": 0, "message": "No parquet files found"}
 
+            tprint_info(f"🔍 Found {len(parquet_files)} parquet files to process")
             files_processed = 0
             columns_removed_total = 0
 
@@ -824,11 +898,17 @@ class KlinesDataProcessingPipeline(BaseStep):
         """
         try:
             tprint_info(f"🔍 Analyzing duplicates in {symbol} {interval} data")
+            tprint_structured({
+                "operation": "duplicate_analysis_start",
+                "symbol": symbol,
+                "interval": interval
+            }, level="INFO")
 
             # Get data directory
             data_path = Path(self.data_dir) / "binance" / symbol.lower() / "raw" / f"{symbol.lower()}_{interval}"
 
             if not data_path.exists():
+                tprint_warning(f"⚠️ No data directory found: {data_path}")
                 return {"files_analyzed": 0, "duplicates_found": 0, "warnings": [], "message": "No data directory found"}
 
             # Find sample files

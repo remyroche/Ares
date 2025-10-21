@@ -102,17 +102,25 @@ def get_system_logger():
 def get_tprint_functions():
     """Lazy import of tprint functions to avoid circular imports."""
     try:
-        from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success, tprint_data_preview
-        return tprint, tprint_info, tprint_warning, tprint_error, tprint_success, tprint_data_preview
+        from src.utils.tprint import (
+            tprint, tprint_info, tprint_warning, tprint_error, tprint_success, tprint_data_preview,
+            tprint_debug, tprint_exception, tprint_progress, tprint_performance, tprint_structured,
+            tprint_timer, tprint_data_format, tprint_batch
+        )
+        return (tprint, tprint_info, tprint_warning, tprint_error, tprint_success, tprint_data_preview,
+                tprint_debug, tprint_exception, tprint_progress, tprint_performance, tprint_structured,
+                tprint_timer, tprint_data_format, tprint_batch)
     except ImportError:
         # Fallback functions
         def tprint(*args, **kwargs):
             print(*args, **kwargs)
-        return tprint, tprint, tprint, tprint, tprint
+        return tprint, tprint, tprint, tprint, tprint, tprint, tprint, tprint, tprint, tprint, tprint, tprint, tprint, tprint
 
 # Initialize lazy imports
 system_logger = get_system_logger()
-tprint, tprint_info, tprint_warning, tprint_error, tprint_success, tprint_data_preview = get_tprint_functions()
+(tprint, tprint_info, tprint_warning, tprint_error, tprint_success, tprint_data_preview,
+ tprint_debug, tprint_exception, tprint_progress, tprint_performance, tprint_structured,
+ tprint_timer, tprint_data_format, tprint_batch) = get_tprint_functions()
 # Import comprehensive data quality utilities from src/utils/data/quality/
 # Use lazy imports to avoid circular import issues
 
@@ -371,11 +379,15 @@ class EnhancedKlinesProcessingPipeline(BaseStep):
         self.enable_logging = self.config.enable_logging
 
         # Initialize components
+        tprint_info("🔧 Initializing data standardizer")
         self.data_standardizer = UnifiedOHLCVStandardizer()
+        tprint_success("✅ Data standardizer initialized")
         
         # Initialize lazy-loaded quality utilities
+        tprint_info("🔧 Loading quality utilities")
         _lazy_import_quality_utilities()
         self.duplicate_analyzer = _COMPREHENSIVE_DUPLICATE_ANALYZER()
+        tprint_success("✅ Quality utilities loaded")
 
         # Note: KlinesParquetManager is now available via BaseStep integration
         # Use self._store_klines(), self._load_klines(), etc. methods
@@ -394,6 +406,15 @@ class EnhancedKlinesProcessingPipeline(BaseStep):
         self.default_resampling_config = ResamplingConfig()
 
         if self.enable_logging:
+            tprint_structured({
+                "operation": "enhanced_pipeline_initialization",
+                "exchange": self.exchange,
+                "data_dir": str(self.data_dir),
+                "enable_logging": self.enable_logging,
+                "components_initialized": [
+                    "data_standardizer", "duplicate_analyzer", "quality_utilities"
+                ]
+            }, level="SUCCESS")
             tprint_success(f"✅ Enhanced Klines Processing Pipeline initialized for {self.exchange}")
 
     async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
@@ -407,6 +428,7 @@ class EnhancedKlinesProcessingPipeline(BaseStep):
             Execution result with artifacts and metrics
         """
         try:
+            tprint_info("🚀 Starting enhanced klines processing pipeline execution")
             self.logger.info("🚀 Starting enhanced klines processing pipeline execution")
             
             # Extract configuration
@@ -415,7 +437,16 @@ class EnhancedKlinesProcessingPipeline(BaseStep):
             interval = config.get('interval', '1m')
             years = config.get('years', 3)
             
+            tprint_structured({
+                "operation": "enhanced_pipeline_execution_start",
+                "symbol": symbol,
+                "exchange": exchange,
+                "interval": interval,
+                "years": years
+            }, level="INFO")
+            
             if not symbol:
+                tprint_error("❌ Symbol is required for klines processing")
                 raise ValueError("Symbol is required for klines processing")
             
             # Set context for klines operations
@@ -426,6 +457,8 @@ class EnhancedKlinesProcessingPipeline(BaseStep):
                 model=config.get('model', 'Analyst')
             )
             
+            tprint_info(f"Processing klines data for {symbol} from {exchange}")
+            tprint_info(f"Interval: {interval}, Years: {years}")
             self.logger.info(f"Processing klines data for {symbol} from {exchange}")
             self.logger.info(f"Interval: {interval}, Years: {years}")
             
@@ -480,6 +513,16 @@ class EnhancedKlinesProcessingPipeline(BaseStep):
                     'pipeline_success': results.get('pipeline_success', False)
                 }
                 
+                tprint_success("✅ Enhanced klines processing completed successfully")
+                tprint_structured({
+                    "operation": "enhanced_pipeline_completed",
+                    "symbol": symbol,
+                    "interval": interval,
+                    "pipeline_success": results.get('pipeline_success', False),
+                    "data_quality": results.get('data_quality', 'unknown'),
+                    "final_shape": results.get('final_data_shape', 'unknown')
+                }, level="SUCCESS")
+                
                 self.logger.info(f"✅ Enhanced klines processing completed successfully")
                 return {
                     'success': True,
@@ -488,6 +531,14 @@ class EnhancedKlinesProcessingPipeline(BaseStep):
                     'results': results
                 }
             else:
+                tprint_error("❌ Enhanced klines processing failed")
+                tprint_structured({
+                    "operation": "enhanced_pipeline_failed",
+                    "symbol": symbol,
+                    "interval": interval,
+                    "error": "Pipeline processing failed"
+                }, level="ERROR")
+                
                 self.logger.error("❌ Enhanced klines processing failed")
                 return {
                     'success': False,
@@ -497,6 +548,16 @@ class EnhancedKlinesProcessingPipeline(BaseStep):
                 }
                 
         except Exception as e:
+            tprint_error(f"❌ Enhanced klines processing failed: {e}")
+            tprint_exception(e, "Enhanced klines processing pipeline execution failed")
+            tprint_structured({
+                "operation": "enhanced_pipeline_exception",
+                "symbol": symbol if 'symbol' in locals() else 'unknown',
+                "interval": interval if 'interval' in locals() else 'unknown',
+                "error": str(e),
+                "error_type": type(e).__name__
+            }, level="ERROR")
+            
             self.logger.error(f"❌ Enhanced klines processing failed: {e}")
             return {
                 'success': False,
@@ -2328,23 +2389,39 @@ async def process_klines_data_enhanced(
     Returns:
         Dictionary with complete processing results
     """
+    tprint_info(f"🚀 Starting enhanced klines data processing for {symbol} {interval}")
+    tprint_structured({
+        "operation": "process_klines_data_enhanced_start",
+        "symbol": symbol,
+        "interval": interval,
+        "years": years,
+        "create_consolidated": create_consolidated,
+        "batch_id": batch_id
+    }, level="INFO")
+    
     pipeline = EnhancedKlinesProcessingPipeline(config)
 
-    return await pipeline.process_klines_data(
-        symbol=symbol,
-        interval=interval,
-        years=years,
-        exchange_interface=exchange_interface,
-        resampling_config=resampling_config,
-        max_gap_minutes=max_gap_minutes,
-        create_consolidated=create_consolidated,
-        batch_id=batch_id
-    )
+    with tprint_timer("process_klines_data_enhanced", level="PERFORMANCE"):
+        results = await pipeline.process_klines_data(
+            symbol=symbol,
+            interval=interval,
+            years=years,
+            exchange_interface=exchange_interface,
+            resampling_config=resampling_config,
+            max_gap_minutes=max_gap_minutes,
+            create_consolidated=create_consolidated,
+            batch_id=batch_id
+        )
+    
+    tprint_success(f"✅ Enhanced klines data processing completed for {symbol} {interval}")
+    return results
 
 if __name__ == "__main__":
     # Example usage - simplified for working with existing data
     async def main():
         try:
+            tprint_info("🚀 Starting enhanced klines processing pipeline example")
+            
             # Configure pipeline for existing data processing
             pipeline_config = PipelineConfig(
                 data_dir="historical_data",
@@ -2356,8 +2433,17 @@ if __name__ == "__main__":
                 enable_quality_validation=True,
                 batch_compatible=True
             )
+            
+            tprint_structured({
+                "operation": "pipeline_config_created",
+                "data_dir": pipeline_config.data_dir,
+                "exchange": pipeline_config.exchange,
+                "enable_logging": pipeline_config.enable_logging,
+                "enable_resampling": pipeline_config.enable_resampling
+            }, level="INFO")
 
             # Configure resampling for existing data
+            tprint_info("🔄 Configuring resampling for existing data")
             resampling_config = ResamplingConfig(
                 target_intervals=['5m', '15m', '30m', '1h'],  # Skip 1m as it's already available
                 method='ohlc',
@@ -2365,8 +2451,10 @@ if __name__ == "__main__":
                 resample_older_than_days=1,  # Resample all data older than 1 day
                 enable_auto_resampling=True
             )
+            tprint_success(f"✅ Resampling configured for {len(resampling_config.target_intervals)} intervals")
 
             # Create enhanced exchange interface for data downloading
+            tprint_info("🔗 Creating exchange interface")
             exchange_config = {
                 'exchange_type': 'binance',
                 'api_key': "",  # Add your API key here
@@ -2375,10 +2463,15 @@ if __name__ == "__main__":
                 'rate_limits': {}
             }
             exchange_interface = ExchangeInterface(exchange_config)
+            tprint_success("✅ Exchange interface created")
             
             try:
+                tprint_info("🔌 Connecting to exchange")
                 await exchange_interface.connect()
+                tprint_success("✅ Connected to exchange successfully")
             except Exception as e:
+                tprint_warning(f"⚠️ Exchange connection failed: {e}")
+                tprint_info("📁 Falling back to existing data processing...")
                 print(f"⚠️ Exchange connection failed: {e}")
                 print("📁 Falling back to existing data processing...")
                 # Create fallback interface for existing data
@@ -2409,6 +2502,16 @@ if __name__ == "__main__":
                 batch_id="existing_data_processing"
             )
 
+            tprint_success(f"🎉 Processing completed: {results['pipeline_success']}")
+            tprint_structured({
+                "operation": "pipeline_processing_completed",
+                "pipeline_success": results['pipeline_success'],
+                "data_quality": results['data_quality'],
+                "final_shape": results['final_data_shape'],
+                "stored_files": results['stored_files'],
+                "resampled_intervals": results['resampled_intervals']
+            }, level="SUCCESS")
+            
             print(f"\n🎉 Processing completed: {results['pipeline_success']}")
             print(f"📊 Data quality: {results['data_quality']}")
             print(f"📈 Final shape: {results['final_data_shape']}")
@@ -2418,6 +2521,14 @@ if __name__ == "__main__":
             await exchange_interface.disconnect()
 
         except Exception as e:
+            tprint_error(f"❌ Error in main processing: {e}")
+            tprint_exception(e, "Main processing failed")
+            tprint_structured({
+                "operation": "main_processing_failed",
+                "error": str(e),
+                "error_type": type(e).__name__
+            }, level="ERROR")
+            
             print(f"❌ Error in main processing: {e}")
             import traceback
             traceback.print_exc()

@@ -66,7 +66,7 @@ class SplitError(Enum):
 from src.utils.tprint import (
     tprint, tprint_info, tprint_success, tprint_warning, tprint_error
 )
-from src.utils.common_operations import safe_divide
+from .shared import safe_divide
 
 from ..shared_utils import get_logger
 from src.utils.matrix_operations.unified_operations import UnifiedMatrixOperations

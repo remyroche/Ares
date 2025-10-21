@@ -44,21 +44,14 @@ from src.utils.tprint import (
     tprint_error,
     tprint_success,
 )
-from src.utils.common_operations import get_m1_gpu_manager, get_m1_memory_optimizer, get_m1_cpu_optimizer
+# Hardware initialization now handled by shared utilities
 from ..shared import HardwareInitializer
 from src.utils.common_utilities import safe_dataframe_operation, validate_dataframe_columns, calculate_data_quality_metrics
-from src.utils.math_validation import validate_finite, validate_positive, validate_range
-from ..shared import ClusteringValidationUtils, ClusteringCommonUtils, safe_divide
+from src.utils.math_validation import validate_positive, validate_range
+from ..shared import ClusteringValidationUtils, ClusteringCommonUtils, safe_divide, clustering_operation
 from src.utils.matrix_operations import get_unified_matrix_operations, safe_matrix_multiply, safe_correlation_matrix
 
-# Hardware optimization imports
-try:
-    from src.utils.hardware.m1_gpu_utils import get_m1_gpu_optimizer
-    from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer as get_hw_memory_optimizer
-    from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer as get_hw_cpu_optimizer
-    HARDWARE_AVAILABLE = True
-except ImportError:
-    HARDWARE_AVAILABLE = False
+# Hardware optimization now handled by shared utilities
 
 @dataclass
 class FeaturePreprocessorConfig:
@@ -131,6 +124,7 @@ class FeaturePreprocessor:
         self.memory_optimizer = hardware_components.get('memory_manager')
         self.cpu_optimizer = hardware_components.get('cpu_optimizer')
 
+    @clustering_operation("feature_preprocessing", verbose=True)
     def preprocess_features(
         self,
         features: np.ndarray,
@@ -148,41 +142,36 @@ class FeaturePreprocessor:
         """
         tprint(f"🔧 FEATURE PREPROCESSING: Starting with {features.shape[1]} features, {features.shape[0]} samples", color="cyan", bold=True)
 
-        try:
-            # Step 1: Data quality checks and cleaning
-            features, feature_names = self._clean_data(features, feature_names)
+        # Step 1: Data quality checks and cleaning
+        features, feature_names = self._clean_data(features, feature_names)
 
-            # Step 2: Handle NaN values
-            features = self._handle_nans(features)
+        # Step 2: Handle NaN values
+        features = self._handle_nans(features)
 
-            # Step 3: Handle outliers
-            features = self._handle_outliers(features)
+        # Step 3: Handle outliers
+        features = self._handle_outliers(features)
 
-            # Step 4: Apply scaling
-            features, scaler = self._apply_scaling(features)
+        # Step 4: Apply scaling
+        features, scaler = self._apply_scaling(features)
 
-            # Step 5: Apply dimensionality reduction
-            features, feature_names, reducer = self._apply_dimensionality_reduction(features, feature_names)
+        # Step 5: Apply dimensionality reduction
+        features, feature_names, reducer = self._apply_dimensionality_reduction(features, feature_names)
 
-            # Store metadata
-            self.preprocessing_metadata = {
-                'original_shape': features.shape,
-                'processed_shape': features.shape,
-                'scaling_method': self.config.scaling_method,
-                'nan_strategy': self.config.nan_strategy,
-                'outlier_method': self.config.outlier_method,
-                'reduction_method': self.config.reduction_method,
-                'n_components': features.shape[1] if features.ndim > 1 else 1,
-                'remaining_features': feature_names
-            }
+        # Store metadata
+        self.preprocessing_metadata = {
+            'original_shape': features.shape,
+            'processed_shape': features.shape,
+            'scaling_method': self.config.scaling_method,
+            'nan_strategy': self.config.nan_strategy,
+            'outlier_method': self.config.outlier_method,
+            'reduction_method': self.config.reduction_method,
+            'n_components': features.shape[1] if features.ndim > 1 else 1,
+            'remaining_features': feature_names
+        }
 
-            tprint(f"✅ Feature preprocessing completed: {features.shape[1]} features processed", "SUCCESS")
+        tprint(f"✅ Feature preprocessing completed: {features.shape[1]} features processed", "SUCCESS")
 
-            return features, feature_names, self.preprocessing_metadata
-
-        except Exception as e:
-            tprint(f"❌ Feature preprocessing failed: {e}", "ERROR")
-            return features, feature_names, {'error': str(e)}
+        return features, feature_names, self.preprocessing_metadata
 
     def _clean_data(
         self,
@@ -221,7 +210,7 @@ class FeaturePreprocessor:
         validation_result = ClusteringValidationUtils.validate_features(features)
         if not validation_result.is_valid:
             raise ValueError(f"Feature validation failed: {validation_result.errors}")
-        features = validate_finite(features, "features")
+        # validate_finite is already called inside ClusteringValidationUtils.validate_features
 
         nan_mask = np.isnan(features)
         total_nans = nan_mask.sum()
@@ -280,8 +269,10 @@ class FeaturePreprocessor:
 
         tprint(f"🔍 Handling outliers using {self.config.outlier_method} method...", "INFO")
 
-        # Validate inputs
-        features = validate_finite(features, "features")
+        # Validate inputs using shared utilities
+        validation_result = ClusteringValidationUtils.validate_features(features)
+        if not validation_result.is_valid:
+            raise ValueError(f"Feature validation failed: {validation_result.errors}")
         outlier_threshold = validate_positive(self.config.outlier_threshold, "outlier_threshold")
 
         if self.config.outlier_method == "clip":
@@ -393,8 +384,10 @@ class FeaturePreprocessor:
 
         tprint(f"🔍 Applying {self.config.scaling_method} scaling...", "INFO")
 
-        # Validate inputs
-        features = validate_finite(features, "features")
+        # Validate inputs using shared utilities
+        validation_result = ClusteringValidationUtils.validate_features(features)
+        if not validation_result.is_valid:
+            raise ValueError(f"Feature validation failed: {validation_result.errors}")
 
         if self.config.scaling_method == "robust":
             scaler = RobustScaler(**self.config.scaling_params)
@@ -455,8 +448,10 @@ class FeaturePreprocessor:
 
         tprint(f"🔍 Applying {self.config.reduction_method} dimensionality reduction...", "INFO")
 
-        # Validate inputs
-        features = validate_finite(features, "features")
+        # Validate inputs using shared utilities
+        validation_result = ClusteringValidationUtils.validate_features(features)
+        if not validation_result.is_valid:
+            raise ValueError(f"Feature validation failed: {validation_result.errors}")
 
         if self.config.reduction_method == "pca":
             # Determine number of components using validation

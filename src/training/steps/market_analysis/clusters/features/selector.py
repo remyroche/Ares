@@ -27,22 +27,15 @@ from src.utils.tprint import (
     tprint_error,
     tprint_success,
 )
-from src.utils.common_operations import get_m1_gpu_manager, get_m1_memory_optimizer, get_m1_cpu_optimizer
+# Hardware initialization now handled by shared utilities
 from ..shared import HardwareInitializer
 from src.utils.common_utilities import safe_dataframe_operation, validate_dataframe_columns, calculate_data_quality_metrics
-from src.utils.math_validation import validate_finite, validate_positive, validate_range
+from src.utils.math_validation import validate_positive, validate_range
 from ..shared import safe_divide, ClusteringValidationUtils
 from src.utils.ml_common.optimization.hpo_utils import HyperparameterOptimization
 from src.utils.matrix_operations import get_unified_matrix_operations, safe_matrix_multiply, safe_correlation_matrix
 
-# Hardware optimization imports
-try:
-    from src.utils.hardware.m1_gpu_utils import get_m1_gpu_optimizer
-    from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer as get_hw_memory_optimizer
-    from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer as get_hw_cpu_optimizer
-    HARDWARE_AVAILABLE = True
-except ImportError:
-    HARDWARE_AVAILABLE = False
+# Hardware optimization now handled by shared utilities
 
 @dataclass
 class FeatureSelectorConfig:
@@ -200,8 +193,10 @@ class FeatureSelector:
         """Drop features with near-zero variance."""
         tprint("🔍 Dropping near-zero variance features...", "INFO")
 
-        # Validate input features
-        features = validate_finite(features, "features")
+        # Validate input features using shared utilities
+        validation_result = ClusteringValidationUtils.validate_features(features)
+        if not validation_result.is_valid:
+            raise ValueError(f"Feature validation failed: {validation_result.errors}")
 
         # Calculate variance for each feature using matrix operations
         try:
@@ -267,8 +262,10 @@ class FeatureSelector:
         """Apply PCA-based pruning using loading scores."""
         tprint("🔍 Applying PCA-based feature pruning...", "INFO")
 
-        # Validate inputs
-        features = validate_finite(features, "features")
+        # Validate inputs using shared utilities
+        validation_result = ClusteringValidationUtils.validate_features(features)
+        if not validation_result.is_valid:
+            raise ValueError(f"Feature validation failed: {validation_result.errors}")
 
         # Standardize features before PCA using matrix operations
         try:

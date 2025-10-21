@@ -31,10 +31,10 @@ from src.utils.tprint import (
     tprint_error,
     tprint_success,
 )
-from src.utils.common_operations import get_m1_gpu_manager, get_m1_memory_optimizer, get_m1_cpu_optimizer
+# Hardware initialization now handled by shared utilities
 from ..shared import HardwareInitializer
 from src.utils.common_utilities import safe_dataframe_operation, validate_dataframe_columns, calculate_data_quality_metrics
-from src.utils.math_validation import validate_finite, validate_positive, validate_range
+from src.utils.math_validation import validate_positive, validate_range
 from ..shared import safe_divide, ClusteringValidationUtils
 from src.utils.matrix_operations import get_unified_matrix_operations, safe_matrix_multiply, safe_correlation_matrix
 
@@ -48,14 +48,7 @@ try:
 except ImportError:
     ML_COMMON_AVAILABLE = False
 
-# Hardware optimization imports
-try:
-    from src.utils.hardware.m1_gpu_utils import get_m1_gpu_optimizer
-    from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer as get_hw_memory_optimizer
-    from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer as get_hw_cpu_optimizer
-    HARDWARE_AVAILABLE = True
-except ImportError:
-    HARDWARE_AVAILABLE = False
+# Hardware optimization now handled by shared utilities
 
 @dataclass
 class FeatureAnalyzerConfig:
@@ -146,8 +139,10 @@ class FeatureAnalyzer:
         tprint(f"🔍 FEATURE ANALYSIS: Analyzing {features.shape[1]} features, {features.shape[0]} samples", color="cyan", bold=True)
 
         try:
-            # Validate inputs
-            features = validate_finite(features, "features")
+            # Validate inputs using shared utilities
+            validation_result = ClusteringValidationUtils.validate_features(features)
+            if not validation_result.is_valid:
+                raise ValueError(f"Feature validation failed: {validation_result.errors}")
 
             # Step 1: Basic feature statistics
             basic_stats = self._compute_basic_statistics(features, feature_names)
@@ -380,8 +375,10 @@ class FeatureAnalyzer:
         """Compute correlation analysis between features."""
         tprint("🔍 Computing correlation analysis...", "INFO")
 
-        # Validate inputs
-        features = validate_finite(features, "features")
+        # Validate inputs using shared utilities
+        validation_result = ClusteringValidationUtils.validate_features(features)
+        if not validation_result.is_valid:
+            raise ValueError(f"Feature validation failed: {validation_result.errors}")
         correlation_threshold = validate_positive(self.config.correlation_threshold, "correlation_threshold")
 
         # Compute correlation matrix using matrix operations for efficiency
@@ -457,8 +454,10 @@ class FeatureAnalyzer:
         """Compute multicollinearity analysis using VIF."""
         tprint("🔍 Computing multicollinearity analysis...", "INFO")
 
-        # Validate inputs
-        features = validate_finite(features, "features")
+        # Validate inputs using shared utilities
+        validation_result = ClusteringValidationUtils.validate_features(features)
+        if not validation_result.is_valid:
+            raise ValueError(f"Feature validation failed: {validation_result.errors}")
         multicollinearity_threshold = validate_positive(self.config.multicollinearity_threshold, "multicollinearity_threshold")
 
         vif_scores = {}
@@ -534,8 +533,10 @@ class FeatureAnalyzer:
         """Compute feature stability over time windows."""
         tprint("🔍 Computing feature stability analysis...", "INFO")
 
-        # Validate inputs
-        features = validate_finite(features, "features")
+        # Validate inputs using shared utilities
+        validation_result = ClusteringValidationUtils.validate_features(features)
+        if not validation_result.is_valid:
+            raise ValueError(f"Feature validation failed: {validation_result.errors}")
         stability_window = validate_positive(self.config.stability_window, "stability_window")
         stability_threshold = validate_positive(self.config.stability_threshold, "stability_threshold")
 
@@ -635,8 +636,10 @@ class FeatureAnalyzer:
         """Compute hierarchical clustering of features."""
         tprint("🔍 Computing feature clustering...", "INFO")
 
-        # Validate inputs
-        features = validate_finite(features, "features")
+        # Validate inputs using shared utilities
+        validation_result = ClusteringValidationUtils.validate_features(features)
+        if not validation_result.is_valid:
+            raise ValueError(f"Feature validation failed: {validation_result.errors}")
 
         # Use correlation-based distance with matrix operations
         try:

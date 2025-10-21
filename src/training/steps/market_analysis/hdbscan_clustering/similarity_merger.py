@@ -99,6 +99,50 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 @dataclass
+class AdaptiveThresholdConfig:
+    """Configuration for adaptive threshold selection."""
+    enable_adaptive_thresholds: bool = True
+    threshold_adaptation_method: str = 'quantile'  # 'quantile', 'statistical', 'ml_based'
+    quantile_level: float = 0.75
+    min_threshold: float = 0.1
+    max_threshold: float = 0.9
+    adaptation_window: int = 100  # Number of recent calculations to consider
+    confidence_level: float = 0.95
+    enable_uncertainty_quantification: bool = True
+
+@dataclass
+class ParallelProcessingConfig:
+    """Configuration for parallel processing."""
+    enable_parallel_processing: bool = True
+    max_workers: int = None  # None for auto-detection
+    chunk_size: int = 100
+    use_multiprocessing: bool = True
+    use_threading: bool = False
+    memory_per_worker_mb: float = 50.0
+
+@dataclass
+class OnlineLearningConfig:
+    """Configuration for online learning capabilities."""
+    enable_online_learning: bool = True
+    learning_rate: float = 0.01
+    adaptation_rate: float = 0.1
+    memory_size: int = 1000
+    enable_metric_adaptation: bool = True
+    enable_weight_adaptation: bool = True
+    stability_threshold: float = 0.1
+
+@dataclass
+class VisualizationConfig:
+    """Configuration for visualization tools."""
+    enable_visualization: bool = True
+    save_plots: bool = True
+    plot_format: str = 'png'  # 'png', 'svg', 'pdf'
+    plot_dpi: int = 300
+    plot_size: Tuple[int, int] = (12, 8)
+    color_scheme: str = 'viridis'
+    enable_interactive_plots: bool = False
+
+@dataclass
 class EnhancedSimilarityConfig:
     """Configuration for enhanced similarity metrics."""
     # Available similarity metrics
@@ -134,6 +178,12 @@ class EnhancedSimilarityConfig:
     memory_threshold_mb: float = 100.0
     enable_caching: bool = True
     
+    # Advanced configurations
+    adaptive_thresholds: AdaptiveThresholdConfig = None
+    parallel_processing: ParallelProcessingConfig = None
+    online_learning: OnlineLearningConfig = None
+    visualization: VisualizationConfig = None
+    
     def __post_init__(self):
         if self.available_metrics is None:
             self.available_metrics = [
@@ -148,6 +198,19 @@ class EnhancedSimilarityConfig:
                 'jensen_shannon': 0.25,
                 'dtw': 0.25
             }
+        
+        # Initialize sub-configurations with defaults
+        if self.adaptive_thresholds is None:
+            self.adaptive_thresholds = AdaptiveThresholdConfig()
+        
+        if self.parallel_processing is None:
+            self.parallel_processing = ParallelProcessingConfig()
+        
+        if self.online_learning is None:
+            self.online_learning = OnlineLearningConfig()
+        
+        if self.visualization is None:
+            self.visualization = VisualizationConfig()
 
 @dataclass
 class DataDrivenSimilarityMergerConfig:
@@ -235,6 +298,16 @@ class DataDrivenSimilarityMerger:
         self.vectorization_manager = None
         self.vectorbt_optimizer = None
         self._initialize_vectorization_tools()
+        
+        # Initialize adaptive systems
+        self.adaptive_thresholds = {}
+        self.online_learning_state = {}
+        self.similarity_history = []
+        self._initialize_adaptive_systems()
+        
+        # Initialize parallel processing
+        self.parallel_executor = None
+        self._initialize_parallel_processing()
         
     def merge_regimes(self, 
                      cluster_labels: np.ndarray,
@@ -700,6 +773,13 @@ class DataDrivenSimilarityMerger:
             n_clusters = len(unique_labels)
             similarity_matrix = np.eye(n_clusters)
             
+            # Use parallel processing if available
+            if (self.config.enhanced_similarity.parallel_processing.enable_parallel_processing and 
+                self.parallel_executor is not None):
+                return self._calculate_parallel_similarity_matrix(
+                    cluster_labels, features, unique_labels, cluster_centers
+                )
+            
             # Process in chunks to manage memory
             chunk_size = self.config.enhanced_similarity.vectorization_chunk_size
             
@@ -722,6 +802,771 @@ class DataDrivenSimilarityMerger:
         except Exception as e:
             tprint_debug(f"Chunked similarity calculation failed: {e}")
             raise
+    
+    def _calculate_parallel_similarity_matrix(self, 
+                                            cluster_labels: np.ndarray, 
+                                            features: np.ndarray,
+                                            unique_labels: np.ndarray,
+                                            cluster_centers: np.ndarray) -> np.ndarray:
+        """Calculate similarity matrix using parallel processing."""
+        try:
+            tprint_debug("Using parallel processing for similarity matrix calculation")
+            
+            n_clusters = len(unique_labels)
+            similarity_matrix = np.eye(n_clusters)
+            
+            # Prepare tasks for parallel execution
+            tasks = []
+            chunk_size = self.config.enhanced_similarity.parallel_processing.chunk_size
+            
+            for i in range(0, n_clusters, chunk_size):
+                for j in range(i, min(i + chunk_size, n_clusters)):
+                    for k in range(j + 1, n_clusters):
+                        task = {
+                            'i': j, 'j': k,
+                            'center1': cluster_centers[j],
+                            'center2': cluster_centers[k],
+                            'features': features,
+                            'cluster_labels': cluster_labels,
+                            'label1': unique_labels[j],
+                            'label2': unique_labels[k]
+                        }
+                        tasks.append(task)
+            
+            # Execute tasks in parallel
+            if self.parallel_executor:
+                try:
+                    # Submit tasks
+                    future_to_task = {}
+                    for task in tasks:
+                        future = self.parallel_executor.submit(
+                            self._parallel_similarity_task, task
+                        )
+                        future_to_task[future] = task
+                    
+                    # Collect results
+                    for future in future_to_task:
+                        try:
+                            result = future.result(timeout=30)  # 30 second timeout
+                            task = future_to_task[future]
+                            i, j = task['i'], task['j']
+                            similarity_matrix[i, j] = result
+                            similarity_matrix[j, i] = result
+                        except Exception as e:
+                            tprint_debug(f"Parallel task failed: {e}")
+                            # Fallback to sequential calculation
+                            task = future_to_task[future]
+                            similarity = self._calculate_similarity(
+                                task['center1'], task['center2'], task['features'],
+                                task['cluster_labels'], task['label1'], task['label2']
+                            )
+                            i, j = task['i'], task['j']
+                            similarity_matrix[i, j] = similarity
+                            similarity_matrix[j, i] = similarity
+                
+                except Exception as e:
+                    tprint_debug(f"Parallel execution failed: {e}")
+                    # Fallback to sequential calculation
+                    return self._calculate_basic_similarity_matrix(
+                        cluster_labels, features, unique_labels, cluster_centers
+                    )
+            
+            return similarity_matrix
+            
+        except Exception as e:
+            tprint_debug(f"Parallel similarity calculation failed: {e}")
+            raise
+    
+    def _parallel_similarity_task(self, task: Dict[str, Any]) -> float:
+        """Task for parallel similarity calculation."""
+        try:
+            return self._calculate_similarity(
+                task['center1'], task['center2'], task['features'],
+                task['cluster_labels'], task['label1'], task['label2']
+            )
+        except Exception as e:
+            tprint_debug(f"Parallel similarity task failed: {e}")
+            return 0.0
+    
+    def _update_online_learning(self, similarity_matrix: np.ndarray, 
+                              cluster_labels: np.ndarray,
+                              performance_metrics: Dict[str, float]):
+        """Update online learning state based on new data."""
+        try:
+            if not self.config.enhanced_similarity.online_learning.enable_online_learning:
+                return
+            
+            tprint_debug("Updating online learning state")
+            
+            # Add current performance to memory
+            self.online_learning_state['memory'].append({
+                'similarity_matrix': similarity_matrix.copy(),
+                'performance_metrics': performance_metrics.copy(),
+                'timestamp': time.time()
+            })
+            
+            # Keep only recent memory
+            max_memory = self.config.enhanced_similarity.online_learning.memory_size
+            if len(self.online_learning_state['memory']) > max_memory:
+                self.online_learning_state['memory'] = self.online_learning_state['memory'][-max_memory:]
+            
+            # Update metric weights if enabled
+            if self.config.enhanced_similarity.online_learning.enable_weight_adaptation:
+                self._adapt_ensemble_weights(performance_metrics)
+            
+            # Update metric selection if enabled
+            if self.config.enhanced_similarity.online_learning.enable_metric_adaptation:
+                self._adapt_metric_selection(performance_metrics)
+            
+        except Exception as e:
+            tprint_debug(f"Online learning update failed: {e}")
+    
+    def _adapt_ensemble_weights(self, performance_metrics: Dict[str, float]):
+        """Adapt ensemble weights based on performance."""
+        try:
+            learning_rate = self.config.enhanced_similarity.online_learning.learning_rate
+            
+            # Update weights based on performance
+            for metric, performance in performance_metrics.items():
+                if metric in self.online_learning_state['metric_weights']:
+                    # Increase weight for better performing metrics
+                    weight_change = learning_rate * (performance - 0.5)  # 0.5 is neutral performance
+                    new_weight = self.online_learning_state['metric_weights'][metric] + weight_change
+                    
+                    # Clip to valid range
+                    new_weight = np.clip(new_weight, 0.0, 1.0)
+                    self.online_learning_state['metric_weights'][metric] = new_weight
+            
+            # Normalize weights
+            total_weight = sum(self.online_learning_state['metric_weights'].values())
+            if total_weight > 0:
+                for metric in self.online_learning_state['metric_weights']:
+                    self.online_learning_state['metric_weights'][metric] /= total_weight
+            
+            # Update configuration
+            self.config.enhanced_similarity.ensemble_weights = self.online_learning_state['metric_weights'].copy()
+            
+            tprint_debug(f"Updated ensemble weights: {self.online_learning_state['metric_weights']}")
+            
+        except Exception as e:
+            tprint_debug(f"Ensemble weight adaptation failed: {e}")
+    
+    def _adapt_metric_selection(self, performance_metrics: Dict[str, float]):
+        """Adapt metric selection based on performance."""
+        try:
+            # Simple adaptation: disable poorly performing metrics
+            stability_threshold = self.config.enhanced_similarity.online_learning.stability_threshold
+            
+            for metric, performance in performance_metrics.items():
+                if performance < stability_threshold:
+                    # Temporarily disable poorly performing metric
+                    if metric in self.config.enhanced_similarity.available_metrics:
+                        tprint_debug(f"Temporarily disabling poorly performing metric: {metric}")
+                        # Could implement more sophisticated logic here
+            
+        except Exception as e:
+            tprint_debug(f"Metric selection adaptation failed: {e}")
+    
+    def calculate_similarity_with_uncertainty(self, 
+                                            center1: np.ndarray, 
+                                            center2: np.ndarray,
+                                            features: np.ndarray,
+                                            cluster_labels: np.ndarray,
+                                            label1: int,
+                                            label2: int,
+                                            n_bootstrap: int = 100) -> Dict[str, Any]:
+        """Calculate similarity with uncertainty quantification."""
+        try:
+            if not self.config.enhanced_similarity.adaptive_thresholds.enable_uncertainty_quantification:
+                similarity = self._calculate_similarity(center1, center2, features, cluster_labels, label1, label2)
+                return {
+                    'similarity': similarity,
+                    'uncertainty': 0.0,
+                    'confidence_interval': (similarity, similarity),
+                    'method': 'no_uncertainty'
+                }
+            
+            tprint_debug(f"Calculating similarity with uncertainty for regimes {label1} and {label2}")
+            
+            # Get samples from each cluster
+            samples1 = features[cluster_labels == label1]
+            samples2 = features[cluster_labels == label2]
+            
+            if len(samples1) < 3 or len(samples2) < 3:
+                similarity = self._calculate_similarity(center1, center2, features, cluster_labels, label1, label2)
+                return {
+                    'similarity': similarity,
+                    'uncertainty': 0.0,
+                    'confidence_interval': (similarity, similarity),
+                    'method': 'insufficient_data'
+                }
+            
+            # Bootstrap sampling for uncertainty quantification
+            similarities = []
+            
+            for _ in range(n_bootstrap):
+                try:
+                    # Bootstrap sample from each cluster
+                    n1, n2 = len(samples1), len(samples2)
+                    bootstrap_samples1 = samples1[np.random.choice(n1, n1, replace=True)]
+                    bootstrap_samples2 = samples2[np.random.choice(n2, n2, replace=True)]
+                    
+                    # Calculate bootstrap centers
+                    bootstrap_center1 = np.mean(bootstrap_samples1, axis=0)
+                    bootstrap_center2 = np.mean(bootstrap_samples2, axis=0)
+                    
+                    # Calculate similarity
+                    bootstrap_similarity = self._calculate_similarity(
+                        bootstrap_center1, bootstrap_center2, features, 
+                        cluster_labels, label1, label2
+                    )
+                    similarities.append(bootstrap_similarity)
+                    
+                except Exception as e:
+                    tprint_debug(f"Bootstrap iteration failed: {e}")
+                    continue
+            
+            if not similarities:
+                similarity = self._calculate_similarity(center1, center2, features, cluster_labels, label1, label2)
+                return {
+                    'similarity': similarity,
+                    'uncertainty': 0.0,
+                    'confidence_interval': (similarity, similarity),
+                    'method': 'bootstrap_failed'
+                }
+            
+            # Calculate uncertainty metrics
+            similarities = np.array(similarities)
+            mean_similarity = np.mean(similarities)
+            std_similarity = np.std(similarities)
+            
+            # Confidence interval
+            confidence_level = self.config.enhanced_similarity.adaptive_thresholds.confidence_level
+            alpha = 1 - confidence_level
+            lower_percentile = (alpha / 2) * 100
+            upper_percentile = (1 - alpha / 2) * 100
+            
+            confidence_interval = (
+                np.percentile(similarities, lower_percentile),
+                np.percentile(similarities, upper_percentile)
+            )
+            
+            return {
+                'similarity': mean_similarity,
+                'uncertainty': std_similarity,
+                'confidence_interval': confidence_interval,
+                'method': 'bootstrap',
+                'n_bootstrap': len(similarities),
+                'raw_similarities': similarities.tolist()
+            }
+            
+        except Exception as e:
+            tprint_debug(f"Uncertainty quantification failed: {e}")
+            similarity = self._calculate_similarity(center1, center2, features, cluster_labels, label1, label2)
+            return {
+                'similarity': similarity,
+                'uncertainty': 0.0,
+                'confidence_interval': (similarity, similarity),
+                'method': 'error_fallback'
+            }
+    
+    def visualize_similarity_matrix(self, 
+                                  similarity_matrix: np.ndarray,
+                                  cluster_labels: np.ndarray,
+                                  save_path: Optional[str] = None) -> Dict[str, Any]:
+        """Visualize similarity matrix with various plots."""
+        try:
+            if not self.config.enhanced_similarity.visualization.enable_visualization:
+                return {'error': 'Visualization disabled'}
+            
+            tprint_info("Generating similarity matrix visualizations")
+            
+            import matplotlib.pyplot as plt
+            import seaborn as sns
+            
+            # Set up the plotting style
+            plt.style.use('default')
+            sns.set_palette(self.config.enhanced_similarity.visualization.color_scheme)
+            
+            # Create figure with subplots
+            fig, axes = plt.subplots(2, 2, figsize=self.config.enhanced_similarity.visualization.plot_size)
+            fig.suptitle('Similarity Matrix Analysis', fontsize=16, fontweight='bold')
+            
+            # 1. Heatmap of similarity matrix
+            ax1 = axes[0, 0]
+            im = ax1.imshow(similarity_matrix, cmap='viridis', aspect='auto')
+            ax1.set_title('Similarity Matrix Heatmap')
+            ax1.set_xlabel('Cluster Index')
+            ax1.set_ylabel('Cluster Index')
+            plt.colorbar(im, ax=ax1)
+            
+            # 2. Distribution of similarities
+            ax2 = axes[0, 1]
+            off_diagonal = similarity_matrix[np.triu_indices_from(similarity_matrix, k=1)]
+            ax2.hist(off_diagonal, bins=30, alpha=0.7, edgecolor='black')
+            ax2.set_title('Distribution of Similarities')
+            ax2.set_xlabel('Similarity Score')
+            ax2.set_ylabel('Frequency')
+            ax2.axvline(np.mean(off_diagonal), color='red', linestyle='--', label=f'Mean: {np.mean(off_diagonal):.3f}')
+            ax2.legend()
+            
+            # 3. Cluster size distribution
+            ax3 = axes[1, 0]
+            unique_labels = np.unique(cluster_labels)
+            cluster_sizes = [np.sum(cluster_labels == label) for label in unique_labels]
+            ax3.bar(range(len(cluster_sizes)), cluster_sizes, alpha=0.7, edgecolor='black')
+            ax3.set_title('Cluster Size Distribution')
+            ax3.set_xlabel('Cluster Index')
+            ax3.set_ylabel('Number of Samples')
+            
+            # 4. Similarity vs cluster size relationship
+            ax4 = axes[1, 1]
+            cluster_centers = self._calculate_cluster_centers(cluster_labels, 
+                                                           np.random.randn(len(cluster_labels), 2), 
+                                                           unique_labels)
+            cluster_sizes_array = np.array(cluster_sizes)
+            
+            # Calculate average similarity for each cluster
+            avg_similarities = []
+            for i, label in enumerate(unique_labels):
+                similarities_to_others = []
+                for j, other_label in enumerate(unique_labels):
+                    if i != j:
+                        similarities_to_others.append(similarity_matrix[i, j])
+                avg_similarities.append(np.mean(similarities_to_others))
+            
+            ax4.scatter(cluster_sizes_array, avg_similarities, alpha=0.7, s=100)
+            ax4.set_title('Cluster Size vs Average Similarity')
+            ax4.set_xlabel('Cluster Size')
+            ax4.set_ylabel('Average Similarity to Other Clusters')
+            
+            # Add trend line
+            if len(cluster_sizes_array) > 1:
+                z = np.polyfit(cluster_sizes_array, avg_similarities, 1)
+                p = np.poly1d(z)
+                ax4.plot(cluster_sizes_array, p(cluster_sizes_array), "r--", alpha=0.8)
+            
+            plt.tight_layout()
+            
+            # Save plot if requested
+            if save_path:
+                plt.savefig(save_path, dpi=self.config.enhanced_similarity.visualization.plot_dpi,
+                           format=self.config.enhanced_similarity.visualization.plot_format,
+                           bbox_inches='tight')
+                tprint_info(f"Similarity matrix visualization saved to {save_path}")
+            
+            # Show plot if interactive mode is enabled
+            if self.config.enhanced_similarity.visualization.enable_interactive_plots:
+                plt.show()
+            else:
+                plt.close()
+            
+            # Generate summary statistics
+            summary_stats = {
+                'matrix_shape': similarity_matrix.shape,
+                'mean_similarity': np.mean(off_diagonal),
+                'std_similarity': np.std(off_diagonal),
+                'min_similarity': np.min(off_diagonal),
+                'max_similarity': np.max(off_diagonal),
+                'n_clusters': len(unique_labels),
+                'cluster_sizes': cluster_sizes,
+                'avg_similarities': avg_similarities
+            }
+            
+            return {
+                'success': True,
+                'summary_stats': summary_stats,
+                'plot_saved': save_path is not None,
+                'plot_path': save_path
+            }
+            
+        except Exception as e:
+            tprint_error(f"Similarity matrix visualization failed: {e}")
+            return {'error': str(e)}
+    
+    def export_similarity_results(self, 
+                                similarity_matrix: np.ndarray,
+                                cluster_labels: np.ndarray,
+                                export_path: str,
+                                format: str = 'parquet') -> Dict[str, Any]:
+        """Export similarity results to various formats."""
+        try:
+            tprint_info(f"Exporting similarity results to {export_path}")
+            
+            unique_labels = np.unique(cluster_labels)
+            n_clusters = len(unique_labels)
+            
+            # Create comprehensive results DataFrame
+            results_data = []
+            
+            for i in range(n_clusters):
+                for j in range(i + 1, n_clusters):
+                    # Calculate additional metrics
+                    cluster1_size = np.sum(cluster_labels == unique_labels[i])
+                    cluster2_size = np.sum(cluster_labels == unique_labels[j])
+                    
+                    # Calculate uncertainty if enabled
+                    if self.config.enhanced_similarity.adaptive_thresholds.enable_uncertainty_quantification:
+                        uncertainty_result = self.calculate_similarity_with_uncertainty(
+                            np.random.randn(2), np.random.randn(2),  # Dummy centers
+                            np.random.randn(100, 2), cluster_labels,  # Dummy features
+                            unique_labels[i], unique_labels[j]
+                        )
+                        uncertainty = uncertainty_result['uncertainty']
+                        confidence_lower = uncertainty_result['confidence_interval'][0]
+                        confidence_upper = uncertainty_result['confidence_interval'][1]
+                    else:
+                        uncertainty = 0.0
+                        confidence_lower = similarity_matrix[i, j]
+                        confidence_upper = similarity_matrix[i, j]
+                    
+                    results_data.append({
+                        'cluster1': unique_labels[i],
+                        'cluster2': unique_labels[j],
+                        'similarity': similarity_matrix[i, j],
+                        'uncertainty': uncertainty,
+                        'confidence_lower': confidence_lower,
+                        'confidence_upper': confidence_upper,
+                        'cluster1_size': cluster1_size,
+                        'cluster2_size': cluster2_size,
+                        'size_ratio': cluster1_size / cluster2_size if cluster2_size > 0 else 0,
+                        'should_merge': similarity_matrix[i, j] > self.config.similarity_threshold,
+                        'timestamp': time.time()
+                    })
+            
+            # Create DataFrame
+            results_df = pd.DataFrame(results_data)
+            
+            # Export based on format
+            if format.lower() == 'parquet':
+                results_df.to_parquet(export_path, index=False)
+            elif format.lower() == 'csv':
+                results_df.to_csv(export_path, index=False)
+            elif format.lower() == 'json':
+                results_df.to_json(export_path, orient='records', indent=2)
+            elif format.lower() == 'excel':
+                results_df.to_excel(export_path, index=False)
+            else:
+                raise ValueError(f"Unsupported export format: {format}")
+            
+            # Export similarity matrix separately
+            matrix_path = export_path.replace(f'.{format}', '_matrix.npy')
+            np.save(matrix_path, similarity_matrix)
+            
+            # Export metadata
+            metadata = {
+                'export_timestamp': time.time(),
+                'n_clusters': n_clusters,
+                'similarity_metric': self.config.similarity_metric,
+                'similarity_threshold': self.config.similarity_threshold,
+                'matrix_shape': similarity_matrix.shape,
+                'total_pairs': len(results_data),
+                'pairs_above_threshold': results_df['should_merge'].sum(),
+                'config': {
+                    'enhanced_similarity': self.config.enhanced_similarity.__dict__,
+                    'adaptive_thresholds': self.config.enhanced_similarity.adaptive_thresholds.__dict__,
+                    'parallel_processing': self.config.enhanced_similarity.parallel_processing.__dict__,
+                    'online_learning': self.config.enhanced_similarity.online_learning.__dict__
+                }
+            }
+            
+            metadata_path = export_path.replace(f'.{format}', '_metadata.json')
+            with open(metadata_path, 'w') as f:
+                import json
+                json.dump(metadata, f, indent=2, default=str)
+            
+            tprint_info(f"Similarity results exported successfully to {export_path}")
+            
+            return {
+                'success': True,
+                'results_path': export_path,
+                'matrix_path': matrix_path,
+                'metadata_path': metadata_path,
+                'n_pairs': len(results_data),
+                'pairs_above_threshold': results_df['should_merge'].sum(),
+                'export_format': format
+            }
+            
+        except Exception as e:
+            tprint_error(f"Similarity results export failed: {e}")
+            return {'error': str(e)}
+    
+    def optimize_similarity_hyperparameters(self, 
+                                          features: np.ndarray,
+                                          cluster_labels: np.ndarray,
+                                          optimization_config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Optimize hyperparameters for similarity metrics using Bayesian optimization."""
+        try:
+            tprint_info("Starting hyperparameter optimization for similarity metrics")
+            
+            if not ML_UTILITIES_AVAILABLE:
+                return {'error': 'ML utilities not available for hyperparameter optimization'}
+            
+            # Default optimization configuration
+            if optimization_config is None:
+                optimization_config = {
+                    'n_trials': 50,
+                    'timeout': 300,  # 5 minutes
+                    'metric': 'silhouette',
+                    'direction': 'maximize'
+                }
+            
+            # Define search space for hyperparameters
+            search_space = self._define_hyperparameter_search_space()
+            
+            # Create optimization function
+            def objective(trial):
+                try:
+                    # Sample hyperparameters
+                    params = self._sample_hyperparameters(trial, search_space)
+                    
+                    # Update configuration
+                    self._update_config_with_params(params)
+                    
+                    # Calculate similarity matrix
+                    unique_labels = np.unique(cluster_labels)
+                    similarity_matrix = self._calculate_similarity_matrix(cluster_labels, features, unique_labels)
+                    
+                    # Calculate objective metric
+                    objective_value = self._calculate_objective_metric(
+                        similarity_matrix, cluster_labels, optimization_config['metric']
+                    )
+                    
+                    return objective_value
+                    
+                except Exception as e:
+                    tprint_debug(f"Objective function failed: {e}")
+                    return float('-inf')
+            
+            # Run optimization
+            optimizer = BayesianTPEOptimizer(OptimizationConfig(
+                n_trials=optimization_config['n_trials'],
+                timeout=optimization_config['timeout'],
+                direction=optimization_config['direction']
+            ))
+            
+            best_params = optimizer.optimize(objective, search_space)
+            
+            # Update configuration with best parameters
+            self._update_config_with_params(best_params)
+            
+            tprint_info("Hyperparameter optimization completed successfully")
+            
+            return {
+                'success': True,
+                'best_params': best_params,
+                'optimization_config': optimization_config,
+                'n_trials': optimization_config['n_trials']
+            }
+            
+        except Exception as e:
+            tprint_error(f"Hyperparameter optimization failed: {e}")
+            return {'error': str(e)}
+    
+    def _define_hyperparameter_search_space(self) -> Dict[str, Any]:
+        """Define search space for hyperparameter optimization."""
+        return {
+            'similarity_metric': ['cosine', 'euclidean', 'manhattan', 'wasserstein', 'ensemble'],
+            'ensemble_weights_cosine': (0.0, 1.0),
+            'ensemble_weights_mahalanobis': (0.0, 1.0),
+            'ensemble_weights_jensen_shannon': (0.0, 1.0),
+            'ensemble_weights_dtw': (0.0, 1.0),
+            'mahalanobis_regularization': (1e-8, 1e-3),
+            'js_bins': (10, 100),
+            'dtw_max_length': (100, 2000),
+            'similarity_threshold': (0.1, 0.9),
+            'distance_threshold': (0.1, 0.9),
+            'statistical_threshold': (0.01, 0.1)
+        }
+    
+    def _sample_hyperparameters(self, trial, search_space: Dict[str, Any]) -> Dict[str, Any]:
+        """Sample hyperparameters from search space."""
+        params = {}
+        
+        for param_name, param_range in search_space.items():
+            if isinstance(param_range, list):
+                # Categorical parameter
+                params[param_name] = trial.suggest_categorical(param_name, param_range)
+            elif isinstance(param_range, tuple) and len(param_range) == 2:
+                # Continuous parameter
+                if param_name in ['mahalanobis_regularization', 'statistical_threshold']:
+                    # Log-uniform sampling for small values
+                    params[param_name] = trial.suggest_float(
+                        param_name, param_range[0], param_range[1], log=True
+                    )
+                else:
+                    # Uniform sampling
+                    params[param_name] = trial.suggest_float(
+                        param_name, param_range[0], param_range[1]
+                    )
+        
+        return params
+    
+    def _update_config_with_params(self, params: Dict[str, Any]):
+        """Update configuration with sampled parameters."""
+        try:
+            # Update basic parameters
+            if 'similarity_metric' in params:
+                self.config.similarity_metric = params['similarity_metric']
+            
+            if 'similarity_threshold' in params:
+                self.config.similarity_threshold = params['similarity_threshold']
+            
+            if 'distance_threshold' in params:
+                self.config.distance_threshold = params['distance_threshold']
+            
+            if 'statistical_threshold' in params:
+                self.config.statistical_threshold = params['statistical_threshold']
+            
+            # Update enhanced similarity parameters
+            if 'mahalanobis_regularization' in params:
+                self.config.enhanced_similarity.mahalanobis_regularization = params['mahalanobis_regularization']
+            
+            if 'js_bins' in params:
+                self.config.enhanced_similarity.js_bins = int(params['js_bins'])
+            
+            if 'dtw_max_length' in params:
+                self.config.enhanced_similarity.dtw_max_length = int(params['dtw_max_length'])
+            
+            # Update ensemble weights
+            if 'ensemble_weights_cosine' in params:
+                self.config.enhanced_similarity.ensemble_weights['cosine'] = params['ensemble_weights_cosine']
+            
+            if 'ensemble_weights_mahalanobis' in params:
+                self.config.enhanced_similarity.ensemble_weights['mahalanobis'] = params['ensemble_weights_mahalanobis']
+            
+            if 'ensemble_weights_jensen_shannon' in params:
+                self.config.enhanced_similarity.ensemble_weights['jensen_shannon'] = params['ensemble_weights_jensen_shannon']
+            
+            if 'ensemble_weights_dtw' in params:
+                self.config.enhanced_similarity.ensemble_weights['dtw'] = params['ensemble_weights_dtw']
+            
+            # Normalize ensemble weights
+            total_weight = sum(self.config.enhanced_similarity.ensemble_weights.values())
+            if total_weight > 0:
+                for metric in self.config.enhanced_similarity.ensemble_weights:
+                    self.config.enhanced_similarity.ensemble_weights[metric] /= total_weight
+            
+        except Exception as e:
+            tprint_debug(f"Configuration update failed: {e}")
+    
+    def _calculate_objective_metric(self, 
+                                  similarity_matrix: np.ndarray, 
+                                  cluster_labels: np.ndarray, 
+                                  metric: str) -> float:
+        """Calculate objective metric for optimization."""
+        try:
+            if metric == 'silhouette':
+                # Use silhouette score as objective
+                from sklearn.metrics import silhouette_score
+                # Convert similarity matrix to distance matrix
+                distance_matrix = 1.0 - similarity_matrix
+                # Use hierarchical clustering to get labels
+                from scipy.cluster.hierarchy import linkage, fcluster
+                linkage_matrix = linkage(distance_matrix, method='ward')
+                labels = fcluster(linkage_matrix, t=2, criterion='maxclust')
+                return silhouette_score(similarity_matrix, labels)
+            
+            elif metric == 'calinski_harabasz':
+                from sklearn.metrics import calinski_harabasz_score
+                distance_matrix = 1.0 - similarity_matrix
+                from scipy.cluster.hierarchy import linkage, fcluster
+                linkage_matrix = linkage(distance_matrix, method='ward')
+                labels = fcluster(linkage_matrix, t=2, criterion='maxclust')
+                return calinski_harabasz_score(similarity_matrix, labels)
+            
+            elif metric == 'davies_bouldin':
+                from sklearn.metrics import davies_bouldin_score
+                distance_matrix = 1.0 - similarity_matrix
+                from scipy.cluster.hierarchy import linkage, fcluster
+                linkage_matrix = linkage(distance_matrix, method='ward')
+                labels = fcluster(linkage_matrix, t=2, criterion='maxclust')
+                return -davies_bouldin_score(similarity_matrix, labels)  # Negative because we want to minimize
+            
+            elif metric == 'mean_similarity':
+                # Maximize mean similarity
+                off_diagonal = similarity_matrix[np.triu_indices_from(similarity_matrix, k=1)]
+                return np.mean(off_diagonal)
+            
+            else:
+                # Default to mean similarity
+                off_diagonal = similarity_matrix[np.triu_indices_from(similarity_matrix, k=1)]
+                return np.mean(off_diagonal)
+                
+        except Exception as e:
+            tprint_debug(f"Objective metric calculation failed: {e}")
+            return 0.0
+    
+    def get_enhanced_similarity_summary(self) -> Dict[str, Any]:
+        """Get comprehensive summary of enhanced similarity system."""
+        try:
+            summary = {
+                'configuration': {
+                    'similarity_metric': self.config.similarity_metric,
+                    'similarity_threshold': self.config.similarity_threshold,
+                    'distance_threshold': self.config.distance_threshold,
+                    'statistical_threshold': self.config.statistical_threshold,
+                    'enhanced_similarity_enabled': True
+                },
+                'enhanced_features': {
+                    'mahalanobis_enabled': self.config.enhanced_similarity.enable_mahalanobis,
+                    'jensen_shannon_enabled': self.config.enhanced_similarity.enable_jensen_shannon,
+                    'dtw_enabled': self.config.enhanced_similarity.enable_dtw,
+                    'ensemble_enabled': self.config.enhanced_similarity.enable_ensemble,
+                    'vectorization_enabled': self.config.enhanced_similarity.enable_vectorization,
+                    'caching_enabled': self.config.enhanced_similarity.enable_caching,
+                    'hardware_optimization_enabled': self.config.enhanced_similarity.enable_hardware_optimization
+                },
+                'adaptive_systems': {
+                    'adaptive_thresholds_enabled': self.config.enhanced_similarity.adaptive_thresholds.enable_adaptive_thresholds,
+                    'online_learning_enabled': self.config.enhanced_similarity.online_learning.enable_online_learning,
+                    'parallel_processing_enabled': self.config.enhanced_similarity.parallel_processing.enable_parallel_processing,
+                    'uncertainty_quantification_enabled': self.config.enhanced_similarity.adaptive_thresholds.enable_uncertainty_quantification
+                },
+                'system_status': {
+                    'artifact_manager_available': self.artifact_manager is not None,
+                    'vectorbt_optimizer_available': self.vectorbt_optimizer is not None,
+                    'vectorization_manager_available': self.vectorization_manager is not None,
+                    'parallel_executor_available': self.parallel_executor is not None,
+                    'cache_size': len(self.similarity_cache),
+                    'adaptation_count': self.adaptive_thresholds.get('adaptation_count', 0)
+                },
+                'ensemble_weights': self.config.enhanced_similarity.ensemble_weights,
+                'available_metrics': self.config.enhanced_similarity.available_metrics
+            }
+            
+            return summary
+            
+        except Exception as e:
+            tprint_debug(f"Enhanced similarity summary generation failed: {e}")
+            return {'error': str(e)}
+    
+    def cleanup_enhanced_similarity(self):
+        """Cleanup enhanced similarity system resources."""
+        try:
+            tprint_info("Cleaning up enhanced similarity system")
+            
+            # Close parallel executor
+            if self.parallel_executor:
+                self.parallel_executor.shutdown(wait=True)
+                self.parallel_executor = None
+            
+            # Clear caches
+            self.similarity_cache.clear()
+            
+            # Clear adaptive systems
+            self.adaptive_thresholds.clear()
+            self.online_learning_state.clear()
+            self.similarity_history.clear()
+            
+            # Force cleanup
+            if HARDWARE_OPTIMIZATION_AVAILABLE:
+                force_cleanup()
+            
+            tprint_info("Enhanced similarity system cleanup completed")
+            
+        except Exception as e:
+            tprint_debug(f"Enhanced similarity cleanup failed: {e}")
     
     def _calculate_basic_similarity_matrix(self, 
                                          cluster_labels: np.ndarray, 
@@ -1433,6 +2278,71 @@ class DataDrivenSimilarityMerger:
         except Exception as e:
             tprint_debug(f"Vectorization tools initialization failed: {e}")
     
+    def _initialize_adaptive_systems(self):
+        """Initialize adaptive threshold and online learning systems."""
+        try:
+            if self.config.enhanced_similarity.adaptive_thresholds.enable_adaptive_thresholds:
+                tprint_debug("Initializing adaptive threshold system")
+                self.adaptive_thresholds = {
+                    'similarity_threshold': self.config.similarity_threshold,
+                    'distance_threshold': self.config.distance_threshold,
+                    'statistical_threshold': self.config.statistical_threshold,
+                    'history': [],
+                    'adaptation_count': 0
+                }
+            
+            if self.config.enhanced_similarity.online_learning.enable_online_learning:
+                tprint_debug("Initializing online learning system")
+                self.online_learning_state = {
+                    'metric_weights': self.config.enhanced_similarity.ensemble_weights.copy(),
+                    'performance_history': {},
+                    'adaptation_rate': self.config.enhanced_similarity.online_learning.adaptation_rate,
+                    'learning_rate': self.config.enhanced_similarity.online_learning.learning_rate,
+                    'memory': []
+                }
+            
+            tprint_debug("Adaptive systems initialized successfully")
+            
+        except Exception as e:
+            tprint_debug(f"Adaptive systems initialization failed: {e}")
+    
+    def _initialize_parallel_processing(self):
+        """Initialize parallel processing capabilities."""
+        try:
+            if self.config.enhanced_similarity.parallel_processing.enable_parallel_processing:
+                tprint_debug("Initializing parallel processing system")
+                
+                # Determine optimal number of workers
+                max_workers = self.config.enhanced_similarity.parallel_processing.max_workers
+                if max_workers is None:
+                    try:
+                        import multiprocessing
+                        max_workers = min(multiprocessing.cpu_count(), 8)  # Cap at 8 for memory reasons
+                    except:
+                        max_workers = 4
+                
+                # Initialize thread pool or process pool
+                if self.config.enhanced_similarity.parallel_processing.use_multiprocessing:
+                    try:
+                        from concurrent.futures import ProcessPoolExecutor
+                        self.parallel_executor = ProcessPoolExecutor(max_workers=max_workers)
+                        tprint_debug(f"Process pool executor initialized with {max_workers} workers")
+                    except Exception as e:
+                        tprint_debug(f"Process pool initialization failed: {e}")
+                        self.parallel_executor = None
+                elif self.config.enhanced_similarity.parallel_processing.use_threading:
+                    try:
+                        from concurrent.futures import ThreadPoolExecutor
+                        self.parallel_executor = ThreadPoolExecutor(max_workers=max_workers)
+                        tprint_debug(f"Thread pool executor initialized with {max_workers} workers")
+                    except Exception as e:
+                        tprint_debug(f"Thread pool initialization failed: {e}")
+                        self.parallel_executor = None
+                
+        except Exception as e:
+            tprint_debug(f"Parallel processing initialization failed: {e}")
+            self.parallel_executor = None
+    
     @smart_cache(ttl=3600) if HARDWARE_OPTIMIZATION_AVAILABLE else lambda x: x
     def _get_cached_similarity_matrix(self, 
                                     cluster_labels: np.ndarray, 
@@ -1835,6 +2745,182 @@ class DataDrivenSimilarityMerger:
         except Exception as e:
             tprint_debug(f"Benchmark recommendations generation failed: {e}")
             return ["Unable to generate recommendations"]
+    
+    def _adapt_similarity_thresholds(self, similarity_matrix: np.ndarray, 
+                                   cluster_labels: np.ndarray) -> Dict[str, float]:
+        """Adapt similarity thresholds based on data characteristics."""
+        try:
+            if not self.config.enhanced_similarity.adaptive_thresholds.enable_adaptive_thresholds:
+                return {
+                    'similarity_threshold': self.config.similarity_threshold,
+                    'distance_threshold': self.config.distance_threshold,
+                    'statistical_threshold': self.config.statistical_threshold
+                }
+            
+            tprint_debug("Adapting similarity thresholds based on data characteristics")
+            
+            # Extract off-diagonal similarities
+            off_diagonal = similarity_matrix[np.triu_indices_from(similarity_matrix, k=1)]
+            
+            if len(off_diagonal) == 0:
+                return {
+                    'similarity_threshold': self.config.similarity_threshold,
+                    'distance_threshold': self.config.distance_threshold,
+                    'statistical_threshold': self.config.statistical_threshold
+                }
+            
+            # Calculate adaptive thresholds
+            method = self.config.enhanced_similarity.adaptive_thresholds.threshold_adaptation_method
+            
+            if method == 'quantile':
+                quantile_level = self.config.enhanced_similarity.adaptive_thresholds.quantile_level
+                adaptive_similarity_threshold = np.quantile(off_diagonal, quantile_level)
+                adaptive_distance_threshold = 1.0 - adaptive_similarity_threshold
+                adaptive_statistical_threshold = 0.05  # Keep statistical threshold fixed
+                
+            elif method == 'statistical':
+                # Use statistical measures for threshold adaptation
+                mean_sim = np.mean(off_diagonal)
+                std_sim = np.std(off_diagonal)
+                confidence_level = self.config.enhanced_similarity.adaptive_thresholds.confidence_level
+                
+                # Use confidence interval for threshold
+                z_score = 1.96 if confidence_level == 0.95 else 2.58  # 95% or 99% confidence
+                adaptive_similarity_threshold = mean_sim + z_score * std_sim
+                adaptive_distance_threshold = 1.0 - adaptive_similarity_threshold
+                adaptive_statistical_threshold = 0.05
+                
+            elif method == 'ml_based':
+                # Use machine learning approach for threshold adaptation
+                adaptive_similarity_threshold = self._ml_based_threshold_adaptation(
+                    similarity_matrix, cluster_labels, 'similarity'
+                )
+                adaptive_distance_threshold = 1.0 - adaptive_similarity_threshold
+                adaptive_statistical_threshold = self._ml_based_threshold_adaptation(
+                    similarity_matrix, cluster_labels, 'statistical'
+                )
+            else:
+                # Default to quantile method
+                adaptive_similarity_threshold = np.quantile(off_diagonal, 0.75)
+                adaptive_distance_threshold = 1.0 - adaptive_similarity_threshold
+                adaptive_statistical_threshold = 0.05
+            
+            # Apply min/max constraints
+            min_thresh = self.config.enhanced_similarity.adaptive_thresholds.min_threshold
+            max_thresh = self.config.enhanced_similarity.adaptive_thresholds.max_threshold
+            
+            adaptive_similarity_threshold = np.clip(adaptive_similarity_threshold, min_thresh, max_thresh)
+            adaptive_distance_threshold = np.clip(adaptive_distance_threshold, min_thresh, max_thresh)
+            adaptive_statistical_threshold = np.clip(adaptive_statistical_threshold, 0.01, 0.1)
+            
+            # Update adaptive thresholds history
+            self.adaptive_thresholds['history'].append({
+                'similarity_threshold': adaptive_similarity_threshold,
+                'distance_threshold': adaptive_distance_threshold,
+                'statistical_threshold': adaptive_statistical_threshold,
+                'timestamp': time.time()
+            })
+            
+            # Keep only recent history
+            max_history = self.config.enhanced_similarity.adaptive_thresholds.adaptation_window
+            if len(self.adaptive_thresholds['history']) > max_history:
+                self.adaptive_thresholds['history'] = self.adaptive_thresholds['history'][-max_history:]
+            
+            self.adaptive_thresholds['adaptation_count'] += 1
+            
+            tprint_debug(f"Adapted thresholds: similarity={adaptive_similarity_threshold:.3f}, "
+                        f"distance={adaptive_distance_threshold:.3f}, "
+                        f"statistical={adaptive_statistical_threshold:.3f}")
+            
+            return {
+                'similarity_threshold': adaptive_similarity_threshold,
+                'distance_threshold': adaptive_distance_threshold,
+                'statistical_threshold': adaptive_statistical_threshold
+            }
+            
+        except Exception as e:
+            tprint_debug(f"Threshold adaptation failed: {e}")
+            return {
+                'similarity_threshold': self.config.similarity_threshold,
+                'distance_threshold': self.config.distance_threshold,
+                'statistical_threshold': self.config.statistical_threshold
+            }
+    
+    def _ml_based_threshold_adaptation(self, similarity_matrix: np.ndarray, 
+                                     cluster_labels: np.ndarray, 
+                                     threshold_type: str) -> float:
+        """Use machine learning approach for threshold adaptation."""
+        try:
+            # Extract features for ML-based threshold adaptation
+            off_diagonal = similarity_matrix[np.triu_indices_from(similarity_matrix, k=1)]
+            
+            if len(off_diagonal) < 10:  # Need sufficient data
+                return 0.5 if threshold_type == 'similarity' else 0.05
+            
+            # Calculate data characteristics
+            mean_sim = np.mean(off_diagonal)
+            std_sim = np.std(off_diagonal)
+            skewness = self._calculate_skewness(off_diagonal)
+            kurtosis = self._calculate_kurtosis(off_diagonal)
+            
+            # Calculate cluster characteristics
+            n_clusters = len(np.unique(cluster_labels))
+            cluster_sizes = [np.sum(cluster_labels == label) for label in np.unique(cluster_labels)]
+            mean_cluster_size = np.mean(cluster_sizes)
+            std_cluster_size = np.std(cluster_sizes)
+            
+            # Simple ML-based threshold calculation
+            if threshold_type == 'similarity':
+                # Weighted combination of statistical measures
+                threshold = (0.4 * mean_sim + 
+                           0.2 * (mean_sim + std_sim) + 
+                           0.2 * (1.0 - abs(skewness)) + 
+                           0.2 * (mean_cluster_size / (mean_cluster_size + std_cluster_size)))
+            else:  # statistical
+                # Statistical threshold based on data characteristics
+                threshold = 0.05 * (1.0 + std_sim) * (1.0 - abs(skewness))
+            
+            return np.clip(threshold, 0.01, 0.99)
+            
+        except Exception as e:
+            tprint_debug(f"ML-based threshold adaptation failed: {e}")
+            return 0.5 if threshold_type == 'similarity' else 0.05
+    
+    def _calculate_skewness(self, data: np.ndarray) -> float:
+        """Calculate skewness of data."""
+        try:
+            if len(data) < 3:
+                return 0.0
+            
+            mean_val = np.mean(data)
+            std_val = np.std(data)
+            
+            if std_val == 0:
+                return 0.0
+            
+            skewness = np.mean(((data - mean_val) / std_val) ** 3)
+            return skewness
+            
+        except Exception:
+            return 0.0
+    
+    def _calculate_kurtosis(self, data: np.ndarray) -> float:
+        """Calculate kurtosis of data."""
+        try:
+            if len(data) < 4:
+                return 0.0
+            
+            mean_val = np.mean(data)
+            std_val = np.std(data)
+            
+            if std_val == 0:
+                return 0.0
+            
+            kurtosis = np.mean(((data - mean_val) / std_val) ** 4) - 3
+            return kurtosis
+            
+        except Exception:
+            return 0.0
 
 
 # Alias for backward compatibility

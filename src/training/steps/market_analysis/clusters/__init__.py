@@ -36,6 +36,14 @@ from .data_validator import DataValidator, validate_data_comprehensive
 from .risk_mitigation import RiskMitigationSystem, PRODUCTION_RISK_CONFIG
 from .validation_framework import ClusteringValidator, ValidationConfig, ValidationResults
 
+# Shared - Common utilities to eliminate duplication
+from .shared import (
+    HardwareInitializer, HardwareContext,
+    ClusteringValidationUtils, ValidationResult,
+    ClusteringCommonUtils, clustering_operation, memory_optimized,
+    safe_execute_with_cleanup, performance_timer
+)
+
 # Clustering - Core algorithms + metrics + optimization
 from .engine import ClusteringEngine, EngineConfig
 from .metrics import ClusteringMetrics, MetricsConfig, MetricsReport, MetricResult
@@ -88,6 +96,17 @@ __all__ = [
     'ClusteringValidator',
     'ValidationConfig',
     'ValidationResults',
+
+    # Shared - Common utilities to eliminate duplication
+    'HardwareInitializer',
+    'HardwareContext',
+    'ClusteringValidationUtils',
+    'ValidationResult',
+    'ClusteringCommonUtils',
+    'clustering_operation',
+    'memory_optimized',
+    'safe_execute_with_cleanup',
+    'performance_timer',
 
     # Clustering - Core algorithms + metrics + optimization
     'ClusteringEngine',

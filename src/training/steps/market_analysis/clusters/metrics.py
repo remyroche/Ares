@@ -28,6 +28,7 @@ from src.utils.tprint import (
 )
 from src.utils.common_operations import (
     get_m1_gpu_manager, get_m1_memory_optimizer, get_m1_cpu_optimizer
+from .shared import HardwareInitializer
 )
 from src.utils.common_utilities import (
     calculate_data_quality_metrics, safe_dataframe_operation,
@@ -144,14 +145,12 @@ class ClusteringMetrics:
             # Initialize matrix operations with hardware acceleration
             self.matrix_ops = UnifiedMatrixOperations()
 
-            # Get hardware managers for metrics computation
-            self.hardware_manager = get_m1_gpu_manager()
-            self.memory_optimizer = get_m1_memory_optimizer()
-
-            if self.hardware_manager or self.memory_optimizer:
-                tprint("🖥️ Hardware optimizations initialized for metrics computation", "INFO")
-            else:
-                tprint("⚠️ Hardware optimizations not available for metrics, using CPU fallback", "WARNING")
+            # Get hardware managers using shared utilities
+            hardware_components = HardwareInitializer.initialize_hardware_components(
+                "metrics_computation", verbose=True
+            )
+            self.hardware_manager = hardware_components.get('gpu_manager')
+            self.memory_optimizer = hardware_components.get('memory_manager')
 
         except Exception as e:
             tprint(f"❌ Hardware initialization for metrics failed: {e}", "ERROR")

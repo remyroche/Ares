@@ -651,7 +651,7 @@ def create_backtesting_component_wrapper(original_component_class: Type) -> Type
         """Wrapper for existing backtesting components."""
         
         def __init__(self, name: str, config: Optional[Dict[str, Any]] = None, logger: Optional[logging.Logger] = None):
-            super().__init__(name, config, logger)
+            super().__init__(name, config)
             self.original_component = None
             self.description = f"Wrapper for {original_component_class.__name__}"
         

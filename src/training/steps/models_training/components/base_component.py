@@ -111,7 +111,7 @@ class BaseModelsTrainingComponent(ModularComponent):
             config: Configuration dictionary
             logger: Logger instance (optional)
         """
-        super().__init__(name, config, logger)
+        super().__init__(name, config)
         
         # ML-specific configuration
         self.model_config = self.get_config('model', {})

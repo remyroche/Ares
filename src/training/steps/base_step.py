@@ -1143,7 +1143,10 @@ class BaseStep(ABC):
             self.logger.info(f"🚀 Starting execution of {self.step_name}")
             
             # Optimize hardware for step execution
-            self.hardware_manager.optimize_for_workload(WorkloadType.DATA_PROCESSING)
+            if self.hardware_manager is not None:
+                self.hardware_manager.optimize_for_workload(WorkloadType.DATA_PROCESSING)
+            else:
+                self.logger.warning("⚠️ Hardware manager not available, skipping hardware optimization")
             
             # Set context from config if available
             symbol = config.get('symbol')

@@ -329,11 +329,10 @@ class M1ComprehensiveOptimizer:
             max_concurrent_operations=16
         )
         
-        self.config.neural_engine_config = NeuralEngineConfig(
-            enable_model_optimization=True,
-            enable_batch_processing=True,
-            max_batch_size=64
-        )
+        self.config.neural_engine_config = NeuralEngineConfig()
+        self.config.neural_engine_config.enable_model_optimization = True
+        self.config.neural_engine_config.enable_batch_processing = True
+        self.config.neural_engine_config.max_batch_size = 64
     
     def _configure_power_efficient(self):
         """Configure for power efficiency."""
@@ -368,12 +367,11 @@ class M1ComprehensiveOptimizer:
     
     def _configure_neural_optimized(self):
         """Configure for neural network optimization."""
-        self.config.neural_engine_config = NeuralEngineConfig(
-            enable_model_optimization=True,
-            enable_quantization=True,
-            quantization_bits=8,
-            max_batch_size=128
-        )
+        self.config.neural_engine_config = NeuralEngineConfig()
+        self.config.neural_engine_config.enable_model_optimization = True
+        self.config.neural_engine_config.enable_quantization = True
+        self.config.neural_engine_config.quantization_bits = 8
+        self.config.neural_engine_config.max_batch_size = 128
         
         self.config.gpu_config = GPUConfig(
             enable_unified_memory=True,

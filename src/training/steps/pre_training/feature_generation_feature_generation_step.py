@@ -42,12 +42,18 @@ from src.utils.hardware import (
     optimize_dataframe_default, optimize_numpy_array_default,
     
     # Workload types and optimization levels
-    WorkloadType, OptimizationLevel, OptimizationStrategy, WorkloadCategory,
+    WorkloadType, OptimizationLevel, WorkloadCategory,
     get_memory_optimization_stats, force_cleanup
 )
 
+# Import OptimizationStrategy specifically from m1_comprehensive_optimizer
+from src.utils.hardware.m1_comprehensive_optimizer import OptimizationStrategy
+
+# Import additional missing classes
+from src.utils.hardware.advanced_memory_manager import MemoryPressureLevel
+
 # Set availability flag
-HARDWARE_OPTIMIZATION_AVAILABLE = True
+HARDWARE_OPTIMIZATION_AVAILABLE = False
 
 # Import tprint utilities
 try:
@@ -160,9 +166,9 @@ except ImportError:
 class FeatureGenerationStep(BaseStep):
     """Enhanced feature generation step using AutoOptimizedFeatureGenerator."""
 
-    def __init__(self, config: Optional[Dict[str, Any]] = None):
+    def __init__(self, step_name: str, config: Optional[Dict[str, Any]] = None):
         """Initialize the enhanced feature generation step."""
-        super().__init__("feature_generation_feature_generation_step", config)
+        super().__init__(step_name, config)
         
         # Initialize CMI complementarity components if available
         if CMI_COMPLEMENTARITY_AVAILABLE:
@@ -327,6 +333,25 @@ class FeatureGenerationStep(BaseStep):
         custom_overrides = config.get('custom_overrides')
         pipeline_state = config.get('pipeline_state', {})
         
+        # Check if data is provided
+        if data is None:
+            self.logger.error("❌ No data provided in config. This step requires input data.")
+            return {
+                'success': False,
+                'error_message': 'No data provided in config',
+                'feature_names': [],
+                'feature_data': pd.DataFrame(),
+                'generated_features': pd.DataFrame(),
+                'feature_categories': [],
+                'generation_time': 0.0,
+                'n_features_generated': 0,
+                'cache_hit': False,
+                'memory_usage_mb': 0.0,
+                'metadata': {},
+                'optimization_stats': {},
+                'artifacts': {}
+            }
+        
         # Set context for enhanced file naming
         self._set_context(symbol=symbol, exchange=exchange, direction=direction, model='Analyst')
         
@@ -481,20 +506,21 @@ class FeatureGenerationStep(BaseStep):
 
         except Exception as e:
             self.logger.error(f"Enhanced feature generation step failed with exception: {e}")
-            return FeatureGenerationResult(
-                feature_names=[],
-                feature_data=pd.DataFrame(),
-                generated_features=pd.DataFrame(),
-                feature_categories=[],
-                generation_time=0.0,
-                n_features_generated=0,
-                cache_hit=False,
-                memory_usage_mb=0.0,
-                success=False,
-                error_message=str(e),
-                metadata={},
-                optimization_stats={}
-            )
+            return {
+                'success': False,
+                'feature_names': [],
+                'feature_data': pd.DataFrame(),
+                'generated_features': pd.DataFrame(),
+                'feature_categories': [],
+                'generation_time': 0.0,
+                'n_features_generated': 0,
+                'cache_hit': False,
+                'memory_usage_mb': 0.0,
+                'error_message': str(e),
+                'metadata': {},
+                'optimization_stats': {},
+                'artifacts': {}
+            }
         
         finally:
             # Cleanup enhanced memory monitoring
@@ -1140,7 +1166,7 @@ class FeatureGenerationStep(BaseStep):
             except:
                 pass
             
-            return FeatureGenerationResult(
+            result = FeatureGenerationResult(
                 feature_names=feature_names,
                 feature_data=generated_features_df,
                 generated_features=generated_features_df,
@@ -1179,6 +1205,23 @@ class FeatureGenerationStep(BaseStep):
                     'raw_dataframe': data
                 }
             )
+            
+            # Convert dataclass to dictionary for base step compatibility
+            return {
+                'success': result.success,
+                'feature_names': result.feature_names,
+                'feature_data': result.feature_data,
+                'generated_features': result.generated_features,
+                'feature_categories': result.feature_categories,
+                'generation_time': result.generation_time,
+                'n_features_generated': result.n_features_generated,
+                'cache_hit': result.cache_hit,
+                'memory_usage_mb': result.memory_usage_mb,
+                'error_message': result.error_message,
+                'optimization_stats': result.optimization_stats,
+                'metadata': result.metadata,
+                'artifacts': result.artifacts
+            }
             
         except Exception as e:
             self.logger.error(f"Enhanced feature generation failed: {e}")

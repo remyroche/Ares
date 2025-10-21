@@ -502,7 +502,7 @@ class FeatureAblationAnalyzer:
         
         return recommendations
     
-    def _save_report(self, report: FeatureImportanceReport):
+    def _save_report(self, report: FeatureImportanceReport) -> None:
         """Save feature importance report."""
         timestamp = report.timestamp.strftime('%Y%m%d_%H%M%S')
         report_file = self.output_dir / f"feature_ablation_report_{timestamp}.json"
@@ -512,7 +512,7 @@ class FeatureAblationAnalyzer:
         
         logger.info(f"Feature ablation report saved to {report_file}")
     
-    def _generate_auto_report(self, report: FeatureImportanceReport):
+    def _generate_auto_report(self, report: FeatureImportanceReport) -> None:
         """Generate automatic feature importance dashboard report."""
         timestamp = report.timestamp.strftime('%Y%m%d_%H%M%S')
         dashboard_file = self.output_dir / f"feature_importance_dashboard_{timestamp}.md"

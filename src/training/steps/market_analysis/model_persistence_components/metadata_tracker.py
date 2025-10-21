@@ -1,7 +1,6 @@
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
 
-from typing import Dict
-from typing import Any
+from typing import Dict, Any, List, Optional
 
 from src.utils.logger import system_logger
 from ....core.decorators import handles_errors

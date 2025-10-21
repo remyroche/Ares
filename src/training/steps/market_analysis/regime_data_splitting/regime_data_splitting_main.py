@@ -3120,6 +3120,9 @@ class RegimeDataSplittingStep(BaseStep):
         try:
             # Import the streamlined component
             from .streamlined_regime_splitting import create_streamlined_regime_splitting
+        except ImportError:
+            # Fallback if streamlined component is not available
+            pass
 
 # VectorBT imports for native optimization
 try:
@@ -3150,63 +3153,6 @@ except ImportError:
 except ImportError:
 
     cp = None
-
-            # Create streamlined regime splitting instance
-            streamlined_splitting = create_streamlined_regime_splitting(self.config)
-
-            self.logger.info('🚀 Executing streamlined regime data splitting')
-
-            # Execute using the streamlined component
-            result = await streamlined_splitting.execute_regime_splitting(training_input, pipeline_state)
-
-            # Clean up resources
-            streamlined_splitting.cleanup_resources()
-
-            if result.success:
-                return {
-                    'success': True,
-                    'step04_regime_data_splitting_completed': True,
-                    'regime_data': result.data,
-                    'regime_metadata': result.metadata,
-                    'regime_splits': result.data,  # For compatibility with step 05 expectations
-                    'execution_time': result.metrics.processing_time_seconds,
-                    'step_name': 'step04_regime_data_splitting',
-                    'data_quality_score': result.metrics.data_quality_score,
-                    'regime_count': result.metrics.regime_count,
-                    'warnings': result.warnings,
-                    'errors': result.errors
-                }
-            else:
-                return {
-                    'success': False,
-                    'step04_regime_data_splitting_completed': False,
-                    'error': result.errors[0] if result.errors else 'Unknown error',
-                    'execution_time': result.metrics.processing_time_seconds,
-                    'step_name': 'step04_regime_data_splitting',
-                    'warnings': result.warnings,
-                    'errors': result.errors
-                }
-
-        except Exception as e:
-            error_context = {
-                'training_input_keys': list(training_input.keys()) if training_input else [],
-                'pipeline_state_keys': list(pipeline_state.keys()) if pipeline_state else []
-            }
-            log_comprehensive_error_report(e, error_context)
-            return {
-                'success': False,
-                'step04_regime_data_splitting_completed': False,
-                'error': str(e),
-                'error_type': type(e).__name__,
-                'execution_time': time.time() - self.start_time if self.start_time else 0,
-                'step_name': 'step04_regime_data_splitting'
-            }
-
-@comprehensive_function_monitor
-@traced(span_name='execute_regime_data_splitting')
-@validates()
-@handles_errors()
-@cached()
 @log_execution_time()
 @monitor_feature_engineering()
 async def run_step(symbol: str, exchange: str, timeframe: str, data_dir: str = None, force_rerun: bool = False, config: dict[str, Any]=None) -> StepResult:

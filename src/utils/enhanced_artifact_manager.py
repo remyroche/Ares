@@ -739,3 +739,7 @@ def create_artifact_manager(
         encryption_key=encryption_key
     )
     return EnhancedArtifactManager(config)
+
+def get_artifact_manager(config: Optional[Dict[str, Any]] = None) -> EnhancedArtifactManager:
+    """Get an instance of the enhanced artifact manager."""
+    return create_enhanced_artifact_manager(config)

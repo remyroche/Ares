@@ -40,6 +40,8 @@ from .tprint import (
 )
 from .common_operations import ensure_directory
 from .version_manager import get_version_manager
+from ..config.pipeline_modes import get_mode_config, get_mode_lookback_days
+from ..data.ares_launcher_data_loader import AresLauncherDataLoader
 
 # Type definitions for better type safety
 T = TypeVar('T')
@@ -545,10 +547,14 @@ class ArtifactManager:
         self._current_symbol: Optional[str] = None
         self._current_exchange: Optional[str] = None
         self._current_information: Optional[str] = None
+        self._current_execution_mode: str = "light"  # Default to light mode
         
         self._artifacts_dir = self.base_dir / "artifacts"
         self._artifacts_dir.mkdir(parents=True, exist_ok=True)
         tprint_success(f"✅ Artifacts directory initialized: {self._artifacts_dir}")
+        
+        # Initialize data loader for mode-aware data fetching
+        self._data_loader: Optional[AresLauncherDataLoader] = None
         
         # Initialize performance metrics with type safety
         self._performance_metrics: Dict[str, Union[int, float]] = {
@@ -581,7 +587,7 @@ class ArtifactManager:
     def set_context(self, step_name: str, symbol: Optional[str] = None, 
                    exchange: Optional[str] = None, datetime_param: Optional[Any] = None, 
                    information: Optional[str] = None, direction: str = "long", 
-                   model: str = "Analyst") -> None:
+                   model: str = "Analyst", execution_mode: str = "light") -> None:
         """Set the current context for path generation with comprehensive validation.
         
         Args:
@@ -592,6 +598,7 @@ class ArtifactManager:
             information: Information type (optional)
             direction: Trading direction (default: "long")
             model: Model type (default: "Analyst")
+            execution_mode: Execution mode for data fetching (default: "light")
             
         Raises:
             ValueError: If required parameters are invalid
@@ -608,8 +615,10 @@ class ArtifactManager:
             raise TypeError(f"direction must be a string, got: {type(direction).__name__}")
         if not isinstance(model, str):
             raise TypeError(f"model must be a string, got: {type(model).__name__}")
+        if not isinstance(execution_mode, str):
+            raise TypeError(f"execution_mode must be a string, got: {type(execution_mode).__name__}")
         
-        tprint_info(f"📁 SETTING CONTEXT: {step_name} | {symbol} | {exchange} | {direction} | {model}")
+        tprint_info(f"📁 SETTING CONTEXT: {step_name} | {symbol} | {exchange} | {direction} | {model} | {execution_mode}")
         
         with self._lock_context():
             try:
@@ -619,6 +628,7 @@ class ArtifactManager:
                 self._current_direction = direction
                 self._current_model = model
                 self._current_information = information
+                self._current_execution_mode = execution_mode
                 
                 self._path_manager.set_context(
                     step_name=step_name,
@@ -1552,6 +1562,194 @@ class ArtifactManager:
         except Exception as e:
             tprint_warning(f"⚠️ Failed to profile memory usage for {artifact_id}: {e}")
             return 0.0
+
+    # ============================================================================
+    # MODE-AWARE DATA FETCHING METHODS
+    # ============================================================================
+    
+    def _get_data_loader(self) -> AresLauncherDataLoader:
+        """Get or create the data loader for mode-aware data fetching."""
+        if self._data_loader is None:
+            self._data_loader = AresLauncherDataLoader(str(self.base_dir / "data"))
+        return self._data_loader
+    
+    def get_mode_lookback_days(self, mode: Optional[str] = None) -> int:
+        """Get lookback days for the specified mode or current context mode.
+        
+        Args:
+            mode: Execution mode ("full", "blank", "light"). If None, uses current context mode.
+            
+        Returns:
+            Number of lookback days for the mode
+        """
+        if mode is None:
+            mode = self._current_execution_mode
+        
+        try:
+            lookback_days = get_mode_lookback_days(mode)
+            tprint_debug(f"📅 Mode '{mode}' lookback days: {lookback_days}")
+            return lookback_days
+        except Exception as e:
+            tprint_warning(f"⚠️ Failed to get lookback days for mode '{mode}': {e}")
+            return 20  # Default to light mode
+    
+    def load_data_with_mode(
+        self, 
+        symbol: str, 
+        interval: str, 
+        mode: Optional[str] = None,
+        data_type: str = "raw",
+        columns: Optional[List[str]] = None
+    ) -> Optional[Any]:
+        """Load data using mode-aware data fetching.
+        
+        Args:
+            symbol: Trading symbol
+            interval: Data interval (e.g., "15m", "1h")
+            mode: Execution mode ("full", "blank", "light"). If None, uses current context mode.
+            data_type: Data type ("raw" or "processed")
+            columns: List of columns to load
+            
+        Returns:
+            Loaded DataFrame or None
+        """
+        if mode is None:
+            mode = self._current_execution_mode
+        
+        tprint_info(f"📊 Loading data with mode-aware fetching: {symbol} ({interval}) in {mode.upper()} mode")
+        
+        try:
+            data_loader = self._get_data_loader()
+            data = data_loader.load_data_with_mode(
+                symbol=symbol,
+                interval=interval,
+                mode=mode,
+                data_type=data_type,
+                columns=columns
+            )
+            
+            if data is not None:
+                tprint_success(f"✅ Mode-aware data loaded: {len(data)} records")
+                # Cache the data if caching is enabled
+                if self._cache:
+                    cache_key = f"mode_data_{symbol}_{interval}_{mode}"
+                    self._cache.put(cache_key, data)
+                    tprint_debug(f"💾 Cached mode-aware data: {cache_key}")
+            
+            return data
+            
+        except Exception as e:
+            tprint_error(f"❌ Failed to load mode-aware data: {e}")
+            return None
+    
+    def load_klines_with_mode(
+        self, 
+        symbol: Optional[str] = None, 
+        interval: str = "15m", 
+        mode: Optional[str] = None,
+        data_type: str = "raw"
+    ) -> Optional[Any]:
+        """Load klines data using mode-aware data fetching with context.
+        
+        Args:
+            symbol: Trading symbol. If None, uses current context symbol.
+            interval: Data interval (e.g., "15m", "1h")
+            mode: Execution mode ("full", "blank", "light"). If None, uses current context mode.
+            data_type: Data type ("raw" or "processed")
+            
+        Returns:
+            Loaded DataFrame or None
+        """
+        if symbol is None:
+            symbol = self._current_symbol
+        
+        if symbol is None:
+            tprint_error("❌ No symbol provided and no current context symbol available")
+            return None
+        
+        if mode is None:
+            mode = self._current_execution_mode
+        
+        tprint_info(f"📊 Loading klines with mode-aware fetching: {symbol} ({interval}) in {mode.upper()} mode")
+        
+        return self.load_data_with_mode(
+            symbol=symbol,
+            interval=interval,
+            mode=mode,
+            data_type=data_type
+        )
+    
+    def get_mode_config(self, mode: Optional[str] = None) -> Dict[str, Any]:
+        """Get configuration for the specified mode or current context mode.
+        
+        Args:
+            mode: Execution mode ("full", "blank", "light"). If None, uses current context mode.
+            
+        Returns:
+            Mode configuration dictionary
+        """
+        if mode is None:
+            mode = self._current_execution_mode
+        
+        try:
+            config = get_mode_config(mode)
+            tprint_debug(f"📊 Mode '{mode}' configuration retrieved")
+            return {
+                'name': config.name,
+                'description': config.description,
+                'lookback_days': config.lookback_days,
+                'lookback_years': config.lookback_years,
+                'intensity_percentage': config.intensity_percentage,
+                'computational_intensity': config.computational_intensity,
+                'estimated_duration_minutes': config.estimated_duration_minutes,
+                'max_trials': config.max_trials,
+                'n_trials': config.n_trials,
+                'monte_carlo_samples': config.monte_carlo_samples,
+                'ab_test_rounds': config.ab_test_rounds,
+                'optuna_trials': config.optuna_trials,
+                'optuna_timeout': config.optuna_timeout,
+                'batch_size': config.batch_size,
+                'epochs': config.epochs,
+                'early_stopping_patience': config.early_stopping_patience,
+                'cross_validation_folds': config.cross_validation_folds,
+                'enable_parallelization': config.enable_parallelization,
+                'enable_caching': config.enable_caching,
+                'enable_advanced_features': config.enable_advanced_features,
+                'enable_ensemble_training': config.enable_ensemble_training,
+                'enable_multi_timeframe_training': config.enable_multi_timeframe_training,
+                'enable_adaptive_training': config.enable_adaptive_training
+            }
+        except Exception as e:
+            tprint_error(f"❌ Failed to get mode configuration for '{mode}': {e}")
+            return {}
+    
+    def set_execution_mode(self, mode: str) -> None:
+        """Set the current execution mode for data fetching.
+        
+        Args:
+            mode: Execution mode ("full", "blank", "light")
+            
+        Raises:
+            ValueError: If mode is invalid
+            TypeError: If mode is not a string
+        """
+        if not isinstance(mode, str):
+            raise TypeError(f"mode must be a string, got: {type(mode).__name__}")
+        
+        valid_modes = ["full", "blank", "light"]
+        if mode not in valid_modes:
+            raise ValueError(f"mode must be one of {valid_modes}, got: {mode}")
+        
+        self._current_execution_mode = mode
+        tprint_info(f"📊 Execution mode set to: {mode.upper()}")
+    
+    def get_current_mode(self) -> str:
+        """Get the current execution mode.
+        
+        Returns:
+            Current execution mode
+        """
+        return self._current_execution_mode
 
 
 def get_analyst_context(config: Dict[str, Any]) -> Dict[str, Any]:

@@ -681,7 +681,7 @@ class BaseStep(ABC):
             self.logger.warning(f"Failed to get hardware stats: {e}")
             return {}
     
-    def run(self, config: Dict[str, Any]) -> Dict[str, Any]:
+    async def run(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """
         Run the step with error handling and outcome generation with hardware optimization.
         
@@ -713,7 +713,7 @@ class BaseStep(ABC):
                 self._set_context(symbol, exchange, information, direction, model)
             
             # Execute the step
-            execution_result = self.execute(config)
+            execution_result = await self.execute(config)
             
             # Calculate execution time
             execution_time = (datetime.now() - start_time).total_seconds()

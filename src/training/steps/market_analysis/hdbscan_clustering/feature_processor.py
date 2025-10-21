@@ -141,10 +141,10 @@ class FeatureProcessor:
             tprint_info("🔧 Starting feature processing pipeline...")
             tprint_debug(f"Input shape: {features_df.shape}, target shape: {target.shape if target is not None else 'None'}")
             
-            # Enhanced data format analysis for troubleshooting
-            tprint_data_format(features_df, "input_features_df", level=LogLevel.INFO)
+            # Data format validation for input features
+            tprint_data_format(features_df, "input_features", LogLevel.DEBUG)
             if target is not None:
-                tprint_data_format(target, "input_target", level=LogLevel.INFO)
+                tprint_data_format(target, "input_target", LogLevel.DEBUG)
             
             # Store original shape
             original_shape = features_df.shape
@@ -155,6 +155,8 @@ class FeatureProcessor:
                 with tprint_timer("Data validation"):
                     features_df = self._validate_data(features_df)
                     tprint_debug(f"After validation: {features_df.shape}")
+                    # Data format validation after validation step
+                    tprint_data_format(features_df, "validated_features", LogLevel.DEBUG)
             else:
                 tprint_debug("Data validation skipped")
             
@@ -162,12 +164,16 @@ class FeatureProcessor:
             with tprint_timer("Data cleaning"):
                 features_df = self._clean_data(features_df)
                 tprint_debug(f"After cleaning: {features_df.shape}")
+                # Data format validation after cleaning step
+                tprint_data_format(features_df, "cleaned_features", LogLevel.DEBUG)
             
             # Step 3: Handle outliers
             if self.config.handle_outliers != 'none':
                 with tprint_timer("Outlier handling"):
                     features_df = self._handle_outliers(features_df)
                     tprint_debug(f"After outlier handling: {features_df.shape}")
+                    # Data format validation after outlier handling
+                    tprint_data_format(features_df, "outlier_handled_features", LogLevel.DEBUG)
             else:
                 tprint_debug("Outlier handling skipped")
             
@@ -176,6 +182,8 @@ class FeatureProcessor:
                 with tprint_timer("Feature scaling"):
                     features_df = self._scale_features(features_df)
                     tprint_debug(f"After scaling: {features_df.shape}")
+                    # Data format validation after scaling
+                    tprint_data_format(features_df, "scaled_features", LogLevel.DEBUG)
             else:
                 tprint_debug("Feature scaling skipped")
             
@@ -184,6 +192,8 @@ class FeatureProcessor:
                 with tprint_timer("Feature engineering"):
                     features_df = self._engineer_features(features_df)
                     tprint_debug(f"After feature engineering: {features_df.shape}")
+                    # Data format validation after feature engineering
+                    tprint_data_format(features_df, "engineered_features", LogLevel.DEBUG)
             else:
                 tprint_debug("Feature engineering skipped")
             
@@ -217,6 +227,8 @@ class FeatureProcessor:
             with tprint_timer("Final validation"):
                 features_df = self._final_validation(features_df)
                 tprint_debug(f"After final validation: {features_df.shape}")
+                # Data format validation for final output
+                tprint_data_format(features_df, "final_processed_features", LogLevel.DEBUG)
             
             # Calculate processing statistics
             self.processing_stats.update({
@@ -631,14 +643,21 @@ class FeatureProcessor:
         try:
             logger.info("🔄 Transforming new features...")
             
+            # Data format validation for input features
+            tprint_data_format(features_df, "transform_input_features", LogLevel.DEBUG)
+            
             # Apply scaling if available
             if self.scaler is not None:
                 numeric_cols = features_df.select_dtypes(include=[np.number]).columns
                 features_df[numeric_cols] = self.scaler.transform(features_df[numeric_cols])
+                # Data format validation after scaling
+                tprint_data_format(features_df, "scaled_transform_features", LogLevel.DEBUG)
             
             # Apply feature selection if available
             if self.feature_selector is not None:
                 features_df = features_df[self.feature_selector.get_support()]
+                # Data format validation after feature selection
+                tprint_data_format(features_df, "selected_transform_features", LogLevel.DEBUG)
             
             # Apply dimensionality reduction if available
             if self.dr_model is not None:
@@ -654,6 +673,11 @@ class FeatureProcessor:
                         columns=new_columns,
                         index=features_df.index
                     )
+                    # Data format validation after dimensionality reduction
+                    tprint_data_format(features_df, "reduced_transform_features", LogLevel.DEBUG)
+            
+            # Data format validation for final transformed output
+            tprint_data_format(features_df, "final_transformed_features", LogLevel.DEBUG)
             
             logger.info("✅ Feature transformation completed")
             return features_df

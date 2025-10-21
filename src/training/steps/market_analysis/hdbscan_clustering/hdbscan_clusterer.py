@@ -135,12 +135,20 @@ class HDBSCANClusterer:
         try:
             logger.info("🔍 Starting HDBSCAN clustering...")
             
+            # Data format validation for input features
+            tprint_data_format(features_df, "clustering_input_features", LogLevel.DEBUG)
+            
             # Validate input
             if self.config.validate_input:
                 features_df = self._validate_input(features_df)
+                # Data format validation after input validation
+                tprint_data_format(features_df, "validated_clustering_features", LogLevel.DEBUG)
             
             # Convert to numpy array
             features = features_df.values
+            
+            # Data format validation for numpy array
+            tprint_data_format(features, "clustering_input_array", LogLevel.DEBUG)
             
             # Data preview for clustering input
             tprint_data_preview(features_df, "clustering_input_features", max_rows=5, level="DEBUG")
@@ -182,6 +190,10 @@ class HDBSCANClusterer:
             
             # Calculate clustering statistics
             self.clustering_stats = self._calculate_clustering_stats(cluster_labels, features, clustering_info)
+            
+            # Data format validation for clustering results
+            tprint_data_format(cluster_labels, "final_cluster_labels", LogLevel.DEBUG)
+            tprint_data_format(self.clustering_stats, "clustering_stats", LogLevel.DEBUG)
             
             # Final data preview
             tprint_data_preview(cluster_labels, "final_cluster_labels", max_rows=10, level="INFO")

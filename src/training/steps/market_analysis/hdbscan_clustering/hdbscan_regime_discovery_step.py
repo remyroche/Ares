@@ -152,6 +152,9 @@ class HDBSCANRegimeDiscoveryStep(BaseStep):
             tprint_info(f"🔍 Starting HDBSCAN regime discovery for {symbol}")
             tprint_debug(f"Configuration: {config}")
             
+            # Data format validation for configuration
+            tprint_data_format(config, "step_configuration", LogLevel.DEBUG)
+            
             # Memory optimization: Clean up before starting
             gc.collect()
             initial_memory = get_memory_usage()
@@ -177,11 +180,16 @@ class HDBSCANRegimeDiscoveryStep(BaseStep):
                 if market_data is None or len(market_data) == 0:
                     raise ValueError("Failed to load market data")
                 
+                # Data format validation for loaded market data
+                tprint_data_format(market_data, "loaded_market_data", LogLevel.DEBUG)
+                
                 # Data preview of loaded market data
                 tprint_data_preview(market_data, "loaded_market_data", max_rows=10, level="INFO")
                 
                 # Optimize memory usage
                 market_data = optimize_dataframe_default(market_data)
+                # Data format validation after optimization
+                tprint_data_format(market_data, "optimized_market_data", LogLevel.DEBUG)
                 tprint_success(f"✅ Loaded market data: {market_data.shape[0]} rows, {market_data.shape[1]} columns")
                 tprint_debug(f"Data memory usage: {market_data.memory_usage(deep=True).sum() / 1024**2:.2f}MB")
             

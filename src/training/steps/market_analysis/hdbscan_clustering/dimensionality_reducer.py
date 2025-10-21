@@ -150,16 +150,18 @@ class DimensionalityReducer:
             tprint_info(f"📉 Starting dimensionality reduction using {self.config.method}...")
             tprint_debug(f"Input shape: {features.shape}, fit={fit}, target_shape={target.shape if target is not None else 'None'}")
             
-            # Enhanced data format analysis for troubleshooting
-            tprint_data_format(features, "input_features_array", level=LogLevel.INFO)
+            # Data format validation for input features
+            tprint_data_format(features, "input_features", LogLevel.DEBUG)
             if target is not None:
-                tprint_data_format(target, "input_target_array", level=LogLevel.INFO)
+                tprint_data_format(target, "input_target", LogLevel.DEBUG)
             
             # Validate input
             if self.config.validate_input:
                 with tprint_timer("Input validation"):
                     features = self._validate_input(features)
                     tprint_debug(f"After validation: {features.shape}")
+                    # Data format validation after input validation
+                    tprint_data_format(features, "validated_features", LogLevel.DEBUG)
             else:
                 tprint_debug("Input validation skipped")
             
@@ -186,6 +188,8 @@ class DimensionalityReducer:
                         reduced_features, model = self._fit_reduction(features, n_components, target)
                     self.model = model
                     tprint_debug(f"After fitting: {reduced_features.shape}")
+                    # Data format validation after fitting
+                    tprint_data_format(reduced_features, "fitted_reduced_features", LogLevel.DEBUG)
             else:
                 with tprint_timer(f"Dimensionality reduction transform ({self.config.method})"):
                     if self.model is None:
@@ -195,12 +199,19 @@ class DimensionalityReducer:
                     else:
                         reduced_features = self._transform_features(features)
                     tprint_debug(f"After transform: {reduced_features.shape}")
+                    # Data format validation after transform
+                    tprint_data_format(reduced_features, "transformed_reduced_features", LogLevel.DEBUG)
             
             # Calculate reduction statistics
             with tprint_timer("Reduction statistics calculation"):
                 reduction_info = self._calculate_reduction_stats(features, reduced_features)
                 self.reduction_stats = reduction_info
                 tprint_debug(f"Reduction info: {reduction_info}")
+                # Data format validation for reduction info
+                tprint_data_format(reduction_info, "reduction_info", LogLevel.DEBUG)
+            
+            # Data format validation for final output
+            tprint_data_format(reduced_features, "final_reduced_features", LogLevel.DEBUG)
             
             tprint_success(f"✅ Dimensionality reduction completed. Shape: {features.shape} -> {reduced_features.shape}")
             

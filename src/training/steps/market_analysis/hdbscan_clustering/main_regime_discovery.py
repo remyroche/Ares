@@ -674,6 +674,9 @@ class HDBSCANRegimeDiscovery:
             if self.last_result is None:
                 raise ValueError("No fitted models available. Call discover_regimes with fit=True first.")
             
+            # Data format validation for prediction input
+            tprint_data_format(data, "prediction_input_data", LogLevel.DEBUG)
+            
             # Use hardware optimization context for prediction
             with self.hardware_manager.optimization_context(WorkloadType.ML_TRAINING, OptimizationLevel.BALANCED):
                 # Extract features
@@ -681,10 +684,16 @@ class HDBSCANRegimeDiscovery:
                 if not feature_result.success:
                     raise ValueError(f"Feature extraction failed: {feature_result.error_message}")
                 
+                # Data format validation for extracted features
+                tprint_data_format(feature_result.features_df, "extracted_features", LogLevel.DEBUG)
+                
                 # Preprocess features
                 processed_result = self.feature_processor.process(feature_result.features_df, fit=False)
                 if not processed_result.success:
                     raise ValueError(f"Preprocessing failed: {processed_result.error_message}")
+                
+                # Data format validation for processed features
+                tprint_data_format(processed_result.features_df, "processed_features", LogLevel.DEBUG)
                 
                 # Reduce dimensionality
                 reduced_features, _ = self.dimensionality_reducer.reduce(

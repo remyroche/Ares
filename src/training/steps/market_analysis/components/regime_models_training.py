@@ -24,7 +24,7 @@ from datetime import datetime
 
 from src.training.steps.base_step import BaseStep
 from src.utils.logger import system_logger
-from src.utils.tprint import tprint, tprint_info, tprint_success, tprint_warning, tprint_error, tprint_data_preview
+from src.utils.tprint import tprint, tprint_info, tprint_success, tprint_warning, tprint_error, tprint_data_preview, tprint_data_format
 
 # Suppress warnings
 warnings.filterwarnings('ignore')
@@ -267,6 +267,12 @@ class RegimeModelsTrainingStep(BaseStep):
                 tprint_data_preview(data, "loaded_training_data", level="INFO")
             except Exception as e:
                 tprint(f"⚠️ [REGIME_MODELS] Data preview failed: {e}", color="yellow")
+            
+            # Add comprehensive data format analysis for troubleshooting
+            try:
+                tprint_data_format(data, "loaded_training_data", level="INFO")
+            except Exception as e:
+                tprint(f"⚠️ [REGIME_MODELS] Data format analysis failed: {e}", color="yellow")
 
             # Step 0: Validate input data
             tprint("🔍 Step 0: Validating input data", "INFO")
@@ -917,6 +923,14 @@ class RegimeModelsTrainingStep(BaseStep):
         tprint("🔍 [REGIME_MODELS] Validating training data", color="cyan")
 
         try:
+            # Add comprehensive data format analysis for troubleshooting
+            try:
+                tprint_data_format(X, "training_features_X", level="INFO")
+                tprint_data_format(y, "training_labels_y", level="INFO")
+                if feature_names is not None:
+                    tprint_data_format(feature_names, "feature_names", level="INFO")
+            except Exception as e:
+                tprint(f"⚠️ [REGIME_MODELS] Data format analysis failed: {e}", color="yellow")
             # Check shapes
             if X.shape[0] != y.shape[0]:
                 tprint(f"❌ [REGIME_MODELS] Mismatched sample counts: X={X.shape[0]}, y={y.shape[0]}", color="red")
@@ -1010,6 +1024,13 @@ class RegimeModelsTrainingStep(BaseStep):
             # Log input data characteristics
             tprint(f"📊 [REGIME_MODELS] Input data shape: {data.shape}", color="blue")
             tprint(f"📊 [REGIME_MODELS] Input data columns: {list(data.columns)}", color="blue")
+            
+            # Add comprehensive data format analysis for troubleshooting
+            try:
+                tprint_data_format(data, "input_market_data", level="INFO")
+                tprint_data_format(regime_labels, "regime_labels", level="INFO")
+            except Exception as e:
+                tprint(f"⚠️ [REGIME_MODELS] Data format analysis failed: {e}", color="yellow")
 
             # Force comprehensive feature generation using feature bank
             tprint("🔧 [REGIME_MODELS] FORCING comprehensive feature generation using feature bank", color="cyan", bold=True)

@@ -31,7 +31,7 @@ from src.training.steps.market_analysis.clusters import (
 from src.utils.tprint import (
     tprint, tprint_info, tprint_success, tprint_warning, tprint_error, 
     tprint_debug, tprint_performance, tprint_progress, tprint_timer,
-    tprint_logged, LogLevel
+    tprint_logged, tprint_data_preview, LogLevel
 )
 from src.utils.hardware import get_memory_usage, optimize_dataframe_default
 from src.utils.data.klines_parquet import get_klines_manager
@@ -217,6 +217,13 @@ class RegimeClusteringStep(BaseStep):
             if market_data is not None and not isinstance(market_data, pd.DataFrame):
                 raise ValueError(f"Invalid market_data type: {type(market_data)}")
             
+            # Add data preview logging for troubleshooting
+            if features is not None:
+                tprint_data_preview(features, "features_loaded", max_rows=5, max_cols=10, level=LogLevel.DEBUG)
+            
+            if market_data is not None:
+                tprint_data_preview(market_data, "market_data_loaded", max_rows=5, max_cols=10, level=LogLevel.DEBUG)
+            
             return features, market_data
             
         except Exception as e:
@@ -266,6 +273,8 @@ class RegimeClusteringStep(BaseStep):
             
             if market_data is not None and not market_data.empty:
                 tprint(f"✅ Loaded {len(market_data)} rows of market data", "SUCCESS")
+                # Add data preview logging for troubleshooting
+                tprint_data_preview(market_data, "klines_market_data", max_rows=5, max_cols=10, level=LogLevel.DEBUG)
                 return market_data
             else:
                 tprint("❌ Failed to load market data from klines", "ERROR")
@@ -316,6 +325,10 @@ class RegimeClusteringStep(BaseStep):
         try:
             tprint("🚀 Executing clustering pipeline...", "INFO")
             
+            # Add data preview logging before clustering
+            tprint_data_preview(features, "clustering_input_features", max_rows=5, max_cols=10, level=LogLevel.DEBUG)
+            tprint_data_preview(market_data, "clustering_input_market_data", max_rows=5, max_cols=10, level=LogLevel.DEBUG)
+            
             # Use the clustering service to run clustering
             clustering_result = await self.clustering_service.run_clustering(
                 features=features,
@@ -329,6 +342,10 @@ class RegimeClusteringStep(BaseStep):
                 
                 tprint(f"✅ Clustering completed: {clustering_result.n_clusters} clusters", "SUCCESS")
                 tprint(f"📊 Convergence: {clustering_result.convergence_status}", "INFO")
+                
+                # Add data preview logging after clustering
+                tprint_data_preview(clustering_result.cluster_assignments, "clustering_output_assignments", max_rows=10, level=LogLevel.DEBUG)
+                tprint_data_preview(clustering_result.metrics, "clustering_output_metrics", level=LogLevel.DEBUG)
             
             return clustering_result
             
@@ -344,6 +361,10 @@ class RegimeClusteringStep(BaseStep):
         """Save clustering results as artifacts."""
         try:
             artifacts = []
+            
+            # Add data preview logging before saving
+            tprint_data_preview(clustering_result.cluster_assignments, "final_cluster_assignments", max_rows=10, level=LogLevel.DEBUG)
+            tprint_data_preview(clustering_result.metrics, "final_clustering_metrics", level=LogLevel.DEBUG)
             
             # Save cluster assignments
             cluster_assignments_path = self._save_dataframe(

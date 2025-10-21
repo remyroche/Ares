@@ -13,7 +13,8 @@ import time
 from datetime import datetime
 
 from src.utils.tprint import (
-    tprint, tprint_info, tprint_success, tprint_warning, tprint_error, tprint_debug, tprint_performance
+    tprint, tprint_info, tprint_success, tprint_warning, tprint_error, tprint_debug, tprint_performance,
+    tprint_data_preview, LogLevel
 )
 from src.utils.common_operations import (
     get_memory_usage, optimize_dataframe_memory, safe_divide, safe_mean, safe_std,
@@ -135,6 +136,10 @@ class ClusteringOrchestrator:
             tprint_debug(f"Input features shape: {features.shape}")
             tprint_debug(f"Market data shape: {market_data.shape}")
             tprint_debug(f"Config type: {type(config)}")
+
+            # Add data preview logging for troubleshooting
+            tprint_data_preview(features, "orchestrator_input_features", max_rows=5, max_cols=10, level=LogLevel.DEBUG)
+            tprint_data_preview(market_data, "orchestrator_input_market_data", max_rows=5, max_cols=10, level=LogLevel.DEBUG)
 
             # Validate input data quality
             tprint("🔍 Validating input data quality", "INFO")
@@ -294,6 +299,12 @@ class ClusteringOrchestrator:
             # Store final results in context
             context.final_results = final_results
             self.performance_metrics["success_count"] += 1
+
+            # Add data preview logging for final results
+            if hasattr(context, 'optimized_assignments') and context.optimized_assignments is not None:
+                tprint_data_preview(context.optimized_assignments, "orchestrator_final_assignments", max_rows=10, level=LogLevel.DEBUG)
+            if hasattr(context, 'final_results') and context.final_results is not None:
+                tprint_data_preview(context.final_results, "orchestrator_final_results", level=LogLevel.DEBUG)
 
             return context
 

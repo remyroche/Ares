@@ -16,7 +16,7 @@ import pandas as pd
 import logging
 from src.utils.parquet_utils import ParquetUtils
 from src.utils.data.processing.data_processing import DataProcessor
-from src.utils.tprint import tprint
+from src.utils.tprint import tprint, tprint_data_preview
 
 class KlinesParquetManager:
     """Unified manager for klines parquet data operations."""
@@ -84,6 +84,7 @@ class KlinesParquetManager:
                     # Only log successful fallback data retrieval
                     max_date_str = max_date.date() if hasattr(max_date, 'date') else str(max_date)
                     self.logger.info(f"✅ Fallback data loaded: last {x_days} days from {max_date_str} -> {len(filtered_df)} records")
+                    tprint_data_preview(filtered_df, f"fallback_data_{x_days}_days")
 
                     return filtered_df
 
@@ -869,6 +870,7 @@ class KlinesParquetManager:
             final_end_str = end_date.date() if hasattr(end_date, 'date') else str(end_date) if end_date else None
             period_info = f"from {final_start_str} to {final_end_str}" if start_date and end_date else "full period"
             self.logger.info(f"✅ Data loaded: {symbol} {interval} {period_info} -> {len(combined_df)} records")
+            tprint_data_preview(combined_df, f"klines_loaded_{symbol}_{interval}_{data_type}")
             return combined_df
 
         except Exception as e:

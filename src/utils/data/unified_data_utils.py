@@ -31,6 +31,7 @@ from .processing.data_processing import DataProcessor
 from .quality.data_cleaning import DataCleaner
 from .processing.transformers import DataStreamingManager
 from src.utils.logger import system_logger
+from src.utils.tprint import tprint_data_preview
 
 logger = logging.getLogger(__name__)
 
@@ -136,10 +137,12 @@ class UnifiedDataUtils:
 
         try:
             processed_data = data.copy()
+            tprint_data_preview(processed_data, f"input_data_{context}")
 
             # Step 1: Quality validation
             if validate_quality:
                 self.logger.info('🔍 Performing quality validation...')
+                tprint_data_preview(processed_data, f"before_quality_validation_{context}")
                 quality_result = self.quality_framework.validate_dataframe_quality(processed_data, context)
                 processing_report['quality_results'] = quality_result.get_summary()
                 processing_report['steps_completed'].append('quality_validation')
@@ -151,6 +154,7 @@ class UnifiedDataUtils:
             if regularize_timestamps and 'timestamp' in processed_data.columns:
                 self.logger.info('⏰ Regularizing timestamps...')
                 processed_data = self.data_processor.regularize_timestamps(processed_data)
+                tprint_data_preview(processed_data, f"after_timestamp_regularization_{context}")
                 processing_report['steps_completed'].append('timestamp_regularization')
 
             # Step 3: Clean missing values
@@ -162,6 +166,7 @@ class UnifiedDataUtils:
                     exchange=exchange,
                     timeframe=timeframe
                 )
+                tprint_data_preview(processed_data, f"after_missing_value_cleaning_{context}")
                 processing_report['steps_completed'].append('missing_value_cleaning')
 
             # Step 4: Detect outliers
@@ -187,6 +192,7 @@ class UnifiedDataUtils:
                     'final_memory_mb': final_memory / 1024 / 1024,
                     'memory_reduction_percent': memory_reduction
                 }
+                tprint_data_preview(processed_data, f"after_dtype_optimization_{context}")
                 processing_report['steps_completed'].append('dtype_optimization')
 
             # Final quality check
@@ -202,6 +208,7 @@ class UnifiedDataUtils:
 
             self.logger.info(f'✅ Data processing completed successfully in {processing_report["processing_time_seconds"]:.2f}s')
             self.logger.info(f'   Original shape: {processing_report["original_shape"]} → Final shape: {processing_report["final_shape"]}')
+            tprint_data_preview(processed_data, f"final_processed_data_{context}")
 
             return processed_data, processing_report
 

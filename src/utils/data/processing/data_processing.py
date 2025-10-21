@@ -18,6 +18,7 @@ from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 from src.utils.logger import system_logger
+from src.utils.tprint import tprint_data_preview
 
 warnings.filterwarnings("ignore")
 logger = logging.getLogger(__name__)
@@ -84,6 +85,7 @@ class DataProcessor:
 
             if irregular_ratio > 0.0001:  # If more than 0.01% irregular intervals
                 self.logger.info(f"🔄 Regularizing timestamps (irregular ratio: {irregular_ratio:.3f})")
+                tprint_data_preview(processed_data, "before_timestamp_regularization")
 
                 # Create a regular timestamp index
                 start_time = processed_data.index.min()
@@ -120,6 +122,7 @@ class DataProcessor:
                 processed_data = processed_data.dropna(how="all")
 
                 self.logger.info(f"✅ Regularized timestamps: {len(processed_data)} rows with {freq} intervals")
+                tprint_data_preview(processed_data, "after_timestamp_regularization")
 
             return processed_data
 
@@ -203,6 +206,7 @@ class DataProcessor:
 
         try:
             fixed_data = data.copy()
+            tprint_data_preview(fixed_data, f"before_quality_validation_{data_type}")
 
             # Fix common issues based on data type
             if data_type == "klines_ohlcv":
@@ -216,6 +220,7 @@ class DataProcessor:
             self.logger.info(
                 f"✅ Data quality validation completed: {len(validation_results['issues_fixed'])} issues fixed"
             )
+            tprint_data_preview(fixed_data, f"after_quality_validation_{data_type}")
 
             return fixed_data, validation_results
 
@@ -354,6 +359,7 @@ class DataProcessor:
         self.logger.info(f"   Initial memory: {initial_memory / 1024**2:.2f} MB")
         self.logger.info(f"   Final memory: {final_memory / 1024**2:.2f} MB")
         self.logger.info(f"   Memory reduction: {memory_reduction:.1%}")
+        tprint_data_preview(optimized_df, "after_dtype_optimization")
 
         return optimized_df
 

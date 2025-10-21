@@ -12,7 +12,7 @@ from typing import Dict, Any, Optional, Union, List
 from pathlib import Path
 
 from src.utils.tprint import (
-    tprint, tprint_info, tprint_success, tprint_warning, tprint_error, tprint_debug
+    tprint, tprint_info, tprint_success, tprint_warning, tprint_error, tprint_debug, tprint_data_preview
 )
 from src.utils.data.klines_parquet import KlinesParquetManager, get_klines_manager
 from src.config.pipeline_modes import get_light_mode_config, get_blank_mode_config, get_full_mode_config
@@ -176,6 +176,7 @@ class AresLauncherDataLoader:
                 tprint_debug(f"   → Data columns: {list(data.columns)}")
                 tprint_debug(f"   → Data index type: {type(data.index)}")
                 tprint_debug(f"   → Memory usage: {data.memory_usage(deep=True).sum() / 1024 / 1024:.2f} MB")
+                tprint_data_preview(data, f"ares_loaded_{symbol}_{interval}_{mode}")
                 return data
             else:
                 tprint_warning(f"⚠️ [ARES_DATA_LOADER] No data found for {symbol} ({interval}) in {mode.upper()} mode")
@@ -243,6 +244,7 @@ class AresLauncherDataLoader:
             if data is not None and not len(data) == 0:
                 tprint_success(f"✅ Loaded {len(data)} records for {symbol} ({interval})")
                 tprint_info(f"📅 Data range: {data.index.min().date()} to {data.index.max().date()}")
+                tprint_data_preview(data, f"ares_async_{symbol}_{interval}_{mode}")
                 return data
             else:
                 tprint_warning(f"⚠️ No data found for {symbol} ({interval}) in {mode.upper()} mode")

@@ -28,27 +28,14 @@ except ImportError:
 
 from .m1_cpu_optimizer import M1CPUOptimizer
 from .m1_gpu_utils import M1GPUManager
+from .constants import WorkloadType, OptimizationLevel
 from .m1_memory_optimizer import M1MemoryOptimizer
 from .enhanced_caching_system import get_global_cache, CacheConfig, DataTypeOptimization
 from .optimization_decorators import smart_cache, auto_optimize, memory_efficient
 
 logger = logging.getLogger(__name__)
 
-class WorkloadType(Enum):
-    """Types of workloads for optimization."""
-    BACKTESTING = "backtesting"
-    ML_TRAINING = "ml_training"
-    DATA_PROCESSING = "data_processing"
-    MONTE_CARLO = "monte_carlo"
-    FEATURE_ENGINEERING = "feature_engineering"
-    GENERAL = "general"
-
-class OptimizationLevel(Enum):
-    """Optimization levels."""
-    MINIMAL = "minimal"
-    BALANCED = "balanced"
-    AGGRESSIVE = "aggressive"
-    MAXIMUM = "maximum"
+# WorkloadType and OptimizationLevel are now imported from constants.py
 
 @dataclass
 class HardwareConfig:

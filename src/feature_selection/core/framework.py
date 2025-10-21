@@ -22,9 +22,9 @@ from src.utils.hardware import (
     memory_efficient,
     performance_tracked,
     smart_cache,
-    WorkloadType,
-    OptimizationLevel
+    WorkloadType
 )
+from src.utils.hardware.constants import OptimizationLevel
 
 # Import tprint for consistent logging
 from src.utils.tprint import tprint, tprint_success, tprint_warning, tprint_performance, tprint_debug

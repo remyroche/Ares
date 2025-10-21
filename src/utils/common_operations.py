@@ -80,6 +80,18 @@ def is_mps_available():
     """Check if MPS (Metal Performance Shaders) is available."""
     return False
 
+def force_cleanup():
+    """Force garbage collection and memory cleanup."""
+    import gc
+    gc.collect()
+    # Additional cleanup if hardware tools are available
+    try:
+        from src.utils.hardware.advanced_memory_manager import force_garbage_collection, cleanup_all_memory
+        force_garbage_collection()
+        cleanup_all_memory()
+    except ImportError:
+        pass
+
 # Configure logging
 logger = logging.getLogger(__name__)
 

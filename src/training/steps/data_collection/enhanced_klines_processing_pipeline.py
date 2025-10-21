@@ -118,13 +118,13 @@ tprint, tprint_info, tprint_warning, tprint_error, tprint_success = get_tprint_f
 
 # Global variables for lazy-loaded quality utilities with type annotations
 QUALITY_UTILITIES_AVAILABLE: bool = False
-_COMPREHENSIVE_DUPLICATE_ANALYZER: Optional[ComprehensiveDuplicateAnalyzer] = None
-_DATA_QUALITY_FRAMEWORK: Optional[DataQualityFramework] = None
-_COMPREHENSIVE_QUALITY_SCORER: Optional[ComprehensiveQualityScorer] = None
-_ADVANCED_QUALITY_METRICS: Optional[AdvancedQualityMetrics] = None
-_DATA_CLEANER: Optional[DataCleaner] = None
-_STATISTICAL_VALIDATOR: Optional[StatisticalValidator] = None
-_QUALITY_ALERT_SYSTEM: Optional[QualityAlertManager] = None
+_COMPREHENSIVE_DUPLICATE_ANALYZER: Optional[Any] = None
+_DATA_QUALITY_FRAMEWORK: Optional[Any] = None
+_COMPREHENSIVE_QUALITY_SCORER: Optional[Any] = None
+_ADVANCED_QUALITY_METRICS: Optional[Any] = None
+_DATA_CLEANER: Optional[Any] = None
+_STATISTICAL_VALIDATOR: Optional[Any] = None
+_QUALITY_ALERT_SYSTEM: Optional[Any] = None
 _ANALYZE_DUPLICATES_COMPREHENSIVE = None
 
 def _lazy_import_quality_utilities():
@@ -174,6 +174,7 @@ def _lazy_import_quality_utilities():
     def analyze_duplicates_comprehensive(df):
         return ComprehensiveDuplicateAnalyzer().analyze_duplicates(df)
 
+    _COMPREHENSIVE_DUPLICATE_ANALYZER = ComprehensiveDuplicateAnalyzer
     _ANALYZE_DUPLICATES_COMPREHENSIVE = analyze_duplicates_comprehensive
 
     # Fallback classes for missing quality utilities
@@ -224,6 +225,9 @@ from src.trading.execution.exchange_interface import ExchangeInterface, create_e
 # Import the proper classes from their locations
 from exchanges.shared.unified_ohlcv_standardizer import UnifiedOHLCVStandardizer
 from src.utils.data.klines_parquet import KlinesParquetManager
+
+# Initialize quality utilities at module level
+_lazy_import_quality_utilities()
 
 class StorageConfig:
     """Simple storage config."""
@@ -363,7 +367,10 @@ class EnhancedKlinesProcessingPipeline:
 
         # Initialize components
         self.data_standardizer = UnifiedOHLCVStandardizer()
-        self.duplicate_analyzer = ComprehensiveDuplicateAnalyzer()
+        
+        # Initialize lazy-loaded quality utilities
+        _lazy_import_quality_utilities()
+        self.duplicate_analyzer = _COMPREHENSIVE_DUPLICATE_ANALYZER()
 
         # Initialize KlinesParquetManager with optimized configuration
         if self.config.storage_config:

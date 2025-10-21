@@ -109,10 +109,13 @@ class KlinesDataProcessingPipeline(BaseStep):
             from .enhanced_klines_processing_pipeline import (
                 EnhancedKlinesProcessingPipeline,
                 ResamplingConfig,
+                PipelineConfig,
                 process_klines_data_enhanced
             )
             ENHANCED_PIPELINE_AVAILABLE = True
-            self.enhanced_pipeline = EnhancedKlinesProcessingPipeline(data_dir, exchange)
+            # Create proper config for enhanced pipeline
+            config = PipelineConfig(data_dir=data_dir, exchange=exchange)
+            self.enhanced_pipeline = EnhancedKlinesProcessingPipeline(config)
             self.logger.info("Enhanced pipeline available")
         except ImportError as e:
             ENHANCED_PIPELINE_AVAILABLE = False

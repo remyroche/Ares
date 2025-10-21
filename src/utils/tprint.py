@@ -1358,63 +1358,128 @@ def _get_caller_chain(max_depth: int = 3) -> str:
         if frame is not None:
             del frame
 
+def _fmt_bytes(n):
+    """Format bytes in human-readable format."""
+    units = ["B", "KB", "MB", "GB", "TB"]
+    i = 0
+    x = float(n)
+    while x >= 1024 and i < len(units) - 1:
+        x /= 1024
+        i += 1
+    return f"{x:.2f} {units[i]} ({n:,} B)"
+
+def _fmt_mtime(ts):
+    """Format modification time with age."""
+    try:
+        from datetime import datetime, timezone
+        dt = datetime.fromtimestamp(ts, tz=timezone.utc).astimezone()
+        age = datetime.now(dt.tzinfo) - dt
+        secs = int(age.total_seconds())
+        if secs < 60:
+            age_str = f"{secs}s ago"
+        elif secs < 3600:
+            age_str = f"{secs//60}m ago"
+        elif secs < 86400:
+            age_str = f"{secs//3600}h ago"
+        else:
+            age_str = f"{secs//86400}d ago"
+        return f"{dt:%Y-%m-%d %H:%M:%S %Z} ({age_str})"
+    except Exception:
+        return str(ts)
+
 def _check_pathlike(data, name: str, level: LogLevel, caller_info: str, list_cap: int = 10) -> Optional[Dict[str, Any]]:
     """Check if data is a path-like object and provide file diagnostics."""
     try:
         import os
+        import mimetypes
         from pathlib import Path
         
-        # Check if it's a path-like object and looks like a real path
-        if isinstance(data, (str, os.PathLike)):
-            path = Path(data)
-            
-            # Only treat as path if it exists, or looks like a file path (has extension or is absolute)
-            if path.exists() or (isinstance(data, str) and ('/' in data or '\\' in data or '.' in data.split('/')[-1])):
-                if path.exists():
-                    tprint_with_level(level, f"🔍 {name} format{caller_info}:")
-                    tprint_with_level(level, f"  Type: {type(data).__name__} (path)")
-                    tprint_with_level(level, f"  Path: {path}")
-                    tprint_with_level(level, f"  Exists: True")
-                    
-                    try:
-                        stat = path.stat()
-                        size_mb = stat.st_size / 1024**2
-                        tprint_with_level(level, f"  Size: {size_mb:.2f} MB")
-                        tprint_with_level(level, f"  Modified: {stat.st_mtime}")
-                        
-                        summary = {
-                            "type": f"{type(data).__name__} (path)",
-                            "path": str(path),
-                            "exists": True,
-                            "size_mb": size_mb,
-                            "modified": stat.st_mtime
-                        }
-                        
-                        # If it's a directory, list some contents
-                        if path.is_dir():
-                            try:
-                                contents = list(path.iterdir())[:list_cap]
-                                content_names = [item.name for item in contents]
-                                if len(contents) == list_cap:
-                                    content_names.append("...")
-                                tprint_with_level(level, f"  Contents: {content_names}")
-                                summary["contents"] = content_names
-                            except Exception:
-                                pass
-                        
-                        return summary
-                    except Exception as e:
-                        tprint_with_level(level, f"  Error accessing file: {e}")
-                        return {"type": f"{type(data).__name__} (path)", "path": str(path), "exists": True, "error": str(e)}
-                else:
-                    tprint_with_level(level, f"🔍 {name} format{caller_info}:")
-                    tprint_with_level(level, f"  Type: {type(data).__name__} (path)")
-                    tprint_with_level(level, f"  Path: {path}")
-                    tprint_with_level(level, f"  Exists: False")
-                    return {"type": f"{type(data).__name__} (path)", "path": str(path), "exists": False}
+        p = Path(os.fspath(data))
+    except Exception:
+        return None
+
+    looks_like = isinstance(data, (str, os.PathLike))
+    if not looks_like:
+        return None
+
+    exists_or_likely = p.exists() or p.is_symlink() or (isinstance(data, str) and any(sep in data for sep in ("/", "\\")) or (p.suffix))
+    if not exists_or_likely:
+        return None
+
+    # Special handling for Parquet files
+    if str(p).lower().endswith('.parquet'):
+        try:
+            from src.utils.tprint import PYARROW_AVAILABLE
+            if PYARROW_AVAILABLE:
+                import pyarrow.parquet as pq
+                pf = pq.ParquetFile(data)
+                tprint_with_level(level, f"🔍 {name} format{caller_info}:")
+                tprint_with_level(level, "  Type: Parquet file")
+                tprint_with_level(level, f"  Path: {p}")
+                tprint_with_level(level, f"  Shape: {pf.metadata.num_rows} rows × {len(pf.schema_arrow)} cols")
+                tprint_with_level(level, f"  Row groups: {pf.num_row_groups}")
+                field_info = [(pf.schema_arrow.names[i], str(pf.schema_arrow.types[i])) for i in range(len(pf.schema_arrow))]
+                tprint_with_level(level, f"  Schema: {field_info}")
+                summary = {"type": "Parquet file", "path": str(p), "shape": (pf.metadata.num_rows, len(pf.schema_arrow)),
+                           "row_groups": pf.num_row_groups, "schema": field_info}
+                return summary
+        except Exception as err:
+            tprint_with_level(level, f"🔍 {name} format{caller_info}: Parquet file (error: {err})")
+            return {"type": "Parquet file", "path": str(p), "error": str(err)}
+
+    tprint_with_level(level, f"🔍 {name} format{caller_info}:")
+    tprint_with_level(level, f"  Type: path")
+    tprint_with_level(level, f"  Path: {p}")
+    tprint_with_level(level, f"  Exists: {p.exists()}")
+
+    summary = {"type": "path", "path": str(p), "exists": p.exists()}
+
+    try:
+        kind = "file" if p.is_file() else "directory" if p.is_dir() else "symlink" if p.is_symlink() else "other"
+        tprint_with_level(level, f"  Kind: {kind}")
+        summary["kind"] = kind
+        if p.is_symlink():
+            try:
+                target = os.readlink(p)
+                tprint_with_level(level, f"  Symlink → {target}")
+                summary["symlink_target"] = target
+            except Exception:
+                pass
     except Exception:
         pass
-    return None
+
+    try:
+        st = p.stat(follow_symlinks=False)
+        tprint_with_level(level, f"  Size: {_fmt_bytes(st.st_size)}")
+        tprint_with_level(level, f"  Modified: {_fmt_mtime(st.st_mtime)}")
+        summary.update({"size_bytes": st.st_size, "mtime": st.st_mtime})
+    except Exception:
+        pass
+
+    if p.exists() and p.is_file():
+        mime, _ = mimetypes.guess_type(str(p))
+        if mime:
+            tprint_with_level(level, f"  MIME: {mime}")
+            summary["mime"] = mime
+
+    if p.exists() and p.is_dir():
+        try:
+            count = 0
+            names = []
+            for i, child in enumerate(p.iterdir()):
+                count += 1
+                if len(names) < list_cap:
+                    names.append(child.name)
+            if count > list_cap:
+                names.append("...")  # indicate more
+            tprint_with_level(level, f"  Entries: {min(count, list_cap)}/{count}")
+            if names:
+                tprint_with_level(level, f"  Sample: {names}")
+            summary.update({"entries_total": count, "entries_sample": names})
+        except Exception:
+            pass
+
+    return summary
 
 def _timeout_guard(timeout_seconds: float, operation_name: str = "operation"):
     """Context manager for timeout enforcement.
@@ -1509,6 +1574,7 @@ def _check_pandas_dataframe(data, name: str, config: DataFormatConfig, caller_in
         info = {
             "class": type(idx).__name__,
             "dtype": str(getattr(idx, "dtype", "")),
+            "length": len(idx),
             "is_unique": bool(getattr(idx, "is_unique", False)),
             "is_monotonic": bool(getattr(idx, "is_monotonic_increasing", False)),
         }
@@ -1767,6 +1833,12 @@ def tprint_data_format(data: Any, name: str = "data", level: LogLevel = LogLevel
         except ImportError:
             SCIPY_AVAILABLE = False
         
+        # Check for path-like objects first (before main type ladder)
+        if isinstance(data, (str, os.PathLike)):
+            path_summary = _check_pathlike(data, name, level, caller_info, config.max_rows)
+            if path_summary is not None:
+                return path_summary if return_summary else None
+
         # Handle None first
         if data is None:
             tprint_with_level(level, f"🔍 {name} format{caller_info}:")
@@ -1782,30 +1854,6 @@ def tprint_data_format(data: Any, name: str = "data", level: LogLevel = LogLevel
             tprint_with_level(level, f"  Value: {data}")
             summary["value"] = data
             return summary if return_summary else None
-        
-        # --- Parquet path (must be BEFORE the plain string branch) ---
-        elif PYARROW_AVAILABLE and isinstance(data, (str, os.PathLike)) and str(data).lower().endswith('.parquet'):
-            try:
-                import pyarrow.parquet as pq
-                pf = pq.ParquetFile(data)
-                tprint_with_level(level, f"🔍 {name} format{caller_info}:")
-                tprint_with_level(level, "  Type: Parquet file")
-                tprint_with_level(level, f"  Shape: {pf.metadata.num_rows} rows × {len(pf.schema_arrow)} cols")
-                tprint_with_level(level, f"  Row groups: {pf.num_row_groups}")
-                field_info = [(pf.schema_arrow.names[i], str(pf.schema_arrow.types[i])) for i in range(len(pf.schema_arrow))]
-                tprint_with_level(level, f"  Schema: {field_info}")
-                summary.update({"type": "Parquet file", "shape": (pf.metadata.num_rows, len(pf.schema_arrow)),
-                                "row_groups": pf.num_row_groups, "schema": field_info})
-            except Exception as err:
-                tprint_with_level(level, f"🔍 {name} format{caller_info}: Parquet file (error: {err})")
-                summary["error"] = str(err)
-            return summary if return_summary else None
-        
-        # Handle path-like objects before strings
-        elif isinstance(data, (str, os.PathLike)):
-            path_summary = _check_pathlike(data, name, level, caller_info, config.max_rows)
-            if path_summary is not None:
-                return path_summary if return_summary else None
         
         # Handle strings (non-path)
         elif isinstance(data, str):

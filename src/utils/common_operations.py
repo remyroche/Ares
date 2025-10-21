@@ -1452,6 +1452,655 @@ def safe_mean(x: Union[pd.Series, np.ndarray], **kwargs) -> Union[pd.Series, np.
     except Exception:
         return np.nan if not isinstance(x, pd.Series) else pd.Series([np.nan], index=x.index)
 
+def safe_median(x: Union[pd.Series, np.ndarray], **kwargs) -> Union[pd.Series, np.ndarray]:
+    """Safely calculate median with error handling."""
+    try:
+        if isinstance(x, pd.Series):
+            return x.median(**kwargs)
+        else:
+            return np.median(x, **kwargs)
+    except Exception:
+        return np.nan if not isinstance(x, pd.Series) else pd.Series([np.nan], index=x.index)
+
+def safe_quantile(x: Union[pd.Series, np.ndarray], q: float = 0.5, **kwargs) -> Union[pd.Series, np.ndarray]:
+    """Safely calculate quantile with error handling."""
+    try:
+        if isinstance(x, pd.Series):
+            return x.quantile(q, **kwargs)
+        else:
+            return np.quantile(x, q, **kwargs)
+    except Exception:
+        return np.nan if not isinstance(x, pd.Series) else pd.Series([np.nan], index=x.index)
+
+def safe_skew(x: Union[pd.Series, np.ndarray], **kwargs) -> Union[pd.Series, np.ndarray]:
+    """Safely calculate skewness with error handling."""
+    try:
+        if isinstance(x, pd.Series):
+            return x.skew(**kwargs)
+        else:
+            from scipy import stats
+            return stats.skew(x, **kwargs)
+    except Exception:
+        return np.nan if not isinstance(x, pd.Series) else pd.Series([np.nan], index=x.index)
+
+def safe_kurtosis(x: Union[pd.Series, np.ndarray], **kwargs) -> Union[pd.Series, np.ndarray]:
+    """Safely calculate kurtosis with error handling."""
+    try:
+        if isinstance(x, pd.Series):
+            return x.kurtosis(**kwargs)
+        else:
+            from scipy import stats
+            return stats.kurtosis(x, **kwargs)
+    except Exception:
+        return np.nan if not isinstance(x, pd.Series) else pd.Series([np.nan], index=x.index)
+
+def safe_rolling_apply(x: Union[pd.Series, np.ndarray], window: int, func: Callable, **kwargs) -> Union[pd.Series, np.ndarray]:
+    """Safely apply function to rolling window with error handling."""
+    try:
+        if isinstance(x, pd.Series):
+            return x.rolling(window=window).apply(func, **kwargs)
+        else:
+            # Convert to pandas Series for rolling operations
+            series = pd.Series(x)
+            result = series.rolling(window=window).apply(func, **kwargs)
+            return result.values
+    except Exception:
+        return np.full_like(x, np.nan)
+
+def safe_ewm_apply(x: Union[pd.Series, np.ndarray], span: int, func: Callable, **kwargs) -> Union[pd.Series, np.ndarray]:
+    """Safely apply function to exponentially weighted moving window with error handling."""
+    try:
+        if isinstance(x, pd.Series):
+            return x.ewm(span=span).apply(func, **kwargs)
+        else:
+            # Convert to pandas Series for ewm operations
+            series = pd.Series(x)
+            result = series.ewm(span=span).apply(func, **kwargs)
+            return result.values
+    except Exception:
+        return np.full_like(x, np.nan)
+
+def safe_expanding_apply(x: Union[pd.Series, np.ndarray], func: Callable, **kwargs) -> Union[pd.Series, np.ndarray]:
+    """Safely apply function to expanding window with error handling."""
+    try:
+        if isinstance(x, pd.Series):
+            return x.expanding().apply(func, **kwargs)
+        else:
+            # Convert to pandas Series for expanding operations
+            series = pd.Series(x)
+            result = series.expanding().apply(func, **kwargs)
+            return result.values
+    except Exception:
+        return np.full_like(x, np.nan)
+
+def safe_rank(x: Union[pd.Series, np.ndarray], method: str = 'average', **kwargs) -> Union[pd.Series, np.ndarray]:
+    """Safely calculate rank with error handling."""
+    try:
+        if isinstance(x, pd.Series):
+            return x.rank(method=method, **kwargs)
+        else:
+            from scipy import stats
+            return stats.rankdata(x, method=method)
+    except Exception:
+        return np.full_like(x, np.nan)
+
+def safe_percentile_rank(x: Union[pd.Series, np.ndarray], **kwargs) -> Union[pd.Series, np.ndarray]:
+    """Safely calculate percentile rank with error handling."""
+    try:
+        if isinstance(x, pd.Series):
+            return x.rank(pct=True, **kwargs)
+        else:
+            from scipy import stats
+            return stats.rankdata(x, method='average') / len(x)
+    except Exception:
+        return np.full_like(x, np.nan)
+
+def safe_zscore(x: Union[pd.Series, np.ndarray], **kwargs) -> Union[pd.Series, np.ndarray]:
+    """Safely calculate z-score with error handling."""
+    try:
+        if isinstance(x, pd.Series):
+            return (x - x.mean()) / x.std()
+        else:
+            return (x - np.mean(x)) / np.std(x)
+    except Exception:
+        return np.full_like(x, np.nan)
+
+def safe_minmax_scale(x: Union[pd.Series, np.ndarray], feature_range: tuple = (0, 1)) -> Union[pd.Series, np.ndarray]:
+    """Safely apply min-max scaling with error handling."""
+    try:
+        if isinstance(x, pd.Series):
+            x_min, x_max = x.min(), x.max()
+            if x_max == x_min:
+                return pd.Series(np.full(len(x), feature_range[0]), index=x.index)
+            scaled = (x - x_min) / (x_max - x_min)
+            return scaled * (feature_range[1] - feature_range[0]) + feature_range[0]
+        else:
+            x_min, x_max = np.min(x), np.max(x)
+            if x_max == x_min:
+                return np.full_like(x, feature_range[0])
+            scaled = (x - x_min) / (x_max - x_min)
+            return scaled * (feature_range[1] - feature_range[0]) + feature_range[0]
+    except Exception:
+        return np.full_like(x, np.nan)
+
+def safe_robust_scale(x: Union[pd.Series, np.ndarray]) -> Union[pd.Series, np.ndarray]:
+    """Safely apply robust scaling (median and IQR) with error handling."""
+    try:
+        if isinstance(x, pd.Series):
+            median = x.median()
+            q75, q25 = x.quantile(0.75), x.quantile(0.25)
+            iqr = q75 - q25
+            if iqr == 0:
+                return pd.Series(np.zeros(len(x)), index=x.index)
+            return (x - median) / iqr
+        else:
+            median = np.median(x)
+            q75, q25 = np.percentile(x, [75, 25])
+            iqr = q75 - q25
+            if iqr == 0:
+                return np.zeros_like(x)
+            return (x - median) / iqr
+    except Exception:
+        return np.full_like(x, np.nan)
+
+def safe_standardize(x: Union[pd.Series, np.ndarray]) -> Union[pd.Series, np.ndarray]:
+    """Safely standardize data (mean=0, std=1) with error handling."""
+    try:
+        if isinstance(x, pd.Series):
+            mean_val = x.mean()
+            std_val = x.std()
+            if std_val == 0:
+                return pd.Series(np.zeros(len(x)), index=x.index)
+            return (x - mean_val) / std_val
+        else:
+            mean_val = np.mean(x)
+            std_val = np.std(x)
+            if std_val == 0:
+                return np.zeros_like(x)
+            return (x - mean_val) / std_val
+    except Exception:
+        return np.full_like(x, np.nan)
+
+def safe_winsorize(x: Union[pd.Series, np.ndarray], limits: tuple = (0.05, 0.05)) -> Union[pd.Series, np.ndarray]:
+    """Safely winsorize data by capping extreme values with error handling."""
+    try:
+        if isinstance(x, pd.Series):
+            lower_limit = x.quantile(limits[0])
+            upper_limit = x.quantile(1 - limits[1])
+            return x.clip(lower=lower_limit, upper=upper_limit)
+        else:
+            lower_limit = np.percentile(x, limits[0] * 100)
+            upper_limit = np.percentile(x, (1 - limits[1]) * 100)
+            return np.clip(x, lower_limit, upper_limit)
+    except Exception:
+        return x
+
+def safe_outlier_detection(x: Union[pd.Series, np.ndarray], method: str = 'iqr', threshold: float = 1.5) -> Union[pd.Series, np.ndarray]:
+    """Safely detect outliers with error handling."""
+    try:
+        if method == 'iqr':
+            if isinstance(x, pd.Series):
+                Q1 = x.quantile(0.25)
+                Q3 = x.quantile(0.75)
+                IQR = Q3 - Q1
+                lower_bound = Q1 - threshold * IQR
+                upper_bound = Q3 + threshold * IQR
+                return (x < lower_bound) | (x > upper_bound)
+            else:
+                Q1 = np.percentile(x, 25)
+                Q3 = np.percentile(x, 75)
+                IQR = Q3 - Q1
+                lower_bound = Q1 - threshold * IQR
+                upper_bound = Q3 + threshold * IQR
+                return (x < lower_bound) | (x > upper_bound)
+        elif method == 'zscore':
+            z_scores = safe_zscore(x)
+            return np.abs(z_scores) > threshold
+        else:
+            return np.zeros_like(x, dtype=bool)
+    except Exception:
+        return np.zeros_like(x, dtype=bool)
+
+def safe_fillna_forward(x: Union[pd.Series, np.ndarray], limit: Optional[int] = None) -> Union[pd.Series, np.ndarray]:
+    """Safely forward fill NaN values with error handling."""
+    try:
+        if isinstance(x, pd.Series):
+            return x.fillna(method='ffill', limit=limit)
+        else:
+            # Convert to pandas Series for forward fill
+            series = pd.Series(x)
+            filled = series.fillna(method='ffill', limit=limit)
+            return filled.values
+    except Exception:
+        return x
+
+def safe_fillna_backward(x: Union[pd.Series, np.ndarray], limit: Optional[int] = None) -> Union[pd.Series, np.ndarray]:
+    """Safely backward fill NaN values with error handling."""
+    try:
+        if isinstance(x, pd.Series):
+            return x.fillna(method='bfill', limit=limit)
+        else:
+            # Convert to pandas Series for backward fill
+            series = pd.Series(x)
+            filled = series.fillna(method='bfill', limit=limit)
+            return filled.values
+    except Exception:
+        return x
+
+def safe_interpolate(x: Union[pd.Series, np.ndarray], method: str = 'linear', **kwargs) -> Union[pd.Series, np.ndarray]:
+    """Safely interpolate NaN values with error handling."""
+    try:
+        if isinstance(x, pd.Series):
+            return x.interpolate(method=method, **kwargs)
+        else:
+            # Convert to pandas Series for interpolation
+            series = pd.Series(x)
+            interpolated = series.interpolate(method=method, **kwargs)
+            return interpolated.values
+    except Exception:
+        return x
+
+def safe_dropna(x: Union[pd.Series, np.ndarray], **kwargs) -> Union[pd.Series, np.ndarray]:
+    """Safely drop NaN values with error handling."""
+    try:
+        if isinstance(x, pd.Series):
+            return x.dropna(**kwargs)
+        else:
+            # Convert to pandas Series for dropna
+            series = pd.Series(x)
+            dropped = series.dropna(**kwargs)
+            return dropped.values
+    except Exception:
+        return x
+
+def safe_replace(x: Union[pd.Series, np.ndarray], to_replace: Any, value: Any) -> Union[pd.Series, np.ndarray]:
+    """Safely replace values with error handling."""
+    try:
+        if isinstance(x, pd.Series):
+            return x.replace(to_replace, value)
+        else:
+            # Convert to pandas Series for replace
+            series = pd.Series(x)
+            replaced = series.replace(to_replace, value)
+            return replaced.values
+    except Exception:
+        return x
+
+def safe_clip(x: Union[pd.Series, np.ndarray], lower: Optional[float] = None, upper: Optional[float] = None) -> Union[pd.Series, np.ndarray]:
+    """Safely clip values to specified range with error handling."""
+    try:
+        if isinstance(x, pd.Series):
+            return x.clip(lower=lower, upper=upper)
+        else:
+            return np.clip(x, lower, upper)
+    except Exception:
+        return x
+
+def safe_round(x: Union[pd.Series, np.ndarray], decimals: int = 0) -> Union[pd.Series, np.ndarray]:
+    """Safely round values with error handling."""
+    try:
+        if isinstance(x, pd.Series):
+            return x.round(decimals)
+        else:
+            return np.round(x, decimals)
+    except Exception:
+        return x
+
+def safe_abs(x: Union[pd.Series, np.ndarray]) -> Union[pd.Series, np.ndarray]:
+    """Safely calculate absolute values with error handling."""
+    try:
+        if isinstance(x, pd.Series):
+            return x.abs()
+        else:
+            return np.abs(x)
+    except Exception:
+        return x
+
+def safe_sign(x: Union[pd.Series, np.ndarray]) -> Union[pd.Series, np.ndarray]:
+    """Safely calculate sign of values with error handling."""
+    try:
+        if isinstance(x, pd.Series):
+            return x.apply(lambda val: 1 if val > 0 else -1 if val < 0 else 0)
+        else:
+            return np.sign(x)
+    except Exception:
+        return np.zeros_like(x)
+
+def safe_where(condition: Union[pd.Series, np.ndarray], x: Union[pd.Series, np.ndarray], y: Union[pd.Series, np.ndarray]) -> Union[pd.Series, np.ndarray]:
+    """Safely apply where condition with error handling."""
+    try:
+        if isinstance(condition, pd.Series) and isinstance(x, pd.Series) and isinstance(y, pd.Series):
+            return condition.where(x, y)
+        else:
+            return np.where(condition, x, y)
+    except Exception:
+        return y
+
+def safe_apply(x: Union[pd.Series, np.ndarray], func: Callable, **kwargs) -> Union[pd.Series, np.ndarray]:
+    """Safely apply function with error handling."""
+    try:
+        if isinstance(x, pd.Series):
+            return x.apply(func, **kwargs)
+        else:
+            # Convert to pandas Series for apply
+            series = pd.Series(x)
+            result = series.apply(func, **kwargs)
+            return result.values
+    except Exception:
+        return x
+
+def safe_map(x: Union[pd.Series, np.ndarray], mapping: dict) -> Union[pd.Series, np.ndarray]:
+    """Safely map values using dictionary with error handling."""
+    try:
+        if isinstance(x, pd.Series):
+            return x.map(mapping)
+        else:
+            # Convert to pandas Series for map
+            series = pd.Series(x)
+            mapped = series.map(mapping)
+            return mapped.values
+    except Exception:
+        return x
+
+def safe_value_counts(x: Union[pd.Series, np.ndarray], **kwargs) -> pd.Series:
+    """Safely count value frequencies with error handling."""
+    try:
+        if isinstance(x, pd.Series):
+            return x.value_counts(**kwargs)
+        else:
+            # Convert to pandas Series for value_counts
+            series = pd.Series(x)
+            return series.value_counts(**kwargs)
+    except Exception:
+        return pd.Series()
+
+def safe_unique(x: Union[pd.Series, np.ndarray]) -> np.ndarray:
+    """Safely get unique values with error handling."""
+    try:
+        if isinstance(x, pd.Series):
+            return x.unique()
+        else:
+            return np.unique(x)
+    except Exception:
+        return np.array([])
+
+def safe_nunique(x: Union[pd.Series, np.ndarray]) -> int:
+    """Safely count unique values with error handling."""
+    try:
+        if isinstance(x, pd.Series):
+            return x.nunique()
+        else:
+            return len(np.unique(x))
+    except Exception:
+        return 0
+
+def safe_mode(x: Union[pd.Series, np.ndarray]) -> Any:
+    """Safely get mode (most frequent value) with error handling."""
+    try:
+        if isinstance(x, pd.Series):
+            mode_values = x.mode()
+            return mode_values.iloc[0] if len(mode_values) > 0 else None
+        else:
+            from scipy import stats
+            mode_result = stats.mode(x, keepdims=True)
+            return mode_result.mode[0] if len(mode_result.mode) > 0 else None
+    except Exception:
+        return None
+
+def safe_shift(x: Union[pd.Series, np.ndarray], periods: int = 1, **kwargs) -> Union[pd.Series, np.ndarray]:
+    """Safely shift values by periods with error handling."""
+    try:
+        if isinstance(x, pd.Series):
+            return x.shift(periods, **kwargs)
+        else:
+            # Convert to pandas Series for shift
+            series = pd.Series(x)
+            shifted = series.shift(periods, **kwargs)
+            return shifted.values
+    except Exception:
+        return x
+
+def safe_diff(x: Union[pd.Series, np.ndarray], periods: int = 1) -> Union[pd.Series, np.ndarray]:
+    """Safely calculate differences with error handling."""
+    try:
+        if isinstance(x, pd.Series):
+            return x.diff(periods)
+        else:
+            # Convert to pandas Series for diff
+            series = pd.Series(x)
+            diff = series.diff(periods)
+            return diff.values
+    except Exception:
+        return x
+
+def safe_pct_change(x: Union[pd.Series, np.ndarray], periods: int = 1, **kwargs) -> Union[pd.Series, np.ndarray]:
+    """Safely calculate percentage change with error handling."""
+    try:
+        if isinstance(x, pd.Series):
+            return x.pct_change(periods, **kwargs)
+        else:
+            # Convert to pandas Series for pct_change
+            series = pd.Series(x)
+            pct_change = series.pct_change(periods, **kwargs)
+            return pct_change.values
+    except Exception:
+        return x
+
+def safe_cumsum(x: Union[pd.Series, np.ndarray]) -> Union[pd.Series, np.ndarray]:
+    """Safely calculate cumulative sum with error handling."""
+    try:
+        if isinstance(x, pd.Series):
+            return x.cumsum()
+        else:
+            return np.cumsum(x)
+    except Exception:
+        return x
+
+def safe_cumprod(x: Union[pd.Series, np.ndarray]) -> Union[pd.Series, np.ndarray]:
+    """Safely calculate cumulative product with error handling."""
+    try:
+        if isinstance(x, pd.Series):
+            return x.cumprod()
+        else:
+            return np.cumprod(x)
+    except Exception:
+        return x
+
+def safe_cummax(x: Union[pd.Series, np.ndarray]) -> Union[pd.Series, np.ndarray]:
+    """Safely calculate cumulative maximum with error handling."""
+    try:
+        if isinstance(x, pd.Series):
+            return x.cummax()
+        else:
+            return np.maximum.accumulate(x)
+    except Exception:
+        return x
+
+def safe_cummin(x: Union[pd.Series, np.ndarray]) -> Union[pd.Series, np.ndarray]:
+    """Safely calculate cumulative minimum with error handling."""
+    try:
+        if isinstance(x, pd.Series):
+            return x.cummin()
+        else:
+            return np.minimum.accumulate(x)
+    except Exception:
+        return x
+
+def safe_rolling_mean(x: Union[pd.Series, np.ndarray], window: int, **kwargs) -> Union[pd.Series, np.ndarray]:
+    """Safely calculate rolling mean with error handling."""
+    return safe_rolling_apply(x, window, np.mean, **kwargs)
+
+def safe_rolling_std(x: Union[pd.Series, np.ndarray], window: int, **kwargs) -> Union[pd.Series, np.ndarray]:
+    """Safely calculate rolling standard deviation with error handling."""
+    return safe_rolling_apply(x, window, np.std, **kwargs)
+
+def safe_rolling_min(x: Union[pd.Series, np.ndarray], window: int, **kwargs) -> Union[pd.Series, np.ndarray]:
+    """Safely calculate rolling minimum with error handling."""
+    return safe_rolling_apply(x, window, np.min, **kwargs)
+
+def safe_rolling_max(x: Union[pd.Series, np.ndarray], window: int, **kwargs) -> Union[pd.Series, np.ndarray]:
+    """Safely calculate rolling maximum with error handling."""
+    return safe_rolling_apply(x, window, np.max, **kwargs)
+
+def safe_rolling_median(x: Union[pd.Series, np.ndarray], window: int, **kwargs) -> Union[pd.Series, np.ndarray]:
+    """Safely calculate rolling median with error handling."""
+    return safe_rolling_apply(x, window, np.median, **kwargs)
+
+def safe_rolling_quantile(x: Union[pd.Series, np.ndarray], window: int, q: float = 0.5, **kwargs) -> Union[pd.Series, np.ndarray]:
+    """Safely calculate rolling quantile with error handling."""
+    return safe_rolling_apply(x, window, lambda arr: np.quantile(arr, q), **kwargs)
+
+def safe_rolling_skew(x: Union[pd.Series, np.ndarray], window: int, **kwargs) -> Union[pd.Series, np.ndarray]:
+    """Safely calculate rolling skewness with error handling."""
+    return safe_rolling_apply(x, window, lambda arr: safe_skew(arr), **kwargs)
+
+def safe_rolling_kurtosis(x: Union[pd.Series, np.ndarray], window: int, **kwargs) -> Union[pd.Series, np.ndarray]:
+    """Safely calculate rolling kurtosis with error handling."""
+    return safe_rolling_apply(x, window, lambda arr: safe_kurtosis(arr), **kwargs)
+
+def safe_rolling_corr(x: Union[pd.Series, np.ndarray], y: Union[pd.Series, np.ndarray], window: int, **kwargs) -> Union[pd.Series, np.ndarray]:
+    """Safely calculate rolling correlation with error handling."""
+    try:
+        if isinstance(x, pd.Series) and isinstance(y, pd.Series):
+            return x.rolling(window=window).corr(y, **kwargs)
+        else:
+            # Convert to pandas Series for rolling correlation
+            x_series = pd.Series(x)
+            y_series = pd.Series(y)
+            corr = x_series.rolling(window=window).corr(y_series, **kwargs)
+            return corr.values
+    except Exception:
+        return np.full_like(x, np.nan)
+
+def safe_rolling_cov(x: Union[pd.Series, np.ndarray], y: Union[pd.Series, np.ndarray], window: int, **kwargs) -> Union[pd.Series, np.ndarray]:
+    """Safely calculate rolling covariance with error handling."""
+    try:
+        if isinstance(x, pd.Series) and isinstance(y, pd.Series):
+            return x.rolling(window=window).cov(y, **kwargs)
+        else:
+            # Convert to pandas Series for rolling covariance
+            x_series = pd.Series(x)
+            y_series = pd.Series(y)
+            cov = x_series.rolling(window=window).cov(y_series, **kwargs)
+            return cov.values
+    except Exception:
+        return np.full_like(x, np.nan)
+
+def safe_ewm_mean(x: Union[pd.Series, np.ndarray], span: int, **kwargs) -> Union[pd.Series, np.ndarray]:
+    """Safely calculate exponentially weighted moving mean with error handling."""
+    return safe_ewm_apply(x, span, np.mean, **kwargs)
+
+def safe_ewm_std(x: Union[pd.Series, np.ndarray], span: int, **kwargs) -> Union[pd.Series, np.ndarray]:
+    """Safely calculate exponentially weighted moving standard deviation with error handling."""
+    return safe_ewm_apply(x, span, np.std, **kwargs)
+
+def safe_ewm_var(x: Union[pd.Series, np.ndarray], span: int, **kwargs) -> Union[pd.Series, np.ndarray]:
+    """Safely calculate exponentially weighted moving variance with error handling."""
+    return safe_ewm_apply(x, span, np.var, **kwargs)
+
+def safe_expanding_mean(x: Union[pd.Series, np.ndarray], **kwargs) -> Union[pd.Series, np.ndarray]:
+    """Safely calculate expanding mean with error handling."""
+    return safe_expanding_apply(x, np.mean, **kwargs)
+
+def safe_expanding_std(x: Union[pd.Series, np.ndarray], **kwargs) -> Union[pd.Series, np.ndarray]:
+    """Safely calculate expanding standard deviation with error handling."""
+    return safe_expanding_apply(x, np.std, **kwargs)
+
+def safe_expanding_min(x: Union[pd.Series, np.ndarray], **kwargs) -> Union[pd.Series, np.ndarray]:
+    """Safely calculate expanding minimum with error handling."""
+    return safe_expanding_apply(x, np.min, **kwargs)
+
+def safe_expanding_max(x: Union[pd.Series, np.ndarray], **kwargs) -> Union[pd.Series, np.ndarray]:
+    """Safely calculate expanding maximum with error handling."""
+    return safe_expanding_apply(x, np.max, **kwargs)
+
+def safe_expanding_sum(x: Union[pd.Series, np.ndarray], **kwargs) -> Union[pd.Series, np.ndarray]:
+    """Safely calculate expanding sum with error handling."""
+    return safe_expanding_apply(x, np.sum, **kwargs)
+
+def safe_expanding_count(x: Union[pd.Series, np.ndarray], **kwargs) -> Union[pd.Series, np.ndarray]:
+    """Safely calculate expanding count with error handling."""
+    return safe_expanding_apply(x, len, **kwargs)
+
+def safe_expanding_quantile(x: Union[pd.Series, np.ndarray], q: float = 0.5, **kwargs) -> Union[pd.Series, np.ndarray]:
+    """Safely calculate expanding quantile with error handling."""
+    return safe_expanding_apply(x, lambda arr: np.quantile(arr, q), **kwargs)
+
+def safe_expanding_skew(x: Union[pd.Series, np.ndarray], **kwargs) -> Union[pd.Series, np.ndarray]:
+    """Safely calculate expanding skewness with error handling."""
+    return safe_expanding_apply(x, lambda arr: safe_skew(arr), **kwargs)
+
+def safe_expanding_kurtosis(x: Union[pd.Series, np.ndarray], **kwargs) -> Union[pd.Series, np.ndarray]:
+    """Safely calculate expanding kurtosis with error handling."""
+    return safe_expanding_apply(x, lambda arr: safe_kurtosis(arr), **kwargs)
+
+def safe_expanding_corr(x: Union[pd.Series, np.ndarray], y: Union[pd.Series, np.ndarray], **kwargs) -> Union[pd.Series, np.ndarray]:
+    """Safely calculate expanding correlation with error handling."""
+    try:
+        if isinstance(x, pd.Series) and isinstance(y, pd.Series):
+            return x.expanding().corr(y, **kwargs)
+        else:
+            # Convert to pandas Series for expanding correlation
+            x_series = pd.Series(x)
+            y_series = pd.Series(y)
+            corr = x_series.expanding().corr(y_series, **kwargs)
+            return corr.values
+    except Exception:
+        return np.full_like(x, np.nan)
+
+def safe_expanding_cov(x: Union[pd.Series, np.ndarray], y: Union[pd.Series, np.ndarray], **kwargs) -> Union[pd.Series, np.ndarray]:
+    """Safely calculate expanding covariance with error handling."""
+    try:
+        if isinstance(x, pd.Series) and isinstance(y, pd.Series):
+            return x.expanding().cov(y, **kwargs)
+        else:
+            # Convert to pandas Series for expanding covariance
+            x_series = pd.Series(x)
+            y_series = pd.Series(y)
+            cov = x_series.expanding().cov(y_series, **kwargs)
+            return cov.values
+    except Exception:
+        return np.full_like(x, np.nan)
+
+def safe_rolling_apply(x: Union[pd.Series, np.ndarray], window: int, func: Callable, **kwargs) -> Union[pd.Series, np.ndarray]:
+    """Safely apply function to rolling window with error handling."""
+    try:
+        if isinstance(x, pd.Series):
+            return x.rolling(window=window).apply(func, **kwargs)
+        else:
+            # Convert to pandas Series for rolling operations
+            series = pd.Series(x)
+            result = series.rolling(window=window).apply(func, **kwargs)
+            return result.values
+    except Exception:
+        return np.full_like(x, np.nan)
+
+def safe_ewm_apply(x: Union[pd.Series, np.ndarray], span: int, func: Callable, **kwargs) -> Union[pd.Series, np.ndarray]:
+    """Safely apply function to exponentially weighted moving window with error handling."""
+    try:
+        if isinstance(x, pd.Series):
+            return x.ewm(span=span).apply(func, **kwargs)
+        else:
+            # Convert to pandas Series for ewm operations
+            series = pd.Series(x)
+            result = series.ewm(span=span).apply(func, **kwargs)
+            return result.values
+    except Exception:
+        return np.full_like(x, np.nan)
+
+def safe_expanding_apply(x: Union[pd.Series, np.ndarray], func: Callable, **kwargs) -> Union[pd.Series, np.ndarray]:
+    """Safely apply function to expanding window with error handling."""
+    try:
+        if isinstance(x, pd.Series):
+            return x.expanding().apply(func, **kwargs)
+        else:
+            # Convert to pandas Series for expanding operations
+            series = pd.Series(x)
+            result = series.expanding().apply(func, **kwargs)
+            return result.values
+    except Exception:
+        return np.full_like(x, np.nan)
+
 def safe_std(x: Union[pd.Series, np.ndarray], **kwargs) -> Union[pd.Series, np.ndarray]:
     """Safely calculate standard deviation with error handling."""
     try:
@@ -2288,7 +2937,70 @@ __all__ = [
     'with_tracing_span',
     'safe_resample',
     'align_dataframes',
-    'safe_deepcopy'
+    'safe_deepcopy',
+    # New enhanced functions
+    'safe_median',
+    'safe_quantile',
+    'safe_skew',
+    'safe_kurtosis',
+    'safe_rolling_apply',
+    'safe_ewm_apply',
+    'safe_expanding_apply',
+    'safe_rank',
+    'safe_percentile_rank',
+    'safe_zscore',
+    'safe_minmax_scale',
+    'safe_robust_scale',
+    'safe_standardize',
+    'safe_winsorize',
+    'safe_outlier_detection',
+    'safe_fillna_forward',
+    'safe_fillna_backward',
+    'safe_interpolate',
+    'safe_dropna',
+    'safe_replace',
+    'safe_clip',
+    'safe_round',
+    'safe_abs',
+    'safe_sign',
+    'safe_where',
+    'safe_apply',
+    'safe_map',
+    'safe_value_counts',
+    'safe_unique',
+    'safe_nunique',
+    'safe_mode',
+    'safe_shift',
+    'safe_diff',
+    'safe_pct_change',
+    'safe_cumsum',
+    'safe_cumprod',
+    'safe_cummax',
+    'safe_cummin',
+    'safe_rolling_mean',
+    'safe_rolling_std',
+    'safe_rolling_min',
+    'safe_rolling_max',
+    'safe_rolling_median',
+    'safe_rolling_quantile',
+    'safe_rolling_skew',
+    'safe_rolling_kurtosis',
+    'safe_rolling_corr',
+    'safe_rolling_cov',
+    'safe_ewm_mean',
+    'safe_ewm_std',
+    'safe_ewm_var',
+    'safe_expanding_mean',
+    'safe_expanding_std',
+    'safe_expanding_min',
+    'safe_expanding_max',
+    'safe_expanding_sum',
+    'safe_expanding_count',
+    'safe_expanding_quantile',
+    'safe_expanding_skew',
+    'safe_expanding_kurtosis',
+    'safe_expanding_corr',
+    'safe_expanding_cov'
 ]
 
 def safe_resample(df: pd.DataFrame, freq: str, method: str = 'mean') -> pd.DataFrame:

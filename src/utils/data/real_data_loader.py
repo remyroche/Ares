@@ -15,6 +15,7 @@ from src.utils.logger import system_logger
 from src.training.steps.data_collection.unified_data_loader import UnifiedDataLoader
 from src.training.steps.data_collection.unified_data_downloader import UnifiedDataDownloader
 from src.utils.data.unified_data_utils import UnifiedDataUtils
+from src.utils.tprint import tprint_data_preview
 
 logger = logging.getLogger(__name__)
 
@@ -66,6 +67,7 @@ class RealDataLoader:
                 existing_data = await self._load_existing_data(symbol, exchange, timeframe, start_date, end_date)
                 if existing_data is not None and len(existing_data) > 0:
                     self.logger.info(f"✅ Loaded existing data: {len(existing_data)} rows")
+                    tprint_data_preview(existing_data, f"loaded_existing_data_{symbol}_{exchange}_{timeframe}")
                     return existing_data
 
             # If no existing data or force download, download new data
@@ -77,6 +79,7 @@ class RealDataLoader:
                 downloaded_data = await self._load_existing_data(symbol, exchange, timeframe, start_date, end_date)
                 if downloaded_data is not None and len(downloaded_data) > 0:
                     self.logger.info(f"✅ Successfully loaded downloaded data: {len(downloaded_data)} rows")
+                    tprint_data_preview(downloaded_data, f"downloaded_data_{symbol}_{exchange}_{timeframe}")
                     return downloaded_data
 
             # If all else fails, raise an error instead of using synthetic data
@@ -210,6 +213,7 @@ class RealDataLoader:
             )
 
             self.logger.info(f"✅ Data processing completed: {processing_report['steps_completed']}")
+            tprint_data_preview(processed_data, f"processed_data_{symbol}_{exchange}_{timeframe}")
             return processed_data
 
         except Exception as e:

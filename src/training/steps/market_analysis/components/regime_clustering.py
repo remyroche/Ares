@@ -890,7 +890,7 @@ class RegimeClusteringComponent(BaseStep):
                 return {}
 
     def _run_clustering_trial(self, features: np.ndarray, market_data: pd.DataFrame, 
-                            config: NASTASClusteringConfig) -> Dict[str, Any]:
+                            config: RegimeClusteringConfig) -> Dict[str, Any]:
         """Run a single clustering trial for optimization."""
         try:
             tprint(f"Running clustering trial with n_regimes={config.n_regimes}", "INFO")

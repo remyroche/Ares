@@ -74,6 +74,7 @@ from datetime import datetime
 import traceback
 
 from src.utils.artifact_manager import ArtifactManager
+from src.utils.hardware.unified_hardware_manager import WorkloadType
 # Enhanced hardware optimization imports
 try:
     from src.utils.hardware import (
@@ -180,7 +181,7 @@ class BaseStep(ABC):
         optimized_df = self.hardware_manager.optimize_dataframe(df)
         return self._save_enhanced_artifact(optimized_df, name, "data", metadata)
     
-    @smart_cache(ttl=1800, max_size=50)
+    @smart_cache(ttl=1800)
     def _load_dataframe(self, name: str) -> Any:
         """
         Convenience method to load a DataFrame with fallback support and memory optimization.
@@ -212,7 +213,7 @@ class BaseStep(ABC):
         """
         return self._save_enhanced_artifact(model, name, "model", metadata)
     
-    @smart_cache(ttl=1800, max_size=50)
+    @smart_cache(ttl=1800)
     def _load_model(self, name: str) -> Any:
         """
         Convenience method to load a model with fallback support.
@@ -680,7 +681,7 @@ class BaseStep(ABC):
             self.logger.warning(f"Failed to get hardware stats: {e}")
             return {}
     
-    def run(self, config: Dict[str, Any]) -> Dict[str, Any]:
+    async def run(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """
         Run the step with error handling and outcome generation with hardware optimization.
         
@@ -699,7 +700,7 @@ class BaseStep(ABC):
             self.logger.info(f"🚀 Starting execution of {self.step_name}")
             
             # Optimize hardware for step execution
-            self.hardware_manager.optimize_for_workload('data_processing')
+            self.hardware_manager.optimize_for_workload(WorkloadType.DATA_PROCESSING)
             
             # Set context from config if available
             symbol = config.get('symbol')
@@ -712,7 +713,7 @@ class BaseStep(ABC):
                 self._set_context(symbol, exchange, information, direction, model)
             
             # Execute the step
-            execution_result = self.execute(config)
+            execution_result = await self.execute(config)
             
             # Calculate execution time
             execution_time = (datetime.now() - start_time).total_seconds()

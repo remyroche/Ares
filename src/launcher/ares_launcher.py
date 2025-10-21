@@ -40,12 +40,7 @@ logger = logging.getLogger("ares.launcher")
 # Import step registry and base step
 from src.training.steps.base_step import step_registry, BaseStep
 
-# Import step packages to register them
-import src.training.steps.data_collection  # Registers DATA_COLLECTION steps
-import src.training.steps.market_analysis  # Registers MARKET_ANALYSIS steps
-import src.training.steps.pre_training  # Registers PRE_TRAINING steps
-import src.training.steps.model_training  # Registers MODEL_TRAINING steps
-import src.training.steps.backtesting  # Registers BACKTESTING steps
+# Step packages will be imported lazily to avoid circular imports
 
 
 class SimplifiedAresLauncher:
@@ -72,7 +67,7 @@ class SimplifiedAresLauncher:
         self.step_registry.register(step_name, step_class)
         self.logger.info(f"Registered step: {step_name}")
     
-    def run_step(self, step_name: str, config: Dict[str, Any]) -> Dict[str, Any]:
+    async def run_step(self, step_name: str, config: Dict[str, Any]) -> Dict[str, Any]:
         """
         Run a single autonomous step.
         
@@ -89,11 +84,11 @@ class SimplifiedAresLauncher:
             # Get step class from registry
             step_class = self.step_registry.get_step(step_name)
             
-            # Create step instance
-            step_instance = step_class(step_name)
+            # Create step instance with config
+            step_instance = step_class(step_name, config)
             
             # Run the step
-            result = step_instance.run(config)
+            result = await step_instance.run(config)
             
             # Log completion
             if result.get('success', False):
@@ -122,7 +117,7 @@ class SimplifiedAresLauncher:
                 'metrics': {}
             }
     
-    def run_steps(self, step_names: List[str], config: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    async def run_steps(self, step_names: List[str], config: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
         """
         Run multiple steps sequentially.
         
@@ -138,7 +133,7 @@ class SimplifiedAresLauncher:
         for step_name in step_names:
             self.logger.info(f"Running step {step_names.index(step_name) + 1}/{len(step_names)}: {step_name}")
             
-            result = self.run_step(step_name, config)
+            result = await self.run_step(step_name, config)
             results[step_name] = result
             
             # Stop on first failure unless configured otherwise
@@ -257,6 +252,8 @@ Examples:
     step_group.add_argument('--stage', type=str, help='Run entire stage')
     step_group.add_argument('--mode', type=str, help='Legacy mode (sequential, etc.)')
     step_group.add_argument('--sub_pipeline', type=str, help='Legacy sub-pipeline execution')
+    step_group.add_argument('--list-steps', action='store_true', help='List all registered steps')
+    step_group.add_argument('--list-stages', action='store_true', help='List all available stages')
     
     # Model training options (maintain compatibility)
     training_group = parser.add_mutually_exclusive_group()
@@ -271,7 +268,7 @@ Examples:
     regime_group.add_argument('--legacy-nas-tas', action='store_true', help='Run legacy NAS/TAS regime discovery (deprecated)')
     
     # Common parameters
-    parser.add_argument('--symbol', type=str, required=True, help='Trading symbol (e.g., ETHUSDT)')
+    parser.add_argument('--symbol', type=str, help='Trading symbol (e.g., ETHUSDT)')
     parser.add_argument('--exchange', type=str, default='binance', help='Exchange name')
     parser.add_argument('--timeframe', type=str, default='15m', help='Timeframe for training')
     parser.add_argument('--direction', type=str, choices=['longs', 'shorts', 'both'], default='longs', help='Trading direction')
@@ -282,16 +279,51 @@ Examples:
     parser.add_argument('--stop-at-step', type=int, help='Legacy: stop at specific step number')
     
     # Utility options
-    parser.add_argument('--list-steps', action='store_true', help='List all registered steps')
-    parser.add_argument('--list-stages', action='store_true', help='List all available stages')
     parser.add_argument('--verbose', '-v', action='store_true', help='Enable verbose logging')
     
     return parser
 
 
+def load_step_modules():
+    """Lazily load step modules to avoid circular imports."""
+    loaded_modules = []
+    failed_modules = []
+    
+    # List of modules to load in order of dependency
+    modules_to_load = [
+        ("data_collection", "src.training.steps.data_collection"),
+        ("pre_training", "src.training.steps.pre_training"),
+        ("market_analysis", "src.training.steps.market_analysis"),
+        ("model_training", "src.training.steps.model_training"),
+        ("backtesting", "src.training.steps.backtesting"),
+    ]
+    
+    for module_name, module_path in modules_to_load:
+        try:
+            __import__(module_path)
+            loaded_modules.append(module_name)
+            print(f"✅ Loaded {module_name}")
+        except ImportError as e:
+            failed_modules.append((module_name, str(e)))
+            print(f"⚠️ Failed to load {module_name}: {e}")
+        except Exception as e:
+            failed_modules.append((module_name, str(e)))
+            print(f"❌ Error loading {module_name}: {e}")
+    
+    if loaded_modules:
+        print(f"✅ Successfully loaded {len(loaded_modules)} step modules: {', '.join(loaded_modules)}")
+        return True
+    else:
+        print("❌ No step modules could be loaded")
+        return False
+
 def main():
     """Main entry point."""
     logger.info("🎯 Starting Simplified Ares Launcher...")
+    
+    # Load step modules lazily
+    if not load_step_modules():
+        return 1
     
     # Create CLI parser
     parser = create_cli_parser()
@@ -319,6 +351,10 @@ def main():
             print(f"  - {stage}")
         return
     
+    # Validate required arguments for execution commands
+    if not args.symbol:
+        parser.error("--symbol is required for step execution")
+    
     # Build configuration
     config = {
         'symbol': args.symbol,
@@ -333,14 +369,14 @@ def main():
         if args.step:
             # Single step execution
             logger.info(f"Running single step: {args.step}")
-            result = launcher.run_step(args.step, config)
+            result = asyncio.run(launcher.run_step(args.step, config))
             print(f"Step '{args.step}' completed: {'✅ Success' if result.get('success') else '❌ Failed'}")
             
         elif args.steps:
             # Multiple steps execution
             step_names = [s.strip() for s in args.steps.split(',')]
             logger.info(f"Running multiple steps: {step_names}")
-            results = launcher.run_steps(step_names, config)
+            results = asyncio.run(launcher.run_steps(step_names, config))
             
             # Print summary
             successful = sum(1 for r in results.values() if r.get('success', False))
@@ -360,7 +396,7 @@ def main():
         elif args.mode == 'sequential' and args.sub_pipeline:
             # Legacy sequential sub-pipeline execution
             logger.info(f"Running legacy sub-pipeline: {args.sub_pipeline}")
-            result = launcher.run_step(args.sub_pipeline, config)
+            result = asyncio.run(launcher.run_step(args.sub_pipeline, config))
             print(f"Sub-pipeline '{args.sub_pipeline}' completed: {'✅ Success' if result.get('success') else '❌ Failed'}")
             
         elif any([args.train_analyst_base, args.train_analyst_ensemble, args.train_tactician_base, args.train_tactician_ensemble]):
@@ -375,20 +411,20 @@ def main():
                 step_name = 'tactician_ensemble_training'
             
             logger.info(f"Running model training: {step_name}")
-            result = launcher.run_step(step_name, config)
+            result = asyncio.run(launcher.run_step(step_name, config))
             print(f"Model training '{step_name}' completed: {'✅ Success' if result.get('success') else '❌ Failed'}")
             
         elif args.hdbscan_regime_discovery:
             # HDBSCAN regime discovery execution
             logger.info("Running HDBSCAN regime discovery (replaces NAS/TAS)")
-            result = launcher.run_step('hdbscan_regime_discovery', config)
+            result = asyncio.run(launcher.run_step('hdbscan_regime_discovery', config))
             print(f"HDBSCAN regime discovery completed: {'✅ Success' if result.get('success') else '❌ Failed'}")
             
         elif args.legacy_nas_tas:
             # Legacy NAS/TAS regime discovery execution (deprecated)
             logger.warning("Running legacy NAS/TAS regime discovery (deprecated - use --hdbscan-regime-discovery instead)")
             # For now, redirect to HDBSCAN until legacy is fully removed
-            result = launcher.run_step('hdbscan_regime_discovery', config)
+            result = asyncio.run(launcher.run_step('hdbscan_regime_discovery', config))
             print(f"Legacy NAS/TAS regime discovery (redirected to HDBSCAN) completed: {'✅ Success' if result.get('success') else '❌ Failed'}")
             
         else:

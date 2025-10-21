@@ -56,7 +56,16 @@ except ImportError:
     def get_integrated_hardware_manager(): return None
     def memory_optimized(*args, **kwargs): return lambda f: f
     def performance_tracked(*args, **kwargs): return lambda f: f
-    def force_cleanup(): pass
+    def force_cleanup():
+        """Force garbage collection and memory cleanup."""
+        import gc
+        gc.collect()
+        try:
+            # Try to import and use hardware-specific cleanup if available
+            from src.utils.hardware import force_cleanup as hw_force_cleanup
+            hw_force_cleanup()
+        except ImportError:
+            pass
     def get_memory_stats(): return {}
     def optimize_dataframe(df): return df
     def optimize_array(arr): return arr
@@ -842,4 +851,22 @@ class ArtifactManager:
         except Exception as e:
             self.logger.warning(f"Failed to profile memory usage for {artifact_id}: {e}")
             return 0.0
+
+
+def get_analyst_context(config: Dict[str, Any]) -> Dict[str, Any]:
+    """Get analyst context from configuration."""
+    return {
+        'symbol': config.get('symbol', 'UNKNOWN'),
+        'timeframe': config.get('timeframe', '15m'),
+        'exchange': config.get('exchange', 'binance'),
+        'execution_mode': config.get('execution_mode', 'light')
+    }
+
+def setup_enhanced_artifact_manager(config: Dict[str, Any]) -> 'ArtifactManager':
+    """Setup enhanced artifact manager with configuration."""
+    return ArtifactManager(config)
+
+def get_pretraining_artifact_manager(config: Dict[str, Any]) -> 'ArtifactManager':
+    """Get pre-training artifact manager with configuration."""
+    return ArtifactManager(config)
 

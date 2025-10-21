@@ -67,7 +67,16 @@ except ImportError:
         if func is None:
             return decorator
         return decorator(func)
-    def force_cleanup(): pass
+    def force_cleanup():
+        """Force garbage collection and memory cleanup."""
+        import gc
+        gc.collect()
+        try:
+            # Try to import and use hardware-specific cleanup if available
+            from src.utils.hardware import force_cleanup as hw_force_cleanup
+            hw_force_cleanup()
+        except ImportError:
+            pass
     def get_memory_stats(): return {}
 
 # Try to import colorama for colored output

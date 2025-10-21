@@ -485,7 +485,7 @@ class UnifiedHardwareManager:
         )
         self.cache_system = get_global_cache(cache_config)
         
-        tprint_info(f"Dynamic cache allocation: {cache_memory_mb:.0f}MB ({total_memory_gb:.1f}GB total system memory)")
+        print(f"[INFO] Dynamic cache allocation: {cache_memory_mb:.0f}MB ({total_memory_gb:.1f}GB total system memory)")
 
         # Initialize hardware components
         self.cpu_optimizer = M1CPUOptimizer()

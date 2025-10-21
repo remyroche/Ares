@@ -347,6 +347,7 @@ class FeatureGenerationFinalValidationStep(BaseStep):
         
         if cached_dataset is not None:
             tprint_success("📦 Retrieved final dataset from artifact manager - using cached result")
+            tprint_data_preview(cached_dataset, "cached_dataset_retrieved", level="INFO")
             self.logger.info("📦 Retrieved final dataset from artifact manager")
             return FinalValidationResult(
                 success=True,
@@ -372,6 +373,7 @@ class FeatureGenerationFinalValidationStep(BaseStep):
                 'selected_feature_dataframe_60'  # Use the 60-feature set as primary
             )
             if final_features is not None and not final_features.empty:
+                tprint_data_preview(final_features, "final_features_loaded", level="INFO")
                 tprint_success(f"✅ Loaded final features: {final_features.shape}")
             else:
                 tprint_warning("⚠️ No final features found, trying alternative names")
@@ -382,6 +384,7 @@ class FeatureGenerationFinalValidationStep(BaseStep):
                         alt_name
                     )
                     if final_features is not None and not final_features.empty:
+                        tprint_data_preview(final_features, f"final_features_loaded_from_{alt_name}", level="INFO")
                         tprint_success(f"✅ Loaded final features from {alt_name}: {final_features.shape}")
                         break
         except Exception as e:
@@ -407,6 +410,7 @@ class FeatureGenerationFinalValidationStep(BaseStep):
                         alt_name
                     )
                     if targets is not None and not targets.empty:
+                        tprint_data_preview(targets, f"targets_loaded_from_{alt_name}", level="INFO")
                         tprint_success(f"✅ Loaded targets from {alt_name}: {len(targets)} samples")
                         break
         except Exception as e:
@@ -415,12 +419,14 @@ class FeatureGenerationFinalValidationStep(BaseStep):
         # Use loaded artifacts if available
         if final_features is not None:
             data = final_features
+            tprint_data_preview(data, "data_from_final_features", level="INFO")
             tprint_info(f"📊 Using final features for validation: {data.shape}")
         
         if targets is not None:
             # Align data and targets
             aligned_data = data.join(targets.rename('target'), how='inner').dropna()
             if not aligned_data.empty:
+                tprint_data_preview(aligned_data, "aligned_data_with_targets", level="INFO")
                 data = aligned_data
                 tprint_success(f"✅ Aligned data with targets: {data.shape}")
             else:
@@ -431,17 +437,32 @@ class FeatureGenerationFinalValidationStep(BaseStep):
             tprint_info("🔍 Auto-loading data for final validation")
             # Try to load from various sources using BaseStep methods
             data = self._load_dataframe('vectorized_features')
+            if data is not None and not data.empty:
+                tprint_data_preview(data, "loaded_vectorized_features", level="DEBUG")
             if data is None or (hasattr(data, 'empty') and data.empty):
                 data = self._load_dataframe('optimized_feature_dataframe')
+                if data is not None and not data.empty:
+                    tprint_data_preview(data, "loaded_optimized_feature_dataframe", level="DEBUG")
             if data is None or (hasattr(data, 'empty') and data.empty):
                 data = self._load_dataframe('interaction_features')
+                if data is not None and not data.empty:
+                    tprint_data_preview(data, "loaded_interaction_features", level="DEBUG")
             if data is None or (hasattr(data, 'empty') and data.empty):
                 data = self._load_dataframe('selected_features')
+                if data is not None and not data.empty:
+                    tprint_data_preview(data, "loaded_selected_features", level="DEBUG")
             if data is None or (hasattr(data, 'empty') and data.empty):
                 data = self._load_dataframe('generated_features')
+                if data is not None and not data.empty:
+                    tprint_data_preview(data, "loaded_generated_features", level="DEBUG")
+            
+            # Preview the final loaded data
+            if data is not None and not data.empty:
+                tprint_data_preview(data, "final_loaded_data", level="INFO")
 
         if data is None or (hasattr(data, 'empty') and data.empty):
             tprint_error("❌ Input data is None or empty - validation failed")
+            tprint_data_preview(data, "empty_data_error", level="ERROR")
             return {
                 'success': False,
                 'artifacts': [],
@@ -456,6 +477,7 @@ class FeatureGenerationFinalValidationStep(BaseStep):
 
         # Perform basic validation
         tprint_info("🔧 Performing basic validation")
+        tprint_data_preview(data, "data_before_validation", level="DEBUG")
         
         # Basic validation checks
         basic_checks = {
@@ -471,6 +493,7 @@ class FeatureGenerationFinalValidationStep(BaseStep):
         quality_level = "excellent" if validation_score >= 90 else "good" if validation_score >= 70 else "poor"
         
         tprint_info(f"✅ Validation completed - Success: {success}, Score: {validation_score:.2f}")
+        tprint_data_preview(data, "final_data_state", level="DEBUG")
         
         # Prepare result for BaseStep
         base_result = {
@@ -492,6 +515,7 @@ class FeatureGenerationFinalValidationStep(BaseStep):
         # Store artifacts using BaseStep methods
         if success:
             tprint_debug("💾 Storing successful validation artifacts")
+            tprint_data_preview(data, "final_dataset_before_saving", level="DEBUG")
             self._save_dataframe(data, 'final_dataset')
             self._save_metadata(basic_checks, 'final_validation_metrics')
             tprint_success("✅ Final validation artifacts stored")

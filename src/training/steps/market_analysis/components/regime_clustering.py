@@ -35,6 +35,8 @@ from src.utils.tprint import (
     tprint_performance,
     tprint_timer,
     tprint_structured,
+    tprint_data_preview,
+    LogLevel,
 )
 
 from ..shared_utils import (
@@ -589,6 +591,8 @@ class RegimeClusteringComponent(BaseStep):
                 data = self._load_dataframe(name)
                 if data is not None and not data.empty:
                     tprint(f"Loaded market data from artifact: {name}", "INFO")
+                    # Add data preview logging for troubleshooting
+                    tprint_data_preview(data, f"market_data_from_artifact_{name}", max_rows=5, max_cols=10, level=LogLevel.DEBUG)
                     return data
             
             tprint("No market data found in artifacts", "WARNING")
@@ -1959,6 +1963,10 @@ class RegimeClusteringComponent(BaseStep):
         self.stage1_metadata = copy.deepcopy(result.metadata or {})
         self.features = result.features_array
 
+        # Add data preview logging for troubleshooting
+        tprint_data_preview(result.features_array, "prepared_features_array", max_rows=5, max_cols=10, level=LogLevel.DEBUG)
+        tprint_data_preview(result.features_df, "prepared_features_dataframe", max_rows=5, max_cols=10, level=LogLevel.DEBUG)
+
         tprint(f"Features prepared: {result.features_array.shape}", "SUCCESS")
         return result
 
@@ -2364,6 +2372,8 @@ class RegimeClusteringComponent(BaseStep):
                 }
                 
                 tprint(f"✅ REGIME FEATURES: Using all {n_features} regime features", "SUCCESS")
+                # Add data preview logging for troubleshooting
+                tprint_data_preview(selected_features, "selected_regime_features", max_rows=5, max_cols=10, level=LogLevel.DEBUG)
                 return selected_features, selected_feature_names, metadata
             
         except Exception as e:
@@ -2413,6 +2423,8 @@ class RegimeClusteringComponent(BaseStep):
             
             tprint(f"✅ Variance-based selection: {features.shape[1]} → {len(top_indices)} features", "SUCCESS")
             tprint(f"🎯 FINAL RESULT: Feature selection completed - {features.shape[1]} → {len(top_indices)} features (target: {target_n_features})", color="green", bold=True)
+            # Add data preview logging for troubleshooting
+            tprint_data_preview(selected_features, "selected_variance_features", max_rows=5, max_cols=10, level=LogLevel.DEBUG)
             return selected_features, selected_feature_names, metadata
             
         except Exception as e:
@@ -3232,9 +3244,19 @@ class RegimeClusteringComponent(BaseStep):
         try:
             tprint("Performing advanced clustering optimization...", "INFO")
             
+            # Add data preview logging before clustering
+            tprint_data_preview(features, "clustering_input_features", max_rows=5, max_cols=10, level=LogLevel.DEBUG)
+            tprint_data_preview(market_data, "clustering_input_market_data", max_rows=5, max_cols=10, level=LogLevel.DEBUG)
+            
             # Use advanced clustering with progressive regime optimization
             clustering_result = await self._perform_advanced_clustering(features, market_data)
             tprint("Advanced clustering optimization completed", "SUCCESS")
+
+            # Add data preview logging after clustering
+            if 'cluster_assignments' in clustering_result:
+                tprint_data_preview(clustering_result['cluster_assignments'], "clustering_output_assignments", max_rows=10, level=LogLevel.DEBUG)
+            if 'metrics' in clustering_result:
+                tprint_data_preview(clustering_result['metrics'], "clustering_output_metrics", level=LogLevel.DEBUG)
 
             tprint(f"Clustering completed: {clustering_result['n_clusters']} clusters", "SUCCESS")
             return clustering_result

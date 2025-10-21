@@ -13,7 +13,8 @@ import time
 import asyncio
 
 from src.utils.tprint import (
-    tprint, tprint_info, tprint_success, tprint_warning, tprint_error
+    tprint, tprint_info, tprint_success, tprint_warning, tprint_error,
+    tprint_data_preview, LogLevel
 )
 
 from .shared_utils import get_logger
@@ -105,6 +106,10 @@ class ClusteringService:
             start_time = time.time()
             tprint("🚀 Starting Clustering Service", "INFO")
 
+            # Add data preview logging for troubleshooting
+            tprint_data_preview(features, "clustering_service_input_features", max_rows=5, max_cols=10, level=LogLevel.DEBUG)
+            tprint_data_preview(market_data, "clustering_service_input_market_data", max_rows=5, max_cols=10, level=LogLevel.DEBUG)
+
             # Create clustering context
             context = ClusteringContext(
                 original_features=features,
@@ -174,6 +179,10 @@ class ClusteringService:
                 execution_time=total_time,
                 convergence_status=convergence_status
             )
+
+            # Add data preview logging for final result
+            tprint_data_preview(result.cluster_assignments, "clustering_service_final_assignments", max_rows=10, level=LogLevel.DEBUG)
+            tprint_data_preview(result.metrics, "clustering_service_final_metrics", level=LogLevel.DEBUG)
 
             tprint(f"🎉 Clustering completed in {total_time:.2f}s with {optimal_k} clusters", "SUCCESS")
             return result

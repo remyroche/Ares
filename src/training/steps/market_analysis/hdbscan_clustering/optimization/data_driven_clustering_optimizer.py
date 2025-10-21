@@ -19,7 +19,7 @@ from pathlib import Path
 from src.utils.tprint import (
     tprint, tprint_info, tprint_success, tprint_warning, tprint_error, 
     tprint_debug, tprint_performance, tprint_progress, tprint_timer,
-    tprint_logged, LogLevel
+    tprint_logged, tprint_data_format, LogLevel
 )
 
 # Import individual optimizers
@@ -125,6 +125,11 @@ class DataDrivenClusteringOptimizer:
         try:
             tprint_info("🚀 Starting comprehensive data-driven clustering optimization...")
             tprint_debug(f"Input shapes: market_data={market_data.shape}, features={features.shape}")
+            
+            # Data format validation for optimization inputs
+            tprint_data_format(market_data, "optimization_market_data", LogLevel.DEBUG)
+            tprint_data_format(features, "optimization_features", LogLevel.DEBUG)
+            tprint_data_format(feature_names, "optimization_feature_names", LogLevel.DEBUG)
             
             self.start_time = time.time()
             

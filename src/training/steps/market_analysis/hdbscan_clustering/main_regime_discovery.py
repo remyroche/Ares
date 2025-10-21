@@ -24,7 +24,7 @@ import psutil
 from src.utils.tprint import (
     tprint, tprint_info, tprint_success, tprint_warning, tprint_error,
     tprint_debug, tprint_performance, tprint_progress, tprint_timer,
-    tprint_logged, LogLevel
+    tprint_logged, tprint_data_format, LogLevel
 )
 from src.utils.common_operations import safe_dataframe_operation
 from src.utils.common_utilities import safe_dataframe_operation as safe_df_op
@@ -458,11 +458,17 @@ class HDBSCANRegimeDiscovery:
             tprint_info(f"🔍 Starting regime discovery: fit={fit}, live={is_live}")
             tprint_debug(f"Data shape: {data.shape}, Memory usage: {initial_memory:.2f}MB")
             
+            # Data format validation for troubleshooting
+            tprint_data_format(data, "input_market_data", LogLevel.DEBUG)
+            
             # Enhanced memory optimization using hardware tools
             with self.hardware_manager.optimization_context(WorkloadType.ML_TRAINING, OptimizationLevel.AGGRESSIVE):
                 data = optimize_dataframe_default(data)
                 optimized_memory = get_memory_usage()
                 tprint_debug(f"Memory after enhanced optimization: {optimized_memory:.2f}MB (saved {initial_memory - optimized_memory:.2f}MB)")
+                
+                # Data format validation after optimization
+                tprint_data_format(data, "optimized_market_data", LogLevel.DEBUG)
             
             # Use optimized implementation if enabled
             if self.use_optimized:
@@ -642,6 +648,9 @@ class HDBSCANRegimeDiscovery:
             if self.last_result is None:
                 raise ValueError("No fitted models available. Call discover_regimes with fit=True first.")
             
+            # Data format validation for prediction input
+            tprint_data_format(data, "prediction_input_data", LogLevel.DEBUG)
+            
             # Use hardware optimization context for prediction
             with self.hardware_manager.optimization_context(WorkloadType.ML_TRAINING, OptimizationLevel.BALANCED):
                 # Extract features
@@ -649,10 +658,16 @@ class HDBSCANRegimeDiscovery:
                 if not feature_result.success:
                     raise ValueError(f"Feature extraction failed: {feature_result.error_message}")
                 
+                # Data format validation for extracted features
+                tprint_data_format(feature_result.features_df, "extracted_features", LogLevel.DEBUG)
+                
                 # Preprocess features
                 processed_result = self.feature_processor.process(feature_result.features_df, fit=False)
                 if not processed_result.success:
                     raise ValueError(f"Preprocessing failed: {processed_result.error_message}")
+                
+                # Data format validation for processed features
+                tprint_data_format(processed_result.features_df, "processed_features", LogLevel.DEBUG)
                 
                 # Reduce dimensionality
                 reduced_features, _ = self.dimensionality_reducer.reduce(

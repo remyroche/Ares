@@ -19,7 +19,7 @@ import warnings
 from src.utils.tprint import (
     tprint, tprint_info, tprint_success, tprint_warning, tprint_error, 
     tprint_debug, tprint_performance, tprint_progress, tprint_timer,
-    tprint_logged, LogLevel
+    tprint_logged, tprint_data_format, LogLevel
 )
 
 logger = logging.getLogger(__name__)
@@ -106,10 +106,15 @@ class AdvancedFinancialFeatureEngineer:
             tprint_info("🔧 Starting advanced financial feature engineering...")
             tprint_debug(f"Market data shape: {market_data.shape}")
             
+            # Data format validation for input market data
+            tprint_data_format(market_data, "input_market_data", LogLevel.DEBUG)
+            
             # Validate input data
             with tprint_timer("Market data validation"):
                 market_data = self._validate_market_data(market_data)
                 tprint_debug(f"Validated market data shape: {market_data.shape}")
+                # Data format validation after validation
+                tprint_data_format(market_data, "validated_market_data", LogLevel.DEBUG)
             
             # Initialize feature storage
             features = []
@@ -128,6 +133,8 @@ class AdvancedFinancialFeatureEngineer:
             with tprint_timer("Base returns calculation"):
                 returns = self._calculate_returns(market_data)
                 tprint_debug(f"Calculated returns: {len(returns)} samples")
+                # Data format validation for calculated returns
+                tprint_data_format(returns, "calculated_returns", LogLevel.DEBUG)
             
             # 1. Risk and Distributional Features
             if (self.config.enable_skewness_features or 
@@ -196,10 +203,16 @@ class AdvancedFinancialFeatureEngineer:
             with tprint_timer("Feature array conversion"):
                 features_array = np.column_stack(features) if features else np.array([]).reshape(len(market_data), 0)
                 tprint_debug(f"Features array shape: {features_array.shape}")
+                # Data format validation for final features array
+                tprint_data_format(features_array, "final_features_array", LogLevel.DEBUG)
             
             # Store feature information
             self.feature_names = feature_names
             self.feature_categories = feature_categories
+            
+            # Data format validation for feature metadata
+            tprint_data_format(feature_names, "feature_names", LogLevel.DEBUG)
+            tprint_data_format(feature_categories, "feature_categories", LogLevel.DEBUG)
             
             tprint_success(f"✅ Advanced feature engineering completed: {features_array.shape[1]} features")
             tprint_info(f"📊 Feature categories: {list(feature_categories.keys())}")

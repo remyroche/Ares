@@ -9,6 +9,13 @@ from .base_training_config import (
     HMMTrainingConfig
 )
 
+# Import PerRegimeTrainingConfig from common config
+try:
+    from src.common.config import PerRegimeTrainingConfig
+except ImportError:
+    # Fallback: create a simple alias if common config is not available
+    PerRegimeTrainingConfig = BaseTrainingConfig
+
 # Re-export unified loader helpers for convenience
 try:
     from src.common.config import (
@@ -25,6 +32,7 @@ __all__ = [
     'EnsembleTrainingConfig',
     'TacticianTrainingConfig',
     'HMMTrainingConfig',
+    'PerRegimeTrainingConfig',
     'save_config_to_file',
     'load_config_from_file'
 ]

@@ -2,7 +2,7 @@
 Training module for ML common utilities with universal validation integration.
 """
 
-from .base_training_step import BaseTrainingStep
+from .base_training_step import BaseTrainingStep, PerRegimeTrainingStep
 from .ensemble_training_step import EnsembleTrainingStep
 from .training_utils import TrainingUtils
 
@@ -18,6 +18,7 @@ from .universal_validation_integration import (
 
 __all__ = [
     'BaseTrainingStep',
+    'PerRegimeTrainingStep',
     'EnsembleTrainingStep',
     'TrainingUtils',
 

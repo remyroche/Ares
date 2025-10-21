@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from enum import Enum
 
 from src.utils.logger import system_logger
+from src.utils.tprint import tprint_data_format, LogLevel
 from src.interfaces.base_interfaces import MarketData
 
 from .base_exchange import BaseExchange
@@ -223,7 +224,16 @@ class ExchangeDispatcher:
             return []
             
         if hasattr(self.exchange, 'get_ohlcv'):
-            return await self.exchange.get_ohlcv(symbol, timeframe, limit)
+            ohlcv_data = await self.exchange.get_ohlcv(symbol, timeframe, limit)
+            
+            # Log OHLCV data format for debugging
+            tprint_data_format(
+                ohlcv_data, 
+                f"dispatcher_ohlcv_{self.config.exchange_type.value}_{symbol}_{timeframe}", 
+                level=LogLevel.DEBUG
+            )
+            
+            return ohlcv_data
         
         return []
     
@@ -233,7 +243,16 @@ class ExchangeDispatcher:
             return None
             
         if hasattr(self.exchange, 'get_ticker'):
-            return await self.exchange.get_ticker(symbol)
+            ticker_data = await self.exchange.get_ticker(symbol)
+            
+            # Log ticker data format for debugging
+            tprint_data_format(
+                ticker_data, 
+                f"dispatcher_ticker_{self.config.exchange_type.value}_{symbol}", 
+                level=LogLevel.DEBUG
+            )
+            
+            return ticker_data
         
         return None
     
@@ -243,7 +262,16 @@ class ExchangeDispatcher:
             return None
             
         if hasattr(self.exchange, 'get_order_book'):
-            return await self.exchange.get_order_book(symbol, limit)
+            orderbook_data = await self.exchange.get_order_book(symbol, limit)
+            
+            # Log order book data format for debugging
+            tprint_data_format(
+                orderbook_data, 
+                f"dispatcher_orderbook_{self.config.exchange_type.value}_{symbol}", 
+                level=LogLevel.DEBUG
+            )
+            
+            return orderbook_data
         
         return None
     

@@ -34,6 +34,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from src.utils.data import DataQualityFramework, DataProcessor
 from src.utils.logger import system_logger
+from src.utils.tprint import tprint_data_format, LogLevel
 
 logger = logging.getLogger(__name__)
 
@@ -148,6 +149,13 @@ class AdvancedDataValidator:
         try:
             self.logger.info(f"Starting validation for {exchange.value} data: {len(data)} records")
             
+            # Log input data format for debugging
+            tprint_data_format(
+                data, 
+                f"validation_input_{exchange.value}_{context}", 
+                level=LogLevel.DEBUG
+            )
+            
             # Initialize validation result
             result = ValidationResult(is_valid=True, quality_score=100.0)
             
@@ -184,6 +192,13 @@ class AdvancedDataValidator:
             
             # Calculate processing time
             result.processing_time = (datetime.now() - start_time).total_seconds()
+            
+            # Log validation result for debugging
+            tprint_data_format(
+                result, 
+                f"validation_result_{exchange.value}_{context}", 
+                level=LogLevel.INFO
+            )
             
             self.logger.info(f"Validation completed: {result.quality_score:.2f} quality score, {len(result.anomalies)} anomalies")
             
@@ -568,6 +583,18 @@ class AdvancedDataValidator:
             'recommendations': []
         }
         
+        # Log input data for comparison debugging
+        tprint_data_format(
+            data1, 
+            f"comparison_data1_{exchange1.value}", 
+            level=LogLevel.DEBUG
+        )
+        tprint_data_format(
+            data2, 
+            f"comparison_data2_{exchange2.value}", 
+            level=LogLevel.DEBUG
+        )
+        
         try:
             # Basic comparison
             if len(data1) != len(data2):
@@ -612,6 +639,13 @@ class AdvancedDataValidator:
             
         except Exception as e:
             comparison_result['error'] = str(e)
+        
+        # Log comparison result for debugging
+        tprint_data_format(
+            comparison_result, 
+            f"comparison_result_{exchange1.value}_vs_{exchange2.value}", 
+            level=LogLevel.INFO
+        )
         
         return comparison_result
 

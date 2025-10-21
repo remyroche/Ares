@@ -39,6 +39,7 @@ from src.utils.data import (
     check_dataframe_health, regularize_timestamps
 )
 from src.utils.logger import system_logger
+from src.utils.tprint import tprint_data_format, LogLevel
 
 logger = logging.getLogger(__name__)
 
@@ -156,6 +157,13 @@ class UnifiedExchangeAdapter:
                 self.logger.warning(f"No data returned for {symbol} {interval}")
                 return pd.DataFrame()
             
+            # Log raw data format for debugging
+            tprint_data_format(
+                raw_data, 
+                f"raw_klines_{self.exchange_type.value}_{symbol}_{interval}", 
+                level=LogLevel.DEBUG
+            )
+            
             # Standardize data using unified standardizer
             standardized_df = self.standardizer.standardize_to_dataframe(
                 raw_data, self.exchange_type, symbol, interval
@@ -166,6 +174,13 @@ class UnifiedExchangeAdapter:
             
             # Validate data quality
             self._validate_data_quality(standardized_df, f"{self.exchange_type.value} klines")
+            
+            # Log final standardized data format for debugging
+            tprint_data_format(
+                standardized_df, 
+                f"final_klines_{self.exchange_type.value}_{symbol}_{interval}", 
+                level=LogLevel.DEBUG
+            )
             
             self.logger.info(f"✅ Retrieved {len(standardized_df)} klines for {symbol} {interval}")
             return standardized_df
@@ -180,8 +195,22 @@ class UnifiedExchangeAdapter:
             # Get raw ticker data
             raw_ticker = await self._get_raw_ticker(symbol)
             
+            # Log raw ticker data for debugging
+            tprint_data_format(
+                raw_ticker, 
+                f"raw_ticker_{self.exchange_type.value}_{symbol}", 
+                level=LogLevel.DEBUG
+            )
+            
             # Standardize ticker format
             standardized_ticker = self._standardize_ticker(raw_ticker, symbol)
+            
+            # Log standardized ticker data for debugging
+            tprint_data_format(
+                standardized_ticker, 
+                f"standardized_ticker_{self.exchange_type.value}_{symbol}", 
+                level=LogLevel.DEBUG
+            )
             
             return standardized_ticker
             
@@ -195,8 +224,22 @@ class UnifiedExchangeAdapter:
             # Get raw order book data
             raw_orderbook = await self._get_raw_orderbook(symbol, limit)
             
+            # Log raw order book data for debugging
+            tprint_data_format(
+                raw_orderbook, 
+                f"raw_orderbook_{self.exchange_type.value}_{symbol}", 
+                level=LogLevel.DEBUG
+            )
+            
             # Standardize order book format
             standardized_orderbook = self._standardize_orderbook(raw_orderbook, symbol)
+            
+            # Log standardized order book data for debugging
+            tprint_data_format(
+                standardized_orderbook, 
+                f"standardized_orderbook_{self.exchange_type.value}_{symbol}", 
+                level=LogLevel.DEBUG
+            )
             
             return standardized_orderbook
             

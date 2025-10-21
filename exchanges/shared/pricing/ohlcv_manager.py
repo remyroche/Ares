@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from enum import Enum
 
 from src.utils.logger import system_logger
+from src.utils.tprint import tprint_data_format, LogLevel
 
 # Import the enhanced OHLCV manager
 from .enhanced_ohlcv_manager import (
@@ -131,7 +132,16 @@ class OHLCVManager:
         )
         
         # Convert back to legacy format for backward compatibility
-        return [self._convert_to_legacy_ohlcv(data) for data in enhanced_data]
+        legacy_data = [self._convert_to_legacy_ohlcv(data) for data in enhanced_data]
+        
+        # Log OHLCV data format for debugging
+        tprint_data_format(
+            legacy_data, 
+            f"ohlcv_{self.exchange_name}_{symbol}_{timeframe.value}", 
+            level=LogLevel.DEBUG
+        )
+        
+        return legacy_data
     
     def _convert_timeframe(self, timeframe: Timeframe) -> EnhancedTimeframe:
         """Convert legacy timeframe to enhanced timeframe."""
@@ -185,7 +195,16 @@ class OHLCVManager:
         )
         
         # Convert back to legacy format for backward compatibility
-        return [self._convert_to_legacy_ohlcv(data) for data in enhanced_data]
+        legacy_data = [self._convert_to_legacy_ohlcv(data) for data in enhanced_data]
+        
+        # Log historical OHLCV data format for debugging
+        tprint_data_format(
+            legacy_data, 
+            f"historical_ohlcv_{self.exchange_name}_{symbol}_{timeframe.value}", 
+            level=LogLevel.DEBUG
+        )
+        
+        return legacy_data
     
     def get_cache_statistics(self) -> Dict[str, Any]:
         """Get OHLCV cache statistics."""

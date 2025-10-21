@@ -70,7 +70,8 @@ except ImportError:
 # Import tprint utilities
 try:
     from src.utils.tprint import (
-        tprint, tprint_info, tprint_success, tprint_warning, tprint_error, tprint_debug
+        tprint, tprint_info, tprint_success, tprint_warning, tprint_error, tprint_debug,
+        tprint_data_preview
     )
 except ImportError:
     def tprint(*args, **kwargs): print(*args, **kwargs)
@@ -79,6 +80,7 @@ except ImportError:
     def tprint_warning(*args, **kwargs): print("WARNING:", *args, **kwargs)
     def tprint_error(*args, **kwargs): print("ERROR:", *args, **kwargs)
     def tprint_debug(*args, **kwargs): print("DEBUG:", *args, **kwargs)
+    def tprint_data_preview(*args, **kwargs): pass  # No-op fallback
 
 # Import artifact management functions
 from src.utils.artifact_manager import ArtifactManager
@@ -358,10 +360,18 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             if features_df is None or targets is None:
                 raise ValueError("Failed to load required artifacts from previous steps")
             
+            # Data preview after loading
+            tprint_data_preview(features_df, "loaded_features", max_rows=3, max_cols=10)
+            tprint_data_preview(targets, "loaded_targets", max_rows=10)
+            
             # Convert to float32 end-to-end with enhanced optimization
             tprint_info("🔄 Converting data to float32 (end-to-end with enhanced optimization)")
             features_df = self._convert_to_float32(features_df)
             targets = targets.astype('float32', copy=False)
+            
+            # Data preview after float32 conversion
+            tprint_data_preview(features_df, "features_float32_converted", max_rows=3, max_cols=10)
+            tprint_data_preview(targets, "targets_float32_converted", max_rows=10)
             
             # Apply comprehensive hardware optimization
             tprint_info("🚀 Applying comprehensive hardware optimization")
@@ -369,6 +379,9 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
                 features_df, WorkloadType.FEATURE_ENGINEERING
             )
             self.performance_stats['hardware_optimizations_applied'] += 1
+            
+            # Data preview after hardware optimization
+            tprint_data_preview(features_df, "features_hardware_optimized", max_rows=3, max_cols=10)
             
             tprint_success(f"✅ Loaded {features_df.shape[1]} features and {len(targets)} targets")
             tprint_info(f"📊 Feature matrix: {features_df.shape}, Target: {targets.shape}")
@@ -452,6 +465,13 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             
             # Save artifacts
             tprint_info("💾 Saving artifacts")
+            
+            # Data preview before saving artifacts
+            tprint_data_preview(result.selected_feature_dataframe_60, "final_features_60", max_rows=3, max_cols=10)
+            tprint_data_preview(result.selected_feature_dataframe_50, "final_features_50", max_rows=3, max_cols=10)
+            tprint_data_preview(result.selected_feature_dataframe_40, "final_features_40", max_rows=3, max_cols=10)
+            tprint_data_preview(pd.Series(result.feature_scores), "final_feature_scores", max_rows=20)
+            
             await self._save_artifacts(artifact_manager, result, model_type, direction)
             
             tprint_success("=" * 80)
@@ -510,6 +530,10 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
                 ArtifactKeys.GENERATED_FEATURES
             )
             
+            # Data preview after loading original features
+            if original_features is not None:
+                tprint_data_preview(original_features, "original_features_loaded", max_rows=3, max_cols=5)
+            
             # Load periods/lookbacks (top1) from feature_generation_period_lookback_optimization_step
             tprint_info("📦 Loading top periods/lookbacks from period_lookback_optimization_step")
             top_periods = artifact_manager.get_artifact(
@@ -528,11 +552,19 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
                 ArtifactKeys.INTERACTION_FEATURES
             )
             
+            # Data preview after loading analyst interaction features
+            if analyst_interaction_features is not None:
+                tprint_data_preview(analyst_interaction_features, "analyst_interactions_loaded", max_rows=3, max_cols=5)
+            
             tprint_info("📦 Loading interaction features from interaction_generation_step_tactician")
             tactician_interaction_features = artifact_manager.get_dataframe(
                 'feature_generation_interaction_generation_step_tactician',
                 ArtifactKeys.INTERACTION_FEATURES
             )
+            
+            # Data preview after loading tactician interaction features
+            if tactician_interaction_features is not None:
+                tprint_data_preview(tactician_interaction_features, "tactician_interactions_loaded", max_rows=3, max_cols=5)
             
             # Merge features from all sources
             features_to_merge = []
@@ -576,6 +608,9 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
                 
                 features_df = pd.concat(merged_features, axis=1)
                 tprint_success(f"✅ Merged features: {features_df.shape}")
+                
+                # Data preview after merging features
+                tprint_data_preview(features_df, "merged_features", max_rows=3, max_cols=10)
             
             # Load targets from labeling_integration_step
             tprint_info("📦 Loading targets from labeling_integration_step")
@@ -617,6 +652,10 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             
             tprint_success(f"✅ Final aligned data: Features={features_df.shape}, Targets={len(targets)}")
             
+            # Data preview after alignment and cleaning
+            tprint_data_preview(features_df, "aligned_features", max_rows=3, max_cols=10)
+            tprint_data_preview(targets, "aligned_targets", max_rows=10)
+            
             return features_df, targets
             
         except Exception as e:
@@ -642,6 +681,9 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             # Ensure float32
             X_numeric = X.select_dtypes(include=[np.number]).astype('float32', copy=False)
             
+            # Data preview after numeric selection
+            tprint_data_preview(X_numeric, "X_numeric_for_pca", max_rows=3, max_cols=10)
+            
             # Fit PCA
             pca = PCA(n_components=0.98, random_state=42)
             pca.fit(X_numeric)
@@ -654,6 +696,9 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             
             pca_features = list(pca_selected)
             tprint_success(f"✅ PCA selected {len(pca_features)} features in {time.time() - pca_start:.2f}s")
+            
+            # Data preview after PCA selection
+            tprint_data_preview(pd.DataFrame(X[pca_features]), "pca_selected_features", max_rows=3, max_cols=10)
             
             # Step 2: Approximate MI filter (correlation to target)
             tprint_info("🔍 Step 1.2: Approximate MI filter with target")
@@ -730,6 +775,10 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             tprint_info(f"📊 MI range: {min(all_mi_scores):.4f} - {max(all_mi_scores):.4f}")
             tprint_info(f"📊 MI cutoff (quantile {self.mi_quantile}): {cutoff:.4f}")
             
+            # Data preview after MI scoring
+            tprint_data_preview(mi_series, "mi_scores", max_rows=20)
+            tprint_data_preview(pd.DataFrame(X[selected_features]), "mi_selected_features", max_rows=3, max_cols=10)
+            
             return selected_features
     
     @memory_optimized(optimization_level=MemoryOptimizationLevel.AGGRESSIVE)
@@ -747,6 +796,9 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             # Ensure float32 with enhanced optimization
             X = optimize_dataframe(X.astype('float32', copy=False))
             y = y.astype('float32', copy=False)
+            
+            # Data preview after float32 conversion for mRMR
+            tprint_data_preview(X, "X_for_mrmr", max_rows=3, max_cols=10)
             
             # Step 1: Compute MI matrix upfront (cache)
             tprint_info("🔍 Step 2.1: Computing MI matrix (caching)")
@@ -790,6 +842,9 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
                         gc.collect()
             
             tprint_success(f"✅ MI matrix computed in {time.time() - mi_cache_start:.2f}s")
+            
+            # Data preview of MI matrix
+            tprint_data_preview(pd.DataFrame(mi_matrix), "mi_matrix", max_rows=5, max_cols=10)
             
             # Step 2: Batch mRMR selection
             tprint_info("🔍 Step 2.2: Batch mRMR selection")
@@ -865,6 +920,9 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             
             tprint_success(f"✅ mRMR selected {len(selected_features)} features in {iterations} iterations")
             
+            # Data preview after mRMR selection
+            tprint_data_preview(pd.DataFrame(X[selected_features[:target_features]]), "mrmr_selected_features", max_rows=3, max_cols=10)
+            
             return selected_features[:target_features]
     
     @memory_optimized(optimization_level=MemoryOptimizationLevel.AGGRESSIVE)
@@ -882,6 +940,9 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             # Ensure float32 with enhanced optimization
             X = optimize_dataframe(X.astype('float32', copy=False))
             y = y.astype('float32', copy=False)
+            
+            # Data preview after float32 conversion for LASSO
+            tprint_data_preview(X, "X_for_lasso", max_rows=3, max_cols=10)
             
             # Convert to sparse if beneficial
             sparsity = (X == 0).sum().sum() / X.size
@@ -956,6 +1017,9 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             tprint_success(f"✅ Stability selection completed in {time.time() - stability_start:.2f}s")
             tprint_info(f"📊 Stability scores range: {min(stability_scores.values()):.3f} - {max(stability_scores.values()):.3f}")
             
+            # Data preview of stability scores
+            tprint_data_preview(pd.Series(stability_scores), "stability_scores", max_rows=20)
+            
             # Step 2: LASSO + RFE in batches of 10
             tprint_info("🔍 Step 3.2: LASSO + RFE (batches of 10)")
             rfe_start = time.time()
@@ -997,6 +1061,9 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             tprint_success(f"✅ LASSO + RFE completed in {time.time() - rfe_start:.2f}s")
             tprint_success(f"✅ Selected {len(current_features)} features")
             
+            # Data preview after LASSO + RFE selection
+            tprint_data_preview(pd.DataFrame(X[current_features]), "lasso_selected_features", max_rows=3, max_cols=10)
+            
             return current_features
     
     @memory_optimized(optimization_level=MemoryOptimizationLevel.AGGRESSIVE)
@@ -1018,6 +1085,9 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             # Ensure float32 with enhanced optimization
             X = optimize_dataframe(X.astype('float32', copy=False))
             y = y.astype('float32', copy=False)
+            
+            # Data preview after float32 conversion for LGBM
+            tprint_data_preview(X, "X_for_lgbm", max_rows=3, max_cols=10)
             
             # Create LightGBM Dataset (reusable)
             tprint_info("📦 Creating LightGBM Dataset")
@@ -1063,6 +1133,9 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             features_60 = current_features
             tprint_success(f"✅ RFE to 60 features completed in {time.time() - rfe_start:.2f}s")
             
+            # Data preview after RFE to 60 features
+            tprint_data_preview(pd.DataFrame(X[features_60]), "lgbm_features_60", max_rows=3, max_cols=10)
+            
             # Continue RFE: 60 → 50
             tprint_info("🔍 Step 4.2: LGBM + RFE (60 → 50)")
             current_features = features_60.copy()
@@ -1093,6 +1166,9 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             features_50 = current_features
             tprint_success(f"✅ RFE to 50 features completed")
             
+            # Data preview after RFE to 50 features
+            tprint_data_preview(pd.DataFrame(X[features_50]), "lgbm_features_50", max_rows=3, max_cols=10)
+            
             # Continue RFE: 50 → 40
             tprint_info("🔍 Step 4.3: LGBM + RFE (50 → 40)")
             current_features = features_50.copy()
@@ -1122,6 +1198,9 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             
             features_40 = current_features
             tprint_success(f"✅ RFE to 40 features completed")
+            
+            # Data preview after RFE to 40 features
+            tprint_data_preview(pd.DataFrame(X[features_40]), "lgbm_features_40", max_rows=3, max_cols=10)
             
             # SHAP for final feature importance
             tprint_info("🔍 Step 4.4: SHAP analysis for final feature sets")
@@ -1173,6 +1252,9 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
                 feature_scores[feat] = float(np.mean(np.abs(shap_values_60[:, i])))
             
             tprint_success(f"✅ SHAP analysis completed in {time.time() - shap_start:.2f}s")
+            
+            # Data preview of final feature scores
+            tprint_data_preview(pd.Series(feature_scores), "final_feature_scores", max_rows=20)
             
             # Enhanced cleanup
             del explainer_60, explainer_50, explainer_40

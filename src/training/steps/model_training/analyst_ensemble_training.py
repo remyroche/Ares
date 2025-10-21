@@ -54,7 +54,7 @@ from dataclasses import dataclass
 from src.utils.tprint import (
     tprint, tprint_info, tprint_warning, tprint_error, tprint_success,
     tprint_debug, tprint_progress, tprint_performance, tprint_structured,
-    tprint_timer, LogLevel
+    tprint_timer, tprint_data_preview, LogLevel
 )
 
 from src.utils.logger import system_logger
@@ -774,7 +774,9 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
 
                 # Convert to DataFrame for cleaning
                 df = pd.DataFrame(X)
+                tprint_data_preview(df, "raw_dataframe")
                 df_cleaned = self.data_cleaner.handle_missing_values(df)
+                tprint_data_preview(df_cleaned, "cleaned_dataframe")
                 X_cleaned = df_cleaned.values
 
                 # Verify cleaning
@@ -1023,6 +1025,11 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
         execution_start_time = time.time()
         tprint_info("🚀 Starting Analyst ensemble training step execution")
         tprint_info("=" * 60)
+        
+        # Preview input data
+        tprint_data_preview(X, "input_features_X")
+        tprint_data_preview(y, "input_targets_y")
+        tprint_data_preview(regime_labels, "input_regime_labels")
 
         # Initialize NAS models if available
         nas_models = None
@@ -1108,6 +1115,7 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
             results['cleaning_report'] = cleaning_report
 
             tprint_success(f"✅ Training complete in {execution_time:.2f}s")
+            tprint_data_preview(results, "final_training_results")
             return results
 
         except Exception as e:
@@ -1495,8 +1503,10 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
         if base_analyst_models is None or not base_analyst_models:
             tprint_info("📋 No base analyst models provided, creating base models")
             base_analyst_models = self._create_base_models()
+            tprint_data_preview(base_analyst_models, "created_base_models")
         else:
             tprint_info(f"✅ Using {len(base_analyst_models)} provided base models")
+            tprint_data_preview(base_analyst_models, "provided_base_models")
 
             # Validate base models
             for model_name, model in base_analyst_models.items():
@@ -1547,6 +1557,7 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
 
             if cached_result:
                 tprint_success(f"✅ Loaded cached model for regime {regime}, type {model_type}")
+                tprint_data_preview(cached_result, f"cached_model_{regime}_{model_type}")
                 return cached_result
 
             return None
@@ -1765,6 +1776,7 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
                 tprint_warning("⚠️ No trained models to save")
                 return
 
+            tprint_data_preview(results, "models_with_metadata")
             for regime, model in results['trained_models'].items():
                 try:
                     metadata = ModelMetadata(
@@ -2110,6 +2122,7 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
         """
         try:
             tprint_info("📊 Generating legacy comprehensive report")
+            tprint_data_preview(results, "comprehensive_report_input")
 
             # Create comprehensive report
             comprehensive_report = {
@@ -2700,6 +2713,7 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
             'warnings': [],
             'quality_score': 0.0
         }
+        tprint_data_preview(results, "validation_input_data")
 
         try:
             # Check for errors

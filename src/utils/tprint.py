@@ -1321,6 +1321,22 @@ def tprint_data_preview(data: Any, name: str = "data", max_rows: int = None,
         include_metadata: Whether to include metadata (default: True)
         force_log: Force logging even for large datasets (default: False)
     """
+    # Get caller information for debugging
+    try:
+        import inspect
+        frame = inspect.currentframe()
+        caller_frame = frame.f_back if frame else None
+        caller_info = ""
+        if caller_frame:
+            caller_file = caller_frame.f_code.co_filename
+            caller_line = caller_frame.f_lineno
+            caller_function = caller_frame.f_code.co_name
+            # Extract just the filename from the full path
+            caller_filename = caller_file.split('/')[-1] if '/' in caller_file else caller_file.split('\\')[-1]
+            caller_info = f" (called from {caller_filename}:{caller_line} in {caller_function})"
+    except Exception:
+        caller_info = ""
+    
     # Check if data preview is enabled
     try:
         import os
@@ -1363,7 +1379,7 @@ def tprint_data_preview(data: Any, name: str = "data", max_rows: int = None,
             try:
                 data_len = len(data)
                 if data_len > DATA_PREVIEW_CONFIG['large_dataset_threshold']:
-                    tprint_with_level(level, f"📊 {name} preview: Large dataset ({data_len} items) - use force_log=True to preview")
+                    tprint_with_level(level, f"📊 {name} preview{caller_info}: Large dataset ({data_len} items) - use force_log=True to preview")
                     return
             except TypeError:
                 # Handle 0-D arrays or other types that don't support len()
@@ -1391,7 +1407,7 @@ def tprint_data_preview(data: Any, name: str = "data", max_rows: int = None,
         
         # Handle PyArrow Tables
         if PYARROW_AVAILABLE and isinstance(data, pa.Table):
-            tprint_with_level(level, f"📊 {name} preview (Arrow Table):")
+            tprint_with_level(level, f"📊 {name} preview (Arrow Table){caller_info}:")
             tprint_with_level(level, f"  Schema: {data.schema}")
             tprint_with_level(level, f"  Num rows: {data.num_rows}, Num columns: {data.num_columns}")
             
@@ -1420,7 +1436,7 @@ def tprint_data_preview(data: Any, name: str = "data", max_rows: int = None,
         elif PYARROW_AVAILABLE and isinstance(data, str) and data.endswith('.parquet'):
             try:
                 pf = pq.ParquetFile(data)
-                tprint_with_level(level, f"📊 {name} preview (Parquet file):")
+                tprint_with_level(level, f"📊 {name} preview (Parquet file){caller_info}:")
                 tprint_with_level(level, f"  Path: {data}")
                 tprint_with_level(level, f"  Schema: {pf.schema_arrow}")
                 tprint_with_level(level, f"  Num rows: {pf.metadata.num_rows}, Num row groups: {pf.num_row_groups}")
@@ -1451,7 +1467,7 @@ def tprint_data_preview(data: Any, name: str = "data", max_rows: int = None,
         
         # Handle pandas DataFrames
         elif PANDAS_AVAILABLE and isinstance(data, pd.DataFrame):
-            tprint_with_level(level, f"📊 {name} preview:")
+            tprint_with_level(level, f"📊 {name} preview{caller_info}:")
             tprint_with_level(level, f"  Shape: {data.shape}")
             tprint_with_level(level, f"  Dtypes: {dict(data.dtypes)}")
             
@@ -1495,7 +1511,7 @@ def tprint_data_preview(data: Any, name: str = "data", max_rows: int = None,
         
         # Handle numpy arrays
         elif NUMPY_AVAILABLE and isinstance(data, np.ndarray):
-            tprint_with_level(level, f"📊 {name} preview:")
+            tprint_with_level(level, f"📊 {name} preview{caller_info}:")
             tprint_with_level(level, f"  Shape: {data.shape}")
             tprint_with_level(level, f"  Dtype: {data.dtype}")
             
@@ -1537,7 +1553,7 @@ def tprint_data_preview(data: Any, name: str = "data", max_rows: int = None,
         
         # Handle dictionaries with deep preview
         elif isinstance(data, dict):
-            tprint_with_level(level, f"📊 {name} preview:")
+            tprint_with_level(level, f"📊 {name} preview{caller_info}:")
             tprint_with_level(level, f"  Type: dict")
             tprint_with_level(level, f"  Keys: {len(data)}")
             
@@ -1569,7 +1585,7 @@ def tprint_data_preview(data: Any, name: str = "data", max_rows: int = None,
         
         # Handle other data types
         else:
-            tprint_with_level(level, f"📊 {name} preview:")
+            tprint_with_level(level, f"📊 {name} preview{caller_info}:")
             tprint_with_level(level, f"  Type: {type(data).__name__}")
             
             if hasattr(data, '__len__'):
@@ -1596,7 +1612,7 @@ def tprint_data_preview(data: Any, name: str = "data", max_rows: int = None,
                 tprint_with_level(level, f"  Preview: (Could not convert to string: {str_err})")
     
     except Exception as e:
-        tprint_with_level(level, f"📊 {name} preview (error): {e}")
+        tprint_with_level(level, f"📊 {name} preview (error){caller_info}: {e}")
 
 
 # Export all functions

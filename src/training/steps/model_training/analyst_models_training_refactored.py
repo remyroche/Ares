@@ -43,7 +43,7 @@ try:
     from src.utils.tprint import (
         tprint, tprint_info, tprint_warning, tprint_error, tprint_success,
         tprint_debug, tprint_progress, tprint_performance, tprint_structured,
-        tprint_timer, LogLevel
+        tprint_timer, tprint_data_preview, LogLevel
     )
     TPRINT_AVAILABLE = True
 except ImportError as e:
@@ -728,12 +728,14 @@ class AnalystModelsTrainingStepRefactored(BaseStep):
         try:
             # This would contain the actual data preparation logic
             # For now, return a placeholder
-            return {
+            training_data = {
                 'success': True,
                 'data_shape': (1000, 50),
                 'regimes': 3,
                 'features': 50
             }
+            tprint_data_preview(training_data, "prepared_training_data")
+            return training_data
         except Exception as e:
             return {'success': False, 'error': str(e)}
 
@@ -855,6 +857,7 @@ class AnalystModelsTrainingStepRefactored(BaseStep):
             
             # Check if data files exist
             data_path = f"data_cache/{exchange}/{symbol}_{timeframe}_labeled_data.parquet"
+            tprint_data_preview(data_path, "data_file_path", force_log=True)
             if not safe_file_exists(data_path):
                 errors.append(f"Labeled data file not found: {data_path}")
             
@@ -880,7 +883,7 @@ class AnalystModelsTrainingStepRefactored(BaseStep):
                 utility_validation['utilities']['math_validation'] = True
             utility_validation['total_count'] += 1
             
-            return {
+            validation_results = {
                 'success': True,
                 'warnings': warnings,
                 'errors': errors,
@@ -888,6 +891,8 @@ class AnalystModelsTrainingStepRefactored(BaseStep):
                 'samples_processed': 0,  # Will be updated when data is loaded
                 'features_count': 0     # Will be updated when data is loaded
             }
+            tprint_data_preview(validation_results, "data_validation_results")
+            return validation_results
             
         except Exception as e:
             return {
@@ -902,7 +907,7 @@ class AnalystModelsTrainingStepRefactored(BaseStep):
         try:
             # This would contain the actual feature preparation logic
             # For now, return a placeholder with enhanced structure
-            return {
+            feature_data = {
                 'success': True,
                 'samples_processed': 1000,
                 'features_count': 50,
@@ -911,6 +916,8 @@ class AnalystModelsTrainingStepRefactored(BaseStep):
                 'fundamental_data': {},
                 'sentiment_data': {}
             }
+            tprint_data_preview(feature_data, "prepared_features")
+            return feature_data
         except Exception as e:
             return {'success': False, 'error': str(e)}
 
@@ -974,12 +981,15 @@ class AnalystModelsTrainingStepRefactored(BaseStep):
         """Save analyst models with enhanced error handling."""
         try:
             # This would contain the actual model saving logic
-            return {
+            tprint_data_preview(training_results, "models_to_save")
+            save_results = {
                 'success': True,
                 'models_saved': len(training_results.get('models', [])),
                 'save_path': self.config.model_save_path,
                 'metadata': evaluation_results.get('evaluation_metrics', {})
             }
+            tprint_data_preview(save_results, "model_save_results")
+            return save_results
         except Exception as e:
             return {'success': False, 'error': str(e)}
 
@@ -1005,6 +1015,7 @@ class AnalystModelsTrainingStepRefactored(BaseStep):
             if save_results:
                 final_results['save_results'] = save_results
             
+            tprint_data_preview(final_results, "final_training_results")
             return final_results
         except Exception as e:
             return {'success': False, 'error': str(e)}

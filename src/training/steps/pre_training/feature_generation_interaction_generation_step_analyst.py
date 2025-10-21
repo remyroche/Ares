@@ -24,6 +24,12 @@ import time
 import os
 
 from src.utils.tprint import tprint, tprint_data_preview
+import os
+
+# Configure data preview settings for this complex step
+os.environ['ENABLE_DATA_PREVIEW'] = 'true'
+os.environ['DATA_PREVIEW_MAX_ROWS'] = '10'  # Show more rows for this complex step
+os.environ['DATA_PREVIEW_MAX_COLS'] = '20'  # Show more columns for feature analysis
 from src.training.steps.base_step import BaseStep
 
 # Import enhanced hardware optimization tools
@@ -505,6 +511,10 @@ class FeatureGenerationInteractionGenerationStepAnalyst(BaseStep):
                     volume=tf_volume
                 )
                 
+                # Preview variants for each timeframe
+                for variant_type, df in variants.items():
+                    tprint_data_preview(df, f"variants_{tf}_{variant_type}", level="DEBUG")
+                
                 # Add timeframe prefix
                 for variant_type, df in variants.items():
                     prefixed_df = pd.DataFrame()
@@ -519,6 +529,8 @@ class FeatureGenerationInteractionGenerationStepAnalyst(BaseStep):
                 return pd.DataFrame(), {}
                 
             combined_variants = pd.concat(list(all_variants.values()), axis=1)
+            # Preview combined variants
+            tprint_data_preview(combined_variants, "combined_variants_phase1", level="INFO")
             tprint(f"📊 Phase 1: Generated {len(combined_variants.columns)} variant features")
             
             # Normalize variants
@@ -529,6 +541,8 @@ class FeatureGenerationInteractionGenerationStepAnalyst(BaseStep):
             
             # Combine normalized variants
             normalized_combined = pd.concat(list(normalized_variants.values()), axis=1)
+            # Preview normalized variants
+            tprint_data_preview(normalized_combined, "normalized_variants_phase1", level="INFO")
             
             # Align with targets
             aligned_data = normalized_combined.join(targets.rename('target'), how='inner').dropna()
@@ -563,6 +577,8 @@ class FeatureGenerationInteractionGenerationStepAnalyst(BaseStep):
             top_features = shap_scorer.get_top_features(shap_results, top_k, 'combined')
             
             selected_features = features_aligned[top_features]
+            # Preview selected features from Phase 1
+            tprint_data_preview(selected_features, "phase1_selected_features", level="INFO")
             tprint(f"📊 Phase 1: Selected {len(selected_features.columns)} features (top {self.phase_config.phase1_selection_ratio*100}%)")
             
             # Store metadata
@@ -609,6 +625,8 @@ class FeatureGenerationInteractionGenerationStepAnalyst(BaseStep):
             features_aligned = aligned_data.drop(columns=['target'])
             targets_aligned = aligned_data['target']
             
+            # Preview input features for Phase 2
+            tprint_data_preview(features_aligned, "phase2_input_features", level="INFO")
             tprint(f"📊 Phase 2: Input features: {features_aligned.shape}")
             
             # SHAP scoring with middle LGBM
@@ -633,6 +651,8 @@ class FeatureGenerationInteractionGenerationStepAnalyst(BaseStep):
             top_features = shap_scorer.get_top_features(shap_results, self.phase_config.phase2_top_k, 'combined')
             selected_features = features_aligned[top_features]
             
+            # Preview selected features from Phase 2
+            tprint_data_preview(selected_features, "phase2_selected_features", level="INFO")
             tprint(f"📊 Phase 2: Selected {len(selected_features.columns)} features")
             
             # Store metadata
@@ -681,6 +701,8 @@ class FeatureGenerationInteractionGenerationStepAnalyst(BaseStep):
             features_aligned = aligned_data.drop(columns=['target'])
             targets_aligned = aligned_data['target']
             
+            # Preview input features for Phase 3
+            tprint_data_preview(features_aligned, "phase3_input_features", level="INFO")
             tprint(f"📊 Phase 3: Input features: {features_aligned.shape}")
             
             # Get interaction centrality pairs from Phase 2
@@ -695,6 +717,8 @@ class FeatureGenerationInteractionGenerationStepAnalyst(BaseStep):
                     centrality_pairs,
                     max_pairs=self.phase_config.phase3_top_interactions // 4  # 4 interactions per pair
                 )
+                # Preview generated interactions
+                tprint_data_preview(interactions_df, "generated_interactions_centrality", level="INFO")
             else:
                 tprint("📊 Phase 3: No centrality pairs, using top features for interaction generation")
                 
@@ -705,6 +729,8 @@ class FeatureGenerationInteractionGenerationStepAnalyst(BaseStep):
                     top_features,
                     max_pairs=self.phase_config.phase3_top_interactions // 4
                 )
+                # Preview generated interactions
+                tprint_data_preview(interactions_df, "generated_interactions_top_features", level="INFO")
             
             if interactions_df.empty:
                 tprint("❌ No interactions generated in Phase 3")
@@ -714,7 +740,12 @@ class FeatureGenerationInteractionGenerationStepAnalyst(BaseStep):
             
             # Filter interactions by variance and correlation
             interactions_df = self.interaction_generator.filter_interactions_by_variance(interactions_df)
+            # Preview after variance filtering
+            tprint_data_preview(interactions_df, "filtered_interactions_variance", level="DEBUG")
+            
             interactions_df = self.interaction_generator.filter_interactions_by_correlation(interactions_df)
+            # Preview after correlation filtering
+            tprint_data_preview(interactions_df, "filtered_interactions_correlation", level="DEBUG")
             
             tprint(f"📊 Phase 3: Filtered to {len(interactions_df.columns)} interactions")
             
@@ -744,6 +775,8 @@ class FeatureGenerationInteractionGenerationStepAnalyst(BaseStep):
             )
             
             selected_interactions = interactions_df[top_interactions]
+            # Preview final selected interactions from Phase 3
+            tprint_data_preview(selected_interactions, "phase3_final_interactions", level="INFO")
             tprint(f"📊 Phase 3: Selected {len(selected_interactions.columns)} interactions")
             
             # Store metadata
@@ -818,6 +851,8 @@ class FeatureGenerationInteractionGenerationStepAnalyst(BaseStep):
                     error_message="Selected features not found. Run feature_selection before interaction_generation."
                 )
             
+            # Preview loaded selected features for troubleshooting
+            tprint_data_preview(selected_df, "selected_features_input", level="INFO")
             tprint(f"✅ [ANALYST] Loaded {len(selected_df.columns)} selected features with shape {selected_df.shape}")
             
             # Load targets
@@ -847,11 +882,18 @@ class FeatureGenerationInteractionGenerationStepAnalyst(BaseStep):
             sampled_features = self._sample_data_by_mode(selected_df, intensity)
             sampled_targets = self._sample_data_by_mode(targets_series, intensity)
             
+            # Preview sampled data for troubleshooting
+            tprint_data_preview(sampled_features, f"sampled_features_{intensity}_mode", level="INFO")
+            tprint_data_preview(sampled_targets, f"sampled_targets_{intensity}_mode", level="INFO")
+            
             # Align features and targets
             tprint("🔍 [ANALYST] Aligning features and targets timestamps")
             aligned = sampled_features.join(sampled_targets.rename("target"), how="inner").dropna()
             if aligned.empty:
                 tprint("❌ [ANALYST] No overlapping timestamps between features and targets")
+                # Preview data for debugging empty alignment
+                tprint_data_preview(sampled_features, "sampled_features_empty_alignment", level="ERROR")
+                tprint_data_preview(sampled_targets, "sampled_targets_empty_alignment", level="ERROR")
                 return InteractionGenerationResult(
                     success=False,
                     interaction_features=pd.DataFrame(),
@@ -864,6 +906,8 @@ class FeatureGenerationInteractionGenerationStepAnalyst(BaseStep):
             features_df = aligned.drop(columns=['target'])
             targets = aligned['target']
             
+            # Preview aligned data for troubleshooting
+            tprint_data_preview(aligned, "aligned_features_and_targets", level="INFO")
             tprint(f"✅ [ANALYST] Final aligned data: features={features_df.shape}, targets={targets.shape}")
             
             # Load timeframes
@@ -880,6 +924,9 @@ class FeatureGenerationInteractionGenerationStepAnalyst(BaseStep):
                 if ohlcv_data is not None and not ohlcv_data.empty:
                     price_data = ohlcv_data[['open', 'high', 'low', 'close']]
                     volume = ohlcv_data['volume']
+                    # Preview OHLCV data for troubleshooting
+                    tprint_data_preview(price_data, "ohlcv_price_data", level="INFO")
+                    tprint_data_preview(volume, "ohlcv_volume_data", level="INFO")
                     tprint(f"✅ [ANALYST] Loaded OHLCV data: {price_data.shape}")
             except Exception as e:
                 tprint(f"⚠️ Could not load OHLCV data: {e}")
@@ -894,6 +941,9 @@ class FeatureGenerationInteractionGenerationStepAnalyst(BaseStep):
             tprint(f"✅ [ANALYST] Phase 1 completed: {len(phase1_features.columns)} features selected")
             
             if phase1_features.empty:
+                # Preview input data for debugging Phase 1 failure
+                tprint_data_preview(features_df, "phase1_failed_input_features", level="ERROR")
+                tprint_data_preview(targets, "phase1_failed_input_targets", level="ERROR")
                 return InteractionGenerationResult(
                     success=False,
                     interaction_features=pd.DataFrame(),
@@ -909,6 +959,9 @@ class FeatureGenerationInteractionGenerationStepAnalyst(BaseStep):
             tprint(f"✅ [ANALYST] Phase 2 completed: {len(phase2_features.columns)} features selected")
             
             if phase2_features.empty:
+                # Preview input data for debugging Phase 2 failure
+                tprint_data_preview(phase1_features, "phase2_failed_input_features", level="ERROR")
+                tprint_data_preview(targets, "phase2_failed_input_targets", level="ERROR")
                 return InteractionGenerationResult(
                     success=False,
                     interaction_features=pd.DataFrame(),
@@ -927,6 +980,9 @@ class FeatureGenerationInteractionGenerationStepAnalyst(BaseStep):
             tprint(f"✅ [ANALYST] Phase 3 completed: {len(phase3_interactions.columns)} interaction features generated")
             
             if phase3_interactions.empty:
+                # Preview input data for debugging Phase 3 failure
+                tprint_data_preview(phase2_features, "phase3_failed_input_features", level="ERROR")
+                tprint_data_preview(targets, "phase3_failed_input_targets", level="ERROR")
                 return InteractionGenerationResult(
                     success=False,
                     interaction_features=pd.DataFrame(),
@@ -943,6 +999,9 @@ class FeatureGenerationInteractionGenerationStepAnalyst(BaseStep):
             # Apply final comprehensive optimization
             tprint("🧹 [ANALYST] Applying final comprehensive optimization to interaction features")
             final_interactions = self._optimize_dataframe_memory(phase3_interactions)
+            
+            # Preview final interactions before storage
+            tprint_data_preview(final_interactions, "final_interactions_before_storage", level="INFO")
             
             # Apply additional hardware optimizations
             final_interactions = self.comprehensive_optimizer.optimize_operation(
@@ -976,6 +1035,8 @@ class FeatureGenerationInteractionGenerationStepAnalyst(BaseStep):
                 }
             }
             
+            # Preview metadata before storage
+            tprint_data_preview(combined_metadata, "interaction_metadata_before_storage", level="DEBUG")
             tprint("💾 [ANALYST] Storing interaction metadata in artifact manager")
             artifact_manager.store_enhanced(ArtifactKeys.INTERACTION_METADATA, combined_metadata, {
                 'step': 'interaction_generation_analyst',
@@ -1001,6 +1062,8 @@ class FeatureGenerationInteractionGenerationStepAnalyst(BaseStep):
                 'success': True
             }
             
+            # Preview generation metrics before storage
+            tprint_data_preview(generation_metrics, "generation_metrics_before_storage", level="DEBUG")
             tprint("💾 [ANALYST] Storing generation metrics in artifact manager")
             artifact_manager.store_enhanced(ArtifactKeys.INTERACTION_GENERATION_METRICS, generation_metrics, {
                 'step': 'interaction_generation_analyst',

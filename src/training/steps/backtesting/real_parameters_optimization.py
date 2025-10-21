@@ -36,6 +36,7 @@ from src.utils.matrix_operations.unified_operations import get_unified_matrix_op
 from src.utils.common_operations import safe_json_dump, safe_json_load, ensure_directory
 from src.utils.math_validation import safe_divide, safe_log, safe_sqrt, validate_finite
 from src.core.decorators import handles_errors, traced, log_execution_time
+from src.utils.tprint import tprint_data_preview
 
 # Optimization imports
 try:
@@ -213,6 +214,9 @@ class RealParametersOptimizer(BaseStep):
             if not symbol:
                 raise ValueError("Symbol is required for real parameters optimization")
             
+            # Preview configuration data
+            tprint_data_preview(config, "real_parameters_config", max_rows=10, level="DEBUG")
+            
             self.logger.info(f"Optimizing real parameters for {symbol} from {exchange}")
             self.logger.info(f"Timeframe: {timeframe}, Direction: {direction}")
             
@@ -232,6 +236,9 @@ class RealParametersOptimizer(BaseStep):
             optimization_result = await self._perform_real_parameters_optimization(
                 symbol, timeframe, direction, execution_mode, config
             )
+
+            # Preview optimization results
+            tprint_data_preview(optimization_result, "real_optimization_result", max_rows=5, level="INFO")
 
             # Save optimization result as artifact (will auto-generate CSV if < 2000 rows)
             artifact_path = self._save_artifact(
@@ -347,6 +354,13 @@ class RealParametersOptimizer(BaseStep):
             if not self.parameter_space:
                 raise ValueError("No parameters defined for optimization")
 
+            # Preview parameter space
+            tprint_data_preview(self.parameter_space, "parameter_space", max_rows=10, level="DEBUG")
+            
+            # Preview initial parameters if provided
+            if initial_parameters:
+                tprint_data_preview(initial_parameters, "initial_parameters", max_rows=5, level="DEBUG")
+
             # Initialize optimization
             if self.config.optimization_method == OptimizationMethod.GRID_SEARCH:
                 results = await self._grid_search_optimization(objective_function)
@@ -366,6 +380,9 @@ class RealParametersOptimizer(BaseStep):
             # Store results
             self.best_parameters = results['best_parameters']
             self.best_score = results['best_score']
+
+            # Preview optimization results
+            tprint_data_preview(results, "optimization_results", max_rows=5, level="INFO")
 
             self.logger.info(f"✅ Optimization completed: best score = {self.best_score:.6f}")
 
@@ -1054,6 +1071,9 @@ class RealParametersOptimizer(BaseStep):
     def _optimize_parameters_for_vectorbt(self, parameters: Dict[str, Any]) -> Dict[str, Any]:
         """Optimize parameters for VectorBT processing."""
         try:
+            # Preview input parameters
+            tprint_data_preview(parameters, "input_parameters_vectorbt", max_rows=5, level="DEBUG")
+            
             optimized_params = parameters.copy()
 
             # Add VectorBT-specific optimizations
@@ -1079,6 +1099,9 @@ class RealParametersOptimizer(BaseStep):
                 'enable_parallel': self.config.enable_parallel_processing,
                 'memory_efficient': self.config.enable_memory_optimization
             }
+
+            # Preview optimized parameters
+            tprint_data_preview(optimized_params, "optimized_parameters_vectorbt", max_rows=5, level="DEBUG")
 
             return optimized_params
 

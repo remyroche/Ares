@@ -64,8 +64,8 @@ class SRDetectionComponent(BaseStep):
             artifacts = []
             metrics = {}
             
-            # Set up artifact manager context
-            self.artifact_manager.set_context(
+            # Set up context using BaseStep method
+            self._set_context(
                 symbol=symbol,
                 exchange=exchange,
                 direction=direction,
@@ -75,11 +75,21 @@ class SRDetectionComponent(BaseStep):
             # Perform SR detection (simplified version)
             detection_result = await self._perform_sr_detection(symbol, timeframe, direction, execution_mode)
 
-            # Save detection result as artifact (will auto-generate CSV if < 2000 rows)
-            artifact_path = self._save_artifact(
+            # Save detection result as artifact using enhanced artifact saving
+            artifact_path = self._save_enhanced_artifact(
                 detection_result,
                 'sr_detection_result',
-                'data'
+                'data',
+                {
+                    'symbol': symbol,
+                    'exchange': exchange,
+                    'timeframe': timeframe,
+                    'direction': direction,
+                    'execution_mode': execution_mode,
+                    'total_levels': detection_result.get('total_levels', 0),
+                    'support_levels': detection_result.get('support_levels', 0),
+                    'resistance_levels': detection_result.get('resistance_levels', 0)
+                }
             )
             artifacts.append(artifact_path)
             

@@ -140,8 +140,18 @@ class TacticianEnsembleTrainer(BaseTrainer):
             
             start_time = time.time()
             
+            # Preview input data
+            from src.utils.tprint import tprint_data_preview
+            tprint_data_preview(data, "Input ensemble training data", max_rows=5, level="INFO")
+            if targets is not None:
+                tprint_data_preview(targets, "Input ensemble training targets", max_rows=10, level="INFO")
+            
             # Preprocess data
             processed_data, processed_targets = self._preprocess_data(data, targets)
+            
+            # Preview preprocessed data
+            tprint_data_preview(processed_data, "Preprocessed ensemble training data", max_rows=5, level="INFO")
+            tprint_data_preview(processed_targets, "Preprocessed ensemble training targets", max_rows=10, level="INFO")
             
             # Train base models
             base_results = await self._train_base_models(processed_data, processed_targets)
@@ -155,6 +165,9 @@ class TacticianEnsembleTrainer(BaseTrainer):
             
             # Generate base predictions for ensemble training
             base_predictions = await self._generate_base_predictions(processed_data)
+            
+            # Preview base predictions
+            tprint_data_preview(base_predictions, "Base model predictions for ensemble", max_rows=5, level="INFO")
             
             # Train ensemble model
             ensemble_result = await self._train_ensemble_model(
@@ -280,11 +293,21 @@ class TacticianEnsembleTrainer(BaseTrainer):
             
             start_time = time.time()
             
+            # Preview input prediction data
+            from src.utils.tprint import tprint_data_preview
+            tprint_data_preview(data, "Input prediction data", max_rows=5, level="INFO")
+            
             # Preprocess data
             processed_data, _ = self._preprocess_data(data, None)
             
+            # Preview preprocessed prediction data
+            tprint_data_preview(processed_data, "Preprocessed prediction data", max_rows=5, level="DEBUG")
+            
             # Generate base predictions
             base_predictions = await self._generate_base_predictions(processed_data)
+            
+            # Preview base predictions
+            tprint_data_preview(base_predictions, "Base model predictions", max_rows=5, level="DEBUG")
             
             # Make ensemble predictions
             ensemble_predictions = await self._predict_ensemble(base_predictions)

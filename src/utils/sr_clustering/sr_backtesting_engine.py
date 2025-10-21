@@ -15,6 +15,7 @@ import asyncio
 from abc import ABC, abstractmethod
 
 from ..logger import system_logger
+from ...utils.tprint import tprint_data_preview
 
 # Import optimization utilities
 try:
@@ -214,6 +215,10 @@ class SRBacktestingEngine:
         self.start_time = datetime.now()
 
         try:
+            # Preview input data
+            tprint_data_preview(market_data, "sr_backtest_market_data", max_rows=5, level="DEBUG")
+            tprint_data_preview(sr_levels, "sr_backtest_levels", max_rows=5, level="DEBUG")
+            
             # Reset backtesting state
             self._reset_backtest_state()
 
@@ -242,6 +247,7 @@ class SRBacktestingEngine:
 
             # Filter and sort SR levels
             valid_levels = self._filter_sr_levels(sr_levels)
+            tprint_data_preview(valid_levels, "filtered_sr_levels", max_rows=5, level="DEBUG")
 
             # Run backtest
             await self._run_backtest(market_data, valid_levels)
@@ -254,6 +260,9 @@ class SRBacktestingEngine:
 
             self.logger.info(f"✅ Backtest completed successfully in {execution_time:.2f}s")
 
+            # Preview performance results
+            tprint_data_preview(performance, "sr_backtest_performance", max_rows=10, level="INFO")
+            
             return BacktestResult(
                 strategy_name=strategy_name,
                 symbol=getattr(market_data, 'name', 'UNKNOWN'),

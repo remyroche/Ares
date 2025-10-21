@@ -66,7 +66,7 @@ except ImportError:
     BASE_ENGINE_AVAILABLE = False
 
 # Output utilities
-from src.utils.tprint import tprint
+from src.utils.tprint import tprint, tprint_data_preview
 
 # Decorators
 from src.core.decorators import handles_errors, traced, log_execution_time
@@ -368,6 +368,9 @@ class RealMonteCarloEngine:
         tprint(f"   Mode: {self.config.mode.value}", "info")
         tprint(f"   Portfolio value: ${portfolio_value:,.2f}", "info")
 
+        # Preview input data for troubleshooting
+        tprint_data_preview(returns_data, "monte_carlo_input_returns", level="DEBUG", include_metadata=True)
+
         try:
             # Validate and prepare data
             prepared_data = self._prepare_and_validate_data(returns_data)
@@ -379,6 +382,9 @@ class RealMonteCarloEngine:
             returns = prepared_data['returns']
             tprint(f"✅ Data validated: {len(returns)} samples", "success")
             tprint(f"   Mean return: {np.mean(returns):.4f}, Std: {np.std(returns):.4f}", "info")
+            
+            # Preview validated data
+            tprint_data_preview(returns, "monte_carlo_validated_returns", level="INFO", include_metadata=True)
 
             # Check for data leakage if enabled
             if self.leakage_detector and self.config.enable_leakage_detection:
@@ -398,6 +404,9 @@ class RealMonteCarloEngine:
                 raise ValueError(f"Unknown simulation mode: {self.config.mode}")
 
             tprint(f"✅ Completed {len(simulation_results):,} simulation scenarios", "success")
+            
+            # Preview simulation results
+            tprint_data_preview(simulation_results, "monte_carlo_simulation_results", level="INFO", max_rows=10)
 
             # Calculate comprehensive metrics
             tprint("📊 Calculating risk metrics", "info")
@@ -406,6 +415,9 @@ class RealMonteCarloEngine:
             # Store results
             self.simulation_results = simulation_results
             self.risk_metrics = metrics.to_dict()
+            
+            # Preview calculated metrics
+            tprint_data_preview(metrics.to_dict(), "monte_carlo_calculated_metrics", level="DEBUG", include_metadata=True)
 
             execution_time = time.time() - start_time
 
@@ -442,11 +454,17 @@ class RealMonteCarloEngine:
         """Prepare and validate returns data for simulation"""
         try:
             tprint("📊 Validating input data", "info")
+            
+            # Preview raw input data
+            tprint_data_preview(returns_data, "monte_carlo_raw_input_data", level="DEBUG", include_metadata=True)
 
             # Convert to array and remove NaN
             returns = ensure_array(returns_data)
             returns = returns[~check_for_nans(returns)]
             returns = returns[~check_for_infs(returns)]
+            
+            # Preview cleaned data
+            tprint_data_preview(returns, "monte_carlo_cleaned_returns", level="DEBUG", include_metadata=True)
 
             if len(returns) < self.config.min_samples:
                 return {
@@ -464,6 +482,9 @@ class RealMonteCarloEngine:
                 'skewness': float(pd.Series(returns).skew()),
                 'kurtosis': float(pd.Series(returns).kurtosis())
             }
+            
+            # Preview calculated statistics
+            tprint_data_preview(statistics, "monte_carlo_data_statistics", level="DEBUG", include_metadata=True)
 
             # Check for suspicious patterns
             if statistics['std'] == 0:
@@ -516,6 +537,15 @@ class RealMonteCarloEngine:
     async def _bootstrap_simulation(self, returns: pd.Series, portfolio_value: float) -> List[float]:
         """Bootstrap simulation using historical returns."""
         self.logger.info("🔄 Running bootstrap simulation")
+        
+        # Preview bootstrap parameters
+        bootstrap_params = {
+            'n_simulations': self.config.n_simulations,
+            'horizon': self.config.simulation_horizon,
+            'sample_size': int(len(returns) * self.config.bootstrap_sample_size),
+            'portfolio_value': portfolio_value
+        }
+        tprint_data_preview(bootstrap_params, "bootstrap_simulation_params", level="DEBUG", include_metadata=True)
 
         try:
             n_simulations = self.config.n_simulations
@@ -571,6 +601,9 @@ class RealMonteCarloEngine:
                 # Update performance stats
                 self.performance_stats['vectorbt_operations'] += n_simulations
                 self.performance_stats['total_simulations'] += n_simulations
+                
+                # Preview bootstrap results
+                tprint_data_preview(portfolio_values, "bootstrap_simulation_results", level="DEBUG", max_rows=5)
 
                 return portfolio_values
 
@@ -624,12 +657,25 @@ class RealMonteCarloEngine:
     async def _parametric_simulation(self, returns: pd.Series, portfolio_value: float) -> List[float]:
         """Parametric simulation using fitted distributions."""
         self.logger.info("📊 Running parametric simulation")
+        
+        # Preview parametric simulation parameters
+        param_params = {
+            'distribution': self.config.parametric_distribution,
+            'n_simulations': self.config.n_simulations,
+            'horizon': self.config.simulation_horizon,
+            'portfolio_value': portfolio_value
+        }
+        tprint_data_preview(param_params, "parametric_simulation_params", level="DEBUG", include_metadata=True)
 
         try:
             # Fit distribution parameters
             if self.config.parametric_distribution == "normal":
                 mu, sigma = returns.mean(), returns.std()
                 simulated_returns = np.random.normal(mu, sigma, (self.config.n_simulations, self.config.simulation_horizon))
+                
+                # Preview fitted parameters
+                fitted_params = {'mu': mu, 'sigma': sigma}
+                tprint_data_preview(fitted_params, "fitted_normal_params", level="DEBUG", include_metadata=True)
             elif self.config.parametric_distribution == "t":
                 from scipy import stats
                 df, loc, scale = stats.t.fit(returns)
@@ -639,6 +685,9 @@ class RealMonteCarloEngine:
 
             # Calculate portfolio values
             portfolio_values = portfolio_value * np.prod(1 + simulated_returns, axis=1)
+            
+            # Preview parametric simulation results
+            tprint_data_preview(portfolio_values.tolist(), "parametric_simulation_results", level="DEBUG", max_rows=5)
 
             return portfolio_values.tolist()
 
@@ -649,11 +698,22 @@ class RealMonteCarloEngine:
     async def _historical_simulation(self, returns: pd.Series, portfolio_value: float) -> List[float]:
         """Historical simulation using historical scenarios."""
         self.logger.info("📈 Running historical simulation")
+        
+        # Preview historical simulation parameters
+        hist_params = {
+            'n_simulations': self.config.n_simulations,
+            'horizon': self.config.simulation_horizon,
+            'portfolio_value': portfolio_value
+        }
+        tprint_data_preview(hist_params, "historical_simulation_params", level="DEBUG", include_metadata=True)
 
         try:
             # Use historical returns as scenarios
             historical_returns = returns.values
             n_scenarios = len(historical_returns)
+            
+            # Preview historical data
+            tprint_data_preview(historical_returns, "historical_returns_data", level="DEBUG", max_rows=10)
 
             portfolio_values = []
 
@@ -661,9 +721,12 @@ class RealMonteCarloEngine:
                 # Randomly select historical scenario
                 scenario_returns = np.random.choice(historical_returns, size=self.config.simulation_horizon, replace=True)
 
-                # Calculate portfolio value
-                portfolio_value_sim = portfolio_value * (1 + scenario_returns).prod()
-                portfolio_values.append(portfolio_value_sim)
+            # Calculate portfolio value
+            portfolio_value_sim = portfolio_value * (1 + scenario_returns).prod()
+            portfolio_values.append(portfolio_value_sim)
+
+            # Preview historical simulation results
+            tprint_data_preview(portfolio_values, "historical_simulation_results", level="DEBUG", max_rows=5)
 
             return portfolio_values
 
@@ -706,10 +769,17 @@ class RealMonteCarloEngine:
                 tprint("⚠️  No simulation results to calculate metrics", "warning")
                 return MonteCarloMetrics()
 
+            # Preview input data for metrics calculation
+            tprint_data_preview(simulation_results, "metrics_input_simulation_results", level="DEBUG", max_rows=5)
+            tprint_data_preview(original_returns, "metrics_input_original_returns", level="DEBUG", max_rows=10)
+
             # Validate simulation results
             results_array = ensure_array(simulation_results)
             results_array = results_array[~check_for_nans(results_array)]
             results_array = results_array[~check_for_infs(results_array)]
+            
+            # Preview validated results array
+            tprint_data_preview(results_array, "metrics_validated_results_array", level="DEBUG", max_rows=5)
 
             if len(results_array) == 0:
                 tprint("⚠️  No valid simulation results after filtering", "warning")
@@ -718,6 +788,9 @@ class RealMonteCarloEngine:
             # Calculate returns from portfolio values
             returns = (results_array - initial_value) / initial_value
             returns = returns[~check_for_nans(returns)]
+            
+            # Preview calculated returns
+            tprint_data_preview(returns, "metrics_calculated_returns", level="DEBUG", max_rows=10)
 
             if len(returns) == 0:
                 return MonteCarloMetrics()
@@ -847,6 +920,9 @@ class RealMonteCarloEngine:
                 n_simulations=len(simulation_results),
                 simulation_mode=self.config.mode.value
             )
+            
+            # Preview final calculated metrics
+            tprint_data_preview(metrics.to_dict(), "monte_carlo_final_metrics", level="INFO", include_metadata=True)
 
             return metrics
 
@@ -858,6 +934,9 @@ class RealMonteCarloEngine:
     def _save_results(self, result: Dict[str, Any]):
         """Save simulation results to disk"""
         try:
+            # Preview results before saving
+            tprint_data_preview(result, "monte_carlo_results_to_save", level="DEBUG", include_metadata=True)
+            
             results_path = Path(self.config.results_path)
             ensure_directory(str(results_path))
 

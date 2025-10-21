@@ -24,7 +24,7 @@ from exchanges.shared.enhanced_unified_exchange_interface import (
 from exchanges.shared.unified_exchange_standardizer import (
     UnifiedExchangeStandardizer, DataQualityLevel
 )
-from src.utils.tprint import tprint_data_preview
+from src.utils.tprint import tprint_data_preview, tprint_data_format, LogLevel
 
 # Optional import to avoid circular dependencies
 try:
@@ -104,6 +104,13 @@ class OkxKlinesAdapter:
                 start_time=start_time,
                 end_time=end_time,
                 limit=limit
+            )
+            
+            # Log standardized data format for debugging
+            tprint_data_format(
+                standardized_data, 
+                f"okx_klines_{symbol}_{interval}", 
+                level=LogLevel.DEBUG
             )
             
             # Show data preview if enabled

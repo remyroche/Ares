@@ -18,7 +18,7 @@ except ImportError:
     AIOHTTP_AVAILABLE = False
 
 from exchanges.shared import KlinesDataProcessingPipeline
-from src.utils.tprint import tprint_data_preview
+from src.utils.tprint import tprint_data_preview, tprint_data_format, LogLevel
 
 # Optional import to avoid circular dependencies
 try:
@@ -95,6 +95,13 @@ class GateioKlinesAdapter:
             
             # Convert to standard format
             standardized_data = self._format_klines_data(klines_data, symbol, interval)
+            
+            # Log standardized data format for debugging
+            tprint_data_format(
+                standardized_data, 
+                f"gateio_klines_{symbol}_{interval}", 
+                level=LogLevel.DEBUG
+            )
             
             # Show data preview if enabled
             if enable_data_preview and not standardized_data.empty:

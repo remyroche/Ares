@@ -34,7 +34,7 @@ from src.utils.data import (
     check_dataframe_health
 )
 from src.utils.logger import system_logger
-from src.utils.tprint import tprint_data_preview
+from src.utils.tprint import tprint_data_preview, tprint_data_format, LogLevel
 
 logger = logging.getLogger(__name__)
 
@@ -323,6 +323,13 @@ class UnifiedOHLCVStandardizer:
                     level="DEBUG"
                 )
             
+            # Log raw data format for debugging
+            tprint_data_format(
+                data_list, 
+                f"raw_{exchange.value}_{symbol}_{interval}", 
+                level=LogLevel.DEBUG
+            )
+            
             # Get exchange configuration
             config = self.exchange_mappings.get(exchange)
             if not config:
@@ -371,6 +378,13 @@ class UnifiedOHLCVStandardizer:
                     level="DEBUG"
                 )
             
+            # Log standardized data format for debugging
+            tprint_data_format(
+                standardized_data, 
+                f"standardized_{exchange.value}_{symbol}_{interval}", 
+                level=LogLevel.DEBUG
+            )
+            
             self.logger.info(f"✅ Standardized {len(standardized_data)} data points from {exchange.value}")
             return standardized_data
             
@@ -417,6 +431,13 @@ class UnifiedOHLCVStandardizer:
             
             # Validate with src/utils/data/ framework
             self._validate_with_data_framework(df, f"{exchange.value} standardization")
+            
+            # Log final DataFrame format for debugging
+            tprint_data_format(
+                df, 
+                f"final_dataframe_{exchange.value}_{symbol}_{interval}", 
+                level=LogLevel.DEBUG
+            )
             
             self.logger.info(f"✅ Standardized DataFrame created: {df.shape} with {len(standardized_objects)} records")
             return df

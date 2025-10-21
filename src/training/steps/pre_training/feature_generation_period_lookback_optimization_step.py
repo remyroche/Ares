@@ -82,6 +82,7 @@ from src.utils.matrix_operations import safe_matrix_multiply, optimize_dataframe
 try:
     from src.utils.artifact_manager import get_pretraining_artifact_manager
     from src.utils.artifact_keys import ArtifactKeys
+    from src.utils.tprint import tprint_data_preview
 except ImportError:
     # Fallback imports if the specific module doesn't exist
     def get_pretraining_artifact_manager(config):
@@ -120,6 +121,8 @@ except ImportError:
     def tprint_performance(*args, **kwargs): print("PERFORMANCE:", *args, **kwargs)
     def tprint_step(*args, **kwargs): print("STEP:", *args, **kwargs)
     def tprint_result(*args, **kwargs): print("RESULT:", *args, **kwargs)
+    def tprint_data_preview(data, name="data", max_rows=5, max_cols=10, level="DEBUG", include_metadata=True, force_log=False): 
+        print(f"DATA_PREVIEW [{name}]: {type(data).__name__} - {getattr(data, 'shape', 'unknown shape')}")
 
 
 class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
@@ -273,6 +276,7 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             initial_memory = df.memory_usage(deep=True).sum()
             if verbose:
                 tprint_info(f"Initial memory usage: {initial_memory / 1024**2:.2f} MB")
+                tprint_data_preview(df, "before_dtype_optimization", max_rows=3, level="DEBUG")
             
             # Use enhanced unified memory manager
             if self.data_type_optimization:
@@ -287,6 +291,7 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                 memory_saved = initial_memory - final_memory
                 if verbose:
                     tprint_success(f"Enhanced data type optimization: {memory_saved / 1024**2:.2f} MB saved")
+                    tprint_data_preview(df, "after_dtype_optimization", max_rows=3, level="DEBUG")
             else:
                 tprint_info("Data type optimization disabled")
             
@@ -317,6 +322,7 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             
             for i in range(0, total_rows, chunk_size):
                 chunk = data.iloc[i:i + chunk_size].copy()
+                tprint_data_preview(chunk, f"processing_chunk_{i//chunk_size + 1}", max_rows=3, level="DEBUG")
                 
                 # Optimize chunk data types (silent for chunks)
                 chunk = self._optimize_dataframe_dtypes(chunk, verbose=False)
@@ -402,6 +408,7 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             df = self._optimize_dataframe_dtypes(df)
             
             tprint_success(f"Memory-mapped data loaded: {df.shape}")
+            tprint_data_preview(df, "memory_mapped_data", max_rows=5, level="INFO")
             return df
             
         except Exception as e:
@@ -635,6 +642,7 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
         tprint_info(f"Data shape: {data.shape if hasattr(data, 'shape') else 'Unknown'}")
         tprint_info(f"Data type: {type(data)}")
         tprint_info(f"Kwargs keys: {list(kwargs.keys())}")
+        tprint_data_preview(data, "input_data", max_rows=5, level="DEBUG")
         
         try:
             # Start memory monitoring
@@ -692,6 +700,8 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                 cached_metrics = artifact_manager.get_artifact('period_lookback_optimization', 'optimization_metadata')
                 
                 tprint_info(f"Cache check results: periods={cached_periods is not None}, lookbacks={cached_lookbacks is not None}, metrics={cached_metrics is not None}")
+                tprint_data_preview(cached_periods, "cached_periods", level="DEBUG")
+                tprint_data_preview(cached_lookbacks, "cached_lookbacks", level="DEBUG")
             
             if cached_periods is not None and cached_lookbacks is not None:
                 tprint_success("📦 Retrieved optimization results from artifact manager")
@@ -1002,6 +1012,8 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             # Store artifacts in artifact manager
             tprint_info("Storing optimization artifacts")
             self.logger.info(f"📦 Storing artifacts: periods={optimized_periods}, lookbacks={optimized_lookbacks}")
+            tprint_data_preview(optimized_periods, "optimized_periods_to_save", level="INFO")
+            tprint_data_preview(optimized_lookbacks, "optimized_lookbacks_to_save", level="INFO")
             
             try:
                 artifact_manager.save(
@@ -1110,6 +1122,7 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
         except Exception as e:
             tprint_error(f"Period + lookback optimization failed: {e}")
             tprint_debug(f"Exception details: {traceback.format_exc()}")
+            tprint_data_preview(data, "failed_optimization_data", max_rows=3, level="ERROR")
             self.logger.error(f"Period + lookback optimization failed: {e}")
             raise
 
@@ -1322,6 +1335,7 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
         except Exception as e:
             tprint_error(f"Feature-level analysis failed: {e}")
             tprint_debug(f"Feature analysis error details: {traceback.format_exc()}")
+            tprint_data_preview(data, "failed_operation_data", max_rows=3, level="ERROR")
             self.logger.warning(f"Feature-level analysis unavailable: {e}")
             return {
                 'status': 'unavailable',
@@ -2789,6 +2803,7 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             features_df = self._load_dataframe('generated_features')
             if features_df is not None and not features_df.empty:
                 tprint_success(f"Loaded features from artifact manager: {features_df.shape}")
+                tprint_data_preview(features_df, "loaded_features", max_rows=5, level="INFO")
             else:
                 tprint_warning("No features found in artifact manager, trying fallback")
                 # Try fallback loading
@@ -2820,6 +2835,7 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                     if isinstance(targets_series, pd.DataFrame):
                         targets_series = targets_series.iloc[:, 0]  # Take first column
                 tprint_success(f"Loaded targets from artifact manager: {len(targets_series)} samples")
+                tprint_data_preview(targets_series, "loaded_targets", max_rows=10, level="INFO")
             else:
                 tprint_warning("No targets found in artifact manager, trying fallback")
                 # Try fallback loading
@@ -2852,6 +2868,9 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
         aligned_targets = aligned_data['target']
         
         tprint_success(f"Aligned data: features={aligned_features.shape}, targets={aligned_targets.shape}")
+        tprint_data_preview(aligned_data, "aligned_data", max_rows=5, level="INFO")
+        tprint_data_preview(aligned_features, "aligned_features", max_rows=5, level="DEBUG")
+        tprint_data_preview(aligned_targets, "aligned_targets", max_rows=10, level="DEBUG")
         
         # Use aligned data for optimization
         data = aligned_features
@@ -2874,10 +2893,12 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             # Save artifacts using BaseStep methods
             if result.get('success', False):
                 if 'optimized_features' in result.get('artifacts', {}):
+                    tprint_data_preview(result['artifacts']['optimized_features'], "saved_optimized_features", max_rows=5, level="INFO")
                     self._save_dataframe(result['artifacts']['optimized_features'], 'optimized_features')
                 if 'optimization_metadata' in result:
                     self._save_metadata(result['optimization_metadata'], 'optimization_metadata')
                 if 'family_diagnostics' in result.get('artifacts', {}):
+                    tprint_data_preview(result['artifacts']['family_diagnostics'], "saved_family_diagnostics", max_rows=5, level="INFO")
                     self._save_dataframe(result['artifacts']['family_diagnostics'], 'family_diagnostics')
             
             # Log optimization statistics
@@ -2933,6 +2954,7 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                          periods_to_test: List[int], direction: str) -> Tuple[int, Dict[str, float]]:
         """Optimize periods using mutual information and out-of-sample Sharpe ratio."""
         tprint_step("Optimizing periods")
+        tprint_data_preview(features, "period_optimization_input", max_rows=5, level="DEBUG")
         
         period_scores = {}
         best_period = periods_to_test[0]
@@ -2980,6 +3002,7 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                 continue
         
         tprint_success(f"Best period: {best_period} (score: {best_score:.3f})")
+        tprint_data_preview(period_scores, "period_optimization_scores", level="INFO")
         return best_period, period_scores
     
     @memory_efficient(OptimizationConfig(
@@ -2991,6 +3014,7 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                            lookbacks_to_test: List[int], direction: str) -> Tuple[int, Dict[str, float]]:
         """Optimize lookbacks using mutual information and out-of-sample Sharpe ratio."""
         tprint_step("Optimizing lookbacks")
+        tprint_data_preview(features, "lookback_optimization_input", max_rows=5, level="DEBUG")
         
         lookback_scores = {}
         best_lookback = lookbacks_to_test[0]
@@ -3038,6 +3062,7 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                 continue
         
         tprint_success(f"Best lookback: {best_lookback} (score: {best_score:.3f})")
+        tprint_data_preview(lookback_scores, "lookback_optimization_scores", level="INFO")
         return best_lookback, lookback_scores
     
     def _create_period_features(self, features: pd.DataFrame, period: int) -> pd.DataFrame:

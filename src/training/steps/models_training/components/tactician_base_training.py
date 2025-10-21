@@ -95,7 +95,7 @@ class TacticianBaseTraining(BaseStep):
             config: Configuration dictionary
             logger: Logger instance
         """
-        super().__init__(name, logger)
+        super().__init__(name, config)
         
         # Set default configuration
         default_config = {

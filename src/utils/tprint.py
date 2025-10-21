@@ -1323,6 +1323,7 @@ class DataFormatConfig:
 
 def _get_caller_chain(max_depth: int = 3) -> str:
     """Get a more detailed caller chain for better debugging."""
+    frame = None
     try:
         import inspect
         frame = inspect.currentframe()
@@ -1349,6 +1350,10 @@ def _get_caller_chain(max_depth: int = 3) -> str:
         return ""
     except Exception:
         return ""
+    finally:
+        # Clean up frame references to avoid memory leaks
+        if frame is not None:
+            del frame
 
 def _safe_repr(obj: Any, max_chars: int = 100) -> str:
     """Safe representation that won't explode on large objects."""
@@ -1365,6 +1370,11 @@ def _safe_repr(obj: Any, max_chars: int = 100) -> str:
 def _check_pandas_dataframe(data, name: str, config: DataFormatConfig, caller_info: str, level: LogLevel) -> Dict[str, Any]:
     """Comprehensive pandas DataFrame analysis."""
     summary = {"type": "DataFrame", "shape": data.shape}
+    
+    # Initialize defaults for variables that might not be set
+    null_pct = None
+    object_cols = []
+    categorical_cols = []
     
     try:
         import pandas as pd
@@ -1419,7 +1429,7 @@ def _check_pandas_dataframe(data, name: str, config: DataFormatConfig, caller_in
         summary.update({
             "dtypes": dict(dtypes),
             "dtype_counts": dtype_counts,
-            "null_pct": null_pct if config.include_semantics else None,
+            "null_pct": null_pct,
             "object_cols": len(object_cols),
             "categorical_cols": len(categorical_cols)
         })
@@ -1455,11 +1465,19 @@ def _check_pandas_series(data, name: str, config: DataFormatConfig, caller_info:
             unique_pct = (unique_count / len(data)) * 100
             tprint_with_level(level, f"  Unique: {unique_count} ({unique_pct:.1f}%)")
             
-            # Monotonicity
-            if data.dtype in ['int64', 'float64', 'datetime64[ns]']:
-                is_monotonic = data.is_monotonic_increasing or data.is_monotonic_decreasing
-                tprint_with_level(level, f"  Monotonic: {is_monotonic}")
-                summary["is_monotonic"] = is_monotonic
+            # Monotonicity using proper pandas API
+            try:
+                from pandas.api.types import is_numeric_dtype, is_datetime64_any_dtype
+                if is_numeric_dtype(data) or is_datetime64_any_dtype(data):
+                    is_monotonic = data.is_monotonic_increasing or data.is_monotonic_decreasing
+                    tprint_with_level(level, f"  Monotonic: {is_monotonic}")
+                    summary["is_monotonic"] = is_monotonic
+            except ImportError:
+                # Fallback for older pandas versions
+                if str(data.dtype) in ['int64', 'float64', 'datetime64[ns]']:
+                    is_monotonic = data.is_monotonic_increasing or data.is_monotonic_decreasing
+                    tprint_with_level(level, f"  Monotonic: {is_monotonic}")
+                    summary["is_monotonic"] = is_monotonic
         
         if config.include_memory:
             try:
@@ -1501,9 +1519,9 @@ def _check_numpy_array(data, name: str, config: DataFormatConfig, caller_info: s
             # Safe sampling for large arrays
             if config.safe_sampling and data.size > config.sample_size:
                 sample_indices = np.random.choice(data.size, min(config.sample_size, data.size), replace=False)
-                sample_data = data.flat[sample_indices]
+                sample_data = np.asarray(data.flat[sample_indices])
             else:
-                sample_data = data.flat
+                sample_data = np.asarray(data.flat)
             
             # Numeric analysis
             if np.issubdtype(data.dtype, np.number):
@@ -1593,10 +1611,10 @@ def tprint_data_format(data: Any, name: str = "data", level: LogLevel = LogLevel
             pass
         
         try:
-            import scipy.sparse
+            import scipy.sparse as sp
             SCIPY_AVAILABLE = True
         except ImportError:
-            pass
+            SCIPY_AVAILABLE = False
         
         # Handle None first
         if data is None:
@@ -1634,6 +1652,28 @@ def tprint_data_format(data: Any, name: str = "data", level: LogLevel = LogLevel
             summary["length"] = len(data)
             return summary if return_summary else None
         
+        # Handle bytes/bytearray
+        elif isinstance(data, (bytes, bytearray)):
+            tprint_with_level(level, f"🔍 {name} format{caller_info}:")
+            tprint_with_level(level, f"  Type: {type(data).__name__}")
+            tprint_with_level(level, f"  Length: {len(data)} bytes")
+            
+            if config.include_values and len(data) > 0:
+                # Show first 16 bytes as hex
+                preview_bytes = data[:16]
+                hex_preview = ' '.join(f'{b:02x}' for b in preview_bytes)
+                tprint_with_level(level, f"  Hex preview: {hex_preview}{'...' if len(data) > 16 else ''}")
+                
+                # Try to decode as UTF-8 for text preview
+                try:
+                    text_preview = data[:config.max_preview_chars].decode('utf-8', errors='ignore')
+                    tprint_with_level(level, f"  Text preview: {_safe_repr(text_preview, config.max_preview_chars)}")
+                except Exception:
+                    pass
+            
+            summary["length"] = len(data)
+            return summary if return_summary else None
+        
         # Handle numbers (after bool check)
         elif isinstance(data, (int, float, complex)):
             tprint_with_level(level, f"🔍 {name} format{caller_info}:")
@@ -1645,11 +1685,99 @@ def tprint_data_format(data: Any, name: str = "data", level: LogLevel = LogLevel
                 summary["bits"] = data.bit_length()
             elif isinstance(data, float):
                 if config.include_semantics:
-                    is_finite = data != float('inf') and data == data  # not inf and not nan
+                    import math
+                    is_finite = math.isfinite(data)
                     tprint_with_level(level, f"  Finite: {is_finite}")
                     summary["is_finite"] = is_finite
             
             summary["value"] = data
+            return summary if return_summary else None
+        
+        # CRITICAL: Handle library-specific types BEFORE generic iterable/sequence checks
+        # This prevents pandas DataFrames/Series from being caught by generic sequence logic
+        
+        # Handle pandas DataFrames
+        elif PANDAS_AVAILABLE and isinstance(data, pd.DataFrame):
+            summary = _check_pandas_dataframe(data, name, config, caller_info, level)
+            return summary if return_summary else None
+        
+        # Handle pandas Series
+        elif PANDAS_AVAILABLE and isinstance(data, pd.Series):
+            summary = _check_pandas_series(data, name, config, caller_info, level)
+            return summary if return_summary else None
+        
+        # Handle numpy arrays
+        elif NUMPY_AVAILABLE and isinstance(data, np.ndarray):
+            summary = _check_numpy_array(data, name, config, caller_info, level)
+            return summary if return_summary else None
+        
+        # Handle scipy sparse matrices
+        elif SCIPY_AVAILABLE and sp.issparse(data):
+            tprint_with_level(level, f"🔍 {name} format{caller_info}:")
+            tprint_with_level(level, f"  Type: {type(data).__name__} (sparse)")
+            tprint_with_level(level, f"  Shape: {data.shape}")
+            tprint_with_level(level, f"  Dtype: {data.dtype}")
+            tprint_with_level(level, f"  NNZ: {data.nnz}")
+            
+            # Correct density calculation: nnz / (rows * cols), not nnz / size
+            density = data.nnz / (data.shape[0] * data.shape[1]) if data.shape[0] > 0 and data.shape[1] > 0 else 0.0
+            tprint_with_level(level, f"  Density: {density:.2%}")
+            
+            summary.update({
+                "type": f"{type(data).__name__} (sparse)",
+                "shape": data.shape,
+                "dtype": str(data.dtype),
+                "nnz": data.nnz,
+                "density": density
+            })
+            return summary if return_summary else None
+        
+        # Handle PyArrow Tables
+        elif PYARROW_AVAILABLE and isinstance(data, pa.Table):
+            tprint_with_level(level, f"🔍 {name} format{caller_info}:")
+            tprint_with_level(level, f"  Type: Arrow Table")
+            tprint_with_level(level, f"  Shape: {data.num_rows} rows × {data.num_columns} cols")
+            
+            # Schema details
+            field_info = [(field.name, str(field.type)) for field in data.schema]
+            tprint_with_level(level, f"  Schema: {field_info}")
+            
+            if config.include_semantics:
+                # Null counts per column
+                null_counts = {field.name: data.column(field.name).null_count for field in data.schema}
+                tprint_with_level(level, f"  Null counts: {null_counts}")
+                summary["null_counts"] = null_counts
+            
+            summary.update({
+                "type": "Arrow Table",
+                "shape": (data.num_rows, data.num_columns),
+                "schema": field_info
+            })
+            return summary if return_summary else None
+        
+        # Handle Parquet files
+        elif PYARROW_AVAILABLE and isinstance(data, (str, os.PathLike)) and str(data).lower().endswith('.parquet'):
+            try:
+                import pyarrow.parquet as pq
+                pf = pq.ParquetFile(data)
+                tprint_with_level(level, f"🔍 {name} format{caller_info}:")
+                tprint_with_level(level, f"  Type: Parquet file")
+                tprint_with_level(level, f"  Shape: {pf.metadata.num_rows} rows × {len(pf.schema_arrow)} cols")
+                tprint_with_level(level, f"  Row groups: {pf.num_row_groups}")
+                
+                field_info = [(field.name, str(field.type)) for field in pf.schema_arrow]
+                tprint_with_level(level, f"  Schema: {field_info}")
+                
+                summary.update({
+                    "type": "Parquet file",
+                    "shape": (pf.metadata.num_rows, len(pf.schema_arrow)),
+                    "row_groups": pf.num_row_groups,
+                    "schema": field_info
+                })
+            except Exception as err:
+                tprint_with_level(level, f"🔍 {name} format{caller_info}: Parquet file (error: {err})")
+                summary["error"] = str(err)
+            
             return summary if return_summary else None
         
         # Handle sets specifically
@@ -1736,87 +1864,6 @@ def tprint_data_format(data: Any, name: str = "data", level: LogLevel = LogLevel
                 tprint_with_level(level, f"🔍 {name} format{caller_info}: {type(data).__name__} (error: {e})")
                 summary["error"] = str(e)
                 return summary if return_summary else None
-        
-        # Handle pandas DataFrames
-        elif PANDAS_AVAILABLE and isinstance(data, pd.DataFrame):
-            summary = _check_pandas_dataframe(data, name, config, caller_info, level)
-            return summary if return_summary else None
-        
-        # Handle pandas Series
-        elif PANDAS_AVAILABLE and isinstance(data, pd.Series):
-            summary = _check_pandas_series(data, name, config, caller_info, level)
-            return summary if return_summary else None
-        
-        # Handle numpy arrays
-        elif NUMPY_AVAILABLE and isinstance(data, np.ndarray):
-            summary = _check_numpy_array(data, name, config, caller_info, level)
-            return summary if return_summary else None
-        
-        # Handle scipy sparse matrices
-        elif SCIPY_AVAILABLE and hasattr(scipy.sparse, 'issparse') and scipy.sparse.issparse(data):
-            tprint_with_level(level, f"🔍 {name} format{caller_info}:")
-            tprint_with_level(level, f"  Type: {type(data).__name__} (sparse)")
-            tprint_with_level(level, f"  Shape: {data.shape}")
-            tprint_with_level(level, f"  Dtype: {data.dtype}")
-            tprint_with_level(level, f"  NNZ: {data.nnz}")
-            tprint_with_level(level, f"  Density: {data.nnz / data.size:.2%}")
-            
-            summary.update({
-                "type": f"{type(data).__name__} (sparse)",
-                "shape": data.shape,
-                "dtype": str(data.dtype),
-                "nnz": data.nnz,
-                "density": data.nnz / data.size
-            })
-            return summary if return_summary else None
-        
-        # Handle PyArrow Tables
-        elif PYARROW_AVAILABLE and isinstance(data, pa.Table):
-            tprint_with_level(level, f"🔍 {name} format{caller_info}:")
-            tprint_with_level(level, f"  Type: Arrow Table")
-            tprint_with_level(level, f"  Shape: {data.num_rows} rows × {data.num_columns} cols")
-            
-            # Schema details
-            field_info = [(field.name, str(field.type)) for field in data.schema]
-            tprint_with_level(level, f"  Schema: {field_info}")
-            
-            if config.include_semantics:
-                # Null counts per column
-                null_counts = {field.name: data.column(field.name).null_count for field in data.schema}
-                tprint_with_level(level, f"  Null counts: {null_counts}")
-                summary["null_counts"] = null_counts
-            
-            summary.update({
-                "type": "Arrow Table",
-                "shape": (data.num_rows, data.num_columns),
-                "schema": field_info
-            })
-            return summary if return_summary else None
-        
-        # Handle Parquet files
-        elif PYARROW_AVAILABLE and isinstance(data, (str, os.PathLike)) and str(data).lower().endswith('.parquet'):
-            try:
-                import pyarrow.parquet as pq
-                pf = pq.ParquetFile(data)
-                tprint_with_level(level, f"🔍 {name} format{caller_info}:")
-                tprint_with_level(level, f"  Type: Parquet file")
-                tprint_with_level(level, f"  Shape: {pf.metadata.num_rows} rows × {len(pf.schema_arrow)} cols")
-                tprint_with_level(level, f"  Row groups: {pf.num_row_groups}")
-                
-                field_info = [(field.name, str(field.type)) for field in pf.schema_arrow]
-                tprint_with_level(level, f"  Schema: {field_info}")
-                
-                summary.update({
-                    "type": "Parquet file",
-                    "shape": (pf.metadata.num_rows, len(pf.schema_arrow)),
-                    "row_groups": pf.num_row_groups,
-                    "schema": field_info
-                })
-            except Exception as err:
-                tprint_with_level(level, f"🔍 {name} format{caller_info}: Parquet file (error: {err})")
-                summary["error"] = str(err)
-            
-            return summary if return_summary else None
         
         # Handle other objects
         else:

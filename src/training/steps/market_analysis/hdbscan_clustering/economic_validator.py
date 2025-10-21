@@ -131,6 +131,7 @@ class EconomicValidator:
             
             # Create regime profiles
             profiles = []
+            all_regime_stats = []  # Collect stats for data-driven classification
             with tprint_progress("Creating regime profiles", len(unique_regimes)):
                 for i, regime_id in enumerate(unique_regimes):
                     tprint_debug(f"Creating profile for regime {regime_id} ({i+1}/{len(unique_regimes)})")
@@ -138,7 +139,11 @@ class EconomicValidator:
                         regime_id, cluster_labels, market_data, returns, features_df
                     )
                     profiles.append(profile)
+                    all_regime_stats.append(profile.key_stats)  # Collect for data-driven analysis
                     tprint_progress("Creating regime profiles", i + 1)
+            
+            # Store all regime stats for data-driven classification
+            self._all_regime_stats = all_regime_stats
             
             # Calculate validation metrics
             with tprint_timer("Validation metrics calculation"):
@@ -525,17 +530,36 @@ class EconomicValidator:
             return {}
     
     def _generate_regime_name(self, key_stats: Dict[str, float], regime_id: int) -> str:
-        """Generate descriptive name for regime based on characteristics."""
+        """Generate data-driven descriptive name for regime based on characteristics."""
         try:
-            # Determine regime type based on key characteristics
-            if key_stats['sharpe_ratio'] > 1.0 and key_stats['volatility'] < 0.1:
+            # Get all regime stats for comparison
+            all_regime_stats = getattr(self, '_all_regime_stats', [])
+            
+            # Calculate data-driven thresholds
+            sharpe_thresholds = self._calculate_sharpe_thresholds(all_regime_stats)
+            volatility_thresholds = self._calculate_volatility_thresholds(all_regime_stats)
+            return_thresholds = self._calculate_return_thresholds(all_regime_stats)
+            
+            # Data-driven regime naming
+            sharpe = key_stats['sharpe_ratio']
+            volatility = key_stats['volatility']
+            avg_return = key_stats['avg_return']
+            
+            # Multi-dimensional classification for naming
+            if sharpe > sharpe_thresholds['high'] and volatility < volatility_thresholds['low']:
+                return f"Elite_{regime_id}"
+            elif sharpe > sharpe_thresholds['high'] and volatility < volatility_thresholds['high']:
                 return f"High_Quality_{regime_id}"
-            elif key_stats['volatility'] > 0.2:
-                return f"High_Vol_{regime_id}"
-            elif key_stats['avg_return'] > 0.01:
+            elif volatility > volatility_thresholds['high']:
+                return f"Volatile_{regime_id}"
+            elif avg_return > return_thresholds['high']:
                 return f"Bullish_{regime_id}"
-            elif key_stats['avg_return'] < -0.01:
+            elif avg_return < -return_thresholds['high']:
                 return f"Bearish_{regime_id}"
+            elif volatility < volatility_thresholds['low'] and abs(avg_return) < return_thresholds['low']:
+                return f"Stable_{regime_id}"
+            elif sharpe < sharpe_thresholds['low']:
+                return f"Poor_Performance_{regime_id}"
             else:
                 return f"Neutral_{regime_id}"
                 
@@ -725,7 +749,7 @@ class EconomicValidator:
             return 0.0
     
     def _generate_trading_recommendations(self, profiles: List[RegimeProfile]) -> Dict[str, Any]:
-        """Generate trading recommendations based on regime profiles."""
+        """Generate data-driven trading recommendations based on regime profiles."""
         try:
             recommendations = {
                 'best_regimes': [],
@@ -737,23 +761,57 @@ class EconomicValidator:
             if not profiles:
                 return recommendations
             
-            # Analyze each regime
+            # Get all regime stats for data-driven analysis
+            all_regime_stats = getattr(self, '_all_regime_stats', [])
+            
+            # Calculate data-driven thresholds
+            sharpe_ratios = [p.key_stats['sharpe_ratio'] for p in profiles]
+            volatilities = [p.key_stats['volatility'] for p in profiles]
+            returns = [p.key_stats['avg_return'] for p in profiles]
+            
+            # Data-driven regime classification
+            sharpe_thresholds = self._calculate_sharpe_thresholds(all_regime_stats)
+            volatility_thresholds = self._calculate_volatility_thresholds(all_regime_stats)
+            return_thresholds = self._calculate_return_thresholds(all_regime_stats)
+            
+            # Analyze each regime with data-driven thresholds
             for profile in profiles:
-                if profile.key_stats['sharpe_ratio'] > 1.0 and profile.key_stats['volatility'] < 0.15:
+                sharpe = profile.key_stats['sharpe_ratio']
+                volatility = profile.key_stats['volatility']
+                avg_return = profile.key_stats['avg_return']
+                
+                # Multi-dimensional data-driven classification
+                if sharpe > sharpe_thresholds['high'] and volatility < volatility_thresholds['high']:
                     recommendations['best_regimes'].append(profile.regime_id)
-                elif profile.key_stats['sharpe_ratio'] < -0.5 or profile.key_stats['volatility'] > 0.25:
+                elif sharpe < sharpe_thresholds['low'] or volatility > volatility_thresholds['high']:
                     recommendations['avoid_regimes'].append(profile.regime_id)
             
-            # Determine overall strategy
-            avg_sharpe = np.mean([p.key_stats['sharpe_ratio'] for p in profiles])
-            avg_vol = np.mean([p.key_stats['volatility'] for p in profiles])
+            # Data-driven overall strategy
+            avg_sharpe = np.mean(sharpe_ratios)
+            avg_vol = np.mean(volatilities)
+            sharpe_std = np.std(sharpe_ratios)
             
-            if avg_sharpe > 0.5 and avg_vol < 0.15:
+            if avg_sharpe > sharpe_thresholds['high'] and sharpe_std < np.std([s.get('sharpe_ratio', 0) for s in all_regime_stats]) * 0.5:
                 recommendations['overall_strategy'] = 'Aggressive'
                 recommendations['risk_level'] = 'Low'
-            elif avg_sharpe < 0 and avg_vol > 0.2:
+            elif avg_sharpe > sharpe_thresholds['low'] and avg_vol < volatility_thresholds['high']:
+                recommendations['overall_strategy'] = 'Moderate'
+                recommendations['risk_level'] = 'Medium'
+            elif avg_sharpe < sharpe_thresholds['low'] and avg_vol > volatility_thresholds['high']:
                 recommendations['overall_strategy'] = 'Defensive'
                 recommendations['risk_level'] = 'High'
+            else:
+                recommendations['overall_strategy'] = 'Conservative'
+                recommendations['risk_level'] = 'Medium'
+            
+            # Additional data-driven insights
+            recommendations['regime_diversity'] = len(set([p.regime_type for p in profiles]))
+            recommendations['performance_consistency'] = 1.0 - (np.std(volatilities) / (avg_vol + 1e-10))
+            recommendations['data_driven_thresholds'] = {
+                'sharpe_thresholds': sharpe_thresholds,
+                'volatility_thresholds': volatility_thresholds,
+                'return_thresholds': return_thresholds
+            }
             
             return recommendations
             
@@ -790,64 +848,192 @@ class EconomicValidator:
         )
     
     def _classify_regime_type(self, key_stats: Dict[str, float], regime_data: pd.DataFrame) -> str:
-        """Classify regime type based on statistical characteristics."""
+        """Classify regime type based on data-driven statistical characteristics."""
         try:
-            # Determine regime type based on key characteristics
+            # Get all regime data for comparison
+            all_regime_stats = self._get_all_regime_statistics()
+            
+            # Determine regime type based on relative characteristics
             avg_return = key_stats['avg_return']
             volatility = key_stats['volatility']
             sharpe_ratio = key_stats['sharpe_ratio']
             skewness = key_stats['skewness']
             
-            # High volatility regime
-            if volatility > 0.2:
+            # Calculate data-driven thresholds
+            volatility_thresholds = self._calculate_volatility_thresholds(all_regime_stats)
+            return_thresholds = self._calculate_return_thresholds(all_regime_stats)
+            sharpe_thresholds = self._calculate_sharpe_thresholds(all_regime_stats)
+            
+            # Data-driven classification
+            if volatility > volatility_thresholds['high']:
                 return 'volatile'
-            
-            # Trending regimes
-            if abs(avg_return) > 0.01:
-                if avg_return > 0:
-                    return 'bull' if sharpe_ratio > 0.5 else 'trending'
+            elif volatility < volatility_thresholds['low']:
+                if abs(avg_return) < return_thresholds['low']:
+                    return 'sideways'
                 else:
-                    return 'bear' if sharpe_ratio < -0.5 else 'trending'
-            
-            # Sideways regime
-            if abs(avg_return) < 0.005 and volatility < 0.1:
-                return 'sideways'
-            
-            # Default classification
-            return 'trending'
+                    return 'trending'
+            else:
+                # Medium volatility - check return characteristics
+                if avg_return > return_thresholds['high']:
+                    return 'bull' if sharpe_ratio > sharpe_thresholds['high'] else 'trending'
+                elif avg_return < return_thresholds['low']:
+                    return 'bear' if sharpe_ratio < sharpe_thresholds['low'] else 'trending'
+                else:
+                    return 'trending'
             
         except Exception as e:
             logger.error(f"❌ Regime type classification failed: {e}")
             return 'unknown'
     
+    def _get_all_regime_statistics(self) -> List[Dict[str, float]]:
+        """Get statistics for all regimes to enable data-driven classification."""
+        try:
+            # This would be populated during the validation process
+            # For now, return empty list - will be enhanced when called from main validation
+            return getattr(self, '_all_regime_stats', [])
+        except Exception as e:
+            logger.debug(f"Getting all regime statistics failed: {e}")
+            return []
+    
+    def _calculate_volatility_thresholds(self, all_regime_stats: List[Dict[str, float]]) -> Dict[str, float]:
+        """Calculate data-driven volatility thresholds."""
+        try:
+            if not all_regime_stats:
+                # Default thresholds if no data available
+                return {'low': 0.05, 'high': 0.15}
+            
+            volatilities = [stats.get('volatility', 0) for stats in all_regime_stats]
+            volatilities = [v for v in volatilities if v > 0]  # Remove invalid values
+            
+            if len(volatilities) < 2:
+                return {'low': 0.05, 'high': 0.15}
+            
+            # Calculate percentiles for data-driven thresholds
+            low_threshold = np.percentile(volatilities, 33)  # Bottom third
+            high_threshold = np.percentile(volatilities, 67)  # Top third
+            
+            return {'low': low_threshold, 'high': high_threshold}
+            
+        except Exception as e:
+            logger.debug(f"Volatility threshold calculation failed: {e}")
+            return {'low': 0.05, 'high': 0.15}
+    
+    def _calculate_return_thresholds(self, all_regime_stats: List[Dict[str, float]]) -> Dict[str, float]:
+        """Calculate data-driven return thresholds."""
+        try:
+            if not all_regime_stats:
+                return {'low': 0.005, 'high': 0.01}
+            
+            returns = [stats.get('avg_return', 0) for stats in all_regime_stats]
+            abs_returns = [abs(r) for r in returns]
+            
+            if len(abs_returns) < 2:
+                return {'low': 0.005, 'high': 0.01}
+            
+            # Calculate percentiles for data-driven thresholds
+            low_threshold = np.percentile(abs_returns, 33)
+            high_threshold = np.percentile(abs_returns, 67)
+            
+            return {'low': low_threshold, 'high': high_threshold}
+            
+        except Exception as e:
+            logger.debug(f"Return threshold calculation failed: {e}")
+            return {'low': 0.005, 'high': 0.01}
+    
+    def _calculate_sharpe_thresholds(self, all_regime_stats: List[Dict[str, float]]) -> Dict[str, float]:
+        """Calculate data-driven Sharpe ratio thresholds."""
+        try:
+            if not all_regime_stats:
+                return {'low': -0.5, 'high': 0.5}
+            
+            sharpe_ratios = [stats.get('sharpe_ratio', 0) for stats in all_regime_stats]
+            sharpe_ratios = [s for s in sharpe_ratios if not np.isnan(s)]  # Remove NaN values
+            
+            if len(sharpe_ratios) < 2:
+                return {'low': -0.5, 'high': 0.5}
+            
+            # Calculate percentiles for data-driven thresholds
+            low_threshold = np.percentile(sharpe_ratios, 33)
+            high_threshold = np.percentile(sharpe_ratios, 67)
+            
+            return {'low': low_threshold, 'high': high_threshold}
+            
+        except Exception as e:
+            logger.debug(f"Sharpe threshold calculation failed: {e}")
+            return {'low': -0.5, 'high': 0.5}
+    
     def _analyze_market_conditions(self, regime_data: pd.DataFrame, key_stats: Dict[str, float]) -> Dict[str, Any]:
-        """Analyze market conditions during this regime."""
+        """Analyze market conditions during this regime using data-driven thresholds."""
         try:
             conditions = {}
+            
+            # Get all regime stats for comparison
+            all_regime_stats = getattr(self, '_all_regime_stats', [])
             
             # Volume analysis
             volume_cols = [col for col in regime_data.columns if 'volume' in col.lower()]
             if volume_cols:
                 volume = regime_data[volume_cols[0]].values
                 conditions['avg_volume'] = np.mean(volume)
-                conditions['volume_trend'] = 'increasing' if np.mean(volume[-len(volume)//4:]) > np.mean(volume[:len(volume)//4]) else 'decreasing'
+                
+                # Data-driven volume trend analysis
+                if len(volume) > 4:
+                    recent_volume = np.mean(volume[-len(volume)//4:])
+                    early_volume = np.mean(volume[:len(volume)//4])
+                    volume_change = (recent_volume - early_volume) / early_volume if early_volume > 0 else 0
+                    conditions['volume_trend'] = 'increasing' if volume_change > 0.1 else 'decreasing' if volume_change < -0.1 else 'stable'
+                    conditions['volume_change_pct'] = volume_change
+                else:
+                    conditions['volume_trend'] = 'unknown'
+                    conditions['volume_change_pct'] = 0.0
             else:
                 conditions['avg_volume'] = 0.0
                 conditions['volume_trend'] = 'unknown'
+                conditions['volume_change_pct'] = 0.0
             
             # Price range analysis
             if 'high' in regime_data.columns and 'low' in regime_data.columns:
                 price_range = (regime_data['high'] - regime_data['low']).mean()
                 conditions['avg_price_range'] = price_range
-                conditions['price_volatility'] = 'high' if price_range > regime_data['close'].mean() * 0.02 else 'low'
+                
+                # Data-driven price volatility classification
+                if len(all_regime_stats) > 1:
+                    price_ranges = []
+                    for stats in all_regime_stats:
+                        if 'price_range' in stats:
+                            price_ranges.append(stats['price_range'])
+                    
+                    if price_ranges:
+                        range_threshold = np.percentile(price_ranges, 67)
+                        conditions['price_volatility'] = 'high' if price_range > range_threshold else 'low'
+                    else:
+                        conditions['price_volatility'] = 'high' if price_range > regime_data['close'].mean() * 0.02 else 'low'
+                else:
+                    conditions['price_volatility'] = 'high' if price_range > regime_data['close'].mean() * 0.02 else 'low'
             else:
                 conditions['avg_price_range'] = 0.0
                 conditions['price_volatility'] = 'unknown'
             
-            # Regime characteristics
-            conditions['regime_volatility'] = 'high' if key_stats['volatility'] > 0.15 else 'low'
-            conditions['regime_trend'] = 'bullish' if key_stats['avg_return'] > 0 else 'bearish'
-            conditions['regime_quality'] = 'high' if key_stats['sharpe_ratio'] > 1.0 else 'medium' if key_stats['sharpe_ratio'] > 0 else 'low'
+            # Data-driven regime characteristics
+            volatility_thresholds = self._calculate_volatility_thresholds(all_regime_stats)
+            return_thresholds = self._calculate_return_thresholds(all_regime_stats)
+            sharpe_thresholds = self._calculate_sharpe_thresholds(all_regime_stats)
+            
+            conditions['regime_volatility'] = 'high' if key_stats['volatility'] > volatility_thresholds['high'] else 'low'
+            conditions['regime_trend'] = 'bullish' if key_stats['avg_return'] > return_thresholds['high'] else 'bearish' if key_stats['avg_return'] < -return_thresholds['high'] else 'neutral'
+            
+            # Data-driven quality assessment
+            if key_stats['sharpe_ratio'] > sharpe_thresholds['high']:
+                conditions['regime_quality'] = 'high'
+            elif key_stats['sharpe_ratio'] < sharpe_thresholds['low']:
+                conditions['regime_quality'] = 'low'
+            else:
+                conditions['regime_quality'] = 'medium'
+            
+            # Additional data-driven metrics
+            conditions['relative_volatility'] = key_stats['volatility'] / np.mean([s.get('volatility', 0) for s in all_regime_stats]) if all_regime_stats else 1.0
+            conditions['relative_return'] = key_stats['avg_return'] / np.mean([s.get('avg_return', 0) for s in all_regime_stats]) if all_regime_stats else 1.0
+            conditions['relative_sharpe'] = key_stats['sharpe_ratio'] / np.mean([s.get('sharpe_ratio', 0) for s in all_regime_stats]) if all_regime_stats else 1.0
             
             return conditions
             
@@ -1111,7 +1297,7 @@ class EconomicValidator:
             return None
     
     def _analyze_market_regime_patterns(self, profiles: List[RegimeProfile], market_data: pd.DataFrame) -> Dict[str, Any]:
-        """Analyze market regime patterns and characteristics."""
+        """Analyze data-driven market regime patterns and characteristics."""
         try:
             analysis = {}
             
@@ -1122,24 +1308,85 @@ class EconomicValidator:
                 type_counts[regime_type] = type_counts.get(regime_type, 0) + 1
             analysis['regime_type_distribution'] = type_counts
             
+            # Data-driven regime characteristics analysis
+            volatilities = [profile.key_stats['volatility'] for profile in profiles]
+            sharpe_ratios = [profile.key_stats['sharpe_ratio'] for profile in profiles]
+            returns = [profile.key_stats['avg_return'] for profile in profiles]
+            durations = [profile.avg_duration for profile in profiles]
+            stabilities = [profile.regime_stability for profile in profiles]
+            
+            # Calculate data-driven percentiles
+            volatility_percentiles = np.percentile(volatilities, [25, 50, 75])
+            sharpe_percentiles = np.percentile(sharpe_ratios, [25, 50, 75])
+            return_percentiles = np.percentile(returns, [25, 50, 75])
+            
             # Average regime characteristics
             avg_characteristics = {
-                'avg_duration': np.mean([profile.avg_duration for profile in profiles]),
-                'avg_volatility': np.mean([profile.key_stats['volatility'] for profile in profiles]),
-                'avg_sharpe': np.mean([profile.key_stats['sharpe_ratio'] for profile in profiles]),
-                'avg_stability': np.mean([profile.regime_stability for profile in profiles])
+                'avg_duration': np.mean(durations),
+                'avg_volatility': np.mean(volatilities),
+                'avg_sharpe': np.mean(sharpe_ratios),
+                'avg_stability': np.mean(stabilities),
+                'volatility_percentiles': volatility_percentiles.tolist(),
+                'sharpe_percentiles': sharpe_percentiles.tolist(),
+                'return_percentiles': return_percentiles.tolist()
             }
             analysis['avg_characteristics'] = avg_characteristics
+            
+            # Data-driven regime quality assessment
+            high_quality_regimes = [p for p in profiles if p.key_stats['sharpe_ratio'] > sharpe_percentiles[2] and p.key_stats['volatility'] < volatility_percentiles[0]]
+            low_quality_regimes = [p for p in profiles if p.key_stats['sharpe_ratio'] < sharpe_percentiles[0] or p.key_stats['volatility'] > volatility_percentiles[2]]
+            
+            analysis['high_quality_regimes'] = len(high_quality_regimes)
+            analysis['low_quality_regimes'] = len(low_quality_regimes)
+            analysis['quality_ratio'] = len(high_quality_regimes) / len(profiles) if profiles else 0
             
             # Market regime analysis
             analysis['total_regimes'] = len(profiles)
             analysis['regime_diversity'] = len(set(regime_types))
             analysis['most_common_type'] = max(type_counts, key=type_counts.get) if type_counts else 'unknown'
             
+            # Data-driven regime stability analysis
+            analysis['regime_stability_std'] = np.std(stabilities)
+            analysis['regime_stability_cv'] = np.std(stabilities) / (np.mean(stabilities) + 1e-10)
+            analysis['most_stable_regime'] = profiles[np.argmax(stabilities)].regime_id if profiles else None
+            
+            # Regime transition analysis
+            analysis['regime_transition_frequency'] = self._calculate_regime_transition_frequency(profiles)
+            
             return analysis
             
         except Exception as e:
             logger.error(f"❌ Market regime pattern analysis failed: {e}")
+            return {}
+    
+    def _calculate_regime_transition_frequency(self, profiles: List[RegimeProfile]) -> Dict[str, float]:
+        """Calculate data-driven regime transition frequency."""
+        try:
+            if not profiles:
+                return {}
+            
+            # Calculate transition probabilities for each regime
+            transition_frequencies = {}
+            for profile in profiles:
+                regime_id = profile.regime_id
+                transition_probs = profile.transition_probabilities
+                
+                if transition_probs:
+                    # Calculate average transition probability
+                    avg_transition_prob = np.mean(list(transition_probs.values()))
+                    transition_frequencies[f'regime_{regime_id}'] = avg_transition_prob
+                else:
+                    transition_frequencies[f'regime_{regime_id}'] = 0.0
+            
+            # Calculate overall transition metrics
+            all_transition_probs = list(transition_frequencies.values())
+            transition_frequencies['avg_transition_frequency'] = np.mean(all_transition_probs)
+            transition_frequencies['transition_volatility'] = np.std(all_transition_probs)
+            
+            return transition_frequencies
+            
+        except Exception as e:
+            logger.debug(f"Regime transition frequency calculation failed: {e}")
             return {}
     
     def _perform_statistical_tests(self, profiles: List[RegimeProfile], returns: np.ndarray) -> Dict[str, Any]:
@@ -1243,4 +1490,64 @@ class EconomicValidator:
             
         except Exception as e:
             logger.error(f"❌ Regime persistence analysis failed: {e}")
+            return {}
+    
+    def get_data_driven_thresholds(self) -> Dict[str, Dict[str, float]]:
+        """Get data-driven thresholds used for regime classification."""
+        try:
+            all_regime_stats = getattr(self, '_all_regime_stats', [])
+            
+            return {
+                'volatility_thresholds': self._calculate_volatility_thresholds(all_regime_stats),
+                'return_thresholds': self._calculate_return_thresholds(all_regime_stats),
+                'sharpe_thresholds': self._calculate_sharpe_thresholds(all_regime_stats)
+            }
+        except Exception as e:
+            logger.error(f"❌ Failed to get data-driven thresholds: {e}")
+            return {}
+    
+    def get_regime_statistics_summary(self) -> Dict[str, Any]:
+        """Get comprehensive regime statistics summary."""
+        try:
+            all_regime_stats = getattr(self, '_all_regime_stats', [])
+            
+            if not all_regime_stats:
+                return {}
+            
+            # Extract all statistics
+            volatilities = [stats.get('volatility', 0) for stats in all_regime_stats]
+            returns = [stats.get('avg_return', 0) for stats in all_regime_stats]
+            sharpe_ratios = [stats.get('sharpe_ratio', 0) for stats in all_regime_stats]
+            
+            # Calculate comprehensive statistics
+            summary = {
+                'n_regimes': len(all_regime_stats),
+                'volatility_stats': {
+                    'mean': np.mean(volatilities),
+                    'std': np.std(volatilities),
+                    'min': np.min(volatilities),
+                    'max': np.max(volatilities),
+                    'percentiles': np.percentile(volatilities, [25, 50, 75]).tolist()
+                },
+                'return_stats': {
+                    'mean': np.mean(returns),
+                    'std': np.std(returns),
+                    'min': np.min(returns),
+                    'max': np.max(returns),
+                    'percentiles': np.percentile(returns, [25, 50, 75]).tolist()
+                },
+                'sharpe_stats': {
+                    'mean': np.mean(sharpe_ratios),
+                    'std': np.std(sharpe_ratios),
+                    'min': np.min(sharpe_ratios),
+                    'max': np.max(sharpe_ratios),
+                    'percentiles': np.percentile(sharpe_ratios, [25, 50, 75]).tolist()
+                },
+                'data_driven_thresholds': self.get_data_driven_thresholds()
+            }
+            
+            return summary
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to get regime statistics summary: {e}")
             return {}

@@ -252,6 +252,8 @@ Examples:
     step_group.add_argument('--stage', type=str, help='Run entire stage')
     step_group.add_argument('--mode', type=str, help='Legacy mode (sequential, etc.)')
     step_group.add_argument('--sub_pipeline', type=str, help='Legacy sub-pipeline execution')
+    step_group.add_argument('--list-steps', action='store_true', help='List all registered steps')
+    step_group.add_argument('--list-stages', action='store_true', help='List all available stages')
     
     # Model training options (maintain compatibility)
     training_group = parser.add_mutually_exclusive_group()
@@ -266,7 +268,7 @@ Examples:
     regime_group.add_argument('--legacy-nas-tas', action='store_true', help='Run legacy NAS/TAS regime discovery (deprecated)')
     
     # Common parameters
-    parser.add_argument('--symbol', type=str, required=True, help='Trading symbol (e.g., ETHUSDT)')
+    parser.add_argument('--symbol', type=str, help='Trading symbol (e.g., ETHUSDT)')
     parser.add_argument('--exchange', type=str, default='binance', help='Exchange name')
     parser.add_argument('--timeframe', type=str, default='15m', help='Timeframe for training')
     parser.add_argument('--direction', type=str, choices=['longs', 'shorts', 'both'], default='longs', help='Trading direction')
@@ -277,8 +279,6 @@ Examples:
     parser.add_argument('--stop-at-step', type=int, help='Legacy: stop at specific step number')
     
     # Utility options
-    parser.add_argument('--list-steps', action='store_true', help='List all registered steps')
-    parser.add_argument('--list-stages', action='store_true', help='List all available stages')
     parser.add_argument('--verbose', '-v', action='store_true', help='Enable verbose logging')
     
     return parser
@@ -350,6 +350,10 @@ def main():
         for stage in stages:
             print(f"  - {stage}")
         return
+    
+    # Validate required arguments for execution commands
+    if not args.symbol:
+        parser.error("--symbol is required for step execution")
     
     # Build configuration
     config = {

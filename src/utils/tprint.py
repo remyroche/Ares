@@ -1308,7 +1308,7 @@ def enhanced_traceback(depth: int = 0, show_locals: bool = True, compact: bool =
 
 def tprint_data_preview(data: Any, name: str = "data", max_rows: int = 5, 
                        max_cols: int = 10, level: LogLevel = LogLevel.DEBUG, 
-                       include_metadata: bool = True) -> None:
+                       include_metadata: bool = True, force_log: bool = False) -> None:
     """
     Smart data preview with performance optimization.
     
@@ -1319,6 +1319,7 @@ def tprint_data_preview(data: Any, name: str = "data", max_rows: int = 5,
         max_cols: Maximum columns to show (default: 10)
         level: Log level for the preview
         include_metadata: Whether to include metadata (default: True)
+        force_log: Force logging even for large datasets (default: False)
     """
     # Check if data preview is enabled
     try:
@@ -1328,13 +1329,34 @@ def tprint_data_preview(data: Any, name: str = "data", max_rows: int = 5,
     except:
         pass
     
-    # Convert string log level to enum
+    # Convert string log level to enum safely
     if isinstance(level, str):
-        level = LogLevel(level.upper())
+        try:
+            level = LogLevel[level.upper()]
+        except KeyError:
+            level = LogLevel.DEBUG
+    
+    # Check for large datasets to prevent log pollution
+    try:
+        if not force_log and hasattr(data, '__len__') and len(data) > 10000:
+            tprint_with_level(level, f"📊 {name} preview: Large dataset ({len(data)} items) - use force_log=True to preview")
+            return
+    except:
+        pass
     
     try:
+        # Try to import pandas and numpy for type checking
+        try:
+            import pandas as pd
+            import numpy as np
+            PANDAS_AVAILABLE = True
+            NUMPY_AVAILABLE = True
+        except ImportError:
+            PANDAS_AVAILABLE = False
+            NUMPY_AVAILABLE = False
+        
         # Handle pandas DataFrames
-        if hasattr(data, 'shape') and hasattr(data, 'head') and hasattr(data, 'dtypes'):
+        if PANDAS_AVAILABLE and isinstance(data, pd.DataFrame):
             tprint_with_level(level, f"📊 {name} preview:")
             tprint_with_level(level, f"  Shape: {data.shape}")
             tprint_with_level(level, f"  Dtypes: {dict(data.dtypes)}")
@@ -1343,28 +1365,27 @@ def tprint_data_preview(data: Any, name: str = "data", max_rows: int = 5,
                 try:
                     memory_mb = data.memory_usage(deep=True).sum() / 1024**2
                     tprint_with_level(level, f"  Memory: {memory_mb:.2f} MB")
-                except:
-                    pass
+                except Exception as mem_err:
+                    tprint_with_level(level, f"  Memory: (Could not measure: {mem_err})")
                 
                 # Check for common data quality issues
                 try:
                     null_count = data.isnull().sum().sum()
                     if null_count > 0:
                         tprint_with_level(level, f"  ⚠️  Null values: {null_count}")
-                except:
-                    pass
+                except Exception as null_err:
+                    tprint_with_level(level, f"  ⚠️  Could not check null values: {null_err}")
                 
                 # Check for infinite values
                 try:
-                    import numpy as np
-                    if hasattr(data, 'select_dtypes'):
+                    if NUMPY_AVAILABLE:
                         numeric_cols = data.select_dtypes(include=[np.number]).columns
                         if len(numeric_cols) > 0:
                             inf_count = np.isinf(data[numeric_cols]).sum().sum()
                             if inf_count > 0:
                                 tprint_with_level(level, f"  ⚠️  Infinite values: {inf_count}")
-                except:
-                    pass
+                except Exception as inf_err:
+                    tprint_with_level(level, f"  ⚠️  Could not check infinite values: {inf_err}")
             
             # Show sample data with smart truncation
             if len(data) > 0:
@@ -1379,7 +1400,7 @@ def tprint_data_preview(data: Any, name: str = "data", max_rows: int = 5,
                 tprint_with_level(level, f"  Empty dataset")
         
         # Handle numpy arrays
-        elif hasattr(data, 'shape') and hasattr(data, 'dtype'):
+        elif NUMPY_AVAILABLE and isinstance(data, np.ndarray):
             tprint_with_level(level, f"📊 {name} preview:")
             tprint_with_level(level, f"  Shape: {data.shape}")
             tprint_with_level(level, f"  Dtype: {data.dtype}")
@@ -1388,22 +1409,21 @@ def tprint_data_preview(data: Any, name: str = "data", max_rows: int = 5,
                 try:
                     memory_mb = data.nbytes / 1024**2
                     tprint_with_level(level, f"  Memory: {memory_mb:.2f} MB")
-                except:
-                    pass
+                except Exception as mem_err:
+                    tprint_with_level(level, f"  Memory: (Could not measure: {mem_err})")
                 
-                # Check for data quality issues
+                # Check for data quality issues - simplified
                 try:
-                    import numpy as np
-                    if np.issubdtype(data.dtype, np.number):
-                        null_count = np.isnan(data).sum() if np.issubdtype(data.dtype, np.floating) else 0
-                        inf_count = np.isinf(data).sum() if np.issubdtype(data.dtype, np.floating) else 0
+                    if np.issubdtype(data.dtype, np.floating):
+                        null_count = np.isnan(data).sum()
+                        inf_count = np.isinf(data).sum()
                         
                         if null_count > 0:
                             tprint_with_level(level, f"  ⚠️  NaN values: {null_count}")
                         if inf_count > 0:
                             tprint_with_level(level, f"  ⚠️  Infinite values: {inf_count}")
-                except:
-                    pass
+                except Exception as quality_err:
+                    tprint_with_level(level, f"  ⚠️  Could not check data quality: {quality_err}")
             
             # Show sample data
             if data.size > 0:
@@ -1421,27 +1441,65 @@ def tprint_data_preview(data: Any, name: str = "data", max_rows: int = 5,
             else:
                 tprint_with_level(level, f"  Empty array")
         
-        # Handle other data types
-        else:
+        # Handle dictionaries with deep preview
+        elif isinstance(data, dict):
             tprint_with_level(level, f"📊 {name} preview:")
-            tprint_with_level(level, f"  Type: {type(data).__name__}")
-            
-            if hasattr(data, '__len__'):
-                tprint_with_level(level, f"  Length: {len(data)}")
+            tprint_with_level(level, f"  Type: dict")
+            tprint_with_level(level, f"  Keys: {len(data)}")
             
             if include_metadata:
                 try:
                     import sys
                     size_bytes = sys.getsizeof(data)
                     tprint_with_level(level, f"  Memory: {size_bytes / 1024**2:.2f} MB")
-                except:
+                except Exception as mem_err:
+                    tprint_with_level(level, f"  Memory: (Could not measure: {mem_err})")
+            
+            # Show sample keys and values
+            sample_keys = list(data.keys())[:max_rows]
+            tprint_with_level(level, f"  Sample keys: {sample_keys}")
+            
+            # Try to pretty print if it's JSON-serializable
+            try:
+                import json
+                json_str = json.dumps(data, indent=2, default=str)
+                if len(json_str) > 1000:
+                    json_str = json_str[:1000] + "..."
+                tprint_with_level(level, f"  JSON preview:\n{json_str}")
+            except Exception:
+                # Fallback to string representation
+                data_str = str(data)
+                if len(data_str) > 500:
+                    data_str = data_str[:500] + "..."
+                tprint_with_level(level, f"  Preview: {data_str}")
+        
+        # Handle other data types
+        else:
+            tprint_with_level(level, f"📊 {name} preview:")
+            tprint_with_level(level, f"  Type: {type(data).__name__}")
+            
+            if hasattr(data, '__len__'):
+                try:
+                    tprint_with_level(level, f"  Length: {len(data)}")
+                except Exception:
                     pass
             
+            if include_metadata:
+                try:
+                    import sys
+                    size_bytes = sys.getsizeof(data)
+                    tprint_with_level(level, f"  Memory: {size_bytes / 1024**2:.2f} MB")
+                except Exception as mem_err:
+                    tprint_with_level(level, f"  Memory: (Could not measure: {mem_err})")
+            
             # Show string representation (truncated)
-            data_str = str(data)
-            if len(data_str) > 500:
-                data_str = data_str[:500] + "..."
-            tprint_with_level(level, f"  Preview: {data_str}")
+            try:
+                data_str = str(data)
+                if len(data_str) > 500:
+                    data_str = data_str[:500] + "..."
+                tprint_with_level(level, f"  Preview: {data_str}")
+            except Exception as str_err:
+                tprint_with_level(level, f"  Preview: (Could not convert to string: {str_err})")
     
     except Exception as e:
         tprint_with_level(level, f"📊 {name} preview (error): {e}")

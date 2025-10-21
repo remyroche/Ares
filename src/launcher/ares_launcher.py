@@ -217,6 +217,22 @@ class SimplifiedAresLauncher:
             List of stage names
         """
         return ['DATA_COLLECTION', 'MARKET_ANALYSIS', 'PRE_TRAINING', 'MODEL_TRAINING', 'BACKTESTING']
+    
+    def is_step_available(self, step_name: str) -> bool:
+        """
+        Check if a specific step is available.
+        
+        Args:
+            step_name: Name of the step to check
+            
+        Returns:
+            True if step is available, False otherwise
+        """
+        try:
+            self.step_registry.get_step(step_name)
+            return True
+        except KeyError:
+            return False
 
 
 def create_cli_parser() -> argparse.ArgumentParser:
@@ -256,12 +272,11 @@ Examples:
     step_group.add_argument('--list-steps', action='store_true', help='List all registered steps')
     step_group.add_argument('--list-stages', action='store_true', help='List all available stages')
     
-    # Model training options (maintain compatibility)
-    training_group = parser.add_mutually_exclusive_group()
-    training_group.add_argument('--train-analyst-base', action='store_true', help='Train analyst base models')
-    training_group.add_argument('--train-analyst-ensemble', action='store_true', help='Train analyst ensemble models')
-    training_group.add_argument('--train-tactician-base', action='store_true', help='Train tactician base models')
-    training_group.add_argument('--train-tactician-ensemble', action='store_true', help='Train tactician ensemble models')
+    # Model training options (included in main group)
+    step_group.add_argument('--train-analyst-base', action='store_true', help='Train analyst base models')
+    step_group.add_argument('--train-analyst-ensemble', action='store_true', help='Train analyst ensemble models')
+    step_group.add_argument('--train-tactician-base', action='store_true', help='Train tactician base models')
+    step_group.add_argument('--train-tactician-ensemble', action='store_true', help='Train tactician ensemble models')
     
     # Regime discovery options
     regime_group = parser.add_mutually_exclusive_group()
@@ -286,9 +301,10 @@ Examples:
 
 
 def load_step_modules():
-    """Lazily load step modules to avoid circular imports."""
+    """Lazily load step modules to avoid circular imports with enhanced resilience."""
     loaded_modules = []
     failed_modules = []
+    partial_modules = []
     
     # List of modules to load in order of dependency
     modules_to_load = [
@@ -301,30 +317,70 @@ def load_step_modules():
     
     for module_name, module_path in modules_to_load:
         try:
-            __import__(module_path)
+            # Try to import the module
+            module = __import__(module_path)
             loaded_modules.append(module_name)
             print(f"✅ Loaded {module_name}")
+            
         except ImportError as e:
-            failed_modules.append((module_name, str(e)))
-            print(f"⚠️ Failed to load {module_name}: {e}")
+            error_msg = str(e)
+            failed_modules.append((module_name, error_msg))
+            
+            # Check if it's a missing dependency vs structural issue
+            if any(dep in error_msg.lower() for dep in ['matplotlib', 'hmmlearn', 'optuna', 'vectorbt', 'shap']):
+                print(f"⚠️ Failed to load {module_name}: Missing dependency - {error_msg}")
+            else:
+                print(f"❌ Failed to load {module_name}: Import error - {error_msg}")
+                
         except Exception as e:
-            failed_modules.append((module_name, str(e)))
-            print(f"❌ Error loading {module_name}: {e}")
+            error_msg = str(e)
+            failed_modules.append((module_name, error_msg))
+            print(f"❌ Error loading {module_name}: {error_msg}")
     
+    # Try to load individual step components if main modules fail
+    if not loaded_modules:
+        print("🔄 Attempting to load individual step components...")
+        individual_steps = [
+            ("tactician_ensemble_training", "src.training.steps.models_training.components.tactician_ensemble_training"),
+            ("analyst_ensemble_training", "src.training.steps.models_training.components.analyst_ensemble_training"),
+            ("tactician_base_training", "src.training.steps.models_training.components.tactician_base_training"),
+            ("analyst_base_training", "src.training.steps.models_training.components.analyst_base_training"),
+        ]
+        
+        for step_name, step_path in individual_steps:
+            try:
+                __import__(step_path)
+                partial_modules.append(step_name)
+                print(f"✅ Loaded individual step: {step_name}")
+            except Exception as e:
+                print(f"⚠️ Failed to load individual step {step_name}: {e}")
+    
+    # Report results
     if loaded_modules:
         print(f"✅ Successfully loaded {len(loaded_modules)} step modules: {', '.join(loaded_modules)}")
+        if partial_modules:
+            print(f"✅ Also loaded {len(partial_modules)} individual steps: {', '.join(partial_modules)}")
+        return True
+    elif partial_modules:
+        print(f"⚠️ Partial success: Loaded {len(partial_modules)} individual steps: {', '.join(partial_modules)}")
         return True
     else:
         print("❌ No step modules could be loaded")
+        if failed_modules:
+            print("Failed modules:")
+            for module_name, error in failed_modules:
+                print(f"  - {module_name}: {error}")
         return False
 
 def main():
     """Main entry point."""
     logger.info("🎯 Starting Simplified Ares Launcher...")
     
-    # Load step modules lazily
-    if not load_step_modules():
-        return 1
+    # Load step modules lazily with enhanced resilience
+    step_loading_success = load_step_modules()
+    if not step_loading_success:
+        print("⚠️ Warning: Some step modules failed to load, but continuing with available modules...")
+        # Don't exit immediately - let the launcher try to work with what's available
     
     # Create CLI parser
     parser = create_cli_parser()
@@ -410,6 +466,14 @@ def main():
                 step_name = 'tactician_base_training'
             elif args.train_tactician_ensemble:
                 step_name = 'tactician_ensemble_training'
+            
+            # Check if step is available
+            if not launcher.is_step_available(step_name):
+                print(f"❌ Error: Step '{step_name}' is not available.")
+                print("Available steps:")
+                for step in launcher.list_steps():
+                    print(f"  - {step}")
+                return 1
             
             logger.info(f"Running model training: {step_name}")
             result = asyncio.run(launcher.run_step(step_name, config))

@@ -82,7 +82,6 @@ from src.utils.matrix_operations import safe_matrix_multiply, optimize_dataframe
 try:
     from src.utils.artifact_manager import get_pretraining_artifact_manager
     from src.utils.artifact_keys import ArtifactKeys
-    from src.utils.tprint import tprint_data_preview
 except ImportError:
     # Fallback imports if the specific module doesn't exist
     def get_pretraining_artifact_manager(config):
@@ -107,7 +106,7 @@ except ImportError:
 try:
     from src.utils.tprint import (
         tprint, tprint_info, tprint_success, tprint_warning, tprint_error, tprint_debug,
-        tprint_performance, tprint_step, tprint_result
+        tprint_performance, tprint_step, tprint_result, tprint_data_preview
     )
     TPRINT_AVAILABLE = True
 except ImportError:
@@ -122,7 +121,9 @@ except ImportError:
     def tprint_step(*args, **kwargs): print("STEP:", *args, **kwargs)
     def tprint_result(*args, **kwargs): print("RESULT:", *args, **kwargs)
     def tprint_data_preview(data, name="data", max_rows=5, max_cols=10, level="DEBUG", include_metadata=True, force_log=False): 
-        print(f"DATA_PREVIEW [{name}]: {type(data).__name__} - {getattr(data, 'shape', 'unknown shape')}")
+        # Simple fallback that works with both string and LogLevel enum
+        level_str = str(level) if hasattr(level, 'value') else str(level)
+        print(f"DATA_PREVIEW [{name}]: {type(data).__name__} - {getattr(data, 'shape', 'unknown shape')} [{level_str}]")
 
 
 class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
@@ -700,8 +701,10 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                 cached_metrics = artifact_manager.get_artifact('period_lookback_optimization', 'optimization_metadata')
                 
                 tprint_info(f"Cache check results: periods={cached_periods is not None}, lookbacks={cached_lookbacks is not None}, metrics={cached_metrics is not None}")
-                tprint_data_preview(cached_periods, "cached_periods", level="DEBUG")
-                tprint_data_preview(cached_lookbacks, "cached_lookbacks", level="DEBUG")
+                if cached_periods is not None:
+                    tprint_data_preview(cached_periods, "cached_periods", level="DEBUG")
+                if cached_lookbacks is not None:
+                    tprint_data_preview(cached_lookbacks, "cached_lookbacks", level="DEBUG")
             
             if cached_periods is not None and cached_lookbacks is not None:
                 tprint_success("📦 Retrieved optimization results from artifact manager")

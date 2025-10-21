@@ -36,7 +36,7 @@ from .logger import system_logger
 from .tprint import (
     tprint, tprint_success, tprint_info, tprint_warning, tprint_error,
     tprint_debug, tprint_performance, tprint_progress, tprint_structured,
-    tprint_exception, tprint_with_level, tprint_data_preview, LogLevel, TPrintConfig
+    tprint_exception, tprint_with_level, tprint_data_preview, tprint_data_format, LogLevel, TPrintConfig
 )
 from .common_operations import ensure_directory
 from .version_manager import get_version_manager
@@ -364,6 +364,9 @@ def _format_data_preview(data: Any, artifact_name: str) -> str:
     """Format a data preview for tprint output with enhanced type safety."""
     tprint_debug(f"📊 Formatting data preview for artifact: {artifact_name}")
     
+    # Add comprehensive data format analysis for troubleshooting
+    tprint_data_format(data, f"preview_{artifact_name}", level=LogLevel.DEBUG)
+    
     try:
         # Try to import pandas for DataFrame handling
         import pandas as pd
@@ -684,8 +687,9 @@ class ArtifactManager:
                 tprint_info(f"💾 SAVING ARTIFACT: {artifact_name}")
                 tprint_info(f"📊 Data Preview:\n{preview}")
                 
-                # Add enhanced data preview
+                # Add enhanced data preview and format validation
                 tprint_data_preview(data, f"saving_artifact_{artifact_name}", level=LogLevel.INFO)
+                tprint_data_format(data, f"saving_artifact_{artifact_name}", level=LogLevel.DEBUG)
                 
                 # Get current step name from path manager
                 step_name = self._path_manager._current_step_name or "unknown"
@@ -783,9 +787,10 @@ class ArtifactManager:
                 # Load artifact
                 data = self._storage.load_artifact(file_path)
                 
-                # Add enhanced data preview
+                # Add enhanced data preview and format validation
                 if data is not None:
                     tprint_data_preview(data, f"loaded_artifact_{artifact_name}", level=LogLevel.INFO)
+                    tprint_data_format(data, f"loaded_artifact_{artifact_name}", level=LogLevel.DEBUG)
                 
                 if data is not None:
                     # Cache if enabled
@@ -1398,9 +1403,12 @@ class ArtifactManager:
         tprint_info(f"🚀 Storing enhanced artifact: {key}")
         
         try:
-            # Profile memory usage
+            # Profile memory usage and validate data format
             memory_usage_mb = self._profile_memory_usage(key, data)
             tprint_debug(f"📊 Memory usage profiled: {memory_usage_mb:.2f}MB")
+            
+            # Add comprehensive data format analysis for troubleshooting
+            tprint_data_format(data, f"store_enhanced_{key}", level=LogLevel.DEBUG)
             
             # Store using regular save method
             artifact_path = self.save(data, key, "data", "auto", metadata)
@@ -1443,6 +1451,9 @@ class ArtifactManager:
             if data is not None:
                 self._performance_metrics['cache_hits'] += 1
                 tprint_success(f"✅ Enhanced artifact retrieved successfully: {key}")
+                
+                # Add comprehensive data format analysis for troubleshooting
+                tprint_data_format(data, f"retrieve_enhanced_{key}", level=LogLevel.DEBUG)
                 return data
             else:
                 self._performance_metrics['cache_misses'] += 1

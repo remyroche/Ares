@@ -102,8 +102,8 @@ def get_system_logger():
 def get_tprint_functions():
     """Lazy import of tprint functions to avoid circular imports."""
     try:
-        from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success
-        return tprint, tprint_info, tprint_warning, tprint_error, tprint_success
+        from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success, tprint_data_preview
+        return tprint, tprint_info, tprint_warning, tprint_error, tprint_success, tprint_data_preview
     except ImportError:
         # Fallback functions
         def tprint(*args, **kwargs):
@@ -112,7 +112,7 @@ def get_tprint_functions():
 
 # Initialize lazy imports
 system_logger = get_system_logger()
-tprint, tprint_info, tprint_warning, tprint_error, tprint_success = get_tprint_functions()
+tprint, tprint_info, tprint_warning, tprint_error, tprint_success, tprint_data_preview = get_tprint_functions()
 # Import comprehensive data quality utilities from src/utils/data/quality/
 # Use lazy imports to avoid circular import issues
 
@@ -912,6 +912,9 @@ class EnhancedKlinesProcessingPipeline(BaseStep):
 
             # Step 3: Validate data quality
             if self.config.enable_quality_validation:
+                # Preview data before quality validation
+                tprint_data_preview(standardize_result.data, f"Data before quality validation for {symbol} {interval}", max_rows=3, include_metadata=True)
+                
                 validate_result = await self._validate_data_quality(
                     standardize_result.data, symbol, interval
                 )
@@ -980,6 +983,9 @@ class EnhancedKlinesProcessingPipeline(BaseStep):
                     results["warnings"].extend(resample_result.warnings)
 
             # Step 8: Final quality check
+            # Preview data before final quality check
+            tprint_data_preview(current_data, f"Data before final quality check for {symbol} {interval}", max_rows=3, include_metadata=True)
+            
             final_quality_result = await self._final_quality_check(
                 current_data, symbol, interval
             )
@@ -1095,6 +1101,9 @@ class EnhancedKlinesProcessingPipeline(BaseStep):
                     end_time=end_date,
                     limit=1000
                 )
+                
+                # Preview raw data from exchange API
+                tprint_data_preview(klines_data, f"Raw klines data from {exchange_interface.exchange_type.upper()}", max_rows=3, include_metadata=True)
                 
                 # Convert KlineData objects to list format
                 raw_data = []
@@ -1254,6 +1263,9 @@ class EnhancedKlinesProcessingPipeline(BaseStep):
             standardized_df = self.data_standardizer.standardize(
                 df
             )
+            
+            # Preview standardized data
+            tprint_data_preview(standardized_df, "Standardized klines data", max_rows=3, include_metadata=True)
 
             result.success = True
             result.data = standardized_df
@@ -1591,6 +1603,9 @@ class EnhancedKlinesProcessingPipeline(BaseStep):
                     limit=1000
                 )
                 
+                # Preview gap-filled data
+                tprint_data_preview(gap_klines, f"Gap-filled data for {gap.start_time} to {gap.end_time}", max_rows=2, include_metadata=True)
+                
                 # Convert KlineData objects to list format
                 gap_data = []
                 for kline in gap_klines:
@@ -1615,6 +1630,9 @@ class EnhancedKlinesProcessingPipeline(BaseStep):
                         standardized_gap_df = self.data_standardizer.standardize(
                             gap_df
                         )
+                        
+                        # Preview standardized gap data
+                        tprint_data_preview(standardized_gap_df, "Standardized gap data", max_rows=2, include_metadata=True)
 
                         # Merge with existing data
                         filled_data = pd.concat([filled_data, standardized_gap_df])
@@ -1729,6 +1747,9 @@ class EnhancedKlinesProcessingPipeline(BaseStep):
                     resampled['symbol'] = symbol
                     resampled['interval'] = target_interval
                     resampled['exchange'] = self.exchange
+                    
+                    # Preview resampled data
+                    tprint_data_preview(resampled, f"Resampled data to {target_interval}", max_rows=3, include_metadata=True)
 
                     # Save resampled data
                     output_file = self.data_dir / f"{symbol}_{target_interval}_resampled.parquet"
@@ -2065,6 +2086,22 @@ class EnhancedKlinesProcessingPipeline(BaseStep):
 
                     # Get compression statistics
                     compression_stats = self._get_klines_compression_stats()
+
+                    result.metadata = {
+                        "stored_files": [f"{symbol}_{interval}_original"],
+                        "record_count": len(df),
+                        "compression_ratio": compression_stats.get("overall_compression_ratio", 0),
+                        "file_size_mb": compression_stats.get("total_file_size_mb", 0),
+                        "optimization_applied": True
+                    }
+
+                    if self.enable_logging:
+                        tprint_success(f"✅ Stored {len(df)} records for {symbol} {interval}")
+                        if compression_stats.get("total_files", 0) > 0:
+                            tprint_info(f"📊 Compression ratio: {compression_stats.get('overall_compression_ratio', 0):.1f}%")
+                            tprint_info(f"💾 File size: {compression_stats.get('total_file_size_mb', 0):.2f} MB")
+                else:
+                    raise RuntimeError("Failed to store data using KlinesParquetManager")
             else:
                 # Fallback to direct parquet storage
                 output_file = self.data_dir / self.exchange / symbol.lower() / "raw" / f"{symbol.lower()}_{interval}.parquet"
@@ -2087,8 +2124,6 @@ class EnhancedKlinesProcessingPipeline(BaseStep):
                     if compression_stats.get("total_files", 0) > 0:
                         tprint_info(f"📊 Compression ratio: {compression_stats.get('overall_compression_ratio', 0):.1f}%")
                         tprint_info(f"💾 File size: {compression_stats.get('total_file_size_mb', 0):.2f} MB")
-            else:
-                raise RuntimeError("Failed to store data using KlinesParquetManager")
 
         except Exception as e:
             error_msg = f"Data storage failed: {str(e)}"
@@ -2149,6 +2184,9 @@ class EnhancedKlinesProcessingPipeline(BaseStep):
                     resampled_df = self._perform_resampling(df, target_interval, resampling_config)
 
                     if not resampled_df.empty:
+                        # Preview resampled data
+                        tprint_data_preview(resampled_df, f"Resampled data to {target_interval}", max_rows=3, include_metadata=True)
+                        
                         # Store resampled data using BaseStep KlinesParquetManager integration
                         if self._is_klines_available():
                             success = self._store_klines(

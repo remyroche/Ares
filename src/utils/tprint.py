@@ -1358,8 +1358,69 @@ def _get_caller_chain(max_depth: int = 3) -> str:
         if frame is not None:
             del frame
 
+def _check_pathlike(data, name: str, level: LogLevel, caller_info: str, list_cap: int = 10) -> Optional[Dict[str, Any]]:
+    """Check if data is a path-like object and provide file diagnostics."""
+    try:
+        import os
+        from pathlib import Path
+        
+        # Check if it's a path-like object and looks like a real path
+        if isinstance(data, (str, os.PathLike)):
+            path = Path(data)
+            
+            # Only treat as path if it exists, or looks like a file path (has extension or is absolute)
+            if path.exists() or (isinstance(data, str) and ('/' in data or '\\' in data or '.' in data.split('/')[-1])):
+                if path.exists():
+                    tprint_with_level(level, f"🔍 {name} format{caller_info}:")
+                    tprint_with_level(level, f"  Type: {type(data).__name__} (path)")
+                    tprint_with_level(level, f"  Path: {path}")
+                    tprint_with_level(level, f"  Exists: True")
+                    
+                    try:
+                        stat = path.stat()
+                        size_mb = stat.st_size / 1024**2
+                        tprint_with_level(level, f"  Size: {size_mb:.2f} MB")
+                        tprint_with_level(level, f"  Modified: {stat.st_mtime}")
+                        
+                        summary = {
+                            "type": f"{type(data).__name__} (path)",
+                            "path": str(path),
+                            "exists": True,
+                            "size_mb": size_mb,
+                            "modified": stat.st_mtime
+                        }
+                        
+                        # If it's a directory, list some contents
+                        if path.is_dir():
+                            try:
+                                contents = list(path.iterdir())[:list_cap]
+                                content_names = [item.name for item in contents]
+                                if len(contents) == list_cap:
+                                    content_names.append("...")
+                                tprint_with_level(level, f"  Contents: {content_names}")
+                                summary["contents"] = content_names
+                            except Exception:
+                                pass
+                        
+                        return summary
+                    except Exception as e:
+                        tprint_with_level(level, f"  Error accessing file: {e}")
+                        return {"type": f"{type(data).__name__} (path)", "path": str(path), "exists": True, "error": str(e)}
+                else:
+                    tprint_with_level(level, f"🔍 {name} format{caller_info}:")
+                    tprint_with_level(level, f"  Type: {type(data).__name__} (path)")
+                    tprint_with_level(level, f"  Path: {path}")
+                    tprint_with_level(level, f"  Exists: False")
+                    return {"type": f"{type(data).__name__} (path)", "path": str(path), "exists": False}
+    except Exception:
+        pass
+    return None
+
 def _timeout_guard(timeout_seconds: float, operation_name: str = "operation"):
-    """Context manager for timeout enforcement."""
+    """Context manager for timeout enforcement.
+    
+    Soft timeout: logs a warning if an operation exceeds the budget; does not interrupt execution.
+    """
     class TimeoutGuard:
         def __init__(self, timeout_seconds, operation_name):
             self.timeout_seconds = timeout_seconds
@@ -1472,6 +1533,20 @@ def _check_pandas_dataframe(data, name: str, config: DataFormatConfig, caller_in
             high_null_cols = null_counts[null_counts > data.shape[0] * 0.5].index.tolist()
             if high_null_cols:
                 tprint_with_level(level, f"  ⚠️  High null cols: {high_null_cols[:5]}")
+            
+            # Mixed object types detection
+            from collections import Counter
+            suspicious = []
+            for c in data.select_dtypes(include=["object"]).columns[:config.max_cols]:
+                try:
+                    types = Counter(type(x).__name__ for x in data[c].dropna().head(100))
+                    if len(types) > 1:
+                        suspicious.append((c, dict(types)))
+                except Exception:
+                    pass
+            if suspicious:
+                tprint_with_level(level, f"  ⚠️ Mixed-type object cols (sample): {suspicious[:5]}{'...' if len(suspicious) > 5 else ''}")
+                summary["mixed_type_cols"] = suspicious[:5]
         
         if config.include_memory:
             try:
@@ -1523,11 +1598,18 @@ def _check_pandas_series(data, name: str, config: DataFormatConfig, caller_info:
             null_pct = (null_count / len(data)) * 100 if len(data) > 0 else 0.0
             tprint_with_level(level, f"  Nulls: {null_count} ({null_pct:.1f}%)")
             
-            # Uniqueness
-            unique_count = data.nunique()
-            # Zero-division guard
-            unique_pct = (unique_count / len(data)) * 100 if len(data) > 0 else 0.0
-            tprint_with_level(level, f"  Unique: {unique_count} ({unique_pct:.1f}%)")
+            # Uniqueness (with sampling for large series)
+            n = len(data)
+            if config.include_semantics:
+                if config.safe_sampling and n > config.sample_size:
+                    sample = data.sample(config.sample_size, random_state=0) if hasattr(data, "sample") else data.head(config.sample_size)
+                    unique_count = sample.nunique(dropna=True)
+                    unique_pct = (unique_count / len(sample) * 100.0) if len(sample) else 0.0
+                    tprint_with_level(level, f"  Unique (sampled {len(sample)}): {unique_count} ({unique_pct:.1f}%)")
+                else:
+                    unique_count = data.nunique(dropna=True)
+                    unique_pct = (unique_count / n * 100.0) if n else 0.0
+                    tprint_with_level(level, f"  Unique: {unique_count} ({unique_pct:.1f}%)")
             
             # Monotonicity using proper pandas API
             try:
@@ -1584,9 +1666,9 @@ def _check_numpy_array(data, name: str, config: DataFormatConfig, caller_info: s
             # Safe sampling for large arrays
             if config.safe_sampling and data.size > config.sample_size:
                 sample_indices = np.random.choice(data.size, min(config.sample_size, data.size), replace=False)
-                sample_data = np.asarray(data.flat[sample_indices])
+                sample_data = data.ravel()[sample_indices]
             else:
-                sample_data = np.asarray(data.flat)
+                sample_data = data.ravel()
             
             # Limit statistics calculation based on max_stat_items
             max_stats = min(config.max_stat_items, len(sample_data))
@@ -1719,7 +1801,13 @@ def tprint_data_format(data: Any, name: str = "data", level: LogLevel = LogLevel
                 summary["error"] = str(err)
             return summary if return_summary else None
         
-        # Handle strings
+        # Handle path-like objects before strings
+        elif isinstance(data, (str, os.PathLike)):
+            path_summary = _check_pathlike(data, name, level, caller_info, config.max_rows)
+            if path_summary is not None:
+                return path_summary if return_summary else None
+        
+        # Handle strings (non-path)
         elif isinstance(data, str):
             tprint_with_level(level, f"🔍 {name} format{caller_info}:")
             tprint_with_level(level, f"  Type: str")
@@ -1827,13 +1915,19 @@ def tprint_data_format(data: Any, name: str = "data", level: LogLevel = LogLevel
             tprint_with_level(level, f"  Type: Arrow Table")
             tprint_with_level(level, f"  Shape: {data.num_rows} rows × {data.num_columns} cols")
             
-            # Schema details
-            field_info = [(field.name, str(field.type)) for field in data.schema]
+            # Schema details (capped to max_cols)
+            cols = data.num_columns
+            show = min(cols, config.max_cols)
+            field_info = [(data.schema[i].name, str(data.schema[i].type)) for i in range(show)]
+            if cols > show:
+                field_info.append(f"... and {cols - show} more")
             tprint_with_level(level, f"  Schema: {field_info}")
             
             if config.include_semantics:
-                # Null counts per column (use index-based access)
-                null_counts = {data.schema[i].name: data.column(i).null_count for i in range(data.num_columns)}
+                # Null counts per column (capped to max_cols)
+                null_counts = {data.schema[i].name: data.column(i).null_count for i in range(show)}
+                if cols > show:
+                    null_counts["..."] = f"{cols - show} more"
                 tprint_with_level(level, f"  Null counts: {null_counts}")
                 summary["null_counts"] = null_counts
             

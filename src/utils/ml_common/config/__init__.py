@@ -9,6 +9,10 @@ from .base_training_config import (
     HMMTrainingConfig
 )
 
+# Create PerRegimeTrainingConfig as an alias to BaseTrainingConfig
+# since we no longer train per-regime
+PerRegimeTrainingConfig = BaseTrainingConfig
+
 # Re-export unified loader helpers for convenience
 try:
     from src.common.config import (
@@ -22,6 +26,7 @@ except Exception:
 
 __all__ = [
     'BaseTrainingConfig',
+    'PerRegimeTrainingConfig',  # Alias for backward compatibility
     'EnsembleTrainingConfig',
     'TacticianTrainingConfig',
     'HMMTrainingConfig',

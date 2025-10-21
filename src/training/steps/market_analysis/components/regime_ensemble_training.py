@@ -55,16 +55,13 @@ class RegimeEnsembleTrainingStep(BaseStep):
     - stacker_lgbm_calibrated: LightGBM model with probability calibration
     """
 
-    def __init__(self, step_name: str = "regime_ensemble_training"):
+    def __init__(self, step_name: str = "regime_ensemble_training", config: Optional[Dict[str, Any]] = None):
         """Initialize the Regime Ensemble Training Step."""
-        super().__init__(step_name)
+        super().__init__(step_name, config)
         self.logger = system_logger.getChild('RegimeEnsembleTraining')
         self.training_start_time = None
         self.training_end_time = None
         tprint("🚀 [REGIME_ENSEMBLE] Initializing Regime Ensemble Training Step", "INFO")
-        super().__init__(config)
-
-        self.logger = system_logger.getChild('RegimeEnsembleTrainingComponent')
         tprint("✅ [REGIME_ENSEMBLE] Logger initialized", color="green")
 
         # Initialize ensemble training parameters

@@ -16,7 +16,7 @@ import pandas as pd
 import logging
 from src.utils.parquet_utils import ParquetUtils
 from src.utils.data.processing.data_processing import DataProcessor
-from src.utils.tprint import tprint
+from src.utils.tprint import tprint, tprint_data_preview
 
 class KlinesParquetManager:
     """Unified manager for klines parquet data operations."""
@@ -1376,7 +1376,13 @@ def load_klines_from_parquet(
         DataFrame with klines data or None if not found
     """
     manager = get_klines_manager(data_dir, exchange)
-    return manager.read_data(symbol, interval, start_date, end_date, data_type, columns)
+    result = manager.read_data(symbol, interval, start_date, end_date, data_type, columns)
+    
+    # Preview loaded data for debugging
+    if os.getenv('ENABLE_DATA_PREVIEW', 'false').lower() == 'true' and result is not None:
+        tprint_data_preview(result, f"loaded_klines_{symbol}_{interval}", max_rows=5, level="DEBUG")
+    
+    return result
 
 def validate_klines_data(df: pd.DataFrame) -> Dict[str, Any]:
     """Validate klines data (backward compatibility function).

@@ -18,6 +18,7 @@ from pathlib import Path
 from dataclasses import dataclass
 
 from src.training.steps.base_step import BaseStep
+from src.utils.tprint import tprint, tprint_data_preview
 
 # Import advanced quality validation components
 # Quality validation components - self-contained implementation
@@ -215,6 +216,9 @@ class FeatureGenerationDataValidationStep(BaseStep):
         """Initialize the enhanced data validation step."""
         super().__init__(step_name, config)
         
+        # Enable data preview via environment variable
+        self.enable_data_preview = os.getenv('ENABLE_DATA_PREVIEW', 'false').lower() == 'true'
+        
         # Initialize quality assessment components
         if QUALITY_COMPONENTS_AVAILABLE:
             self.quality_scorer = ComprehensiveQualityScorer()
@@ -312,6 +316,11 @@ class FeatureGenerationDataValidationStep(BaseStep):
 
         except Exception as e:
             self.logger.error(f"❌ Enhanced data validation step failed with exception: {e}")
+            
+            # Preview data in error state for debugging
+            if self.enable_data_preview and 'data' in locals():
+                tprint_data_preview(data, "error_state_data", max_rows=3, level="ERROR")
+            
             return {
                 'success': False,
                 'artifacts': [],
@@ -325,6 +334,10 @@ class FeatureGenerationDataValidationStep(BaseStep):
         """Perform comprehensive data validation using advanced quality frameworks."""
         
         try:
+            # Preview data before quality assessment
+            if self.enable_data_preview:
+                tprint_data_preview(data, f"quality_assessment_input_{symbol}_{timeframe}", max_rows=5, level="DEBUG")
+            
             # Step 1: Basic data quality framework validation
             quality_thresholds = QualityThresholds(
                 max_nan_ratio=0.05,
@@ -459,6 +472,11 @@ class FeatureGenerationDataValidationStep(BaseStep):
             success = all(basic_checks.values())
             quality_score = sum(basic_checks.values()) / len(basic_checks) * 100
             
+            # Preview data before saving artifacts
+            if self.enable_data_preview:
+                tprint_data_preview(data, "saved_validated_dataframe", max_rows=5, level="INFO")
+                tprint_data_preview(data, "saved_raw_dataframe", max_rows=5, level="INFO")
+            
             # Save artifacts using BaseStep methods
             self._save_dataframe(data.copy(), 'validated_dataframe')
             self._save_dataframe(data.copy(), 'raw_dataframe')
@@ -537,6 +555,10 @@ class FeatureGenerationDataValidationStep(BaseStep):
             if data is None or data.empty:
                 raise ValueError(f"Failed to load data for {symbol} {timeframe}")
             
+            # Preview loaded data for debugging
+            if self.enable_data_preview:
+                tprint_data_preview(data, f"loaded_klines_data_{symbol}_{timeframe}", max_rows=10, level="DEBUG")
+            
             # Apply dynamic date filtering based on actual data range
             if 'timestamp' in data.columns and len(data) > 0:
                 # Get the actual data range
@@ -583,6 +605,10 @@ class FeatureGenerationDataValidationStep(BaseStep):
                     start_date = end_date - pd.Timedelta(days=30)
                     data = data[(data['timestamp'] >= start_date) & (data['timestamp'] <= end_date)]
                     self.logger.info(f"📊 Using default 30-day window: {start_date} to {end_date}")
+            
+            # Preview filtered data for debugging
+            if self.enable_data_preview:
+                tprint_data_preview(data, f"filtered_data_{symbol}_{timeframe}", max_rows=5, level="DEBUG")
             
             self.logger.info(f"✅ Loaded data: {len(data)} rows, {len(data.columns)} columns")
             return data

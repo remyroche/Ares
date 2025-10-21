@@ -37,6 +37,7 @@ from src.utils.hardware import (
     # Memory management
     get_advanced_memory_manager, memory_efficient_processing,
     track_memory_usage, force_garbage_collection, cleanup_all_memory,
+    MemoryPressureLevel,
     # Caching
     get_global_cache, CacheConfig, DataTypeOptimization, CacheStrategy
 )
@@ -351,12 +352,12 @@ class FeatureSelectionResult:
 class FeatureGenerationFeatureSelectionStep(BaseStep):
     """Sophisticated feature selection step using hardware-optimized components."""
 
-    def __init__(self, config: Optional[Dict[str, Any]] = None):
+    def __init__(self, step_name: str, config: Optional[Dict[str, Any]] = None):
         """Initialize the sophisticated feature selection step."""
         tprint_info("🔧 [DEBUG] Initializing FeatureGenerationFeatureSelectionStep")
         tprint_debug(f"🔧 [DEBUG] Config keys: {list(config.keys()) if config else 'None'}")
         
-        super().__init__("feature_generation_feature_selection_step", config)
+        super().__init__(step_name, config)
         
         tprint_info("🔧 [DEBUG] Checking hardware-optimized components availability")
         tprint_debug(f"🔧 [DEBUG] HARDWARE_OPTIMIZED_COMPONENTS_AVAILABLE: {HARDWARE_OPTIMIZED_COMPONENTS_AVAILABLE}")

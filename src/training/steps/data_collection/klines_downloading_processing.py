@@ -44,7 +44,7 @@ def get_base_step():
 # Use lazy import
 BaseStep = get_base_step()
 from src.utils.logger import system_logger
-from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success
+from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success, tprint_data_preview
 from src.utils.data.quality.comprehensive_duplicate_analyzer import (
     ComprehensiveDuplicateAnalyzer,
     analyze_duplicates_comprehensive
@@ -239,6 +239,9 @@ class KlinesDataProcessingPipeline(BaseStep):
 
             # Concatenate all data
             consolidated_df = pd.concat(combined_data, ignore_index=True)
+            
+            # Preview data after concatenation
+            tprint_data_preview(consolidated_df, "Consolidated data after concatenation", max_rows=5, include_metadata=True)
 
             # Remove any duplicate records based on timestamp
             initial_records = len(consolidated_df)
@@ -268,6 +271,9 @@ class KlinesDataProcessingPipeline(BaseStep):
                 )
                 
                 # Store consolidated data
+                # Preview data before storage
+                tprint_data_preview(consolidated_df, "Data before KlinesParquetManager storage", max_rows=3, include_metadata=True)
+                
                 success = self._store_klines_with_context(
                     df=consolidated_df,
                     interval=interval,
@@ -284,9 +290,13 @@ class KlinesDataProcessingPipeline(BaseStep):
                 else:
                     tprint_warning(f"⚠️ Failed to store consolidated data using KlinesParquetManager, falling back to direct parquet")
                     # Fallback to direct parquet storage
+                    # Preview data before fallback storage
+                    tprint_data_preview(consolidated_df, f"Data before fallback parquet storage to {output_file.name}", max_rows=3, include_metadata=True)
                     consolidated_df.to_parquet(output_file, index=False, compression='snappy')
             else:
                 # Fallback to direct parquet storage
+                # Preview data before direct parquet storage
+                tprint_data_preview(consolidated_df, f"Data before direct parquet storage to {output_file.name}", max_rows=3, include_metadata=True)
                 consolidated_df.to_parquet(output_file, index=False, compression='snappy')
 
             # Create results summary
@@ -389,6 +399,9 @@ class KlinesDataProcessingPipeline(BaseStep):
                         if hasattr(result, 'get') and 'data' in result:
                             klines_data = result['data']
                             if klines_data is not None:
+                                # Preview data before storage
+                                tprint_data_preview(klines_data, f"Data before storage for {timeframe}", max_rows=3, include_metadata=True)
+                                
                                 success = self._store_klines_with_context(
                                     df=klines_data,
                                     interval=timeframe,

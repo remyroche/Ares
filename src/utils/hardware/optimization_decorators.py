@@ -50,6 +50,7 @@ class OptimizationLevel(Enum):
     """Optimization levels for decorators."""
     NONE = "none"
     BASIC = "basic"          # Basic caching and data type optimization
+    BALANCED = "balanced"    # Balanced optimization
     AGGRESSIVE = "aggressive"  # Full optimization with compression
     MAXIMUM = "maximum"      # Maximum optimization with all features
 

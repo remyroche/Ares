@@ -4,6 +4,7 @@ Evaluation module for ML common utilities.
 
 import logging
 from typing import Optional
+from src.utils.tprint import tprint_data_format, LogLevel
 
 from .evaluation_utils import EvaluationUtils
 

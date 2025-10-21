@@ -11,6 +11,7 @@ from typing import Dict, List, Optional, Tuple, Any, Union
 from dataclasses import dataclass
 import logging
 import warnings
+from src.utils.tprint import tprint_data_format, LogLevel
 
 logger = logging.getLogger(__name__)
 
@@ -155,6 +156,10 @@ class DataLeakageDetector:
         }
 
         try:
+            # Debug input data format
+            tprint_data_format(features, "leakage_detector_features", level=LogLevel.DEBUG)
+            tprint_data_format(target, "leakage_detector_target", level=LogLevel.DEBUG)
+            
             # Check for features that might contain future information
             suspicious_features = []
 

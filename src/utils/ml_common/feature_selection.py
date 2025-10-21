@@ -1,4 +1,4 @@
-from src.utils.tprint import tprint
+from src.utils.tprint import tprint, tprint_data_format, LogLevel
 
 """
 Unified Feature Selection Framework
@@ -176,6 +176,9 @@ class FeatureSelectionFramework:
         tprint("🚀 Initializing FeatureSelectionFramework with comprehensive optimizations...")
         self.config = config or {}
         self.logger = logger.getChild('FeatureSelection')
+        
+        # Debug configuration format
+        tprint_data_format(self.config, "feature_selection_config", level=LogLevel.DEBUG)
 
         _LOGGER.info("🚀 Initializing FeatureSelectionFramework with comprehensive optimizations...")
 
@@ -1805,6 +1808,11 @@ class FeatureSelectionFramework:
         tprint("🚀 Starting comprehensive feature selection...")
         tprint(f"📊 Input shapes - X: {X.shape}, y: {y.shape}, features: {len(feature_names)}")
         tprint(f"📊 Target count: {target_count}, model_type: {model_type}, optimizations: {enable_all_optimizations}")
+
+        # Debug input data format
+        tprint_data_format(X, "comprehensive_feature_selection_features", level=LogLevel.DEBUG)
+        tprint_data_format(y, "comprehensive_feature_selection_targets", level=LogLevel.DEBUG)
+        tprint_data_format(feature_names, "comprehensive_feature_selection_feature_names", level=LogLevel.DEBUG)
 
         # Input validation
         if X is None or y is None or feature_names is None:

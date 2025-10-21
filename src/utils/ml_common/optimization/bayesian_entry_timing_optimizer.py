@@ -67,7 +67,7 @@ from ...tprint import (
     tprint, tprint_debug, tprint_info, tprint_warning, tprint_error,
     tprint_success, tprint_progress, tprint_performance, tprint_structured,
     tprint_with_level, tprint_timer, tprint_logged, configure_tprint,
-    get_tprint_config, tprint_context, LogLevel
+    get_tprint_config, tprint_context, tprint_data_format, LogLevel
 )
 
 from ...data.klines_parquet import (
@@ -253,6 +253,14 @@ class BayesianEntryTimingOptimizer:
             EntryTimingResult with optimization results
         """
         try:
+            # Debug input data format
+            tprint_data_format(X, "entry_timing_optimizer_features", level=LogLevel.DEBUG)
+            tprint_data_format(y, "entry_timing_optimizer_targets", level=LogLevel.DEBUG)
+            if analyst_signals is not None:
+                tprint_data_format(analyst_signals, "entry_timing_optimizer_analyst_signals", level=LogLevel.DEBUG)
+            if hmm_regime_probs is not None:
+                tprint_data_format(hmm_regime_probs, "entry_timing_optimizer_hmm_regime_probs", level=LogLevel.DEBUG)
+            
             if optimization_method == "optuna" and OPTUNA_AVAILABLE:
                 return self._optimize_with_optuna(
                     model, X, y, analyst_signals, hmm_regime_probs, timestamps, model_name

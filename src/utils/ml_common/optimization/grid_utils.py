@@ -10,6 +10,7 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional, Tuple
 import itertools
 import numpy as np
+from src.utils.tprint import tprint_data_format, LogLevel
 
 def build_coarse_grid_from_search_space(search_space: Dict[str, Any], grid_points: int) -> List[Dict[str, Any]]:
     """Create a coarse parameter grid list from a search space.

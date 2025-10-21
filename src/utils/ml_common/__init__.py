@@ -14,7 +14,7 @@ from src.utils.logger import system_logger
 _LOGGER = system_logger.getChild('MLCommon')
 
 # Import the proper tprint from utils
-from src.utils.tprint import tprint
+from src.utils.tprint import tprint, tprint_data_format, LogLevel
 
 # Legacy function for backward compatibility (deprecated)
 def legacy_tprint(message: str, level: str = "INFO") -> None:

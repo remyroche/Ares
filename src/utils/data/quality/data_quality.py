@@ -22,6 +22,7 @@ import psutil
 
 # Import our custom utilities
 import logging
+from src.utils.tprint import tprint_data_format
 
 # Import comprehensive duplicate analyzer
 try:
@@ -253,6 +254,9 @@ class DataQualityFramework:
         if df is None or df.empty:
             result.add_issue('empty_data', 'DataFrame is None or empty')
             return result
+
+        # Add format debugging for troubleshooting
+        tprint_data_format(df, f"quality_validation_input_{context}", level="DEBUG")
 
         result.add_metric('rows', len(df))
         result.add_metric('columns', len(df.columns))

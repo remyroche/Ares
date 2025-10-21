@@ -16,7 +16,7 @@ from src.utils.logger import system_logger
 from src.utils.parquet_utils import get_parquet_utils
 from src.utils.hardware.memory_optimization import MemoryMonitor, optimize_dataframe_dtypes
 from src.utils.hardware.m1_optimizations import get_m1_memory_optimizer, M1DataManager
-from src.utils.tprint import tprint_data_preview
+from src.utils.tprint import tprint_data_preview, tprint_data_format
 
 class OptimizedParquetStorage:
     """Optimized parquet storage with hardware-specific optimizations."""
@@ -77,8 +77,10 @@ class OptimizedParquetStorage:
 
             # Optimize DataFrame before saving
             tprint_data_preview(df, f"before_storage_optimization_{symbol}_{interval}")
+            tprint_data_format(df, f"before_storage_optimization_format_{symbol}_{interval}", level="DEBUG")
             optimized_df = self._optimize_dataframe_for_storage(df)
             tprint_data_preview(optimized_df, f"storage_optimized_{symbol}_{interval}")
+            tprint_data_format(optimized_df, f"storage_optimized_format_{symbol}_{interval}", level="DEBUG")
 
             # Add partitioning columns if specified
             if partition_by:
@@ -211,6 +213,7 @@ class OptimizedParquetStorage:
 
                 self.logger.info(f"📊 Loaded optimized data: {symbol} {interval} ({len(combined_df)} records)")
                 tprint_data_preview(combined_df, f"loaded_optimized_data_{symbol}_{interval}")
+                tprint_data_format(combined_df, f"loaded_optimized_data_format_{symbol}_{interval}", level="DEBUG")
                 return combined_df
 
         except Exception as e:

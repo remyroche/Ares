@@ -31,7 +31,7 @@ from .processing.data_processing import DataProcessor
 from .quality.data_cleaning import DataCleaner
 from .processing.transformers import DataStreamingManager
 from src.utils.logger import system_logger
-from src.utils.tprint import tprint_data_preview
+from src.utils.tprint import tprint_data_preview, tprint_data_format
 
 logger = logging.getLogger(__name__)
 
@@ -138,11 +138,13 @@ class UnifiedDataUtils:
         try:
             processed_data = data.copy()
             tprint_data_preview(processed_data, f"input_data_{context}")
+            tprint_data_format(processed_data, f"input_data_format_{context}", level="DEBUG")
 
             # Step 1: Quality validation
             if validate_quality:
                 self.logger.info('🔍 Performing quality validation...')
                 tprint_data_preview(processed_data, f"before_quality_validation_{context}")
+                tprint_data_format(processed_data, f"before_quality_validation_format_{context}", level="DEBUG")
                 quality_result = self.quality_framework.validate_dataframe_quality(processed_data, context)
                 processing_report['quality_results'] = quality_result.get_summary()
                 processing_report['steps_completed'].append('quality_validation')
@@ -155,6 +157,7 @@ class UnifiedDataUtils:
                 self.logger.info('⏰ Regularizing timestamps...')
                 processed_data = self.data_processor.regularize_timestamps(processed_data)
                 tprint_data_preview(processed_data, f"after_timestamp_regularization_{context}")
+                tprint_data_format(processed_data, f"after_timestamp_regularization_format_{context}", level="DEBUG")
                 processing_report['steps_completed'].append('timestamp_regularization')
 
             # Step 3: Clean missing values
@@ -167,6 +170,7 @@ class UnifiedDataUtils:
                     timeframe=timeframe
                 )
                 tprint_data_preview(processed_data, f"after_missing_value_cleaning_{context}")
+                tprint_data_format(processed_data, f"after_missing_value_cleaning_format_{context}", level="DEBUG")
                 processing_report['steps_completed'].append('missing_value_cleaning')
 
             # Step 4: Detect outliers
@@ -209,6 +213,7 @@ class UnifiedDataUtils:
             self.logger.info(f'✅ Data processing completed successfully in {processing_report["processing_time_seconds"]:.2f}s')
             self.logger.info(f'   Original shape: {processing_report["original_shape"]} → Final shape: {processing_report["final_shape"]}')
             tprint_data_preview(processed_data, f"final_processed_data_{context}")
+            tprint_data_format(processed_data, f"final_processed_data_format_{context}", level="INFO")
 
             return processed_data, processing_report
 
@@ -219,6 +224,8 @@ class UnifiedDataUtils:
             processing_report['processing_time_seconds'] = (datetime.now() - start_time).total_seconds()
 
             self.logger.exception(f'❌ Error in data processing: {e}')
+            # Add format debugging for error troubleshooting
+            tprint_data_format(data, f"error_data_format_{context}", level="ERROR")
             return data, processing_report
 
     def validate_data_quality(

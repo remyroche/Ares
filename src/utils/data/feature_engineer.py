@@ -16,6 +16,7 @@ import numpy as np
 from src.utils.logger import system_logger
 from src.utils.parquet_utils import ParquetUtils
 from src.utils.data.processing.data_processing import DataProcessor
+from src.utils.tprint import tprint_data_format
 
 # Import unified matrix operations for optimized calculations
 try:
@@ -267,6 +268,9 @@ class FeatureEngineer:
         """
         try:
             featured_df = df.copy()
+
+            # Add format debugging for troubleshooting
+            tprint_data_format(featured_df, "feature_engineering_input", level="DEBUG")
 
             # Ensure we have the required columns
             required_columns = ['open', 'high', 'low', 'close', 'volume']
@@ -804,6 +808,9 @@ class FeatureEngineer:
             Resampled DataFrame or None if failed
         """
         try:
+            # Add format debugging for troubleshooting
+            tprint_data_format(df, f"resample_input_{target_interval}", level="DEBUG")
+            
             # Convert interval string to pandas frequency
             freq_map = {
                 '1m': '1T',

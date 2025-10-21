@@ -959,7 +959,7 @@ class ExampleModularComponent(ModularComponent):
     """
     
     def __init__(self, name: str, config: Optional[Dict[str, Any]] = None, logger: Optional[logging.Logger] = None):
-        super().__init__(name, config, logger)
+        super().__init__(name, config)
         self.description = f"Example Backtesting Component: {name}"
     
     def initialize(self) -> bool:

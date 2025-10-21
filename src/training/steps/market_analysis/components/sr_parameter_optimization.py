@@ -29,7 +29,11 @@ except ImportError:
 
 from src.training.steps.base_step import BaseStep
 from src.utils.logger import system_logger
-from src.utils.tprint import tprint, tprint_info, tprint_success, tprint_warning, tprint_error, tprint_data_preview
+from src.utils.tprint import (
+    tprint, tprint_info, tprint_success, tprint_warning, tprint_error, 
+    tprint_debug, tprint_data_format, tprint_data_preview, tprint_performance,
+    tprint_timer, tprint_structured, LogLevel
+)
 
 # Import SR clustering components
 try:
@@ -80,8 +84,15 @@ class SRParameterOptimizationStep(BaseStep):
         
         try:
             tprint(f"🔍 Starting SR parameter optimization for {config.get('symbol', 'UNKNOWN')}", "INFO")
+            tprint_structured({
+                "step": "sr_parameter_optimization_start",
+                "component": "SRParameterOptimizationStep",
+                "symbol": config.get('symbol', 'UNKNOWN'),
+                "timestamp": start_time.isoformat()
+            }, level=LogLevel.INFO)
             
             # Set context for artifact management
+            tprint_debug("Setting up execution context", level=LogLevel.DEBUG)
             self._set_context(
                 symbol=config.get('symbol', 'ETHUSDT'),
                 exchange=config.get('exchange', 'binance'),
@@ -93,6 +104,12 @@ class SRParameterOptimizationStep(BaseStep):
             if not SR_CLUSTERING_AVAILABLE:
                 error_msg = "SR clustering components not available"
                 tprint(f"❌ {error_msg}", "ERROR")
+                tprint_error(f"SR clustering components not available", level=LogLevel.ERROR)
+                tprint_structured({
+                    "step": "sr_parameter_optimization_error",
+                    "error": error_msg,
+                    "error_type": "ImportError"
+                }, level=LogLevel.ERROR)
                 return {
                     'success': False,
                     'error': error_msg,
@@ -101,65 +118,93 @@ class SRParameterOptimizationStep(BaseStep):
                 }
 
             # Load market data
+            tprint_info("Loading market data for optimization", level=LogLevel.INFO)
             market_data = self._load_market_data(config)
             if market_data is None:
+                tprint_error("No market data found", level=LogLevel.ERROR)
                 raise ValueError("No market data found")
             
             tprint(f"✅ Loaded market data: {market_data.shape[0]} rows, {market_data.shape[1]} columns", "SUCCESS")
+            tprint_success(f"Loaded market data: {market_data.shape[0]} rows, {market_data.shape[1]} columns", level=LogLevel.INFO)
             
             # Preview loaded market data for troubleshooting
-            tprint_data_preview(market_data, "market_data_for_optimization", max_rows=5, level="INFO")
+            tprint_data_preview(market_data, "market_data_for_optimization", max_rows=5)
+            tprint_data_format(market_data, "market_data_format", level=LogLevel.DEBUG)
 
             # Load SR levels
+            tprint_info("Loading SR levels for optimization", level=LogLevel.INFO)
             sr_levels = self._load_sr_levels(config)
             if sr_levels is None:
+                tprint_error("No SR levels found", level=LogLevel.ERROR)
                 raise ValueError("No SR levels found")
             
             tprint(f"✅ Loaded SR levels: {len(sr_levels)} levels", "SUCCESS")
+            tprint_success(f"Loaded SR levels: {len(sr_levels)} levels", level=LogLevel.INFO)
             
             # Preview loaded SR levels for troubleshooting
-            tprint_data_preview(sr_levels, "sr_levels_for_optimization", max_rows=10, level="INFO")
+            tprint_data_preview(sr_levels, "sr_levels_for_optimization", max_rows=10)
+            tprint_data_format(sr_levels, "sr_levels_format", level=LogLevel.DEBUG)
 
             # Get parameter grid
+            tprint_info("Getting parameter grid for optimization", level=LogLevel.INFO)
             parameter_grid = self._get_parameter_grid(config)
+            tprint_data_format(parameter_grid, "parameter_grid", level=LogLevel.DEBUG)
 
             # Configure enhanced parameter optimization with validation
+            tprint_info("Creating validated parameter configuration", level=LogLevel.INFO)
             param_config = self._create_validated_param_config()
+            tprint_data_format(param_config, "param_config", level=LogLevel.DEBUG)
 
             # Ensure data has proper datetime indexing for backtesting
+            tprint_info("Preparing data for backtesting", level=LogLevel.INFO)
             market_data = self._prepare_data_for_backtesting(market_data)
             
             # Preview prepared data for backtesting
-            tprint_data_preview(market_data, "prepared_data_for_backtesting", max_rows=5, level="DEBUG")
+            tprint_data_preview(market_data, "prepared_data_for_backtesting", max_rows=5)
+            tprint_data_format(market_data, "prepared_data_format", level=LogLevel.DEBUG)
 
             # Create backtesting engine with validated hardware optimizations
+            tprint_info("Creating backtesting engine", level=LogLevel.INFO)
             backtest_config = self._create_validated_backtest_config()
+            tprint_data_format(backtest_config, "backtest_config", level=LogLevel.DEBUG)
 
             engine = SRBacktestingEngine(backtest_config)
+            tprint_success("Backtesting engine created successfully", level=LogLevel.INFO)
 
             # Create sample SR levels for optimization with proper data splitting
+            tprint_info("Splitting data for optimization", level=LogLevel.INFO)
             level_creation_data, backtest_data = self._split_data_for_optimization(market_data)
             
             # Preview split data for troubleshooting
-            tprint_data_preview(level_creation_data, "level_creation_data", max_rows=5, level="DEBUG")
-            tprint_data_preview(backtest_data, "backtest_data", max_rows=5, level="DEBUG")
+            tprint_data_preview(level_creation_data, "level_creation_data", max_rows=5)
+            tprint_data_preview(backtest_data, "backtest_data", max_rows=5)
+            tprint_data_format(level_creation_data, "level_creation_data_format", level=LogLevel.DEBUG)
+            tprint_data_format(backtest_data, "backtest_data_format", level=LogLevel.DEBUG)
 
             # Run parameter optimization
-            optimization_result = await self._run_parameter_optimization(
-                engine, level_creation_data, backtest_data, param_config
+            tprint_info("Starting parameter optimization process", level=LogLevel.INFO)
+            with tprint_timer("parameter_optimization", level=LogLevel.PERFORMANCE):
+                optimization_result = await self._run_parameter_optimization(
+                    engine, level_creation_data, backtest_data, param_config
             )
 
             # Extract results
+            tprint_info("Extracting optimization results", level=LogLevel.INFO)
             optimized_parameters = optimization_result.get('optimized_parameters', {})
             quality_thresholds = optimization_result.get('quality_thresholds', {})
             parameter_optimization_metrics = optimization_result.get('parameter_optimization_metrics', {})
+            
+            tprint_data_format(optimization_result, "optimization_result", level=LogLevel.DEBUG)
+            tprint_data_preview(optimized_parameters, "optimized_parameters", max_rows=5)
 
             # Validate that we have the required data
             if not optimized_parameters or not quality_thresholds:
+                tprint_error("Parameter optimization failed to produce required data", level=LogLevel.ERROR)
                 raise ValueError("Parameter optimization failed to produce required data")
 
             # Save optimization results using artifact manager
-            self._save_artifact({
+            tprint_info("Saving optimization results as artifact", level=LogLevel.INFO)
+            artifact_data = {
                 'optimized_parameters': optimized_parameters,
                 'quality_thresholds': quality_thresholds,
                 'parameter_optimization_metrics': parameter_optimization_metrics,
@@ -175,15 +220,28 @@ class SRParameterOptimizationStep(BaseStep):
                     'data_points': len(market_data) if market_data is not None else 0,
                     'execution_timestamp': datetime.now().isoformat()
                 }
-            }, 'sr_parameter_optimization_result')
+            }
+            tprint_data_format(artifact_data, "artifact_data", level=LogLevel.DEBUG)
+            self._save_artifact(artifact_data, 'sr_parameter_optimization_result')
+            tprint_success("Optimization results saved as artifact", level=LogLevel.INFO)
 
             # Calculate metrics
+            tprint_info("Calculating optimization metrics", level=LogLevel.INFO)
             metrics = self._calculate_optimization_metrics(optimization_result, start_time, config)
+            tprint_data_format(metrics, "optimization_metrics", level=LogLevel.DEBUG)
 
             # Create outcome report
+            tprint_info("Creating outcome report", level=LogLevel.INFO)
             outcome_report = self._create_outcome_report(optimization_result, metrics, config)
+            tprint_data_format(outcome_report, "outcome_report", level=LogLevel.DEBUG)
 
             tprint(f"✅ SR parameter optimization completed", "SUCCESS")
+            tprint_success("SR parameter optimization completed successfully", level=LogLevel.INFO)
+            tprint_structured({
+                "step": "sr_parameter_optimization_complete",
+                "metrics": metrics,
+                "optimization_summary": optimization_result.get('optimization_summary', {})
+            }, level=LogLevel.INFO)
 
             return {
                 'success': True,
@@ -196,6 +254,13 @@ class SRParameterOptimizationStep(BaseStep):
         except Exception as e:
             error_msg = f"SR parameter optimization failed: {str(e)}"
             tprint(f"❌ {error_msg}", "ERROR")
+            tprint_error(f"SR parameter optimization failed: {str(e)}", level=LogLevel.ERROR)
+            tprint_structured({
+                "step": "sr_parameter_optimization_error",
+                "error": str(e),
+                "error_type": type(e).__name__,
+                "processing_time": (datetime.now() - start_time).total_seconds()
+            }, level=LogLevel.ERROR)
             self.logger.error(error_msg)
             
             return {
@@ -208,20 +273,25 @@ class SRParameterOptimizationStep(BaseStep):
 
     async def _load_market_data(self, data: Any) -> Optional[Any]:
         """Load and prepare market data for optimization with memory optimization."""
+        tprint_debug("Loading market data for optimization", level=LogLevel.DEBUG)
         if data is None:
+            tprint_warning("No market data provided", level=LogLevel.WARNING)
             return None
 
         if PANDAS_AVAILABLE and isinstance(data, pd.DataFrame):
             # Check data size and optimize memory usage
             data_size_mb = data.memory_usage(deep=True).sum() / (1024 * 1024)
             self.logger.info(f"Data size: {data_size_mb:.2f} MB")
+            tprint_info(f"Data size: {data_size_mb:.2f} MB", level=LogLevel.INFO)
             
             # Preview loaded market data for troubleshooting
-            tprint_data_preview(data, "loaded_market_data", max_rows=5, level="DEBUG")
+            tprint_data_preview(data, "loaded_market_data", max_rows=5)
+            tprint_data_format(data, "loaded_market_data_format", level=LogLevel.DEBUG)
 
             # For large datasets, optimize memory usage
             if data_size_mb > 100:  # Large dataset (> 100MB)
                 self.logger.info("Large dataset detected, optimizing memory usage")
+                tprint_info("Large dataset detected, optimizing memory usage", level=LogLevel.INFO)
 
                 # Convert float64 to float32 where possible to save memory
                 numeric_columns = data.select_dtypes(include=[np.float64]).columns

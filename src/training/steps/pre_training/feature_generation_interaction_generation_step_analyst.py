@@ -23,7 +23,7 @@ import threading
 import time
 import os
 
-from src.utils.tprint import tprint
+from src.utils.tprint import tprint, tprint_data_preview
 from src.training.steps.base_step import BaseStep
 
 # Import enhanced hardware optimization tools
@@ -827,6 +827,8 @@ class FeatureGenerationInteractionGenerationStepAnalyst(BaseStep):
                 series = artifact_manager.get_series(step_name, ArtifactKeys.TARGETS)
                 if isinstance(series, pd.Series) and not series.empty:
                     targets_series = series.astype(float)
+                    # Preview loaded targets for troubleshooting
+                    tprint_data_preview(targets_series, "loaded_targets_for_interaction_generation", level="INFO")
                     tprint(f"✅ [ANALYST] Loaded targets from {step_name}: {len(targets_series)} samples")
                     break
             

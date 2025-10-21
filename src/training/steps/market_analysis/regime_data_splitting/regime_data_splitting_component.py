@@ -1,5 +1,4 @@
 """
-import warnings
 Regime Data Splitting Component.
 
 This component tags data by regimes discovered in previous stages.
@@ -12,6 +11,7 @@ import json
 import logging
 import re
 import time
+import warnings
 from typing import Any, Dict, List, Optional, Tuple
 from datetime import datetime
 from pathlib import Path
@@ -1481,6 +1481,10 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
             self.logger.info(f"✅ Generated regime probabilities: {regime_probabilities.shape}")
             return regime_probabilities
 
+        except Exception as e:
+            self.logger.error(f"❌ Error in fallback ML model prediction: {e}")
+            return None
+
     def get_regime_probabilities(self) -> Dict[str, Any]:
         """Get regime probabilities for downstream models (Analyst & Tactician)."""
         try:
@@ -2753,6 +2757,21 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
 
             # Final garbage collection
             import gc
+            gc.collect()
+
+            return {
+                'success': True,
+                'cleanup_result': cleanup_result,
+                'timestamp': datetime.now().isoformat()
+            }
+
+        except Exception as e:
+            self.logger.error(f"❌ Error during cleanup: {e}")
+            return {
+                'success': False,
+                'error': str(e),
+                'timestamp': datetime.now().isoformat()
+            }
 
 # VectorBT imports for native optimization
 try:
@@ -2781,21 +2800,9 @@ except ImportError:
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
 except ImportError:
-
+    VECTORBT_AVAILABLE = False
+    vbt = None
     cp = None
-            gc.collect()
-
-            # Log final memory status
-            if hasattr(self.memory_optimizer, 'get_current_memory_usage'):
-                final_memory = self.memory_optimizer.get_current_memory_usage()
-                self.logger.info(f"🧹 Final memory usage: {final_memory:.2f} GB")
-
-            self.logger.info(f"🧹 Cleanup completed successfully: {cleanup_result}")
-            return cleanup_result
-
-        except Exception as e:
-            self.logger.warning(f"⚠️ Error during cleanup: {e}")
-            return {'status': 'failed', 'error': str(e)}
 
     def get_resource_metrics(self) -> Dict[str, Any]:
         """Get current resource usage metrics."""

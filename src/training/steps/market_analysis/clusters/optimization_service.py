@@ -13,10 +13,34 @@ from dataclasses import dataclass
 import time
 
 from src.utils.tprint import (
-    tprint, tprint_info, tprint_success, tprint_warning, tprint_error
+    tprint, tprint_info, tprint_success, tprint_warning, tprint_error, tprint_debug, tprint_performance
+)
+from src.utils.common_operations import (
+    get_memory_usage, optimize_dataframe_memory, safe_divide, safe_mean, safe_std,
+    memory_monitor, force_garbage_collection, performance_timer, validate_dataframe,
+    safe_merge, safe_concat, calculate_data_quality_metrics, create_summary_statistics
+)
+from src.utils.common_utilities import (
+    safe_dataframe_operation, validate_dataframe_columns, safe_convert_dtypes,
+    analyze_nan_values_detailed, format_nan_analysis_report, get_dataframe_info,
+    safe_merge_dataframes, safe_groupby_operation, safe_apply_function
 )
 from src.utils.math_validation import (
-    validate_finite, safe_divide, safe_log, safe_sqrt, safe_power
+    validate_finite, validate_array_finite, safe_divide, safe_log, safe_sqrt, safe_power,
+    safe_correlation, safe_mean, safe_std, validate_positive, safe_covariance,
+    safe_percentile, validate_correlation_matrix, safe_matrix_inverse
+)
+from src.utils.ml_common.optimization.bayesian_tpe_optimizer import (
+    BayesianTPEOptimizer, TPEConfig, OptimizationResult
+)
+from src.utils.ml_common.optimization.grid_utils import (
+    build_coarse_grid_from_search_space, build_fine_grid_around_best
+)
+from src.utils.ml_common.unified_vectorization_manager import (
+    UnifiedVectorizationManager, VectorizationConfig
+)
+from src.utils.ml_common.ensembles.vectorbt_ensemble_optimizer import (
+    VectorBTRollingOptimizer, EnsembleConfig
 )
 from src.utils.ml_common.optimization.hpo_utils import HyperparameterOptimization
 
@@ -97,6 +121,18 @@ class OptimizationService:
             }
         }
         self.hpo_optimizer = HyperparameterOptimization(config=hpo_config)
+        
+        # Initialize enhanced ML optimization components
+        try:
+            self.bayesian_optimizer = BayesianTPEOptimizer(TPEConfig())
+            self.vectorization_manager = UnifiedVectorizationManager(VectorizationConfig())
+            self.ensemble_optimizer = VectorBTRollingOptimizer(EnsembleConfig())
+            tprint("🤖 Enhanced ML optimization components initialized", "INFO")
+        except Exception as e:
+            tprint(f"⚠️ Failed to initialize ML optimization components: {e}", "WARNING")
+            self.bayesian_optimizer = None
+            self.vectorization_manager = None
+            self.ensemble_optimizer = None
 
         # Default objective weights
         self.objective_weights = ObjectiveWeights()

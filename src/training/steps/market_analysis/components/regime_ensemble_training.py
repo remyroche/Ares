@@ -55,16 +55,13 @@ class RegimeEnsembleTrainingStep(BaseStep):
     - stacker_lgbm_calibrated: LightGBM model with probability calibration
     """
 
-    def __init__(self, step_name: str = "regime_ensemble_training"):
+    def __init__(self, step_name: str = "regime_ensemble_training", config: Optional[Dict[str, Any]] = None):
         """Initialize the Regime Ensemble Training Step."""
-        super().__init__(step_name)
+        super().__init__(step_name, config)
         self.logger = system_logger.getChild('RegimeEnsembleTraining')
         self.training_start_time = None
         self.training_end_time = None
         tprint("🚀 [REGIME_ENSEMBLE] Initializing Regime Ensemble Training Step", "INFO")
-        super().__init__(config)
-
-        self.logger = system_logger.getChild('RegimeEnsembleTrainingComponent')
         tprint("✅ [REGIME_ENSEMBLE] Logger initialized", color="green")
 
         # Initialize ensemble training parameters
@@ -170,12 +167,12 @@ class RegimeEnsembleTrainingStep(BaseStep):
                 base_models = self._train_base_models(X, y, regime_labels)
                 if not base_models:
                     tprint("❌ [REGIME_ENSEMBLE] Failed to train base models", color="red")
-                    return ComponentResult(
-                        success=False,
-                        artifacts={},
-                        error_message="Failed to train base models",
-                        metadata={'component_type': 'regime_ensemble_training'}
-                    )
+                    return {
+                        'success': False,
+                        'artifacts': {},
+                        'error_message': "Failed to train base models",
+                        'metadata': {'component_type': 'regime_ensemble_training'}
+                    }
 
             tprint(f"📊 [REGIME_ENSEMBLE] Data shapes - X: {X.shape}, y: {y.shape}, regime_labels: {len(regime_labels) if regime_labels is not None else 'None'}", color="blue")
             tprint(f"📊 [REGIME_ENSEMBLE] Base models available: {list(base_models.keys())}", color="blue")
@@ -299,25 +296,25 @@ class RegimeEnsembleTrainingStep(BaseStep):
             except Exception as e:
                 tprint(f"⚠️ [REGIME_ENSEMBLE] Failed to save artifacts persistently: {e}", color="yellow")
 
-            return ComponentResult(
-                success=True,
-                artifacts=results,
-                metadata={
+            return {
+                'success': True,
+                'artifacts': results,
+                'metadata': {
                     'component_type': 'regime_ensemble_training',
                     'execution_time': (datetime.now() - start_time).total_seconds(),
                     'artifacts_saved_persistently': True
                 }
-            )
+            }
 
         except Exception as e:
             tprint(f"❌ [REGIME_ENSEMBLE] Regime ensemble training failed: {e}", color="red", bold=True)
             self.logger.error(f"Regime ensemble training failed: {e}", exc_info=True)
-            return ComponentResult(
-                success=False,
-                artifacts={},
-                error_message=str(e),
-                metadata={'component_type': 'regime_ensemble_training'}
-            )
+            return {
+                'success': False,
+                'artifacts': {},
+                'error_message': str(e),
+                'metadata': {'component_type': 'regime_ensemble_training'}
+            }
 
     def _prepare_data(self, X: np.ndarray, y: np.ndarray, regime_labels: Optional[np.ndarray]) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Prepare data for ensemble training."""

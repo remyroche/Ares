@@ -15,15 +15,22 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 from .logger import system_logger
-from .enhanced_artifact_manager import get_artifact_manager, ArtifactMetadata
+from .artifact_manager import setup_enhanced_artifact_manager as get_artifact_manager
+
+# Simple ArtifactMetadata class for compatibility
+class ArtifactMetadata:
+    """Simple metadata class for artifacts."""
+    def __init__(self, **kwargs):
+        for key, value in kwargs.items():
+            setattr(self, key, value)
 
 class ArtifactPickupUtils:
     """Utilities for picking up artifacts from previous pipeline stages."""
 
-    def __init__(self):
+    def __init__(self, config: Optional[Dict[str, Any]] = None):
         """Initialize the artifact pickup utilities."""
         self.logger = system_logger.getChild("ArtifactPickupUtils")
-        self.artifact_manager = get_artifact_manager()
+        self.artifact_manager = get_artifact_manager(config or {})
 
     def find_most_recent_artifact(
         self,

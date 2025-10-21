@@ -9,12 +9,8 @@ from .base_training_config import (
     HMMTrainingConfig
 )
 
-# Import PerRegimeTrainingConfig from common config
-try:
-    from src.common.config import PerRegimeTrainingConfig
-except ImportError:
-    # Fallback: create a simple alias if common config is not available
-    PerRegimeTrainingConfig = BaseTrainingConfig
+# since we no longer train per-regime
+PerRegimeTrainingConfig = BaseTrainingConfig
 
 # Re-export unified loader helpers for convenience
 try:
@@ -29,6 +25,7 @@ except Exception:
 
 __all__ = [
     'BaseTrainingConfig',
+    'PerRegimeTrainingConfig',  # Alias for backward compatibility
     'EnsembleTrainingConfig',
     'TacticianTrainingConfig',
     'HMMTrainingConfig',

@@ -46,7 +46,8 @@ from src.utils.hardware import (
 # Import tprint utilities
 try:
     from src.utils.tprint import (
-        tprint, tprint_info, tprint_success, tprint_warning, tprint_error, tprint_debug
+        tprint, tprint_info, tprint_success, tprint_warning, tprint_error, tprint_debug,
+        tprint_data_preview
     )
     TPRINT_AVAILABLE = True
 except ImportError:
@@ -57,6 +58,7 @@ except ImportError:
     def tprint_warning(*args, **kwargs): print("WARNING:", *args, **kwargs)
     def tprint_error(*args, **kwargs): print("ERROR:", *args, **kwargs)
     def tprint_debug(*args, **kwargs): print("DEBUG:", *args, **kwargs)
+    def tprint_data_preview(*args, **kwargs): print("DATA_PREVIEW:", *args, **kwargs)
 
 # Enhanced hardware-optimized feature selection components
 @dataclass
@@ -535,6 +537,7 @@ class FeatureGenerationFeatureSelectionStep(BaseStep):
                     features_df = candidate
                     features_found_in_artifacts = True
                     tprint_success(f"✅ [DEBUG] Loaded generated features from BaseStep: shape={features_df.shape}")
+                    tprint_data_preview(features_df, "loaded_features_from_artifacts")
             except Exception as e:
                 tprint_warning(f"⚠️ [DEBUG] Artifact manager failed for features: {e}")
 
@@ -554,6 +557,7 @@ class FeatureGenerationFeatureSelectionStep(BaseStep):
                         tprint_info(f"🔍 [FALLBACK] Loading features from: {latest_file}")
                         features_df = pd.read_parquet(latest_file)
                         tprint_success(f"✅ [DEBUG] Loaded features from file: shape={features_df.shape}")
+                        tprint_data_preview(features_df, "loaded_features_from_file")
                     else:
                         raise ValueError("No generated features files found")
                 except Exception as fallback_error:
@@ -587,6 +591,8 @@ class FeatureGenerationFeatureSelectionStep(BaseStep):
                 tprint_debug(f"🔍 [DEBUG] Targets shape after loading: {targets_series.shape}")
                 tprint_debug(f"🔍 [DEBUG] Targets variance: {targets_series.var():.6f}")
                 tprint_debug(f"🔍 [DEBUG] Targets std: {targets_series.std():.6f}")
+                tprint_data_preview(targets_series, "extracted_targets")
+                tprint_data_preview(features_df, "features_after_target_extraction")
             else:
                 tprint_error("❌ [DEBUG] No target column found in features data")
                 tprint_error(f"❌ [DEBUG] Available columns: {list(features_df.columns)[:20]}")
@@ -606,6 +612,7 @@ class FeatureGenerationFeatureSelectionStep(BaseStep):
 
             tprint_debug(f"🔍 [DEBUG] Aligned shape: {aligned.shape}")
             tprint_debug(f"🔍 [DEBUG] Alignment dropped {len(features_df) - len(aligned)} rows")
+            tprint_data_preview(aligned, "aligned_features_and_targets")
 
             if aligned.empty:
                 tprint_error(f"❌ [DEBUG] Alignment resulted in empty DataFrame!")
@@ -618,6 +625,8 @@ class FeatureGenerationFeatureSelectionStep(BaseStep):
             tprint_success(f"✅ [DEBUG] Prepared feature/target matrix: features={features_df.shape}, targets={targets.shape}")
             tprint_debug(f"🔍 [DEBUG] Final features shape: {features_df.shape}")
             tprint_debug(f"🔍 [DEBUG] Final targets shape: {targets.shape}")
+            tprint_data_preview(features_df, "final_prepared_features")
+            tprint_data_preview(targets, "final_prepared_targets")
             
             # Load periods/lookbacks from feature_generation_period_lookback_optimization_step
             tprint_info("🔍 [DEBUG] Loading periods/lookbacks from period lookback optimization step")
@@ -703,6 +712,7 @@ class FeatureGenerationFeatureSelectionStep(BaseStep):
                 tprint_success("✅ [DEBUG] Using cached feature selection results")
                 tprint_debug(f"🔍 [DEBUG] Cached features shape: {cached_selected_features.shape}")
                 tprint_debug(f"🔍 [DEBUG] Cached features columns: {list(cached_selected_features.columns)[:10]}...")
+                tprint_data_preview(cached_selected_features, "cached_selected_features")
                 return FeatureSelectionResult(
                     success=True,
                     selected_features=cached_selected_features,
@@ -763,6 +773,8 @@ class FeatureGenerationFeatureSelectionStep(BaseStep):
                 tprint_debug(f"🔍 [DEBUG] Feature importance keys: {list(selection_result.feature_importance.keys()) if selection_result.feature_importance else 'None'}")
                 
                 # Save artifacts using BaseStep methods
+                tprint_data_preview(selection_result.selected_features, "saving_selected_features")
+                tprint_data_preview(selection_result.selection_metrics, "saving_selection_metrics")
                 self._save_dataframe(selection_result.selected_features, 'selected_features')
                 self._save_metadata(selection_result.selection_metrics, 'selection_metrics')
                 self._save_metadata(selection_result.feature_importance, 'feature_importance_rankings')
@@ -934,6 +946,7 @@ class FeatureGenerationFeatureSelectionStep(BaseStep):
             df1 = optimize_dataframe_default(df1)
             tprint_debug(f"🔍 [STAGE1] Filtered dataset shape: {df1.shape}")
             tprint_debug(f"🔍 [STAGE1] Filtered dataset memory usage: {df1.memory_usage(deep=True).sum() / 1024 / 1024:.2f} MB")
+            tprint_data_preview(df1, "stage1_hardware_optimized_features")
             
             tprint_success(f"✅ [STAGE1] Hardware-optimized selection completed: {len(cols1_available)} features selected")
             tprint_info(f"🔍 [STAGE1] Feature reduction: {len(data.columns) - len(cols1_available)} features removed ({(len(data.columns) - len(cols1_available))/len(data.columns)*100:.1f}%)")
@@ -991,6 +1004,7 @@ class FeatureGenerationFeatureSelectionStep(BaseStep):
             df2 = df1.loc[:, cols2_available].copy()
             tprint_debug(f"🔍 [STAGE2] Filtered dataset shape: {df2.shape}")
             tprint_debug(f"🔍 [STAGE2] Filtered dataset memory usage: {df2.memory_usage(deep=True).sum() / 1024 / 1024:.2f} MB")
+            tprint_data_preview(df2, "stage2_multi_objective_features")
             
             if not disable_stage2:
                 tprint_success(f"✅ [STAGE2] Multi-objective optimization completed: {len(cols2_available)} features selected")
@@ -1040,6 +1054,7 @@ class FeatureGenerationFeatureSelectionStep(BaseStep):
             df3 = df2.loc[:, cols3_available].copy()
             tprint_debug(f"🔍 [STAGE3] Filtered dataset shape: {df3.shape}")
             tprint_debug(f"🔍 [STAGE3] Filtered dataset memory usage: {df3.memory_usage(deep=True).sum() / 1024 / 1024:.2f} MB")
+            tprint_data_preview(df3, "stage3_economic_validated_features")
             
             if not disable_stage3:
                 tprint_success(f"✅ [STAGE3] Economic validation completed: {len(cols3_available)} features validated")
@@ -1086,6 +1101,7 @@ class FeatureGenerationFeatureSelectionStep(BaseStep):
             selected_features_df = optimize_dataframe_default(selected_features_df)
             tprint_debug(f"🔍 [STAGE4] Final dataset shape: {selected_features_df.shape}")
             tprint_debug(f"🔍 [STAGE4] Final dataset memory usage: {selected_features_df.memory_usage(deep=True).sum() / 1024 / 1024:.2f} MB")
+            tprint_data_preview(selected_features_df, "final_selected_features")
             
             tprint_success(f"✅ [STAGE4] Hardware-optimized VectorBT optimization completed: {len(cols4_available)} features optimized")
             tprint_info(f"🔍 [STAGE4] Feature reduction: {len(df3.columns) - len(cols4_available)} features removed ({(len(df3.columns) - len(cols4_available))/len(df3.columns)*100:.1f}%)")
@@ -1244,6 +1260,8 @@ class FeatureGenerationFeatureSelectionStep(BaseStep):
             y_aligned = y.loc[X_shifted.index]
             tprint_debug(f"🔍 [DEBUG] Shifted features shape: {X_shifted.shape}")
             tprint_debug(f"🔍 [DEBUG] Aligned targets length: {len(y_aligned)}")
+            tprint_data_preview(X_shifted, "fallback_shifted_features")
+            tprint_data_preview(y_aligned, "fallback_aligned_targets")
             
             if len(X_shifted) == 0:
                 tprint_error("❌ [DEBUG] No valid data after time-shifting")
@@ -1275,6 +1293,7 @@ class FeatureGenerationFeatureSelectionStep(BaseStep):
             tprint_info("🔍 [DEBUG] Creating selected features dataframe")
             selected_data = data[selected_features]
             tprint_debug(f"🔍 [DEBUG] Selected data shape: {selected_data.shape}")
+            tprint_data_preview(selected_data, "fallback_selected_features")
             
             # Calculate basic feature importance
             feature_importance = correlations_clean[selected_features].to_dict()

@@ -50,6 +50,15 @@ except ImportError:
             return None
     pd = DummyModule()
 
+# Import tprint for data preview
+try:
+    from src.utils.tprint import tprint_data_preview, LogLevel
+    TPRINT_AVAILABLE = True
+except ImportError:
+    TPRINT_AVAILABLE = False
+    def tprint_data_preview(data, name="data", max_rows=5, max_cols=10, level="DEBUG", include_metadata=True, force_log=False):
+        print(f"DATA_PREVIEW [{name}]: {type(data).__name__} - {getattr(data, 'shape', 'unknown shape')}")
+
 from src.utils.tprint import (
     tprint, tprint_debug, tprint_info, tprint_success, tprint_warning, tprint_error,
     tprint_performance, tprint_timer, LogLevel
@@ -768,12 +777,30 @@ def cache_result(key_func: Optional[Callable] = None,
 
 def optimize_dataframe_default(df: pd.DataFrame) -> pd.DataFrame:
     """Optimize DataFrame with default settings."""
+    # Add data preview before optimization
+    if TPRINT_AVAILABLE:
+        tprint_data_preview(df, "dataframe_before_caching_optimization", max_rows=3, level=LogLevel.DEBUG)
+    
     cache = get_global_cache()
     optimized_df, _ = cache.data_type_optimizer.optimize_dataframe(df)
+    
+    # Add data preview after optimization
+    if TPRINT_AVAILABLE:
+        tprint_data_preview(optimized_df, "dataframe_after_caching_optimization", max_rows=3, level=LogLevel.DEBUG)
+    
     return optimized_df
 
 def optimize_numpy_array_default(arr: np.ndarray) -> np.ndarray:
     """Optimize NumPy array with default settings."""
+    # Add data preview before optimization
+    if TPRINT_AVAILABLE:
+        tprint_data_preview(arr, "numpy_array_before_caching_optimization", max_rows=3, level=LogLevel.DEBUG)
+    
     cache = get_global_cache()
     optimized_arr, _ = cache.data_type_optimizer.optimize_numpy_array(arr)
+    
+    # Add data preview after optimization
+    if TPRINT_AVAILABLE:
+        tprint_data_preview(optimized_arr, "numpy_array_after_caching_optimization", max_rows=3, level=LogLevel.DEBUG)
+    
     return optimized_arr

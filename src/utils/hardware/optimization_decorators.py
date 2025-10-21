@@ -41,7 +41,7 @@ from .enhanced_caching_system import (
 )
 from src.utils.tprint import (
     tprint, tprint_debug, tprint_info, tprint_success, tprint_warning, tprint_error,
-    tprint_performance, tprint_timer, LogLevel
+    tprint_performance, tprint_timer, tprint_data_preview, LogLevel
 )
 
 logger = logging.getLogger(__name__)
@@ -562,15 +562,23 @@ def memory_aware():
 # Global optimization functions
 def optimize_all_dataframes(data: Dict[str, Any]) -> Dict[str, Any]:
     """Optimize all DataFrames in a dictionary."""
+    # Add data preview before optimization
+    tprint_data_preview(data, "data_dict_before_optimization", max_rows=3, level=LogLevel.DEBUG)
+    
     optimized_data = {}
     
     for key, value in data.items():
         if isinstance(value, pd.DataFrame):
+            tprint_data_preview(value, f"dataframe_{key}_before_optimization", max_rows=3, level=LogLevel.DEBUG)
             optimized_data[key] = optimize_dataframe_default(value)
+            tprint_data_preview(optimized_data[key], f"dataframe_{key}_after_optimization", max_rows=3, level=LogLevel.DEBUG)
         elif isinstance(value, dict):
             optimized_data[key] = optimize_all_dataframes(value)
         else:
             optimized_data[key] = value
+    
+    # Add data preview after optimization
+    tprint_data_preview(optimized_data, "data_dict_after_optimization", max_rows=3, level=LogLevel.DEBUG)
     
     return optimized_data
 

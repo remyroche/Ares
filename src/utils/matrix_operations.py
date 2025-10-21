@@ -3,6 +3,15 @@ import numpy as np
 import pandas as pd
 from typing import Union
 
+# Import tprint for data preview
+try:
+    from src.utils.tprint import tprint_data_preview, LogLevel
+    TPRINT_AVAILABLE = True
+except ImportError:
+    TPRINT_AVAILABLE = False
+    def tprint_data_preview(data, name="data", max_rows=5, max_cols=10, level="DEBUG", include_metadata=True, force_log=False):
+        print(f"DATA_PREVIEW [{name}]: {type(data).__name__} - {getattr(data, 'shape', 'unknown shape')}")
+
 # Enhanced hardware optimization imports
 try:
     from src.utils.hardware.optimization_decorators import (
@@ -60,11 +69,18 @@ def safe_matrix_multiply(a: ArrayLike, b: ArrayLike) -> np.ndarray:
 ))
 def optimize_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     """Enhanced DataFrame optimization using hardware optimization tools."""
+    # Add data preview before optimization
+    if TPRINT_AVAILABLE:
+        tprint_data_preview(df, "dataframe_before_optimization", max_rows=3, level=LogLevel.DEBUG)
+    
     # Use enhanced hardware optimization if available
     if HARDWARE_OPTIMIZATION_AVAILABLE:
         try:
             from src.utils.hardware.enhanced_caching_system import optimize_dataframe_default
-            return optimize_dataframe_default(df)
+            result = optimize_dataframe_default(df)
+            if TPRINT_AVAILABLE:
+                tprint_data_preview(result, "dataframe_after_hardware_optimization", max_rows=3, level=LogLevel.DEBUG)
+            return result
         except ImportError:
             pass  # Fallback to enhanced implementation
     
@@ -83,5 +99,9 @@ def optimize_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     for col in df_opt.select_dtypes(include=["object"]).columns:
         if df_opt[col].nunique() / len(df_opt) < 0.5:  # If less than 50% unique values
             df_opt[col] = df_opt[col].astype('category')
+    
+    # Add data preview after optimization
+    if TPRINT_AVAILABLE:
+        tprint_data_preview(df_opt, "dataframe_after_optimization", max_rows=3, level=LogLevel.DEBUG)
     
     return df_opt

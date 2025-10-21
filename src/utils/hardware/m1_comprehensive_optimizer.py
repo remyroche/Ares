@@ -17,6 +17,26 @@ from functools import wraps
 import numpy as np
 import pandas as pd
 
+# Import tprint for data preview
+try:
+    from src.utils.tprint import (
+        tprint, tprint_info, tprint_success, tprint_warning, tprint_error,
+        tprint_debug, tprint_performance, tprint_timer, tprint_data_preview, LogLevel
+    )
+    TPRINT_AVAILABLE = True
+except ImportError:
+    TPRINT_AVAILABLE = False
+    def tprint(*args, **kwargs): print("TPRINT:", *args, **kwargs)
+    def tprint_info(*args, **kwargs): print("INFO:", *args, **kwargs)
+    def tprint_success(*args, **kwargs): print("SUCCESS:", *args, **kwargs)
+    def tprint_warning(*args, **kwargs): print("WARNING:", *args, **kwargs)
+    def tprint_error(*args, **kwargs): print("ERROR:", *args, **kwargs)
+    def tprint_debug(*args, **kwargs): print("DEBUG:", *args, **kwargs)
+    def tprint_performance(*args, **kwargs): print("PERFORMANCE:", *args, **kwargs)
+    def tprint_timer(*args, **kwargs): print("TIMER:", *args, **kwargs)
+    def tprint_data_preview(data, name="data", max_rows=5, max_cols=10, level="DEBUG", include_metadata=True, force_log=False):
+        print(f"DATA_PREVIEW [{name}]: {type(data).__name__} - {getattr(data, 'shape', 'unknown shape')}")
+
 # Import all M1 optimization modules
 from .m1_unified_memory_manager import (
     M1UnifiedMemoryManager, UnifiedMemoryConfig, MemoryTier, get_unified_memory_manager
@@ -484,12 +504,20 @@ class M1ComprehensiveOptimizer:
         start_time = time.time()
         workload_category = workload_category or self.config.workload_category
         
+        # Add data preview before optimization
+        if TPRINT_AVAILABLE:
+            tprint_data_preview(data, f"data_before_{operation_type}_optimization", max_rows=3, level=LogLevel.DEBUG)
+        
         try:
             # Determine optimal execution strategy
             execution_strategy = self._determine_execution_strategy(operation_type, data, workload_category)
             
             # Execute with optimization
             result = self._execute_with_optimization(operation_type, data, execution_strategy)
+            
+            # Add data preview after optimization
+            if TPRINT_AVAILABLE:
+                tprint_data_preview(result, f"data_after_{operation_type}_optimization", max_rows=3, level=LogLevel.DEBUG)
             
             execution_time = time.time() - start_time
             

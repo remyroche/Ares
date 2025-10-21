@@ -25,6 +25,7 @@ except ImportError:
     Records = None
 
 from ..logger import system_logger
+from ...utils.tprint import tprint_data_preview
 
 logger = logging.getLogger(__name__)
 
@@ -111,6 +112,12 @@ class VectorBTBacktestingEngine:
         try:
             self.logger.info(f"🚀 Starting VectorBT backtest with mode: {mode.value}")
 
+            # Preview input data
+            tprint_data_preview(signals, "vectorbt_signals", max_rows=5, level="DEBUG")
+            tprint_data_preview(prices, "vectorbt_prices", max_rows=5, level="DEBUG")
+            if timestamps is not None:
+                tprint_data_preview(timestamps, "vectorbt_timestamps", max_rows=5, level="DEBUG")
+
             # Prepare data for VectorBT
             if timestamps is not None:
                 # Create a DataFrame with timestamps as index
@@ -124,6 +131,9 @@ class VectorBTBacktestingEngine:
                     'price': prices,
                     'signal': signals
                 })
+            
+            # Preview prepared data
+            tprint_data_preview(data, "vectorbt_prepared_data", max_rows=5, level="DEBUG")
 
             # Create VectorBT portfolio based on mode
             if mode == BacktestMode.VECTORBT_GPU and self._is_gpu_available():
@@ -138,6 +148,9 @@ class VectorBTBacktestingEngine:
 
             # Extract results
             result = self._extract_backtest_results(portfolio, data)
+            
+            # Preview backtest results
+            tprint_data_preview(result, "vectorbt_backtest_result", max_rows=10, level="INFO")
 
             self.logger.info(f"✅ VectorBT backtest completed: {result.total_return:.2%} total return")
             return result
@@ -223,6 +236,9 @@ class VectorBTBacktestingEngine:
     def _extract_backtest_results(self, portfolio: Any, data: pd.DataFrame) -> BacktestResult:
         """Extract results from VectorBT portfolio."""
         try:
+            # Preview input data
+            tprint_data_preview(data, "extract_input_data", max_rows=5, level="DEBUG")
+            
             # Calculate performance metrics
             total_return = portfolio.total_return()
             sharpe_ratio = portfolio.sharpe_ratio()
@@ -234,6 +250,8 @@ class VectorBTBacktestingEngine:
                 win_rate = (trades['Return'] > 0).mean()
                 total_trades = len(trades)
                 avg_trade_return = trades['Return'].mean()
+                # Preview trades data
+                tprint_data_preview(trades, "extracted_trades", max_rows=5, level="DEBUG")
             else:
                 win_rate = 0.0
                 total_trades = 0
@@ -241,6 +259,7 @@ class VectorBTBacktestingEngine:
 
             # Get equity curve
             equity_curve = portfolio.value()
+            tprint_data_preview(equity_curve, "extracted_equity_curve", max_rows=5, level="DEBUG")
 
             return BacktestResult(
                 total_return=total_return.iloc[-1] if hasattr(total_return, 'iloc') else total_return,

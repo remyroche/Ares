@@ -65,7 +65,7 @@ from src.utils.common_operations import (
 from src.utils.common_utilities import ensure_list, ensure_array, flatten_dict
 
 # Output utilities
-from src.utils.tprint import tprint
+from src.utils.tprint import tprint, tprint_data_preview
 
 # Hardware optimization
 try:
@@ -355,6 +355,9 @@ class FinalParametersOptimizer(BaseStep):
             if not symbol:
                 raise ValueError("Symbol is required for final parameters optimization")
             
+            # Preview configuration data
+            tprint_data_preview(config, "final_parameters_config", max_rows=10, level="DEBUG")
+            
             self.logger.info(f"Optimizing final parameters for {symbol} from {exchange}")
             self.logger.info(f"Timeframe: {timeframe}, Direction: {direction}")
             
@@ -374,6 +377,9 @@ class FinalParametersOptimizer(BaseStep):
             optimization_result = await self._perform_final_parameters_optimization(
                 symbol, timeframe, direction, execution_mode, config
             )
+
+            # Preview optimization results
+            tprint_data_preview(optimization_result, "optimization_result", max_rows=5, level="INFO")
 
             # Save optimization result as artifact (will auto-generate CSV if < 2000 rows)
             artifact_path = self._save_artifact(
@@ -436,6 +442,9 @@ class FinalParametersOptimizer(BaseStep):
                 'ensemble_weight_analyst': 0.6,
                 'ensemble_weight_tactician': 0.4
             }
+            
+            # Preview sample parameters
+            tprint_data_preview(sample_parameters, "sample_parameters", max_rows=10, level="DEBUG")
             
             return {
                 'parameters_optimized': len(sample_parameters),
@@ -1755,6 +1764,13 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
             self.logger.info(f"📊 Calibration results available: {len(calibration_results)} keys")
             self.logger.info(f"🔄 Previous results available: {previous_results is not None}")
 
+            # Preview calibration results
+            tprint_data_preview(calibration_results, "calibration_results", max_rows=5, level="DEBUG")
+            
+            # Preview previous results if available
+            if previous_results:
+                tprint_data_preview(previous_results, "previous_results", max_rows=5, level="DEBUG")
+
             optimization_results = {}
             start_time = time.time()
 
@@ -1779,6 +1795,9 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
             self.logger.info("✅ Final parameters optimization completed")
             self.logger.info(f"⏱️ Total optimization time: {total_duration:.2f}s")
             self.logger.info(f"📊 Categories optimized: {len(optimization_results)}")
+            
+            # Preview final optimization results
+            tprint_data_preview(optimization_results, "final_optimization_results", max_rows=10, level="INFO")
 
             return optimization_results
 
@@ -1816,6 +1835,13 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 return {}
 
             tprint(f"📊 Search space: {len(search_space)} parameters", "info")
+            
+            # Preview search space
+            tprint_data_preview(search_space, f"search_space_{category}", max_rows=5, level="DEBUG")
+            
+            # Preview previous results if available
+            if previous_results:
+                tprint_data_preview(previous_results, f"previous_results_{category}", max_rows=5, level="DEBUG")
 
             # Convert search space to BayesianTPEOptimizer format
             converted_search_space = self._convert_search_space_format(search_space)
@@ -3157,10 +3183,15 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
         try:
             start_time = time.time()
 
+            # Preview parameters being evaluated
+            tprint_data_preview(parameters, "evaluation_parameters", max_rows=5, level="DEBUG")
+
             # Use VectorBTRollingOptimizer for enhanced data preprocessing
             optimized_data = None
             if hasattr(self, 'training_data') and self.training_data is not None:
                 optimized_data = self._optimize_data_for_vectorbt_enhanced(self.training_data)
+                # Preview optimized data
+                tprint_data_preview(optimized_data, "optimized_training_data", max_rows=3, level="DEBUG")
 
             # Create operation context for VectorBT optimization
             operation_context = {
@@ -3401,6 +3432,9 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
             return data
 
         try:
+            # Preview input data
+            tprint_data_preview(data, "input_data_vectorbt", max_rows=3, level="DEBUG")
+            
             # Use existing memory optimizer
             if self.memory_optimizer:
                 data = self.memory_optimizer.optimize_dataframe(data)
@@ -3409,6 +3443,9 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
             if self.rolling_optimizer:
                 data = self.rolling_optimizer._optimize_data_types(data)
 
+            # Preview optimized data
+            tprint_data_preview(data, "optimized_data_vectorbt", max_rows=3, level="DEBUG")
+            
             return data
 
         except Exception as e:
@@ -3429,6 +3466,9 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
             return data
 
         try:
+            # Preview input data
+            tprint_data_preview(data, "input_data_vectorbt_optimization", max_rows=3, level="DEBUG")
+            
             # Use existing memory optimizer
             if self.memory_optimizer:
                 data = self.memory_optimizer.optimize_dataframe(data)
@@ -4387,6 +4427,10 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
         """Save optimization results."""
         try:
             self.logger.info(f"💾 Saving optimization results for {exchange}_{symbol}")
+            
+            # Preview optimization results before saving
+            tprint_data_preview(optimization_results, "saving_optimization_results", max_rows=5, level="INFO")
+            
             optimization_dir = f'generated/backtesting/optimization_results'
             os.makedirs(optimization_dir, exist_ok=True)
             self.logger.info(f"📁 Optimization directory: {optimization_dir}")
@@ -4462,6 +4506,10 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 if results:
                     self.logger.info(f"✅ Successfully loaded previous optimization results")
                     self.logger.info(f"📊 Categories in previous results: {len(results)}")
+                    
+                    # Preview loaded results
+                    tprint_data_preview(results, "loaded_previous_results", max_rows=5, level="INFO")
+                    
                     for category in results.keys():
                         self.logger.debug(f"   • {category}")
                 else:

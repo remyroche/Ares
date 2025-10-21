@@ -13,6 +13,7 @@ from enum import Enum
 import logging
 
 from ..logger import system_logger
+from ...utils.tprint import tprint_data_preview
 
 logger = logging.getLogger(__name__)
 
@@ -89,23 +90,31 @@ class VectorizedBacktestingEngine:
         try:
             self.logger.info(f"🚀 Starting vectorized backtest with {len(signals)} signals")
 
+            # Preview input data
+            tprint_data_preview(signals, "backtest_signals", max_rows=5, level="DEBUG")
+            tprint_data_preview(prices, "backtest_prices", max_rows=5, level="DEBUG")
+
             # Initialize backtesting
             self._initialize_backtest()
 
             # Generate positions from signals
             positions = self._generate_positions(signals)
+            tprint_data_preview(positions, "generated_positions", max_rows=5, level="DEBUG")
 
             # Calculate portfolio returns
             portfolio_returns = self._calculate_portfolio_returns(positions, prices)
+            tprint_data_preview(portfolio_returns, "portfolio_returns", max_rows=5, level="DEBUG")
 
             # Generate equity curve
             equity_curve = self._generate_equity_curve(portfolio_returns)
 
             # Calculate performance metrics
             metrics = self._calculate_performance_metrics(portfolio_returns, equity_curve)
+            tprint_data_preview(metrics, "performance_metrics", max_rows=10, level="INFO")
 
             # Generate trade records
             trades = self._generate_trade_records(positions, prices)
+            tprint_data_preview(trades, "trade_records", max_rows=5, level="DEBUG")
 
             result = BacktestResult(
                 total_return=metrics['total_return'],
@@ -117,6 +126,9 @@ class VectorizedBacktestingEngine:
                 equity_curve=equity_curve,
                 trades=trades
             )
+
+            # Preview final result
+            tprint_data_preview(result, "backtest_result", max_rows=10, level="INFO")
 
             self.logger.info(f"✅ Vectorized backtest completed: {result.total_return:.2%} total return")
             return result
@@ -135,14 +147,26 @@ class VectorizedBacktestingEngine:
 
     def _generate_positions(self, signals: pd.Series) -> pd.Series:
         """Generate position sizes from trading signals."""
+        # Preview input signals
+        tprint_data_preview(signals, "input_signals", max_rows=5, level="DEBUG")
+        
         # Simple position sizing: 100% long/short based on signals
         positions = signals.copy()
+        
+        # Preview generated positions
+        tprint_data_preview(positions, "generated_positions", max_rows=5, level="DEBUG")
+        
         return positions
 
     def _calculate_portfolio_returns(self, positions: pd.Series, prices: pd.Series) -> pd.Series:
         """Calculate portfolio returns from positions and prices."""
+        # Preview input data
+        tprint_data_preview(positions, "input_positions", max_rows=5, level="DEBUG")
+        tprint_data_preview(prices, "input_prices", max_rows=5, level="DEBUG")
+        
         # Calculate price returns
         price_returns = prices.pct_change().fillna(0)
+        tprint_data_preview(price_returns, "price_returns", max_rows=5, level="DEBUG")
 
         # Calculate strategy returns (position * price return)
         strategy_returns = positions.shift(1) * price_returns
@@ -150,6 +174,9 @@ class VectorizedBacktestingEngine:
         # Apply transaction costs
         transaction_costs = self._calculate_transaction_costs(positions)
         strategy_returns -= transaction_costs
+
+        # Preview final strategy returns
+        tprint_data_preview(strategy_returns, "strategy_returns", max_rows=5, level="DEBUG")
 
         return strategy_returns
 
@@ -166,6 +193,10 @@ class VectorizedBacktestingEngine:
 
     def _calculate_performance_metrics(self, returns: pd.Series, equity_curve: pd.Series) -> Dict[str, float]:
         """Calculate comprehensive performance metrics."""
+        # Preview input data
+        tprint_data_preview(returns, "input_returns", max_rows=5, level="DEBUG")
+        tprint_data_preview(equity_curve, "input_equity_curve", max_rows=5, level="DEBUG")
+        
         if len(returns) == 0:
             return {
                 'total_return': 0.0,

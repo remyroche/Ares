@@ -32,8 +32,11 @@ from .hardware.unified_hardware_manager import (
 from .hardware.adaptive_optimization_engine import (
     get_adaptive_optimization_engine, AdaptiveOptimizationEngine, OptimizationTarget
 )
+from .hardware.advanced_memory_manager import (
+    get_advanced_memory_manager, AdvancedMemoryManager
+)
 from .hardware.advanced_memory_optimizer import (
-    get_advanced_memory_manager, AdvancedM1MemoryOptimizer, MemoryStrategy
+    MemoryStrategy
 )
 from .hardware.enhanced_gpu_manager import (
     get_enhanced_gpu_manager, EnhancedM1GPUManager, GPUOperationType

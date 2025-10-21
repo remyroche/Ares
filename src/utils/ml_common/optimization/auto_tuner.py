@@ -24,6 +24,7 @@ from src.utils.tprint import tprint_info, tprint_success, tprint_warning
 from src.utils.logger import system_logger
 
 from .bayesian_tpe_optimizer import OptimizationConfig
+from ...hardware.memory_optimized_decorators import memory_optimized, MemoryOptimizationLevel
 
 # Enhanced hardware optimization imports
 try:
@@ -810,7 +811,7 @@ class AutoTuner:
 # Convenience function with enhanced hardware optimization
 @performance_tracked(log_performance=True, track_memory=True)
 @m1_optimized(workload_category=WorkloadCategory.MACHINE_LEARNING)
-@memory_optimized(aggressive_cleanup=True, enable_gc_optimization=True)
+@memory_optimized(optimization_level=MemoryOptimizationLevel.AGGRESSIVE, enable_aggressive_gc=True)
 def auto_tune_and_optimize(
     X: np.ndarray,
     y: np.ndarray,

@@ -1,208 +1,108 @@
-# tprint_data_preview Integration Summary
+# TPrint Data Format Integration Summary
 
 ## Overview
+Successfully integrated `tprint_data_format` utility into both Tactician training modules for enhanced troubleshooting capabilities.
 
-Successfully integrated `tprint_data_preview` from `src/utils/tprint.py` into the exchanges standardization logic. This integration provides helpful data previews during the data processing pipeline, making it easier to debug and understand data transformations.
+## Modules Updated
 
-## Integration Points
+### 1. Tactician Base Training (`src/training/steps/models_training/components/tactician_base_training.py`)
 
-### 1. UnifiedExchangeStandardizer (`exchanges/shared/unified_exchange_standardizer.py`)
+**Integration Points:**
+- **Import**: Added `tprint_data_format` to imports
+- **Input Data Analysis**: Comprehensive format analysis of input data dictionary
+- **Training Data Validation**: Detailed analysis of X_train and y_train before and after processing
+- **Configuration Analysis**: Format analysis of trainer configuration during initialization
+- **Results Analysis**: Format analysis of trained models, metrics, and feature importance
+- **Validation Data**: Format analysis of validation data in validate() method
+- **Prediction Data**: Format analysis of prediction data in predict() method
+- **Error Handling**: Enhanced error troubleshooting with data format analysis
+- **Model Saving**: Format analysis of models before saving
 
-**Updated Methods:**
-- `standardize_data()` - Added `enable_data_preview: bool = True` parameter
-- `standardize_to_dataframe()` - Added `enable_data_preview: bool = True` parameter
-- `standardize_exchange_ohlcv()` - Added `enable_data_preview: bool = True` parameter
+**Key Benefits:**
+- Faster identification of data format issues
+- Comprehensive debugging information for training failures
+- Better understanding of data transformations throughout the pipeline
 
-**Preview Points:**
-- Raw data preview before processing
-- Standardized data preview after conversion
-- Final DataFrame preview after optimization
+### 2. Tactician Ensemble Training (`src/training/steps/models_training/components/tactician_ensemble_training.py`)
 
-### 2. UnifiedOHLCVStandardizer (`exchanges/shared/unified_ohlcv_standardizer.py`)
+**Integration Points:**
+- **Import**: Added `tprint_data_format` to imports
+- **Input Data Analysis**: Comprehensive format analysis of ensemble input data dictionary
+- **Training Data Validation**: Detailed analysis of X_train and y_train for ensemble training
+- **Configuration Analysis**: Format analysis of ensemble trainer configuration during initialization
+- **Results Analysis**: Format analysis of ensemble model, individual models, and metrics
+- **Validation Data**: Format analysis of ensemble validation data
+- **Prediction Data**: Format analysis of ensemble prediction data
+- **Error Handling**: Enhanced error troubleshooting with data format analysis
+- **Model Saving**: Format analysis of ensemble and individual models before saving
 
-**Updated Methods:**
-- `standardize_data()` - Added `enable_data_preview: bool = True` parameter
+**Key Benefits:**
+- Faster identification of ensemble-specific data format issues
+- Comprehensive debugging for complex ensemble training scenarios
+- Better understanding of data flow through ensemble methods
 
-**Preview Points:**
-- Raw data preview before processing
-- Standardized data preview after conversion
+## Integration Features
 
-### 3. Klines Adapters
+### Comprehensive Data Analysis
+The `tprint_data_format` function provides detailed analysis including:
+- Data types and shapes
+- Memory usage characteristics
+- Data quality indicators (nulls, uniqueness, etc.)
+- Schema analysis and potential issues
+- Performance characteristics
 
-**Updated Adapters:**
-- `exchanges/binance/klines_adapter.py`
-- `exchanges/bingx/klines_adapter.py`
-- `exchanges/okx/klines_adapter.py`
-- `exchanges/mexc/klines_adapter.py`
-- `exchanges/gateio/klines_adapter.py`
-- `exchanges/phemex/klines_adapter.py`
+### Strategic Placement
+- **Input Validation**: Data format analysis when data is first received
+- **Preprocessing Stages**: Before and after data transformations
+- **Training Data**: X_train and y_train format validation
+- **Results Analysis**: Model outputs and metrics validation
+- **Error Handling**: When data format issues occur
+- **Configuration Analysis**: Trainer configuration validation
 
-**Updated Methods:**
-- `get_klines_data()` - Added `enable_data_preview: bool = True` parameter
-- `download_and_process_klines()` - Added `enable_data_preview: bool = True` parameter
-
-**Preview Points:**
-- Raw klines data from exchange APIs
-- Processed data after pipeline processing
-
-## Features Added
-
-### 1. Data Preview Integration
-- **Raw Data Preview**: Shows incoming data before standardization
-- **Standardized Data Preview**: Shows data after conversion to unified format
-- **Final Data Preview**: Shows processed data ready for use
-
-### 2. Configuration Options
-- **Environment Variable**: `ENABLE_DATA_PREVIEW=true` to enable/disable previews globally
-- **Method Parameter**: `enable_data_preview=True` to control per-method
-- **Log Level Control**: Previews use DEBUG/INFO levels for appropriate visibility
-
-### 3. Smart Preview Features
-- **Automatic Data Type Detection**: Handles lists, dicts, DataFrames, numpy arrays
-- **Size Limits**: Prevents log pollution with large datasets
-- **Metadata Display**: Shows data shape, memory usage, quality metrics
-- **Truncation**: Smart truncation of large data for readability
+### Error Troubleshooting
+Enhanced error handling includes:
+- Automatic data format analysis when errors occur
+- Detailed debugging information for failed operations
+- Format analysis of failed save operations
+- Comprehensive error context for faster resolution
 
 ## Usage Examples
 
 ### Basic Usage
 ```python
-from exchanges.shared.unified_exchange_standardizer import standardize_exchange_ohlcv
-
-# With data preview (default)
-df = standardize_exchange_ohlcv(
-    raw_data, 
-    "binance", 
-    "BTCUSDT", 
-    "5m",
-    enable_data_preview=True
-)
-
-# Without data preview
-df = standardize_exchange_ohlcv(
-    raw_data, 
-    "binance", 
-    "BTCUSDT", 
-    "5m",
-    enable_data_preview=False
-)
+# In training modules, tprint_data_format is automatically called at key points
+tprint_data_format(data, "Input data dictionary", level="INFO")
+tprint_data_format(X_train, "Training features", level="DEBUG")
+tprint_data_format(result.metrics, "Training metrics", level="INFO")
 ```
 
-### Klines Adapter Usage
+### Error Troubleshooting
 ```python
-from exchanges.binance.klines_adapter import BinanceKlinesAdapter
-
-adapter = BinanceKlinesAdapter()
-
-# With data preview (default)
-data = await adapter.get_klines_data(
-    "BTCUSDT", 
-    "5m", 
-    enable_data_preview=True
-)
-
-# Process with preview
-processed = await adapter.download_and_process_klines(
-    "BTCUSDT", 
-    "5m", 
-    enable_data_preview=True
-)
+# When errors occur, automatic format analysis is performed
+tprint_error("🔍 Error troubleshooting - analyzing data formats:")
+tprint_data_format(data, "Failed training data", level="ERROR")
 ```
 
-### Environment Control
-```bash
-# Enable data previews globally
-export ENABLE_DATA_PREVIEW=true
+## Benefits for Troubleshooting
 
-# Disable data previews globally
-export ENABLE_DATA_PREVIEW=false
-```
-
-## Preview Output Examples
-
-### Raw Data Preview
-```
-[2025-10-21 14:10:13.284] DEBUG: 📊 Raw binance data for BTCUSDT (5m) preview:
-[2025-10-21 14:10:13.284] DEBUG:   Type: list
-[2025-10-21 14:10:13.284] DEBUG:   Length: 10
-[2025-10-21 14:10:13.284] DEBUG:   Memory: 0.00 MB
-[2025-10-21 14:10:13.284] DEBUG:   Preview: [{'openTime': 1760969413285, 'open': '50000.00', ...}]
-```
-
-### Standardized Data Preview
-```
-[2025-10-21 14:10:13.284] DEBUG: 📊 Standardized binance data for BTCUSDT (5m) preview:
-[2025-10-21 14:10:13.284] DEBUG:   Shape: (10, 15)
-[2025-10-21 14:10:13.284] DEBUG:   Dtypes: {'symbol': 'object', 'timestamp': 'datetime64[ns]', ...}
-[2025-10-21 14:10:13.284] DEBUG:   Memory: 0.00 MB
-[2025-10-21 14:10:13.284] DEBUG:   Sample data (first 3 rows):
-[2025-10-21 14:10:13.284] DEBUG:     symbol  timestamp  open  high  low  close  volume
-[2025-10-21 14:10:13.284] DEBUG:   0  BTCUSDT 2025-10-21  50000  50050  49950  50025    100
-```
-
-## Benefits
-
-### 1. Debugging & Development
-- **Visual Data Inspection**: Quickly see data structure and content
-- **Transformation Tracking**: Follow data through processing pipeline
-- **Quality Assessment**: Identify data quality issues early
-
-### 2. Monitoring & Operations
-- **Data Validation**: Verify data correctness during processing
-- **Performance Monitoring**: Track data processing efficiency
-- **Error Diagnosis**: Identify issues in data transformation
-
-### 3. Documentation & Learning
-- **Data Flow Understanding**: Visualize how data moves through system
-- **Format Examples**: See actual data structures and formats
-- **Integration Examples**: Understand how different exchanges work
-
-## Configuration
-
-### Environment Variables
-- `ENABLE_DATA_PREVIEW`: Global enable/disable (default: false)
-- `DATA_PREVIEW_MAX_ROWS`: Maximum rows to show (default: 5)
-- `DATA_PREVIEW_MAX_COLS`: Maximum columns to show (default: 10)
-- `DATA_PREVIEW_LARGE_THRESHOLD`: Large dataset threshold (default: 10000)
-
-### Method Parameters
-- `enable_data_preview: bool = True`: Control per-method
-- `max_rows: int = None`: Override default row limit
-- `max_cols: int = None`: Override default column limit
-- `level: LogLevel = LogLevel.DEBUG`: Control log level
+1. **Faster Debugging**: Immediate visibility into data formats at critical points
+2. **Comprehensive Analysis**: Detailed information about data types, shapes, and quality
+3. **Error Context**: Enhanced error messages with data format information
+4. **Performance Insights**: Memory usage and performance characteristics
+5. **Data Quality**: Identification of potential data issues (nulls, infinite values, etc.)
 
 ## Testing
 
-Created comprehensive test suite:
-- `test_tprint_integration.py`: Full integration test with sample data
-- `simple_tprint_test.py`: Basic functionality test without dependencies
-
-Test results show:
-- ✅ Basic data preview functionality working
-- ✅ Integration points properly configured
-- ✅ Method signatures updated correctly
-- ✅ Environment variable control working
+- ✅ Import functionality verified
+- ✅ Basic data type analysis confirmed working
+- ✅ Integration points properly implemented
+- ✅ Error handling enhanced with format analysis
 
 ## Files Modified
 
-### Core Standardization
-- `exchanges/shared/unified_exchange_standardizer.py`
-- `exchanges/shared/unified_ohlcv_standardizer.py`
+1. `src/training/steps/models_training/components/tactician_base_training.py`
+2. `src/training/steps/models_training/components/tactician_ensemble_training.py`
 
-### Klines Adapters
-- `exchanges/binance/klines_adapter.py`
-- `exchanges/bingx/klines_adapter.py`
-- `exchanges/okx/klines_adapter.py`
-- `exchanges/mexc/klines_adapter.py`
-- `exchanges/gateio/klines_adapter.py`
-- `exchanges/phemex/klines_adapter.py`
+## Next Steps
 
-### Test Files
-- `test_tprint_integration.py`
-- `simple_tprint_test.py`
-
-## Conclusion
-
-The `tprint_data_preview` integration is now complete and provides comprehensive data preview capabilities throughout the exchanges standardization logic. This enhancement significantly improves debugging, monitoring, and understanding of data processing workflows while maintaining backward compatibility and performance.
-
-The integration follows the existing codebase patterns and provides flexible configuration options to suit different use cases and environments.
+The integration is complete and ready for use. The `tprint_data_format` utility will now provide comprehensive debugging information throughout the training pipeline, making it much easier to identify and resolve data format issues during model training.

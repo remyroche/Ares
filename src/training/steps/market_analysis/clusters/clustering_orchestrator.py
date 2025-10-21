@@ -13,7 +13,38 @@ import time
 from datetime import datetime
 
 from src.utils.tprint import (
-    tprint, tprint_info, tprint_success, tprint_warning, tprint_error
+    tprint, tprint_info, tprint_success, tprint_warning, tprint_error, tprint_debug, tprint_performance
+)
+from src.utils.common_operations import (
+    get_memory_usage, optimize_dataframe_memory, safe_divide, safe_mean, safe_std,
+    memory_monitor, force_garbage_collection, performance_timer, validate_dataframe,
+    safe_merge, safe_concat, calculate_data_quality_metrics, create_summary_statistics
+)
+from src.utils.common_utilities import (
+    safe_dataframe_operation, validate_dataframe_columns, safe_convert_dtypes,
+    analyze_nan_values_detailed, format_nan_analysis_report, get_dataframe_info,
+    safe_merge_dataframes, safe_groupby_operation, safe_apply_function
+)
+from src.utils.math_validation import (
+    validate_finite, validate_array_finite, safe_divide, safe_log, safe_sqrt,
+    safe_power, safe_correlation, safe_mean, safe_std, validate_positive
+)
+from src.utils.data.unified_data_utils import (
+    UnifiedDataUtils, DataQualityMetrics, DataValidationResult
+)
+from src.utils.data.quality.comprehensive_quality_scorer import (
+    ComprehensiveQualityScorer, QualityScoreConfig
+)
+from src.utils.kline_parquet import KlinesParquetManager, KlinesMetadata
+from src.utils.artifact_manager import ArtifactManager, ArtifactConfig
+from src.utils.hardware.integrated_hardware_manager import (
+    get_integrated_hardware_manager, IntegratedHardwareManager
+)
+from src.utils.hardware.enhanced_caching_system import (
+    EnhancedCachingSystem, CacheConfig
+)
+from src.utils.hardware.advanced_memory_manager import (
+    AdvancedMemoryManager, MemoryConfig
 )
 
 from .step1_feature_preparation import ClusteringContext
@@ -37,15 +68,39 @@ class ClusteringOrchestrator:
         self.optimization_service = OptimizationService(verbose=verbose)
         self.hardware_service = HardwareService(verbose=verbose)
 
-        # Performance tracking
+        # Performance tracking with enhanced metrics
         self.performance_metrics = {
             "start_time": None,
             "end_time": None,
             "step_times": {},
             "memory_usage": [],
             "error_count": 0,
-            "success_count": 0
+            "success_count": 0,
+            "data_quality_metrics": {},
+            "optimization_stats": {}
         }
+        
+        # Initialize memory monitoring
+        self.initial_memory = get_memory_usage()
+        tprint_debug(f"Orchestrator initialized - Initial memory: {self.initial_memory['rss']:.1f}MB")
+        
+        # Initialize data utilities
+        self.data_utils = UnifiedDataUtils()
+        self.quality_scorer = ComprehensiveQualityScorer(QualityScoreConfig())
+        self.klines_manager = KlinesParquetManager()
+        self.artifact_manager = ArtifactManager(ArtifactConfig())
+        
+        # Initialize hardware utilities
+        try:
+            self.hardware_manager = get_integrated_hardware_manager()
+            self.caching_system = EnhancedCachingSystem(CacheConfig())
+            self.memory_manager = AdvancedMemoryManager(MemoryConfig())
+            tprint("🔧 Hardware utilities initialized", "INFO")
+        except Exception as e:
+            tprint(f"⚠️ Failed to initialize hardware utilities: {e}", "WARNING")
+            self.hardware_manager = None
+            self.caching_system = None
+            self.memory_manager = None
 
     async def execute_clustering_pipeline(
         self,
@@ -53,12 +108,23 @@ class ClusteringOrchestrator:
         market_data: pd.DataFrame,
         config: Any
     ) -> Dict[str, Any]:
-        """Execute the complete clustering pipeline."""
+        """Execute the complete clustering pipeline with enhanced monitoring."""
         try:
             # Initialize performance tracking
             self.performance_metrics["start_time"] = time.time()
             tprint("🚀 Starting NAS-TAS Clustering Pipeline (Refactored)", "INFO")
             tprint("🎯 Using advanced 3-step iterative clustering with risk mitigation", "INFO")
+
+            # Validate input data quality
+            with memory_monitor("Data Validation"):
+                data_quality = calculate_data_quality_metrics(market_data)
+                self.performance_metrics["data_quality_metrics"] = data_quality
+                tprint_debug(f"Data quality metrics: {data_quality}")
+                
+                # Analyze NaN values if present
+                if data_quality.get('missing_percentage', 0) > 0:
+                    nan_analysis = analyze_nan_values_detailed(market_data)
+                    tprint_warning(format_nan_analysis_report(nan_analysis, "⚠️ "))
 
             # Create clustering context
             context = ClusteringContext(
@@ -68,11 +134,18 @@ class ClusteringOrchestrator:
                 feature_scores=getattr(config, 'feature_scores', {})
             )
 
-            # Validate context before pipeline execution
+            # Validate context before pipeline execution with enhanced validation
             if not hasattr(context, 'original_features') or context.original_features is None:
                 raise ValueError("Original features are None or not available in context")
             if not hasattr(context, 'market_data') or context.market_data is None or context.market_data.empty:
                 raise ValueError("Market data is None or empty in context")
+            
+            # Validate finite values in features
+            try:
+                validate_array_finite(features, "original_features")
+            except ValueError as e:
+                tprint_warning(f"Feature validation warning: {e}")
+                # Continue with warning rather than failing
 
             # Execute pipeline steps
             context = await self._execute_pipeline_steps(context, config)

@@ -13,19 +13,25 @@ import time
 from datetime import datetime
 
 from src.utils.tprint import (
-    tprint, tprint_info, tprint_success, tprint_warning, tprint_error
+    tprint, tprint_info, tprint_success, tprint_warning, tprint_error, tprint_debug, tprint_performance
 )
 from src.utils.common_operations import (
-    get_m1_gpu_manager, get_m1_memory_optimizer, get_m1_cpu_optimizer
-from .shared import HardwareInitializer,
+    get_memory_usage, optimize_dataframe_memory, safe_divide, safe_mean, safe_std,
+    memory_monitor, force_garbage_collection, performance_timer, validate_dataframe,
+    safe_merge, safe_concat, calculate_data_quality_metrics, create_summary_statistics,
+    get_m1_gpu_manager, get_m1_memory_optimizer, get_m1_cpu_optimizer,
     integrate_with_m1_optimizers, cleanup_m1_optimizers
 )
 from src.utils.common_utilities import (
-    calculate_data_quality_metrics, safe_dataframe_operation,
-    validate_dataframe_columns, create_summary_statistics
+    safe_dataframe_operation, validate_dataframe_columns, safe_convert_dtypes,
+    analyze_nan_values_detailed, format_nan_analysis_report, get_dataframe_info,
+    safe_merge_dataframes, safe_groupby_operation, safe_apply_function,
+    calculate_data_quality_metrics, create_summary_statistics
 )
 from src.utils.math_validation import (
-    safe_divide, validate_finite, safe_log, safe_sqrt
+    validate_finite, validate_array_finite, safe_divide, safe_log, safe_sqrt,
+    safe_power, safe_correlation, safe_mean, safe_std, validate_positive,
+    safe_covariance, safe_percentile, validate_correlation_matrix
 )
 from src.utils.matrix_operations.unified_operations import UnifiedMatrixOperations
 

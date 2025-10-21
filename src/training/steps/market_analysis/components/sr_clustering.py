@@ -16,6 +16,7 @@ from pathlib import Path
 
 from src.training.steps.base_step import BaseStep
 from src.utils.logger import system_logger
+from src.utils.tprint import tprint_data_preview
 
 # Hardware optimization imports
 from src.utils.hardware import (
@@ -116,10 +117,16 @@ class SRClusteringComponent(BaseStep):
                 self.logger.warning("No SR levels found, generating sample data for demonstration")
                 sr_levels = self._generate_sample_sr_levels(symbol, timeframe)
             
+            # Preview SR levels for clustering troubleshooting
+            tprint_data_preview(sr_levels, "sr_levels_for_clustering", max_rows=10, level="INFO")
+            
             # Perform optimized SR clustering
             clustering_result = await self._perform_optimized_sr_clustering(
                 sr_levels, symbol, timeframe, direction, execution_mode
             )
+            
+            # Preview clustering result for troubleshooting
+            tprint_data_preview(clustering_result, "clustering_result", max_rows=10, level="INFO")
 
             # Optimize clustering result for storage
             optimized_result = self.hardware_manager.process_data_with_optimization(
@@ -176,6 +183,8 @@ class SRClusteringComponent(BaseStep):
                 levels = sr_data.get('sr_levels', [])
                 if levels:
                     self.logger.info(f"Loaded {len(levels)} SR levels from previous step")
+                    # Preview loaded SR levels for troubleshooting
+                    tprint_data_preview(levels, "loaded_sr_levels", max_rows=10, level="DEBUG")
                     return levels
             
             # Try alternative artifact names
@@ -272,10 +281,16 @@ class SRClusteringComponent(BaseStep):
             # Convert to DataFrame for optimization
             df = pd.DataFrame(sr_levels)
             
+            # Preview DataFrame conversion for troubleshooting
+            tprint_data_preview(df, "sr_levels_dataframe", max_rows=10, level="DEBUG")
+            
             # Optimize DataFrame with hardware acceleration
             optimized_df = self.hardware_manager.process_data_with_optimization(
                 df, 'DATA_PROCESSING'
             )
+            
+            # Preview hardware optimized DataFrame for troubleshooting
+            tprint_data_preview(optimized_df, "hardware_optimized_dataframe", max_rows=10, level="DEBUG")
             
             # Perform clustering based on execution mode
             if execution_mode == 'light':

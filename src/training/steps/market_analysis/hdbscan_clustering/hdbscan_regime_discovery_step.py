@@ -41,7 +41,7 @@ from src.training.steps.market_analysis.hdbscan_clustering.feature_engineering.a
 from src.utils.tprint import (
     tprint, tprint_info, tprint_success, tprint_warning, tprint_error, 
     tprint_debug, tprint_performance, tprint_progress, tprint_timer,
-    tprint_logged, tprint_data_preview, LogLevel
+    tprint_logged, tprint_data_preview, tprint_data_format, LogLevel
 )
 from src.utils.hardware import get_memory_usage, optimize_dataframe_default
 from src.utils.data.klines_parquet import get_klines_manager
@@ -143,6 +143,9 @@ class HDBSCANRegimeDiscoveryStep(BaseStep):
         """
         start_time = datetime.now()
         perf_start = time.perf_counter()
+        
+        # Enhanced data format analysis for troubleshooting
+        tprint_data_format(config, "step_config", level=LogLevel.INFO)
         
         try:
             symbol = config.get('symbol', 'UNKNOWN')
@@ -503,6 +506,9 @@ class HDBSCANRegimeDiscoveryStep(BaseStep):
                 )
             
             if market_data is not None and len(market_data) > 0:
+                # Enhanced data format analysis for troubleshooting
+                tprint_data_format(market_data, "loaded_market_data", level=LogLevel.INFO)
+                
                 # Enhanced data validation using common operations
                 def validate_and_optimize_data(df):
                     # Memory optimization

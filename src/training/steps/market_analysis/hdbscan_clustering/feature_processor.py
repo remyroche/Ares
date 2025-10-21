@@ -28,7 +28,7 @@ from src.utils.hardware import (
 from src.utils.tprint import (
     tprint, tprint_info, tprint_success, tprint_warning, tprint_error,
     tprint_debug, tprint_performance, tprint_progress, tprint_timer,
-    tprint_logged, LogLevel
+    tprint_logged, tprint_data_format, LogLevel
 )
 
 logger = logging.getLogger(__name__)
@@ -141,6 +141,11 @@ class FeatureProcessor:
             tprint_info("🔧 Starting feature processing pipeline...")
             tprint_debug(f"Input shape: {features_df.shape}, target shape: {target.shape if target is not None else 'None'}")
             
+            # Enhanced data format analysis for troubleshooting
+            tprint_data_format(features_df, "input_features_df", level=LogLevel.INFO)
+            if target is not None:
+                tprint_data_format(target, "input_target", level=LogLevel.INFO)
+            
             # Store original shape
             original_shape = features_df.shape
             self.processing_stats['original_shape'] = original_shape
@@ -225,6 +230,10 @@ class FeatureProcessor:
             
             tprint_success(f"✅ Feature processing completed. Final shape: {features_df.shape}")
             tprint_debug(f"Processing stats: features_removed={self.processing_stats['features_removed']}, samples_removed={self.processing_stats['samples_removed']}")
+            
+            # Enhanced data format analysis for processed features
+            tprint_data_format(features_df, "processed_features_df", level=LogLevel.INFO)
+            tprint_data_format(self.processing_stats, "processing_stats", level=LogLevel.DEBUG)
             
             return ProcessedFeatures(
                 features_df=features_df,

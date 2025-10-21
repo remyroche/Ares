@@ -28,7 +28,7 @@ from src.utils.hardware import (
 from src.utils.tprint import (
     tprint, tprint_info, tprint_success, tprint_warning, tprint_error,
     tprint_debug, tprint_performance, tprint_progress, tprint_timer,
-    tprint_logged, LogLevel
+    tprint_logged, tprint_data_format, LogLevel
 )
 
 logger = logging.getLogger(__name__)
@@ -150,6 +150,11 @@ class DimensionalityReducer:
             tprint_info(f"📉 Starting dimensionality reduction using {self.config.method}...")
             tprint_debug(f"Input shape: {features.shape}, fit={fit}, target_shape={target.shape if target is not None else 'None'}")
             
+            # Enhanced data format analysis for troubleshooting
+            tprint_data_format(features, "input_features_array", level=LogLevel.INFO)
+            if target is not None:
+                tprint_data_format(target, "input_target_array", level=LogLevel.INFO)
+            
             # Validate input
             if self.config.validate_input:
                 with tprint_timer("Input validation"):
@@ -198,6 +203,10 @@ class DimensionalityReducer:
                 tprint_debug(f"Reduction info: {reduction_info}")
             
             tprint_success(f"✅ Dimensionality reduction completed. Shape: {features.shape} -> {reduced_features.shape}")
+            
+            # Enhanced data format analysis for reduced features
+            tprint_data_format(reduced_features, "reduced_features_array", level=LogLevel.INFO)
+            tprint_data_format(reduction_info, "reduction_info", level=LogLevel.DEBUG)
             
             return reduced_features, reduction_info
             

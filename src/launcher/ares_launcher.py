@@ -242,8 +242,11 @@ def create_cli_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Run a single step
-  python ares_launcher.py --step data_download --symbol ETHUSDT --exchange binance
+  # Run a single step (new simplified format)
+  python ares_launcher.py feature_generation_period_lookback_optimization_step --symbol ETHUSDT --execution-mode light
+  
+  # Run with additional parameters
+  python ares_launcher.py feature_generation_data_validation_step --symbol ETHUSDT --timeframe 15m --exchange binance --execution-mode full
   
   # Run multiple steps
   python ares_launcher.py --steps data_download,data_conversion --symbol ETHUSDT
@@ -251,20 +254,17 @@ Examples:
   # Run entire stage
   python ares_launcher.py --stage DATA_COLLECTION --symbol ETHUSDT
   
-  # PRE_TRAINING steps (maintain compatibility)
-  python ares_launcher.py --step feature_generation_data_validation_step --symbol ETHUSDT --execution-mode light
-  
-  # MODEL_TRAINING steps (maintain compatibility)
+  # Model training steps
   python ares_launcher.py --train-analyst-base --symbol ETHUSDT --timeframe 15m --direction longs
   
-  # Legacy compatibility
-  python ares_launcher.py --mode sequential --sub_pipeline feature_generation_data_validation_step --symbol ETHUSDT
+  # List available steps
+  python ares_launcher.py --list-steps
         """
     )
     
     # Step execution options
     step_group = parser.add_mutually_exclusive_group(required=True)
-    step_group.add_argument('--step', type=str, help='Run a single step')
+    step_group.add_argument('step_name', nargs='?', type=str, help='Name of the step to run (positional argument)')
     step_group.add_argument('--steps', type=str, help='Run multiple steps (comma-separated)')
     step_group.add_argument('--stage', type=str, help='Run entire stage')
     step_group.add_argument('--mode', type=str, help='Legacy mode (sequential, etc.)')
@@ -289,10 +289,6 @@ Examples:
     parser.add_argument('--timeframe', type=str, default='15m', help='Timeframe for training')
     parser.add_argument('--direction', type=str, choices=['longs', 'shorts', 'both'], default='longs', help='Trading direction')
     parser.add_argument('--execution-mode', type=str, choices=['full', 'light', 'blank'], default='light', help='Execution mode')
-    
-    # Legacy compatibility options
-    parser.add_argument('--start-from-step-name', type=str, help='Legacy: start from specific step')
-    parser.add_argument('--stop-at-step', type=int, help='Legacy: stop at specific step number')
     
     # Utility options
     parser.add_argument('--verbose', '-v', action='store_true', help='Enable verbose logging')
@@ -409,7 +405,7 @@ def main():
         return
     
     # Validate required arguments for execution commands
-    if not args.symbol:
+    if args.step_name and not args.symbol:
         parser.error("--symbol is required for step execution")
     
     # Build configuration
@@ -423,11 +419,11 @@ def main():
     
     # Handle different execution modes
     try:
-        if args.step:
-            # Single step execution
-            logger.info(f"Running single step: {args.step}")
-            result = asyncio.run(launcher.run_step(args.step, config))
-            print(f"Step '{args.step}' completed: {'✅ Success' if result.get('success') else '❌ Failed'}")
+        if args.step_name:
+            # Single step execution (new simplified format)
+            logger.info(f"Running single step: {args.step_name}")
+            result = asyncio.run(launcher.run_step(args.step_name, config))
+            print(f"Step '{args.step_name}' completed: {'✅ Success' if result.get('success') else '❌ Failed'}")
             
         elif args.steps:
             # Multiple steps execution

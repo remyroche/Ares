@@ -278,10 +278,15 @@ class BaseStep(ABC):
             tprint_debug("🔗 Hardware manager integrated with artifact manager")
         
         # Set up artifact manager context with step-category organization
+        execution_mode = config.get('execution_mode', 'light') if config else 'light'
         self.artifact_manager.set_context(
             step_name=step_name,
-            datetime_param=datetime.now()
+            datetime_param=datetime.now(),
+            execution_mode=execution_mode
         )
+        
+        # Store execution mode for easy access
+        self._current_execution_mode = execution_mode
         
         # Ensure proper directory structure
         self._ensure_directory_structure()
@@ -1203,7 +1208,7 @@ class BaseStep(ABC):
     
     def _set_context(self, symbol: Optional[str] = None, exchange: Optional[str] = None, 
                     information: Optional[str] = None, direction: str = "long", 
-                    model: str = "Analyst") -> None:
+                    model: str = "Analyst", execution_mode: str = "light") -> None:
         """
         Set the artifact manager and klines manager context for enhanced file naming and path management.
         
@@ -1213,6 +1218,7 @@ class BaseStep(ABC):
             information: Information type
             direction: Trading direction (long/short)
             model: Model type (Analyst/Tactician)
+            execution_mode: Execution mode for data fetching (full/blank/light)
             
         Raises:
             ValueError: If required parameters are invalid
@@ -1229,8 +1235,10 @@ class BaseStep(ABC):
             raise TypeError(f"direction must be a string, got: {type(direction).__name__}")
         if not isinstance(model, str):
             raise TypeError(f"model must be a string, got: {type(model).__name__}")
+        if not isinstance(execution_mode, str):
+            raise TypeError(f"execution_mode must be a string, got: {type(execution_mode).__name__}")
         
-        tprint_info(f"📁 Setting context: symbol={symbol}, exchange={exchange}, information={information}, direction={direction}, model={model}")
+        tprint_info(f"📁 Setting context: symbol={symbol}, exchange={exchange}, information={information}, direction={direction}, model={model}, execution_mode={execution_mode}")
         
         try:
             # Set artifact manager context
@@ -1240,7 +1248,8 @@ class BaseStep(ABC):
                 exchange=exchange,
                 information=information,
                 direction=direction,
-                model=model
+                model=model,
+                execution_mode=execution_mode
             )
             
             # Store context for klines operations (KlinesParquetManager uses these directly)
@@ -1249,6 +1258,7 @@ class BaseStep(ABC):
             self._current_direction = direction
             self._current_model = model
             self._current_information = information
+            self._current_execution_mode = execution_mode
             
             tprint_success(f"✅ Context set successfully")
             
@@ -1372,6 +1382,150 @@ class BaseStep(ABC):
             return None
         
         return self._load_klines(symbol, exchange, interval, start_time, end_time, batch_id)
+    
+    # ============================================================================
+    # MODE-AWARE DATA LOADING METHODS
+    # ============================================================================
+    
+    def _load_data_with_mode(
+        self, 
+        symbol: str, 
+        interval: str, 
+        mode: Optional[str] = None,
+        data_type: str = "raw",
+        columns: Optional[List[str]] = None
+    ) -> Optional[Any]:
+        """
+        Load data using mode-aware data fetching.
+        
+        Args:
+            symbol: Trading symbol
+            interval: Data interval (e.g., "15m", "1h")
+            mode: Execution mode ("full", "blank", "light"). If None, uses current context mode.
+            data_type: Data type ("raw" or "processed")
+            columns: List of columns to load
+            
+        Returns:
+            Loaded DataFrame or None
+        """
+        if mode is None:
+            mode = getattr(self, '_current_execution_mode', 'light')
+        
+        tprint_info(f"📊 Loading data with mode-aware fetching: {symbol} ({interval}) in {mode.upper()} mode")
+        
+        try:
+            data = self.artifact_manager.load_data_with_mode(
+                symbol=symbol,
+                interval=interval,
+                mode=mode,
+                data_type=data_type,
+                columns=columns
+            )
+            
+            if data is not None:
+                tprint_success(f"✅ Mode-aware data loaded: {len(data)} records")
+                # Add mode information to data metadata if it's a DataFrame
+                if hasattr(data, 'attrs'):
+                    data.attrs['execution_mode'] = mode
+                    data.attrs['lookback_days'] = self.artifact_manager.get_mode_lookback_days(mode)
+            
+            return data
+            
+        except Exception as e:
+            tprint_error(f"❌ Failed to load mode-aware data: {e}")
+            return None
+    
+    def _load_klines_with_mode(
+        self, 
+        symbol: Optional[str] = None, 
+        interval: str = "15m", 
+        mode: Optional[str] = None,
+        data_type: str = "raw"
+    ) -> Optional[Any]:
+        """
+        Load klines data using mode-aware data fetching with context.
+        
+        Args:
+            symbol: Trading symbol. If None, uses current context symbol.
+            interval: Data interval (e.g., "15m", "1h")
+            mode: Execution mode ("full", "blank", "light"). If None, uses current context mode.
+            data_type: Data type ("raw" or "processed")
+            
+        Returns:
+            Loaded DataFrame or None
+        """
+        if symbol is None:
+            symbol = getattr(self, '_current_symbol', None)
+        
+        if symbol is None:
+            tprint_error("❌ No symbol provided and no current context symbol available")
+            return None
+        
+        if mode is None:
+            mode = getattr(self, '_current_execution_mode', 'light')
+        
+        tprint_info(f"📊 Loading klines with mode-aware fetching: {symbol} ({interval}) in {mode.upper()} mode")
+        
+        return self._load_data_with_mode(
+            symbol=symbol,
+            interval=interval,
+            mode=mode,
+            data_type=data_type
+        )
+    
+    def _get_mode_lookback_days(self, mode: Optional[str] = None) -> int:
+        """
+        Get lookback days for the specified mode or current context mode.
+        
+        Args:
+            mode: Execution mode ("full", "blank", "light"). If None, uses current context mode.
+            
+        Returns:
+            Number of lookback days for the mode
+        """
+        if mode is None:
+            mode = getattr(self, '_current_execution_mode', 'light')
+        
+        return self.artifact_manager.get_mode_lookback_days(mode)
+    
+    def _get_mode_config(self, mode: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Get configuration for the specified mode or current context mode.
+        
+        Args:
+            mode: Execution mode ("full", "blank", "light"). If None, uses current context mode.
+            
+        Returns:
+            Mode configuration dictionary
+        """
+        if mode is None:
+            mode = getattr(self, '_current_execution_mode', 'light')
+        
+        return self.artifact_manager.get_mode_config(mode)
+    
+    def _set_execution_mode(self, mode: str) -> None:
+        """
+        Set the current execution mode for data fetching.
+        
+        Args:
+            mode: Execution mode ("full", "blank", "light")
+            
+        Raises:
+            ValueError: If mode is invalid
+            TypeError: If mode is not a string
+        """
+        self.artifact_manager.set_execution_mode(mode)
+        self._current_execution_mode = mode
+        tprint_info(f"📊 Execution mode set to: {mode.upper()}")
+    
+    def _get_current_mode(self) -> str:
+        """
+        Get the current execution mode.
+        
+        Returns:
+            Current execution mode
+        """
+        return getattr(self, '_current_execution_mode', 'light')
     
     def _save_enhanced_artifact(self, data: Any, artifact_name: str, 
                                artifact_type: str = "data", 
@@ -1797,9 +1951,14 @@ class BaseStep(ABC):
             information = config.get('information')
             direction = config.get('direction', 'long')
             model = config.get('model', 'Analyst')
+            execution_mode = config.get('execution_mode', 'light')
+            
+            # Update execution mode if provided in config
+            if execution_mode != self._current_execution_mode:
+                self._set_execution_mode(execution_mode)
             
             if any([symbol, exchange, information]):
-                self._set_context(symbol, exchange, information, direction, model)
+                self._set_context(symbol, exchange, information, direction, model, execution_mode)
             
             # Execute the step
             execution_result = await self.execute(config)

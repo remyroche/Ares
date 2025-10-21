@@ -1306,8 +1306,8 @@ def enhanced_traceback(depth: int = 0, show_locals: bool = True, compact: bool =
         _global_manager.config.show_locals = old_locals
         _global_manager.config.compact_traceback = old_compact
 
-def tprint_data_preview(data: Any, name: str = "data", max_rows: int = 5, 
-                       max_cols: int = 10, level: LogLevel = LogLevel.DEBUG, 
+def tprint_data_preview(data: Any, name: str = "data", max_rows: int = None, 
+                       max_cols: int = None, level: LogLevel = LogLevel.DEBUG, 
                        include_metadata: bool = True, force_log: bool = False) -> None:
     """
     Smart data preview with performance optimization.
@@ -1315,8 +1315,8 @@ def tprint_data_preview(data: Any, name: str = "data", max_rows: int = 5,
     Args:
         data: Data to preview (DataFrame, array, or any data structure)
         name: Name/description of the data
-        max_rows: Maximum rows to show (default: 5)
-        max_cols: Maximum columns to show (default: 10)
+        max_rows: Maximum rows to show (default: from config or 5)
+        max_cols: Maximum columns to show (default: from config or 10)
         level: Log level for the preview
         include_metadata: Whether to include metadata (default: True)
         force_log: Force logging even for large datasets (default: False)
@@ -1329,6 +1329,27 @@ def tprint_data_preview(data: Any, name: str = "data", max_rows: int = 5,
     except:
         pass
     
+    # Load configuration defaults
+    try:
+        import os
+        DATA_PREVIEW_CONFIG = {
+            'max_rows': int(os.getenv('DATA_PREVIEW_MAX_ROWS', '5')),
+            'max_cols': int(os.getenv('DATA_PREVIEW_MAX_COLS', '10')),
+            'large_dataset_threshold': int(os.getenv('DATA_PREVIEW_LARGE_THRESHOLD', '10000'))
+        }
+    except:
+        DATA_PREVIEW_CONFIG = {
+            'max_rows': 5,
+            'max_cols': 10,
+            'large_dataset_threshold': 10000
+        }
+    
+    # Use config defaults if not provided
+    if max_rows is None:
+        max_rows = DATA_PREVIEW_CONFIG['max_rows']
+    if max_cols is None:
+        max_cols = DATA_PREVIEW_CONFIG['max_cols']
+    
     # Convert string log level to enum safely
     if isinstance(level, str):
         try:
@@ -1336,16 +1357,22 @@ def tprint_data_preview(data: Any, name: str = "data", max_rows: int = 5,
         except KeyError:
             level = LogLevel.DEBUG
     
-    # Check for large datasets to prevent log pollution
+    # Check for large datasets to prevent log pollution (with improved __len__ check)
     try:
-        if not force_log and hasattr(data, '__len__') and len(data) > 10000:
-            tprint_with_level(level, f"📊 {name} preview: Large dataset ({len(data)} items) - use force_log=True to preview")
-            return
+        if not force_log and hasattr(data, '__len__'):
+            try:
+                data_len = len(data)
+                if data_len > DATA_PREVIEW_CONFIG['large_dataset_threshold']:
+                    tprint_with_level(level, f"📊 {name} preview: Large dataset ({data_len} items) - use force_log=True to preview")
+                    return
+            except TypeError:
+                # Handle 0-D arrays or other types that don't support len()
+                pass
     except:
         pass
     
     try:
-        # Try to import pandas and numpy for type checking
+        # Try to import required libraries for type checking
         try:
             import pandas as pd
             import numpy as np
@@ -1355,8 +1382,75 @@ def tprint_data_preview(data: Any, name: str = "data", max_rows: int = 5,
             PANDAS_AVAILABLE = False
             NUMPY_AVAILABLE = False
         
+        try:
+            import pyarrow as pa
+            import pyarrow.parquet as pq
+            PYARROW_AVAILABLE = True
+        except ImportError:
+            PYARROW_AVAILABLE = False
+        
+        # Handle PyArrow Tables
+        if PYARROW_AVAILABLE and isinstance(data, pa.Table):
+            tprint_with_level(level, f"📊 {name} preview (Arrow Table):")
+            tprint_with_level(level, f"  Schema: {data.schema}")
+            tprint_with_level(level, f"  Num rows: {data.num_rows}, Num columns: {data.num_columns}")
+            
+            if include_metadata:
+                try:
+                    size_bytes = data.nbytes
+                    tprint_with_level(level, f"  Estimated memory: {size_bytes / 1024**2:.2f} MB")
+                except Exception as mem_err:
+                    tprint_with_level(level, f"  Memory: (Could not measure: {mem_err})")
+            
+            # Preview first few rows
+            try:
+                if PANDAS_AVAILABLE:
+                    preview_df = data.slice(0, max_rows).to_pandas()
+                    tprint_with_level(level, f"  Sample data (first {max_rows} rows):")
+                    tprint_with_level(level, f"  {preview_df}")
+                else:
+                    # Fallback to Arrow table slice
+                    preview_table = data.slice(0, max_rows)
+                    tprint_with_level(level, f"  Sample data (first {max_rows} rows):")
+                    tprint_with_level(level, f"  {preview_table}")
+            except Exception as err:
+                tprint_with_level(level, f"  ⚠️  Could not preview rows: {err}")
+        
+        # Handle Parquet files by path
+        elif PYARROW_AVAILABLE and isinstance(data, str) and data.endswith('.parquet'):
+            try:
+                pf = pq.ParquetFile(data)
+                tprint_with_level(level, f"📊 {name} preview (Parquet file):")
+                tprint_with_level(level, f"  Path: {data}")
+                tprint_with_level(level, f"  Schema: {pf.schema_arrow}")
+                tprint_with_level(level, f"  Num rows: {pf.metadata.num_rows}, Num row groups: {pf.num_row_groups}")
+                
+                if include_metadata:
+                    try:
+                        import os
+                        file_size = os.path.getsize(data)
+                        tprint_with_level(level, f"  File size: {file_size / 1024**2:.2f} MB")
+                    except Exception as size_err:
+                        tprint_with_level(level, f"  File size: (Could not measure: {size_err})")
+                
+                # Read first few rows (efficiently)
+                if pf.num_row_groups > 0:
+                    table = pf.read_row_group(0).slice(0, max_rows)
+                    if PANDAS_AVAILABLE:
+                        preview_df = table.to_pandas()
+                        tprint_with_level(level, f"  Sample data (first {max_rows} rows from first row group):")
+                        tprint_with_level(level, f"  {preview_df}")
+                    else:
+                        tprint_with_level(level, f"  Sample data (first {max_rows} rows from first row group):")
+                        tprint_with_level(level, f"  {table}")
+                else:
+                    tprint_with_level(level, f"  No row groups available")
+            
+            except Exception as err:
+                tprint_with_level(level, f"  ⚠️  Could not preview Parquet file: {err}")
+        
         # Handle pandas DataFrames
-        if PANDAS_AVAILABLE and isinstance(data, pd.DataFrame):
+        elif PANDAS_AVAILABLE and isinstance(data, pd.DataFrame):
             tprint_with_level(level, f"📊 {name} preview:")
             tprint_with_level(level, f"  Shape: {data.shape}")
             tprint_with_level(level, f"  Dtypes: {dict(data.dtypes)}")

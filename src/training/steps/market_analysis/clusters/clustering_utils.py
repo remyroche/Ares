@@ -29,7 +29,39 @@ from src.utils.common_operations import (
     memory_checkpoint, gpu_context, optimize_memory, get_memory_usage,
     validate_file_path, get_file_size, check_disk_space, get_logger,
     integrate_with_m1_optimizers, cleanup_m1_optimizers, get_m1_gpu_manager,
-    get_m1_memory_optimizer, get_m1_cpu_optimizer, is_m1_available, is_mps_available
+    get_m1_memory_optimizer, get_m1_cpu_optimizer, is_m1_available, is_mps_available,
+    # Additional common operations utilities
+    safe_dataframe_operation, validate_dataframe_columns, safe_convert_dtypes,
+    analyze_nan_values_detailed, safe_apply_with_validation, safe_aggregate_data,
+    safe_merge_dataframes, safe_drop_columns, safe_fillna, safe_dropna,
+    safe_reset_index, safe_sort_values, safe_groupby_agg, safe_pivot_table,
+    safe_melt_dataframe, safe_concat_dataframes, safe_join_dataframes,
+    safe_apply_custom_function, safe_transform_dataframe, safe_validate_dataframe,
+    safe_export_dataframe, safe_import_dataframe, safe_compress_dataframe,
+    safe_decompress_dataframe, safe_serialize_dataframe, safe_deserialize_dataframe
+)
+
+# Import common utilities
+from src.utils.common_utilities import (
+    safe_dataframe_operation, validate_dataframe_columns, safe_convert_dtypes,
+    analyze_nan_values_detailed, safe_apply_with_validation, safe_aggregate_data,
+    safe_merge_dataframes, safe_drop_columns, safe_fillna, safe_dropna,
+    safe_reset_index, safe_sort_values, safe_groupby_agg, safe_pivot_table,
+    safe_melt_dataframe, safe_concat_dataframes, safe_join_dataframes,
+    safe_apply_custom_function, safe_transform_dataframe, safe_validate_dataframe,
+    safe_export_dataframe, safe_import_dataframe, safe_compress_dataframe,
+    safe_decompress_dataframe, safe_serialize_dataframe, safe_deserialize_dataframe,
+    # Data quality utilities
+    calculate_data_quality_score, detect_data_anomalies, validate_data_consistency,
+    clean_data_automatically, standardize_data_format, validate_data_types,
+    check_data_completeness, validate_data_ranges, detect_outliers,
+    validate_data_relationships, check_data_duplicates, validate_data_integrity,
+    # Performance utilities
+    optimize_dataframe_performance, reduce_memory_usage, optimize_dtypes,
+    compress_dataframe, decompress_dataframe, cache_dataframe, load_cached_dataframe,
+    # Hardware optimization utilities
+    get_hardware_info, optimize_for_hardware, get_memory_usage, get_cpu_usage,
+    get_gpu_usage, optimize_memory_allocation, optimize_cpu_usage, optimize_gpu_usage
 )
 
 from src.utils.tprint import (
@@ -50,22 +82,165 @@ try:
     from src.utils.hardware.m1_gpu_utils import is_m1_available as hw_is_m1_available, is_mps_available as hw_is_mps_available
     from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer as hw_get_m1_memory_optimizer
     from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer as hw_get_m1_cpu_optimizer
+    from src.utils.hardware.integrated_hardware_manager import get_integrated_hardware_manager
+    from src.utils.hardware.optimization_decorators import (
+        smart_cache, auto_optimize, memory_efficient, performance_tracked
+    )
+    from src.utils.hardware.memory_optimized_decorators import (
+        memory_optimized, comprehensive_memory_optimization, MemoryOptimizationLevel
+    )
+    from src.utils.hardware.unified_hardware_manager import UnifiedHardwareManager
+    from src.utils.hardware.vectorbt_gpu_accelerator import VectorBTRollingOptimizer, UnifiedVectorizationManager
+    HARDWARE_OPTIMIZATION_AVAILABLE = True
 except ImportError:
     hw_is_m1_available = lambda: False
     hw_is_mps_available = lambda: False
     hw_get_m1_memory_optimizer = lambda: None
     hw_get_m1_cpu_optimizer = lambda: None
+    get_integrated_hardware_manager = lambda: None
+    smart_cache = lambda *args, **kwargs: lambda f: f
+    auto_optimize = lambda *args, **kwargs: lambda f: f
+    memory_efficient = lambda *args, **kwargs: lambda f: f
+    performance_tracked = lambda *args, **kwargs: lambda f: f
+    memory_optimized = lambda *args, **kwargs: lambda f: f
+    comprehensive_memory_optimization = lambda *args, **kwargs: lambda f: f
+    MemoryOptimizationLevel = type('MemoryOptimizationLevel', (), {})
+    UnifiedHardwareManager = None
+    VectorBTRollingOptimizer = None
+    UnifiedVectorizationManager = None
+    HARDWARE_OPTIMIZATION_AVAILABLE = False
 
-# Import ML common utilities (removed unused imports that cause linter errors)
+# Import ML common utilities
+try:
+    from src.utils.ml_common.optimization.bayesian_tpe_optimizer import BayesianTPEOptimizer
+    from src.utils.ml_common.optimization.grid_utils import GridSearchOptimizer
+    from src.utils.ml_common.optimization.hpo_utils import HPOConfig, HPOOptimizer
+    from src.utils.ml_common.cross_validation import PurgedKFold, TimeSeriesSplit
+    from src.utils.ml_common.model_validation import ModelValidator, ValidationMetrics
+    from src.utils.ml_common.feature_importance import SHAPExplainer, LIMEExplainer
+    from src.utils.ml_common.data_leakage import DataLeakageDetector
+    from src.utils.ml_common.lookahead_bias import LookaheadBiasDetector
+    ML_COMMON_AVAILABLE = True
+except ImportError:
+    BayesianTPEOptimizer = None
+    GridSearchOptimizer = None
+    HPOConfig = None
+    HPOOptimizer = None
+    PurgedKFold = None
+    TimeSeriesSplit = None
+    ModelValidator = None
+    ValidationMetrics = None
+    SHAPExplainer = None
+    LIMEExplainer = None
+    DataLeakageDetector = None
+    LookaheadBiasDetector = None
+    ML_COMMON_AVAILABLE = False
+
+# Import data utilities
+try:
+    from src.utils.data.klines_parquet import KlinesParquetManager
+    from src.utils.data.unified_data_utils import UnifiedDataManager
+    from src.utils.data.feature_engineer import FeatureEngineer
+    from src.utils.data.historical_data_pipeline import HistoricalDataPipeline
+    DATA_UTILS_AVAILABLE = True
+except ImportError:
+    KlinesParquetManager = None
+    UnifiedDataManager = None
+    FeatureEngineer = None
+    HistoricalDataPipeline = None
+    DATA_UTILS_AVAILABLE = False
+
+# Import artifact manager
+try:
+    from src.utils.artifact_manager import ArtifactManager
+    from src.utils.enhanced_artifact_manager import EnhancedArtifactManager
+    ARTIFACT_MANAGER_AVAILABLE = True
+except ImportError:
+    ArtifactManager = None
+    EnhancedArtifactManager = None
+    ARTIFACT_MANAGER_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
 class ClusteringUtils:
     """Utility functions for clustering operations and calculations."""
 
-    def __init__(self):
-        """Initialize clustering utilities."""
+    def __init__(self, enable_hardware_optimization: bool = True, enable_ml_optimization: bool = True):
+        """Initialize clustering utilities with enhanced capabilities."""
         self.logger = logger
+        self.enable_hardware_optimization = enable_hardware_optimization and HARDWARE_OPTIMIZATION_AVAILABLE
+        self.enable_ml_optimization = enable_ml_optimization and ML_COMMON_AVAILABLE
+        
+        # Initialize hardware manager if available
+        if self.enable_hardware_optimization:
+            try:
+                self.hardware_manager = get_integrated_hardware_manager()
+                self.vectorbt_optimizer = VectorBTRollingOptimizer() if VectorBTRollingOptimizer else None
+                self.vectorization_manager = UnifiedVectorizationManager() if UnifiedVectorizationManager else None
+                tprint_info("Hardware optimization enabled for clustering utilities")
+            except Exception as e:
+                tprint_warning(f"Failed to initialize hardware optimization: {e}")
+                self.hardware_manager = None
+                self.vectorbt_optimizer = None
+                self.vectorization_manager = None
+        else:
+            self.hardware_manager = None
+            self.vectorbt_optimizer = None
+            self.vectorization_manager = None
+        
+        # Initialize ML optimization components if available
+        if self.enable_ml_optimization:
+            try:
+                self.bayesian_optimizer = BayesianTPEOptimizer() if BayesianTPEOptimizer else None
+                self.grid_optimizer = GridSearchOptimizer() if GridSearchOptimizer else None
+                self.hpo_optimizer = HPOOptimizer() if HPOOptimizer else None
+                self.model_validator = ModelValidator() if ModelValidator else None
+                self.data_leakage_detector = DataLeakageDetector() if DataLeakageDetector else None
+                self.lookahead_bias_detector = LookaheadBiasDetector() if LookaheadBiasDetector else None
+                tprint_info("ML optimization enabled for clustering utilities")
+            except Exception as e:
+                tprint_warning(f"Failed to initialize ML optimization: {e}")
+                self.bayesian_optimizer = None
+                self.grid_optimizer = None
+                self.hpo_optimizer = None
+                self.model_validator = None
+                self.data_leakage_detector = None
+                self.lookahead_bias_detector = None
+        else:
+            self.bayesian_optimizer = None
+            self.grid_optimizer = None
+            self.hpo_optimizer = None
+            self.model_validator = None
+            self.data_leakage_detector = None
+            self.lookahead_bias_detector = None
+        
+        # Initialize data utilities if available
+        if DATA_UTILS_AVAILABLE:
+            try:
+                self.klines_manager = KlinesParquetManager() if KlinesParquetManager else None
+                self.data_manager = UnifiedDataManager() if UnifiedDataManager else None
+                self.feature_engineer = FeatureEngineer() if FeatureEngineer else None
+                tprint_info("Data utilities enabled for clustering utilities")
+            except Exception as e:
+                tprint_warning(f"Failed to initialize data utilities: {e}")
+                self.klines_manager = None
+                self.data_manager = None
+                self.feature_engineer = None
+        else:
+            self.klines_manager = None
+            self.data_manager = None
+            self.feature_engineer = None
+        
+        # Initialize artifact manager if available
+        if ARTIFACT_MANAGER_AVAILABLE:
+            try:
+                self.artifact_manager = EnhancedArtifactManager() if EnhancedArtifactManager else ArtifactManager()
+                tprint_info("Artifact manager enabled for clustering utilities")
+            except Exception as e:
+                tprint_warning(f"Failed to initialize artifact manager: {e}")
+                self.artifact_manager = None
+        else:
+            self.artifact_manager = None
 
     def calculate_euclidean_distance(self, point1: np.ndarray, point2: np.ndarray) -> float:
         """Calculate Euclidean distance between two points."""
@@ -348,35 +523,215 @@ class ClusteringUtils:
             return {}
 
     def normalize_features(self, data: np.ndarray, method: str = 'standard') -> np.ndarray:
-        """Normalize features using specified method."""
+        """Normalize features using specified method with enhanced validation and optimization."""
         try:
-            if method == 'standard':
-                # Z-score normalization
-                mean = np.mean(data, axis=0)
-                std = np.std(data, axis=0)
-                std = np.where(std == 0, 1, std)  # Avoid division by zero
-                return (data - mean) / std
-
-            elif method == 'minmax':
-                # Min-max normalization
-                min_val = np.min(data, axis=0)
-                max_val = np.max(data, axis=0)
-                range_val = max_val - min_val
-                range_val = np.where(range_val == 0, 1, range_val)  # Avoid division by zero
-                return (data - min_val) / range_val
-
-            elif method == 'robust':
-                # Robust normalization using median and IQR
-                median = np.median(data, axis=0)
-                q75, q25 = np.percentile(data, [75, 25], axis=0)
-                iqr = q75 - q25
-                iqr = np.where(iqr == 0, 1, iqr)  # Avoid division by zero
-                return (data - median) / iqr
-
+            # Validate input data using math validation utilities
+            math_validate_numeric_array(data, "normalization_data")
+            
+            # Use hardware optimization if available
+            if self.enable_hardware_optimization and self.hardware_manager:
+                with self.hardware_manager.optimize_operation("normalization"):
+                    return self._normalize_features_optimized(data, method)
             else:
-                self.logger.warning(f"Unknown normalization method: {method}")
-                return data
+                return self._normalize_features_standard(data, method)
 
         except Exception as e:
+            tprint_error(f"Failed to normalize features: {e}")
             self.logger.error(f"Failed to normalize features: {e}")
             return data
+
+    def _normalize_features_standard(self, data: np.ndarray, method: str) -> np.ndarray:
+        """Standard normalization implementation."""
+        if method == 'standard':
+            # Z-score normalization
+            mean = np.mean(data, axis=0)
+            std = np.std(data, axis=0)
+            std = np.where(std == 0, 1, std)  # Avoid division by zero
+            return (data - mean) / std
+
+        elif method == 'minmax':
+            # Min-max normalization
+            min_val = np.min(data, axis=0)
+            max_val = np.max(data, axis=0)
+            range_val = max_val - min_val
+            range_val = np.where(range_val == 0, 1, range_val)  # Avoid division by zero
+            return (data - min_val) / range_val
+
+        elif method == 'robust':
+            # Robust normalization using median and IQR
+            median = np.median(data, axis=0)
+            q75, q25 = np.percentile(data, [75, 25], axis=0)
+            iqr = q75 - q25
+            iqr = np.where(iqr == 0, 1, iqr)  # Avoid division by zero
+            return (data - median) / iqr
+
+        else:
+            self.logger.warning(f"Unknown normalization method: {method}")
+            return data
+
+    def _normalize_features_optimized(self, data: np.ndarray, method: str) -> np.ndarray:
+        """Hardware-optimized normalization implementation."""
+        # Use vectorized operations and hardware acceleration
+        if self.vectorization_manager:
+            return self.vectorization_manager.normalize_features(data, method)
+        else:
+            return self._normalize_features_standard(data, method)
+
+    @memory_optimized(level=MemoryOptimizationLevel.BALANCED) if HARDWARE_OPTIMIZATION_AVAILABLE else lambda x: x
+    def optimize_clustering_data(self, data: np.ndarray, labels: np.ndarray = None) -> Tuple[np.ndarray, Optional[np.ndarray]]:
+        """Optimize data for clustering with comprehensive validation and preprocessing."""
+        try:
+            tprint_info("Starting comprehensive data optimization for clustering")
+            
+            # Data quality analysis
+            if isinstance(data, np.ndarray):
+                nan_analysis = analyze_nan_values_detailed(data)
+                tprint_structured("Data Quality Analysis", nan_analysis)
+                
+                # Clean data if needed
+                if nan_analysis['total_nans'] > 0:
+                    tprint_warning(f"Found {nan_analysis['total_nans']} NaN values, cleaning data")
+                    data = safe_fillna(data, method='median')
+            
+            # Validate data consistency
+            if self.data_leakage_detector:
+                leakage_score = self.data_leakage_detector.detect_leakage(data)
+                if leakage_score > 0.1:  # Threshold for data leakage
+                    tprint_warning(f"Potential data leakage detected: {leakage_score:.3f}")
+            
+            # Check for lookahead bias
+            if self.lookahead_bias_detector:
+                bias_score = self.lookahead_bias_detector.detect_bias(data)
+                if bias_score > 0.05:  # Threshold for lookahead bias
+                    tprint_warning(f"Potential lookahead bias detected: {bias_score:.3f}")
+            
+            # Optimize data types and memory usage
+            if self.enable_hardware_optimization:
+                data = optimize_dataframe_dtypes(pd.DataFrame(data)) if hasattr(data, 'dtype') else data
+                data = optimize_memory(data)
+            
+            # Normalize features
+            data = self.normalize_features(data, method='robust')
+            
+            # Validate final data
+            math_validate_numeric_array(data, "optimized_clustering_data")
+            
+            tprint_success("Data optimization completed successfully")
+            return data, labels
+            
+        except Exception as e:
+            tprint_error(f"Failed to optimize clustering data: {e}")
+            self.logger.error(f"Failed to optimize clustering data: {e}")
+            return data, labels
+
+    @performance_tracked(log_performance=True, track_memory=True) if HARDWARE_OPTIMIZATION_AVAILABLE else lambda x: x
+    def enhanced_knn_graph(self, data: np.ndarray, k: int = 5, distance_metric: str = 'euclidean',
+                          use_vectorization: bool = True) -> Tuple[np.ndarray, np.ndarray]:
+        """Enhanced kNN graph building with vectorization and hardware optimization."""
+        try:
+            tprint_info(f"Building enhanced kNN graph with k={k}, metric={distance_metric}")
+            
+            # Use vectorization manager if available
+            if use_vectorization and self.vectorization_manager:
+                return self.vectorization_manager.build_knn_graph(data, k, distance_metric)
+            else:
+                return self.build_knn_graph(data, k, distance_metric)
+                
+        except Exception as e:
+            tprint_error(f"Failed to build enhanced kNN graph: {e}")
+            return self.build_knn_graph(data, k, distance_metric)
+
+    def calculate_enhanced_cluster_metrics(self, data: np.ndarray, labels: np.ndarray) -> Dict[str, Any]:
+        """Calculate enhanced cluster metrics with comprehensive analysis."""
+        try:
+            tprint_info("Calculating enhanced cluster metrics")
+            
+            # Basic cluster statistics
+            basic_stats = self.calculate_cluster_statistics(data, labels)
+            
+            # Enhanced metrics using ML utilities
+            enhanced_metrics = {
+                'basic_statistics': basic_stats,
+                'silhouette_score': None,
+                'calinski_harabasz_score': None,
+                'davies_bouldin_score': None,
+                'data_quality_score': None,
+                'optimization_recommendations': []
+            }
+            
+            # Calculate silhouette score if possible
+            try:
+                from sklearn.metrics import silhouette_score
+                enhanced_metrics['silhouette_score'] = silhouette_score(data, labels)
+            except ImportError:
+                tprint_warning("scikit-learn not available for silhouette score")
+            except Exception as e:
+                tprint_warning(f"Failed to calculate silhouette score: {e}")
+            
+            # Calculate data quality score
+            if self.data_manager:
+                enhanced_metrics['data_quality_score'] = calculate_data_quality_score(data)
+            
+            # Generate optimization recommendations
+            if self.hardware_manager:
+                recommendations = self.hardware_manager.get_optimization_recommendations(data)
+                enhanced_metrics['optimization_recommendations'] = recommendations
+            
+            tprint_success("Enhanced cluster metrics calculated successfully")
+            return enhanced_metrics
+            
+        except Exception as e:
+            tprint_error(f"Failed to calculate enhanced cluster metrics: {e}")
+            return {'basic_statistics': self.calculate_cluster_statistics(data, labels)}
+
+    def save_clustering_artifacts(self, artifacts: Dict[str, Any], step_name: str) -> bool:
+        """Save clustering artifacts using the artifact manager."""
+        try:
+            if not self.artifact_manager:
+                tprint_warning("Artifact manager not available, skipping artifact save")
+                return False
+            
+            tprint_info(f"Saving clustering artifacts for step: {step_name}")
+            
+            # Save artifacts with metadata
+            metadata = {
+                'step_name': step_name,
+                'timestamp': get_current_datetime(),
+                'hardware_optimization_enabled': self.enable_hardware_optimization,
+                'ml_optimization_enabled': self.enable_ml_optimization
+            }
+            
+            success = self.artifact_manager.save_artifacts(artifacts, step_name, metadata)
+            
+            if success:
+                tprint_success(f"Successfully saved artifacts for step: {step_name}")
+            else:
+                tprint_warning(f"Failed to save artifacts for step: {step_name}")
+            
+            return success
+            
+        except Exception as e:
+            tprint_error(f"Failed to save clustering artifacts: {e}")
+            return False
+
+    def load_clustering_artifacts(self, step_name: str) -> Optional[Dict[str, Any]]:
+        """Load clustering artifacts using the artifact manager."""
+        try:
+            if not self.artifact_manager:
+                tprint_warning("Artifact manager not available, skipping artifact load")
+                return None
+            
+            tprint_info(f"Loading clustering artifacts for step: {step_name}")
+            
+            artifacts = self.artifact_manager.load_artifacts(step_name)
+            
+            if artifacts:
+                tprint_success(f"Successfully loaded artifacts for step: {step_name}")
+            else:
+                tprint_warning(f"No artifacts found for step: {step_name}")
+            
+            return artifacts
+            
+        except Exception as e:
+            tprint_error(f"Failed to load clustering artifacts: {e}")
+            return None

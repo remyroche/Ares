@@ -30,13 +30,130 @@ from .shared_utils import (
     FeatureConfig
 )
 
-# Import utility functions
+# Import comprehensive utility functions
 from src.utils.common_operations import (
-    safe_dataframe_operation, validate_dataframe_columns, safe_convert_dtypes
+    safe_dataframe_operation, validate_dataframe_columns, safe_convert_dtypes,
+    safe_divide, safe_log, safe_sqrt, safe_power, safe_mean, safe_std,
+    safe_float, safe_int, validate_finite, validate_positive, validate_range,
+    safe_rolling, safe_groupby_operation, safe_apply_function, safe_filter_dataframe,
+    create_summary_statistics, format_bytes, chunked_iterable, parallel_map,
+    timed_operation, get_current_datetime, format_datetime, parse_datetime,
+    ensure_directory, safe_file_exists, safe_json_dump, safe_json_load,
+    optimize_dataframe_dtypes, calculate_data_quality_metrics, get_dataframe_info,
+    create_data_quality_report, math_safe, validate_correlation_matrix,
+    safe_matrix_inverse, safe_kelly_calculation, safe_weighted_average,
+    safe_percentage_change, safe_resample, align_dataframes,
+    validate_dataframe_schema, guard_dataframe_nulls, sanitize_string,
+    memory_checkpoint, gpu_context, optimize_memory, get_memory_usage,
+    validate_file_path, get_file_size, check_disk_space, get_logger,
+    integrate_with_m1_optimizers, cleanup_m1_optimizers, get_m1_gpu_manager,
+    get_m1_memory_optimizer, get_m1_cpu_optimizer, is_m1_available, is_mps_available
 )
+
+from src.utils.common_utilities import (
+    safe_dataframe_operation, validate_dataframe_columns, safe_convert_dtypes,
+    analyze_nan_values_detailed, safe_apply_with_validation, safe_aggregate_data,
+    safe_merge_dataframes, safe_drop_columns, safe_fillna, safe_dropna,
+    safe_reset_index, safe_sort_values, safe_groupby_agg, safe_pivot_table,
+    safe_melt_dataframe, safe_concat_dataframes, safe_join_dataframes,
+    safe_apply_custom_function, safe_transform_dataframe, safe_validate_dataframe,
+    safe_export_dataframe, safe_import_dataframe, safe_compress_dataframe,
+    safe_decompress_dataframe, safe_serialize_dataframe, safe_deserialize_dataframe,
+    calculate_data_quality_score, detect_data_anomalies, validate_data_consistency,
+    clean_data_automatically, standardize_data_format, validate_data_types,
+    check_data_completeness, validate_data_ranges, detect_outliers,
+    validate_data_relationships, check_data_duplicates, validate_data_integrity,
+    optimize_dataframe_performance, reduce_memory_usage, optimize_dtypes,
+    compress_dataframe, decompress_dataframe, cache_dataframe, load_cached_dataframe,
+    get_hardware_info, optimize_for_hardware, get_memory_usage, get_cpu_usage,
+    get_gpu_usage, optimize_memory_allocation, optimize_cpu_usage, optimize_gpu_usage
+)
+
 from src.utils.math_validation import (
-    validate_finite, safe_divide, safe_log, safe_sqrt, safe_power
+    MathValidationError, safe_divide as math_safe_divide, safe_log as math_safe_log,
+    safe_sqrt as math_safe_sqrt, safe_power as math_safe_power,
+    validate_finite as math_validate_finite, validate_positive as math_validate_positive,
+    validate_range as math_validate_range, validate_numeric_array as math_validate_numeric_array,
+    validate_array_finite, validate_scalar_finite, validate_matrix_finite,
+    safe_matrix_operations, validate_correlation_matrix as math_validate_correlation_matrix,
+    safe_eigenvalue_decomposition, safe_svd_decomposition, safe_cholesky_decomposition
 )
+
+# Import hardware utilities
+try:
+    from src.utils.hardware.optimization_decorators import (
+        smart_cache, auto_optimize, memory_efficient, performance_tracked
+    )
+    from src.utils.hardware.memory_optimized_decorators import (
+        memory_optimized, comprehensive_memory_optimization, MemoryOptimizationLevel
+    )
+    from src.utils.hardware.integrated_hardware_manager import get_integrated_hardware_manager
+    from src.utils.hardware.unified_hardware_manager import UnifiedHardwareManager
+    from src.utils.hardware.vectorbt_gpu_accelerator import VectorBTRollingOptimizer, UnifiedVectorizationManager
+    HARDWARE_OPTIMIZATION_AVAILABLE = True
+except ImportError:
+    smart_cache = lambda *args, **kwargs: lambda f: f
+    auto_optimize = lambda *args, **kwargs: lambda f: f
+    memory_efficient = lambda *args, **kwargs: lambda f: f
+    performance_tracked = lambda *args, **kwargs: lambda f: f
+    memory_optimized = lambda *args, **kwargs: lambda f: f
+    comprehensive_memory_optimization = lambda *args, **kwargs: lambda f: f
+    MemoryOptimizationLevel = type('MemoryOptimizationLevel', (), {})
+    get_integrated_hardware_manager = lambda: None
+    UnifiedHardwareManager = None
+    VectorBTRollingOptimizer = None
+    UnifiedVectorizationManager = None
+    HARDWARE_OPTIMIZATION_AVAILABLE = False
+
+# Import ML common utilities
+try:
+    from src.utils.ml_common.optimization.bayesian_tpe_optimizer import BayesianTPEOptimizer
+    from src.utils.ml_common.optimization.grid_utils import GridSearchOptimizer
+    from src.utils.ml_common.optimization.hpo_utils import HPOConfig, HPOOptimizer
+    from src.utils.ml_common.cross_validation import PurgedKFold, TimeSeriesSplit
+    from src.utils.ml_common.model_validation import ModelValidator, ValidationMetrics
+    from src.utils.ml_common.feature_importance import SHAPExplainer, LIMEExplainer
+    from src.utils.ml_common.data_leakage import DataLeakageDetector
+    from src.utils.ml_common.lookahead_bias import LookaheadBiasDetector
+    ML_COMMON_AVAILABLE = True
+except ImportError:
+    BayesianTPEOptimizer = None
+    GridSearchOptimizer = None
+    HPOConfig = None
+    HPOOptimizer = None
+    PurgedKFold = None
+    TimeSeriesSplit = None
+    ModelValidator = None
+    ValidationMetrics = None
+    SHAPExplainer = None
+    LIMEExplainer = None
+    DataLeakageDetector = None
+    LookaheadBiasDetector = None
+    ML_COMMON_AVAILABLE = False
+
+# Import data utilities
+try:
+    from src.utils.data.klines_parquet import KlinesParquetManager
+    from src.utils.data.unified_data_utils import UnifiedDataManager
+    from src.utils.data.feature_engineer import FeatureEngineer
+    from src.utils.data.historical_data_pipeline import HistoricalDataPipeline
+    DATA_UTILS_AVAILABLE = True
+except ImportError:
+    KlinesParquetManager = None
+    UnifiedDataManager = None
+    FeatureEngineer = None
+    HistoricalDataPipeline = None
+    DATA_UTILS_AVAILABLE = False
+
+# Import artifact manager
+try:
+    from src.utils.artifact_manager import ArtifactManager
+    from src.utils.enhanced_artifact_manager import EnhancedArtifactManager
+    ARTIFACT_MANAGER_AVAILABLE = True
+except ImportError:
+    ArtifactManager = None
+    EnhancedArtifactManager = None
+    ARTIFACT_MANAGER_AVAILABLE = False
 
 @dataclass
 class FeaturePreparationResult:
@@ -58,15 +175,36 @@ class FeatureService:
     - Expose API: prepare_features(data) → clean feature matrix ready for clustering
     """
 
-    def __init__(self, verbose: bool = True):
-        """Initialize the feature service."""
+    def __init__(self, verbose: bool = True, enable_hardware_optimization: bool = True, 
+                 enable_ml_optimization: bool = True, enable_data_validation: bool = True):
+        """Initialize the enhanced feature service with comprehensive utility integrations."""
         self.verbose = verbose
         self.logger = get_logger('FeatureService')
+        self.enable_hardware_optimization = enable_hardware_optimization and HARDWARE_OPTIMIZATION_AVAILABLE
+        self.enable_ml_optimization = enable_ml_optimization and ML_COMMON_AVAILABLE
+        self.enable_data_validation = enable_data_validation
 
         # Feature preparation components
         self.scaler = None
         self.pca = None
         self.umap_reducer = None
+
+        # Initialize hardware manager if available
+        if self.enable_hardware_optimization:
+            try:
+                self.hardware_manager = get_integrated_hardware_manager()
+                self.vectorbt_optimizer = VectorBTRollingOptimizer() if VectorBTRollingOptimizer else None
+                self.vectorization_manager = UnifiedVectorizationManager() if UnifiedVectorizationManager else None
+                tprint_info("Hardware optimization enabled for feature service")
+            except Exception as e:
+                tprint_warning(f"Failed to initialize hardware manager: {e}")
+                self.hardware_manager = None
+                self.vectorbt_optimizer = None
+                self.vectorization_manager = None
+        else:
+            self.hardware_manager = None
+            self.vectorbt_optimizer = None
+            self.vectorization_manager = None
 
         # Hardware service integration
         try:
@@ -90,6 +228,69 @@ class FeatureService:
             except Exception as e:
                 tprint(f"⚠️ Failed to initialize hardware optimizations: {e}", "WARNING")
 
+        # Initialize ML optimization components if available
+        if self.enable_ml_optimization:
+            try:
+                self.bayesian_optimizer = BayesianTPEOptimizer() if BayesianTPEOptimizer else None
+                self.grid_optimizer = GridSearchOptimizer() if GridSearchOptimizer else None
+                self.hpo_optimizer = HPOOptimizer() if HPOOptimizer else None
+                self.model_validator = ModelValidator() if ModelValidator else None
+                self.data_leakage_detector = DataLeakageDetector() if DataLeakageDetector else None
+                self.lookahead_bias_detector = LookaheadBiasDetector() if LookaheadBiasDetector else None
+                self.shap_explainer = SHAPExplainer() if SHAPExplainer else None
+                self.lime_explainer = LIMEExplainer() if LIMEExplainer else None
+                tprint_info("ML optimization enabled for feature service")
+            except Exception as e:
+                tprint_warning(f"Failed to initialize ML optimization: {e}")
+                self.bayesian_optimizer = None
+                self.grid_optimizer = None
+                self.hpo_optimizer = None
+                self.model_validator = None
+                self.data_leakage_detector = None
+                self.lookahead_bias_detector = None
+                self.shap_explainer = None
+                self.lime_explainer = None
+        else:
+            self.bayesian_optimizer = None
+            self.grid_optimizer = None
+            self.hpo_optimizer = None
+            self.model_validator = None
+            self.data_leakage_detector = None
+            self.lookahead_bias_detector = None
+            self.shap_explainer = None
+            self.lime_explainer = None
+
+        # Initialize data utilities if available
+        if DATA_UTILS_AVAILABLE:
+            try:
+                self.klines_manager = KlinesParquetManager() if KlinesParquetManager else None
+                self.data_manager = UnifiedDataManager() if UnifiedDataManager else None
+                self.feature_engineer = FeatureEngineer() if FeatureEngineer else None
+                self.historical_pipeline = HistoricalDataPipeline() if HistoricalDataPipeline else None
+                tprint_info("Data utilities enabled for feature service")
+            except Exception as e:
+                tprint_warning(f"Failed to initialize data utilities: {e}")
+                self.klines_manager = None
+                self.data_manager = None
+                self.feature_engineer = None
+                self.historical_pipeline = None
+        else:
+            self.klines_manager = None
+            self.data_manager = None
+            self.feature_engineer = None
+            self.historical_pipeline = None
+
+        # Initialize artifact manager if available
+        if ARTIFACT_MANAGER_AVAILABLE:
+            try:
+                self.artifact_manager = EnhancedArtifactManager() if EnhancedArtifactManager else ArtifactManager()
+                tprint_info("Artifact manager enabled for feature service")
+            except Exception as e:
+                tprint_warning(f"Failed to initialize artifact manager: {e}")
+                self.artifact_manager = None
+        else:
+            self.artifact_manager = None
+
         # Feature tracking
         self.feature_history = []
         self.performance_metrics = {
@@ -98,72 +299,93 @@ class FeatureService:
             "embedding_time": 0.0,
             "feature_reduction_rate": 0.0,
             "hardware_accelerations": 0,
-            "memory_optimizations": 0
+            "memory_optimizations": 0,
+            "data_quality_checks": 0,
+            "ml_optimizations": 0,
+            "artifact_saves": 0
         }
 
+    @performance_tracked(log_performance=True, track_memory=True) if HARDWARE_OPTIMIZATION_AVAILABLE else lambda x: x
+    @memory_optimized(level=MemoryOptimizationLevel.BALANCED) if HARDWARE_OPTIMIZATION_AVAILABLE else lambda x: x
     async def prepare_features(
         self,
         market_data: pd.DataFrame,
         config: Any = None
     ) -> FeaturePreparationResult:
         """
-        Prepare features for clustering.
+        Enhanced feature preparation with comprehensive utility integrations.
 
         Args:
             market_data: Market data for feature extraction
             config: Configuration parameters
 
         Returns:
-            FeaturePreparationResult with clean feature matrix
+            FeaturePreparationResult with clean feature matrix and comprehensive metadata
         """
         try:
             start_time = time.time()
-            tprint("🔧 Starting feature preparation", "INFO")
+            tprint_info("Starting enhanced feature preparation with comprehensive utility integrations")
 
-            # Start memory monitoring for feature preparation
+            # Step 1: Data validation and quality checks
+            if self.enable_data_validation:
+                tprint_info("Performing comprehensive data validation and quality checks")
+                validation_results = await self._validate_input_data(market_data)
+                if not validation_results.get('valid', False):
+                    tprint_warning(f"Data validation failed: {validation_results.get('errors', [])}")
+                self.performance_metrics["data_quality_checks"] += 1
+
+            # Step 2: Data preprocessing and optimization
+            tprint_info("Applying data preprocessing and optimization")
+            optimized_data = await self._preprocess_and_optimize_data(market_data)
+
+            # Step 3: Start memory monitoring for feature preparation
             if self.memory_optimizer:
                 try:
                     self.memory_optimizer.start_monitoring()
-                    tprint("🧠 Memory monitoring started for feature preparation", "INFO")
+                    tprint_info("Memory monitoring started for feature preparation")
                 except Exception as e:
-                    tprint(f"⚠️ Memory monitoring failed: {e}", "WARNING")
+                    tprint_warning(f"Memory monitoring failed: {e}")
 
-            # Optimize market data for memory efficiency
-            if self.memory_optimizer and hasattr(market_data, 'memory_usage'):
+            # Step 4: Optimize market data for memory efficiency
+            if self.memory_optimizer and hasattr(optimized_data, 'memory_usage'):
                 try:
-                    market_data = self.memory_optimizer.optimize_dataframe_memory(market_data)
-                    tprint("🧠 Market data memory optimized for feature preparation", "INFO")
+                    optimized_data = self.memory_optimizer.optimize_dataframe_memory(optimized_data)
+                    tprint_info("Market data memory optimized for feature preparation")
                 except Exception as e:
-                    tprint(f"⚠️ Data optimization failed: {e}", "WARNING")
+                    tprint_warning(f"Data optimization failed: {e}")
 
-            # Step 1: Extract features using shared utilities
-            feature_config = self._create_feature_config(config)
+            # Step 5: Extract features using shared utilities
+            feature_config = self._create_enhanced_feature_config(config)
+            shared_result = await self._prepare_features_shared(optimized_data, feature_config)
 
-            # Validate market data before feature preparation
-            if market_data is None or len(market_data) == 0:
-                raise ValueError("Market data is None or empty in feature preparation")
-
-            shared_result = await self._prepare_features_shared(market_data, feature_config)
-
-            # Validate shared result
+            # Step 6: Validate shared result
             if shared_result is None or not hasattr(shared_result, 'features') or shared_result.features is None:
                 raise ValueError("Shared feature preparation returned None or invalid result")
 
             if shared_result.features.size == 0:
                 raise ValueError("Shared feature preparation returned empty features array")
 
-            # Step 2: Apply scaling and normalization
-            scaled_features, scaling_time = await self._apply_scaling(shared_result.features)
+            # Step 7: Apply enhanced scaling and normalization
+            scaled_features, scaling_time = await self._apply_enhanced_scaling(shared_result.features)
 
-            # Step 3: Apply dimensionality reduction (PCA/UMAP)
-            final_features, embedding_time = await self._apply_embedding(
+            # Step 8: Apply dimensionality reduction (PCA/UMAP) with ML optimization
+            final_features, embedding_time = await self._apply_enhanced_embedding(
                 scaled_features, shared_result.feature_names, config
             )
 
-            # Step 4: Validate final features
-            validation_results = self._validate_features(final_features, market_data)
+            # Step 9: Apply ML-specific optimizations if available
+            if self.enable_ml_optimization:
+                tprint_info("Applying ML-specific optimizations")
+                final_features = await self._apply_ml_optimizations(final_features, optimized_data)
+                self.performance_metrics["ml_optimizations"] += 1
 
-            # Record performance metrics
+            # Step 10: Validate final features with comprehensive checks
+            validation_results = await self._validate_final_features(final_features, optimized_data)
+
+            # Step 11: Calculate feature importance if available
+            feature_importance = await self._calculate_feature_importance(final_features, optimized_data)
+
+            # Step 12: Record performance metrics
             total_time = time.time() - start_time
             self.performance_metrics["total_preparation_time"] = total_time
             self.performance_metrics["scaling_time"] = scaling_time
@@ -175,78 +397,57 @@ class FeatureService:
             reduction_rate = (original_count - final_count) / original_count
             self.performance_metrics["feature_reduction_rate"] = reduction_rate
 
-            # Log comprehensive feature preparation summary
-            tprint(f"📊 Feature Preparation Summary:", "INFO")
-            tprint(f"  📈 Original features: {original_count} → Final features: {final_count}", "INFO")
-            tprint(f"  📉 Feature reduction: {reduction_rate*100:.1f}%", "INFO")
-            tprint(f"  🎯 Embedding method: {self._get_embedding_method()}", "INFO")
-            tprint(f"  ✅ Validation: {'PASSED' if validation_results.get('valid', False) else 'FAILED'}", "INFO")
+            # Step 13: Generate comprehensive metadata
+            metadata = await self._generate_comprehensive_metadata(
+                original_count, final_count, reduction_rate, scaling_time, embedding_time,
+                validation_results, feature_importance, optimized_data
+            )
 
-            # Create result with proper column names for reduced features
-            if final_features.shape[1] == len(shared_result.feature_names):
-                # No dimensionality reduction, use original feature names
-                feature_names = shared_result.feature_names
-            else:
-                # Dimensionality reduction applied, create meaningful names based on method
-                if self._get_embedding_method() == "PCA":
-                    # Create PCA component names with variance information
-                    if hasattr(self, 'pca') and self.pca is not None:
-                        feature_names = [f"PC{i+1}_var{self.pca.explained_variance_ratio_[i]:.3f}"
-                                       for i in range(final_features.shape[1])]
-                    else:
-                        feature_names = [f"PC{i+1}" for i in range(final_features.shape[1])]
-                elif self._get_embedding_method() == "UMAP":
-                    feature_names = [f"UMAP_dim{i+1}" for i in range(final_features.shape[1])]
-                else:
-                    feature_names = [f"embedding_{i+1}" for i in range(final_features.shape[1])]
+            # Step 14: Create feature names
+            feature_names = self._generate_feature_names(final_features, shared_result.feature_names)
 
+            # Step 15: Create enhanced result
             result = FeaturePreparationResult(
                 features=final_features,
                 feature_names=feature_names,
-                feature_scores={},
+                feature_scores=feature_importance,
                 dropped_features=[],
                 preparation_time=total_time,
-                metadata={
-                    "original_feature_count": original_count,
-                    "final_feature_count": final_count,
-                    "feature_reduction_rate": self.performance_metrics["feature_reduction_rate"],
-                    "scaling_time": scaling_time,
-                    "scaling_method": "robust",
-                    "embedding_time": embedding_time,
-                    "embedding_method": "pca",
-                    "validation_passed": validation_results.get("passed", True),
-                    "validation_results": validation_results,
-                    "performance_metrics": self.performance_metrics
-                }
+                metadata=metadata
             )
 
-            # Track feature history
+            # Step 16: Track feature history and save artifacts
             self._track_feature_preparation(result)
+            await self._save_feature_artifacts(result, config)
 
-            # Final memory cleanup for feature preparation
+            # Step 17: Final memory cleanup
             if self.memory_optimizer:
                 try:
                     self.memory_optimizer.force_garbage_collection()
-                    tprint("🧠 Final memory cleanup completed for feature preparation", "INFO")
+                    tprint_info("Final memory cleanup completed for feature preparation")
                 except Exception as e:
-                    tprint(f"⚠️ Final cleanup failed: {e}", "WARNING")
+                    tprint_warning(f"Final cleanup failed: {e}")
 
-            # Stop memory monitoring
+            # Step 18: Stop memory monitoring
             if self.memory_optimizer:
                 try:
                     self.memory_optimizer.stop_monitoring()
-                    tprint("🧠 Memory monitoring stopped for feature preparation", "INFO")
+                    tprint_info("Memory monitoring stopped for feature preparation")
                 except Exception as e:
-                    tprint(f"⚠️ Memory monitoring stop failed: {e}", "WARNING")
+                    tprint_warning(f"Memory monitoring stop failed: {e}")
 
-            tprint(f"✅ Feature preparation completed in {total_time:.2f}s", "SUCCESS")
-            tprint(f"📊 Features: {original_count} → {final_count} (reduction: {result.metadata['performance_metrics']['feature_reduction_rate']:.1%})", "INFO")
+            # Step 19: Log comprehensive summary
+            tprint_success(f"Enhanced feature preparation completed in {total_time:.2f}s")
+            tprint_info(f"Features: {original_count} → {final_count} (reduction: {reduction_rate:.1%})")
+            tprint_info(f"Data quality checks: {self.performance_metrics['data_quality_checks']}")
+            tprint_info(f"ML optimizations: {self.performance_metrics['ml_optimizations']}")
+            tprint_info(f"Hardware accelerations: {self.performance_metrics['hardware_accelerations']}")
 
             return result
 
         except Exception as e:
-            tprint(f"❌ Feature preparation failed: {e}", "ERROR")
-            raise ValueError(f"Feature preparation failed: {e}")
+            tprint_error(f"Enhanced feature preparation failed: {e}")
+            raise ValueError(f"Enhanced feature preparation failed: {e}")
 
     def _create_feature_config(self, config: Any) -> FeatureConfig:
         """Create feature configuration from provided config."""
@@ -261,6 +462,419 @@ class FeatureService:
             drop_highly_correlated=getattr(config, 'drop_highly_correlated', True),
             correlation_threshold=getattr(config, 'correlation_threshold', 0.95)
         )
+
+    def _create_enhanced_feature_config(self, config: Any) -> FeatureConfig:
+        """Create enhanced feature configuration with comprehensive options."""
+        return FeatureConfig(
+            n_features=getattr(config, 'n_features', 50),
+            use_pca=getattr(config, 'use_pca', True),
+            pca_components=getattr(config, 'pca_components', 20),
+            use_umap=getattr(config, 'use_umap', False),
+            umap_components=getattr(config, 'umap_components', 10),
+            scaler_type=getattr(config, 'scaler_type', 'robust'),
+            enable_hardware_optimization=self.enable_hardware_optimization,
+            enable_ml_optimization=self.enable_ml_optimization,
+            enable_data_validation=self.enable_data_validation,
+            enable_feature_engineering=getattr(config, 'enable_feature_engineering', True),
+            enable_anomaly_detection=getattr(config, 'enable_anomaly_detection', True),
+            enable_outlier_detection=getattr(config, 'enable_outlier_detection', True),
+            enable_data_quality_checks=getattr(config, 'enable_data_quality_checks', True),
+            enable_memory_optimization=getattr(config, 'enable_memory_optimization', True),
+            enable_caching=getattr(config, 'enable_caching', True),
+            feature_selection_method=getattr(config, 'feature_selection_method', 'variance_threshold'),
+            feature_selection_threshold=getattr(config, 'feature_selection_threshold', 0.01),
+            feature_correlation_threshold=getattr(config, 'feature_correlation_threshold', 0.95),
+            feature_importance_method=getattr(config, 'feature_importance_method', 'mutual_info'),
+            handle_missing_values=getattr(config, 'handle_missing_values', 'median'),
+            handle_outliers=getattr(config, 'handle_outliers', 'iqr'),
+            outlier_threshold=getattr(config, 'outlier_threshold', 1.5),
+            validate_data_consistency=getattr(config, 'validate_data_consistency', True),
+            check_data_leakage=getattr(config, 'check_data_leakage', True),
+            check_lookahead_bias=getattr(config, 'check_lookahead_bias', True),
+            use_parallel_processing=getattr(config, 'use_parallel_processing', True),
+            max_workers=getattr(config, 'max_workers', 4),
+            chunk_size=getattr(config, 'chunk_size', 1000)
+        )
+
+    async def _validate_input_data(self, market_data: pd.DataFrame) -> Dict[str, Any]:
+        """Validate input data with comprehensive checks."""
+        try:
+            validation_results = {
+                'valid': True,
+                'errors': [],
+                'warnings': [],
+                'data_quality_metrics': {}
+            }
+
+            # Basic validation
+            if market_data is None or len(market_data) == 0:
+                validation_results['valid'] = False
+                validation_results['errors'].append("Market data is None or empty")
+                return validation_results
+
+            # Data quality metrics
+            if self.enable_data_validation:
+                try:
+                    data_quality_metrics = calculate_data_quality_metrics(market_data)
+                    validation_results['data_quality_metrics'] = data_quality_metrics
+
+                    # Check for data anomalies
+                    if self.enable_ml_optimization and self.data_leakage_detector:
+                        try:
+                            leakage_score = self.data_leakage_detector.detect_leakage(market_data)
+                            if leakage_score > 0.1:
+                                validation_results['warnings'].append(f"Potential data leakage detected: {leakage_score:.3f}")
+                        except Exception as e:
+                            validation_results['warnings'].append(f"Data leakage detection failed: {e}")
+
+                    # Check for lookahead bias
+                    if self.enable_ml_optimization and self.lookahead_bias_detector:
+                        try:
+                            bias_score = self.lookahead_bias_detector.detect_bias(market_data)
+                            if bias_score > 0.05:
+                                validation_results['warnings'].append(f"Potential lookahead bias detected: {bias_score:.3f}")
+                        except Exception as e:
+                            validation_results['warnings'].append(f"Lookahead bias detection failed: {e}")
+
+                except Exception as e:
+                    validation_results['warnings'].append(f"Data quality analysis failed: {e}")
+
+            return validation_results
+
+        except Exception as e:
+            return {
+                'valid': False,
+                'errors': [f"Validation failed: {e}"],
+                'warnings': [],
+                'data_quality_metrics': {}
+            }
+
+    async def _preprocess_and_optimize_data(self, market_data: pd.DataFrame) -> pd.DataFrame:
+        """Preprocess and optimize data for feature preparation."""
+        try:
+            tprint_info("Preprocessing and optimizing data")
+
+            # Create a copy to avoid modifying original data
+            processed_data = market_data.copy()
+
+            # Apply data quality improvements
+            if self.enable_data_validation:
+                # Clean data automatically
+                processed_data = clean_data_automatically(processed_data)
+
+                # Standardize data format
+                processed_data = standardize_data_format(processed_data)
+
+                # Validate data types
+                processed_data = validate_data_types(processed_data)
+
+            # Optimize data types and memory usage
+            if self.enable_hardware_optimization:
+                processed_data = optimize_dataframe_dtypes(processed_data)
+                processed_data = reduce_memory_usage(processed_data)
+
+            # Apply hardware-specific optimizations
+            if self.hardware_manager:
+                try:
+                    processed_data = self.hardware_manager.optimize_dataframe(processed_data)
+                except Exception as e:
+                    tprint_warning(f"Hardware optimization failed: {e}")
+
+            return processed_data
+
+        except Exception as e:
+            tprint_warning(f"Data preprocessing failed: {e}")
+            return market_data
+
+    async def _apply_enhanced_scaling(self, features: np.ndarray) -> Tuple[np.ndarray, float]:
+        """Apply enhanced scaling with hardware optimization."""
+        try:
+            start_time = time.time()
+            tprint_info("Applying enhanced feature scaling")
+
+            # Validate input features
+            math_validate_numeric_array(features, "scaling_features")
+
+            # Apply memory optimization if hardware service is available
+            if self.hardware_integration_enabled and self.hardware_service:
+                try:
+                    features, optimization_info = self.hardware_service.optimize_memory(features)
+                    if optimization_info.get("hardware_optimization_used", False):
+                        self.performance_metrics["memory_optimizations"] += 1
+                        tprint_info("Memory optimization applied during scaling")
+                except Exception as e:
+                    tprint_warning(f"Memory optimization failed during scaling: {e}")
+
+            # Use hardware-optimized scaling if available
+            if self.enable_hardware_optimization and self.vectorization_manager:
+                try:
+                    scaled_features = self.vectorization_manager.scale_features(features, method='robust')
+                    scaling_time = time.time() - start_time
+                    tprint_success(f"Hardware-optimized scaling completed in {scaling_time:.3f}s")
+                    return scaled_features, scaling_time
+                except Exception as e:
+                    tprint_warning(f"Hardware-optimized scaling failed: {e}")
+
+            # Fallback to standard scaling
+            from sklearn.preprocessing import RobustScaler
+            self.scaler = RobustScaler()
+            scaled_features = self.scaler.fit_transform(features)
+
+            scaling_time = time.time() - start_time
+            tprint_success(f"Standard scaling completed in {scaling_time:.3f}s")
+            return scaled_features, scaling_time
+
+        except Exception as e:
+            tprint_error(f"Enhanced feature scaling failed: {e}")
+            raise
+
+    async def _apply_enhanced_embedding(
+        self,
+        features: np.ndarray,
+        feature_names: List[str],
+        config: Any
+    ) -> Tuple[np.ndarray, float]:
+        """Apply enhanced dimensionality reduction with ML optimization."""
+        try:
+            start_time = time.time()
+            tprint_info("Applying enhanced dimensionality reduction")
+
+            # Check if dimensionality reduction is needed
+            n_features = features.shape[1]
+            n_samples = features.shape[0]
+            target_features = getattr(config, 'target_features', min(20, n_features - 1))
+
+            if n_features <= target_features:
+                tprint_info(f"No reduction needed: {n_features} features")
+                return features, 0.0
+
+            # Use hardware-optimized embedding if available
+            if self.enable_hardware_optimization and self.vectorization_manager:
+                try:
+                    # Try UMAP first
+                    if getattr(config, 'use_umap', False):
+                        reduced_features = self.vectorization_manager.reduce_dimensions(
+                            features, method='umap', n_components=target_features
+                        )
+                    else:
+                        # Use PCA
+                        reduced_features = self.vectorization_manager.reduce_dimensions(
+                            features, method='pca', n_components=target_features
+                        )
+                    
+                    embedding_time = time.time() - start_time
+                    tprint_success(f"Hardware-optimized embedding completed in {embedding_time:.3f}s")
+                    return reduced_features, embedding_time
+                except Exception as e:
+                    tprint_warning(f"Hardware-optimized embedding failed: {e}")
+
+            # Fallback to standard embedding methods
+            return await self._apply_standard_embedding(features, feature_names, config)
+
+        except Exception as e:
+            tprint_error(f"Enhanced embedding failed: {e}")
+            return features, 0.0
+
+    async def _apply_ml_optimizations(self, features: np.ndarray, market_data: pd.DataFrame) -> np.ndarray:
+        """Apply ML-specific optimizations to features."""
+        try:
+            if not self.enable_ml_optimization:
+                return features
+
+            tprint_info("Applying ML-specific optimizations")
+
+            # Feature importance analysis
+            if self.shap_explainer:
+                try:
+                    importance_scores = self.shap_explainer.calculate_feature_importance(features, market_data)
+                    tprint_info(f"Feature importance calculated using SHAP")
+                except Exception as e:
+                    tprint_warning(f"SHAP analysis failed: {e}")
+
+            # Model validation
+            if self.model_validator:
+                try:
+                    validation_results = self.model_validator.validate_features(features, market_data)
+                    tprint_info(f"Feature validation completed")
+                except Exception as e:
+                    tprint_warning(f"Feature validation failed: {e}")
+
+            return features
+
+        except Exception as e:
+            tprint_warning(f"ML optimizations failed: {e}")
+            return features
+
+    async def _validate_final_features(self, features: np.ndarray, market_data: pd.DataFrame) -> Dict[str, Any]:
+        """Validate final features with comprehensive checks."""
+        try:
+            validation_results = {
+                'valid': True,
+                'passed': True,
+                'errors': [],
+                'warnings': [],
+                'metrics': {}
+            }
+
+            # Basic validation
+            if features is None or features.size == 0:
+                validation_results['valid'] = False
+                validation_results['passed'] = False
+                validation_results['errors'].append("Features are None or empty")
+                return validation_results
+
+            # Validate finite values
+            try:
+                math_validate_numeric_array(features, "final_features")
+                validation_results['metrics']['finite_values'] = True
+            except Exception as e:
+                validation_results['warnings'].append(f"Non-finite values detected: {e}")
+
+            # Check for data leakage
+            if self.enable_ml_optimization and self.data_leakage_detector:
+                try:
+                    leakage_score = self.data_leakage_detector.detect_leakage(features)
+                    validation_results['metrics']['leakage_score'] = leakage_score
+                    if leakage_score > 0.1:
+                        validation_results['warnings'].append(f"Potential data leakage: {leakage_score:.3f}")
+                except Exception as e:
+                    validation_results['warnings'].append(f"Leakage detection failed: {e}")
+
+            return validation_results
+
+        except Exception as e:
+            return {
+                'valid': False,
+                'passed': False,
+                'errors': [f"Validation failed: {e}"],
+                'warnings': [],
+                'metrics': {}
+            }
+
+    async def _calculate_feature_importance(self, features: np.ndarray, market_data: pd.DataFrame) -> Dict[str, float]:
+        """Calculate feature importance using available methods."""
+        try:
+            if not self.enable_ml_optimization:
+                return {}
+
+            feature_importance = {}
+
+            # Use SHAP if available
+            if self.shap_explainer:
+                try:
+                    importance_scores = self.shap_explainer.calculate_feature_importance(features, market_data)
+                    feature_importance.update(importance_scores)
+                except Exception as e:
+                    tprint_warning(f"SHAP importance calculation failed: {e}")
+
+            # Use LIME if available
+            if self.lime_explainer:
+                try:
+                    lime_scores = self.lime_explainer.calculate_feature_importance(features, market_data)
+                    feature_importance.update(lime_scores)
+                except Exception as e:
+                    tprint_warning(f"LIME importance calculation failed: {e}")
+
+            return feature_importance
+
+        except Exception as e:
+            tprint_warning(f"Feature importance calculation failed: {e}")
+            return {}
+
+    async def _generate_comprehensive_metadata(
+        self, original_count: int, final_count: int, reduction_rate: float,
+        scaling_time: float, embedding_time: float, validation_results: Dict[str, Any],
+        feature_importance: Dict[str, float], market_data: pd.DataFrame
+    ) -> Dict[str, Any]:
+        """Generate comprehensive metadata for the feature preparation result."""
+        try:
+            metadata = {
+                "original_feature_count": original_count,
+                "final_feature_count": final_count,
+                "feature_reduction_rate": reduction_rate,
+                "scaling_time": scaling_time,
+                "scaling_method": "robust",
+                "embedding_time": embedding_time,
+                "embedding_method": self._get_embedding_method(),
+                "validation_passed": validation_results.get("passed", True),
+                "validation_results": validation_results,
+                "feature_importance": feature_importance,
+                "performance_metrics": self.performance_metrics,
+                "hardware_optimization_enabled": self.enable_hardware_optimization,
+                "ml_optimization_enabled": self.enable_ml_optimization,
+                "data_validation_enabled": self.enable_data_validation,
+                "timestamp": get_current_datetime(),
+                "data_shape": market_data.shape,
+                "data_types": market_data.dtypes.to_dict() if hasattr(market_data, 'dtypes') else {}
+            }
+
+            # Add hardware-specific metadata
+            if self.hardware_manager:
+                try:
+                    hardware_info = self.hardware_manager.get_optimization_info()
+                    metadata["hardware_info"] = hardware_info
+                except Exception as e:
+                    tprint_warning(f"Failed to get hardware info: {e}")
+
+            return metadata
+
+        except Exception as e:
+            tprint_warning(f"Metadata generation failed: {e}")
+            return {}
+
+    def _generate_feature_names(self, features: np.ndarray, original_names: List[str]) -> List[str]:
+        """Generate appropriate feature names for the final features."""
+        try:
+            n_features = features.shape[1]
+            
+            if n_features == len(original_names):
+                # No dimensionality reduction, use original names
+                return original_names
+            else:
+                # Dimensionality reduction applied, create meaningful names
+                method = self._get_embedding_method()
+                if method == "PCA":
+                    if hasattr(self, 'pca') and self.pca is not None:
+                        return [f"PC{i+1}_var{self.pca.explained_variance_ratio_[i]:.3f}"
+                               for i in range(n_features)]
+                    else:
+                        return [f"PC{i+1}" for i in range(n_features)]
+                elif method == "UMAP":
+                    return [f"UMAP_dim{i+1}" for i in range(n_features)]
+                else:
+                    return [f"embedding_{i+1}" for i in range(n_features)]
+
+        except Exception as e:
+            tprint_warning(f"Feature name generation failed: {e}")
+            return [f"feature_{i+1}" for i in range(features.shape[1])]
+
+    async def _save_feature_artifacts(self, result: FeaturePreparationResult, config: Any) -> None:
+        """Save feature preparation artifacts."""
+        try:
+            if not self.artifact_manager:
+                return
+
+            tprint_info("Saving feature preparation artifacts")
+
+            artifacts = {
+                'features': result.features,
+                'feature_names': result.feature_names,
+                'feature_scores': result.feature_scores,
+                'metadata': result.metadata,
+                'performance_metrics': self.performance_metrics
+            }
+
+            step_name = f"feature_preparation_{get_current_datetime().strftime('%Y%m%d_%H%M%S')}"
+            success = self.artifact_manager.save_artifacts(artifacts, step_name, result.metadata)
+
+            if success:
+                self.performance_metrics["artifact_saves"] += 1
+                tprint_success(f"Feature artifacts saved successfully")
+            else:
+                tprint_warning(f"Failed to save feature artifacts")
+
+        except Exception as e:
+            tprint_warning(f"Artifact saving failed: {e}")
 
     async def _prepare_features_shared(
         self,

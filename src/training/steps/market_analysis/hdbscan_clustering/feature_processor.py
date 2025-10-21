@@ -63,6 +63,14 @@ class FeatureProcessorConfig:
     enable_interactions: bool = True
     max_interactions: int = 10
     
+    # Regime-specific processing
+    enable_regime_aware_processing: bool = True
+    regime_detection_method: str = 'variance'  # 'variance', 'entropy', 'volatility'
+    regime_window: int = 20
+    regime_threshold: float = 0.1
+    enable_regime_normalization: bool = True
+    enable_regime_scaling: bool = True
+    
     # Dimensionality reduction
     enable_dr: bool = False
     dr_method: str = 'pca'  # 'pca', 'tsne', 'none'
@@ -173,6 +181,14 @@ class FeatureProcessor:
                     tprint_debug(f"After feature engineering: {features_df.shape}")
             else:
                 tprint_debug("Feature engineering skipped")
+            
+            # Step 5.5: Regime-aware processing
+            if self.config.enable_regime_aware_processing:
+                with tprint_timer("Regime-aware processing"):
+                    features_df = self._apply_regime_aware_processing(features_df)
+                    tprint_debug(f"After regime-aware processing: {features_df.shape}")
+            else:
+                tprint_debug("Regime-aware processing skipped")
             
             # Step 6: Feature selection
             if self.config.enable_feature_selection:
@@ -652,3 +668,267 @@ class FeatureProcessor:
     def get_dr_model(self) -> Optional[Any]:
         """Get fitted dimensionality reduction model."""
         return self.dr_model
+    
+    def _apply_regime_aware_processing(self, features_df: pd.DataFrame) -> pd.DataFrame:
+        """Apply regime-aware processing to features."""
+        try:
+            logger.info("🎯 Applying regime-aware processing...")
+            
+            # Detect regimes in the data
+            regimes = self._detect_regimes(features_df)
+            
+            # Apply regime-specific processing
+            if regimes is not None:
+                # Regime-specific normalization
+                if self.config.enable_regime_normalization:
+                    features_df = self._apply_regime_normalization(features_df, regimes)
+                
+                # Regime-specific scaling
+                if self.config.enable_regime_scaling:
+                    features_df = self._apply_regime_scaling(features_df, regimes)
+                
+                # Regime-aware feature selection
+                features_df = self._apply_regime_aware_feature_selection(features_df, regimes)
+                
+                logger.info("✅ Regime-aware processing completed")
+            else:
+                logger.warning("⚠️ No regimes detected, skipping regime-aware processing")
+            
+            return features_df
+            
+        except Exception as e:
+            logger.error(f"❌ Regime-aware processing failed: {e}")
+            return features_df
+    
+    def _detect_regimes(self, features_df: pd.DataFrame) -> Optional[np.ndarray]:
+        """Detect regimes in the feature data."""
+        try:
+            numeric_cols = features_df.select_dtypes(include=[np.number]).columns
+            
+            if len(numeric_cols) == 0:
+                return None
+            
+            # Select primary feature for regime detection
+            if 'returns' in numeric_cols:
+                primary_feature = features_df['returns']
+            elif 'volatility' in numeric_cols:
+                primary_feature = features_df['volatility']
+            else:
+                # Use the first numeric column
+                primary_feature = features_df[numeric_cols[0]]
+            
+            # Detect regimes based on method
+            if self.config.regime_detection_method == 'variance':
+                regimes = self._detect_regimes_by_variance(primary_feature)
+            elif self.config.regime_detection_method == 'entropy':
+                regimes = self._detect_regimes_by_entropy(primary_feature)
+            elif self.config.regime_detection_method == 'volatility':
+                regimes = self._detect_regimes_by_volatility(primary_feature)
+            else:
+                regimes = self._detect_regimes_by_variance(primary_feature)
+            
+            return regimes
+            
+        except Exception as e:
+            logger.error(f"❌ Regime detection failed: {e}")
+            return None
+    
+    def _detect_regimes_by_variance(self, feature: pd.Series) -> np.ndarray:
+        """Detect regimes based on variance changes."""
+        try:
+            window = self.config.regime_window
+            threshold = self.config.regime_threshold
+            
+            regimes = np.zeros(len(feature))
+            rolling_var = feature.rolling(window=window).var()
+            
+            # Find variance change points
+            var_changes = np.abs(rolling_var.diff()) > (threshold * rolling_var.rolling(window=window).mean())
+            change_points = np.where(var_changes)[0]
+            
+            # Assign regime labels
+            current_regime = 0
+            for i in range(len(regimes)):
+                if i in change_points:
+                    current_regime = (current_regime + 1) % 3  # 3 regimes max
+                regimes[i] = current_regime
+            
+            return regimes
+            
+        except Exception as e:
+            logger.debug(f"Variance-based regime detection failed: {e}")
+            return np.zeros(len(feature))
+    
+    def _detect_regimes_by_entropy(self, feature: pd.Series) -> np.ndarray:
+        """Detect regimes based on entropy changes."""
+        try:
+            window = self.config.regime_window
+            threshold = self.config.regime_threshold
+            
+            regimes = np.zeros(len(feature))
+            
+            # Calculate rolling entropy
+            rolling_entropy = []
+            for i in range(window, len(feature)):
+                window_data = feature[i-window:i]
+                # Discretize data
+                hist, _ = np.histogram(window_data, bins=10)
+                hist = hist / hist.sum()
+                hist = hist[hist > 0]
+                entropy = -np.sum(hist * np.log2(hist))
+                rolling_entropy.append(entropy)
+            
+            rolling_entropy = np.array(rolling_entropy)
+            
+            # Find entropy change points
+            entropy_changes = np.abs(np.diff(rolling_entropy)) > (threshold * np.std(rolling_entropy))
+            change_points = np.where(entropy_changes)[0] + window
+            
+            # Assign regime labels
+            current_regime = 0
+            for i in range(len(regimes)):
+                if i in change_points:
+                    current_regime = (current_regime + 1) % 3
+                regimes[i] = current_regime
+            
+            return regimes
+            
+        except Exception as e:
+            logger.debug(f"Entropy-based regime detection failed: {e}")
+            return np.zeros(len(feature))
+    
+    def _detect_regimes_by_volatility(self, feature: pd.Series) -> np.ndarray:
+        """Detect regimes based on volatility changes."""
+        try:
+            window = self.config.regime_window
+            threshold = self.config.regime_threshold
+            
+            regimes = np.zeros(len(feature))
+            rolling_vol = feature.rolling(window=window).std()
+            
+            # Find volatility change points
+            vol_changes = np.abs(rolling_vol.diff()) > (threshold * rolling_vol.rolling(window=window).mean())
+            change_points = np.where(vol_changes)[0]
+            
+            # Assign regime labels
+            current_regime = 0
+            for i in range(len(regimes)):
+                if i in change_points:
+                    current_regime = (current_regime + 1) % 3
+                regimes[i] = current_regime
+            
+            return regimes
+            
+        except Exception as e:
+            logger.debug(f"Volatility-based regime detection failed: {e}")
+            return np.zeros(len(feature))
+    
+    def _apply_regime_normalization(self, features_df: pd.DataFrame, regimes: np.ndarray) -> pd.DataFrame:
+        """Apply regime-specific normalization."""
+        try:
+            numeric_cols = features_df.select_dtypes(include=[np.number]).columns
+            normalized_df = features_df.copy()
+            
+            unique_regimes = np.unique(regimes)
+            
+            for regime in unique_regimes:
+                regime_mask = regimes == regime
+                if np.sum(regime_mask) > 1:  # Need at least 2 samples
+                    regime_data = features_df.loc[regime_mask, numeric_cols]
+                    
+                    # Normalize within regime
+                    regime_mean = regime_data.mean()
+                    regime_std = regime_data.std()
+                    
+                    # Avoid division by zero
+                    regime_std = regime_std.replace(0, 1)
+                    
+                    normalized_df.loc[regime_mask, numeric_cols] = (
+                        (regime_data - regime_mean) / regime_std
+                    )
+            
+            logger.info(f"✅ Applied regime-specific normalization for {len(unique_regimes)} regimes")
+            return normalized_df
+            
+        except Exception as e:
+            logger.error(f"❌ Regime normalization failed: {e}")
+            return features_df
+    
+    def _apply_regime_scaling(self, features_df: pd.DataFrame, regimes: np.ndarray) -> pd.DataFrame:
+        """Apply regime-specific scaling."""
+        try:
+            numeric_cols = features_df.select_dtypes(include=[np.number]).columns
+            scaled_df = features_df.copy()
+            
+            unique_regimes = np.unique(regimes)
+            
+            for regime in unique_regimes:
+                regime_mask = regimes == regime
+                if np.sum(regime_mask) > 1:
+                    regime_data = features_df.loc[regime_mask, numeric_cols]
+                    
+                    # Min-max scaling within regime
+                    regime_min = regime_data.min()
+                    regime_max = regime_data.max()
+                    
+                    # Avoid division by zero
+                    regime_range = regime_max - regime_min
+                    regime_range = regime_range.replace(0, 1)
+                    
+                    scaled_df.loc[regime_mask, numeric_cols] = (
+                        (regime_data - regime_min) / regime_range
+                    )
+            
+            logger.info(f"✅ Applied regime-specific scaling for {len(unique_regimes)} regimes")
+            return scaled_df
+            
+        except Exception as e:
+            logger.error(f"❌ Regime scaling failed: {e}")
+            return features_df
+    
+    def _apply_regime_aware_feature_selection(self, features_df: pd.DataFrame, regimes: np.ndarray) -> pd.DataFrame:
+        """Apply regime-aware feature selection."""
+        try:
+            numeric_cols = features_df.select_dtypes(include=[np.number]).columns
+            selected_cols = []
+            
+            unique_regimes = np.unique(regimes)
+            
+            # Select features that are informative across regimes
+            for col in numeric_cols:
+                feature_values = features_df[col].values
+                
+                # Calculate regime-specific variance
+                regime_variances = []
+                for regime in unique_regimes:
+                    regime_mask = regimes == regime
+                    if np.sum(regime_mask) > 1:
+                        regime_data = feature_values[regime_mask]
+                        regime_var = np.var(regime_data)
+                        regime_variances.append(regime_var)
+                
+                if len(regime_variances) > 1:
+                    # Feature is informative if it has different variance across regimes
+                    variance_ratio = np.max(regime_variances) / (np.min(regime_variances) + 1e-10)
+                    if variance_ratio > 2.0:  # Threshold for regime discrimination
+                        selected_cols.append(col)
+                else:
+                    # If only one regime, keep feature if it has sufficient variance
+                    if len(regime_variances) == 1 and regime_variances[0] > 1e-6:
+                        selected_cols.append(col)
+            
+            # Keep non-numeric columns
+            non_numeric_cols = features_df.select_dtypes(exclude=[np.number]).columns
+            selected_cols.extend(non_numeric_cols)
+            
+            if len(selected_cols) > 0:
+                features_df = features_df[selected_cols]
+                logger.info(f"✅ Regime-aware feature selection: {len(selected_cols)} features selected")
+            else:
+                logger.warning("⚠️ No features selected by regime-aware selection")
+            
+            return features_df
+            
+        except Exception as e:
+            logger.error(f"❌ Regime-aware feature selection failed: {e}")
+            return features_df

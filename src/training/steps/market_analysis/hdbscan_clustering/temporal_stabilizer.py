@@ -52,6 +52,14 @@ class TemporalStabilizerConfig:
     # Validation
     validate_input: bool = True
     min_samples: int = 10
+    
+    # Regime-specific temporal analysis
+    enable_regime_aware_stabilization: bool = True
+    regime_detection_method: str = 'variance'  # 'variance', 'entropy', 'volatility'
+    regime_window: int = 20
+    regime_threshold: float = 0.1
+    regime_specific_parameters: bool = True
+    regime_transition_smoothing: bool = True
 
 class TemporalStabilizer:
     """
@@ -103,7 +111,10 @@ class TemporalStabilizer:
                 cluster_labels = self._validate_input(cluster_labels)
             
             # Apply temporal stabilization
-            stabilized_labels = self._apply_stabilization(cluster_labels)
+            if self.config.enable_regime_aware_stabilization:
+                stabilized_labels = self._apply_regime_aware_stabilization(cluster_labels, features)
+            else:
+                stabilized_labels = self._apply_stabilization(cluster_labels)
             
             # Apply temporal constraints
             if self.config.handle_transitions:
@@ -609,3 +620,348 @@ class TemporalStabilizer:
     def get_stabilized_labels(self) -> Optional[np.ndarray]:
         """Get stabilized cluster labels."""
         return self.stabilized_labels.copy() if self.stabilized_labels is not None else None
+    
+    def _apply_regime_aware_stabilization(self, cluster_labels: np.ndarray, features: Optional[np.ndarray]) -> np.ndarray:
+        """Apply regime-aware temporal stabilization."""
+        try:
+            logger.info("⏰ Starting regime-aware temporal stabilization...")
+            
+            # Detect regimes
+            if features is not None:
+                regimes = self._detect_regimes(features)
+            else:
+                # Use cluster labels to detect regimes
+                regimes = self._detect_regimes_from_labels(cluster_labels)
+            
+            if regimes is not None and len(np.unique(regimes)) > 1:
+                # Apply regime-aware stabilization
+                stabilized_labels = self._apply_regime_specific_stabilization(cluster_labels, regimes)
+            else:
+                # Fall back to standard stabilization
+                stabilized_labels = self._apply_stabilization(cluster_labels)
+            
+            return stabilized_labels
+            
+        except Exception as e:
+            logger.error(f"❌ Regime-aware stabilization failed: {e}")
+            return self._apply_stabilization(cluster_labels)
+    
+    def _detect_regimes(self, features: np.ndarray) -> Optional[np.ndarray]:
+        """Detect regimes in the feature data."""
+        try:
+            # Use first feature for regime detection
+            primary_feature = features[:, 0]
+            
+            if self.config.regime_detection_method == 'variance':
+                regimes = self._detect_regimes_by_variance(primary_feature)
+            elif self.config.regime_detection_method == 'entropy':
+                regimes = self._detect_regimes_by_entropy(primary_feature)
+            elif self.config.regime_detection_method == 'volatility':
+                regimes = self._detect_regimes_by_volatility(primary_feature)
+            else:
+                regimes = self._detect_regimes_by_variance(primary_feature)
+            
+            return regimes
+            
+        except Exception as e:
+            logger.error(f"❌ Regime detection failed: {e}")
+            return None
+    
+    def _detect_regimes_from_labels(self, cluster_labels: np.ndarray) -> np.ndarray:
+        """Detect regimes from cluster labels."""
+        try:
+            # Use cluster label changes to detect regimes
+            regimes = np.zeros(len(cluster_labels))
+            label_changes = np.diff(cluster_labels) != 0
+            change_points = np.where(label_changes)[0]
+            
+            # Assign regime labels based on cluster stability
+            current_regime = 0
+            for i in range(len(regimes)):
+                if i in change_points:
+                    current_regime = (current_regime + 1) % 3
+                regimes[i] = current_regime
+            
+            return regimes
+            
+        except Exception as e:
+            logger.debug(f"Regime detection from labels failed: {e}")
+            return np.zeros(len(cluster_labels))
+    
+    def _detect_regimes_by_variance(self, feature: np.ndarray) -> np.ndarray:
+        """Detect regimes based on variance changes."""
+        try:
+            window = self.config.regime_window
+            threshold = self.config.regime_threshold
+            
+            regimes = np.zeros(len(feature))
+            rolling_var = pd.Series(feature).rolling(window=window).var().values
+            
+            # Find variance change points
+            var_changes = np.abs(np.diff(rolling_var)) > (threshold * np.nanmean(rolling_var))
+            change_points = np.where(var_changes)[0]
+            
+            # Assign regime labels
+            current_regime = 0
+            for i in range(len(regimes)):
+                if i in change_points:
+                    current_regime = (current_regime + 1) % 3
+                regimes[i] = current_regime
+            
+            return regimes
+            
+        except Exception as e:
+            logger.debug(f"Variance-based regime detection failed: {e}")
+            return np.zeros(len(feature))
+    
+    def _detect_regimes_by_entropy(self, feature: np.ndarray) -> np.ndarray:
+        """Detect regimes based on entropy changes."""
+        try:
+            window = self.config.regime_window
+            threshold = self.config.regime_threshold
+            
+            regimes = np.zeros(len(feature))
+            
+            # Calculate rolling entropy
+            rolling_entropy = []
+            for i in range(window, len(feature)):
+                window_data = feature[i-window:i]
+                # Discretize data
+                hist, _ = np.histogram(window_data, bins=10)
+                hist = hist / hist.sum()
+                hist = hist[hist > 0]
+                entropy = -np.sum(hist * np.log2(hist))
+                rolling_entropy.append(entropy)
+            
+            rolling_entropy = np.array(rolling_entropy)
+            
+            # Find entropy change points
+            entropy_changes = np.abs(np.diff(rolling_entropy)) > (threshold * np.std(rolling_entropy))
+            change_points = np.where(entropy_changes)[0] + window
+            
+            # Assign regime labels
+            current_regime = 0
+            for i in range(len(regimes)):
+                if i in change_points:
+                    current_regime = (current_regime + 1) % 3
+                regimes[i] = current_regime
+            
+            return regimes
+            
+        except Exception as e:
+            logger.debug(f"Entropy-based regime detection failed: {e}")
+            return np.zeros(len(feature))
+    
+    def _detect_regimes_by_volatility(self, feature: np.ndarray) -> np.ndarray:
+        """Detect regimes based on volatility changes."""
+        try:
+            window = self.config.regime_window
+            threshold = self.config.regime_threshold
+            
+            regimes = np.zeros(len(feature))
+            rolling_vol = pd.Series(feature).rolling(window=window).std().values
+            
+            # Find volatility change points
+            vol_changes = np.abs(np.diff(rolling_vol)) > (threshold * np.nanmean(rolling_vol))
+            change_points = np.where(vol_changes)[0]
+            
+            # Assign regime labels
+            current_regime = 0
+            for i in range(len(regimes)):
+                if i in change_points:
+                    current_regime = (current_regime + 1) % 3
+                regimes[i] = current_regime
+            
+            return regimes
+            
+        except Exception as e:
+            logger.debug(f"Volatility-based regime detection failed: {e}")
+            return np.zeros(len(feature))
+    
+    def _apply_regime_specific_stabilization(self, cluster_labels: np.ndarray, regimes: np.ndarray) -> np.ndarray:
+        """Apply regime-specific temporal stabilization."""
+        try:
+            unique_regimes = np.unique(regimes)
+            stabilized_labels = cluster_labels.copy()
+            
+            # Process each regime separately
+            for regime in unique_regimes:
+                regime_mask = regimes == regime
+                regime_labels = cluster_labels[regime_mask]
+                
+                if len(regime_labels) > 1:
+                    # Apply regime-specific stabilization
+                    regime_stabilized = self._stabilize_regime_labels(regime_labels, regime)
+                    stabilized_labels[regime_mask] = regime_stabilized
+            
+            # Apply regime transition smoothing
+            if self.config.regime_transition_smoothing:
+                stabilized_labels = self._apply_regime_transition_smoothing(stabilized_labels, regimes)
+            
+            return stabilized_labels
+            
+        except Exception as e:
+            logger.error(f"❌ Regime-specific stabilization failed: {e}")
+            return cluster_labels
+    
+    def _stabilize_regime_labels(self, regime_labels: np.ndarray, regime: int) -> np.ndarray:
+        """Stabilize labels within a specific regime."""
+        try:
+            # Use regime-specific parameters
+            if self.config.regime_specific_parameters:
+                regime_config = self._get_regime_specific_config(regime)
+            else:
+                regime_config = self.config
+            
+            # Apply regime-specific stabilization method
+            if regime_config.stabilization_method == 'median_filter':
+                return self._apply_regime_median_filter(regime_labels, regime_config)
+            elif regime_config.stabilization_method == 'majority_vote':
+                return self._apply_regime_majority_vote(regime_labels, regime_config)
+            elif regime_config.stabilization_method == 'temporal_smoothing':
+                return self._apply_regime_temporal_smoothing(regime_labels, regime_config)
+            else:
+                return self._apply_regime_median_filter(regime_labels, regime_config)
+            
+        except Exception as e:
+            logger.error(f"❌ Regime label stabilization failed: {e}")
+            return regime_labels
+    
+    def _get_regime_specific_config(self, regime: int) -> 'TemporalStabilizerConfig':
+        """Get regime-specific configuration."""
+        try:
+            # Create regime-specific config
+            regime_config = TemporalStabilizerConfig()
+            
+            # Adjust parameters based on regime characteristics
+            if regime == 0:  # Low volatility regime
+                regime_config.median_filter_size = max(3, self.config.median_filter_size // 2)
+                regime_config.majority_vote_window = max(3, self.config.majority_vote_window // 2)
+                regime_config.smoothing_alpha = min(0.5, self.config.smoothing_alpha * 1.5)
+            elif regime == 1:  # Medium volatility regime
+                regime_config.median_filter_size = self.config.median_filter_size
+                regime_config.majority_vote_window = self.config.majority_vote_window
+                regime_config.smoothing_alpha = self.config.smoothing_alpha
+            else:  # High volatility regime
+                regime_config.median_filter_size = min(15, self.config.median_filter_size * 2)
+                regime_config.majority_vote_window = min(15, self.config.majority_vote_window * 2)
+                regime_config.smoothing_alpha = max(0.1, self.config.smoothing_alpha * 0.5)
+            
+            return regime_config
+            
+        except Exception as e:
+            logger.debug(f"Regime-specific config creation failed: {e}")
+            return self.config
+    
+    def _apply_regime_median_filter(self, regime_labels: np.ndarray, config: 'TemporalStabilizerConfig') -> np.ndarray:
+        """Apply median filter to regime labels."""
+        try:
+            # Convert labels to float for median filter
+            float_labels = regime_labels.astype(float)
+            
+            # Apply median filter
+            filtered_labels = median_filter(float_labels, size=config.median_filter_size)
+            
+            # Convert back to int
+            return filtered_labels.astype(int)
+            
+        except Exception as e:
+            logger.debug(f"Regime median filter failed: {e}")
+            return regime_labels
+    
+    def _apply_regime_majority_vote(self, regime_labels: np.ndarray, config: 'TemporalStabilizerConfig') -> np.ndarray:
+        """Apply majority vote to regime labels."""
+        try:
+            window_size = config.majority_vote_window
+            stabilized_labels = regime_labels.copy()
+            
+            for i in range(len(regime_labels)):
+                # Define window boundaries
+                start_idx = max(0, i - window_size // 2)
+                end_idx = min(len(regime_labels), i + window_size // 2 + 1)
+                
+                # Get window labels
+                window_labels = regime_labels[start_idx:end_idx]
+                
+                # Remove noise for voting
+                valid_labels = window_labels[window_labels != -1]
+                
+                if len(valid_labels) > 0:
+                    # Find most common label
+                    unique_labels, counts = np.unique(valid_labels, return_counts=True)
+                    most_common_label = unique_labels[np.argmax(counts)]
+                    stabilized_labels[i] = most_common_label
+                else:
+                    # Keep original label if no valid labels in window
+                    stabilized_labels[i] = regime_labels[i]
+            
+            return stabilized_labels
+            
+        except Exception as e:
+            logger.debug(f"Regime majority vote failed: {e}")
+            return regime_labels
+    
+    def _apply_regime_temporal_smoothing(self, regime_labels: np.ndarray, config: 'TemporalStabilizerConfig') -> np.ndarray:
+        """Apply temporal smoothing to regime labels."""
+        try:
+            # Convert labels to one-hot encoding
+            unique_labels = np.unique(regime_labels)
+            unique_labels = unique_labels[unique_labels != -1]  # Remove noise
+            
+            if len(unique_labels) == 0:
+                return regime_labels
+            
+            # Create one-hot encoding
+            one_hot = np.zeros((len(regime_labels), len(unique_labels)))
+            for i, label in enumerate(unique_labels):
+                one_hot[regime_labels == label, i] = 1
+            
+            # Apply exponential moving average
+            alpha = config.smoothing_alpha
+            smoothed_one_hot = np.zeros_like(one_hot)
+            smoothed_one_hot[0] = one_hot[0]
+            
+            for i in range(1, len(one_hot)):
+                smoothed_one_hot[i] = alpha * one_hot[i] + (1 - alpha) * smoothed_one_hot[i-1]
+            
+            # Convert back to labels
+            stabilized_labels = unique_labels[np.argmax(smoothed_one_hot, axis=1)]
+            
+            # Handle noise points
+            noise_mask = regime_labels == -1
+            stabilized_labels[noise_mask] = -1
+            
+            return stabilized_labels
+            
+        except Exception as e:
+            logger.debug(f"Regime temporal smoothing failed: {e}")
+            return regime_labels
+    
+    def _apply_regime_transition_smoothing(self, cluster_labels: np.ndarray, regimes: np.ndarray) -> np.ndarray:
+        """Apply smoothing around regime transitions."""
+        try:
+            smoothed_labels = cluster_labels.copy()
+            
+            # Find regime transition points
+            regime_changes = np.diff(regimes) != 0
+            transition_points = np.where(regime_changes)[0]
+            
+            # Apply smoothing around each transition point
+            for transition_point in transition_points:
+                # Define smoothing window
+                window_size = min(10, len(cluster_labels) // 20)
+                start_idx = max(0, transition_point - window_size)
+                end_idx = min(len(cluster_labels), transition_point + window_size)
+                
+                # Apply majority vote in transition window
+                window_labels = cluster_labels[start_idx:end_idx]
+                if len(window_labels) > 0:
+                    unique_labels, counts = np.unique(window_labels, return_counts=True)
+                    most_common_label = unique_labels[np.argmax(counts)]
+                    smoothed_labels[start_idx:end_idx] = most_common_label
+            
+            return smoothed_labels
+            
+        except Exception as e:
+            logger.error(f"❌ Regime transition smoothing failed: {e}")
+            return cluster_labels

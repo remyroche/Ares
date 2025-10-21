@@ -16,7 +16,8 @@ from src.utils.tprint import (
     tprint, tprint_info, tprint_success, tprint_warning, tprint_error
 )
 from src.utils.common_operations import (
-    get_m1_gpu_manager, get_m1_memory_optimizer, get_m1_cpu_optimizer,
+    get_m1_gpu_manager, get_m1_memory_optimizer, get_m1_cpu_optimizer
+from .shared import HardwareInitializer,
     integrate_with_m1_optimizers, cleanup_m1_optimizers
 )
 from src.utils.common_utilities import (
@@ -111,14 +112,12 @@ class ClusteringEngine:
             # Initialize matrix operations with hardware acceleration
             self.matrix_ops = UnifiedMatrixOperations()
 
-            # Get hardware managers
-            self.hardware_manager = get_m1_gpu_manager()
-            self.memory_optimizer = get_m1_memory_optimizer()
-
-            if self.hardware_manager or self.memory_optimizer:
-                tprint("🖥️ Hardware optimizations initialized for clustering engine", "INFO")
-            else:
-                tprint("⚠️ Hardware optimizations not available, using CPU fallback", "WARNING")
+            # Get hardware managers using shared utilities
+            hardware_components = HardwareInitializer.initialize_hardware_components(
+                "clustering_engine", verbose=True
+            )
+            self.hardware_manager = hardware_components.get('gpu_manager')
+            self.memory_optimizer = hardware_components.get('memory_manager')
 
         except Exception as e:
             tprint(f"❌ Hardware initialization failed: {e}", "ERROR")

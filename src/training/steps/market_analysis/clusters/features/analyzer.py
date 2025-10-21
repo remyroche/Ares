@@ -32,8 +32,10 @@ from src.utils.tprint import (
     tprint_success,
 )
 from src.utils.common_operations import get_m1_gpu_manager, get_m1_memory_optimizer, get_m1_cpu_optimizer
+from ..shared import HardwareInitializer
 from src.utils.common_utilities import safe_dataframe_operation, validate_dataframe_columns, calculate_data_quality_metrics
-from src.utils.math_validation import safe_divide, validate_finite, validate_positive, validate_range
+from src.utils.math_validation import validate_finite, validate_positive, validate_range
+from ..shared import safe_divide, ClusteringValidationUtils
 from src.utils.matrix_operations import get_unified_matrix_operations, safe_matrix_multiply, safe_correlation_matrix
 
 # Import ML common utilities
@@ -113,20 +115,14 @@ class FeatureAnalyzer:
             self.feature_selection_framework = None
 
     def _initialize_hardware_optimization(self):
-        """Initialize hardware optimization components."""
-        try:
-            self.gpu_manager = get_m1_gpu_manager() if get_m1_gpu_manager() else None
-            self.memory_optimizer = get_m1_memory_optimizer() if get_m1_memory_optimizer() else None
-            self.cpu_optimizer = get_m1_cpu_optimizer() if get_m1_cpu_optimizer() else None
-
-            if self.gpu_manager or self.memory_optimizer or self.cpu_optimizer:
-                tprint("✅ Hardware optimization initialized for feature analysis", "SUCCESS")
-
-        except Exception as e:
-            tprint(f"⚠️ Hardware optimization initialization failed: {e}", "WARNING")
-            self.gpu_manager = None
-            self.memory_optimizer = None
-            self.cpu_optimizer = None
+        """Initialize hardware optimization components using shared utilities."""
+        hardware_components = HardwareInitializer.initialize_hardware_components(
+            "feature_analysis", verbose=True
+        )
+        
+        self.gpu_manager = hardware_components.get('gpu_manager')
+        self.memory_optimizer = hardware_components.get('memory_manager')
+        self.cpu_optimizer = hardware_components.get('cpu_optimizer')
 
     def analyze_features(
         self,

@@ -11,7 +11,14 @@ This module contains all utility functionality including:
 """
 
 from ..logger import setup_logger, get_logger
-from .memory_optimization import MemoryEfficientTraining as MemoryOptimizer
+# Memory optimization now handled by hardware tools
+try:
+    from src.utils.hardware.advanced_memory_manager import AdvancedMemoryManager as MemoryOptimizer
+except ImportError:
+    # Fallback if hardware tools not available
+    class MemoryOptimizer:
+        def __init__(self, *args, **kwargs):
+            pass
 from .memory_integration import MemoryIntegrator
 from src.utils.parallel_processing_optimizer import ParallelProcessor
 from src.utils.unified_cache import UnifiedCache, get_unified_cache, cached

@@ -64,34 +64,8 @@ class AresLauncherDataLoader:
             tprint_warning(f"⚠️ [ARES_DATA_LOADER] Unknown mode '{mode}', defaulting to light mode")
             config = get_light_mode_config()
 
-        # Calculate dates - use last available data date instead of current date
-        end_date = datetime.now()
-
-        # Try to detect last available data date if symbol and interval are provided
-        if symbol and interval:
-            try:
-                tprint_debug("🔍 [ARES_DATA_LOADER] Attempting to detect last available data date")
-                from src.utils.data.klines_parquet import KlinesParquetManager
-                manager = KlinesParquetManager(data_dir=self.data_dir)
-
-                # Get data info to find the actual available date range
-                data_info = manager.get_data_info(symbol=symbol, interval=interval, data_type="processed")
-
-                if data_info and data_info.get("available") and data_info.get("date_range"):
-                    # Use the last date from the available data
-                    _, max_date = data_info["date_range"]
-                    end_date = pd.to_datetime(max_date)
-                    # Remove timezone to match dataframe format (timezone-naive)
-                    if hasattr(end_date, 'tz') and end_date.tz is not None:
-                        end_date = end_date.tz_localize(None)
-                    # Normalize to end of day to include all data on that day
-                    end_date = end_date.replace(hour=23, minute=59, second=59, microsecond=999999)
-                    tprint_success(f"✅ [ARES_DATA_LOADER] Using last available data date: {end_date.strftime('%Y-%m-%d')}")
-                else:
-                    tprint_warning("⚠️ [ARES_DATA_LOADER] Could not get data info, using current date")
-            except Exception as e:
-                tprint_warning(f"⚠️ [ARES_DATA_LOADER] Error detecting last available date: {e}")
-                tprint_debug("   → Falling back to current date")
+        # Always try to detect last available data date first
+        end_date = self._get_last_available_data_date(symbol, interval)
 
         start_date = end_date - timedelta(days=config.lookback_days)
         # Normalize to start of day to include all data from that day
@@ -104,6 +78,103 @@ class AresLauncherDataLoader:
         tprint_debug(f"   → Total duration: {config.lookback_days} days")
 
         return start_date, end_date
+
+    def _get_last_available_data_date(self, symbol: Optional[str] = None, interval: Optional[str] = None) -> datetime:
+        """
+        Get the last available data date, trying multiple strategies.
+        
+        Args:
+            symbol: Trading symbol (optional)
+            interval: Data interval (optional)
+            
+        Returns:
+            Last available data date as datetime
+        """
+        import pandas as pd
+        
+        tprint_debug("🔍 [ARES_DATA_LOADER] Detecting last available data date")
+        
+        # Strategy 1: Try to get last date from specific symbol/interval
+        if symbol and interval:
+            end_date = self._try_get_last_date_from_symbol(symbol, interval)
+            if end_date:
+                return end_date
+        
+        # Strategy 2: Try to get last date from any available data
+        end_date = self._try_get_last_date_from_any_data()
+        if end_date:
+            return end_date
+        
+        # Strategy 3: Fallback to current date (but warn user)
+        tprint_warning("⚠️ [ARES_DATA_LOADER] Could not detect last available data date, using current date")
+        tprint_warning("   → This may result in missing data if the latest data is not available")
+        return datetime.now()
+
+    def _try_get_last_date_from_symbol(self, symbol: str, interval: str) -> Optional[datetime]:
+        """Try to get last date from specific symbol/interval."""
+        try:
+            tprint_debug(f"🔍 [ARES_DATA_LOADER] Checking last date for {symbol} ({interval})")
+            
+            # Try processed data first
+            data_info = self.klines_manager.get_data_info(symbol=symbol, interval=interval, data_type="processed")
+            if data_info and data_info.get("available") and data_info.get("date_range"):
+                _, max_date = data_info["date_range"]
+                end_date = pd.to_datetime(max_date)
+                if hasattr(end_date, 'tz') and end_date.tz is not None:
+                    end_date = end_date.tz_localize(None)
+                end_date = end_date.replace(hour=23, minute=59, second=59, microsecond=999999)
+                tprint_success(f"✅ [ARES_DATA_LOADER] Found last date from processed data: {end_date.strftime('%Y-%m-%d')}")
+                return end_date
+            
+            # Try raw data if processed not available
+            data_info = self.klines_manager.get_data_info(symbol=symbol, interval=interval, data_type="raw")
+            if data_info and data_info.get("available") and data_info.get("date_range"):
+                _, max_date = data_info["date_range"]
+                end_date = pd.to_datetime(max_date)
+                if hasattr(end_date, 'tz') and end_date.tz is not None:
+                    end_date = end_date.tz_localize(None)
+                end_date = end_date.replace(hour=23, minute=59, second=59, microsecond=999999)
+                tprint_success(f"✅ [ARES_DATA_LOADER] Found last date from raw data: {end_date.strftime('%Y-%m-%d')}")
+                return end_date
+                
+        except Exception as e:
+            tprint_debug(f"⚠️ [ARES_DATA_LOADER] Error getting last date from {symbol} ({interval}): {e}")
+        
+        return None
+
+    def _try_get_last_date_from_any_data(self) -> Optional[datetime]:
+        """Try to get last date from any available data."""
+        try:
+            tprint_debug("🔍 [ARES_DATA_LOADER] Checking last date from any available data")
+            
+            # Get list of available datasets
+            available_data = self.klines_manager.list_available_data()
+            if not available_data:
+                tprint_debug("⚠️ [ARES_DATA_LOADER] No available data found")
+                return None
+            
+            # Find the most recent date across all datasets
+            latest_date = None
+            for data_info in available_data:
+                if data_info.get("date_range"):
+                    _, max_date = data_info["date_range"]
+                    if max_date:
+                        current_date = pd.to_datetime(max_date)
+                        if hasattr(current_date, 'tz') and current_date.tz is not None:
+                            current_date = current_date.tz_localize(None)
+                        
+                        if latest_date is None or current_date > latest_date:
+                            latest_date = current_date
+            
+            if latest_date:
+                latest_date = latest_date.replace(hour=23, minute=59, second=59, microsecond=999999)
+                tprint_success(f"✅ [ARES_DATA_LOADER] Found latest date from available data: {latest_date.strftime('%Y-%m-%d')}")
+                return latest_date
+                
+        except Exception as e:
+            tprint_debug(f"⚠️ [ARES_DATA_LOADER] Error getting last date from any data: {e}")
+        
+        return None
 
     def load_data_with_mode(
         self,

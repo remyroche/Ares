@@ -41,7 +41,7 @@ from .tprint import (
 from .common_operations import ensure_directory
 from .version_manager import get_version_manager
 from ..config.pipeline_modes import get_mode_config, get_mode_lookback_days
-from ..data.ares_launcher_data_loader import AresLauncherDataLoader
+from ..utils.data.ares_launcher_data_loader import AresLauncherDataLoader
 
 # Type definitions for better type safety
 T = TypeVar('T')

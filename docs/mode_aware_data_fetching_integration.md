@@ -10,13 +10,15 @@ The integration allows all pipeline steps to automatically use the correct data 
 - **blank**: 180 days (6 months) - Quick testing mode with moderate dataset  
 - **light**: 20 days - Development mode with minimal dataset
 
+**Key Feature**: The lookback period is calculated from the **latest available data point**, not from the current time. This ensures that steps always work with the most recent data available, regardless of when they are executed.
+
 This eliminates the need for each step to manually implement mode-specific data fetching logic.
 
 ## Key Components
 
 ### 1. Enhanced ArtifactManager
 
-The `ArtifactManager` class now includes mode-aware data fetching methods:
+The `ArtifactManager` class now includes mode-aware data fetching methods that automatically calculate lookback periods from the latest available data point:
 
 ```python
 # Load data with mode-aware lookback
@@ -64,6 +66,28 @@ class MyStep(BaseStep):
         
         return {'success': True, 'data': data}
 ```
+
+## Date Calculation Strategy
+
+The system uses a sophisticated multi-strategy approach to ensure lookback periods are calculated from the latest available data point:
+
+### Strategy 1: Symbol-Specific Detection
+- If symbol and interval are provided, check for the latest data for that specific combination
+- Try processed data first, then raw data if processed is not available
+
+### Strategy 2: Global Data Detection  
+- If symbol-specific detection fails, scan all available datasets
+- Find the most recent date across all available data
+
+### Strategy 3: Fallback to Current Time
+- Only used if no data is available at all
+- Includes warning messages to alert users about potential data gaps
+
+This ensures that:
+- ✅ Steps always use the most recent data available
+- ✅ Lookback periods are calculated from actual data, not current time
+- ✅ The system gracefully handles missing or incomplete data
+- ✅ Users are warned when falling back to current time
 
 ## Mode Configuration
 
@@ -261,10 +285,12 @@ Get the current execution mode.
 ## Benefits
 
 1. **Automatic Compliance**: Steps automatically use the correct lookback period based on execution mode
-2. **Consistent Interface**: All steps use the same methods for mode-aware data loading
-3. **Easy Migration**: Existing steps can be easily updated to use mode-aware data fetching
-4. **Centralized Configuration**: Mode definitions are centralized in `pipeline_modes.py`
-5. **Backward Compatibility**: Existing code continues to work without changes
+2. **Latest Data Usage**: Lookback periods are calculated from the latest available data point, not current time
+3. **Consistent Interface**: All steps use the same methods for mode-aware data loading
+4. **Easy Migration**: Existing steps can be easily updated to use mode-aware data fetching
+5. **Centralized Configuration**: Mode definitions are centralized in `pipeline_modes.py`
+6. **Backward Compatibility**: Existing code continues to work without changes
+7. **Robust Date Detection**: Multiple fallback strategies ensure we always find the latest available data
 
 ## Migration Guide
 
@@ -302,17 +328,22 @@ Get the current execution mode.
 
 ## Testing
 
-Run the example to test mode-aware data fetching:
+Run the examples to test mode-aware data fetching:
 
 ```bash
+# Test basic mode-aware data fetching
 python src/examples/mode_aware_data_fetching_example.py
+
+# Test lookback calculation from latest data point
+python src/examples/test_lookback_from_latest_data.py
 ```
 
 This will demonstrate:
 - Loading data in different modes (light/blank/full)
-- Automatic lookback period application
+- Automatic lookback period application from latest available data
 - Mode configuration retrieval
 - Error handling for missing data
+- Verification that lookback periods are calculated from latest data, not current time
 
 ## Troubleshooting
 

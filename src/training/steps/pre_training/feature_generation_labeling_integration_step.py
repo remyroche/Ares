@@ -36,8 +36,8 @@ class LabelingIntegrationResult:
 
 
 class FeatureGenerationLabelingIntegrationStep(BaseStep):
-    def __init__(self, config: Optional[Dict[str, Any]] = None) -> None:
-        super().__init__("feature_generation_labeling_integration_step", config)
+    def __init__(self, step_name: str, config: Optional[Dict[str, Any]] = None) -> None:
+        super().__init__(step_name, config)
 
 
     async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
@@ -55,7 +55,25 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
         # Get data from config
         data = config.get('data')
         if data is None or not isinstance(data, pd.DataFrame) or data.empty:
-            raise ValueError("Input data must be a non‑empty DataFrame")
+            # Attempt to auto-load data if not provided
+            try:
+                from .feature_generation_data_validation_step import FeatureGenerationDataValidationStep
+                loader = FeatureGenerationDataValidationStep("feature_generation_data_validation_step")
+                symbol = config.get('symbol', 'ETHUSDT')
+                timeframe = config.get('timeframe', '15m')
+                exchange = config.get('exchange', 'binance')
+                start_date = config.get('start_date')
+                end_date = config.get('end_date')
+                lookback_days = config.get('lookback_days')
+                
+                loaded = await loader._load_data_for_validation(
+                    symbol, timeframe, exchange, start_date, end_date, lookback_days
+                )
+                data = loaded
+                tprint_info(f"✅ Auto-loaded data: {len(data)} rows")
+            except Exception as e:
+                tprint_error(f"❌ Failed to auto-load data: {e}")
+                raise ValueError(f"Input data must be a non‑empty DataFrame and auto-loading failed: {e}")
 
         # Cache hit path using BaseStep artifact methods
         cached_labeled = self._load_dataframe('labeled_dataframe')
@@ -82,40 +100,40 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
             raise ValueError(f"Missing required columns for labeling: {missing}")
 
         # Run multi‑horizon labeler
-            try:
-                from src.training.steps.pre_training.profit_labeling.volatility_aware_labeler import create_enhanced_analyst_labeler
-                labeler = create_enhanced_analyst_labeler()
-                lr = labeler.generate_labels(data)
-                labels_df = getattr(lr, 'labels', pd.DataFrame())
-                if labels_df is None or labels_df.empty:
-                    raise ValueError('Labeling produced no label columns')
+        try:
+            from src.training.steps.pre_training.profit_labeling.volatility_aware_labeler import create_enhanced_analyst_labeler
+            labeler = create_enhanced_analyst_labeler()
+            lr = labeler.generate_labels(data)
+            labels_df = getattr(lr, 'labels', pd.DataFrame())
+            if labels_df is None or labels_df.empty:
+                raise ValueError('Labeling produced no label columns')
 
-                # Handle both Series and DataFrame cases
-                if isinstance(labels_df, pd.Series):
-                    # Single target case - use the series directly
-                    targets = labels_df.dropna().astype(float)
-                    target_name = labels_df.name or 'target'
-                else:
-                    # Multiple targets case - prefer columns that contain 'target'
-                    target_cols = [c for c in labels_df.columns if 'target' in str(c).lower()]
-                    target_col = target_cols[0] if target_cols else labels_df.select_dtypes(include=[np.number]).columns[0]
-                    targets = labels_df[target_col].dropna().astype(float)
-                    target_name = target_col
+            # Handle both Series and DataFrame cases
+            if isinstance(labels_df, pd.Series):
+                # Single target case - use the series directly
+                targets = labels_df.dropna().astype(float)
+                target_name = labels_df.name or 'target'
+            else:
+                # Multiple targets case - prefer columns that contain 'target'
+                target_cols = [c for c in labels_df.columns if 'target' in str(c).lower()]
+                target_col = target_cols[0] if target_cols else labels_df.select_dtypes(include=[np.number]).columns[0]
+                targets = labels_df[target_col].dropna().astype(float)
+                target_name = target_col
 
-                # Align and build labeled DataFrame
-                common_idx = data.index.intersection(targets.index)
-                labeled = data.loc[common_idx].copy()
-                targets = targets.loc[common_idx]
-                labeled[target_name] = targets
-                tprint_success(f"✅ Labeled {len(targets)} samples (var={targets.var():.6f})")
-            except Exception as e:
-                # Fallback to simple returns to keep the pipeline moving if labeler unavailable
-                tprint_warning(f"⚠️ Multi‑Horizon labeler failed: {e}; falling back to simple returns")
-                if 'close' not in data.columns:
-                    raise
-                targets = data['close'].pct_change().shift(-1).fillna(0.0).astype(float)
-                labeled = data.copy()
-                labeled['target'] = targets
+            # Align and build labeled DataFrame
+            common_idx = data.index.intersection(targets.index)
+            labeled = data.loc[common_idx].copy()
+            targets = targets.loc[common_idx]
+            labeled[target_name] = targets
+            tprint_success(f"✅ Labeled {len(targets)} samples (var={targets.var():.6f})")
+        except Exception as e:
+            # Fallback to simple returns to keep the pipeline moving if labeler unavailable
+            tprint_warning(f"⚠️ Multi‑Horizon labeler failed: {e}; falling back to simple returns")
+            if 'close' not in data.columns:
+                raise
+            targets = data['close'].pct_change().shift(-1).fillna(0.0).astype(float)
+            labeled = data.copy()
+            labeled['target'] = targets
 
         # Save artifacts using BaseStep methods
         try:
@@ -160,13 +178,13 @@ async def handle_feature_generation_labeling_integration_step(
     **kwargs: Any
 ) -> LabelingIntegrationResult:
     """Execute labeling integration and persist artifacts (launcher compatibility)."""
-    step = FeatureGenerationLabelingIntegrationStep()
+    step = FeatureGenerationLabelingIntegrationStep("feature_generation_labeling_integration_step")
 
     # Attempt lazy load if data not provided
     if data is None or not isinstance(data, pd.DataFrame) or data.empty:
         try:
             from .feature_generation_data_validation_step import FeatureGenerationDataValidationStep  # type: ignore
-            loader = FeatureGenerationDataValidationStep()
+            loader = FeatureGenerationDataValidationStep("feature_generation_data_validation_step")
             loaded = await loader._load_data_for_validation(  # noqa: SLF001
                 symbol, timeframe, exchange, start_date, end_date, lookback_days
             )

@@ -99,23 +99,30 @@ class FeatureSelector:
     - Return final feature set
     """
 
-    def __init__(self, config: FeatureSelectorConfig = None):
+    def __init__(self, config: FeatureSelectorConfig = None) -> None:
         """Initialize the FeatureSelector."""
+        tprint("🚀 Initializing FeatureSelector", "INFO")
         self.config = config or FeatureSelectorConfig()
-        self.selection_metadata = {}
+        self.selection_metadata: Dict[str, Any] = {}
+        tprint_debug(f"Selector config: {self.config.__dict__}")
 
         # Initialize hardware optimization components
+        tprint("⚡ Initializing hardware optimization components", "INFO")
         self._initialize_hardware_optimization()
 
         # Initialize matrix operations for efficient computations
+        tprint("🔢 Initializing matrix operations", "INFO")
         self.matrix_ops = get_unified_matrix_operations(
             enable_gpu=True,
             enable_memory_optimization=True,
             enable_parallel=True
         )
+        tprint_debug("Matrix operations initialized with GPU and parallel processing")
 
         # Initialize HPO for parameter optimization
+        tprint("🎯 Initializing hyperparameter optimization", "INFO")
         self.hpo_optimizer = HyperparameterOptimization()
+        tprint_debug("HyperparameterOptimization initialized")
 
     def _initialize_hardware_optimization(self):
         """Initialize hardware optimization components using shared utilities."""

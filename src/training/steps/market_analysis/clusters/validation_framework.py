@@ -7,7 +7,7 @@ clustering system to ensure correctness, stability, and performance.
 
 import numpy as np
 import pandas as pd
-from typing import Dict, List, Tuple, Optional, Any, Set
+from typing import Dict, List, Tuple, Optional, Any, Set, Union, Callable, Awaitable
 from dataclasses import dataclass, field
 import hashlib
 import time
@@ -108,7 +108,7 @@ class ClusteringValidator:
         self,
         features: np.ndarray,
         stats: ClusteringStats,
-        sample_size: int = None
+        sample_size: Optional[int] = None
     ) -> bool:
         """Validate that incremental updates match full recomputation."""
         tprint(f"🔍 Validating incremental correctness with sample size: {sample_size}", "DEBUG")

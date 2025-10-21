@@ -11,7 +11,7 @@ This module provides feature analysis capabilities including:
 
 import numpy as np
 import pandas as pd
-from typing import Dict, List, Optional, Tuple, Union, Any
+from typing import Dict, List, Optional, Tuple, Union, Any, Callable, Awaitable
 from dataclasses import dataclass, field
 import warnings
 from sklearn.decomposition import PCA
@@ -112,27 +112,38 @@ class FeatureAnalyzer:
     - Generate feature stability reports
     """
 
-    def __init__(self, config: FeatureAnalyzerConfig = None):
+    def __init__(self, config: FeatureAnalyzerConfig = None) -> None:
         """Initialize the FeatureAnalyzer."""
+        tprint("🚀 Initializing FeatureAnalyzer", "INFO")
         self.config = config or FeatureAnalyzerConfig()
-        self.analysis_results = {}
+        self.analysis_results: Dict[str, Any] = {}
+        tprint_debug(f"Analyzer config: {self.config.__dict__}")
 
         # Initialize hardware optimization components
+        tprint("⚡ Initializing hardware optimization components", "INFO")
         self._initialize_hardware_optimization()
 
         # Initialize matrix operations for efficient computations
+        tprint("🔢 Initializing matrix operations", "INFO")
         self.matrix_ops = get_unified_matrix_operations(
             enable_gpu=True,
             enable_memory_optimization=True,
             enable_parallel=True
         )
+        tprint_debug("Matrix operations initialized with GPU and parallel processing")
 
         # Initialize ML common utilities if available
+        tprint("🤖 Initializing ML common utilities", "INFO")
         if ML_COMMON_AVAILABLE:
             self.hpo_optimizer = HyperparameterOptimization()
+            tprint_debug("HyperparameterOptimization initialized")
             self.unified_evaluator = UnifiedEvaluator()
+            tprint_debug("UnifiedEvaluator initialized")
             self.feature_selection_framework = FeatureSelectionFramework()
+            tprint_debug("FeatureSelectionFramework initialized")
+            tprint("✅ ML common utilities initialized", "SUCCESS")
         else:
+            tprint("⚠️ ML common utilities not available", "WARNING")
             self.hpo_optimizer = None
             self.unified_evaluator = None
             self.feature_selection_framework = None

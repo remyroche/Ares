@@ -20,30 +20,39 @@ from .step1_feature_preparation import ClusteringContext
 class ValidationStep:
     """Step 8: Clustering validation and robustness testing."""
 
-    def __init__(self, verbose: bool = True):
+    def __init__(self, verbose: bool = True) -> None:
         """Initialize the validation step."""
+        tprint("🚀 Initializing ValidationStep", "INFO")
         self.verbose = verbose
         self.logger = get_logger('ValidationStep')
+        tprint_debug(f"Validation step verbose mode: {verbose}")
 
     async def execute(self, context: ClusteringContext, config: Any) -> ClusteringContext:
         """Execute validation step."""
         try:
             tprint("Step 8: Starting clustering validation...", "INFO")
+            tprint_debug(f"Context features shape: {context.optimized_features.shape}")
+            tprint_debug(f"Context assignments shape: {context.optimized_assignments.shape}")
+            tprint_debug(f"Market data shape: {context.market_data.shape}")
 
             # Perform comprehensive validation
+            tprint("🔍 Performing comprehensive clustering validation", "INFO")
             validation_results = await self._validate_clustering_robustness(
                 context.optimized_features,
                 context.optimized_assignments,
                 context.market_data
             )
             context.validation_results = validation_results
+            tprint_debug(f"Validation results keys: {list(validation_results.keys())}")
 
             # Assess regime stability
+            tprint("🔄 Assessing regime stability", "INFO")
             stability_results = await self._assess_regime_stability(
                 context.optimized_features,
                 context.optimized_assignments
             )
             context.stability_results = stability_results
+            tprint_debug(f"Stability results keys: {list(stability_results.keys())}")
 
             tprint("Step 8: Validation completed successfully", "SUCCESS")
             return context

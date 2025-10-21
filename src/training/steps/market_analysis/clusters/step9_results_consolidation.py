@@ -30,25 +30,37 @@ from .step1_feature_preparation import ClusteringContext
 class ResultsConsolidationStep:
     """Step 9: Results consolidation and artifact creation."""
 
-    def __init__(self, verbose: bool = True):
+    def __init__(self, verbose: bool = True) -> None:
         """Initialize the results consolidation step."""
+        tprint("🚀 Initializing ResultsConsolidationStep", "INFO")
         self.verbose = verbose
         self.logger = get_logger('ResultsConsolidationStep')
         self.metrics_calculator = MetricsCalculator(verbose=True)
+        tprint_debug(f"Results consolidation verbose mode: {verbose}")
+        tprint_debug("MetricsCalculator initialized")
 
     async def execute(self, context: ClusteringContext, config: Any) -> Dict[str, Any]:
         """Execute results consolidation step."""
         try:
             tprint("Step 9: Starting results consolidation...", "INFO")
+            tprint_debug(f"Context features shape: {context.optimized_features.shape}")
+            tprint_debug(f"Context assignments shape: {context.optimized_assignments.shape}")
+            tprint_debug(f"Market data shape: {context.market_data.shape}")
 
             # Calculate comprehensive clustering metrics
+            tprint("📊 Calculating comprehensive clustering metrics", "INFO")
             clustering_metrics = await self._calculate_clustering_metrics(context)
+            tprint_debug(f"Clustering metrics keys: {list(clustering_metrics.keys())}")
 
             # Generate cluster characteristics
+            tprint("🔍 Generating cluster characteristics", "INFO")
             cluster_characteristics = await self._generate_cluster_characteristics(context)
+            tprint_debug(f"Cluster characteristics keys: {list(cluster_characteristics.keys())}")
 
             # Create consolidated artifacts
+            tprint("📋 Creating consolidated artifacts", "INFO")
             artifacts = await self._create_consolidated_artifacts(context, config)
+            tprint_debug(f"Artifacts keys: {list(artifacts.keys())}")
 
             # Summarize results
             final_results = await self._summarize_results(

@@ -36,10 +36,12 @@ from .step1_feature_preparation import ClusteringContext
 class InitialClusteringStep:
     """Step 2: Initial clustering and regime assignment extraction."""
 
-    def __init__(self, verbose: bool = True):
+    def __init__(self, verbose: bool = True) -> None:
         """Initialize the initial clustering step."""
+        tprint("🚀 Initializing InitialClusteringStep", "INFO")
         self.verbose = verbose
         self.logger = get_logger('InitialClusteringStep')
+        tprint_debug(f"Step verbose mode: {verbose}")
 
     async def execute(self, context: ClusteringContext, config: Any) -> ClusteringContext:
         """Execute initial clustering step with enhanced monitoring."""

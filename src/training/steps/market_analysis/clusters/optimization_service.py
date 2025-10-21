@@ -20,7 +20,7 @@ from src.utils.math_validation import (
 )
 from src.utils.ml_common.optimization.hpo_utils import HyperparameterOptimization
 
-from ..shared_utils import get_logger
+from .shared_utils import get_logger
 from .step1_feature_preparation import ClusteringContext
 from .iterative_optimization import IterativeOptimization, ClusteringStats
 from .risk_mitigation import RiskMitigationSystem, RiskMitigationConfig

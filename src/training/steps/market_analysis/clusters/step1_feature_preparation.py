@@ -41,7 +41,7 @@ try:
 except ImportError:
     umap = None
 
-from ..shared_utils import (
+from .shared_utils import (
     prepare_market_features,
     FeatureConfig,
     FeaturePreparationResult,

@@ -30,7 +30,7 @@ from src.utils.tprint import (
     tprint_timer, tprint_logged, LogLevel, TimestampFormat
 )
 
-from ..shared_utils import get_logger
+from .shared_utils import get_logger
 from .step1_feature_preparation import ClusteringContext
 
 @dataclass

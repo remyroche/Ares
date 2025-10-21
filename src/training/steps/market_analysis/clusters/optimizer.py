@@ -32,7 +32,7 @@ from src.utils.math_validation import (
 )
 from src.utils.matrix_operations.unified_operations import UnifiedMatrixOperations
 
-from ..shared_utils import get_logger
+from .shared_utils import get_logger
 from .iterative_optimization import ClusteringStats
 
 @dataclass

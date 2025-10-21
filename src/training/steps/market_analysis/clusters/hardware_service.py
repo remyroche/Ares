@@ -27,7 +27,7 @@ from src.utils.math_validation import (
     validate_finite, safe_divide, safe_log, safe_sqrt, safe_power
 )
 
-from ..shared_utils import get_logger
+from .shared_utils import get_logger
 
 @dataclass
 class HardwareCapabilities:

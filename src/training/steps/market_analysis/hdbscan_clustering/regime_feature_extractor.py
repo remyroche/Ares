@@ -22,6 +22,22 @@ from src.utils.hardware import (
 )
 from src.utils.hardware.optimization_decorators import performance_tracked
 
+# Import enhanced data utilities
+from src.utils.data.feature_engineer import FeatureEngineer
+from src.utils.data.processing.data_processing import DataProcessor
+from src.utils.data.quality.data_quality import DataQualityValidator
+from src.utils.data.quality.advanced_quality_metrics import AdvancedQualityMetrics
+
+# Import common operations and math validation
+from src.utils.common_operations import (
+    safe_dataframe_operation, validate_dataframe_columns,
+    safe_numeric_operation, optimize_dataframe_memory
+)
+from src.utils.math_validation import (
+    validate_finite, safe_divide, safe_log, safe_sqrt, safe_power,
+    validate_array, validate_numeric_range, safe_statistical_operation
+)
+
 logger = logging.getLogger(__name__)
 
 @dataclass
@@ -96,7 +112,7 @@ class RegimeFeatureExtractor:
                         market_data: pd.DataFrame,
                         existing_features: Optional[pd.DataFrame] = None) -> pd.DataFrame:
         """
-        Extract regime-specific features from market data.
+        Extract regime-specific features from market data with enhanced validation.
         
         Args:
             market_data: Market data with OHLCV columns
@@ -108,22 +124,51 @@ class RegimeFeatureExtractor:
         try:
             logger.info("🔍 Extracting regime-specific features...")
             
+            # Enhanced input validation using common operations
+            def validate_market_data(df):
+                if df is None or len(df) == 0:
+                    raise ValueError("Market data cannot be None or empty")
+                
+                # Check required columns
+                required_columns = ['open', 'high', 'low', 'close', 'volume']
+                missing_columns = [col for col in required_columns if col not in df.columns]
+                if missing_columns:
+                    raise ValueError(f"Missing required columns: {missing_columns}")
+                
+                # Validate data quality
+                if not validate_finite(df[required_columns].values):
+                    logger.warning("⚠️ Non-finite values found in market data, applying fixes")
+                    df = df.replace([np.inf, -np.inf], np.nan).fillna(method='ffill').fillna(method='bfill')
+                
+                # Optimize memory usage
+                df = optimize_dataframe_memory(df)
+                
+                return df
+            
+            # Use safe dataframe operation for validation
+            validated_data = safe_dataframe_operation(market_data, validate_market_data)
+            
+            # Initialize data quality validator
+            quality_validator = DataQualityValidator()
+            quality_metrics = quality_validator.validate_dataframe(validated_data)
+            logger.info(f"📊 Data quality metrics: {quality_metrics}")
+            
             features_list = []
             feature_names = []
             
-            # Basic regime features
+            # Basic regime features with enhanced validation
             if self.config.include_returns:
-                returns_features, returns_names = self._extract_returns_features(market_data)
+                returns_features, returns_names = self._extract_returns_features_enhanced(validated_data)
                 features_list.append(returns_features)
                 feature_names.extend(returns_names)
             
             if self.config.include_volatility:
-                vol_features, vol_names = self._extract_volatility_features(market_data)
+                vol_features, vol_names = self._extract_volatility_features_enhanced(validated_data)
                 features_list.append(vol_features)
                 feature_names.extend(vol_names)
             
             if self.config.include_volume:
-                volume_features, volume_names = self._extract_volume_features(market_data)
+                volume_features, volume_names = self._extract_volume_features_enhanced(validated_data)
                 features_list.append(volume_features)
                 feature_names.extend(volume_names)
             
@@ -229,9 +274,17 @@ class RegimeFeatureExtractor:
             if existing_features is not None:
                 features_df = pd.concat([existing_features, features_df], axis=1)
             
+            # Validate features are finite
+            if not validate_finite(features_df.values):
+                logger.warning("⚠️ Non-finite values in features, applying fixes")
+                features_df = features_df.replace([np.inf, -np.inf], np.nan).fillna(0)
+            
             # Normalize features
             if self.config.normalize_features:
                 features_df = self._normalize_features(features_df)
+            
+            # Optimize memory usage
+            features_df = optimize_dataframe_default(features_df)
             
             # Store feature names and stats
             self.feature_names = list(features_df.columns)
@@ -2257,3 +2310,218 @@ class RegimeFeatureExtractor:
         except Exception as e:
             logger.debug(f"Chaos indicators calculation failed: {e}")
             return [np.zeros(len(returns)), np.zeros(len(returns))]
+    
+    def _extract_returns_features_enhanced(self, data: pd.DataFrame) -> Tuple[np.ndarray, List[str]]:
+        """Extract returns features with enhanced validation."""
+        try:
+            features = []
+            names = []
+            
+            # Basic returns
+            returns = data['close'].pct_change()
+            
+            # Validate returns are finite
+            if not validate_finite(returns.values):
+                logger.warning("⚠️ Non-finite values in returns, applying fixes")
+                returns = returns.replace([np.inf, -np.inf], np.nan).fillna(0)
+            
+            # Add returns features
+            features.append(returns.values)
+            names.append('returns')
+            
+            # Rolling returns with safe operations
+            for window in [5, 10, 20]:
+                def calculate_rolling_returns():
+                    return returns.rolling(window).mean()
+                
+                rolling_returns = safe_statistical_operation(calculate_rolling_returns, default=pd.Series(0, index=returns.index))
+                features.append(rolling_returns.values)
+                names.append(f'returns_rolling_{window}')
+            
+            return np.column_stack(features), names
+            
+        except Exception as e:
+            logger.error(f"❌ Enhanced returns features failed: {e}")
+            return np.array([]), []
+    
+    def _extract_volatility_features_enhanced(self, data: pd.DataFrame) -> Tuple[np.ndarray, List[str]]:
+        """Extract volatility features with enhanced validation."""
+        try:
+            features = []
+            names = []
+            
+            # Calculate returns
+            returns = data['close'].pct_change()
+            
+            # Validate returns are finite
+            if not validate_finite(returns.values):
+                logger.warning("⚠️ Non-finite values in returns, applying fixes")
+                returns = returns.replace([np.inf, -np.inf], np.nan).fillna(0)
+            
+            # Rolling volatility with safe operations
+            for window in [5, 10, 20]:
+                def calculate_rolling_vol():
+                    return returns.rolling(window).std()
+                
+                rolling_vol = safe_statistical_operation(calculate_rolling_vol, default=pd.Series(0, index=returns.index))
+                features.append(rolling_vol.values)
+                names.append(f'volatility_rolling_{window}')
+            
+            return np.column_stack(features), names
+            
+        except Exception as e:
+            logger.error(f"❌ Enhanced volatility features failed: {e}")
+            return np.array([]), []
+    
+    def _extract_volume_features_enhanced(self, data: pd.DataFrame) -> Tuple[np.ndarray, List[str]]:
+        """Extract volume features with enhanced validation."""
+        try:
+            features = []
+            names = []
+            
+            # Volume features
+            volume = data['volume']
+            
+            # Validate volume is finite
+            if not validate_finite(volume.values):
+                logger.warning("⚠️ Non-finite values in volume, applying fixes")
+                volume = volume.replace([np.inf, -np.inf], np.nan).fillna(0)
+            
+            # Volume features
+            features.append(volume.values)
+            names.append('volume')
+            
+            # Rolling volume with safe operations
+            for window in [5, 10, 20]:
+                def calculate_rolling_volume():
+                    return volume.rolling(window).mean()
+                
+                rolling_volume = safe_statistical_operation(calculate_rolling_volume, default=pd.Series(0, index=volume.index))
+                features.append(rolling_volume.values)
+                names.append(f'volume_rolling_{window}')
+            
+            return np.column_stack(features), names
+            
+        except Exception as e:
+            logger.error(f"❌ Enhanced volume features failed: {e}")
+            return np.array([]), []
+    
+    def _extract_entropy_features_enhanced(self, data: pd.DataFrame) -> Tuple[np.ndarray, List[str]]:
+        """Extract entropy features with enhanced validation."""
+        try:
+            features = []
+            names = []
+            
+            # Calculate returns
+            returns = data['close'].pct_change()
+            
+            # Validate returns are finite
+            if not validate_finite(returns.values):
+                logger.warning("⚠️ Non-finite values in returns, applying fixes")
+                returns = returns.replace([np.inf, -np.inf], np.nan).fillna(0)
+            
+            # Entropy features with safe operations
+            for window in [10, 20, 50]:
+                def calculate_entropy():
+                    rolling_returns = returns.rolling(window)
+                    return rolling_returns.apply(lambda x: self._calculate_entropy(x.dropna()), raw=False)
+                
+                entropy = safe_statistical_operation(calculate_entropy, default=pd.Series(0, index=returns.index))
+                features.append(entropy.values)
+                names.append(f'entropy_rolling_{window}')
+            
+            return np.column_stack(features), names
+            
+        except Exception as e:
+            logger.error(f"❌ Enhanced entropy features failed: {e}")
+            return np.array([]), []
+    
+    def _extract_spectral_features_enhanced(self, data: pd.DataFrame) -> Tuple[np.ndarray, List[str]]:
+        """Extract spectral features with enhanced validation."""
+        try:
+            features = []
+            names = []
+            
+            # Calculate returns
+            returns = data['close'].pct_change()
+            
+            # Validate returns are finite
+            if not validate_finite(returns.values):
+                logger.warning("⚠️ Non-finite values in returns, applying fixes")
+                returns = returns.replace([np.inf, -np.inf], np.nan).fillna(0)
+            
+            # Spectral features with safe operations
+            for window in [20, 50, 100]:
+                def calculate_spectral():
+                    rolling_returns = returns.rolling(window)
+                    return rolling_returns.apply(lambda x: self._calculate_spectral_density(x.dropna()), raw=False)
+                
+                spectral = safe_statistical_operation(calculate_spectral, default=pd.Series(0, index=returns.index))
+                features.append(spectral.values)
+                names.append(f'spectral_rolling_{window}')
+            
+            return np.column_stack(features), names
+            
+        except Exception as e:
+            logger.error(f"❌ Enhanced spectral features failed: {e}")
+            return np.array([]), []
+    
+    def _extract_regime_persistence_features_enhanced(self, data: pd.DataFrame) -> Tuple[np.ndarray, List[str]]:
+        """Extract regime persistence features with enhanced validation."""
+        try:
+            features = []
+            names = []
+            
+            # Calculate returns
+            returns = data['close'].pct_change()
+            
+            # Validate returns are finite
+            if not validate_finite(returns.values):
+                logger.warning("⚠️ Non-finite values in returns, applying fixes")
+                returns = returns.replace([np.inf, -np.inf], np.nan).fillna(0)
+            
+            # Regime persistence features with safe operations
+            for window in [10, 20, 50]:
+                def calculate_persistence():
+                    rolling_returns = returns.rolling(window)
+                    return rolling_returns.apply(lambda x: self._calculate_regime_persistence(x.dropna()), raw=False)
+                
+                persistence = safe_statistical_operation(calculate_persistence, default=pd.Series(0, index=returns.index))
+                features.append(persistence.values)
+                names.append(f'regime_persistence_rolling_{window}')
+            
+            return np.column_stack(features), names
+            
+        except Exception as e:
+            logger.error(f"❌ Enhanced regime persistence features failed: {e}")
+            return np.array([]), []
+    
+    def _extract_regime_transition_features_enhanced(self, data: pd.DataFrame) -> Tuple[np.ndarray, List[str]]:
+        """Extract regime transition features with enhanced validation."""
+        try:
+            features = []
+            names = []
+            
+            # Calculate returns
+            returns = data['close'].pct_change()
+            
+            # Validate returns are finite
+            if not validate_finite(returns.values):
+                logger.warning("⚠️ Non-finite values in returns, applying fixes")
+                returns = returns.replace([np.inf, -np.inf], np.nan).fillna(0)
+            
+            # Regime transition features with safe operations
+            for window in [10, 20, 50]:
+                def calculate_transitions():
+                    rolling_returns = returns.rolling(window)
+                    return rolling_returns.apply(lambda x: self._calculate_regime_transitions(x.dropna()), raw=False)
+                
+                transitions = safe_statistical_operation(calculate_transitions, default=pd.Series(0, index=returns.index))
+                features.append(transitions.values)
+                names.append(f'regime_transitions_rolling_{window}')
+            
+            return np.column_stack(features), names
+            
+        except Exception as e:
+            logger.error(f"❌ Enhanced regime transition features failed: {e}")
+            return np.array([]), []

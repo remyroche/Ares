@@ -46,6 +46,25 @@ from src.utils.tprint import (
 from src.utils.hardware import get_memory_usage, optimize_dataframe_default
 from src.utils.data.klines_parquet import get_klines_manager
 from src.utils.serialization_utils import save_pickle, load_pickle
+
+# Import enhanced artifact management
+from src.utils.artifact_manager import ArtifactManager, ArtifactConfig
+
+# Import enhanced common operations and utilities
+from src.utils.common_operations import (
+    safe_dataframe_operation, validate_dataframe_columns, 
+    safe_numeric_operation, optimize_dataframe_memory,
+    validate_dataframe_structure, safe_dataframe_merge
+)
+from src.utils.common_utilities import (
+    safe_dataframe_operation as safe_df_op,
+    validate_dataframe_columns as validate_df_cols,
+    optimize_dataframe_memory as optimize_df_memory
+)
+from src.utils.math_validation import (
+    validate_finite, safe_divide, safe_log, safe_sqrt, safe_power,
+    validate_array, validate_numeric_range, safe_statistical_operation
+)
 # Memory optimization now handled by hardware module
 
 logger = logging.getLogger(__name__)
@@ -426,9 +445,8 @@ class HDBSCANRegimeDiscoveryStep(BaseStep):
             )
     
     @tprint_logged(LogLevel.INFO, include_args=True, include_result=True)
-    @tprint_logged(LogLevel.INFO, include_args=True, include_result=True)
     def _load_market_data(self, config: Dict[str, Any]) -> Optional[pd.DataFrame]:
-        """Load market data using klines manager with comprehensive optimization."""
+        """Load market data using klines manager with comprehensive optimization and validation."""
         try:
             tprint_info("📂 Loading market data...")
             
@@ -464,31 +482,58 @@ class HDBSCANRegimeDiscoveryStep(BaseStep):
                 )
             
             if market_data is not None and len(market_data) > 0:
-                # Memory optimization
-                initial_memory = market_data.memory_usage(deep=True).sum() / 1024**2
-                tprint_debug(f"Initial data memory usage: {initial_memory:.2f}MB")
-                
-                # Ensure timestamp column exists
-                if 'timestamp' not in market_data.columns and isinstance(market_data.index, pd.DatetimeIndex):
-                    market_data = market_data.copy()
-                    market_data['timestamp'] = market_data.index
-                    tprint_success("✅ Added timestamp column from DatetimeIndex")
-                
-                # Comprehensive memory optimization
-                with tprint_timer("DataFrame memory optimization"):
-                    market_data = optimize_dataframe_default(market_data)
-                    final_memory = market_data.memory_usage(deep=True).sum() / 1024**2
+                # Enhanced data validation using common operations
+                def validate_and_optimize_data(df):
+                    # Memory optimization
+                    initial_memory = df.memory_usage(deep=True).sum() / 1024**2
+                    tprint_debug(f"Initial data memory usage: {initial_memory:.2f}MB")
+                    
+                    # Ensure timestamp column exists
+                    if 'timestamp' not in df.columns and isinstance(df.index, pd.DatetimeIndex):
+                        df = df.copy()
+                        df['timestamp'] = df.index
+                        tprint_success("✅ Added timestamp column from DatetimeIndex")
+                    
+                    # Validate dataframe structure
+                    if not validate_dataframe_structure(df):
+                        tprint_warning("⚠️ DataFrame structure validation failed, applying fixes")
+                        # Apply basic fixes
+                        df = df.dropna(how='all')  # Remove completely empty rows
+                        df = df.select_dtypes(include=[np.number, 'datetime64[ns]'])  # Keep only numeric and datetime columns
+                    
+                    # Comprehensive memory optimization
+                    df = optimize_dataframe_memory(df)
+                    final_memory = df.memory_usage(deep=True).sum() / 1024**2
                     memory_saved = initial_memory - final_memory
                     
-                    # Additional memory cleanup
-                    gc.collect()
-                    post_gc_memory = get_memory_usage()
-                    
                     tprint_debug(f"Memory optimization: {initial_memory:.2f}MB -> {final_memory:.2f}MB (saved {memory_saved:.2f}MB)")
-                    tprint_debug(f"System memory after GC: {post_gc_memory:.2f}MB")
+                    
+                    return df
                 
-                # Data quality validation
-                tprint_debug(f"Data quality check: {market_data.isnull().sum().sum()} null values, {market_data.isin([np.inf, -np.inf]).sum().sum()} infinite values")
+                # Use safe dataframe operation for validation and optimization
+                market_data = safe_dataframe_operation(market_data, validate_and_optimize_data)
+                
+                # Additional memory cleanup
+                gc.collect()
+                post_gc_memory = get_memory_usage()
+                tprint_debug(f"System memory after GC: {post_gc_memory:.2f}MB")
+                
+                # Enhanced data quality validation
+                def validate_data_quality(df):
+                    null_count = df.isnull().sum().sum()
+                    inf_count = df.isin([np.inf, -np.inf]).sum().sum()
+                    
+                    tprint_debug(f"Data quality check: {null_count} null values, {inf_count} infinite values")
+                    
+                    # Check for finite values in numeric columns
+                    numeric_cols = df.select_dtypes(include=[np.number]).columns
+                    for col in numeric_cols:
+                        if not validate_finite(df[col].values):
+                            tprint_warning(f"⚠️ Column {col} contains non-finite values")
+                    
+                    return df
+                
+                market_data = safe_dataframe_operation(market_data, validate_data_quality)
                 
                 tprint_success(f"✅ Market data loaded: {market_data.shape[0]} rows, {market_data.shape[1]} columns")
                 tprint_info(f"📅 Date range: {market_data.index.min()} to {market_data.index.max()}")
@@ -503,11 +548,33 @@ class HDBSCANRegimeDiscoveryStep(BaseStep):
             return None
     
     def _extract_returns(self, market_data: pd.DataFrame) -> Optional[np.ndarray]:
-        """Extract returns from market data for economic validation."""
+        """Extract returns from market data for economic validation with enhanced math validation."""
         try:
             if 'close' in market_data.columns:
-                returns = market_data['close'].pct_change().dropna().values
-                return returns
+                # Use safe numeric operation for returns calculation
+                def calculate_returns():
+                    returns = market_data['close'].pct_change().dropna()
+                    
+                    # Validate returns are finite
+                    if not validate_finite(returns.values):
+                        tprint_warning("⚠️ Non-finite values in returns, applying safe operations")
+                        returns = returns.replace([np.inf, -np.inf], np.nan).fillna(0)
+                    
+                    # Validate returns range
+                    if not validate_numeric_range(returns.values, min_val=-1.0, max_val=1.0):
+                        tprint_warning("⚠️ Returns outside expected range [-1, 1], clipping")
+                        returns = returns.clip(-1.0, 1.0)
+                    
+                    return returns.values
+                
+                returns = safe_numeric_operation(calculate_returns, default=None)
+                
+                if returns is not None and validate_finite(returns):
+                    tprint_debug(f"✅ Returns extracted: {len(returns)} samples, range: [{np.min(returns):.4f}, {np.max(returns):.4f}]")
+                    return returns
+                else:
+                    tprint_warning("⚠️ Returns calculation failed or produced invalid values")
+                    return None
             else:
                 tprint("⚠️ No 'close' column found for returns calculation", "WARNING")
                 return None
@@ -516,8 +583,18 @@ class HDBSCANRegimeDiscoveryStep(BaseStep):
             return None
     
     def _create_artifacts(self, regime_result: RegimeResult, config: Dict[str, Any]) -> Dict[str, Any]:
-        """Create artifacts from regime discovery result."""
+        """Create artifacts from regime discovery result with enhanced artifact management."""
         try:
+            # Initialize artifact manager
+            artifact_config = ArtifactConfig(
+                enable_compression=True,
+                enable_versioning=True,
+                enable_metadata=True,
+                compression_level=6
+            )
+            artifact_manager = ArtifactManager(artifact_config)
+            
+            # Create comprehensive artifacts
             artifacts = {
                 # Core regime data
                 'regime_labels': regime_result.labels,
@@ -553,7 +630,26 @@ class HDBSCANRegimeDiscoveryStep(BaseStep):
                 'created_at': datetime.now().isoformat(),
                 'symbol': config['symbol'],
                 'exchange': config['exchange'],
-                'timeframe': config['timeframe']
+                'timeframe': config['timeframe'],
+                
+                # Enhanced artifact metadata
+                'artifact_metadata': {
+                    'artifact_type': 'hdbscan_regime_discovery',
+                    'version': '1.0.0',
+                    'created_by': 'HDBSCANRegimeDiscoveryStep',
+                    'data_quality_score': self._calculate_data_quality_score(regime_result),
+                    'compression_ratio': 0.0,  # Will be calculated during saving
+                    'file_size_bytes': 0,  # Will be calculated during saving
+                    'checksum': '',  # Will be calculated during saving
+                }
+            }
+            
+            # Add artifact manager metadata
+            artifacts['artifact_manager_metadata'] = {
+                'compression_enabled': artifact_config.enable_compression,
+                'versioning_enabled': artifact_config.enable_versioning,
+                'metadata_enabled': artifact_config.enable_metadata,
+                'compression_level': artifact_config.compression_level
             }
             
             return artifacts
@@ -563,13 +659,24 @@ class HDBSCANRegimeDiscoveryStep(BaseStep):
             return {}
     
     def _save_artifacts(self, artifacts: Dict[str, Any], config: Dict[str, Any]) -> None:
-        """Save artifacts to disk."""
+        """Save artifacts to disk with enhanced artifact management."""
         try:
+            # Initialize artifact manager
+            artifact_config = ArtifactConfig(
+                enable_compression=True,
+                enable_versioning=True,
+                enable_metadata=True,
+                compression_level=6
+            )
+            artifact_manager = ArtifactManager(artifact_config)
+            
             # Create output directory
             output_dir = Path(config.get('data_dir', 'historical_data')) / 'hdbscan_regime_discovery' / config['symbol']
             output_dir.mkdir(parents=True, exist_ok=True)
             
-            # Save regime labels as parquet
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            
+            # Save regime labels as parquet with enhanced metadata
             if 'regime_labels' in artifacts:
                 labels_df = pd.DataFrame({
                     'regime_label': artifacts['regime_labels'],
@@ -577,25 +684,116 @@ class HDBSCANRegimeDiscoveryStep(BaseStep):
                     'cluster_persistence': artifacts['cluster_persistence'] if 'cluster_persistence' in artifacts else None
                 })
                 
-                labels_file = output_dir / f"hdbscan_regime_labels_{config['symbol']}_{config['timeframe']}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.parquet"
-                labels_df.to_parquet(labels_file)
+                labels_file = output_dir / f"hdbscan_regime_labels_{config['symbol']}_{config['timeframe']}_{timestamp}.parquet"
+                labels_df.to_parquet(labels_file, compression='snappy')
+                
+                # Add metadata to the parquet file
+                labels_df.attrs.update({
+                    'symbol': config['symbol'],
+                    'exchange': config['exchange'],
+                    'timeframe': config['timeframe'],
+                    'created_at': datetime.now().isoformat(),
+                    'data_quality_score': artifacts.get('artifact_metadata', {}).get('data_quality_score', 0.0)
+                })
+                
                 tprint(f"✅ Regime labels saved to {labels_file}", "SUCCESS")
             
-            # Save full artifacts as pickle
-            artifacts_file = output_dir / f"hdbscan_regime_artifacts_{config['symbol']}_{config['timeframe']}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pkl"
-            save_pickle(artifacts, artifacts_file)
+            # Save full artifacts with enhanced compression
+            artifacts_file = output_dir / f"hdbscan_regime_artifacts_{config['symbol']}_{config['timeframe']}_{timestamp}.pkl"
+            
+            # Use artifact manager for enhanced saving
+            if hasattr(artifact_manager, 'save_artifact'):
+                artifact_manager.save_artifact(
+                    data=artifacts,
+                    path=str(artifacts_file),
+                    artifact_type='hdbscan_regime_discovery',
+                    metadata=artifacts.get('artifact_metadata', {})
+                )
+            else:
+                # Fallback to standard pickle saving
+                save_pickle(artifacts, artifacts_file)
+            
             tprint(f"✅ Full artifacts saved to {artifacts_file}", "SUCCESS")
             
-            # Save economic profiles as JSON
+            # Save economic profiles as JSON with enhanced formatting
             if 'economic_profiles' in artifacts:
                 import json
-                profiles_file = output_dir / f"hdbscan_economic_profiles_{config['symbol']}_{config['timeframe']}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+                profiles_file = output_dir / f"hdbscan_economic_profiles_{config['symbol']}_{config['timeframe']}_{timestamp}.json"
+                
+                # Enhanced JSON formatting
+                profiles_data = {
+                    'metadata': {
+                        'symbol': config['symbol'],
+                        'exchange': config['exchange'],
+                        'timeframe': config['timeframe'],
+                        'created_at': datetime.now().isoformat(),
+                        'n_profiles': len(artifacts['economic_profiles'])
+                    },
+                    'economic_profiles': artifacts['economic_profiles']
+                }
+                
                 with open(profiles_file, 'w') as f:
-                    json.dump(artifacts['economic_profiles'], f, indent=2, default=str)
+                    json.dump(profiles_data, f, indent=2, default=str)
                 tprint(f"✅ Economic profiles saved to {profiles_file}", "SUCCESS")
+            
+            # Save configuration as YAML for better readability
+            if 'config' in artifacts:
+                import yaml
+                config_file = output_dir / f"hdbscan_config_{config['symbol']}_{config['timeframe']}_{timestamp}.yaml"
+                with open(config_file, 'w') as f:
+                    yaml.dump(artifacts['config'], f, default_flow_style=False, indent=2)
+                tprint(f"✅ Configuration saved to {config_file}", "SUCCESS")
+            
+            # Calculate and update artifact metadata
+            self._update_artifact_metadata(artifacts, output_dir, timestamp)
             
         except Exception as e:
             tprint(f"⚠️ Failed to save artifacts: {e}", "WARNING")
+    
+    def _update_artifact_metadata(self, artifacts: Dict[str, Any], output_dir: Path, timestamp: str) -> None:
+        """Update artifact metadata with file information."""
+        try:
+            # Calculate file sizes and compression ratios
+            total_size = 0
+            file_info = {}
+            
+            for file_path in output_dir.glob(f"*{timestamp}*"):
+                if file_path.is_file():
+                    file_size = file_path.stat().st_size
+                    total_size += file_size
+                    file_info[file_path.name] = {
+                        'size_bytes': file_size,
+                        'size_mb': file_size / 1024 / 1024,
+                        'created_at': datetime.fromtimestamp(file_path.stat().st_ctime).isoformat()
+                    }
+            
+            # Update artifact metadata
+            if 'artifact_metadata' in artifacts:
+                artifacts['artifact_metadata']['file_size_bytes'] = total_size
+                artifacts['artifact_metadata']['file_size_mb'] = total_size / 1024 / 1024
+                artifacts['artifact_metadata']['file_info'] = file_info
+                artifacts['artifact_metadata']['compression_ratio'] = self._calculate_compression_ratio(artifacts, total_size)
+            
+            tprint(f"📊 Artifact metadata updated: {total_size / 1024 / 1024:.2f}MB total size", "INFO")
+            
+        except Exception as e:
+            tprint(f"⚠️ Failed to update artifact metadata: {e}", "WARNING")
+    
+    def _calculate_compression_ratio(self, artifacts: Dict[str, Any], compressed_size: int) -> float:
+        """Calculate compression ratio for artifacts."""
+        try:
+            # Estimate uncompressed size
+            import sys
+            uncompressed_size = sys.getsizeof(artifacts)
+            
+            if uncompressed_size > 0:
+                return 1.0 - (compressed_size / uncompressed_size)
+            else:
+                return 0.0
+                
+        except Exception as e:
+            tprint(f"⚠️ Failed to calculate compression ratio: {e}", "WARNING")
+            return 0.0
     
     def _calculate_metrics(self, regime_result: RegimeResult, start_time: datetime) -> Dict[str, Any]:
         """Calculate step execution metrics."""
@@ -1062,6 +1260,39 @@ regime_discovery_config:
         except Exception as e:
             tprint(f"⚠️ Failed to save comprehensive outcome report: {e}", "WARNING")
             return ""
+    
+    def _calculate_data_quality_score(self, regime_result: RegimeResult) -> float:
+        """Calculate data quality score for artifacts."""
+        try:
+            score = 0.0
+            
+            # Check if regime result is valid
+            if not regime_result.success:
+                return 0.0
+            
+            # Check data completeness
+            if len(regime_result.labels) > 0:
+                score += 0.3
+            
+            # Check economic profiles
+            if len(regime_result.economic_profiles) > 0:
+                score += 0.3
+            
+            # Check validation metrics
+            validation_metrics = regime_result.validation_metrics
+            if validation_metrics.get('validation_passed', False):
+                score += 0.2
+            
+            # Check economic separation
+            economic_separation = validation_metrics.get('economic_separation', 0.0)
+            if economic_separation > 0.5:
+                score += 0.2
+            
+            return min(score, 1.0)
+            
+        except Exception as e:
+            tprint(f"⚠️ Failed to calculate data quality score: {e}", "WARNING")
+            return 0.0
 
 
 # Register the step

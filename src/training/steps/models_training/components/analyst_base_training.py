@@ -26,7 +26,7 @@ from ..core.analyst_base_trainer import (
 )
 from src.training.steps.base_step import BaseStep
 from src.utils.logger import system_logger
-from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success, tprint_debug, tprint_performance
+from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success, tprint_debug, tprint_performance, tprint_data_format
 from src.core.decorators import handles_errors, traced, log_execution_time
 from src.utils.hardware.integrated_hardware_manager import (
     get_integrated_hardware_manager, WorkloadType, process_ml_training_data
@@ -127,6 +127,9 @@ class AnalystBaseTraining(BaseStep):
         
         tprint_info(f"🔧 Initialized AnalystBaseTraining: {name}")
         self.logger.info(f"Initialized AnalystBaseTraining: {name}")
+        
+        # Debug configuration format for troubleshooting
+        tprint_data_format(self.config.__dict__, "analyst_base_config", level=tprint.LogLevel.DEBUG)
     
     @handles_errors(
         exceptions=(ValueError, RuntimeError, MemoryError),
@@ -214,6 +217,10 @@ class AnalystBaseTraining(BaseStep):
             if not isinstance(y_train, pd.Series):
                 y_train = pd.Series(y_train)
             
+            # Debug data format for troubleshooting
+            tprint_data_format(X_train, "X_train", level=tprint.LogLevel.INFO)
+            tprint_data_format(y_train, "y_train", level=tprint.LogLevel.INFO)
+            
             # Train models
             training_result = await self._trainer.train(X_train, y_train)
             
@@ -232,6 +239,11 @@ class AnalystBaseTraining(BaseStep):
                 training_time=training_result.training_time,
                 feature_importance=self._extract_feature_importance(training_result)
             )
+            
+            # Debug training result format for troubleshooting
+            tprint_data_format(result.metrics, "training_metrics", level=tprint.LogLevel.INFO)
+            if result.feature_importance:
+                tprint_data_format(result.feature_importance, "feature_importance", level=tprint.LogLevel.INFO)
             
             # Auto-save if enabled
             if self.config.auto_save:
@@ -286,6 +298,10 @@ class AnalystBaseTraining(BaseStep):
             if not isinstance(y_val, pd.Series):
                 y_val = pd.Series(y_val)
             
+            # Debug validation data format for troubleshooting
+            tprint_data_format(X_val, "X_val", level=tprint.LogLevel.INFO)
+            tprint_data_format(y_val, "y_val", level=tprint.LogLevel.INFO)
+            
             # Validate models
             validation_result = await self._trainer.validate(X_val, y_val)
             
@@ -335,6 +351,9 @@ class AnalystBaseTraining(BaseStep):
             # Convert to pandas if needed
             if not isinstance(X_pred, pd.DataFrame):
                 X_pred = pd.DataFrame(X_pred)
+            
+            # Debug prediction data format for troubleshooting
+            tprint_data_format(X_pred, "X_pred", level=tprint.LogLevel.INFO)
             
             # Make predictions
             prediction_result = await self._trainer.predict(X_pred)

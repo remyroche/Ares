@@ -53,21 +53,29 @@ class KlinesDataProcessingPipeline(BaseStep):
     backward compatibility and additional convenience methods.
     """
     
-    def __init__(self, step_name: str = "data_download", data_dir: str = "historical_data", exchange: str = "binance"):
+    def __init__(self, step_name: str = "data_download", config: Optional[Dict[str, Any]] = None, exchange: str = "binance"):
         """Initialize the klines data processing pipeline as an autonomous step.
 
         Args:
             step_name: Name for this autonomous step
-            data_dir: Base directory for historical data
-            exchange: Default exchange name
+            config: Configuration dictionary (when called by launcher) or data_dir string (legacy)
+            exchange: Default exchange name (only used when config is None)
         """
         super().__init__(step_name)
-        self.data_dir = data_dir
-        self.exchange = exchange.lower()
+        
+        # Handle both launcher call (config dict) and legacy call (data_dir string)
+        if isinstance(config, dict):
+            self.data_dir = config.get('data_dir', 'historical_data')
+            self.exchange = config.get('exchange', 'binance').lower()
+        else:
+            # Legacy call - config is actually data_dir string
+            self.data_dir = config if config else 'historical_data'
+            self.exchange = exchange.lower()
+            
         self.logger = system_logger.getChild("KlinesDataProcessingPipeline")
 
         # Try to import and initialize components dynamically
-        self._initialize_components(data_dir, exchange)
+        self._initialize_components(self.data_dir, self.exchange)
 
         # Quality checker will be initialized when first used
         self._quality_checker: Optional[KlinesDataQualityChecker] = None
@@ -109,10 +117,13 @@ class KlinesDataProcessingPipeline(BaseStep):
             from .enhanced_klines_processing_pipeline import (
                 EnhancedKlinesProcessingPipeline,
                 ResamplingConfig,
+                PipelineConfig,
                 process_klines_data_enhanced
             )
             ENHANCED_PIPELINE_AVAILABLE = True
-            self.enhanced_pipeline = EnhancedKlinesProcessingPipeline(data_dir, exchange)
+            # Create proper config for enhanced pipeline
+            config = PipelineConfig(data_dir=data_dir, exchange=exchange)
+            self.enhanced_pipeline = EnhancedKlinesProcessingPipeline(config)
             self.logger.info("Enhanced pipeline available")
         except ImportError as e:
             ENHANCED_PIPELINE_AVAILABLE = False
@@ -814,6 +825,67 @@ class KlinesDataProcessingPipeline(BaseStep):
                 "warnings": [],
                 "success": False,
                 "error": str(e)
+            }
+
+    async def run(self, config: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Run the klines data processing pipeline as a BaseStep.
+        
+        This method is called by the ares_launcher.py and extracts parameters
+        from the config dictionary to run the complete pipeline.
+        
+        Args:
+            config: Configuration dictionary containing:
+                - symbol: Trading symbol (e.g., "ETHUSDT")
+                - exchange: Exchange name (e.g., "binance") 
+                - interval: Time interval (e.g., "1m")
+                - years: Number of years of data to download
+                - api_key: Exchange API key
+                - api_secret: Exchange API secret
+                - max_gap_minutes: Maximum allowed gap in minutes
+                - create_consolidated: Whether to create consolidated features file
+                - resampling_intervals: List of intervals for resampling
+                
+        Returns:
+            Dictionary containing execution results
+        """
+        try:
+            # Extract parameters from config with defaults
+            symbol = config.get('symbol', 'ETHUSDT')
+            exchange = config.get('exchange', self.exchange)
+            interval = config.get('interval', '1m')
+            years = config.get('years', None)
+            api_key = config.get('api_key', '')
+            api_secret = config.get('api_secret', '')
+            max_gap_minutes = config.get('max_gap_minutes', 1)
+            create_consolidated = config.get('create_consolidated', True)
+            resampling_intervals = config.get('resampling_intervals', None)
+            
+            self.logger.info(f"🚀 Starting klines data processing for {symbol} on {exchange}")
+            
+            # Run the complete pipeline
+            result = await self.run_complete_pipeline(
+                symbol=symbol,
+                years=years,
+                interval=interval,
+                api_key=api_key,
+                api_secret=api_secret,
+                max_gap_minutes=max_gap_minutes,
+                create_consolidated=create_consolidated,
+                resampling_intervals=resampling_intervals
+            )
+            
+            self.logger.info(f"✅ Klines data processing completed for {symbol}")
+            return result
+            
+        except Exception as e:
+            error_msg = f"❌ Klines data processing failed: {e}"
+            self.logger.error(error_msg)
+            return {
+                "success": False,
+                "error": str(e),
+                "symbol": config.get('symbol', 'unknown'),
+                "exchange": config.get('exchange', 'unknown')
             }
 
 class KlinesDataQualityChecker:

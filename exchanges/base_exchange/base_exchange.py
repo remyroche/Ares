@@ -209,7 +209,7 @@ class ExchangeRegistry:
     
     def __init__(self):
         self.logger = logging.getLogger(f"{__name__}.ExchangeRegistry")
-        self._exchanges: Dict[str, BaseExchange] = {}
+        self._exchanges: Dict[str, 'BaseExchange'] = {}
         self._exchange_configs: Dict[str, Dict[str, Any]] = {}
         self._active_exchanges: Set[str] = set()
         self._lock = asyncio.Lock()
@@ -217,7 +217,7 @@ class ExchangeRegistry:
     async def register_exchange(
         self,
         name: str,
-        exchange: BaseExchange,
+        exchange: 'BaseExchange',
         config: Optional[Dict[str, Any]] = None
     ) -> None:
         """Register an exchange"""
@@ -249,7 +249,7 @@ class ExchangeRegistry:
             self.logger.info(f"Unregistered exchange: {name}")
             return True
     
-    async def get_exchange(self, name: str) -> Optional[BaseExchange]:
+    async def get_exchange(self, name: str) -> Optional['BaseExchange']:
         """Get an exchange by name"""
         return self._exchanges.get(name)
     
@@ -1299,7 +1299,7 @@ class MultiExchangeBase:
     Provides functionality to route requests to multiple exchanges.
     """
 
-    def __init__(self, exchanges: Dict[str, BaseExchange]):
+    def __init__(self, exchanges: Dict[str, 'BaseExchange']):
         self.exchanges = exchanges
         self.logger = logging.getLogger(f"{self.__class__.__module__}.{self.__class__.__name__}")
 

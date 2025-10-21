@@ -24,8 +24,9 @@ import pandas as pd
 
 # Hardware optimization imports
 from .hardware.integrated_hardware_manager import (
-    get_integrated_hardware_manager, IntegratedHardwareManager, WorkloadType
+    get_integrated_hardware_manager, IntegratedHardwareManager
 )
+from .hardware.constants import WorkloadType
 from .hardware.unified_hardware_manager import (
     get_unified_hardware_manager, UnifiedHardwareManager, OptimizationLevel
 )

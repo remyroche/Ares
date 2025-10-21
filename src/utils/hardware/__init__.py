@@ -113,10 +113,19 @@ from .m1_neural_engine_manager import (
     get_neural_engine_metrics
 )
 
+# Lazy import to avoid circular imports
+def get_comprehensive_optimizer(config=None):
+    """Lazy import of get_comprehensive_optimizer to avoid circular imports."""
+    try:
+        from .m1_comprehensive_optimizer import get_comprehensive_optimizer as _get_comprehensive_optimizer
+        return _get_comprehensive_optimizer(config)
+    except ImportError:
+        return None
+
+# Import other items normally
 from .m1_comprehensive_optimizer import (
     M1ComprehensiveOptimizer, ComprehensiveConfig, OptimizationStrategy,
-    WorkloadCategory, OptimizationResult, get_comprehensive_optimizer,
-    m1_optimized, get_m1_comprehensive_metrics
+    WorkloadCategory, OptimizationResult, m1_optimized, get_m1_comprehensive_metrics
 )
 
 # Import enhanced hardware optimizations

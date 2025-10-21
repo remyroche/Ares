@@ -24,7 +24,7 @@ import psutil
 from src.utils.tprint import (
     tprint, tprint_info, tprint_success, tprint_warning, tprint_error,
     tprint_debug, tprint_performance, tprint_progress, tprint_timer,
-    tprint_logged, LogLevel
+    tprint_logged, tprint_data_format, LogLevel
 )
 from src.utils.common_operations import safe_dataframe_operation
 from src.utils.common_utilities import safe_dataframe_operation as safe_df_op
@@ -458,11 +458,17 @@ class HDBSCANRegimeDiscovery:
             tprint_info(f"🔍 Starting regime discovery: fit={fit}, live={is_live}")
             tprint_debug(f"Data shape: {data.shape}, Memory usage: {initial_memory:.2f}MB")
             
+            # Enhanced data format analysis for troubleshooting
+            tprint_data_format(data, "input_market_data", level=LogLevel.INFO)
+            
             # Enhanced memory optimization using hardware tools
             with self.hardware_manager.optimization_context(WorkloadType.ML_TRAINING, OptimizationLevel.AGGRESSIVE):
                 data = optimize_dataframe_default(data)
                 optimized_memory = get_memory_usage()
                 tprint_debug(f"Memory after enhanced optimization: {optimized_memory:.2f}MB (saved {initial_memory - optimized_memory:.2f}MB)")
+                
+                # Data format analysis after optimization
+                tprint_data_format(data, "optimized_market_data", level=LogLevel.DEBUG)
             
             # Use optimized implementation if enabled
             if self.use_optimized:
@@ -476,6 +482,13 @@ class HDBSCANRegimeDiscovery:
             tprint("📊 Step 1: Feature extraction", "INFO")
             with self.hardware_manager.optimization_context(WorkloadType.FEATURE_ENGINEERING, OptimizationLevel.AGGRESSIVE):
                 feature_result = self.feature_extractor.extract_features(data)
+                
+                # Data format analysis for feature extraction results
+                if feature_result.success and hasattr(feature_result, 'features_df'):
+                    tprint_data_format(feature_result.features_df, "extracted_features", level=LogLevel.INFO)
+                else:
+                    tprint_data_format(feature_result, "feature_extraction_result", level=LogLevel.ERROR)
+                
                 if not feature_result.success:
                     return RegimeResult(
                         labels=np.array([]),
@@ -495,6 +508,13 @@ class HDBSCANRegimeDiscovery:
                 processed_result = self.feature_processor.process(
                     feature_result.features_df, fit=fit
                 )
+                
+                # Data format analysis for preprocessing results
+                if processed_result.success and hasattr(processed_result, 'processed_features_df'):
+                    tprint_data_format(processed_result.processed_features_df, "processed_features", level=LogLevel.INFO)
+                else:
+                    tprint_data_format(processed_result, "preprocessing_result", level=LogLevel.ERROR)
+                
                 if not processed_result.success:
                     return RegimeResult(
                         labels=np.array([]),
@@ -514,6 +534,10 @@ class HDBSCANRegimeDiscovery:
                 reduced_features, dr_metadata = self.dimensionality_reducer.reduce(
                     processed_result.processed_features_df.values, fit=fit
                 )
+                
+                # Data format analysis for dimensionality reduction results
+                tprint_data_format(reduced_features, "reduced_features", level=LogLevel.INFO)
+                tprint_data_format(dr_metadata, "dimensionality_reduction_metadata", level=LogLevel.DEBUG)
             
             # Step 4: Temporal windowing
             tprint("🔄 Step 4: Temporal windowing", "INFO")
@@ -527,6 +551,14 @@ class HDBSCANRegimeDiscovery:
                 cluster_result = self.hdbscan_clusterer.fit_predict(
                     reduced_features, window_metadata['n_effective_samples']
                 )
+                
+                # Data format analysis for clustering results
+                if hasattr(cluster_result, 'labels'):
+                    tprint_data_format(cluster_result.labels, "cluster_labels", level=LogLevel.INFO)
+                if hasattr(cluster_result, 'probabilities'):
+                    tprint_data_format(cluster_result.probabilities, "cluster_probabilities", level=LogLevel.INFO)
+                if hasattr(cluster_result, 'metadata'):
+                    tprint_data_format(cluster_result.metadata, "clustering_metadata", level=LogLevel.DEBUG)
             
             # Step 6: Noise handling
             tprint("🔧 Step 6: Noise handling", "INFO")

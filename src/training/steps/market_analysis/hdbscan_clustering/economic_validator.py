@@ -19,7 +19,7 @@ import time
 from src.utils.tprint import (
     tprint, tprint_info, tprint_success, tprint_warning, tprint_error,
     tprint_debug, tprint_performance, tprint_progress, tprint_timer,
-    tprint_logged, LogLevel
+    tprint_logged, tprint_data_format, LogLevel
 )
 
 logger = logging.getLogger(__name__)
@@ -112,6 +112,14 @@ class EconomicValidator:
         try:
             tprint_info("🔍 Starting economic validation and profiling...")
             tprint_debug(f"Input shapes: cluster_labels={cluster_labels.shape}, market_data={market_data.shape}")
+            
+            # Enhanced data format analysis for troubleshooting
+            tprint_data_format(cluster_labels, "input_cluster_labels", level=LogLevel.INFO)
+            tprint_data_format(market_data, "input_market_data", level=LogLevel.INFO)
+            if returns is not None:
+                tprint_data_format(returns, "input_returns", level=LogLevel.INFO)
+            if features_df is not None:
+                tprint_data_format(features_df, "input_features_df", level=LogLevel.INFO)
             
             # Calculate returns if not provided
             if returns is None:

@@ -43,7 +43,7 @@ from src.utils.common_operations import (
 )
 from src.utils.hardware import optimize_dataframe_default, get_memory_usage
 from src.utils.math_validation import validate_positive, validate_range
-from src.utils.tprint import tprint_info, tprint_success, tprint_warning, tprint_error, tprint_performance, tprint_data_preview
+from src.utils.tprint import tprint_info, tprint_success, tprint_warning, tprint_error, tprint_performance, tprint_data_preview, tprint_data_format, LogLevel
 
 logger = logging.getLogger(__name__)
 
@@ -190,6 +190,11 @@ class HDBSCANRegimeOptimizer:
         with memory_monitor("HDBSCAN Regime Optimization"):
             tprint_info(f"🚀 Starting optimized regime discovery for {symbol} {timeframe}")
             
+            # Enhanced data format analysis for troubleshooting
+            tprint_data_format(data, "input_ohlcv_data", level=LogLevel.INFO)
+            if target is not None:
+                tprint_data_format(target, "input_target", level=LogLevel.INFO)
+            
             # Step 1: Feature Processing
             if self.config.enable_feature_processing:
                 tprint_info("🔄 Step 1: Feature Processing")
@@ -298,6 +303,9 @@ class HDBSCANRegimeOptimizer:
             
             # Final data preview of results
             tprint_data_preview(results, "optimization_results", level="INFO")
+            
+            # Enhanced data format analysis for final results
+            tprint_data_format(results, "optimization_results", level=LogLevel.INFO)
             
             tprint_success(f"✅ Optimized regime discovery completed in {total_time:.2f}s")
             

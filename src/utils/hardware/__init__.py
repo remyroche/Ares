@@ -161,7 +161,7 @@ __author__ = "Ares Trading System"
 __description__ = "Enhanced Hardware Utilities with Caching and Optimization"
 
 # Default configurations with intelligent dynamic memory allocation
-def get_dynamic_cache_config(workload_type: WorkloadType = WorkloadType.MODERATE,
+def get_dynamic_cache_config(workload_type: WorkloadType = WorkloadType.GENERAL,
                            data_size_mb: Optional[float] = None,
                            user_preferences: Optional[Dict[str, Any]] = None) -> CacheConfig:
     """Get cache configuration with intelligent dynamic memory allocation."""

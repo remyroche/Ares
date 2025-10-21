@@ -221,36 +221,38 @@ def memory_efficient(
                     data_size_mb = np.prod(args[0].shape) * 8 / (1024 * 1024)  # Assume float64
                 
                 # Auto-adjust memory threshold based on data size
-                if memory_threshold_mb is None:
+                local_memory_threshold_mb = memory_threshold_mb
+                local_optimization_level = optimization_level
+                if local_memory_threshold_mb is None:
                     if data_size_mb > 1000:  # Large dataset
-                        memory_threshold_mb = 2000.0
-                        optimization_level = optimization_level or OptimizationLevel.AGGRESSIVE
+                        local_memory_threshold_mb = 2000.0
+                        local_optimization_level = local_optimization_level or OptimizationLevel.AGGRESSIVE
                     elif data_size_mb > 100:  # Medium dataset
-                        memory_threshold_mb = 500.0
-                        optimization_level = optimization_level or OptimizationLevel.BALANCED
+                        local_memory_threshold_mb = 500.0
+                        local_optimization_level = local_optimization_level or OptimizationLevel.BALANCED
                     else:  # Small dataset
-                        memory_threshold_mb = 100.0
-                        optimization_level = optimization_level or OptimizationLevel.MINIMAL
+                        local_memory_threshold_mb = 100.0
+                        local_optimization_level = local_optimization_level or OptimizationLevel.MINIMAL
                 
                 # Auto-adjust optimization level based on function name
-                if optimization_level is None:
+                if local_optimization_level is None:
                     func_name = func.__name__.lower()
                     if any(keyword in func_name for keyword in ['ensemble', 'comprehensive', 'stability']):
                         optimization_level = OptimizationLevel.AGGRESSIVE
                     elif any(keyword in func_name for keyword in ['correlation', 'mutual', 'variance']):
-                        optimization_level = OptimizationLevel.BALANCED
+                        local_optimization_level = OptimizationLevel.BALANCED
                     else:
                         optimization_level = OptimizationLevel.MINIMAL
             
             # Use defaults if not auto-detected
-            memory_threshold_mb = memory_threshold_mb or 100.0
+            local_memory_threshold_mb = local_memory_threshold_mb or 100.0
             optimization_level = optimization_level or OptimizationLevel.BALANCED
             
             # Check memory usage before execution
             initial_memory = cache._get_current_memory_usage()
             initial_memory_mb = initial_memory / (1024 * 1024)
             
-            if initial_memory_mb > memory_threshold_mb and auto_cleanup:
+            if initial_memory_mb > local_memory_threshold_mb and auto_cleanup:
                 tprint_warning(f"High memory usage detected: {initial_memory_mb:.1f}MB, cleaning up...")
                 cache._aggressive_cleanup()
             
@@ -288,11 +290,11 @@ def memory_efficient(
                 final_memory_mb = final_memory / (1024 * 1024)
                 memory_delta = final_memory_mb - initial_memory_mb
                 
-                if memory_delta > memory_threshold_mb:
+                if memory_delta > local_memory_threshold_mb:
                     tprint_warning(f"Function {func.__name__} used {memory_delta:.1f}MB additional memory")
                 
                 # Auto cleanup if enabled
-                if auto_cleanup and final_memory_mb > memory_threshold_mb * 1.5:
+                if auto_cleanup and final_memory_mb > local_memory_threshold_mb * 1.5:
                     cache._evict_items(0.2)  # Evict 20% of items
                 
                 return result

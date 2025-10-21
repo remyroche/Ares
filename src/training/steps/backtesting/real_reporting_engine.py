@@ -26,6 +26,7 @@ from src.utils.math_validation import safe_divide, safe_log, safe_sqrt, validate
 from src.utils.matrix_operations.unified_operations import get_unified_matrix_operations
 from src.utils.ml_common.evaluation import ModelEvaluator
 from src.core.decorators import handles_errors, traced, log_execution_time
+from src.utils.tprint import tprint_data_preview
 
 # VectorBT optimizations
 from src.feature_generation.utils.vectorbt_rolling_optimizer import VectorBTRollingOptimizer
@@ -127,6 +128,9 @@ class RealReportingEngine:
                             test_name: str = "backtest_report") -> Dict[str, Any]:
         """Generate comprehensive backtest report."""
         self.logger.info(f"📊 Generating {self.config.report_type.value} report: {test_name}")
+        
+        # Preview input backtest results for troubleshooting
+        tprint_data_preview(backtest_results, f"reporting_input_backtest_results_{test_name}", level="DEBUG", include_metadata=True)
 
         try:
             # Initialize report
@@ -158,6 +162,9 @@ class RealReportingEngine:
 
             # Generate summary
             report['summary'] = self._generate_summary(report['sections'])
+            
+            # Preview final report before saving
+            tprint_data_preview(report, f"reporting_final_report_{test_name}", level="INFO", include_metadata=True)
 
             # Save report
             await self._save_report(report, test_name)
@@ -176,6 +183,9 @@ class RealReportingEngine:
     async def _generate_performance_metrics(self, backtest_results: Dict[str, Any]) -> Dict[str, Any]:
         """Generate performance metrics section."""
         self.logger.info("📈 Generating performance metrics")
+        
+        # Preview performance metrics input data
+        tprint_data_preview(backtest_results, "reporting_performance_metrics_input", level="DEBUG", include_metadata=True)
 
         try:
             metrics = {}
@@ -184,12 +194,18 @@ class RealReportingEngine:
             if 'performance_metrics' in backtest_results:
                 basic_metrics = backtest_results['performance_metrics']
                 metrics.update(basic_metrics)
+                
+                # Preview basic metrics
+                tprint_data_preview(basic_metrics, "reporting_basic_performance_metrics", level="DEBUG", include_metadata=True)
 
             # Calculate additional metrics
             if 'equity_curve' in backtest_results:
                 equity_curve = backtest_results['equity_curve']
                 if isinstance(equity_curve, list):
                     equity_curve = np.array(equity_curve)
+                
+                # Preview equity curve data
+                tprint_data_preview(equity_curve, "reporting_equity_curve_data", level="DEBUG", max_rows=10, include_metadata=True)
 
                 # Use VectorBT for enhanced performance calculations
                 equity_series = pd.Series(equity_curve)
@@ -309,6 +325,9 @@ class RealReportingEngine:
                 metrics.setdefault('capacity_utilization', turnover_metrics.get('capacity_utilization', 0.0))
                 metrics.setdefault('market_impact_cost', turnover_metrics.get('market_impact_cost', 0.0))
 
+            # Preview calculated performance metrics
+            tprint_data_preview(metrics, "reporting_calculated_performance_metrics", level="INFO", include_metadata=True)
+            
             return {
                 'metrics': metrics,
                 'timestamp': datetime.now().isoformat()
@@ -321,6 +340,9 @@ class RealReportingEngine:
     async def _generate_risk_analysis(self, backtest_results: Dict[str, Any]) -> Dict[str, Any]:
         """Generate risk analysis section."""
         self.logger.info("⚠️ Generating risk analysis")
+        
+        # Preview risk analysis input data
+        tprint_data_preview(backtest_results, "reporting_risk_analysis_input", level="DEBUG", include_metadata=True)
 
         try:
             risk_analysis = {}
@@ -334,6 +356,9 @@ class RealReportingEngine:
                 returns = np.diff(equity_curve) / equity_curve[:-1]
 
             if returns is not None:
+                # Preview returns data for risk analysis
+                tprint_data_preview(returns, "reporting_risk_analysis_returns", level="DEBUG", max_rows=10, include_metadata=True)
+                
                 # Value at Risk (VaR)
                 risk_analysis['var_95'] = np.percentile(returns, 5)
                 risk_analysis['var_99'] = np.percentile(returns, 1)
@@ -364,6 +389,9 @@ class RealReportingEngine:
                         risk_analysis['beta'] = covariance / benchmark_variance if benchmark_variance > 0 else 0
                         risk_analysis['alpha'] = risk_analysis.get('annualized_return', 0) - risk_analysis['beta'] * np.mean(benchmark_returns) * 252
 
+            # Preview calculated risk analysis
+            tprint_data_preview(risk_analysis, "reporting_calculated_risk_analysis", level="INFO", include_metadata=True)
+            
             return {
                 'risk_metrics': risk_analysis,
                 'timestamp': datetime.now().isoformat()
@@ -376,12 +404,18 @@ class RealReportingEngine:
     async def _generate_trade_analysis(self, backtest_results: Dict[str, Any]) -> Dict[str, Any]:
         """Generate trade analysis section."""
         self.logger.info("📊 Generating trade analysis")
+        
+        # Preview trade analysis input data
+        tprint_data_preview(backtest_results, "reporting_trade_analysis_input", level="DEBUG", include_metadata=True)
 
         try:
             trade_analysis = {}
 
             if 'trade_log' in backtest_results:
                 trade_log = backtest_results['trade_log']
+                
+                # Preview trade log data
+                tprint_data_preview(trade_log, "reporting_trade_log_data", level="DEBUG", max_rows=5, include_metadata=True)
 
                 if trade_log:
                     # Basic trade statistics
@@ -442,6 +476,9 @@ class RealReportingEngine:
                             'percentile_75': np.percentile(profits, 75)
                         }
 
+            # Preview calculated trade analysis
+            tprint_data_preview(trade_analysis, "reporting_calculated_trade_analysis", level="INFO", include_metadata=True)
+            
             return {
                 'trade_statistics': trade_analysis,
                 'timestamp': datetime.now().isoformat()
@@ -454,6 +491,9 @@ class RealReportingEngine:
     async def _generate_portfolio_analysis(self, backtest_results: Dict[str, Any]) -> Dict[str, Any]:
         """Generate portfolio analysis section."""
         self.logger.info("💼 Generating portfolio analysis")
+        
+        # Preview portfolio analysis input data
+        tprint_data_preview(backtest_results, "reporting_portfolio_analysis_input", level="DEBUG", include_metadata=True)
 
         try:
             portfolio_analysis = {}
@@ -503,6 +543,9 @@ class RealReportingEngine:
                         portfolio_analysis['max_position_size'] = np.max(position_sizes)
                         portfolio_analysis['min_position_size'] = np.min(position_sizes)
 
+            # Preview calculated portfolio analysis
+            tprint_data_preview(portfolio_analysis, "reporting_calculated_portfolio_analysis", level="INFO", include_metadata=True)
+            
             return {
                 'portfolio_metrics': portfolio_analysis,
                 'timestamp': datetime.now().isoformat()
@@ -654,6 +697,9 @@ class RealReportingEngine:
     async def _generate_vectorbt_analytics(self, backtest_results: Dict[str, Any]) -> Dict[str, Any]:
         """Generate VectorBT analytics section."""
         self.logger.info("⚡ Generating VectorBT analytics")
+        
+        # Preview VectorBT analytics input data
+        tprint_data_preview(backtest_results, "reporting_vectorbt_analytics_input", level="DEBUG", include_metadata=True)
 
         try:
             vectorbt_analytics = {}
@@ -745,6 +791,9 @@ class RealReportingEngine:
             # Store analytics
             self.vectorbt_analytics[backtest_results.get('test_name', 'default')] = vectorbt_analytics
 
+            # Preview calculated VectorBT analytics
+            tprint_data_preview(vectorbt_analytics, "reporting_calculated_vectorbt_analytics", level="INFO", include_metadata=True)
+            
             return {
                 'analytics': vectorbt_analytics,
                 'timestamp': datetime.now().isoformat(),
@@ -866,6 +915,9 @@ class RealReportingEngine:
     def _generate_summary(self, sections: Dict[str, Any]) -> Dict[str, Any]:
         """Generate report summary."""
         try:
+            # Preview sections for summary generation
+            tprint_data_preview(sections, "reporting_sections_for_summary", level="DEBUG", include_metadata=True)
+            
             summary = {
                 'report_generated': datetime.now().isoformat(),
                 'sections_included': list(sections.keys()),
@@ -894,6 +946,9 @@ class RealReportingEngine:
                     'profit_factor': trade_stats.get('profit_factor', 0)
                 })
 
+            # Preview generated summary
+            tprint_data_preview(summary, "reporting_generated_summary", level="INFO", include_metadata=True)
+            
             return summary
 
         except Exception as e:
@@ -903,6 +958,9 @@ class RealReportingEngine:
     async def _save_report(self, report: Dict[str, Any], test_name: str):
         """Save report to file."""
         try:
+            # Preview report before saving
+            tprint_data_preview(report, f"reporting_report_to_save_{test_name}", level="DEBUG", include_metadata=True)
+            
             if self.config.output_format == "json":
                 # Save as JSON
                 report_path = Path(self.config.output_dir) / f"{test_name}.json"

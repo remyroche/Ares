@@ -43,6 +43,7 @@ from src.utils.common_operations import (
     safe_append, safe_extend, safe_dict_get, safe_lower, safe_upper,
     format_datetime, validate_file_path, get_file_size, check_disk_space
 )
+from src.utils.tprint import tprint_data_preview
 from src.utils.math_validation import (
     safe_divide, safe_log, safe_sqrt, safe_power, validate_finite,
     validate_positive, validate_range, safe_kelly_calculation,
@@ -216,6 +217,10 @@ class StatisticalAnalyzer:
 
         self.logger.info("📈 Starting comprehensive statistical analysis...")
         start_time = time.time()
+        
+        # Preview input data for troubleshooting
+        tprint_data_preview(model_results, "abc_testing_input_model_results", level="DEBUG", include_metadata=True)
+        tprint_data_preview(metrics, "abc_testing_input_metrics", level="DEBUG", include_metadata=True)
 
         try:
             # Extract data for analysis
@@ -223,18 +228,27 @@ class StatisticalAnalyzer:
 
             # Perform statistical tests
             test_results = await self._perform_statistical_tests(analysis_data, metrics)
+            
+            # Preview test results
+            tprint_data_preview(test_results, "abc_testing_statistical_test_results", level="DEBUG", max_rows=5)
 
             # Calculate effect sizes
             effect_sizes = await self._calculate_effect_sizes(analysis_data, metrics)
 
             # Perform power analysis
             power_analysis = await self._perform_power_analysis(analysis_data, metrics)
+            
+            # Preview power analysis results
+            tprint_data_preview(power_analysis, "abc_testing_power_analysis_results", level="DEBUG", include_metadata=True)
 
             # Apply multiple comparison correction
             multiple_comparison_correction = await self._apply_multiple_comparison_correction(test_results)
 
             # Perform bootstrap analysis
             bootstrap_results = await self._perform_bootstrap_analysis(analysis_data, metrics)
+            
+            # Preview bootstrap results
+            tprint_data_preview(bootstrap_results, "abc_testing_bootstrap_results", level="DEBUG", max_rows=3)
 
             # Generate recommendations
             recommendations = await self._generate_statistical_recommendations(
@@ -259,6 +273,9 @@ class StatisticalAnalyzer:
                 recommendations=recommendations,
                 overall_conclusion=overall_conclusion
             )
+            
+            # Preview final comprehensive result
+            tprint_data_preview(result.__dict__, "abc_testing_final_comparison_result", level="INFO", include_metadata=True)
 
             execution_time = time.time() - start_time
             self.logger.info(f"✅ Statistical analysis completed in {execution_time:.2f}s")
@@ -277,6 +294,14 @@ class StatisticalAnalyzer:
                               metrics: List[str]) -> Dict[str, Dict[str, np.ndarray]]:
         """Extract data for statistical analysis."""
         self.logger.info("📊 Extracting analysis data...")
+        
+        # Preview extraction parameters
+        extraction_params = {
+            'n_models': len(model_results),
+            'n_metrics': len(metrics),
+            'metrics': metrics
+        }
+        tprint_data_preview(extraction_params, "abc_testing_extraction_params", level="DEBUG", include_metadata=True)
 
         analysis_data = {}
 
@@ -307,12 +332,25 @@ class StatisticalAnalyzer:
                     analysis_data[model_id][metric] = np.array([])
 
         self.logger.info(f"✅ Extracted data for {len(analysis_data)} models and {len(metrics)} metrics")
+        
+        # Preview extracted analysis data
+        tprint_data_preview(analysis_data, "abc_testing_extracted_analysis_data", level="DEBUG", include_metadata=True)
+        
         return analysis_data
 
     async def _perform_statistical_tests(self, analysis_data: Dict[str, Dict[str, np.ndarray]],
                                        metrics: List[str]) -> List[StatisticalTestResult]:
         """Perform all configured statistical tests."""
         self.logger.info("🔬 Performing statistical tests...")
+        
+        # Preview test configuration
+        test_config = {
+            'n_tests': len(self.config.tests),
+            'tests': [t.value for t in self.config.tests],
+            'alpha': self.config.alpha,
+            'confidence_level': self.config.confidence_level
+        }
+        tprint_data_preview(test_config, "abc_testing_statistical_test_config", level="DEBUG", include_metadata=True)
 
         test_results = []
 
@@ -346,6 +384,15 @@ class StatisticalAnalyzer:
                         continue
 
         self.logger.info(f"✅ Completed {len(test_results)} statistical tests")
+        
+        # Preview test results summary
+        test_summary = {
+            'total_tests': len(test_results),
+            'significant_tests': len([t for t in test_results if t.significant]),
+            'failed_assumptions': len([t for t in test_results if not t.assumptions_met])
+        }
+        tprint_data_preview(test_summary, "abc_testing_test_results_summary", level="INFO", include_metadata=True)
+        
         return test_results
 
     async def _perform_single_test(self, test_type: StatisticalTest, data1: np.ndarray,
@@ -519,6 +566,14 @@ class StatisticalAnalyzer:
                                     metrics: List[str]) -> Dict[str, float]:
         """Calculate effect sizes for all comparisons using VectorBT optimizations."""
         self.logger.info("📏 Calculating effect sizes with VectorBT optimizations...")
+        
+        # Preview effect size calculation parameters
+        effect_params = {
+            'n_effect_size_methods': len(self.config.effect_size_methods),
+            'methods': [m.value for m in self.config.effect_size_methods],
+            'enable_vectorbt': True
+        }
+        tprint_data_preview(effect_params, "abc_testing_effect_size_params", level="DEBUG", include_metadata=True)
 
         effect_sizes = {}
 
@@ -559,6 +614,17 @@ class StatisticalAnalyzer:
                     self.logger.warning(f"⚠️ VectorBT effect size calculation failed for {model1_id} vs {model2_id} on {metric}: {e}")
 
         self.logger.info(f"✅ Calculated {len(effect_sizes)} effect sizes with VectorBT optimizations")
+        
+        # Preview effect sizes summary
+        if effect_sizes:
+            effect_summary = {
+                'total_effect_sizes': len(effect_sizes),
+                'large_effects': len([v for v in effect_sizes.values() if abs(v) > 0.8]),
+                'medium_effects': len([v for v in effect_sizes.values() if 0.5 < abs(v) <= 0.8]),
+                'small_effects': len([v for v in effect_sizes.values() if abs(v) <= 0.5])
+            }
+            tprint_data_preview(effect_summary, "abc_testing_effect_sizes_summary", level="INFO", include_metadata=True)
+        
         return effect_sizes
 
     def _calculate_single_effect_size(self, method: EffectSizeMethod, data1: np.ndarray,
@@ -676,6 +742,13 @@ class StatisticalAnalyzer:
                                     metrics: List[str]) -> Dict[str, float]:
         """Perform power analysis for all comparisons."""
         self.logger.info("⚡ Performing power analysis...")
+        
+        # Preview power analysis parameters
+        power_params = {
+            'power_threshold': self.config.power_threshold,
+            'enable_power_analysis': self.config.enable_power_analysis
+        }
+        tprint_data_preview(power_params, "abc_testing_power_analysis_params", level="DEBUG", include_metadata=True)
 
         power_results = {}
 
@@ -707,6 +780,17 @@ class StatisticalAnalyzer:
                     self.logger.warning(f"⚠️ Could not calculate power for {model1_id} vs {model2_id} on {metric}: {e}")
 
         self.logger.info(f"✅ Calculated power for {len(power_results)} comparisons")
+        
+        # Preview power analysis summary
+        if power_results:
+            power_summary = {
+                'total_comparisons': len(power_results),
+                'high_power': len([v for v in power_results.values() if v >= self.config.power_threshold]),
+                'low_power': len([v for v in power_results.values() if v < self.config.power_threshold]),
+                'avg_power': sum(power_results.values()) / len(power_results)
+            }
+            tprint_data_preview(power_summary, "abc_testing_power_analysis_summary", level="INFO", include_metadata=True)
+        
         return power_results
 
     def _calculate_statistical_power(self, effect_size: float, n1: int, n2: int) -> float:
@@ -786,6 +870,15 @@ class StatisticalAnalyzer:
 
         if not self.config.enable_bootstrap:
             return {}
+        
+        # Preview bootstrap parameters
+        bootstrap_params = {
+            'enable_bootstrap': self.config.enable_bootstrap,
+            'bootstrap_samples': self.config.bootstrap_samples,
+            'bootstrap_confidence_level': self.config.bootstrap_confidence_level,
+            'enable_vectorbt': True
+        }
+        tprint_data_preview(bootstrap_params, "abc_testing_bootstrap_params", level="DEBUG", include_metadata=True)
 
         bootstrap_results = {}
 
@@ -837,6 +930,16 @@ class StatisticalAnalyzer:
                     self.logger.warning(f"⚠️ Could not perform bootstrap for {model1_id} vs {model2_id} on {metric}: {e}")
 
         self.logger.info(f"✅ Completed VectorBT-optimized bootstrap analysis for {len(bootstrap_results)} comparisons")
+        
+        # Preview bootstrap results summary
+        if bootstrap_results:
+            bootstrap_summary = {
+                'total_bootstrap_comparisons': len(bootstrap_results),
+                'vectorbt_optimized': True,
+                'avg_confidence_interval_width': 0.0  # Would need to calculate from actual results
+            }
+            tprint_data_preview(bootstrap_summary, "abc_testing_bootstrap_summary", level="INFO", include_metadata=True)
+        
         return bootstrap_results
 
     def _perform_vectorbt_bootstrap(self, data1: np.ndarray, data2: np.ndarray,

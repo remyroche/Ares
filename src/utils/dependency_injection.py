@@ -217,7 +217,7 @@ def _register_common_operations(container: DependencyInjectionContainer) -> None
             suggest_int_uniform, validate_dataframe, validate_numeric_range,
             validate_dataframe_schema, validate_data_quality, optimize_dataframe_dtypes,
             timed_operation, format_bytes, chunked_iterable, parallel_map,
-            safe_log_metric, safe_log_params, safe_log_artifact, standardize_price_action_probabilities
+            standardize_price_action_probabilities
         )
 
         # Register as singleton services
@@ -235,7 +235,6 @@ def _register_common_operations(container: DependencyInjectionContainer) -> None
         container.register_singleton('optimization_utils', type(optimize_dataframe_dtypes), optimize_dataframe_dtypes)
         container.register_singleton('performance_utils', type(timed_operation), timed_operation)
         container.register_singleton('parallel_utils', type(parallel_map), parallel_map)
-        container.register_singleton('mlflow_utils', type(safe_log_metric), safe_log_metric)
         container.register_singleton('probability_utils', type(standardize_price_action_probabilities), standardize_price_action_probabilities)
 
         logger.debug("✅ Registered common_operations utilities")

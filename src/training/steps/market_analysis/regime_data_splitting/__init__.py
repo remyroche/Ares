@@ -30,13 +30,6 @@ from .regime_data_splitting_component import (
 )
 tprint('✅ Component module imported')
 
-tprint('📦 Importing NAS/TAS regime data splitting module')
-from .nas_tas_regime_data_splitting import (
-    NasTasRegimeDataSplitting,
-    HMMRegimeTagger,
-    execute_nas_tas_regime_data_splitting
-)
-tprint('✅ NAS/TAS regime data splitting module imported')
 
 tprint('📦 Importing main module')
 from .regime_data_splitting_main import (
@@ -78,9 +71,7 @@ tprint('✅ Configuration utilities imported')
 __all__ = [
     # Component classes
     'RegimeDataSplittingComponent',
-    'NasTasRegimeDataSplitting',
     'RegimeDataSplittingStep',
-    'HMMRegimeTagger',
 
     # Data classes
     'RegimeSplittingStatus',
@@ -94,7 +85,6 @@ __all__ = [
     'Step4RegimeDataSplittingValidator',
 
     # Functions
-    'execute_nas_tas_regime_data_splitting',
     'run_validator',
 
     # Validation utilities

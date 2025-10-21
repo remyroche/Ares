@@ -300,28 +300,28 @@ class RegimeModelsTrainingStep(BaseStep):
             
             tprint(f"✅ Loaded regime labels: {len(regime_labels)} labels", "SUCCESS")
 
-                # Try other possible artifact keys
-                for key in ['regime_assignments', 'assignments', 'cluster_assignments']:
+            # Try other possible artifact keys
+            for key in ['regime_assignments', 'assignments', 'cluster_assignments']:
                     if key in artifacts:
                         regime_labels = artifacts[key]
                         tprint(f"🔍 [REGIME_MODELS] Found regime labels in {key}", color="blue")
                         break
 
-                # Try nested structures
-                if regime_labels is None:
-                    for artifact_key, artifact_value in artifacts.items():
-                        if isinstance(artifact_value, dict):
-                            # Legacy TAS assignments removed
-                                break
-                            # Legacy NAS assignments removed
-                            elif 'assignments' in artifact_value:
-                                regime_labels = artifact_value['assignments']
-                                tprint(f"🔍 [REGIME_MODELS] Found assignments in {artifact_key}", color="blue")
-                                break
-                            elif 'cluster_assignments' in artifact_value:
-                                regime_labels = artifact_value['cluster_assignments']
-                                tprint(f"🔍 [REGIME_MODELS] Found cluster_assignments in {artifact_key}", color="blue")
-                                break
+            # Try nested structures
+            if regime_labels is None:
+                for artifact_key, artifact_value in artifacts.items():
+                    if isinstance(artifact_value, dict):
+                        # Legacy TAS assignments removed
+                        break
+                    # Legacy NAS assignments removed
+                    elif 'assignments' in artifact_value:
+                        regime_labels = artifact_value['assignments']
+                        tprint(f"🔍 [REGIME_MODELS] Found assignments in {artifact_key}", color="blue")
+                        break
+                    elif 'cluster_assignments' in artifact_value:
+                        regime_labels = artifact_value['cluster_assignments']
+                        tprint(f"🔍 [REGIME_MODELS] Found cluster_assignments in {artifact_key}", color="blue")
+                        break
 
                 # Try extracting from optimal_regime_clustering_result clustering_result object
                 if regime_labels is None:

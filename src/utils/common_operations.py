@@ -1600,19 +1600,6 @@ def format_bytes(bytes_value: int) -> str:
         bytes_value /= 1024.0
     return f"{bytes_value:.2f} PB"
 
-def safe_log_metric(metric_name: str, value: float, step: int = 0) -> None:
-    """Safely log metric."""
-    try:
-        logger.info(f"Metric {metric_name}: {value} at step {step}")
-    except Exception:
-        pass
-
-def safe_log_params(params: Dict[str, Any]) -> None:
-    """Safely log parameters."""
-    try:
-        logger.info(f"Parameters: {params}")
-    except Exception:
-        pass
 
 def get_current_datetime() -> str:
     """Get current datetime as string."""
@@ -1661,6 +1648,142 @@ def create_directory_safe(directory_path: str) -> bool:
 def get_logger(name: str) -> logging.Logger:
     """Get logger instance."""
     return logging.getLogger(name)
+
+def setup_basic_logging(level: int = logging.INFO) -> None:
+    """Setup basic logging configuration."""
+    logging.basicConfig(
+        level=level,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
+
+
+def validate_correlation_matrix(corr_matrix: Any, logger: Optional[logging.Logger] = None) -> bool:
+    """Validate correlation matrix for common issues."""
+    try:
+        if corr_matrix is None:
+            if logger:
+                logger.warning("Correlation matrix is None")
+            return False
+        
+        if hasattr(corr_matrix, 'isnull'):
+            if corr_matrix.isnull().any().any():
+                if logger:
+                    logger.warning("Correlation matrix contains NaN values")
+                return False
+        
+        if hasattr(corr_matrix, 'values'):
+            values = corr_matrix.values
+        else:
+            values = corr_matrix
+            
+        if hasattr(values, 'shape'):
+            if values.shape[0] != values.shape[1]:
+                if logger:
+                    logger.warning("Correlation matrix is not square")
+                return False
+        
+        return True
+    except Exception as e:
+        if logger:
+            logger.warning(f"Error validating correlation matrix: {e}")
+        return False
+
+def safe_matrix_inverse(matrix: Any, logger: Optional[logging.Logger] = None) -> Any:
+    """Safely compute matrix inverse with error handling."""
+    try:
+        if matrix is None:
+            if logger:
+                logger.warning("Matrix is None, cannot compute inverse")
+            return None
+        
+        if hasattr(matrix, 'values'):
+            values = matrix.values
+        else:
+            values = matrix
+            
+        if hasattr(values, 'shape'):
+            if values.shape[0] != values.shape[1]:
+                if logger:
+                    logger.warning("Matrix is not square, cannot compute inverse")
+                return None
+        
+        # Use numpy for inverse computation
+        if NUMPY_AVAILABLE:
+            return np.linalg.inv(values)
+        else:
+            if logger:
+                logger.warning("NumPy not available for matrix inverse")
+            return None
+            
+    except np.linalg.LinAlgError as e:
+        if logger:
+            logger.warning(f"Matrix is singular, cannot compute inverse: {e}")
+        return None
+    except Exception as e:
+        if logger:
+            logger.warning(f"Error computing matrix inverse: {e}")
+        return None
+
+def math_safe(operation: str, *args, logger: Optional[logging.Logger] = None) -> Any:
+    """Safely perform mathematical operations with error handling."""
+    try:
+        if operation == 'sqrt':
+            if NUMPY_AVAILABLE:
+                return np.sqrt(args[0])
+            else:
+                import math
+                return math.sqrt(args[0])
+        elif operation == 'log':
+            if NUMPY_AVAILABLE:
+                return np.log(args[0])
+            else:
+                import math
+                return math.log(args[0])
+        elif operation == 'exp':
+            if NUMPY_AVAILABLE:
+                return np.exp(args[0])
+            else:
+                import math
+                return math.exp(args[0])
+        else:
+            if logger:
+                logger.warning(f"Unknown math operation: {operation}")
+            return None
+    except Exception as e:
+        if logger:
+            logger.warning(f"Error in math operation {operation}: {e}")
+        return None
+
+def chunked_iterable(iterable: Any, chunk_size: int) -> Any:
+    """Split an iterable into chunks of specified size."""
+    try:
+        if hasattr(iterable, '__iter__'):
+            iterator = iter(iterable)
+            while True:
+                chunk = []
+                try:
+                    for _ in range(chunk_size):
+                        chunk.append(next(iterator))
+                    yield chunk
+                except StopIteration:
+                    if chunk:
+                        yield chunk
+                    break
+        else:
+            yield iterable
+    except Exception:
+        yield iterable
+
+def parallel_map(func: Callable, items: List[Any], max_workers: int = 4) -> List[Any]:
+    """Apply function to items in parallel."""
+    try:
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            return list(executor.map(func, items))
+    except Exception:
+        # Fallback to sequential processing
+        return [func(item) for item in items]
 
 def cleanup_m1_optimizers() -> bool:
     """Cleanup M1 optimizers - DEPRECATED: Use comprehensive hardware tools instead.
@@ -2273,8 +2396,6 @@ __all__ = [
     'safe_float',
     'safe_int',
     'format_bytes',
-    'safe_log_metric',
-    'safe_log_params',
     'get_current_datetime',
     'format_datetime',
     'create_fallback_logger',

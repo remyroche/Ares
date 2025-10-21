@@ -32,7 +32,14 @@ import joblib
 
 # Import system utilities
 from ..logger import get_logger
-from ..matrix_operations import get_unified_matrix_operations
+# Lazy import to avoid circular imports
+def get_unified_matrix_operations():
+    """Lazy import of get_unified_matrix_operations to avoid circular imports."""
+    try:
+        from ..matrix_operations import get_unified_matrix_operations as _get_unified_matrix_operations
+        return _get_unified_matrix_operations
+    except ImportError:
+        return None
 
 class DriftType(Enum):
     """Types of data drift."""

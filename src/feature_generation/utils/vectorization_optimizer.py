@@ -17,7 +17,14 @@ from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 import asyncio
 
 # Import optimization components
-from ...utils.matrix_operations import get_unified_matrix_operations
+# Lazy import to avoid circular imports
+def get_unified_matrix_operations():
+    """Lazy import of get_unified_matrix_operations to avoid circular imports."""
+    try:
+        from ...utils.matrix_operations import get_unified_matrix_operations as _get_unified_matrix_operations
+        return _get_unified_matrix_operations
+    except ImportError:
+        return None
 from ...utils.hardware.unified_hardware_manager import get_unified_hardware_manager, WorkloadType
 from ...utils.matrix_operations.vectorized_core import get_vectorized_processing_core
 

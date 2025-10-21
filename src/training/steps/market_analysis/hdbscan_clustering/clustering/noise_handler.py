@@ -17,7 +17,14 @@ from src.utils.tprint import tprint, tprint_info, tprint_success, tprint_warning
 from src.utils.common_operations import safe_dataframe_operation
 from src.utils.common_utilities import safe_dataframe_operation as safe_df_op
 from src.utils.math_validation import validate_finite, safe_divide, safe_log, safe_sqrt
-from src.utils.matrix_operations import get_unified_matrix_operations
+# Lazy import to avoid circular imports
+def get_unified_matrix_operations():
+    """Lazy import of get_unified_matrix_operations to avoid circular imports."""
+    try:
+        from src.utils.matrix_operations import get_unified_matrix_operations as _get_unified_matrix_operations
+        return _get_unified_matrix_operations
+    except ImportError:
+        return None
 
 from ..config.regime_discovery_config import RegimeDiscoveryConfig
 

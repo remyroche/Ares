@@ -114,46 +114,46 @@ except ImportError as e:
     logger.warning(f"Error handling not available: {e}")
 
 # Convenience functions for common operations
-try:
-    # Import safe_correlation_matrix directly from unified_operations to avoid circular import
-    # Use lazy import to avoid circular dependency issues
-    _safe_correlation_matrix = None
-    _unified_matrix_operations = None
+# Use lazy import to avoid circular dependency issues
+_safe_correlation_matrix = None
+_unified_matrix_operations = None
 
-    def safe_correlation_matrix(data):
-        """Lazy import and call safe_correlation_matrix to avoid circular imports."""
-        global _safe_correlation_matrix
-        if _safe_correlation_matrix is None:
-            try:
-                from .unified_operations import safe_correlation_matrix as _safe_correlation_matrix
-            except ImportError:
-                # Fallback implementation
-                def _safe_correlation_matrix(data):
-                    try:
-                        if hasattr(data, 'corr'):
-                            return data.corr().values
-                        else:
-                            return np.corrcoef(data.T)
-                    except Exception:
-                        n = data.shape[1] if len(data.shape) > 1 else 1
-                        return np.eye(n)
-        return _safe_correlation_matrix(data)
-
-    def get_unified_matrix_operations():
-        """Lazy import and return unified matrix operations to avoid circular imports."""
-        global _unified_matrix_operations
-        if _unified_matrix_operations is None:
-            try:
-                from .unified_operations import get_unified_matrix_operations as _get_unified_matrix_operations
-                _unified_matrix_operations = _get_unified_matrix_operations()
-            except ImportError:
-                # Fallback implementation
+def safe_correlation_matrix(data):
+    """Lazy import and call safe_correlation_matrix to avoid circular imports."""
+    global _safe_correlation_matrix
+    if _safe_correlation_matrix is None:
+        try:
+            from .unified_operations import safe_correlation_matrix as _safe_correlation_matrix
+        except ImportError:
+            # Fallback implementation
+            def _safe_correlation_matrix(data):
                 try:
-                    from ..base_matrix_operations import create_fallback_matrix_operations
-                    _unified_matrix_operations = create_fallback_matrix_operations()
-                except ImportError:
-                    _unified_matrix_operations = None
-        return _unified_matrix_operations
+                    if hasattr(data, 'corr'):
+                        return data.corr().values
+                    else:
+                        return np.corrcoef(data.T)
+                except Exception:
+                    n = data.shape[1] if len(data.shape) > 1 else 1
+                    return np.eye(n)
+    return _safe_correlation_matrix(data)
+
+def get_unified_matrix_operations():
+    """Lazy import and return unified matrix operations to avoid circular imports."""
+    global _unified_matrix_operations
+    if _unified_matrix_operations is None:
+        try:
+            from .unified_operations import get_unified_matrix_operations as _get_unified_matrix_operations
+            _unified_matrix_operations = _get_unified_matrix_operations()
+        except ImportError:
+            # Fallback implementation
+            try:
+                from ..base_matrix_operations import create_fallback_matrix_operations
+                _unified_matrix_operations = create_fallback_matrix_operations()
+            except ImportError:
+                _unified_matrix_operations = None
+    return _unified_matrix_operations
+
+try:
 
     from .convenience import (
         # Matrix operations

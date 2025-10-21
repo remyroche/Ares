@@ -23,7 +23,14 @@ import seaborn as sns
 # Import existing utilities
 from src.utils.common_operations import safe_json_dump, safe_json_load, ensure_directory
 from src.utils.math_validation import safe_divide, safe_log, safe_sqrt, validate_finite
-from src.utils.matrix_operations.unified_operations import get_unified_matrix_operations
+# Lazy import to avoid circular imports
+def get_unified_matrix_operations():
+    """Lazy import of get_unified_matrix_operations to avoid circular imports."""
+    try:
+        from src.utils.matrix_operations.unified_operations import get_unified_matrix_operations as _get_unified_matrix_operations
+        return _get_unified_matrix_operations
+    except ImportError:
+        return None
 from src.utils.ml_common.evaluation import ModelEvaluator
 from src.core.decorators import handles_errors, traced, log_execution_time
 

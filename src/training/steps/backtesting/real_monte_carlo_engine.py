@@ -29,7 +29,14 @@ from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, as_compl
 from src.utils.hardware.m1_gpu_utils import get_m1_gpu_manager, M1GPUAccelerator
 from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer, M1MemoryOptimizer
 from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer, M1CPUOptimizer
-from src.utils.matrix_operations.unified_operations import get_unified_matrix_operations
+# Lazy import to avoid circular imports
+def get_unified_matrix_operations():
+    """Lazy import of get_unified_matrix_operations to avoid circular imports."""
+    try:
+        from src.utils.matrix_operations.unified_operations import get_unified_matrix_operations as _get_unified_matrix_operations
+        return _get_unified_matrix_operations
+    except ImportError:
+        return None
 from src.utils.matrix_operations.hardware_integration import HardwareOptimizedMatrixProcessor
 from src.utils.matrix_operations.batch_operations import BatchMatrixProcessor
 

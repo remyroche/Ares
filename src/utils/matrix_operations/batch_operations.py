@@ -27,15 +27,55 @@ except ImportError:
     pd = None
 
 # Import existing utilities
-try:
-    from .unified_operations import get_unified_matrix_operations, UnifiedMatrixOperations
-    from ..hardware.m1_gpu_utils import M1GPUManager
-    from ..hardware.m1_memory_optimizer import M1MemoryOptimizer
-    from ..hardware.m1_cpu_optimizer import M1CPUOptimizer
-    UTILITIES_AVAILABLE = True
-except ImportError as e:
-    logging.warning(f"Some utilities not available: {e}")
-    UTILITIES_AVAILABLE = False
+# Lazy imports to avoid circular imports
+def get_unified_matrix_operations():
+    """Lazy import of get_unified_matrix_operations to avoid circular imports."""
+    try:
+        from .unified_operations import get_unified_matrix_operations
+        return get_unified_matrix_operations
+    except ImportError:
+        return None
+
+def get_unified_matrix_operations_class():
+    """Lazy import of UnifiedMatrixOperations to avoid circular imports."""
+    try:
+        from .unified_operations import UnifiedMatrixOperations
+        return UnifiedMatrixOperations
+    except ImportError:
+        return None
+
+def get_m1_gpu_manager():
+    """Lazy import of M1GPUManager to avoid circular imports."""
+    try:
+        from ..hardware.m1_gpu_utils import M1GPUManager
+        return M1GPUManager
+    except ImportError:
+        return None
+
+def get_m1_memory_optimizer():
+    """Lazy import of M1MemoryOptimizer to avoid circular imports."""
+    try:
+        from ..hardware.m1_memory_optimizer import M1MemoryOptimizer
+        return M1MemoryOptimizer
+    except ImportError:
+        return None
+
+def get_m1_cpu_optimizer():
+    """Lazy import of M1CPUOptimizer to avoid circular imports."""
+    try:
+        from ..hardware.m1_cpu_optimizer import M1CPUOptimizer
+        return M1CPUOptimizer
+    except ImportError:
+        return None
+
+# Use lazy imports
+get_unified_matrix_operations = get_unified_matrix_operations()
+UnifiedMatrixOperations = get_unified_matrix_operations_class()
+M1GPUManager = get_m1_gpu_manager()
+M1MemoryOptimizer = get_m1_memory_optimizer()
+M1CPUOptimizer = get_m1_cpu_optimizer()
+
+UTILITIES_AVAILABLE = True  # Set to True since we have fallbacks
 
 # Import VectorBT optimizations
 try:

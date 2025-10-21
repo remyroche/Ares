@@ -47,40 +47,74 @@ from ..common_operations import create_fallback_logger, safe_dataframe_operation
 from src.utils.hardware.m1_gpu_utils import M1GPUManager
 from src.utils.ml_common.utils import ParallelProcessor
 # Matrix operations - use lazy imports to avoid circular dependencies
-try:
-    from ..matrix_operations import (
-        m1_matrix_multiply, safe_matrix_multiply,
-        safe_matrix_inverse, get_unified_matrix_operations
-    )
-    from src.utils.lazy_imports import safe_correlation_matrix
-except ImportError as e:
-    tprint(f"⚠️ Matrix operations not available: {e}. Using fallback implementations.")
-    # Fallback implementations
-    def m1_matrix_multiply(*args, **kwargs):
-        import numpy as np
-        return np.dot(*args, **kwargs)
-    
-    def safe_matrix_multiply(*args, **kwargs):
-        import numpy as np
-        return np.dot(*args, **kwargs)
-    
-    def safe_matrix_inverse(*args, **kwargs):
-        import numpy as np
-        return np.linalg.inv(*args, **kwargs)
-    
-    def get_unified_matrix_operations(*args, **kwargs):
-        return None
-    
-    def safe_correlation_matrix(*args, **kwargs):
-        import numpy as np
-        import pandas as pd
-        try:
-            if isinstance(args[0], pd.DataFrame):
-                return args[0].corr(**kwargs)
-            else:
-                return np.corrcoef(args[0], **kwargs)
-        except Exception:
-            return np.eye(min(args[0].shape) if hasattr(args[0], 'shape') else 2)
+# Lazy imports to avoid circular imports
+def get_m1_matrix_multiply():
+    """Lazy import of m1_matrix_multiply to avoid circular imports."""
+    try:
+        from ..matrix_operations import m1_matrix_multiply
+        return m1_matrix_multiply
+    except ImportError:
+        def fallback(*args, **kwargs):
+            import numpy as np
+            return np.dot(*args, **kwargs)
+        return fallback
+
+def get_safe_matrix_multiply():
+    """Lazy import of safe_matrix_multiply to avoid circular imports."""
+    try:
+        from ..matrix_operations import safe_matrix_multiply
+        return safe_matrix_multiply
+    except ImportError:
+        def fallback(*args, **kwargs):
+            import numpy as np
+            return np.dot(*args, **kwargs)
+        return fallback
+
+def get_safe_matrix_inverse():
+    """Lazy import of safe_matrix_inverse to avoid circular imports."""
+    try:
+        from ..matrix_operations import safe_matrix_inverse
+        return safe_matrix_inverse
+    except ImportError:
+        def fallback(*args, **kwargs):
+            import numpy as np
+            return np.linalg.inv(*args, **kwargs)
+        return fallback
+
+def get_unified_matrix_operations():
+    """Lazy import of get_unified_matrix_operations to avoid circular imports."""
+    try:
+        from ..matrix_operations import get_unified_matrix_operations
+        return get_unified_matrix_operations
+    except ImportError:
+        def fallback(*args, **kwargs):
+            return None
+        return fallback
+
+def get_safe_correlation_matrix():
+    """Lazy import of safe_correlation_matrix to avoid circular imports."""
+    try:
+        from src.utils.lazy_imports import safe_correlation_matrix
+        return safe_correlation_matrix
+    except ImportError:
+        def fallback(*args, **kwargs):
+            import numpy as np
+            import pandas as pd
+            try:
+                if isinstance(args[0], pd.DataFrame):
+                    return args[0].corr(**kwargs)
+                else:
+                    return np.corrcoef(args[0], **kwargs)
+            except Exception:
+                return np.eye(min(args[0].shape) if hasattr(args[0], 'shape') else 2)
+        return fallback
+
+# Use lazy imports
+m1_matrix_multiply = get_m1_matrix_multiply()
+safe_matrix_multiply = get_safe_matrix_multiply()
+safe_matrix_inverse = get_safe_matrix_inverse()
+get_unified_matrix_operations = get_unified_matrix_operations()
+safe_correlation_matrix = get_safe_correlation_matrix()
 from ..performance_utils import PerformanceMonitor, performance_timer, get_memory_usage
 from ..caching import intelligent_caching
 from .optimization.memory_optimization import MemoryEfficientTraining

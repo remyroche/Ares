@@ -1,4 +1,4 @@
-from src.utils.tprint import tprint
+from src.utils.tprint import tprint, tprint_data_preview
 
 from ...core.decorators import handles_errors, traced
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
@@ -335,7 +335,6 @@ class UnifiedDataLoader:
                 return None
 
             # Add data preview for troubleshooting data state before processing
-            from src.utils.tprint import tprint_data_preview
             tprint_data_preview(
                 data, 
                 name=f"before_processing_{Path(file_path).name}",
@@ -406,7 +405,6 @@ class UnifiedDataLoader:
             data = data.head(self.max_rows)
         
         # Add data preview for troubleshooting data state after loading
-        from src.utils.tprint import tprint_data_preview
         tprint_data_preview(
             data, 
             name=f"loaded_from_{Path(file_path).name}",
@@ -626,7 +624,6 @@ class UnifiedDataLoader:
                 data = data[data['timestamp'] <= end_dt]
 
             # Add data preview for troubleshooting filtered data correctness
-            from src.utils.tprint import tprint_data_preview
             tprint_data_preview(
                 data, 
                 name=f"date_filtered_{start_date}_{end_date}",

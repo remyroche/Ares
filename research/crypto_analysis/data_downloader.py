@@ -12,6 +12,9 @@ import pandas as pd
 import numpy as np
 import requests
 
+# Import tprint for data preview
+from src.utils.tprint import tprint_data_preview
+
 # Import centralized logging with fallback
 try:
     from centralized_logging import get_logger
@@ -146,7 +149,6 @@ class BinanceDataDownloader:
         logger.info(f"Successfully downloaded {len(df)} klines for {symbol}")
         
         # Add data preview for troubleshooting raw downloaded data quality
-        from src.utils.tprint import tprint_data_preview
         tprint_data_preview(
             df, 
             name=f"downloaded_{symbol}_{interval}_raw_data",

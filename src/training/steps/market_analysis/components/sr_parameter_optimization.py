@@ -159,7 +159,7 @@ class SRParameterOptimizationStep(BaseStep):
                 raise ValueError("Parameter optimization failed to produce required data")
 
             # Save optimization results using artifact manager
-            self._save_artifact('sr_parameter_optimization_result', {
+            self._save_artifact({
                 'optimized_parameters': optimized_parameters,
                 'quality_thresholds': quality_thresholds,
                 'parameter_optimization_metrics': parameter_optimization_metrics,
@@ -175,7 +175,7 @@ class SRParameterOptimizationStep(BaseStep):
                     'data_points': len(market_data) if market_data is not None else 0,
                     'execution_timestamp': datetime.now().isoformat()
                 }
-            })
+            }, 'sr_parameter_optimization_result')
 
             # Calculate metrics
             metrics = self._calculate_optimization_metrics(optimization_result, start_time, config)

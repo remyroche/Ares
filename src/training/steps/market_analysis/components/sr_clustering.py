@@ -99,8 +99,8 @@ class SRClusteringComponent(BaseStep):
             artifacts = []
             metrics = {}
             
-            # Set up artifact manager context
-            self.artifact_manager.set_context(
+            # Set up context using BaseStep method
+            self._set_context(
                 symbol=symbol,
                 exchange=exchange,
                 direction=direction,
@@ -133,11 +133,21 @@ class SRClusteringComponent(BaseStep):
                 clustering_result, 'DATA_PROCESSING'
             )
 
-            # Save clustering result as artifact (will auto-generate CSV if < 2000 rows)
-            artifact_path = self._save_artifact(
+            # Save clustering result as artifact using enhanced artifact saving
+            artifact_path = self._save_enhanced_artifact(
                 optimized_result,
                 'sr_clustering_result',
-                'data'
+                'data',
+                {
+                    'symbol': symbol,
+                    'exchange': exchange,
+                    'timeframe': timeframe,
+                    'direction': direction,
+                    'execution_mode': execution_mode,
+                    'total_clusters': clustering_result.get('total_clusters', 0),
+                    'clustering_efficiency': clustering_result.get('clustering_efficiency', 0.0),
+                    'hardware_optimized': True
+                }
             )
             artifacts.append(artifact_path)
             

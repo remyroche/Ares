@@ -19,7 +19,7 @@ from datetime import datetime
 
 from src.training.steps.base_step import BaseStep
 from src.utils.logger import system_logger
-from src.utils.tprint import tprint, tprint_info, tprint_success, tprint_warning, tprint_error
+from src.utils.tprint import tprint, tprint_info, tprint_success, tprint_warning, tprint_error, tprint_data_preview
 
 # Suppress warnings
 warnings.filterwarnings('ignore')
@@ -128,6 +128,11 @@ class RegimeEnsembleTrainingStep(BaseStep):
                 raise ValueError("No training data found")
             
             tprint(f"✅ Loaded training data: {data.shape[0]} rows, {data.shape[1]} columns", "SUCCESS")
+            # Add data preview for troubleshooting
+            try:
+                tprint_data_preview(data, "ensemble_training_data", level="INFO")
+            except Exception as e:
+                tprint(f"⚠️ [REGIME_ENSEMBLE] Data preview failed: {e}", color="yellow")
 
             # Load regime labels
             regime_labels = self._load_regime_labels(config)
@@ -146,6 +151,13 @@ class RegimeEnsembleTrainingStep(BaseStep):
             # Prepare training data from the input data DataFrame with advanced regime features
             tprint("🔧 Preparing training data with advanced regime features", "INFO")
             X, y, feature_names = self._prepare_training_data(data, regime_labels, config)
+
+            # Add data preview for troubleshooting
+            try:
+                tprint_data_preview(X, "ensemble_prepared_features", level="DEBUG")
+                tprint_data_preview(y, "ensemble_prepared_labels", level="DEBUG")
+            except Exception as e:
+                tprint(f"⚠️ [REGIME_ENSEMBLE] Data preview failed: {e}", color="yellow")
 
             # Validate required data
             tprint("🔍 Validating required data", "INFO")
@@ -181,6 +193,15 @@ class RegimeEnsembleTrainingStep(BaseStep):
             tprint("🔧 [REGIME_ENSEMBLE] Preparing data for ensemble training with proper validation", color="yellow")
             X_processed, y_processed, regime_labels_processed = self._prepare_data(X, y, regime_labels)
             tprint(f"✅ [REGIME_ENSEMBLE] Data prepared - X: {X_processed.shape}, y: {y_processed.shape}", color="green")
+            
+            # Add data preview for troubleshooting
+            try:
+                tprint_data_preview(X_processed, "ensemble_processed_features", level="DEBUG")
+                tprint_data_preview(y_processed, "ensemble_processed_labels", level="DEBUG")
+                if regime_labels_processed is not None:
+                    tprint_data_preview(regime_labels_processed, "ensemble_processed_regime_labels", level="DEBUG")
+            except Exception as e:
+                tprint(f"⚠️ [REGIME_ENSEMBLE] Data preview failed: {e}", color="yellow")
 
             # Import temporal validation utilities
             from src.utils.ml_common.validation.universal_temporal_validation import UniversalTemporalValidator, TemporalValidationConfig
@@ -212,6 +233,15 @@ class RegimeEnsembleTrainingStep(BaseStep):
             X_test = X_processed[test_indices]
             y_train = y_processed[train_indices]
             y_test = y_processed[test_indices]
+
+            # Add data preview for troubleshooting
+            try:
+                tprint_data_preview(X_train, "ensemble_train_features", level="INFO")
+                tprint_data_preview(X_test, "ensemble_test_features", level="INFO")
+                tprint_data_preview(y_train, "ensemble_train_labels", level="INFO")
+                tprint_data_preview(y_test, "ensemble_test_labels", level="INFO")
+            except Exception as e:
+                tprint(f"⚠️ [REGIME_ENSEMBLE] Data preview failed: {e}", color="yellow")
 
             # Validate the temporal split
             validation_report = temporal_validator.validate_temporal_split(
@@ -463,6 +493,12 @@ class RegimeEnsembleTrainingStep(BaseStep):
             tprint("🔧 [REGIME_ENSEMBLE] Combining base model predictions", color="blue")
             meta_features = np.column_stack(base_predictions)
             tprint(f"📊 [REGIME_ENSEMBLE] Meta-features shape: {meta_features.shape}", color="blue")
+            
+            # Add data preview for troubleshooting
+            try:
+                tprint_data_preview(meta_features, "ensemble_meta_features", level="DEBUG")
+            except Exception as e:
+                tprint(f"⚠️ [REGIME_ENSEMBLE] Meta-features preview failed: {e}", color="yellow")
 
             # Create LightGBM meta-learner with AGGRESSIVE regularization to prevent overfitting
             tprint("🌲 [REGIME_ENSEMBLE] Creating LightGBM meta-learner with AGGRESSIVE regularization", color="blue", bold=True)
@@ -492,6 +528,12 @@ class RegimeEnsembleTrainingStep(BaseStep):
             tprint("🔧 [REGIME_ENSEMBLE] Creating enhanced meta-learner features", color="blue")
             enhanced_meta_features = self._create_enhanced_meta_features(meta_features, y)
             tprint(f"📊 [REGIME_ENSEMBLE] Enhanced meta-features shape: {enhanced_meta_features.shape}", color="blue")
+            
+            # Add data preview for troubleshooting
+            try:
+                tprint_data_preview(enhanced_meta_features, "ensemble_enhanced_features", level="DEBUG")
+            except Exception as e:
+                tprint(f"⚠️ [REGIME_ENSEMBLE] Enhanced features preview failed: {e}", color="yellow")
 
             # Train meta-learner
             tprint("🏋️ [REGIME_ENSEMBLE] Training meta-learner", color="blue")

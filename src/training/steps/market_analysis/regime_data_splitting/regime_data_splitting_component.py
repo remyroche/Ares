@@ -39,7 +39,7 @@ except ImportError as e:
 
 from ..components.base_component import BaseMarketAnalysisComponent, ComponentConfig, ComponentResult
 from src.utils.logger import system_logger
-from src.utils.tprint import tprint
+from src.utils.tprint import tprint, tprint_data_preview
 
 # Import our standardized utilities
 from .validation_utils import get_validator, ValidationErrorType, ValidationResult, create_standardized_error
@@ -359,6 +359,12 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                 report.status = RegimeSplittingStatus.FAILED
                 report.errors.append("Failed to load market data")
                 return self._create_failure_result(report, "Data loading failed")
+            
+            # Add data preview for troubleshooting
+            try:
+                tprint_data_preview(market_data, "loaded_market_data", level="INFO")
+            except Exception as e:
+                tprint(f"⚠️ [REGIME_DATA_SPLITTING] Data preview failed: {e}", color="yellow")
             tprint(f'✅ Market data loaded: {market_data.shape}')
 
             # Step 2.5: Filter data to match regime assignments (if available)
@@ -374,6 +380,12 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                         self.logger.info(f"🔍 Filtering market data to match clustering dataset size: {target_size} rows")
                         market_data = market_data.head(target_size)
                         tprint(f'✅ Filtered market data to match clustering size: {market_data.shape}')
+                        
+                        # Add data preview for troubleshooting
+                        try:
+                            tprint_data_preview(market_data, "filtered_market_data", level="INFO")
+                        except Exception as e:
+                            tprint(f"⚠️ [REGIME_DATA_SPLITTING] Data preview failed: {e}", color="yellow")
 
             # Additional check: If we have regime assignment files, use their size as reference
             try:
@@ -383,6 +395,12 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                     self.logger.info(f"🔍 Filtering market data to match regime assignments file size: {target_size} rows")
                     market_data = market_data.head(target_size)
                     tprint(f'✅ Filtered market data to match regime assignments file size: {market_data.shape}')
+                    
+                    # Add data preview for troubleshooting
+                    try:
+                        tprint_data_preview(market_data, "filtered_market_data_by_assignments", level="INFO")
+                    except Exception as e:
+                        tprint(f"⚠️ [REGIME_DATA_SPLITTING] Data preview failed: {e}", color="yellow")
             except Exception as e:
                 self.logger.debug(f"Could not load regime assignments from file for size reference: {e}")
 

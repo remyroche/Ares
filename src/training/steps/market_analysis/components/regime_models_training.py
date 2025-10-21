@@ -24,7 +24,7 @@ from datetime import datetime
 
 from src.training.steps.base_step import BaseStep
 from src.utils.logger import system_logger
-from src.utils.tprint import tprint, tprint_info, tprint_success, tprint_warning, tprint_error
+from src.utils.tprint import tprint, tprint_info, tprint_success, tprint_warning, tprint_error, tprint_data_preview
 
 # Suppress warnings
 warnings.filterwarnings('ignore')
@@ -262,6 +262,11 @@ class RegimeModelsTrainingStep(BaseStep):
                 raise ValueError("No training data found")
             
             tprint(f"✅ Loaded training data: {data.shape[0]} rows, {data.shape[1]} columns", "SUCCESS")
+            # Add data preview for troubleshooting
+            try:
+                tprint_data_preview(data, "loaded_training_data", level="INFO")
+            except Exception as e:
+                tprint(f"⚠️ [REGIME_MODELS] Data preview failed: {e}", color="yellow")
 
             # Step 0: Validate input data
             tprint("🔍 Step 0: Validating input data", "INFO")
@@ -461,6 +466,14 @@ class RegimeModelsTrainingStep(BaseStep):
             X, y, feature_selection_info, feature_names = self._prepare_training_data(data, regime_labels, pipeline_state)
             self._log_performance_metrics("Data preparation", data_prep_start)
             self._monitor_memory_usage("After data preparation")
+            
+            # Add data preview for troubleshooting
+            try:
+                tprint_data_preview(X, "prepared_features_matrix", level="DEBUG")
+                tprint_data_preview(y, "prepared_target_labels", level="DEBUG")
+            except Exception as e:
+                tprint(f"⚠️ [REGIME_MODELS] Data preview failed: {e}", color="yellow")
+            
             if X is None or y is None:
                 error_msg = "Failed to prepare training data"
                 tprint(f"❌ [REGIME_MODELS] {error_msg}", color="red")
@@ -1227,6 +1240,14 @@ class RegimeModelsTrainingStep(BaseStep):
                 feature_names = list(all_features.columns)
                 tprint(f"✅ [REGIME_MODELS] Feature bank generated {X.shape[1]} features from {len(categories)} categories", color="green")
                 tprint(f"📊 [REGIME_MODELS] Feature matrix shape: {X.shape}", color="blue")
+                
+                # Add data preview for troubleshooting
+                try:
+                    tprint_data_preview(all_features, "generated_features_dataframe", level="DEBUG")
+                    tprint_data_preview(X, "generated_features_array", level="DEBUG")
+                except Exception as e:
+                    tprint(f"⚠️ [REGIME_MODELS] Feature preview failed: {e}", color="yellow")
+                
                 return X, feature_names
             else:
                 tprint("❌ [REGIME_MODELS] Feature bank generated no features", color="red")

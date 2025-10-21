@@ -1374,7 +1374,12 @@ def _timeout_guard(timeout_seconds: float, operation_name: str = "operation"):
             if self.start_time:
                 elapsed = time.time() - self.start_time
                 if elapsed > self.timeout_seconds:
-                    print(f"⚠️  {self.operation_name} timed out after {elapsed:.2f}s (limit: {self.timeout_seconds}s)")
+                    # Use proper logging instead of direct print
+                    try:
+                        tprint_with_level(LogLevel.WARNING, 
+                            f"⚠️  {self.operation_name} timed out after {elapsed:.2f}s (limit: {self.timeout_seconds}s)")
+                    except Exception:
+                        print(f"⚠️  {self.operation_name} timed out after {elapsed:.2f}s (limit: {self.timeout_seconds}s)")
             return False
     
     return TimeoutGuard(timeout_seconds, operation_name)
@@ -1438,9 +1443,16 @@ def _check_pandas_dataframe(data, name: str, config: DataFormatConfig, caller_in
         tprint_with_level(level, f"  Dtypes: {dtypes_dict}")
         tprint_with_level(level, f"  Dtype counts: {dtype_counts_str}")
         
-        # Index info
-        index_type = type(data.index).__name__
-        tprint_with_level(level, f"  Index: {index_type}")
+        # Index info with diagnostics
+        idx = data.index
+        info = {
+            "class": type(idx).__name__,
+            "dtype": str(getattr(idx, "dtype", "")),
+            "is_unique": bool(getattr(idx, "is_unique", False)),
+            "is_monotonic": bool(getattr(idx, "is_monotonic_increasing", False)),
+        }
+        tprint_with_level(level, f"  Index info: {info}")
+        summary["index"] = info
         
         if config.include_semantics:
             # Null analysis
@@ -1582,16 +1594,17 @@ def _check_numpy_array(data, name: str, config: DataFormatConfig, caller_info: s
             # Numeric analysis
             if np.issubdtype(data.dtype, np.number):
                 try:
-                    finite_mask = np.isfinite(sample_data)
-                    finite_pct = np.mean(finite_mask) * 100
+                    # Actually use max_stat_items
+                    finite_mask = np.isfinite(sample_data[:max_stats])
+                    finite_pct = float(np.mean(finite_mask) * 100.0)
                     tprint_with_level(level, f"  Finite: {finite_pct:.1f}%")
                     
                     if np.any(finite_mask):
-                        finite_data = sample_data[finite_mask]
-                        tprint_with_level(level, f"  Range: [{np.min(finite_data):.3f}, {np.max(finite_data):.3f}]")
-                        summary["finite_pct"] = finite_pct
-                        summary["min_val"] = float(np.min(finite_data))
-                        summary["max_val"] = float(np.max(finite_data))
+                        finite_data = sample_data[:max_stats][finite_mask]
+                        vmin = float(np.min(finite_data))
+                        vmax = float(np.max(finite_data))
+                        tprint_with_level(level, f"  Range: [{vmin:.3f}, {vmax:.3f}]")
+                        summary.update({"finite_pct": finite_pct, "min_val": vmin, "max_val": vmax})
                 except Exception:
                     pass
         
@@ -1688,6 +1701,24 @@ def tprint_data_format(data: Any, name: str = "data", level: LogLevel = LogLevel
             summary["value"] = data
             return summary if return_summary else None
         
+        # --- Parquet path (must be BEFORE the plain string branch) ---
+        elif PYARROW_AVAILABLE and isinstance(data, (str, os.PathLike)) and str(data).lower().endswith('.parquet'):
+            try:
+                import pyarrow.parquet as pq
+                pf = pq.ParquetFile(data)
+                tprint_with_level(level, f"🔍 {name} format{caller_info}:")
+                tprint_with_level(level, "  Type: Parquet file")
+                tprint_with_level(level, f"  Shape: {pf.metadata.num_rows} rows × {len(pf.schema_arrow)} cols")
+                tprint_with_level(level, f"  Row groups: {pf.num_row_groups}")
+                field_info = [(pf.schema_arrow.names[i], str(pf.schema_arrow.types[i])) for i in range(len(pf.schema_arrow))]
+                tprint_with_level(level, f"  Schema: {field_info}")
+                summary.update({"type": "Parquet file", "shape": (pf.metadata.num_rows, len(pf.schema_arrow)),
+                                "row_groups": pf.num_row_groups, "schema": field_info})
+            except Exception as err:
+                tprint_with_level(level, f"🔍 {name} format{caller_info}: Parquet file (error: {err})")
+                summary["error"] = str(err)
+            return summary if return_summary else None
+        
         # Handle strings
         elif isinstance(data, str):
             tprint_with_level(level, f"🔍 {name} format{caller_info}:")
@@ -1710,24 +1741,26 @@ def tprint_data_format(data: Any, name: str = "data", level: LogLevel = LogLevel
         
         # Handle bytes/bytearray/memoryview
         elif isinstance(data, (bytes, bytearray, memoryview)):
+            # Convert memoryview to bytes for safe operations
+            buf = bytes(data) if isinstance(data, memoryview) else data
             tprint_with_level(level, f"🔍 {name} format{caller_info}:")
             tprint_with_level(level, f"  Type: {type(data).__name__}")
-            tprint_with_level(level, f"  Length: {len(data)} bytes")
+            tprint_with_level(level, f"  Length: {len(buf)} bytes")
             
-            if config.include_values and len(data) > 0:
+            if config.include_values and len(buf) > 0:
                 # Show first 16 bytes as hex
-                preview_bytes = data[:16]
+                preview_bytes = buf[:16]
                 hex_preview = ' '.join(f'{b:02x}' for b in preview_bytes)
-                tprint_with_level(level, f"  Hex preview: {hex_preview}{'...' if len(data) > 16 else ''}")
+                tprint_with_level(level, f"  Hex preview: {hex_preview}{'...' if len(buf) > 16 else ''}")
                 
                 # Try to decode as UTF-8 for text preview
                 try:
-                    text_preview = data[:config.max_preview_chars].decode('utf-8', errors='ignore')
+                    text_preview = buf[:config.max_preview_chars].decode('utf-8', errors='ignore')
                     tprint_with_level(level, f"  Text preview: {_safe_repr(text_preview, config.max_preview_chars)}")
                 except Exception:
                     pass
             
-            summary["length"] = len(data)
+            summary["length"] = len(buf)
             return summary if return_summary else None
         
         # Handle numbers (after bool check)
@@ -1799,8 +1832,8 @@ def tprint_data_format(data: Any, name: str = "data", level: LogLevel = LogLevel
             tprint_with_level(level, f"  Schema: {field_info}")
             
             if config.include_semantics:
-                # Null counts per column
-                null_counts = {field.name: data.column(field.name).null_count for field in data.schema}
+                # Null counts per column (use index-based access)
+                null_counts = {data.schema[i].name: data.column(i).null_count for i in range(data.num_columns)}
                 tprint_with_level(level, f"  Null counts: {null_counts}")
                 summary["null_counts"] = null_counts
             
@@ -1811,30 +1844,6 @@ def tprint_data_format(data: Any, name: str = "data", level: LogLevel = LogLevel
             })
             return summary if return_summary else None
         
-        # Handle Parquet files
-        elif PYARROW_AVAILABLE and isinstance(data, (str, os.PathLike)) and str(data).lower().endswith('.parquet'):
-            try:
-                import pyarrow.parquet as pq
-                pf = pq.ParquetFile(data)
-                tprint_with_level(level, f"🔍 {name} format{caller_info}:")
-                tprint_with_level(level, f"  Type: Parquet file")
-                tprint_with_level(level, f"  Shape: {pf.metadata.num_rows} rows × {len(pf.schema_arrow)} cols")
-                tprint_with_level(level, f"  Row groups: {pf.num_row_groups}")
-                
-                field_info = [(field.name, str(field.type)) for field in pf.schema_arrow]
-                tprint_with_level(level, f"  Schema: {field_info}")
-                
-                summary.update({
-                    "type": "Parquet file",
-                    "shape": (pf.metadata.num_rows, len(pf.schema_arrow)),
-                    "row_groups": pf.num_row_groups,
-                    "schema": field_info
-                })
-            except Exception as err:
-                tprint_with_level(level, f"🔍 {name} format{caller_info}: Parquet file (error: {err})")
-                summary["error"] = str(err)
-            
-            return summary if return_summary else None
         
         # Handle sets specifically
         elif isinstance(data, set):
@@ -1886,18 +1895,18 @@ def tprint_data_format(data: Any, name: str = "data", level: LogLevel = LogLevel
                 summary["error"] = str(e)
                 return summary if return_summary else None
         
+        # Handle iterators/generators - BEFORE generic sequence handling
+        elif hasattr(data, '__next__') and not isinstance(data, (str, bytes, bytearray)):
+            tprint_with_level(level, f"🔍 {name} format{caller_info}:")
+            tprint_with_level(level, f"  Type: {type(data).__name__} (iterator)")
+            tprint_with_level(level, f"  Note: Iterator not consumed")
+            summary["type"] = f"{type(data).__name__} (iterator)"
+            return summary if return_summary else None
+        
         # Handle collections.abc types
         elif hasattr(data, '__iter__') and not isinstance(data, (str, bytes, bytearray)):
-            # Check for iterators/generators
-            if hasattr(data, '__next__'):
-                tprint_with_level(level, f"🔍 {name} format{caller_info}:")
-                tprint_with_level(level, f"  Type: {type(data).__name__} (iterator)")
-                tprint_with_level(level, f"  Note: Iterator not consumed")
-                summary["type"] = f"{type(data).__name__} (iterator)"
-                return summary if return_summary else None
-            
             # Handle sequences - AFTER mappings
-            elif hasattr(data, '__getitem__') and hasattr(data, '__len__'):
+            if hasattr(data, '__getitem__') and hasattr(data, '__len__'):
                 try:
                     length = len(data)
                     tprint_with_level(level, f"🔍 {name} format{caller_info}:")

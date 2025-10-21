@@ -41,7 +41,7 @@ from src.training.steps.market_analysis.hdbscan_clustering.feature_engineering.a
 from src.utils.tprint import (
     tprint, tprint_info, tprint_success, tprint_warning, tprint_error, 
     tprint_debug, tprint_performance, tprint_progress, tprint_timer,
-    tprint_logged, LogLevel
+    tprint_logged, tprint_data_preview, LogLevel
 )
 from src.utils.hardware import get_memory_usage, optimize_dataframe_default
 from src.utils.data.klines_parquet import get_klines_manager
@@ -174,6 +174,9 @@ class HDBSCANRegimeDiscoveryStep(BaseStep):
                 if market_data is None or len(market_data) == 0:
                     raise ValueError("Failed to load market data")
                 
+                # Data preview of loaded market data
+                tprint_data_preview(market_data, "loaded_market_data", max_rows=10, level="INFO")
+                
                 # Optimize memory usage
                 market_data = optimize_dataframe_default(market_data)
                 tprint_success(f"✅ Loaded market data: {market_data.shape[0]} rows, {market_data.shape[1]} columns")
@@ -183,12 +186,16 @@ class HDBSCANRegimeDiscoveryStep(BaseStep):
             with tprint_timer("Returns extraction"):
                 returns = self._extract_returns(market_data)
                 if returns is not None:
+                    tprint_data_preview(returns, "extracted_returns", max_rows=10, level="DEBUG")
                     tprint_debug(f"Extracted returns: {len(returns)} samples")
                 else:
                     tprint_warning("No returns data available for economic validation")
             
             # Execute regime discovery
             with tprint_timer("Regime discovery execution"):
+                # Data preview before regime discovery
+                tprint_data_preview(market_data, "regime_discovery_input", max_rows=5, level="DEBUG")
+                
                 regime_result = await self.regime_discovery.discover_regimes(
                     data=market_data,
                     fit=True,
@@ -198,6 +205,10 @@ class HDBSCANRegimeDiscoveryStep(BaseStep):
                 
                 if not regime_result.success:
                     raise ValueError(f"Regime discovery failed: {regime_result.error_message}")
+                
+                # Data preview of regime discovery results
+                tprint_data_preview(regime_result.labels, "regime_discovery_labels", max_rows=10, level="INFO")
+                tprint_data_preview(regime_result.validation_metrics, "regime_validation_metrics", level="DEBUG")
                 
                 tprint_success(f"✅ Regime discovery completed: {regime_result.validation_metrics['n_regimes']} regimes")
             
@@ -214,6 +225,7 @@ class HDBSCANRegimeDiscoveryStep(BaseStep):
             # Create artifacts
             with tprint_timer("Artifacts creation"):
                 artifacts = self._create_artifacts(regime_result, config)
+                tprint_data_preview(artifacts, "created_artifacts", level="INFO")
                 tprint_debug(f"Created {len(artifacts)} artifact categories")
             
             # Save artifacts
@@ -268,6 +280,15 @@ class HDBSCANRegimeDiscoveryStep(BaseStep):
             error_msg = f"HDBSCAN regime discovery failed: {str(e)}"
             tprint_error(error_msg)
             self.logger.error(error_msg)
+            
+            # Data preview for error case
+            error_data = {
+                'error_message': error_msg,
+                'config': config,
+                'processing_time': (datetime.now() - start_time).total_seconds(),
+                'performance_time': time.perf_counter() - perf_start
+            }
+            tprint_data_preview(error_data, "comprehensive_error_case_data", level="ERROR")
             
             # Clean up on error
             gc.collect()
@@ -831,6 +852,7 @@ class HDBSCANRegimeDiscoveryStep(BaseStep):
             
             # Engineer advanced features
             advanced_features, feature_names, feature_categories = self.advanced_feature_engineer.engineer_features(market_data)
+            tprint_data_preview(advanced_features, "economic_validation_features", max_rows=5, level="DEBUG")
             
             # Perform data-driven optimization
             optimization_result = self.data_driven_optimizer.optimize_all_parameters(
@@ -839,6 +861,9 @@ class HDBSCANRegimeDiscoveryStep(BaseStep):
                 feature_names=feature_names,
                 clustering_func=lambda x: cluster_labels  # Use existing labels
             )
+            
+            # Data preview of optimization results
+            tprint_data_preview(optimization_result, "economic_optimization_result", level="DEBUG")
             
             # Extract economic validation results
             economic_validation_result = {

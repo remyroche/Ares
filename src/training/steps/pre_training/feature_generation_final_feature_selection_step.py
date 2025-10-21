@@ -49,7 +49,7 @@ from src.utils.hardware import (
 
 # Import base step and artifact management
 from src.training.steps.base_step import BaseStep
-from src.training.utils.artifact_manager import get_step_context_from_config, setup_enhanced_artifact_manager
+from src.utils.artifact_manager import get_step_context_from_config, setup_enhanced_artifact_manager
 
 # LightGBM and SHAP
 try:

@@ -80,7 +80,7 @@ from src.utils.matrix_operations import safe_matrix_multiply, optimize_dataframe
 
 # Import missing dependencies
 try:
-    from src.training.utils.artifact_manager import get_pretraining_artifact_manager
+    from src.utils.artifact_manager import get_pretraining_artifact_manager
     from src.utils.artifact_keys import ArtifactKeys
 except ImportError:
     # Fallback imports if the specific module doesn't exist

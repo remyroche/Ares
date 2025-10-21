@@ -20,6 +20,7 @@ from src.training.steps.base_step import BaseStep
 
 from src.utils.common_operations import safe_dataframe_operation
 from src.utils.matrix_operations import safe_matrix_multiply, optimize_dataframe
+from src.utils.tprint import tprint_success, tprint_warning, tprint_data_preview
 
 
 
@@ -394,6 +395,8 @@ class FeatureGenerationFinalValidationStep(BaseStep):
                 'targets'
             )
             if targets is not None and not targets.empty:
+                # Preview loaded targets for troubleshooting
+                tprint_data_preview(targets, "loaded_targets_for_final_validation", level="INFO")
                 tprint_success(f"✅ Loaded targets: {len(targets)} samples")
             else:
                 tprint_warning("⚠️ No targets found, trying alternative names")

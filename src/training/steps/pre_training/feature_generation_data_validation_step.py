@@ -18,6 +18,7 @@ from pathlib import Path
 from dataclasses import dataclass
 
 from src.training.steps.base_step import BaseStep
+from src.utils.tprint import tprint_data_preview
 
 # Import advanced quality validation components
 # Quality validation components - self-contained implementation
@@ -585,6 +586,9 @@ class FeatureGenerationDataValidationStep(BaseStep):
                     self.logger.info(f"📊 Using default 30-day window: {start_date} to {end_date}")
             
             self.logger.info(f"✅ Loaded data: {len(data)} rows, {len(data.columns)} columns")
+            
+            # Preview loaded data for troubleshooting
+            tprint_data_preview(data, "loaded_validation_data", level="INFO")
             return data
             
         except Exception as e:

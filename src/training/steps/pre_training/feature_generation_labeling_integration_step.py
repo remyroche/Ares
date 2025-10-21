@@ -15,7 +15,7 @@ from src.training.steps.base_step import BaseStep
 
 try:  # Logging helpers
     from src.utils.tprint import (
-        tprint, tprint_info, tprint_success, tprint_warning, tprint_error
+        tprint, tprint_info, tprint_success, tprint_warning, tprint_error, tprint_data_preview
     )
 except Exception:  # pragma: no cover
     def tprint(*args, **kwargs): print(*args, **kwargs)
@@ -23,6 +23,7 @@ except Exception:  # pragma: no cover
     def tprint_success(*args, **kwargs): print("SUCCESS:", *args, **kwargs)
     def tprint_warning(*args, **kwargs): print("WARNING:", *args, **kwargs)
     def tprint_error(*args, **kwargs): print("ERROR:", *args, **kwargs)
+    def tprint_data_preview(*args, **kwargs): pass  # No-op fallback
 
 
 from dataclasses import dataclass
@@ -56,11 +57,17 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
         data = config.get('data')
         if data is None or not isinstance(data, pd.DataFrame) or data.empty:
             raise ValueError("Input data must be a non‑empty DataFrame")
+        
+        # Preview input data for troubleshooting
+        tprint_data_preview(data, "input_data", level="INFO")
 
         # Cache hit path using BaseStep artifact methods
         cached_labeled = self._load_dataframe('labeled_dataframe')
         cached_targets = self._load_dataframe('targets')
         if isinstance(cached_labeled, pd.DataFrame) and isinstance(cached_targets, pd.Series):
+            # Preview cached data for troubleshooting
+            tprint_data_preview(cached_labeled, "cached_labeled_data", level="INFO")
+            tprint_data_preview(cached_targets, "cached_targets", level="INFO")
             tprint_success("📦 Using cached labeling artifacts")
             return {
                 'success': True,
@@ -89,6 +96,9 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
                 labels_df = getattr(lr, 'labels', pd.DataFrame())
                 if labels_df is None or labels_df.empty:
                     raise ValueError('Labeling produced no label columns')
+                
+                # Preview raw labels from labeler for troubleshooting
+                tprint_data_preview(labels_df, "raw_labels_from_labeler", level="DEBUG")
 
                 # Handle both Series and DataFrame cases
                 if isinstance(labels_df, pd.Series):
@@ -102,11 +112,18 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
                     targets = labels_df[target_col].dropna().astype(float)
                     target_name = target_col
 
+                # Preview processed targets for troubleshooting
+                tprint_data_preview(targets, f"processed_targets_{target_name}", level="INFO")
+
                 # Align and build labeled DataFrame
                 common_idx = data.index.intersection(targets.index)
                 labeled = data.loc[common_idx].copy()
                 targets = targets.loc[common_idx]
                 labeled[target_name] = targets
+                
+                # Preview final labeled data for troubleshooting
+                tprint_data_preview(labeled, "final_labeled_dataframe", level="INFO")
+                tprint_data_preview(targets, "final_targets_series", level="INFO")
                 tprint_success(f"✅ Labeled {len(targets)} samples (var={targets.var():.6f})")
             except Exception as e:
                 # Fallback to simple returns to keep the pipeline moving if labeler unavailable
@@ -116,10 +133,19 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
                 targets = data['close'].pct_change().shift(-1).fillna(0.0).astype(float)
                 labeled = data.copy()
                 labeled['target'] = targets
+                
+                # Preview fallback data for troubleshooting
+                tprint_data_preview(targets, "fallback_targets", level="WARNING")
+                tprint_data_preview(labeled, "fallback_labeled_data", level="WARNING")
 
         # Save artifacts using BaseStep methods
         try:
             tprint_info(f"🔍 [DEBUG] About to save artifacts: labeled={type(labeled)}, targets={type(targets)}")
+            
+            # Preview data before saving for troubleshooting
+            tprint_data_preview(labeled, "pre_save_labeled_dataframe", level="DEBUG")
+            tprint_data_preview(targets, "pre_save_targets", level="DEBUG")
+            
             self._save_dataframe(labeled, 'labeled_dataframe')
             self._save_dataframe(targets, 'targets')
             self._save_dataframe(data, 'raw_dataframe')

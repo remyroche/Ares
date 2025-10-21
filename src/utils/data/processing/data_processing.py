@@ -18,7 +18,7 @@ from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 from src.utils.logger import system_logger
-from src.utils.tprint import tprint_data_preview
+from src.utils.tprint import tprint_data_preview, tprint_data_format
 
 warnings.filterwarnings("ignore")
 logger = logging.getLogger(__name__)
@@ -86,6 +86,7 @@ class DataProcessor:
             if irregular_ratio > 0.0001:  # If more than 0.01% irregular intervals
                 self.logger.info(f"🔄 Regularizing timestamps (irregular ratio: {irregular_ratio:.3f})")
                 tprint_data_preview(processed_data, "before_timestamp_regularization")
+                tprint_data_format(processed_data, "before_timestamp_regularization_format", level="DEBUG")
 
                 # Create a regular timestamp index
                 start_time = processed_data.index.min()
@@ -123,6 +124,7 @@ class DataProcessor:
 
                 self.logger.info(f"✅ Regularized timestamps: {len(processed_data)} rows with {freq} intervals")
                 tprint_data_preview(processed_data, "after_timestamp_regularization")
+                tprint_data_format(processed_data, "after_timestamp_regularization_format", level="DEBUG")
 
             return processed_data
 
@@ -207,6 +209,7 @@ class DataProcessor:
         try:
             fixed_data = data.copy()
             tprint_data_preview(fixed_data, f"before_quality_validation_{data_type}")
+            tprint_data_format(fixed_data, f"before_quality_validation_format_{data_type}", level="DEBUG")
 
             # Fix common issues based on data type
             if data_type == "klines_ohlcv":
@@ -221,6 +224,7 @@ class DataProcessor:
                 f"✅ Data quality validation completed: {len(validation_results['issues_fixed'])} issues fixed"
             )
             tprint_data_preview(fixed_data, f"after_quality_validation_{data_type}")
+            tprint_data_format(fixed_data, f"after_quality_validation_format_{data_type}", level="DEBUG")
 
             return fixed_data, validation_results
 

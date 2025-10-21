@@ -21,6 +21,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 from dataclasses import dataclass
 
 import logging
+from src.utils.tprint import tprint_data_format
 
 class MissingValueStrategy(Enum):
     """Strategies for handling missing values."""
@@ -398,6 +399,9 @@ class DataCleaner:
         if timestamp_column not in data.columns:
             self.logger.error(f"Timestamp column '{timestamp_column}' not found")
             return data
+
+        # Add format debugging for troubleshooting
+        tprint_data_format(data, f"missing_values_input_{symbol}_{exchange}_{timeframe}", level="DEBUG")
 
         data = data.sort_values(timestamp_column).reset_index(drop=True)
         gaps = self._analyze_gaps(data, timestamp_column)

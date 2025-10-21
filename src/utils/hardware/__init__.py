@@ -8,6 +8,9 @@ memory-efficient operations throughout the codebase.
 
 from typing import Optional, Dict, Any
 
+# Import force_cleanup from common_operations to avoid circular imports
+from ..common_operations import force_cleanup
+
 # Import core caching and optimization components
 from .enhanced_caching_system import (
     EnhancedCacheSystem, CacheConfig, DataTypeOptimization, CacheStrategy,
@@ -57,9 +60,12 @@ from .optimization_patches import (
     auto_optimize_function, track_performance
 )
 
+# Import constants to avoid circular imports
+from .constants import WorkloadType, OptimizationLevel
+
 # Import existing hardware utilities
 from .unified_hardware_manager import (
-    UnifiedHardwareManager, HardwareConfig, WorkloadType as UnifiedWorkloadType, OptimizationLevel,
+    UnifiedHardwareManager, HardwareConfig,
     get_unified_hardware_manager, optimize_for_workload, get_system_status
 )
 
@@ -233,10 +239,7 @@ def comprehensive_optimization():
     """Apply comprehensive memory optimization to function."""
     return comprehensive_memory_optimization(optimization_level=MemoryOptimizationLevel.MAXIMUM)
 
-def force_cleanup():
-    """Force garbage collection and memory cleanup."""
-    force_garbage_collection()
-    cleanup_all_memory()
+# force_cleanup is now defined in common_operations.py to avoid circular imports
 
 def memory_efficient_function(func):
     """Decorator for memory efficient function execution."""
@@ -308,7 +311,7 @@ __all__ = [
     'process_ml_training_data', 'process_backtesting_data',
     
     # Hardware utilities
-    'UnifiedHardwareManager', 'HardwareConfig', 'UnifiedWorkloadType', 'OptimizationLevel',
+    'UnifiedHardwareManager', 'HardwareConfig', 'WorkloadType', 'OptimizationLevel',
     'M1MemoryOptimizer', 'M1CPUOptimizer', 'M1GPUManager', 'EnhancedM1GPUManager',
     
     # Comprehensive M1 enhancements

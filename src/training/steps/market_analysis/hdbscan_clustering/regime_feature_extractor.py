@@ -17,9 +17,10 @@ import warnings
 
 # Import enhanced hardware optimization tools
 from src.utils.hardware import (
-    smart_cache, auto_optimize, memory_efficient, performance_tracked,
+    smart_cache, auto_optimize, memory_efficient,
     optimize_dataframe_default, optimize_numpy_array_default
 )
+from src.utils.hardware.optimization_decorators import performance_tracked
 
 logger = logging.getLogger(__name__)
 

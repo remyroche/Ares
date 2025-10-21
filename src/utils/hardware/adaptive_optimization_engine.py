@@ -49,6 +49,7 @@ class LearningAlgorithm(Enum):
     ADAM = "adam"
     RMSPROP = "rmsprop"
     MOMENTUM = "momentum"
+    RANDOM_FOREST = "random_forest"
 
 class OptimizationTarget(Enum):
     """Optimization targets."""

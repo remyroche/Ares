@@ -13,6 +13,7 @@ import logging
 import time
 import itertools
 from dataclasses import dataclass
+from src.utils.hardware.optimization_decorators import performance_tracked
 
 try:
     import optuna
@@ -30,14 +31,23 @@ from .pareto import Solution, ParetoFront, compute_pareto_front
 try:
     from ...hardware import (
         get_integrated_hardware_manager, get_comprehensive_optimizer,
-        m1_optimized, memory_optimized, auto_optimize, smart_cache,
-        performance_tracked, optimize_dataframe, optimize_array,
-        process_ml_training_data, WorkloadCategory, OptimizationStrategy
+        memory_optimized, auto_optimize, smart_cache,
+        optimize_dataframe, optimize_array,
+        process_ml_training_data, OptimizationStrategy
     )
     HARDWARE_OPTIMIZATION_AVAILABLE = True
 except ImportError as e:
     logging.warning(f"Enhanced hardware optimization not available: {e}")
     HARDWARE_OPTIMIZATION_AVAILABLE = False
+
+# Dummy functions for missing imports
+def m1_optimized(workload_category=None):
+    def decorator(func):
+        return func
+    return decorator
+
+class WorkloadCategory:
+    MACHINE_LEARNING = "machine_learning"
 
 # VectorBT optimization imports
 try:

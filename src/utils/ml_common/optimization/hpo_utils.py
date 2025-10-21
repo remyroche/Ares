@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from src.utils.tprint import tprint
+from src.utils.hardware.memory_optimized_decorators import memory_optimized, MemoryOptimizationLevel
+from src.utils.hardware.optimization_decorators import performance_tracked
 
 """
 Advanced Hyperparameter Optimization Utilities
@@ -2663,7 +2665,7 @@ class HyperparameterOptimization:
 # These functions provide a simple interface to the HyperparameterOptimization class
 
 @performance_tracked(log_performance=True, track_memory=True)
-@memory_optimized(aggressive_cleanup=True, enable_gc_optimization=True)
+@memory_optimized(optimization_level=MemoryOptimizationLevel.AGGRESSIVE, enable_aggressive_gc=True)
 def optimize_hyperparameters(model_factory: Callable = None,
                            model: Any = None,
                            X: np.ndarray = None,

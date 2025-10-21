@@ -15,13 +15,25 @@ import logging
 # Enhanced hardware optimization imports
 try:
     from ...hardware import (
-        get_integrated_hardware_manager, m1_optimized, memory_optimized,
-        auto_optimize, smart_cache, performance_tracked, optimize_dataframe,
+        get_integrated_hardware_manager, m1_optimized,
+        auto_optimize, smart_cache, optimize_dataframe,
         optimize_array, process_ml_training_data, WorkloadCategory
     )
+    from ...hardware.optimization_decorators import performance_tracked
+    from ...hardware.memory_optimized_decorators import memory_optimized
     HARDWARE_OPTIMIZATION_AVAILABLE = True
 except ImportError:
     HARDWARE_OPTIMIZATION_AVAILABLE = False
+    # Dummy decorators for fallback
+    def performance_tracked(*args, **kwargs):
+        def decorator(func):
+            return func
+        return decorator
+    
+    def memory_optimized(*args, **kwargs):
+        def decorator(func):
+            return func
+        return decorator
 
 try:
     import torch

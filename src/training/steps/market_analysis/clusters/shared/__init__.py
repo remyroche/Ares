@@ -16,6 +16,7 @@ from .common_utils import (
     safe_execute_with_cleanup,
     performance_timer
 )
+from src.utils.common_operations import safe_divide
 
 __all__ = [
     'HardwareInitializer',
@@ -26,5 +27,6 @@ __all__ = [
     'clustering_operation',
     'memory_optimized',
     'safe_execute_with_cleanup',
-    'performance_timer'
+    'performance_timer',
+    'safe_divide'
 ]

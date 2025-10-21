@@ -19,6 +19,8 @@ import math
 import time
 import numpy as np
 from ...nonlinear_optimization_helpers import NonLinearConfig
+from ...hardware.memory_optimized_decorators import memory_optimized, MemoryOptimizationLevel
+from ...hardware.optimization_decorators import performance_tracked
 
 # Import torch for GPU acceleration
 try:
@@ -923,7 +925,7 @@ def _dominates(a: Solution, b: Solution, objectives: ObjectiveDirection) -> bool
     return better_or_equal_all and strictly_better_at_least_one
 
 @performance_tracked(log_performance=True, track_memory=True)
-@memory_optimized(aggressive_cleanup=True, enable_gc_optimization=True)
+@memory_optimized(optimization_level=MemoryOptimizationLevel.AGGRESSIVE, enable_aggressive_gc=True)
 def compute_pareto_front(
     solutions: List[Solution],
     objectives: ObjectiveDirection,

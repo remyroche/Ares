@@ -36,6 +36,7 @@ from src.utils.data import (
     check_dataframe_health, regularize_timestamps
 )
 from src.utils.logger import system_logger
+from src.utils.tprint import tprint_data_preview
 
 logger = logging.getLogger(__name__)
 
@@ -325,7 +326,8 @@ class UnifiedExchangeStandardizer:
         raw_data: Union[List[Dict], List[List], pd.DataFrame],
         exchange: ExchangeType,
         symbol: str,
-        interval: str
+        interval: str,
+        enable_data_preview: bool = True
     ) -> List[StandardizedOHLCVData]:
         """
         Standardize raw exchange data to unified format.
@@ -335,6 +337,7 @@ class UnifiedExchangeStandardizer:
             exchange: Exchange source
             symbol: Trading symbol
             interval: Data interval
+            enable_data_preview: Whether to show data preview using tprint_data_preview
             
         Returns:
             List of standardized OHLCV data objects
@@ -342,6 +345,15 @@ class UnifiedExchangeStandardizer:
         try:
             # Convert to list of dictionaries for consistent processing
             data_list = self._normalize_input_format(raw_data)
+            
+            # Show data preview if enabled
+            if enable_data_preview and data_list:
+                tprint_data_preview(
+                    data_list, 
+                    name=f"Raw {exchange.value} data for {symbol} ({interval})",
+                    max_rows=3,
+                    level="DEBUG"
+                )
             
             # Get exchange configuration
             config = self.exchange_configs.get(exchange)
@@ -380,6 +392,17 @@ class UnifiedExchangeStandardizer:
             # Apply quality validation and cleaning
             standardized_data = self._apply_quality_processing(standardized_data)
             
+            # Show standardized data preview if enabled
+            if enable_data_preview and standardized_data:
+                # Convert to DataFrame for preview
+                preview_df = pd.DataFrame([item.to_dict() for item in standardized_data])
+                tprint_data_preview(
+                    preview_df, 
+                    name=f"Standardized {exchange.value} data for {symbol} ({interval})",
+                    max_rows=3,
+                    level="DEBUG"
+                )
+            
             self.logger.info(f"✅ Standardized {len(standardized_data)} data points from {exchange.value}")
             return standardized_data
             
@@ -392,7 +415,8 @@ class UnifiedExchangeStandardizer:
         raw_data: Union[List[Dict], List[List], pd.DataFrame],
         exchange: ExchangeType,
         symbol: str,
-        interval: str
+        interval: str,
+        enable_data_preview: bool = True
     ) -> pd.DataFrame:
         """
         Standardize raw exchange data to unified DataFrame format.
@@ -404,13 +428,14 @@ class UnifiedExchangeStandardizer:
             exchange: Exchange source
             symbol: Trading symbol
             interval: Data interval
+            enable_data_preview: Whether to show data preview using tprint_data_preview
             
         Returns:
             Standardized DataFrame compatible with src/utils/data/
         """
         try:
             # Get standardized data objects
-            standardized_objects = self.standardize_data(raw_data, exchange, symbol, interval)
+            standardized_objects = self.standardize_data(raw_data, exchange, symbol, interval, enable_data_preview)
             
             # Convert to DataFrame
             df_data = [obj.to_dict() for obj in standardized_objects]
@@ -426,6 +451,15 @@ class UnifiedExchangeStandardizer:
             
             # Validate with src/utils/data/ framework
             self._validate_with_data_framework(df, f"{exchange.value} standardization")
+            
+            # Show final DataFrame preview if enabled
+            if enable_data_preview and not df.empty:
+                tprint_data_preview(
+                    df, 
+                    name=f"Final standardized DataFrame for {symbol} ({interval})",
+                    max_rows=5,
+                    level="INFO"
+                )
             
             self.logger.info(f"✅ Standardized DataFrame created: {df.shape} with {len(standardized_objects)} records")
             return df
@@ -709,7 +743,8 @@ def standardize_exchange_ohlcv(
     exchange: str,
     symbol: str,
     interval: str,
-    quality_level: str = "standard"
+    quality_level: str = "standard",
+    enable_data_preview: bool = True
 ) -> pd.DataFrame:
     """
     Convenience function to standardize exchange OHLCV data.
@@ -720,6 +755,7 @@ def standardize_exchange_ohlcv(
         symbol: Trading symbol
         interval: Data interval
         quality_level: Quality validation level
+        enable_data_preview: Whether to show data preview using tprint_data_preview
         
     Returns:
         Standardized DataFrame compatible with src/utils/data/
@@ -729,7 +765,7 @@ def standardize_exchange_ohlcv(
         quality_level_enum = DataQualityLevel(quality_level.lower())
         
         standardizer = UnifiedExchangeStandardizer(quality_level_enum)
-        return standardizer.standardize_to_dataframe(raw_data, exchange_type, symbol, interval)
+        return standardizer.standardize_to_dataframe(raw_data, exchange_type, symbol, interval, enable_data_preview)
         
     except ValueError as e:
         raise ValueError(f"Invalid exchange or quality level: {e}")

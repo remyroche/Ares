@@ -24,6 +24,7 @@ from exchanges.shared.enhanced_unified_exchange_interface import (
 from exchanges.shared.unified_exchange_standardizer import (
     UnifiedExchangeStandardizer, DataQualityLevel
 )
+from src.utils.tprint import tprint_data_preview
 
 # Optional import to avoid circular dependencies
 try:
@@ -72,7 +73,8 @@ class OkxKlinesAdapter:
         interval: str, 
         start_time: Optional[datetime] = None,
         end_time: Optional[datetime] = None,
-        limit: int = 1000
+        limit: int = 1000,
+        enable_data_preview: bool = True
     ) -> pd.DataFrame:
         """Get standardized klines data from OKX API.
         
@@ -85,6 +87,7 @@ class OkxKlinesAdapter:
             start_time: Start time for data
             end_time: End time for data
             limit: Maximum number of records
+            enable_data_preview: Whether to show data preview using tprint_data_preview
             
         Returns:
             Standardized DataFrame compatible with src/utils/data/
@@ -102,6 +105,15 @@ class OkxKlinesAdapter:
                 end_time=end_time,
                 limit=limit
             )
+            
+            # Show data preview if enabled
+            if enable_data_preview and not standardized_data.empty:
+                tprint_data_preview(
+                    standardized_data, 
+                    name=f"OKX klines data for {symbol} ({interval})",
+                    max_rows=5,
+                    level="INFO"
+                )
             
             return standardized_data
             
@@ -185,7 +197,8 @@ class OkxKlinesAdapter:
         interval: str,
         start_time: Optional[datetime] = None,
         end_time: Optional[datetime] = None,
-        save_data: bool = True
+        save_data: bool = True,
+        enable_data_preview: bool = True
     ) -> pd.DataFrame:
         """Download and process klines data using the shared pipeline.
         
@@ -195,13 +208,14 @@ class OkxKlinesAdapter:
             start_time: Start time for data
             end_time: End time for data
             save_data: Whether to save processed data
+            enable_data_preview: Whether to show data preview using tprint_data_preview
             
         Returns:
             Processed DataFrame
         """
         try:
             # Get raw data from API
-            raw_data = await self.get_klines_data(symbol, interval, start_time, end_time)
+            raw_data = await self.get_klines_data(symbol, interval, start_time, end_time, enable_data_preview=enable_data_preview)
             
             if raw_data.empty:
                 return pd.DataFrame()
@@ -210,6 +224,15 @@ class OkxKlinesAdapter:
             processed_data = self.processing_pipeline.process_klines_data(
                 raw_data, symbol, interval, save_data=save_data
             )
+            
+            # Show processed data preview if enabled
+            if enable_data_preview and not processed_data.empty:
+                tprint_data_preview(
+                    processed_data, 
+                    name=f"Processed OKX klines data for {symbol} ({interval})",
+                    max_rows=5,
+                    level="INFO"
+                )
             
             return processed_data
             

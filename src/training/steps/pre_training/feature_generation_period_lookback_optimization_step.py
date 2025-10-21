@@ -46,48 +46,58 @@ from src.utils.hardware.m1_enhanced_gpu_manager import (
     M1EnhancedGPUManager, get_enhanced_gpu_manager, GPUOperationType
 )
 from src.training.steps.base_step import BaseStep
-from src.training.steps.pre_training.components.base_component import ComponentResult
+# ComponentResult moved to local definition
+from dataclasses import dataclass
+from typing import Any, Dict, Optional
+from enum import Enum
+
+class ComponentStatus(Enum):
+    """Status of a component."""
+    PENDING = "pending"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    SKIPPED = "skipped"
+
+@dataclass
+class ComponentResult:
+    """Result of component execution."""
+    success: bool
+    status: ComponentStatus
+    data: Any = None
+    metrics: Dict[str, Any] = None
+    error: Optional[str] = None
+    execution_time: float = 0.0
+    
+    def __post_init__(self):
+        if self.metrics is None:
+            self.metrics = {}
+        if self.status is None:
+            self.status = ComponentStatus.COMPLETED if self.success else ComponentStatus.FAILED
 from dataclasses import field
 from src.utils.common_operations import safe_dataframe_operation
 from src.utils.matrix_operations import safe_matrix_multiply, optimize_dataframe
 
 # Import missing dependencies
 try:
-    from src.training.steps.pre_training.components.artifact_manager import get_pretraining_artifact_manager, ArtifactKeys
+    from src.training.utils.artifact_manager import get_pretraining_artifact_manager
+    from src.utils.artifact_keys import ArtifactKeys
 except ImportError:
     # Fallback imports if the specific module doesn't exist
-    try:
-        from src.utils.artifact_manager import ArtifactManager
-        def get_pretraining_artifact_manager():
-            return ArtifactManager()
-        
-        class ArtifactKeys:
-            FEATURE_DATAFRAME = 'feature_dataframe'
-            TARGETS = 'targets'
-            MI_BEST_LOOKBACKS_PER_FEATURE = 'mi_best_lookbacks_per_feature'
-            MRMR_TOP_LOOKBACKS_PER_FEATURE = 'mrmr_top_lookbacks_per_feature'
-            MI_SCORES_BY_FEATURE = 'mi_scores_by_feature'
-            OOS_SHARPE_BY_FEATURE_WINDOW = 'oos_sharpe_by_feature_window'
-            SELECTED_FEATURES_METADATA = 'selected_features_metadata'
-            FAMILY_DIAGNOSTICS = 'family_diagnostics'
-            OPTIMIZATION_CONFIG = 'optimization_config'
-            OPTIMIZED_FEATURE_DATAFRAME = 'optimized_feature_dataframe'
-    except ImportError:
-        # Final fallback
-        def get_pretraining_artifact_manager():
-            return None
-        
-        class ArtifactKeys:
-            FEATURE_DATAFRAME = 'feature_dataframe'
-            TARGETS = 'targets'
-            MI_BEST_LOOKBACKS_PER_FEATURE = 'mi_best_lookbacks_per_feature'
-            MRMR_TOP_LOOKBACKS_PER_FEATURE = 'mrmr_top_lookbacks_per_feature'
-            MI_SCORES_BY_FEATURE = 'mi_scores_by_feature'
-            OOS_SHARPE_BY_FEATURE_WINDOW = 'oos_sharpe_by_feature_window'
-            SELECTED_FEATURES_METADATA = 'selected_features_metadata'
-            FAMILY_DIAGNOSTICS = 'family_diagnostics'
-            OPTIMIZATION_CONFIG = 'optimization_config'
-            OPTIMIZED_FEATURE_DATAFRAME = 'optimized_feature_dataframe'
+    def get_pretraining_artifact_manager(config):
+        return None
+    
+    class ArtifactKeys:
+        FEATURE_DATAFRAME = 'feature_dataframe'
+        TARGETS = 'targets'
+        MI_BEST_LOOKBACKS_PER_FEATURE = 'mi_best_lookbacks_per_feature'
+        MRMR_TOP_LOOKBACKS_PER_FEATURE = 'mrmr_top_lookbacks_per_feature'
+        MI_SCORES_BY_FEATURE = 'mi_scores_by_feature'
+        OOS_SHARPE_BY_FEATURE_WINDOW = 'oos_sharpe_by_feature_window'
+        SELECTED_FEATURES_METADATA = 'selected_features_metadata'
+        FAMILY_DIAGNOSTICS = 'family_diagnostics'
+        OPTIMIZATION_CONFIG = 'optimization_config'
+        OPTIMIZED_FEATURE_DATAFRAME = 'optimized_feature_dataframe'
 
 
 # CMI complementarity components are now handled by external modules

@@ -74,6 +74,7 @@ from datetime import datetime
 import traceback
 
 from src.utils.artifact_manager import ArtifactManager
+from src.utils.hardware.unified_hardware_manager import WorkloadType
 # Enhanced hardware optimization imports
 try:
     from src.utils.hardware import (
@@ -699,7 +700,7 @@ class BaseStep(ABC):
             self.logger.info(f"🚀 Starting execution of {self.step_name}")
             
             # Optimize hardware for step execution
-            self.hardware_manager.optimize_for_workload('data_processing')
+            self.hardware_manager.optimize_for_workload(WorkloadType.DATA_PROCESSING)
             
             # Set context from config if available
             symbol = config.get('symbol')

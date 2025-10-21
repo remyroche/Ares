@@ -56,7 +56,16 @@ except ImportError:
     def get_integrated_hardware_manager(): return None
     def memory_optimized(*args, **kwargs): return lambda f: f
     def performance_tracked(*args, **kwargs): return lambda f: f
-    def force_cleanup(): pass
+    def force_cleanup():
+        """Force garbage collection and memory cleanup."""
+        import gc
+        gc.collect()
+        try:
+            # Try to import and use hardware-specific cleanup if available
+            from src.utils.hardware import force_cleanup as hw_force_cleanup
+            hw_force_cleanup()
+        except ImportError:
+            pass
     def get_memory_stats(): return {}
     def optimize_dataframe(df): return df
     def optimize_array(arr): return arr

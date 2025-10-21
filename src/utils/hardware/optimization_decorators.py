@@ -116,13 +116,14 @@ def smart_cache(
                 
                 # Auto-adjust TTL based on function type
                 # Shorter TTLs to prevent stale data and memory bloat
-                if ttl is None:
+                current_ttl = ttl
+                if current_ttl is None:
                     if any(keyword in func_name for keyword in ['correlation', 'mutual', 'variance']):
-                        ttl = 300   # 5 minutes for statistical calculations (stable results)
+                        current_ttl = 300   # 5 minutes for statistical calculations (stable results)
                     elif any(keyword in func_name for keyword in ['select', 'ensemble']):
-                        ttl = 180   # 3 minutes for selection methods (may change with data)
+                        current_ttl = 180   # 3 minutes for selection methods (may change with data)
                     else:
-                        ttl = 60    # 1 minute for general functions (short-lived)
+                        current_ttl = 60    # 1 minute for general functions (short-lived)
                 
                 # Enable caching if function should be cached
                 if should_cache:
@@ -172,7 +173,7 @@ def smart_cache(
             
             # Cache result if enabled
             if config.enable_caching:
-                cache.put(cache_key, result, ttl)
+                cache.put(cache_key, result, current_ttl)
                 tprint_debug(f"Cached result for {func.__name__}")
             
             return result
@@ -189,7 +190,8 @@ def memory_efficient(
     optimization_level: OptimizationLevel = None,  # Auto-detect if None
     optimize_inputs: bool = True,
     optimize_outputs: bool = True,
-    auto_detect_context: bool = True
+    auto_detect_context: bool = True,
+    ttl: int = None  # Time-to-live for caching
 ):
     """
     Memory-efficient decorator with automatic cleanup, optimization, and data type optimization.

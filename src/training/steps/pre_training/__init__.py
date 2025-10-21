@@ -23,11 +23,7 @@ from .feature_generation_feature_selection_step import (
     handle_feature_generation_feature_selection_step
 )
 
-from .feature_generation_period_optimization_step import (
-    FeatureGenerationPeriodOptimizationStep,
-    PeriodOptimizationResult,
-    handle_feature_generation_period_optimization_step
-)
+# Period optimization step removed - functionality integrated into other steps
 
 from .feature_generation_lookback_optimization_step import (
     FeatureGenerationLookbackOptimizationStep,
@@ -76,7 +72,7 @@ from src.training.steps.base_step import step_registry
 step_registry.register("feature_generation_data_validation_step", FeatureGenerationDataValidationStep)
 step_registry.register("feature_generation_feature_generation_step", FeatureGenerationStep)
 step_registry.register("feature_generation_feature_selection_step", FeatureGenerationFeatureSelectionStep)
-step_registry.register("feature_generation_period_optimization_step", FeatureGenerationPeriodOptimizationStep)
+# Period optimization step removed - functionality integrated into other steps
 step_registry.register("feature_generation_lookback_optimization_step", FeatureGenerationLookbackOptimizationStep)
 step_registry.register("feature_generation_period_lookback_optimization_step", FeatureGenerationPeriodLookbackOptimizationStep)
 step_registry.register("feature_generation_interaction_generation_step_analyst", FeatureGenerationInteractionGenerationStepAnalyst)
@@ -91,7 +87,7 @@ __all__ = [
     "FeatureGenerationDataValidationStep",
     "FeatureGenerationStep",
     "FeatureGenerationFeatureSelectionStep",
-    "FeatureGenerationPeriodOptimizationStep",
+    # "FeatureGenerationPeriodOptimizationStep",  # Removed - functionality integrated
     "FeatureGenerationLookbackOptimizationStep",
     "FeatureGenerationPeriodLookbackOptimizationStep",
     "FeatureGenerationInteractionGenerationStepAnalyst",

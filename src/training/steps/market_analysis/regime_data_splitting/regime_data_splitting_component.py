@@ -38,6 +38,7 @@ except ImportError as e:
     IMPORT_ERRORS.append(f"pandas: {e}")
 
 from ..components.base_component import BaseMarketAnalysisComponent, ComponentConfig, ComponentResult
+from src.training.steps.base_step import BaseStep
 from src.utils.logger import system_logger
 from src.utils.tprint import tprint, tprint_data_preview
 
@@ -158,7 +159,7 @@ class RegimeSplittingReport:
     recommendations: List[str] = field(default_factory=list)
     timestamp: str = field(default_factory=lambda: datetime.now().isoformat())
 
-class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
+class RegimeDataSplittingComponent(BaseStep):
     """
     Regime Data Splitting Component.
 
@@ -166,10 +167,11 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
     Enhanced with comprehensive error handling, validation, and reporting.
     """
 
-    def __init__(self, config: Optional[ComponentConfig] = None):
+    def __init__(self, config: Optional[ComponentConfig] = None, step_name: str = "regime_data_splitting"):
         """Initialize the regime data splitting component."""
         tprint('🔧 Initializing RegimeDataSplittingComponent')
-        super().__init__(config)
+        # Initialize BaseStep first
+        super().__init__(step_name)
         self.logger = system_logger.getChild('RegimeDataSplitting')
         tprint('✅ Logger initialized')
 
@@ -478,22 +480,57 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
             self.logger.info(f'✅ Enhanced Regime Data Splitting completed: {self.metrics.regime_count} regimes processed')
             tprint(f'✅ Enhanced Regime Data Splitting completed: {self.metrics.regime_count} regimes processed')
 
-            # Save artifacts persistently using the artifact manager
+            # Save artifacts using enhanced BaseStep methods
             try:
-                save_report = await self.save_artifacts(artifacts, {
-                    'symbol': self.config.symbol,
-                    'exchange': self.config.exchange,
-                    'timeframe': self.config.timeframe,
-                    'regime_count': self.metrics.regime_count,
-                    'execution_time': self.metrics.processing_time_seconds,
-                    'data_quality_score': self.metrics.data_quality_score
-                })
-                tprint(
-                    f"💾 [REGIME_DATA_SPLITTING] Artifacts saved persistently (correlation_id={save_report.correlation_id}): {list(save_report.paths.keys())}",
-                    color="green"
+                # Save main regime data splitting result
+                self._save_enhanced_artifact(
+                    artifacts['regime_data_splitting_result'],
+                    'regime_data_splitting_result',
+                    'data',
+                    {
+                        'symbol': self.config.symbol,
+                        'exchange': self.config.exchange,
+                        'timeframe': self.config.timeframe,
+                        'regime_count': self.metrics.regime_count,
+                        'execution_time': self.metrics.processing_time_seconds,
+                        'data_quality_score': self.metrics.data_quality_score,
+                        'execution_timestamp': datetime.now().isoformat()
+                    }
                 )
+                
+                # Save regime splitting report
+                if 'regime_splitting_report' in artifacts:
+                    self._save_enhanced_artifact(
+                        artifacts['regime_splitting_report'],
+                        'regime_splitting_report',
+                        'data',
+                        {
+                            'symbol': self.config.symbol,
+                            'exchange': self.config.exchange,
+                            'timeframe': self.config.timeframe,
+                            'report_type': 'regime_splitting_analysis',
+                            'execution_timestamp': datetime.now().isoformat()
+                        }
+                    )
+                
+                # Save regime validation results
+                if 'regime_validation_results' in artifacts:
+                    self._save_enhanced_artifact(
+                        artifacts['regime_validation_results'],
+                        'regime_validation_results',
+                        'data',
+                        {
+                            'symbol': self.config.symbol,
+                            'exchange': self.config.exchange,
+                            'timeframe': self.config.timeframe,
+                            'validation_type': 'regime_validation',
+                            'execution_timestamp': datetime.now().isoformat()
+                        }
+                    )
+                
+                tprint("💾 [REGIME_DATA_SPLITTING] Artifacts saved using enhanced BaseStep methods", color="green")
             except Exception as e:
-                tprint(f"⚠️ [REGIME_DATA_SPLITTING] Failed to save artifacts persistently: {e}", color="yellow")
+                tprint(f"⚠️ [REGIME_DATA_SPLITTING] Failed to save artifacts: {e}", color="yellow")
 
             return ComponentResult(
                 success=True,

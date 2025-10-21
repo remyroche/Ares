@@ -576,23 +576,62 @@ class RegimeModelsTrainingStep(BaseStep):
             except Exception as e:
                 tprint(f"⚠️ [REGIME_MODELS] Failed to generate regime probability report: {e}", color="yellow")
 
-            # Save artifacts persistently using the artifact manager
+            # Save artifacts using enhanced BaseStep methods
             try:
-                save_report = await self.save_artifacts(artifacts, {
-                    'component_type': 'regime_models_training',
-                    'execution_time': execution_time,
-                    'training_time': training_results['training_time'],
-                    'model_count': len(training_results['models']),
-                    'feature_count': X.shape[1],
-                    'sample_count': X.shape[0],
-                    'selected_feature_count': feature_selection_info.get('retained_feature_count', X.shape[1]) if feature_selection_info else X.shape[1]
-                })
-                tprint(
-                    f"💾 [REGIME_MODELS] Artifacts saved persistently (correlation_id={save_report.correlation_id}): {list(save_report.paths.keys())}",
-                    color="green"
+                # Save main training result
+                self._save_enhanced_artifact(
+                    artifacts['regime_models_training_result'],
+                    'regime_models_training_result',
+                    'data',
+                    {
+                        'symbol': config.get('symbol', 'ETHUSDT'),
+                        'exchange': config.get('exchange', 'binance'),
+                        'timeframe': config.get('timeframe', '15m'),
+                        'component_type': 'regime_models_training',
+                        'execution_time': execution_time,
+                        'training_time': training_results['training_time'],
+                        'model_count': len(training_results['models']),
+                        'feature_count': X.shape[1],
+                        'sample_count': X.shape[0],
+                        'selected_feature_count': feature_selection_info.get('retained_feature_count', X.shape[1]) if feature_selection_info else X.shape[1],
+                        'execution_timestamp': datetime.now().isoformat()
+                    }
                 )
+                
+                # Save individual models
+                for model_name, model_data in training_results['models'].items():
+                    if hasattr(model_data, 'predict'):  # It's a trained model
+                        self._save_enhanced_artifact(
+                            model_data,
+                            f'{model_name}_model',
+                            'model',
+                            {
+                                'symbol': config.get('symbol', 'ETHUSDT'),
+                                'exchange': config.get('exchange', 'binance'),
+                                'timeframe': config.get('timeframe', '15m'),
+                                'model_type': model_name,
+                                'execution_timestamp': datetime.now().isoformat()
+                            }
+                        )
+                
+                # Save regime probability report if available
+                if 'regime_probability_report' in artifacts:
+                    self._save_enhanced_artifact(
+                        artifacts['regime_probability_report'],
+                        'regime_probability_report',
+                        'data',
+                        {
+                            'symbol': config.get('symbol', 'ETHUSDT'),
+                            'exchange': config.get('exchange', 'binance'),
+                            'timeframe': config.get('timeframe', '15m'),
+                            'report_type': 'regime_probability_analysis',
+                            'execution_timestamp': datetime.now().isoformat()
+                        }
+                    )
+                
+                tprint("💾 [REGIME_MODELS] Artifacts saved using enhanced BaseStep methods", color="green")
             except Exception as e:
-                tprint(f"⚠️ [REGIME_MODELS] Failed to save artifacts persistently: {e}", color="yellow")
+                tprint(f"⚠️ [REGIME_MODELS] Failed to save artifacts: {e}", color="yellow")
 
             return ComponentResult(
                 success=True,

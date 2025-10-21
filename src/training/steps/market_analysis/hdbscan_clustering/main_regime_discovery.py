@@ -26,6 +26,7 @@ from src.utils.tprint import (
     tprint_debug, tprint_performance, tprint_progress, tprint_timer,
     tprint_logged, LogLevel
 )
+from src.training.steps.base_step import BaseStep
 from src.utils.common_operations import safe_dataframe_operation
 from src.utils.common_utilities import safe_dataframe_operation as safe_df_op
 from src.utils.math_validation import validate_finite, safe_divide, safe_log, safe_sqrt
@@ -88,7 +89,7 @@ class RegimeResult:
     error_message: Optional[str] = None
 
 
-class HDBSCANRegimeDiscovery:
+class HDBSCANRegimeDiscovery(BaseStep):
     """
     Main orchestrator for HDBSCAN-based regime discovery.
     
@@ -104,8 +105,11 @@ class HDBSCANRegimeDiscovery:
     """
     
     @tprint_logged(LogLevel.INFO, include_args=True)
-    def __init__(self, config: RegimeDiscoveryConfig, use_optimized: bool = True):
+    def __init__(self, config: RegimeDiscoveryConfig, use_optimized: bool = True, step_name: str = "hdbscan_regime_discovery"):
         """Initialize the regime discovery system."""
+        # Initialize BaseStep first
+        super().__init__(step_name)
+        
         start_time = time.perf_counter()
         initial_memory = get_memory_usage()
         
@@ -172,6 +176,197 @@ class HDBSCANRegimeDiscovery:
         tprint_debug(f"Memory usage: {initial_memory:.2f}MB -> {final_memory:.2f}MB (delta: {final_memory - initial_memory:+.2f}MB)")
         
         self.logger.info("HDBSCANRegimeDiscovery initialized successfully")
+    
+    def get_required_artifacts(self) -> List[str]:
+        """Get list of required artifacts this component must produce."""
+        return ['hdbscan_regime_discovery_result', 'regime_labels', 'regime_profiles']
+    
+    async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Execute HDBSCAN regime discovery using BaseStep interface.
+        
+        Args:
+            config: Configuration dictionary with parameters:
+                - symbol: Trading symbol (e.g., 'ETHUSDT')
+                - exchange: Exchange name (e.g., 'binance')
+                - timeframe: Timeframe (e.g., '15m')
+                - data_dir: Data directory path
+                - start_date: Start date (optional)
+                - end_date: End date (optional)
+                - market_data: Market data (optional)
+                - returns: Returns data (optional)
+                - fit: Whether to fit models (default: True)
+                - is_live: Whether this is live trading (default: False)
+        
+        Returns:
+            Dictionary with regime discovery results and artifacts
+        """
+        start_time = datetime.now()
+        
+        try:
+            tprint(f"🔍 Starting HDBSCAN regime discovery for {config.get('symbol', 'UNKNOWN')}", "INFO")
+            
+            # Set context for artifact management
+            self._set_context(
+                symbol=config.get('symbol', 'ETHUSDT'),
+                exchange=config.get('exchange', 'binance'),
+                direction=config.get('direction', 'both'),
+                model=config.get('model', 'default')
+            )
+            
+            # Load market data
+            market_data = self._load_market_data(config)
+            if market_data is None:
+                raise ValueError("No market data found")
+            
+            tprint(f"✅ Loaded market data: {market_data.shape[0]} rows, {market_data.shape[1]} columns", "SUCCESS")
+            
+            # Load returns data if available
+            returns = self._load_returns_data(config)
+            
+            # Get parameters
+            fit = config.get('fit', True)
+            is_live = config.get('is_live', False)
+            
+            # Discover regimes
+            regime_result = await self.discover_regimes(
+                data=market_data,
+                fit=fit,
+                is_live=is_live,
+                returns=returns
+            )
+            
+            if not regime_result.success:
+                raise ValueError(f"Regime discovery failed: {regime_result.error_message}")
+            
+            # Save regime discovery results using artifact manager
+            self._save_enhanced_artifact({
+                'regime_labels': regime_result.labels,
+                'regime_probabilities': regime_result.probabilities,
+                'cluster_persistence': regime_result.cluster_persistence,
+                'economic_profiles': regime_result.economic_profiles,
+                'validation_metrics': regime_result.validation_metrics,
+                'metadata': regime_result.metadata,
+                'processing_time': regime_result.processing_time,
+                'success': regime_result.success
+            }, 'hdbscan_regime_discovery_result', 'data', {
+                'symbol': config.get('symbol', 'ETHUSDT'),
+                'exchange': config.get('exchange', 'binance'),
+                'timeframe': config.get('timeframe', '15m'),
+                'n_regimes': len(np.unique(regime_result.labels[regime_result.labels != -1])),
+                'noise_ratio': np.sum(regime_result.labels == -1) / len(regime_result.labels),
+                'fit_mode': fit,
+                'live_mode': is_live,
+                'execution_timestamp': datetime.now().isoformat()
+            })
+            
+            # Save regime labels separately for easy access
+            self._save_enhanced_artifact({
+                'labels': regime_result.labels,
+                'probabilities': regime_result.probabilities,
+                'metadata': {
+                    'n_regimes': len(np.unique(regime_result.labels[regime_result.labels != -1])),
+                    'noise_ratio': np.sum(regime_result.labels == -1) / len(regime_result.labels),
+                    'symbol': config.get('symbol', 'ETHUSDT'),
+                    'exchange': config.get('exchange', 'binance'),
+                    'timeframe': config.get('timeframe', '15m')
+                }
+            }, 'regime_labels', 'data')
+            
+            # Save economic profiles
+            self._save_enhanced_artifact({
+                'profiles': regime_result.economic_profiles,
+                'validation_metrics': regime_result.validation_metrics,
+                'metadata': regime_result.metadata
+            }, 'regime_profiles', 'data')
+            
+            # Calculate metrics
+            metrics = self._calculate_discovery_metrics(regime_result, start_time, config)
+            
+            tprint(f"✅ HDBSCAN regime discovery completed", "SUCCESS")
+            
+            return {
+                'success': True,
+                'regime_result': regime_result,
+                'metrics': metrics,
+                'processing_time': (datetime.now() - start_time).total_seconds()
+            }
+            
+        except Exception as e:
+            error_msg = f"HDBSCAN regime discovery failed: {str(e)}"
+            tprint(f"❌ {error_msg}", "ERROR")
+            self.logger.error(error_msg)
+            
+            return {
+                'success': False,
+                'error': error_msg,
+                'regime_result': None,
+                'metrics': {},
+                'processing_time': (datetime.now() - start_time).total_seconds()
+            }
+    
+    def _load_market_data(self, config: Dict[str, Any]) -> Optional[pd.DataFrame]:
+        """Load market data from artifacts or config."""
+        try:
+            # Try to load from artifacts first
+            market_data = self._load_dataframe('market_data')
+            if market_data is not None:
+                return market_data
+            
+            # Try alternative artifact names
+            market_data = self._load_dataframe('processed_data') or self._load_dataframe('data')
+            if market_data is not None:
+                return market_data
+            
+            # Try to load from config
+            if 'market_data' in config:
+                return pd.DataFrame(config['market_data'])
+            
+            return None
+            
+        except Exception as e:
+            tprint(f"⚠️ Failed to load market data: {e}", "WARNING")
+            return None
+    
+    def _load_returns_data(self, config: Dict[str, Any]) -> Optional[np.ndarray]:
+        """Load returns data from artifacts or config."""
+        try:
+            # Try to load from artifacts first
+            returns_data = self._get_artifact('returns_data')
+            if returns_data is not None:
+                if isinstance(returns_data, dict) and 'returns' in returns_data:
+                    return np.array(returns_data['returns'])
+                elif isinstance(returns_data, (list, np.ndarray)):
+                    return np.array(returns_data)
+            
+            # Try to load from config
+            if 'returns' in config:
+                return np.array(config['returns'])
+            
+            return None
+            
+        except Exception as e:
+            tprint(f"⚠️ Failed to load returns data: {e}", "WARNING")
+            return None
+    
+    def _calculate_discovery_metrics(self, regime_result: 'RegimeResult', start_time: datetime, config: Dict[str, Any]) -> Dict[str, Any]:
+        """Calculate regime discovery metrics."""
+        try:
+            processing_time = (datetime.now() - start_time).total_seconds()
+            
+            metrics = {
+                'processing_time_seconds': processing_time,
+                'n_regimes': len(np.unique(regime_result.labels[regime_result.labels != -1])),
+                'noise_ratio': np.sum(regime_result.labels == -1) / len(regime_result.labels),
+                'validation_metrics': regime_result.validation_metrics,
+                'success': regime_result.success
+            }
+            
+            return metrics
+            
+        except Exception as e:
+            tprint(f"⚠️ Failed to calculate metrics: {e}", "WARNING")
+            return {'success': False, 'error': str(e)}
     
     async def _discover_regimes_optimized(self, data: pd.DataFrame, 
                                         fit: bool = True, 

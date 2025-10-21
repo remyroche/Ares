@@ -313,18 +313,41 @@ class RegimeEnsembleTrainingStep(BaseStep):
             except Exception as e:
                 tprint(f"⚠️ [REGIME_ENSEMBLE] Failed to generate regime probability report: {e}", color="yellow")
 
-            # Save artifacts persistently using the artifact manager
+            # Save artifacts using enhanced BaseStep methods
             try:
-                save_report = await self.save_artifacts(results, {
-                    'component_type': 'regime_ensemble_training',
-                    'execution_time': (datetime.now() - start_time).total_seconds()
-                })
-                tprint(
-                    f"💾 [REGIME_ENSEMBLE] Artifacts saved persistently (correlation_id={save_report.correlation_id}): {list(save_report.paths.keys())}",
-                    color="green"
+                # Save main ensemble training result
+                self._save_enhanced_artifact(
+                    results['regime_ensemble_training_result'],
+                    'regime_ensemble_training_result',
+                    'data',
+                    {
+                        'symbol': config.get('symbol', 'ETHUSDT'),
+                        'exchange': config.get('exchange', 'binance'),
+                        'timeframe': config.get('timeframe', '15m'),
+                        'component_type': 'regime_ensemble_training',
+                        'execution_time': (datetime.now() - start_time).total_seconds(),
+                        'execution_timestamp': datetime.now().isoformat()
+                    }
                 )
+                
+                # Save regime probability report if available
+                if 'regime_probability_report' in results:
+                    self._save_enhanced_artifact(
+                        results['regime_probability_report'],
+                        'regime_probability_report',
+                        'data',
+                        {
+                            'symbol': config.get('symbol', 'ETHUSDT'),
+                            'exchange': config.get('exchange', 'binance'),
+                            'timeframe': config.get('timeframe', '15m'),
+                            'report_type': 'regime_ensemble_probability_analysis',
+                            'execution_timestamp': datetime.now().isoformat()
+                        }
+                    )
+                
+                tprint("💾 [REGIME_ENSEMBLE] Artifacts saved using enhanced BaseStep methods", color="green")
             except Exception as e:
-                tprint(f"⚠️ [REGIME_ENSEMBLE] Failed to save artifacts persistently: {e}", color="yellow")
+                tprint(f"⚠️ [REGIME_ENSEMBLE] Failed to save artifacts: {e}", color="yellow")
 
             return {
                 'success': True,

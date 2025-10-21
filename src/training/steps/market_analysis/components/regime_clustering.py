@@ -2918,14 +2918,47 @@ class RegimeClusteringComponent(BaseStep):
                 except Exception as e:
                     tprint(f"⚠️ Hardware cleanup failed: {e}", "WARNING")
 
-            # Save artifacts using BaseStep methods
+            # Save artifacts using enhanced BaseStep methods
             for artifact_name, artifact_data in artifacts.items():
                 if isinstance(artifact_data, pd.DataFrame):
-                    self._save_dataframe(artifact_data, artifact_name)
+                    self._save_enhanced_artifact(
+                        artifact_data, 
+                        artifact_name, 
+                        'data',
+                        {
+                            'symbol': config.get('symbol', 'ETHUSDT'),
+                            'exchange': config.get('exchange', 'binance'),
+                            'timeframe': config.get('timeframe', '15m'),
+                            'n_clusters': clustering_result.get('n_clusters', 0),
+                            'clustering_method': clustering_result.get('method', 'unknown'),
+                            'execution_timestamp': datetime.now().isoformat()
+                        }
+                    )
                 elif isinstance(artifact_data, dict):
-                    self._save_metadata(artifact_data, artifact_name)
+                    self._save_enhanced_artifact(
+                        artifact_data, 
+                        artifact_name, 
+                        'metadata',
+                        {
+                            'symbol': config.get('symbol', 'ETHUSDT'),
+                            'exchange': config.get('exchange', 'binance'),
+                            'timeframe': config.get('timeframe', '15m'),
+                            'execution_timestamp': datetime.now().isoformat()
+                        }
+                    )
                 else:
-                    self._save_model(artifact_data, artifact_name)
+                    self._save_enhanced_artifact(
+                        artifact_data, 
+                        artifact_name, 
+                        'model',
+                        {
+                            'symbol': config.get('symbol', 'ETHUSDT'),
+                            'exchange': config.get('exchange', 'binance'),
+                            'timeframe': config.get('timeframe', '15m'),
+                            'model_type': type(artifact_data).__name__,
+                            'execution_timestamp': datetime.now().isoformat()
+                        }
+                    )
             
             # Generate detailed metrics markdown report
             metrics_report_path = self._generate_metrics_report(

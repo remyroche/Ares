@@ -91,7 +91,7 @@ from src.utils.hardware.m1_gpu_utils import get_m1_gpu_manager
 from src.utils.hardware.unified_hardware_manager import UnifiedHardwareManager
 
 from src.utils.logger import system_logger
-from src.utils.tprint import tprint
+from src.utils.tprint import tprint, tprint_data_format
 
 class RegimeSplittingStatus(Enum):
     """Status enumeration for regime splitting operations."""
@@ -319,6 +319,13 @@ class StreamlinedRegimeDataSplitting:
             data = optimize_dataframe_dtypes(data)
 
             self.logger.info(f"✅ Loaded {len(data)} rows of regime data")
+            
+            # Add comprehensive data format analysis for troubleshooting
+            try:
+                tprint_data_format(data, "loaded_regime_data", level="INFO")
+            except Exception as e:
+                tprint(f"⚠️ [STREAMLINED_REGIME_SPLITTING] Data format analysis failed: {e}", color="yellow")
+            
             return data
 
         except Exception as e:
@@ -455,6 +462,12 @@ class StreamlinedRegimeDataSplitting:
     def _validate_tagged_data(self, data: pd.DataFrame) -> bool:
         """Validate tagged data integrity with comprehensive checks."""
         try:
+            # Add comprehensive data format analysis for troubleshooting
+            try:
+                tprint_data_format(data, "tagged_data", level="INFO")
+            except Exception as e:
+                tprint(f"⚠️ [STREAMLINED_REGIME_SPLITTING] Tagged data format analysis failed: {e}", color="yellow")
+            
             # Check required columns
             required_columns = ['timestamp', 'composite_cluster_id']
             for col in required_columns:

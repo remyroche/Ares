@@ -39,7 +39,7 @@ except ImportError as e:
 
 from ..components.base_component import BaseMarketAnalysisComponent, ComponentConfig, ComponentResult
 from src.utils.logger import system_logger
-from src.utils.tprint import tprint, tprint_data_preview
+from src.utils.tprint import tprint, tprint_data_preview, tprint_data_format
 
 # Import our standardized utilities
 from .validation_utils import get_validator, ValidationErrorType, ValidationResult, create_standardized_error
@@ -536,6 +536,12 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
         if data is None:
             validation_result['valid'] = False
             validation_result['errors'].append("VALIDATION_ERROR: Input data is None. Action required: Provide valid market data.")
+        else:
+            # Add comprehensive data format analysis for troubleshooting
+            try:
+                tprint_data_format(data, "input_data", level="INFO")
+            except Exception as e:
+                tprint(f"⚠️ [REGIME_DATA_SPLITTING] Input data format analysis failed: {e}", color="yellow")
 
         # Check pipeline state
         if not isinstance(pipeline_state, dict):
@@ -595,6 +601,12 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
             if len(market_data) == 0:
                 self.logger.error("❌ Market data is empty")
                 return None
+            
+            # Add comprehensive data format analysis for troubleshooting
+            try:
+                tprint_data_format(market_data, "loaded_market_data", level="INFO")
+            except Exception as e:
+                tprint(f"⚠️ [REGIME_DATA_SPLITTING] Data format analysis failed: {e}", color="yellow")
 
             # Check for required columns using common utilities
             required_columns = ['open', 'high', 'low', 'close', 'volume']

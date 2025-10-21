@@ -1,4 +1,4 @@
-from src.utils.tprint import tprint, tprint_info, tprint_success, tprint_warning, tprint_error
+from src.utils.tprint import tprint, tprint_info, tprint_success, tprint_warning, tprint_error, tprint_data_format
 import warnings
 
 from typing import Dict, List, Optional, Union, Any, Tuple, Callable
@@ -1164,6 +1164,12 @@ class RegimeDataSplittingStep(BaseStep):
                 raise ValueError("No market data found")
             
             tprint(f"✅ Loaded market data: {market_data.shape[0]} rows, {market_data.shape[1]} columns", "SUCCESS")
+            
+            # Add comprehensive data format analysis for troubleshooting
+            try:
+                tprint_data_format(market_data, "market_data", level="INFO")
+            except Exception as e:
+                tprint(f"⚠️ [REGIME_DATA_SPLITTING] Market data format analysis failed: {e}", color="yellow")
 
             # Load regime labels
             regime_labels = self._load_regime_labels(config)
@@ -1171,6 +1177,12 @@ class RegimeDataSplittingStep(BaseStep):
                 raise ValueError("No regime labels found")
             
             tprint(f"✅ Loaded regime labels: {len(regime_labels)} labels", "SUCCESS")
+            
+            # Add comprehensive data format analysis for troubleshooting
+            try:
+                tprint_data_format(regime_labels, "regime_labels", level="INFO")
+            except Exception as e:
+                tprint(f"⚠️ [REGIME_DATA_SPLITTING] Regime labels format analysis failed: {e}", color="yellow")
 
             # Initialize if not already done
             if not self.start_time:

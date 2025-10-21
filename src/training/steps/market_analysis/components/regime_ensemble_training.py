@@ -19,7 +19,7 @@ from datetime import datetime
 
 from src.training.steps.base_step import BaseStep
 from src.utils.logger import system_logger
-from src.utils.tprint import tprint, tprint_info, tprint_success, tprint_warning, tprint_error, tprint_data_preview
+from src.utils.tprint import tprint, tprint_info, tprint_success, tprint_warning, tprint_error, tprint_data_preview, tprint_data_format
 
 # Suppress warnings
 warnings.filterwarnings('ignore')
@@ -133,6 +133,12 @@ class RegimeEnsembleTrainingStep(BaseStep):
                 tprint_data_preview(data, "ensemble_training_data", level="INFO")
             except Exception as e:
                 tprint(f"⚠️ [REGIME_ENSEMBLE] Data preview failed: {e}", color="yellow")
+            
+            # Add comprehensive data format analysis for troubleshooting
+            try:
+                tprint_data_format(data, "ensemble_training_data", level="INFO")
+            except Exception as e:
+                tprint(f"⚠️ [REGIME_ENSEMBLE] Data format analysis failed: {e}", color="yellow")
 
             # Load regime labels
             regime_labels = self._load_regime_labels(config)
@@ -140,6 +146,12 @@ class RegimeEnsembleTrainingStep(BaseStep):
                 raise ValueError("No regime labels found")
             
             tprint(f"✅ Loaded regime labels: {len(regime_labels)} labels", "SUCCESS")
+            
+            # Add comprehensive data format analysis for troubleshooting
+            try:
+                tprint_data_format(regime_labels, "regime_labels", level="INFO")
+            except Exception as e:
+                tprint(f"⚠️ [REGIME_ENSEMBLE] Regime labels format analysis failed: {e}", color="yellow")
 
             # Load base models
             base_models = self._load_base_models(config)
@@ -147,6 +159,12 @@ class RegimeEnsembleTrainingStep(BaseStep):
                 raise ValueError("No base models found")
             
             tprint(f"✅ Loaded {len(base_models)} base models", "SUCCESS")
+            
+            # Add comprehensive data format analysis for troubleshooting
+            try:
+                tprint_data_format(base_models, "base_models", level="INFO")
+            except Exception as e:
+                tprint(f"⚠️ [REGIME_ENSEMBLE] Base models format analysis failed: {e}", color="yellow")
 
             # Prepare training data from the input data DataFrame with advanced regime features
             tprint("🔧 Preparing training data with advanced regime features", "INFO")
@@ -851,6 +869,13 @@ class RegimeEnsembleTrainingStep(BaseStep):
             # Log input data characteristics
             tprint(f"📊 [REGIME_ENSEMBLE] Input data shape: {data.shape}", color="blue")
             tprint(f"📊 [REGIME_ENSEMBLE] Input data columns: {list(data.columns)}", color="blue")
+            
+            # Add comprehensive data format analysis for troubleshooting
+            try:
+                tprint_data_format(data, "input_market_data", level="INFO")
+                tprint_data_format(regime_labels, "regime_labels", level="INFO")
+            except Exception as e:
+                tprint(f"⚠️ [REGIME_ENSEMBLE] Data format analysis failed: {e}", color="yellow")
 
             # Force comprehensive feature generation using feature bank
             tprint("🔧 [REGIME_ENSEMBLE] FORCING comprehensive feature generation using feature bank", color="cyan", bold=True)

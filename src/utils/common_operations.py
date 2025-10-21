@@ -1600,19 +1600,6 @@ def format_bytes(bytes_value: int) -> str:
         bytes_value /= 1024.0
     return f"{bytes_value:.2f} PB"
 
-def safe_log_metric(metric_name: str, value: float, step: int = 0) -> None:
-    """Safely log metric."""
-    try:
-        logger.info(f"Metric {metric_name}: {value} at step {step}")
-    except Exception:
-        pass
-
-def safe_log_params(params: Dict[str, Any]) -> None:
-    """Safely log parameters."""
-    try:
-        logger.info(f"Parameters: {params}")
-    except Exception:
-        pass
 
 def get_current_datetime() -> str:
     """Get current datetime as string."""
@@ -1670,38 +1657,6 @@ def setup_basic_logging(level: int = logging.INFO) -> None:
         datefmt='%Y-%m-%d %H:%M:%S'
     )
 
-def safe_log_artifact(artifact_name: str, artifact_data: Any, logger: Optional[logging.Logger] = None) -> None:
-    """Safely log an artifact without raising exceptions."""
-    try:
-        if logger:
-            logger.info(f"Artifact logged: {artifact_name}")
-        else:
-            logging.info(f"Artifact logged: {artifact_name}")
-    except Exception:
-        # Silently ignore logging errors
-        pass
-
-def safe_log_metric(metric_name: str, metric_value: Any, logger: Optional[logging.Logger] = None) -> None:
-    """Safely log a metric without raising exceptions."""
-    try:
-        if logger:
-            logger.info(f"Metric logged: {metric_name} = {metric_value}")
-        else:
-            logging.info(f"Metric logged: {metric_name} = {metric_value}")
-    except Exception:
-        # Silently ignore logging errors
-        pass
-
-def safe_log_params(params: Dict[str, Any], logger: Optional[logging.Logger] = None) -> None:
-    """Safely log parameters without raising exceptions."""
-    try:
-        if logger:
-            logger.info(f"Parameters logged: {params}")
-        else:
-            logging.info(f"Parameters logged: {params}")
-    except Exception:
-        # Silently ignore logging errors
-        pass
 
 def validate_correlation_matrix(corr_matrix: Any, logger: Optional[logging.Logger] = None) -> bool:
     """Validate correlation matrix for common issues."""
@@ -2441,8 +2396,6 @@ __all__ = [
     'safe_float',
     'safe_int',
     'format_bytes',
-    'safe_log_metric',
-    'safe_log_params',
     'get_current_datetime',
     'format_datetime',
     'create_fallback_logger',

@@ -137,7 +137,7 @@ from src.utils.lookahead_bias_detector import (
     get_global_detector, validate_no_future_data, LookaheadBiasError
 )
 from src.utils.enhanced_mlflow_integration import EnhancedMLflowManager
-from src.utils.enhanced_artifact_manager import get_artifact_manager
+from src.utils.artifact_manager import setup_enhanced_artifact_manager as get_artifact_manager
 from src.utils.artifact_pickup_utils import get_artifact_pickup_utils
 from src.utils.version_manager import get_version_manager
 
@@ -441,7 +441,7 @@ class FunctionCallTracker:
         self.error_tracking = {}
 
         # Initialize artifact and version managers
-        self.artifact_manager = get_artifact_manager()
+        self.artifact_manager = get_artifact_manager(self.config)
         self.pickup_utils = get_artifact_pickup_utils()
         self.version_manager = get_version_manager()
     def start_call(self, func_name: str, args: tuple, kwargs: dict, caller: str = None) -> str:
@@ -620,7 +620,7 @@ class AsyncFileProcessor:
         }
 
         # Initialize artifact and version managers
-        self.artifact_manager = get_artifact_manager()
+        self.artifact_manager = get_artifact_manager(self.config)
         self.pickup_utils = get_artifact_pickup_utils()
         self.version_manager = get_version_manager()
     async def process_files_concurrent(
@@ -721,7 +721,7 @@ class MemoryPoolManager:
         self.gc_threshold = max_memory_gb * 0.8 * 1024**3  # 80% threshold
 
         # Initialize artifact and version managers
-        self.artifact_manager = get_artifact_manager()
+        self.artifact_manager = get_artifact_manager(self.config)
         self.pickup_utils = get_artifact_pickup_utils()
         self.version_manager = get_version_manager()
     async def allocate_chunk(self, estimated_size_bytes: int) -> bool:
@@ -897,7 +897,7 @@ class RegimeDataSplittingStep(BaseStep):
             self.financial_logger = None
 
         # Initialize artifact and version managers
-        self.artifact_manager = get_artifact_manager()
+        self.artifact_manager = get_artifact_manager(self.config)
         self.pickup_utils = get_artifact_pickup_utils()
         self.version_manager = get_version_manager()
     def _init_performance_optimizers(self) -> None:

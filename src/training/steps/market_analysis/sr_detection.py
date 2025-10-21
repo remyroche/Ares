@@ -34,8 +34,7 @@ from src.utils.common_operations import (
     ensure_directory, create_fallback_logger, create_fallback_decorator,
     get_current_datetime, format_datetime, create_empty_dataframe,
     safe_fillna, get_logger, setup_basic_logging,
-    validate_dataframe, optimize_dataframe_dtypes,
-    safe_log_metric, safe_log_params, safe_log_artifact
+    validate_dataframe, optimize_dataframe_dtypes
 )
 
 # Core decorators and errors

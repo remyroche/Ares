@@ -31,6 +31,16 @@ from src.utils.common_utilities import safe_dataframe_operation as safe_df_op
 from src.utils.math_validation import validate_finite, safe_divide, safe_log, safe_sqrt
 from src.utils.serialization_utils import save_pickle, load_pickle
 
+# Import enhanced ML common utilities
+from src.utils.ml_common.optimization.bayesian_tpe_optimizer import (
+    BayesianTPEOptimizer, OptimizationConfig, TPEConfig
+)
+from src.utils.ml_common.unified_vectorization_manager import (
+    UnifiedVectorizationManager, OperationType, OptimizationStrategy
+)
+from src.utils.ml_common.evaluation.unified_evaluator import UnifiedEvaluator
+from src.utils.ml_common.explainability.model_explainability import ModelExplainability
+
 # Import enhanced hardware optimization tools
 from src.utils.hardware import (
     get_unified_hardware_manager, get_comprehensive_optimizer,
@@ -106,6 +116,10 @@ class HDBSCANRegimeDiscovery:
         # Initialize enhanced hardware optimization
         with tprint_timer("Enhanced hardware optimization initialization"):
             self._initialize_enhanced_hardware_optimization()
+        
+        # Initialize ML common utilities
+        with tprint_timer("ML common utilities initialization"):
+            self._initialize_ml_common_utilities()
         
         # Performance tracking
         self.performance_stats = {
@@ -275,13 +289,30 @@ class HDBSCANRegimeDiscovery:
         try:
             tprint_info("Initializing enhanced hardware optimization utilities")
             
-            # Initialize unified hardware manager
+            # Initialize unified hardware manager with enhanced configuration
             with tprint_timer("Unified hardware manager initialization"):
                 self.hardware_manager = get_unified_hardware_manager()
+                
+                # Configure for machine learning workload with aggressive optimization
                 self.hardware_manager.configure_workload(WorkloadType.ML_TRAINING, OptimizationLevel.AGGRESSIVE)
+                
+                # Enable M1-specific optimizations if available
+                if hasattr(self.hardware_manager, 'enable_m1_optimizations'):
+                    self.hardware_manager.enable_m1_optimizations(True)
+                    tprint_info("🍎 M1-specific optimizations enabled")
+                
+                # Configure memory optimization
+                if hasattr(self.hardware_manager, 'configure_memory_optimization'):
+                    self.hardware_manager.configure_memory_optimization(
+                        enable_compression=True,
+                        enable_caching=True,
+                        memory_threshold_mb=500.0
+                    )
+                    tprint_info("💾 Memory optimization configured")
+                
                 tprint_success("✅ Unified hardware manager initialized")
             
-            # Initialize comprehensive optimizer
+            # Initialize comprehensive optimizer with enhanced configuration
             with tprint_timer("Comprehensive optimizer initialization"):
                 comprehensive_config = ComprehensiveConfig(
                     optimization_strategy=OptimizationStrategy.MAXIMUM_PERFORMANCE,
@@ -289,9 +320,26 @@ class HDBSCANRegimeDiscovery:
                     enable_adaptive_optimization=True,
                     enable_cross_component_optimization=True,
                     enable_thermal_management=True,
-                    enable_power_management=True
+                    enable_power_management=True,
+                    # Enhanced ML-specific optimizations
+                    enable_gpu_acceleration=True,
+                    enable_vectorization=True,
+                    enable_parallel_processing=True,
+                    max_memory_usage_gb=8.0,
+                    enable_memory_compression=True
                 )
                 self.comprehensive_optimizer = get_comprehensive_optimizer(comprehensive_config)
+                
+                # Configure ML-specific optimizations
+                if hasattr(self.comprehensive_optimizer, 'configure_ml_optimizations'):
+                    self.comprehensive_optimizer.configure_ml_optimizations(
+                        enable_batch_processing=True,
+                        enable_feature_caching=True,
+                        enable_model_caching=True,
+                        enable_gradient_accumulation=True
+                    )
+                    tprint_info("🤖 ML-specific optimizations configured")
+                
                 tprint_success("✅ Comprehensive optimizer initialized")
             
             # Initialize caching system
@@ -307,6 +355,52 @@ class HDBSCANRegimeDiscovery:
             self.hardware_manager = get_unified_hardware_manager(conservative_mode=True)
             self.comprehensive_optimizer = None
             self.cache_system = None
+    
+    @tprint_logged(LogLevel.INFO, include_result=True)
+    def _initialize_ml_common_utilities(self):
+        """Initialize ML common utilities for enhanced regime discovery."""
+        try:
+            tprint_info("Initializing ML common utilities")
+            
+            # Initialize Bayesian TPE optimizer for hyperparameter optimization
+            with tprint_timer("Bayesian TPE optimizer initialization"):
+                tpe_config = TPEConfig(
+                    n_trials=100,
+                    timeout_seconds=3600,
+                    enable_pruning=True,
+                    enable_memory_optimization=True
+                )
+                self.bayesian_optimizer = BayesianTPEOptimizer(tpe_config)
+                tprint_success("✅ Bayesian TPE optimizer initialized")
+            
+            # Initialize unified vectorization manager
+            with tprint_timer("Unified vectorization manager initialization"):
+                self.vectorization_manager = UnifiedVectorizationManager()
+                self.vectorization_manager.configure_operation(
+                    OperationType.MACHINE_LEARNING,
+                    OptimizationStrategy.BALANCED
+                )
+                tprint_success("✅ Unified vectorization manager initialized")
+            
+            # Initialize unified evaluator
+            with tprint_timer("Unified evaluator initialization"):
+                self.evaluator = UnifiedEvaluator()
+                tprint_success("✅ Unified evaluator initialized")
+            
+            # Initialize model explainability
+            with tprint_timer("Model explainability initialization"):
+                self.explainability = ModelExplainability()
+                tprint_success("✅ Model explainability initialized")
+            
+            tprint_success("🚀 ML common utilities initialization complete")
+                
+        except Exception as e:
+            tprint_error(f"❌ ML common utilities initialization failed: {e}")
+            # Fallback to basic functionality
+            self.bayesian_optimizer = None
+            self.vectorization_manager = None
+            self.evaluator = None
+            self.explainability = None
     
     def _initialize_components(self):
         """Initialize all regime discovery components."""
@@ -681,12 +775,27 @@ class HDBSCANRegimeDiscovery:
         if not hasattr(self, 'hardware_manager'):
             return {'error': 'Hardware manager not initialized'}
         
-        return {
+        stats = {
             'hardware_manager': self.hardware_manager.get_system_status(),
             'cache_system': self.cache_system.get_statistics() if self.cache_system else None,
             'comprehensive_optimizer': self.comprehensive_optimizer.get_comprehensive_metrics() if self.comprehensive_optimizer else None,
             'performance_stats': self.performance_stats
         }
+        
+        # Add enhanced hardware metrics if available
+        if hasattr(self.hardware_manager, 'get_enhanced_metrics'):
+            stats['enhanced_metrics'] = self.hardware_manager.get_enhanced_metrics()
+        
+        if hasattr(self.hardware_manager, 'get_m1_metrics'):
+            stats['m1_metrics'] = self.hardware_manager.get_m1_metrics()
+        
+        if hasattr(self.hardware_manager, 'get_memory_optimization_stats'):
+            stats['memory_optimization'] = self.hardware_manager.get_memory_optimization_stats()
+        
+        if hasattr(self.hardware_manager, 'get_gpu_metrics'):
+            stats['gpu_metrics'] = self.hardware_manager.get_gpu_metrics()
+        
+        return stats
     
     def optimize_for_workload(self, workload_type: WorkloadType, optimization_level: OptimizationLevel = OptimizationLevel.AGGRESSIVE):
         """Optimize hardware for specific workload type."""
@@ -695,3 +804,320 @@ class HDBSCANRegimeDiscovery:
             tprint_info(f"🔧 Hardware optimized for {workload_type.value} workload ({optimization_level.value})")
         else:
             tprint_warning("⚠️ Hardware manager not available for optimization")
+    
+    @tprint_logged(LogLevel.INFO, include_args=True, include_result=True)
+    def optimize_for_regime_discovery(self, data_size: int, feature_count: int) -> Dict[str, Any]:
+        """
+        Optimize hardware specifically for regime discovery operations.
+        
+        Args:
+            data_size: Number of data points
+            feature_count: Number of features
+            
+        Returns:
+            Dictionary with optimization results
+        """
+        try:
+            if not hasattr(self, 'hardware_manager'):
+                return {'success': False, 'error': 'Hardware manager not available'}
+            
+            tprint_info(f"🔧 Optimizing hardware for regime discovery: {data_size} samples, {feature_count} features")
+            
+            # Configure workload based on data size
+            if data_size > 100000:
+                workload_type = WorkloadType.ML_TRAINING
+                optimization_level = OptimizationLevel.MAXIMUM
+            elif data_size > 10000:
+                workload_type = WorkloadType.ML_TRAINING
+                optimization_level = OptimizationLevel.AGGRESSIVE
+            else:
+                workload_type = WorkloadType.ML_TRAINING
+                optimization_level = OptimizationLevel.BALANCED
+            
+            # Configure hardware for regime discovery
+            self.hardware_manager.configure_workload(workload_type, optimization_level)
+            
+            # Configure memory optimization based on data size
+            if hasattr(self.hardware_manager, 'configure_memory_optimization'):
+                memory_threshold = min(1000.0, data_size * feature_count * 8 / 1024 / 1024)  # Estimate memory usage
+                self.hardware_manager.configure_memory_optimization(
+                    enable_compression=True,
+                    enable_caching=True,
+                    memory_threshold_mb=memory_threshold
+                )
+                tprint_info(f"💾 Memory optimization configured: {memory_threshold:.1f}MB threshold")
+            
+            # Configure vectorization for regime discovery
+            if hasattr(self.hardware_manager, 'configure_vectorization'):
+                self.hardware_manager.configure_vectorization(
+                    enable_vectorization=True,
+                    vectorization_threshold=1000,
+                    enable_parallel_processing=True
+                )
+                tprint_info("⚡ Vectorization configured for regime discovery")
+            
+            # Get optimization recommendations
+            recommendations = self.hardware_manager.get_optimization_recommendations(
+                workload_type=workload_type,
+                data_size=data_size,
+                feature_count=feature_count
+            )
+            
+            tprint_success(f"✅ Hardware optimized for regime discovery")
+            
+            return {
+                'workload_type': workload_type.value,
+                'optimization_level': optimization_level.value,
+                'recommendations': recommendations,
+                'success': True
+            }
+            
+        except Exception as e:
+            tprint_error(f"❌ Hardware optimization for regime discovery failed: {e}")
+            return {'success': False, 'error': str(e)}
+    
+    @tprint_logged(LogLevel.INFO, include_args=True, include_result=True)
+    def optimize_hyperparameters(self, data: pd.DataFrame, 
+                                search_space: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """
+        Optimize hyperparameters using Bayesian TPE optimizer.
+        
+        Args:
+            data: Market data for optimization
+            search_space: Optional custom search space
+            
+        Returns:
+            Dictionary with optimized parameters and results
+        """
+        try:
+            if not hasattr(self, 'bayesian_optimizer') or self.bayesian_optimizer is None:
+                tprint_warning("⚠️ Bayesian optimizer not available, using default parameters")
+                return self._get_default_hyperparameters()
+            
+            tprint_info("🔧 Starting hyperparameter optimization with Bayesian TPE")
+            
+            # Define search space if not provided
+            if search_space is None:
+                search_space = {
+                    'min_cluster_size': (10, 50),
+                    'min_samples': (3, 20),
+                    'cluster_selection_epsilon': (0.0, 0.5),
+                    'metric': ['euclidean', 'manhattan', 'cosine'],
+                    'alpha': (0.5, 2.0)
+                }
+            
+            # Define objective function
+            def objective(trial):
+                try:
+                    # Sample parameters
+                    params = {
+                        'min_cluster_size': trial.suggest_int('min_cluster_size', *search_space['min_cluster_size']),
+                        'min_samples': trial.suggest_int('min_samples', *search_space['min_samples']),
+                        'cluster_selection_epsilon': trial.suggest_float('cluster_selection_epsilon', *search_space['cluster_selection_epsilon']),
+                        'metric': trial.suggest_categorical('metric', search_space['metric']),
+                        'alpha': trial.suggest_float('alpha', *search_space['alpha'])
+                    }
+                    
+                    # Create temporary clusterer with sampled parameters
+                    temp_config = HDBSCANClustererConfig(**params)
+                    temp_clusterer = HDBSCANClusterer(temp_config)
+                    
+                    # Perform clustering
+                    cluster_labels, clustering_info = temp_clusterer.cluster_data(data)
+                    
+                    # Calculate validation score
+                    if len(cluster_labels) > 0:
+                        n_clusters = len(set(cluster_labels)) - (1 if -1 in cluster_labels else 0)
+                        if n_clusters >= 2:
+                            valid_mask = cluster_labels != -1
+                            if valid_mask.sum() >= 2:
+                                valid_labels = cluster_labels[valid_mask]
+                                valid_features = data.values[valid_mask]
+                                
+                                if len(set(valid_labels)) >= 2:
+                                    score = silhouette_score(valid_features, valid_labels)
+                                    return score
+                    
+                    return -1.0  # Return low score for invalid clustering
+                    
+                except Exception as e:
+                    tprint_debug(f"Trial failed: {e}")
+                    return -1.0
+            
+            # Run optimization
+            with tprint_timer("Bayesian TPE optimization"):
+                optimization_result = self.bayesian_optimizer.optimize(
+                    objective_function=objective,
+                    search_space=search_space,
+                    n_trials=50,
+                    timeout_seconds=1800
+                )
+            
+            if optimization_result and optimization_result.best_params:
+                tprint_success(f"✅ Hyperparameter optimization completed. Best score: {optimization_result.best_value:.3f}")
+                return {
+                    'best_params': optimization_result.best_params,
+                    'best_score': optimization_result.best_value,
+                    'n_trials': optimization_result.n_trials,
+                    'optimization_time': optimization_result.optimization_time,
+                    'success': True
+                }
+            else:
+                tprint_warning("⚠️ Hyperparameter optimization failed, using default parameters")
+                return self._get_default_hyperparameters()
+                
+        except Exception as e:
+            tprint_error(f"❌ Hyperparameter optimization failed: {e}")
+            return self._get_default_hyperparameters()
+    
+    def _get_default_hyperparameters(self) -> Dict[str, Any]:
+        """Get default hyperparameters as fallback."""
+        return {
+            'best_params': {
+                'min_cluster_size': 20,
+                'min_samples': 5,
+                'cluster_selection_epsilon': 0.0,
+                'metric': 'euclidean',
+                'alpha': 1.0
+            },
+            'best_score': 0.0,
+            'n_trials': 0,
+            'optimization_time': 0.0,
+            'success': False
+        }
+    
+    @tprint_logged(LogLevel.INFO, include_args=True, include_result=True)
+    def optimize_vectorization(self, data: pd.DataFrame, 
+                             operation_type: OperationType = OperationType.MACHINE_LEARNING) -> Dict[str, Any]:
+        """
+        Optimize vectorization for specific operation type.
+        
+        Args:
+            data: Data to optimize vectorization for
+            operation_type: Type of operation to optimize for
+            
+        Returns:
+            Dictionary with optimization results
+        """
+        try:
+            if not hasattr(self, 'vectorization_manager') or self.vectorization_manager is None:
+                tprint_warning("⚠️ Vectorization manager not available")
+                return {'success': False, 'error': 'Vectorization manager not available'}
+            
+            tprint_info(f"🔧 Optimizing vectorization for {operation_type.value}")
+            
+            # Configure vectorization for the operation type
+            self.vectorization_manager.configure_operation(
+                operation_type, 
+                OptimizationStrategy.BALANCED
+            )
+            
+            # Get optimization recommendations
+            recommendations = self.vectorization_manager.get_optimization_recommendations(
+                data_shape=data.shape,
+                operation_type=operation_type
+            )
+            
+            tprint_success(f"✅ Vectorization optimization completed")
+            return {
+                'recommendations': recommendations,
+                'operation_type': operation_type.value,
+                'data_shape': data.shape,
+                'success': True
+            }
+            
+        except Exception as e:
+            tprint_error(f"❌ Vectorization optimization failed: {e}")
+            return {'success': False, 'error': str(e)}
+    
+    @tprint_logged(LogLevel.INFO, include_args=True, include_result=True)
+    def evaluate_regime_quality(self, cluster_labels: np.ndarray, 
+                               features: np.ndarray, 
+                               market_data: pd.DataFrame) -> Dict[str, Any]:
+        """
+        Evaluate regime quality using unified evaluator.
+        
+        Args:
+            cluster_labels: Cluster labels
+            features: Feature matrix
+            market_data: Market data
+            
+        Returns:
+            Dictionary with evaluation results
+        """
+        try:
+            if not hasattr(self, 'evaluator') or self.evaluator is None:
+                tprint_warning("⚠️ Evaluator not available")
+                return {'success': False, 'error': 'Evaluator not available'}
+            
+            tprint_info("📊 Evaluating regime quality")
+            
+            # Prepare data for evaluation
+            evaluation_data = {
+                'cluster_labels': cluster_labels,
+                'features': features,
+                'market_data': market_data
+            }
+            
+            # Run comprehensive evaluation
+            with tprint_timer("Regime quality evaluation"):
+                evaluation_result = self.evaluator.evaluate_clustering(
+                    data=evaluation_data,
+                    metrics=['silhouette', 'calinski_harabasz', 'davies_bouldin', 'inertia']
+                )
+            
+            tprint_success(f"✅ Regime quality evaluation completed")
+            return {
+                'evaluation_result': evaluation_result,
+                'success': True
+            }
+            
+        except Exception as e:
+            tprint_error(f"❌ Regime quality evaluation failed: {e}")
+            return {'success': False, 'error': str(e)}
+    
+    @tprint_logged(LogLevel.INFO, include_args=True, include_result=True)
+    def explain_regime_discovery(self, cluster_labels: np.ndarray, 
+                                features: np.ndarray, 
+                                feature_names: List[str]) -> Dict[str, Any]:
+        """
+        Explain regime discovery using model explainability.
+        
+        Args:
+            cluster_labels: Cluster labels
+            features: Feature matrix
+            feature_names: List of feature names
+            
+        Returns:
+            Dictionary with explanation results
+        """
+        try:
+            if not hasattr(self, 'explainability') or self.explainability is None:
+                tprint_warning("⚠️ Explainability not available")
+                return {'success': False, 'error': 'Explainability not available'}
+            
+            tprint_info("🔍 Explaining regime discovery")
+            
+            # Prepare data for explanation
+            explanation_data = {
+                'cluster_labels': cluster_labels,
+                'features': features,
+                'feature_names': feature_names
+            }
+            
+            # Run explanation
+            with tprint_timer("Regime discovery explanation"):
+                explanation_result = self.explainability.explain_clustering(
+                    data=explanation_data,
+                    methods=['shap', 'lime', 'permutation_importance']
+                )
+            
+            tprint_success(f"✅ Regime discovery explanation completed")
+            return {
+                'explanation_result': explanation_result,
+                'success': True
+            }
+            
+        except Exception as e:
+            tprint_error(f"❌ Regime discovery explanation failed: {e}")
+            return {'success': False, 'error': str(e)}

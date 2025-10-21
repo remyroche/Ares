@@ -22,6 +22,20 @@ from src.utils.hardware import (
     optimize_dataframe_default, optimize_numpy_array_default
 )
 
+# Import common operations and utilities
+from src.utils.common_operations import (
+    safe_dataframe_operation, validate_dataframe_columns, 
+    safe_numeric_operation, optimize_dataframe_memory
+)
+from src.utils.common_utilities import (
+    safe_dataframe_operation as safe_df_op,
+    validate_dataframe_columns as validate_df_cols
+)
+from src.utils.math_validation import (
+    validate_finite, safe_divide, safe_log, safe_sqrt, safe_power,
+    validate_array, validate_numeric_range, safe_statistical_operation
+)
+
 logger = logging.getLogger(__name__)
 
 @dataclass
@@ -147,25 +161,48 @@ class HDBSCANClusterer:
             return np.zeros(len(features_df), dtype=int), {'error': str(e)}
     
     def _validate_input(self, features_df: pd.DataFrame) -> pd.DataFrame:
-        """Validate input features."""
+        """Validate input features with enhanced validation using common utilities."""
         try:
-            # Check for NaN values
-            if features_df.isnull().any().any():
-                logger.warning("⚠️ Found NaN values, filling with 0")
-                features_df = features_df.fillna(0)
+            # Use safe dataframe operation for validation
+            def validate_and_clean_dataframe(df):
+                # Check for NaN values using math validation
+                if df.isnull().any().any():
+                    logger.warning("⚠️ Found NaN values, filling with 0")
+                    df = df.fillna(0)
+                
+                # Check for infinite values using math validation
+                if np.isinf(df.values).sum() > 0:
+                    logger.warning("⚠️ Found infinite values, clipping")
+                    df = df.replace([np.inf, -np.inf], [np.finfo(np.float64).max, np.finfo(np.float64).min])
+                
+                # Validate finite values using math validation
+                df_values = df.values
+                if not validate_finite(df_values):
+                    logger.warning("⚠️ Found non-finite values, applying safe operations")
+                    df_values = np.where(np.isfinite(df_values), df_values, 0)
+                    df = pd.DataFrame(df_values, columns=df.columns, index=df.index)
+                
+                # Check for constant columns
+                constant_cols = df.columns[df.nunique() <= 1]
+                if len(constant_cols) > 0:
+                    logger.warning(f"⚠️ Removing constant columns: {constant_cols.tolist()}")
+                    df = df.drop(columns=constant_cols)
+                
+                # Validate numeric range
+                for col in df.columns:
+                    if not validate_numeric_range(df[col].values, min_val=-1e10, max_val=1e10):
+                        logger.warning(f"⚠️ Column {col} has values outside expected range, clipping")
+                        df[col] = df[col].clip(-1e10, 1e10)
+                
+                return df
             
-            # Check for infinite values
-            if np.isinf(features_df.values).sum() > 0:
-                logger.warning("⚠️ Found infinite values, clipping")
-                features_df = features_df.replace([np.inf, -np.inf], [np.finfo(np.float64).max, np.finfo(np.float64).min])
+            # Use safe dataframe operation
+            validated_df = safe_dataframe_operation(features_df, validate_and_clean_dataframe)
             
-            # Check for constant columns
-            constant_cols = features_df.columns[features_df.nunique() <= 1]
-            if len(constant_cols) > 0:
-                logger.warning(f"⚠️ Removing constant columns: {constant_cols.tolist()}")
-                features_df = features_df.drop(columns=constant_cols)
+            # Optimize memory usage
+            optimized_df = optimize_dataframe_memory(validated_df)
             
-            return features_df
+            return optimized_df
             
         except Exception as e:
             logger.error(f"❌ Input validation failed: {e}")
@@ -304,8 +341,13 @@ class HDBSCANClusterer:
             raise
     
     def _calculate_cluster_centers(self, features: np.ndarray, cluster_labels: np.ndarray) -> np.ndarray:
-        """Calculate cluster centers."""
+        """Calculate cluster centers with enhanced math validation."""
         try:
+            # Validate inputs
+            if not validate_finite(features) or not validate_finite(cluster_labels):
+                logger.debug("Non-finite values in features or labels, returning empty centers")
+                return np.array([])
+            
             unique_labels = np.unique(cluster_labels)
             unique_labels = unique_labels[unique_labels != -1]  # Remove noise
             
@@ -316,8 +358,23 @@ class HDBSCANClusterer:
             for label in unique_labels:
                 mask = cluster_labels == label
                 if mask.sum() > 0:
-                    center = np.mean(features[mask], axis=0)
-                    centers.append(center)
+                    cluster_features = features[mask]
+                    
+                    # Validate cluster features
+                    if not validate_finite(cluster_features):
+                        logger.debug(f"Non-finite values in cluster {label}, skipping")
+                        continue
+                    
+                    # Calculate center using safe operations
+                    def calculate_center():
+                        return np.mean(cluster_features, axis=0)
+                    
+                    center = safe_statistical_operation(calculate_center, default=None)
+                    
+                    if center is not None and validate_finite(center):
+                        centers.append(center)
+                    else:
+                        logger.debug(f"Invalid center for cluster {label}, skipping")
             
             return np.array(centers) if centers else np.array([])
             
@@ -335,7 +392,7 @@ class HDBSCANClusterer:
             return {}
     
     def _calculate_validation_score(self, cluster_labels: np.ndarray, features: np.ndarray) -> float:
-        """Calculate validation score for clustering."""
+        """Calculate validation score for clustering with enhanced math validation."""
         try:
             # Remove noise points for validation
             valid_mask = cluster_labels != -1
@@ -348,15 +405,33 @@ class HDBSCANClusterer:
             if len(set(valid_labels)) < 2:
                 return -np.inf
             
-            # Calculate score based on optimization metric
-            if self.config.optimization_metric == 'silhouette':
-                score = silhouette_score(valid_features, valid_labels)
-            elif self.config.optimization_metric == 'calinski_harabasz':
-                score = calinski_harabasz_score(valid_features, valid_labels)
-            elif self.config.optimization_metric == 'davies_bouldin':
-                score = -davies_bouldin_score(valid_features, valid_labels)  # Negative because lower is better
-            else:
-                score = silhouette_score(valid_features, valid_labels)
+            # Validate inputs using math validation
+            if not validate_finite(valid_features):
+                logger.debug("Non-finite values in features, skipping validation")
+                return -np.inf
+            
+            if not validate_finite(valid_labels):
+                logger.debug("Non-finite values in labels, skipping validation")
+                return -np.inf
+            
+            # Calculate score based on optimization metric with safe operations
+            def calculate_safe_score():
+                if self.config.optimization_metric == 'silhouette':
+                    return silhouette_score(valid_features, valid_labels)
+                elif self.config.optimization_metric == 'calinski_harabasz':
+                    return calinski_harabasz_score(valid_features, valid_labels)
+                elif self.config.optimization_metric == 'davies_bouldin':
+                    return -davies_bouldin_score(valid_features, valid_labels)  # Negative because lower is better
+                else:
+                    return silhouette_score(valid_features, valid_labels)
+            
+            # Use safe statistical operation
+            score = safe_statistical_operation(calculate_safe_score, default=-np.inf)
+            
+            # Validate score is finite
+            if not validate_finite(np.array([score])):
+                logger.debug("Non-finite validation score, returning -inf")
+                return -np.inf
             
             return score
             
@@ -677,8 +752,13 @@ class HDBSCANClusterer:
             return self._random_fallback(features)
     
     def _enhanced_distance_based_prediction(self, features: np.ndarray) -> Tuple[np.ndarray, np.ndarray, str]:
-        """Enhanced distance-based prediction with better probability estimation."""
+        """Enhanced distance-based prediction with better probability estimation and math validation."""
         try:
+            # Validate input features
+            if not validate_finite(features):
+                logger.warning("⚠️ Non-finite values in features, using random assignment")
+                return self._random_fallback(features)
+            
             # Get cluster centers from training
             if hasattr(self, 'cluster_centers') and self.cluster_centers is not None:
                 centers = self.cluster_centers
@@ -689,23 +769,51 @@ class HDBSCANClusterer:
             if len(centers) == 0:
                 return self._random_fallback(features)
             
-            # Calculate distances to cluster centers
-            distances = np.sqrt(((features[:, np.newaxis] - centers[np.newaxis, :]) ** 2).sum(axis=2))
+            # Validate cluster centers
+            if not validate_finite(centers):
+                logger.warning("⚠️ Non-finite values in cluster centers, using random assignment")
+                return self._random_fallback(features)
+            
+            # Calculate distances to cluster centers using safe operations
+            def calculate_distances():
+                return np.sqrt(((features[:, np.newaxis] - centers[np.newaxis, :]) ** 2).sum(axis=2))
+            
+            distances = safe_statistical_operation(calculate_distances, default=None)
+            if distances is None or not validate_finite(distances):
+                logger.warning("⚠️ Distance calculation failed, using random assignment")
+                return self._random_fallback(features)
             
             # Assign to closest cluster
             labels = np.argmin(distances, axis=1)
             
-            # Enhanced probability calculation using softmax
-            # Convert distances to similarities (inverse relationship)
-            max_distance = np.max(distances)
-            similarities = max_distance - distances + 1e-10  # Add small value to avoid division by zero
+            # Enhanced probability calculation using softmax with safe operations
+            def calculate_probabilities():
+                # Convert distances to similarities (inverse relationship)
+                max_distance = safe_statistical_operation(lambda: np.max(distances), default=1.0)
+                similarities = max_distance - distances + 1e-10  # Add small value to avoid division by zero
+                
+                # Apply softmax to get probabilities
+                std_similarities = safe_statistical_operation(lambda: np.std(similarities), default=1.0)
+                exp_similarities = np.exp(similarities / std_similarities)  # Normalize by standard deviation
+                
+                # Safe division for probabilities
+                sum_exp = np.sum(exp_similarities, axis=1, keepdims=True)
+                probabilities = safe_divide(exp_similarities, sum_exp, default=1.0/len(centers))
+                
+                return probabilities
             
-            # Apply softmax to get probabilities
-            exp_similarities = np.exp(similarities / np.std(similarities))  # Normalize by standard deviation
-            probabilities = exp_similarities / np.sum(exp_similarities, axis=1, keepdims=True)
+            probabilities_matrix = safe_statistical_operation(calculate_probabilities, default=None)
+            if probabilities_matrix is None or not validate_finite(probabilities_matrix):
+                logger.warning("⚠️ Probability calculation failed, using uniform probabilities")
+                probabilities_matrix = np.ones((len(features), len(centers))) / len(centers)
             
             # Get maximum probability for each sample
-            max_probabilities = np.max(probabilities, axis=1)
+            max_probabilities = np.max(probabilities_matrix, axis=1)
+            
+            # Validate final probabilities
+            if not validate_finite(max_probabilities):
+                logger.warning("⚠️ Non-finite probabilities, using uniform probabilities")
+                max_probabilities = np.ones(len(features)) / len(centers)
             
             return labels, max_probabilities, "enhanced_distance_based"
             

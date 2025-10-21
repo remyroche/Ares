@@ -133,11 +133,24 @@ class TacticianBaseTrainer(BaseTrainer):
             
             start_time = time.time()
             
+            # Preview input data
+            from src.utils.tprint import tprint_data_preview
+            tprint_data_preview(data, "Input training data", max_rows=5, level="INFO")
+            if targets is not None:
+                tprint_data_preview(targets, "Input training targets", max_rows=10, level="INFO")
+            
             # Preprocess data
             processed_data, processed_targets = self._preprocess_data(data, targets)
             
+            # Preview preprocessed data
+            tprint_data_preview(processed_data, "Preprocessed training data", max_rows=5, level="INFO")
+            tprint_data_preview(processed_targets, "Preprocessed training targets", max_rows=10, level="INFO")
+            
             # Create features
             feature_data = await self._create_tactician_features(processed_data)
+            
+            # Preview final training features
+            tprint_data_preview(feature_data, "Final training features", max_rows=5, level="INFO")
             
             # Train models
             training_results = {}
@@ -370,6 +383,10 @@ class TacticianBaseTrainer(BaseTrainer):
         try:
             tprint_info("🔧 Creating Tactician features with enhanced optimization...")
             
+            # Preview input data for feature creation
+            from src.utils.tprint import tprint_data_preview
+            tprint_data_preview(data, "Input data for feature creation", max_rows=5, level="DEBUG")
+            
             # Use integrated hardware manager for optimized data processing
             hardware_manager = get_integrated_hardware_manager()
             feature_data = hardware_manager.process_data_with_optimization(
@@ -392,6 +409,10 @@ class TacticianBaseTrainer(BaseTrainer):
                 self._tactician_state['position_sizing_features_created'] = True
             
             self._tactician_state['timing_features_completed'] = True
+            
+            # Preview final Tactician features
+            tprint_data_preview(feature_data, "Tactician features created", max_rows=5, level="INFO")
+            
             tprint_success(f"✅ Created {feature_data.shape[1]} features with enhanced optimization")
             
             return feature_data
@@ -541,6 +562,10 @@ class TacticianBaseTrainer(BaseTrainer):
         """Make predictions with a single model."""
         try:
             predictions = model.predict(data)
+            
+            # Preview predictions
+            from src.utils.tprint import tprint_data_preview
+            tprint_data_preview(predictions, f"Predictions from {model_type.value}", max_rows=10, level="DEBUG")
             
             # For regression models, we don't typically have probabilities
             # But we can calculate confidence intervals or uncertainty estimates

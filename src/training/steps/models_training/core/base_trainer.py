@@ -407,9 +407,16 @@ class BaseTrainer(ABC):
             
             # Memory usage is now tracked by enhanced hardware managers
             
+            # Preview raw input data
+            from src.utils.tprint import tprint_data_preview
+            tprint_data_preview(data, "Raw input data", max_rows=5, level="INFO")
+            
             # Calculate data quality metrics
             quality_metrics = calculate_data_quality_metrics(data)
             tprint_debug(f"📊 Data quality metrics: {quality_metrics}")
+            
+            # Preview data after quality checks
+            tprint_data_preview(data, "Data after quality checks", max_rows=5, level="DEBUG")
             
             # Handle missing values using safe operations
             if data.isnull().any().any():
@@ -428,12 +435,16 @@ class BaseTrainer(ABC):
                     data, WorkloadType.ML_TRAINING
                 )
                 tprint_debug("🧠 Enhanced memory optimization applied")
+                # Preview data after memory optimization
+                tprint_data_preview(data, "Data after memory optimization", max_rows=5, level="DEBUG")
             
             # Feature selection if enabled
             if self.config.max_features < len(data.columns):
                 selected_features = self._select_features(data, targets)
                 data = data[selected_features]
                 tprint_info(f"📊 Selected {len(selected_features)} features")
+                # Preview data after feature selection
+                tprint_data_preview(data, "Data after feature selection", max_rows=5, level="DEBUG")
             
             # Extract targets if not provided
             if targets is None:
@@ -442,6 +453,8 @@ class BaseTrainer(ABC):
                     if col in data.columns:
                         targets = data[col]
                         data = data.drop(columns=[col])
+                        # Preview extracted targets
+                        tprint_data_preview(targets, f"Extracted targets from {col}", max_rows=10, level="INFO")
                         break
                 
                 if targets is None:
@@ -450,6 +463,11 @@ class BaseTrainer(ABC):
             # Validate finite values in targets
             if targets is not None:
                 validate_finite(targets, "targets")
+            
+            # Preview final preprocessed data
+            tprint_data_preview(data, "Final preprocessed data", max_rows=5, level="INFO")
+            if targets is not None:
+                tprint_data_preview(targets, "Final preprocessed targets", max_rows=10, level="INFO")
             
             tprint_success(f"✅ Data preprocessed: {data.shape[0]} samples, {data.shape[1]} features")
             

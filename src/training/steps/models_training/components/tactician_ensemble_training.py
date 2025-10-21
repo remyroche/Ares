@@ -232,9 +232,19 @@ class TacticianEnsembleTraining(BaseStep):
             
             start_time = time.time()
             
+            # Preview input data dictionary
+            from src.utils.tprint import tprint_data_preview
+            tprint_data_preview(data, "Input ensemble data dictionary", max_rows=5, level="INFO")
+            
             # Extract data
             X_train = data.get('X_train')
             y_train = data.get('y_train')
+            
+            # Preview extracted training data
+            if X_train is not None:
+                tprint_data_preview(X_train, "Extracted ensemble X_train", max_rows=5, level="INFO")
+            if y_train is not None:
+                tprint_data_preview(y_train, "Extracted ensemble y_train", max_rows=10, level="INFO")
             
             if X_train is None or y_train is None:
                 return {
@@ -248,6 +258,10 @@ class TacticianEnsembleTraining(BaseStep):
                 X_train = pd.DataFrame(X_train)
             if not isinstance(y_train, pd.Series):
                 y_train = pd.Series(y_train)
+            
+            # Preview processed training data
+            tprint_data_preview(X_train, "Processed ensemble X_train", max_rows=5, level="DEBUG")
+            tprint_data_preview(y_train, "Processed ensemble y_train", max_rows=10, level="DEBUG")
             
             # Train ensemble
             training_result = await self._trainer.train(X_train, y_train)

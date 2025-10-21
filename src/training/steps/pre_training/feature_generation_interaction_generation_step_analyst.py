@@ -958,6 +958,10 @@ class FeatureGenerationInteractionGenerationStepAnalyst(BaseStep):
             selected_df = artifact_manager.get_dataframe('feature_selection', ArtifactKeys.SELECTED_FEATURES)
             if selected_df is None or selected_df.empty:
                 selected_df = artifact_manager.get_dataframe('feature_generation_feature_selection_step', ArtifactKeys.SELECTED_FEATURES)
+            
+            # Comprehensive data format analysis for troubleshooting
+            tprint_data_format(selected_df, "selected_features_loaded", level="INFO", return_summary=True)
+            
             if selected_df is None or selected_df.empty:
                 return InteractionGenerationResult(
                     success=False,
@@ -970,7 +974,6 @@ class FeatureGenerationInteractionGenerationStepAnalyst(BaseStep):
             
             # Preview loaded selected features for troubleshooting
             tprint_data_preview(selected_df, "selected_features_input", level="INFO")
-            tprint_data_format(selected_df, "selected_features_format_check", level="DEBUG")
             tprint_success(f"✅ [ANALYST] Loaded {len(selected_df.columns)} selected features with shape {selected_df.shape}")
             
             # Load targets
@@ -980,6 +983,8 @@ class FeatureGenerationInteractionGenerationStepAnalyst(BaseStep):
                 series = artifact_manager.get_series(step_name, ArtifactKeys.TARGETS)
                 if isinstance(series, pd.Series) and not series.empty:
                     targets_series = series.astype(float)
+                    # Comprehensive data format analysis for targets
+                    tprint_data_format(targets_series, f"targets_loaded_from_{step_name}", level="INFO", return_summary=True)
                     # Preview loaded targets for troubleshooting
                     tprint_data_preview(targets_series, "loaded_targets_for_interaction_generation", level="INFO")
                     tprint(f"✅ [ANALYST] Loaded targets from {step_name}: {len(targets_series)} samples")
@@ -999,6 +1004,10 @@ class FeatureGenerationInteractionGenerationStepAnalyst(BaseStep):
             tprint(f"✂️ [ANALYST] Sampling data for {intensity} mode")
             sampled_features = self._sample_data_by_mode(selected_df, intensity)
             sampled_targets = self._sample_data_by_mode(targets_series, intensity)
+            
+            # Comprehensive data format analysis for sampled data
+            tprint_data_format(sampled_features, f"sampled_features_{intensity}_mode", level="INFO", return_summary=True)
+            tprint_data_format(sampled_targets, f"sampled_targets_{intensity}_mode", level="INFO", return_summary=True)
             
             # Preview sampled data for troubleshooting
             tprint_data_preview(sampled_features, f"sampled_features_{intensity}_mode", level="INFO")
@@ -1020,6 +1029,10 @@ class FeatureGenerationInteractionGenerationStepAnalyst(BaseStep):
             }, level="DEBUG")
             
             aligned = sampled_features.join(sampled_targets.rename("target"), how="inner").dropna()
+            
+            # Comprehensive data format analysis for aligned data
+            tprint_data_format(aligned, "aligned_features_and_targets", level="INFO", return_summary=True)
+            
             if aligned.empty:
                 tprint_error("❌ [ANALYST] No overlapping timestamps between features and targets")
                 # Preview data for debugging empty alignment
@@ -1135,6 +1148,9 @@ class FeatureGenerationInteractionGenerationStepAnalyst(BaseStep):
             # Apply final comprehensive optimization
             tprint("🧹 [ANALYST] Applying final comprehensive optimization to interaction features")
             final_interactions = self._optimize_dataframe_memory(phase3_interactions)
+            
+            # Comprehensive data format analysis for final interactions
+            tprint_data_format(final_interactions, "final_interactions_before_storage", level="INFO", return_summary=True)
             
             # Preview final interactions before storage
             tprint_data_preview(final_interactions, "final_interactions_before_storage", level="INFO")

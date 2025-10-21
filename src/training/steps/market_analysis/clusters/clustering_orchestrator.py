@@ -21,7 +21,7 @@ from .clustering_service import ClusteringService
 from .feature_service import FeatureService
 from .optimization_service import OptimizationService
 from .hardware_service import HardwareService
-from ..shared_utils import get_logger
+from .shared_utils import get_logger
 
 class ClusteringOrchestrator:
     """Orchestrates the entire NAS-TAS clustering pipeline."""

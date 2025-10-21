@@ -27,7 +27,7 @@ from src.utils.tprint import (
     tprint_timer, tprint_logged, LogLevel, TimestampFormat
 )
 
-from ..shared_utils import get_logger
+from .shared_utils import get_logger
 
 @dataclass
 class ValidationConfig:

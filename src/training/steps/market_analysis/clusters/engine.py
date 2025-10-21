@@ -28,7 +28,7 @@ from src.utils.math_validation import (
 )
 from src.utils.matrix_operations.unified_operations import UnifiedMatrixOperations
 
-from ..shared_utils import get_logger
+from .shared_utils import get_logger
 from .step1_feature_preparation import ClusteringContext
 from .step2_initial_clustering import InitialClusteringStep
 from .iterative_optimization import IterativeOptimization, ClusteringStats

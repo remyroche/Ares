@@ -16,7 +16,7 @@ from src.utils.tprint import (
     tprint, tprint_info, tprint_success, tprint_warning, tprint_error
 )
 
-from ..shared_utils import (
+from .shared_utils import (
     calculate_consensus_metrics,
     calculate_disagreement_metrics,
     calculate_economic_scores,
@@ -99,7 +99,7 @@ class ResultsConsolidationStep:
             market_data = context.market_data
 
             # Use shared characteristics generator
-            from ..shared_utils import CharacteristicsGenerator
+            from .shared_utils import CharacteristicsGenerator
             characteristics_generator = CharacteristicsGenerator(verbose=True)
 
             characteristics = characteristics_generator.generate_cluster_characteristics(

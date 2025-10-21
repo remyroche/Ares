@@ -21,11 +21,11 @@ from .regime_data_splitting.regime_data_splitting_main import RegimeDataSplittin
 from .components.regime_models_training import RegimeModelsTrainingStep
 from .components.regime_ensemble_training import RegimeEnsembleTrainingStep
 from .components.sr_parameter_optimization import SRParameterOptimizationStep
+from .regime_clustering_step import RegimeClusteringStep
 
 # Register existing components
 step_registry.register("sr_clustering", SRClusteringComponent)
 step_registry.register("sr_detection", SRDetectionComponent)
-step_registry.register("regime_clustering", RegimeClusteringComponent)
 step_registry.register("hdbscan_clustering", HDBSCANRegimeDiscoveryStep)
 
 # Register migrated steps
@@ -35,3 +35,4 @@ step_registry.register("regime_data_splitting", RegimeDataSplittingStep)
 step_registry.register("regime_models_training", RegimeModelsTrainingStep)
 step_registry.register("regime_ensemble_training", RegimeEnsembleTrainingStep)
 step_registry.register("sr_parameter_optimization", SRParameterOptimizationStep)
+step_registry.register("regime_clustering", RegimeClusteringStep)

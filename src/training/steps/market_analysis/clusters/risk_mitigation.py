@@ -22,7 +22,7 @@ from sklearn.cluster import KMeans
 import warnings
 
 from .step1_feature_preparation import ClusteringContext
-from ..shared_utils import get_logger
+from .shared_utils import get_logger
 
 class ClusteringStats:
     """Simplified ClusteringStats for risk mitigation (avoids circular import)."""

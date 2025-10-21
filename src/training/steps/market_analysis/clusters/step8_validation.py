@@ -14,7 +14,7 @@ from src.utils.tprint import (
     tprint, tprint_info, tprint_success, tprint_warning, tprint_error
 )
 
-from ..shared_utils import get_logger
+from .shared_utils import get_logger
 from .step1_feature_preparation import ClusteringContext
 
 class ValidationStep:

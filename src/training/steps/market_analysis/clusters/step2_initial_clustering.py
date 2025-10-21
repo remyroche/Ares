@@ -12,7 +12,22 @@ from sklearn.cluster import KMeans
 from sklearn.mixture import GaussianMixture
 
 from src.utils.tprint import (
-    tprint, tprint_info, tprint_success, tprint_warning, tprint_error
+    tprint, tprint_info, tprint_success, tprint_warning, tprint_error, tprint_debug, tprint_performance
+)
+from src.utils.common_operations import (
+    get_memory_usage, optimize_dataframe_memory, safe_divide, safe_mean, safe_std,
+    memory_monitor, force_garbage_collection, performance_timer, validate_dataframe,
+    safe_merge, safe_concat, calculate_data_quality_metrics, create_summary_statistics
+)
+from src.utils.common_utilities import (
+    safe_dataframe_operation, validate_dataframe_columns, safe_convert_dtypes,
+    analyze_nan_values_detailed, format_nan_analysis_report, get_dataframe_info,
+    safe_merge_dataframes, safe_groupby_operation, safe_apply_function
+)
+from src.utils.math_validation import (
+    validate_finite, validate_array_finite, safe_divide, safe_log, safe_sqrt, safe_power,
+    safe_correlation, safe_mean, safe_std, validate_positive, safe_covariance,
+    safe_percentile, validate_correlation_matrix
 )
 
 from .shared_utils import get_logger
@@ -27,30 +42,38 @@ class InitialClusteringStep:
         self.logger = get_logger('InitialClusteringStep')
 
     async def execute(self, context: ClusteringContext, config: Any) -> ClusteringContext:
-        """Execute initial clustering step."""
+        """Execute initial clustering step with enhanced monitoring."""
         try:
             tprint("Step 2: Starting initial clustering setup...", "INFO")
-            tprint(f"🔍 DEBUG: Context features shape: {context.optimized_features.shape}", "DEBUG")
+            tprint_debug(f"Context features shape: {context.optimized_features.shape}")
+
+            # Validate input features
+            with memory_monitor("Feature Validation"):
+                validate_array_finite(context.optimized_features, "optimized_features")
+                tprint_debug(f"Features validated - shape: {context.optimized_features.shape}")
 
             # Extract TAS and NAS regime assignments
-            tprint("🔍 DEBUG: About to extract regime assignments", "DEBUG")
-            tas_assignments, nas_assignments = await self._extract_regime_assignments(context, config)
-            tprint(f"✅ DEBUG: Regime assignments extracted - TAS: {len(tas_assignments)}, NAS: {len(nas_assignments)}", "DEBUG")
+            tprint_debug("About to extract regime assignments")
+            with memory_monitor("Regime Assignment Extraction"):
+                tas_assignments, nas_assignments = await self._extract_regime_assignments(context, config)
+            tprint_debug(f"Regime assignments extracted - TAS: {len(tas_assignments)}, NAS: {len(nas_assignments)}")
             context.tas_assignments = tas_assignments
             context.nas_assignments = nas_assignments
 
             # Initialize basic clustering with optimal K
-            tprint("🔍 DEBUG: About to determine optimal K", "DEBUG")
-            optimal_k = await self._determine_optimal_k(context, config)
-            tprint(f"✅ DEBUG: Optimal K determined: {optimal_k}", "DEBUG")
+            tprint_debug("About to determine optimal K")
+            with memory_monitor("Optimal K Determination"):
+                optimal_k = await self._determine_optimal_k(context, config)
+            tprint_debug(f"Optimal K determined: {optimal_k}")
             context.optimal_k = optimal_k
 
             # Perform initial clustering
-            tprint("🔍 DEBUG: About to perform initial clustering", "DEBUG")
-            initial_assignments = await self._perform_initial_clustering(
-                context.optimized_features, optimal_k
-            )
-            tprint(f"✅ DEBUG: Initial clustering completed - assignments shape: {initial_assignments.shape}", "DEBUG")
+            tprint_debug("About to perform initial clustering")
+            with memory_monitor("Initial Clustering"):
+                initial_assignments = await self._perform_initial_clustering(
+                    context.optimized_features, optimal_k
+                )
+            tprint_debug(f"Initial clustering completed - assignments shape: {initial_assignments.shape}")
             context.initial_assignments = initial_assignments
 
             tprint("Step 2: Initial clustering completed successfully", "SUCCESS")
@@ -58,6 +81,8 @@ class InitialClusteringStep:
 
         except Exception as e:
             tprint(f"Step 2: Initial clustering failed: {e}", "ERROR")
+            # Force cleanup on error
+            force_garbage_collection()
             raise ValueError(f"Initial clustering failed: {e}")
 
     async def _extract_regime_assignments(
@@ -85,10 +110,14 @@ class InitialClusteringStep:
             raise
 
     async def _determine_optimal_k(self, context: ClusteringContext, config: Any) -> int:
-        """Determine optimal number of clusters using BIC and stability analysis."""
+        """Determine optimal number of clusters using BIC and stability analysis with enhanced validation."""
         try:
             features = context.optimized_features
             n_samples, n_features = features.shape
+
+            # Validate input features
+            validate_array_finite(features, "features")
+            tprint_debug(f"Determining optimal K for {n_samples} samples, {n_features} features")
 
             # Default optimal K
             default_k = getattr(config, 'n_regimes', 6)

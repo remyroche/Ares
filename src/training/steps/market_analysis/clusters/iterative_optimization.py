@@ -19,6 +19,26 @@ from dataclasses import dataclass
 from sklearn.cluster import KMeans
 from contextlib import nullcontext
 
+# Enhanced utility imports
+from src.utils.tprint import (
+    tprint, tprint_info, tprint_success, tprint_warning, tprint_error, tprint_debug, tprint_performance
+)
+from src.utils.common_operations import (
+    get_memory_usage, optimize_dataframe_memory, safe_divide, safe_mean, safe_std,
+    memory_monitor, force_garbage_collection, performance_timer, validate_dataframe,
+    safe_merge, safe_concat, calculate_data_quality_metrics, create_summary_statistics
+)
+from src.utils.common_utilities import (
+    safe_dataframe_operation, validate_dataframe_columns, safe_convert_dtypes,
+    analyze_nan_values_detailed, format_nan_analysis_report, get_dataframe_info,
+    safe_merge_dataframes, safe_groupby_operation, safe_apply_function
+)
+from src.utils.math_validation import (
+    validate_finite, validate_array_finite, safe_divide, safe_log, safe_sqrt, safe_power,
+    safe_correlation, safe_mean, safe_std, validate_positive, safe_covariance,
+    safe_percentile, validate_correlation_matrix, safe_matrix_inverse
+)
+
 # Optional imports
 try:
     import umap
@@ -2246,6 +2266,22 @@ class IterativeOptimization:
             use_hardware_accel=True,
             cache_size=1000
         )
+        
+        # Initialize enhanced utilities
+        try:
+            from src.utils.hardware.integrated_hardware_manager import get_integrated_hardware_manager
+            from src.utils.ml_common.unified_vectorization_manager import UnifiedVectorizationManager
+            from src.utils.data.unified_data_utils import UnifiedDataUtils
+            
+            self.hardware_manager = get_integrated_hardware_manager()
+            self.vectorization_manager = UnifiedVectorizationManager()
+            self.data_utils = UnifiedDataUtils()
+            tprint_debug("Enhanced utilities initialized for iterative optimization")
+        except Exception as e:
+            tprint_warning(f"Failed to initialize enhanced utilities: {e}")
+            self.hardware_manager = None
+            self.vectorization_manager = None
+            self.data_utils = None
 
         # Call hydrate defaults to ensure all attributes are set
         # Note: features will be set when optimization starts
@@ -3769,14 +3805,33 @@ class IterativeOptimization:
     def optimize_with_hard_constraints(self, X: np.ndarray, initial_assignments: np.ndarray,
                                      entity_ids: np.ndarray = None, time_idx: np.ndarray = None) -> np.ndarray:
         """Main optimization loop with hard constraints and lexicographic optimization."""
-        # CRITICAL: Comprehensive input validation
+        # CRITICAL: Comprehensive input validation with enhanced math validation
         self._validate_optimization_inputs(X, initial_assignments, entity_ids, time_idx)
+        
+        # Enhanced input validation
+        try:
+            validate_array_finite(X, "features")
+            validate_array_finite(initial_assignments, "initial_assignments")
+            if entity_ids is not None:
+                validate_array_finite(entity_ids, "entity_ids")
+            if time_idx is not None:
+                validate_array_finite(time_idx, "time_idx")
+        except ValueError as e:
+            tprint_warning(f"Input validation warning: {e}")
+        
         try:
             N = len(X)
             min_size = max(1, int(np.ceil(self.config.min_size_ratio * N)))
             max_size = int(np.floor(self.config.max_size_ratio * N))
 
-            self._log_with_context(f"Starting optimization: N={N}, min_size={min_size}, max_size={max_size}", "INFO", "MAIN")
+            # Enhanced logging with performance monitoring
+            with memory_monitor("Optimization Setup"):
+                self._log_with_context(f"Starting optimization: N={N}, min_size={min_size}, max_size={max_size}", "INFO", "MAIN")
+                tprint_debug(f"Input features shape: {X.shape}, assignments shape: {initial_assignments.shape}")
+                
+                # Log data quality metrics
+                data_quality = calculate_data_quality_metrics(X)
+                tprint_debug(f"Data quality metrics: {data_quality}")
 
             # Initialize with hard constraints
             assignments = self._enforce_hard_constraints(X, initial_assignments, entity_ids, time_idx)

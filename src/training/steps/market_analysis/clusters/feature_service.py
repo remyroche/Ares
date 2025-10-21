@@ -21,7 +21,7 @@ except ImportError:
     pass
 
 from src.utils.tprint import (
-    tprint, tprint_info, tprint_success, tprint_warning, tprint_error
+    tprint, tprint_info, tprint_success, tprint_warning, tprint_error, tprint_debug, tprint_performance
 )
 
 from .shared_utils import (
@@ -30,13 +30,31 @@ from .shared_utils import (
     FeatureConfig
 )
 
-# Import utility functions
+# Enhanced utility imports
 from src.utils.common_operations import (
+    get_memory_usage, optimize_dataframe_memory, safe_divide, safe_mean, safe_std,
+    memory_monitor, force_garbage_collection, performance_timer, validate_dataframe,
+    safe_merge, safe_concat, calculate_data_quality_metrics, create_summary_statistics,
     safe_dataframe_operation, validate_dataframe_columns, safe_convert_dtypes
 )
-from src.utils.math_validation import (
-    validate_finite, safe_divide, safe_log, safe_sqrt, safe_power
+from src.utils.common_utilities import (
+    analyze_nan_values_detailed, format_nan_analysis_report, get_dataframe_info,
+    safe_merge_dataframes, safe_groupby_operation, safe_apply_function,
+    calculate_data_quality_metrics, create_summary_statistics
 )
+from src.utils.math_validation import (
+    validate_finite, validate_array_finite, safe_divide, safe_log, safe_sqrt, safe_power,
+    safe_correlation, safe_mean, safe_std, validate_positive, safe_covariance,
+    safe_percentile, validate_correlation_matrix, safe_matrix_inverse
+)
+from src.utils.data.unified_data_utils import (
+    UnifiedDataUtils, DataQualityMetrics, DataValidationResult
+)
+from src.utils.data.quality.comprehensive_quality_scorer import (
+    ComprehensiveQualityScorer, QualityScoreConfig
+)
+from src.utils.kline_parquet import KlinesParquetManager, KlinesMetadata
+from src.utils.artifact_manager import ArtifactManager, ArtifactConfig
 
 @dataclass
 class FeaturePreparationResult:
@@ -90,6 +108,21 @@ class FeatureService:
             except Exception as e:
                 tprint(f"⚠️ Failed to initialize hardware optimizations: {e}", "WARNING")
 
+        # Initialize data utilities
+        try:
+            self.data_utils = UnifiedDataUtils()
+            self.quality_scorer = ComprehensiveQualityScorer(QualityScoreConfig())
+            self.klines_manager = KlinesParquetManager()
+            self.artifact_manager = ArtifactManager(ArtifactConfig())
+            tprint("📊 Data utilities initialized for feature service", "INFO")
+        except Exception as e:
+            tprint(f"⚠️ Failed to initialize data utilities: {e}", "WARNING")
+            # Set fallback values
+            self.data_utils = None
+            self.quality_scorer = None
+            self.klines_manager = None
+            self.artifact_manager = None
+
         # Feature tracking
         self.feature_history = []
         self.performance_metrics = {
@@ -107,7 +140,7 @@ class FeatureService:
         config: Any = None
     ) -> FeaturePreparationResult:
         """
-        Prepare features for clustering.
+        Prepare features for clustering with enhanced monitoring and validation.
 
         Args:
             market_data: Market data for feature extraction
@@ -120,6 +153,17 @@ class FeatureService:
             start_time = time.time()
             tprint("🔧 Starting feature preparation", "INFO")
 
+            # Enhanced data validation
+            with memory_monitor("Feature Preparation Setup"):
+                # Validate input data quality
+                data_quality = calculate_data_quality_metrics(market_data)
+                tprint_debug(f"Input data quality: {data_quality}")
+                
+                # Analyze NaN values if present
+                if data_quality.get('missing_percentage', 0) > 0:
+                    nan_analysis = analyze_nan_values_detailed(market_data)
+                    tprint_warning(format_nan_analysis_report(nan_analysis, "⚠️ "))
+
             # Start memory monitoring for feature preparation
             if self.memory_optimizer:
                 try:
@@ -128,7 +172,7 @@ class FeatureService:
                 except Exception as e:
                     tprint(f"⚠️ Memory monitoring failed: {e}", "WARNING")
 
-            # Optimize market data for memory efficiency
+            # Optimize market data for memory efficiency with enhanced validation
             if self.memory_optimizer and hasattr(market_data, 'memory_usage'):
                 try:
                     market_data = self.memory_optimizer.optimize_dataframe_memory(market_data)
@@ -139,9 +183,13 @@ class FeatureService:
             # Step 1: Extract features using shared utilities
             feature_config = self._create_feature_config(config)
 
-            # Validate market data before feature preparation
+            # Enhanced validation before feature preparation
             if market_data is None or len(market_data) == 0:
                 raise ValueError("Market data is None or empty in feature preparation")
+            
+            # Validate DataFrame structure
+            if not validate_dataframe(market_data, min_rows=1):
+                raise ValueError("Market data validation failed")
 
             shared_result = await self._prepare_features_shared(market_data, feature_config)
 

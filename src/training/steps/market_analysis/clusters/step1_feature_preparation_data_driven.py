@@ -13,7 +13,32 @@ from sklearn.preprocessing import RobustScaler
 from sklearn.decomposition import PCA
 
 from src.utils.tprint import (
-    tprint, tprint_info, tprint_success, tprint_warning, tprint_error
+    tprint, tprint_info, tprint_success, tprint_warning, tprint_error, tprint_debug, tprint_performance
+)
+from src.utils.common_operations import (
+    get_memory_usage, optimize_dataframe_memory, safe_divide, safe_mean, safe_std,
+    memory_monitor, force_garbage_collection, performance_timer, validate_dataframe,
+    safe_merge, safe_concat, calculate_data_quality_metrics, create_summary_statistics,
+    safe_dataframe_operation, validate_dataframe_columns, safe_convert_dtypes
+)
+from src.utils.common_utilities import (
+    analyze_nan_values_detailed, format_nan_analysis_report, get_dataframe_info,
+    safe_merge_dataframes, safe_groupby_operation, safe_apply_function,
+    calculate_data_quality_metrics, create_summary_statistics
+)
+from src.utils.math_validation import (
+    validate_finite, validate_array_finite, safe_divide, safe_log, safe_sqrt, safe_power,
+    safe_correlation, safe_mean, safe_std, validate_positive, safe_covariance,
+    safe_percentile, validate_correlation_matrix
+)
+from src.utils.hardware.integrated_hardware_manager import (
+    get_integrated_hardware_manager, IntegratedHardwareManager
+)
+from src.utils.ml_common.unified_vectorization_manager import (
+    UnifiedVectorizationManager, VectorizationConfig
+)
+from src.utils.data.unified_data_utils import (
+    UnifiedDataUtils, DataQualityMetrics, DataValidationResult
 )
 
 # Import data-driven optimization
@@ -110,6 +135,18 @@ class DataDrivenFeaturePreparationStep:
             self.feature_weight_optimizer = DataDrivenFeatureWeightOptimizer(
                 FeatureGroupWeightConfig()
             )
+        
+        # Initialize enhanced utilities
+        try:
+            self.hardware_manager = get_integrated_hardware_manager()
+            self.vectorization_manager = UnifiedVectorizationManager(VectorizationConfig())
+            self.data_utils = UnifiedDataUtils()
+            tprint_debug("Enhanced utilities initialized for feature preparation")
+        except Exception as e:
+            tprint_warning(f"Failed to initialize enhanced utilities: {e}")
+            self.hardware_manager = None
+            self.vectorization_manager = None
+            self.data_utils = None
 
     async def execute(self, context: ClusteringContext, config: Any) -> ClusteringContext:
         """Execute data-driven feature preparation step."""

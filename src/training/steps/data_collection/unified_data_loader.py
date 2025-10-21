@@ -334,6 +334,16 @@ class UnifiedDataLoader:
                 self.logger.error(f"No data loaded from {file_path}")
                 return None
 
+            # Add data preview for troubleshooting data state before processing
+            from src.utils.tprint import tprint_data_preview
+            tprint_data_preview(
+                data, 
+                name=f"before_processing_{Path(file_path).name}",
+                max_rows=3,
+                level="DEBUG",
+                include_metadata=True
+            )
+
             # DEBUG: Check data quality immediately after parquet read
             import numpy as np
             non_finite = (~np.isfinite(data.select_dtypes(include=[np.number])).values).sum()
@@ -391,9 +401,19 @@ class UnifiedDataLoader:
 
             data = self._inject_partition_metadata(data, Path(file_path))
 
-            if len(data) > self.max_rows:
-                self.logger.warning(f"Data has {len(data)} rows, exceeding limit of {self.max_rows}")
-                data = data.head(self.max_rows)
+        if len(data) > self.max_rows:
+            self.logger.warning(f"Data has {len(data)} rows, exceeding limit of {self.max_rows}")
+            data = data.head(self.max_rows)
+        
+        # Add data preview for troubleshooting data state after loading
+        from src.utils.tprint import tprint_data_preview
+        tprint_data_preview(
+            data, 
+            name=f"loaded_from_{Path(file_path).name}",
+            max_rows=3,
+            level="DEBUG",
+            include_metadata=True
+        )
 
             return data
 
@@ -604,6 +624,16 @@ class UnifiedDataLoader:
 
                 end_dt = pd.to_datetime(end_date, utc=True)
                 data = data[data['timestamp'] <= end_dt]
+
+            # Add data preview for troubleshooting filtered data correctness
+            from src.utils.tprint import tprint_data_preview
+            tprint_data_preview(
+                data, 
+                name=f"date_filtered_{start_date}_{end_date}",
+                max_rows=3,
+                level="DEBUG",
+                include_metadata=True
+            )
 
             return data
 

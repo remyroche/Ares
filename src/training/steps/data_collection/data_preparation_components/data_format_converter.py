@@ -207,6 +207,16 @@ class DataFormatConverter:
         self.logger.info(f'📊 Schema enforcement complete: {conversion_results["success"]} successful, {conversion_results["failed"]} failed, {conversion_results["skipped"]} skipped')
         self.logger.info(f'📋 Final DataFrame dtypes: {dict(df.dtypes)}')
 
+        # Add data preview for troubleshooting data structure after conversion
+        from src.utils.tprint import tprint_data_preview
+        tprint_data_preview(
+            df, 
+            name=f"schema_enforced_{schema_name}",
+            max_rows=3,
+            level="DEBUG",
+            include_metadata=True
+        )
+
         return df
 
     def write_partitioned_dataset(self, df: pd.DataFrame, base_dir: str, partition_cols: list[str], schema_name: str | None, compression: str='snappy', use_dictionary: bool | dict[str, bool]=True, min_rows_per_group: int = 50000, max_rows_per_file: int = 5000000, use_threads: bool = True, update_manifest: bool = True, metadata: dict[str, Any] | None = None, auto_add_date_columns: bool = True) -> None:

@@ -144,6 +144,17 @@ class BinanceDataDownloader:
             df[col] = df[col].astype("float64")
 
         logger.info(f"Successfully downloaded {len(df)} klines for {symbol}")
+        
+        # Add data preview for troubleshooting raw downloaded data quality
+        from src.utils.tprint import tprint_data_preview
+        tprint_data_preview(
+            df, 
+            name=f"downloaded_{symbol}_{interval}_raw_data",
+            max_rows=5,
+            level="INFO",
+            include_metadata=True
+        )
+        
         return df
 
     def download_multiple_assets(self, symbols, start_date, end_date, interval="15m"):

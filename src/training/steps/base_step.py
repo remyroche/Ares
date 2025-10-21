@@ -108,7 +108,7 @@ from src.utils.hardware.unified_hardware_manager import WorkloadType
 from src.utils.tprint import (
     tprint, tprint_success, tprint_info, tprint_warning, tprint_error,
     tprint_debug, tprint_performance, tprint_progress, tprint_structured,
-    tprint_exception, tprint_with_level, tprint_data_preview, LogLevel, TPrintConfig
+    tprint_exception, tprint_with_level, LogLevel, TPrintConfig, tprint_data_preview
 )
 
 # Type definitions for better type safety
@@ -323,8 +323,9 @@ class BaseStep(ABC):
         
         tprint_info(f"💾 Saving DataFrame: {name}")
         
-        # Preview data before saving for troubleshooting
-        tprint_data_preview(df, f"saving_{name}", level="DEBUG")
+        # Preview data before saving
+        if os.getenv('ENABLE_DATA_PREVIEW', 'false').lower() == 'true':
+            tprint_data_preview(df, f"saving_{name}", max_rows=3, level="DEBUG")
         
         try:
             # Optimize DataFrame with hardware manager
@@ -367,8 +368,9 @@ class BaseStep(ABC):
         try:
             data = self._get_enhanced_artifact(name, "data")
             if data is not None:
-                # Preview loaded data for troubleshooting
-                tprint_data_preview(data, f"loaded_{name}", level="DEBUG")
+                # Preview loaded data
+                if os.getenv('ENABLE_DATA_PREVIEW', 'false').lower() == 'true':
+                    tprint_data_preview(data, f"loaded_{name}", max_rows=3, level="DEBUG")
                 
                 # Apply hardware optimization to loaded data
                 if self.hardware_manager is not None:
@@ -548,6 +550,10 @@ class BaseStep(ABC):
         
         tprint_info(f"💾 Storing klines data: {symbol} {exchange} {interval}")
         
+        # Preview data before storing
+        if os.getenv('ENABLE_DATA_PREVIEW', 'false').lower() == 'true':
+            tprint_data_preview(df, f"storing_klines_{symbol}_{interval}", max_rows=3, level="DEBUG")
+        
         if not self._is_klines_available():
             tprint_error("❌ KlinesParquetManager not available (pandas/pyarrow required)")
             return False
@@ -636,6 +642,10 @@ class BaseStep(ABC):
             )
             
             if df is not None and not df.empty:
+                # Preview loaded klines data
+                if os.getenv('ENABLE_DATA_PREVIEW', 'false').lower() == 'true':
+                    tprint_data_preview(df, f"loaded_klines_{symbol}_{interval}", max_rows=3, level="DEBUG")
+                
                 # Apply hardware optimization to loaded data
                 if self.hardware_manager is not None:
                     optimized_df = self.hardware_manager.optimize_dataframe(df)

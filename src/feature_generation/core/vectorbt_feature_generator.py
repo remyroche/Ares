@@ -21,6 +21,12 @@ from typing import Any, Dict, List, Optional, Union, Callable, Tuple
 from abc import ABC, abstractmethod
 import warnings
 
+# Import tprint utilities
+try:
+    from src.utils.tprint import tprint_data_preview
+except ImportError:
+    def tprint_data_preview(*args, **kwargs): pass  # Silent fallback
+
 # VectorBT imports
 try:
     import vectorbt as vbt
@@ -635,6 +641,9 @@ class VectorBTFeatureGenerator(FeatureGenerator):
             metadata={'n_features': len(feature_configs), 'data_shape': data.shape}
         ):
             logger.info(f"🚀 Generating {len(feature_configs)} features in batch...")
+            
+            # Data preview: VectorBT batch input data
+            tprint_data_preview(data, "VectorBT batch input data", level="DEBUG")
 
             # Group features by type for efficient processing
             indicator_features = []
@@ -778,6 +787,9 @@ class VectorBTFeatureGenerator(FeatureGenerator):
             Optimized DataFrame with VectorBT array wrappers
         """
         try:
+            # Data preview: Data before VectorBT optimization
+            tprint_data_preview(data, "Data before VectorBT optimization", level="DEBUG")
+            
             # Create a copy to avoid modifying original data
             optimized_data = data.copy()
 

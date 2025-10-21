@@ -1,4 +1,4 @@
-from src.utils.tprint import tprint, tprint_warning, tprint_info, tprint_error, tprint_success
+from src.utils.tprint import tprint, tprint_warning, tprint_info, tprint_error, tprint_success, tprint_data_preview
 from typing import Dict, Any, Optional, Union
 import logging
 import pandas as pd
@@ -492,6 +492,9 @@ class AutoOptimizedFeatureGenerator(FeatureGenerator,
         """Generate feature with automatic optimization."""
         try:
             start_time = time.time()
+            
+            # Data preview: AutoOptimizedFeatureGenerator input
+            tprint_data_preview(data, "AutoOptimizedFeatureGenerator input", level="DEBUG")
 
             # DEBUG: Check data quality at the start of generate
             import numpy as np
@@ -572,11 +575,17 @@ class AutoOptimizedFeatureGenerator(FeatureGenerator,
                 return data
 
             self.logger.debug(f"Applying enhanced hardware optimization, input shape: {data.shape}")
+            
+            # Data preview: Data before auto-optimization
+            tprint_data_preview(data, "Data before auto-optimization", level="DEBUG")
 
             # Use enhanced hardware optimization system
             optimized_data = optimize_dataframe_default(data)
 
             self.logger.debug(f"Enhanced hardware optimization completed, output shape: {optimized_data.shape}")
+            
+            # Data preview: Data after auto-optimization
+            tprint_data_preview(optimized_data, "Data after auto-optimization", level="DEBUG")
 
             # Calculate memory savings
             original_memory = data.memory_usage(deep=True).sum() / (1024 * 1024)

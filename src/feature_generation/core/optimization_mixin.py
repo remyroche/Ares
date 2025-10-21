@@ -28,6 +28,12 @@ from src.utils.hardware import (
     MemoryOptimizationLevel, WorkloadType, get_integrated_hardware_manager
 )
 
+# Import tprint utilities
+try:
+    from src.utils.tprint import tprint_data_preview
+except ImportError:
+    def tprint_data_preview(*args, **kwargs): pass  # Silent fallback
+
 class OptimizationMixin:
     """Mixin class that provides optimization capabilities for feature generators."""
 
@@ -66,6 +72,9 @@ class OptimizationMixin:
             Optimized DataFrame
         """
         start_time = time.time()
+        
+        # Data preview: Data before optimization
+        tprint_data_preview(data, "Data before optimization", level="DEBUG")
 
         if not self.enable_memory_optimization:
             return data
@@ -123,6 +132,9 @@ class OptimizationMixin:
 
     def _optimize_dtypes(self, data: pd.DataFrame) -> pd.DataFrame:
         """Optimize DataFrame dtypes for memory efficiency with early downcasting."""
+        # Data preview: Data before dtype optimization
+        tprint_data_preview(data, "Data before dtype optimization", level="DEBUG")
+        
         # Always work on a copy to avoid modifying the original data
         optimized_data = data.copy()
 

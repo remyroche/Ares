@@ -58,7 +58,8 @@ HARDWARE_OPTIMIZATION_AVAILABLE = False
 # Import tprint utilities
 try:
     from src.utils.tprint import (
-        tprint, tprint_info, tprint_success, tprint_warning, tprint_error, tprint_debug
+        tprint, tprint_info, tprint_success, tprint_warning, tprint_error, tprint_debug,
+        tprint_data_preview
     )
 except ImportError:
     # Fallback if tprint is not available
@@ -68,6 +69,7 @@ except ImportError:
     def tprint_warning(*args, **kwargs): print("WARNING:", *args)
     def tprint_error(*args, **kwargs): print("ERROR:", *args)
     def tprint_debug(*args, **kwargs): print("DEBUG:", *args)
+    def tprint_data_preview(*args, **kwargs): pass  # Silent fallback for data preview
 
 # Self-contained CMI complementarity components
 @dataclass
@@ -333,6 +335,10 @@ class FeatureGenerationStep(BaseStep):
         custom_overrides = config.get('custom_overrides')
         pipeline_state = config.get('pipeline_state', {})
         
+        # Data preview: Input data from config
+        if data is not None:
+            tprint_data_preview(data, f"Input data from config ({symbol}, {timeframe}, {direction})", level="INFO")
+        
         # Check if data is provided
         if data is None:
             self.logger.error("❌ No data provided in config. This step requires input data.")
@@ -387,6 +393,9 @@ class FeatureGenerationStep(BaseStep):
                 nf = (~np.isfinite(numeric[col])).sum()
                 if nf:
                     self.logger.debug("Execute - %s: %d non-finite", col, nf)
+            
+            # Data preview: Validated input data with quality metrics
+            tprint_data_preview(data, "Validated input data (after quality checks)", level="DEBUG")
 
             # Clone feature configuration to avoid mutating shared config
             if FEATURE_GENERATION_AVAILABLE:
@@ -413,6 +422,8 @@ class FeatureGenerationStep(BaseStep):
             if self.comprehensive_optimizer:
                 tprint_info("🚀 Applying comprehensive M1 hardware optimization to input data")
                 data = self._apply_m1_comprehensive_optimization(data)
+                # Data preview: M1-optimized input data
+                tprint_data_preview(data, "M1-optimized input data", level="DEBUG")
                 
             # Monitor memory usage
             self._monitor_memory_usage()
@@ -466,6 +477,9 @@ class FeatureGenerationStep(BaseStep):
                 # This prevents serialization issues with FeatureResult objects
                 clean_features_df = generation_result.generated_features.copy()
                 
+                # Data preview: Generated features before saving
+                tprint_data_preview(clean_features_df, "Generated features (before saving)", level="INFO")
+                
                 # Convert any FeatureResult objects to their underlying data
                 for col in clean_features_df.columns:
                     if len(clean_features_df[col]) > 0:
@@ -493,6 +507,9 @@ class FeatureGenerationStep(BaseStep):
                 self._save_metadata(generation_result.generation_metrics, 'feature_generation_metrics')
                 self._save_metadata(generation_result.optimization_stats, 'optimization_stats')
                 self._save_metadata(generation_result.optimization_stats, 'feature_optimization_stats')
+                
+                # Data preview: Saved generated features
+                tprint_data_preview(clean_features_df, "Saved generated features", level="INFO")
                 
                 # Generate final report
                 report_path = await self._generate_final_report(
@@ -547,6 +564,9 @@ class FeatureGenerationStep(BaseStep):
             if not isinstance(data, pd.DataFrame) or data.empty:
                 return data
             
+            # Data preview: Data before M1 optimization
+            tprint_data_preview(data, "Data before M1 optimization", level="DEBUG")
+            
             initial_memory = data.memory_usage(deep=True).sum()
             
             # Use M1 Comprehensive Optimizer
@@ -596,6 +616,9 @@ class FeatureGenerationStep(BaseStep):
             if memory_saved > 0:
                 tprint_success(f"🚀 M1 optimization: {memory_saved / 1024**2:.2f} MB saved")
                 self.performance_stats['memory_savings_mb'] += memory_saved / 1024**2
+            
+            # Data preview: Data after M1 optimization
+            tprint_data_preview(optimized_data, "Data after M1 optimization", level="DEBUG")
             
             return optimized_data
             
@@ -986,6 +1009,8 @@ class FeatureGenerationStep(BaseStep):
             # Apply CMI complementarity filtering if enabled
             if enable_cmi_complementarity and targets is not None:
                 tprint_info("🎯 Applying CMI complementarity filtering to generated features")
+                # Data preview: Features before CMI filtering
+                tprint_data_preview(generated_features_df, "Features before CMI filtering", level="DEBUG")
                 try:
                     # Extract Analyst side information
                     analyst_result = self.analyst_handler.extract_side_info(
@@ -1068,6 +1093,9 @@ class FeatureGenerationStep(BaseStep):
                 # Optimize DataFrame before saving to reduce memory pressure
                 self.logger.info("🔧 Optimizing DataFrame for efficient saving...")
                 optimized_df = self._optimize_dataframe_for_saving(clean_df)
+                
+                # Data preview: Optimized features for saving
+                tprint_data_preview(optimized_df, "Optimized features for saving", level="DEBUG")
                 
                 # Don't delete optimized_df yet - we need it for saving
                 # del optimized_df

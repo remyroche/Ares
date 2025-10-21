@@ -23,7 +23,7 @@ from .feature_registry import FeatureRegistry
 from ..utils.vectorbt_operation_batcher import VectorBTOperationBatcher, get_global_batcher
 from ..utils.memory_pool_optimizer import MemoryPoolOptimizer, get_global_memory_pool
 from src.utils.unified_cache import UnifiedCache
-from src.utils.tprint import tprint
+from src.utils.tprint import tprint, tprint_data_preview
 
 # Enhanced hardware optimization imports
 from src.utils.hardware import (
@@ -1067,6 +1067,9 @@ class FeatureBank:
         start_time = time.time()
         tprint("🚀 Starting feature generation...")
         self.logger.info(f"🎯 Starting feature generation...")
+        
+        # Data preview: FeatureBank input data
+        tprint_data_preview(data, "FeatureBank input data", level="DEBUG")
 
         if len(data) == 0:
             tprint("⚠️ Empty data provided")
@@ -2005,6 +2008,8 @@ class FeatureBank:
         if all_feature_data:
             feature_df = pd.DataFrame(all_feature_data, index=data.index)
             tprint(f"✅ Progressive loading completed: {len(feature_df.columns)} features generated")
+            # Data preview: Combined features from FeatureBank
+            tprint_data_preview(feature_df, "Combined features from FeatureBank", level="DEBUG")
             return feature_df
         else:
             tprint("⚠️ No features were successfully generated")

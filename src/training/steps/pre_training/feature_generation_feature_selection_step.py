@@ -47,7 +47,7 @@ from src.utils.hardware import (
 try:
     from src.utils.tprint import (
         tprint, tprint_info, tprint_success, tprint_warning, tprint_error, tprint_debug,
-        tprint_data_preview
+        tprint_data_preview, tprint_data_format
     )
     TPRINT_AVAILABLE = True
 except ImportError:
@@ -538,6 +538,7 @@ class FeatureGenerationFeatureSelectionStep(BaseStep):
                     features_found_in_artifacts = True
                     tprint_success(f"✅ [DEBUG] Loaded generated features from BaseStep: shape={features_df.shape}")
                     tprint_data_preview(features_df, "loaded_features_from_artifacts")
+                    tprint_data_format(features_df, "loaded_features_from_artifacts", level="INFO")
             except Exception as e:
                 tprint_warning(f"⚠️ [DEBUG] Artifact manager failed for features: {e}")
 
@@ -558,6 +559,7 @@ class FeatureGenerationFeatureSelectionStep(BaseStep):
                         features_df = pd.read_parquet(latest_file)
                         tprint_success(f"✅ [DEBUG] Loaded features from file: shape={features_df.shape}")
                         tprint_data_preview(features_df, "loaded_features_from_file")
+                        tprint_data_format(features_df, "loaded_features_from_file", level="INFO")
                     else:
                         raise ValueError("No generated features files found")
                 except Exception as fallback_error:
@@ -592,7 +594,9 @@ class FeatureGenerationFeatureSelectionStep(BaseStep):
                 tprint_debug(f"🔍 [DEBUG] Targets variance: {targets_series.var():.6f}")
                 tprint_debug(f"🔍 [DEBUG] Targets std: {targets_series.std():.6f}")
                 tprint_data_preview(targets_series, "extracted_targets")
+                tprint_data_format(targets_series, "extracted_targets", level="DEBUG")
                 tprint_data_preview(features_df, "features_after_target_extraction")
+                tprint_data_format(features_df, "features_after_target_extraction", level="DEBUG")
             else:
                 tprint_error("❌ [DEBUG] No target column found in features data")
                 tprint_error(f"❌ [DEBUG] Available columns: {list(features_df.columns)[:20]}")
@@ -825,6 +829,8 @@ class FeatureGenerationFeatureSelectionStep(BaseStep):
             tprint_debug(f"🔍 [DEBUG] Input data shape: {data.shape}")
             tprint_debug(f"🔍 [DEBUG] Input targets length: {len(targets)}")
             tprint_debug(f"🔍 [DEBUG] Symbol: {symbol}, Timeframe: {timeframe}, Direction: {direction}")
+            tprint_data_format(data, f"sophisticated_selection_input_{symbol}_{timeframe}", level="DEBUG")
+            tprint_data_format(targets, f"sophisticated_selection_targets_{symbol}_{timeframe}", level="DEBUG")
             
             if not HARDWARE_OPTIMIZED_COMPONENTS_AVAILABLE:
                 tprint_error("❌ [DEBUG] Hardware-optimized feature selection components not available")
@@ -1005,6 +1011,7 @@ class FeatureGenerationFeatureSelectionStep(BaseStep):
             tprint_debug(f"🔍 [STAGE2] Filtered dataset shape: {df2.shape}")
             tprint_debug(f"🔍 [STAGE2] Filtered dataset memory usage: {df2.memory_usage(deep=True).sum() / 1024 / 1024:.2f} MB")
             tprint_data_preview(df2, "stage2_multi_objective_features")
+            tprint_data_format(df2, "stage2_multi_objective_features", level="DEBUG")
             
             if not disable_stage2:
                 tprint_success(f"✅ [STAGE2] Multi-objective optimization completed: {len(cols2_available)} features selected")
@@ -1102,6 +1109,7 @@ class FeatureGenerationFeatureSelectionStep(BaseStep):
             tprint_debug(f"🔍 [STAGE4] Final dataset shape: {selected_features_df.shape}")
             tprint_debug(f"🔍 [STAGE4] Final dataset memory usage: {selected_features_df.memory_usage(deep=True).sum() / 1024 / 1024:.2f} MB")
             tprint_data_preview(selected_features_df, "final_selected_features")
+            tprint_data_format(selected_features_df, "final_selected_features", level="INFO")
             
             tprint_success(f"✅ [STAGE4] Hardware-optimized VectorBT optimization completed: {len(cols4_available)} features optimized")
             tprint_info(f"🔍 [STAGE4] Feature reduction: {len(df3.columns) - len(cols4_available)} features removed ({(len(df3.columns) - len(cols4_available))/len(df3.columns)*100:.1f}%)")

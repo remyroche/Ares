@@ -419,7 +419,9 @@ class GateFeaturePipelineManager:
         """Evaluate all gate features."""
         tprint_step("🔍 Starting gate feature evaluation")
         tprint_data_preview(features, "gate_evaluation_input_features", level="DEBUG")
+        tprint_data_format(features, "gate_evaluation_input_features", level="DEBUG")
         tprint_data_preview(targets, "gate_evaluation_input_targets", level="DEBUG")
+        tprint_data_format(targets, "gate_evaluation_input_targets", level="DEBUG")
         tprint_info(f"📊 Features shape: {features.shape}, Targets length: {len(targets)}")
         
         if not self.state.enabled:
@@ -486,7 +488,9 @@ class GateFeaturePipelineManager:
         """Select gate features for the pipeline."""
         tprint_step("🎯 Starting gate feature selection")
         tprint_data_preview(features, "gate_selection_input_features", level="DEBUG")
+        tprint_data_format(features, "gate_selection_input_features", level="DEBUG")
         tprint_data_preview(targets, "gate_selection_input_targets", level="DEBUG")
+        tprint_data_format(targets, "gate_selection_input_targets", level="DEBUG")
         tprint_info(f"📊 Features shape: {features.shape}, Targets length: {len(targets)}")
         
         if not self.state.enabled:

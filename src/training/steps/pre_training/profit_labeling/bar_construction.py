@@ -92,6 +92,7 @@ class BarConstructor:
         """
         tprint_step("🔨 Starting bar construction")
         tprint_data_preview(data, "bar_construction_input_data", level="DEBUG")
+        tprint_data_format(data, "bar_construction_input_data", level="DEBUG")
         tprint_info(f"📊 Input data type: {type(data)}")
         tprint_info(f"🎯 Bar type: {self.config.bar_type.value}")
         tprint_info(f"📏 Bar size: {self.config.bar_size}")
@@ -129,6 +130,7 @@ class BarConstructor:
         
         tprint_success(f"✅ Bar construction completed: {len(result)} bars created")
         tprint_data_preview(result, "constructed_bars", level="DEBUG")
+        tprint_data_format(result, "constructed_bars", level="DEBUG")
         
         # Validate minimum bars requirement
         if len(result) < self.config.min_bars_required:

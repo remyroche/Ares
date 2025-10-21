@@ -28,6 +28,7 @@ except ImportError:
     optuna = None
 
 from src.utils.logger import system_logger
+from src.utils.tprint import tprint_data_format, LogLevel
 
 # Enforce time-series CV
 try:

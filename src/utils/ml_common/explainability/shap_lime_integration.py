@@ -31,6 +31,7 @@ except ImportError:
     lime = None
 
 from src.utils.logger import system_logger
+from src.utils.tprint import tprint_data_format, LogLevel
 
 logger = system_logger.getChild('SHAPLIMEIntegration')
 

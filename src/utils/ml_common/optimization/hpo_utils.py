@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from src.utils.tprint import tprint
+from src.utils.tprint import tprint, tprint_data_format, LogLevel
 from src.utils.hardware.memory_optimized_decorators import memory_optimized, MemoryOptimizationLevel
 from src.utils.hardware.optimization_decorators import performance_tracked
 
@@ -254,6 +254,9 @@ class HyperparameterOptimization:
 
             self.active_studies[study_id] = study_info
             self.trial_results[study_id] = []
+            
+            # Debug study info format
+            tprint_data_format(study_info, f"hpo_study_start_{study_id}", level=LogLevel.DEBUG)
 
             _LOGGER.info(f"🚀 Started monitoring HPO study: {study_name} ({study_id})")
             return study_info
@@ -288,6 +291,9 @@ class HyperparameterOptimization:
                 self.trial_results[study_id].append(trial_result)
                 study_info = self.active_studies[study_id]
                 study_info['total_trials'] += 1
+                
+                # Debug trial result format
+                tprint_data_format(trial_result, f"hpo_trial_result_{study_id}_{trial_number}", level=LogLevel.DEBUG)
 
                 if trial_result['error_info'] is None:
                     study_info['successful_trials'] += 1

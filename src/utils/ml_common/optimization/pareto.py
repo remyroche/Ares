@@ -18,6 +18,7 @@ from typing import Any, Dict, List, Tuple, Callable, Optional
 import math
 import time
 import numpy as np
+from src.utils.tprint import tprint_data_format, LogLevel
 from ...nonlinear_optimization_helpers import NonLinearConfig
 from ...hardware.memory_optimized_decorators import memory_optimized, MemoryOptimizationLevel
 from ...hardware.optimization_decorators import performance_tracked

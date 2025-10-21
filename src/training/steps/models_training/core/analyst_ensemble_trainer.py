@@ -57,19 +57,19 @@ class AnalystEnsembleTrainingConfig(AnalystTrainingConfig):
         AnalystModelType.LIGHTGBM_PATCHTST
     ])
     
-                # Meta-learner parameters
-                meta_learner_type: ModelType = ModelType.LIGHTGBM
-                meta_learner_params: Dict[str, Any] = field(default_factory=lambda: {
-                    'objective': 'binary',
-                    'metric': 'binary_logloss',
-                    'boosting_type': 'gbdt',
-                    'num_leaves': 31,
-                    'learning_rate': 0.05,
-                    'feature_fraction': 0.9,
-                    'bagging_fraction': 0.8,
-                    'bagging_freq': 5,
-                    'verbose': -1
-                })
+    # Meta-learner parameters
+    meta_learner_type: ModelType = ModelType.LIGHTGBM
+    meta_learner_params: Dict[str, Any] = field(default_factory=lambda: {
+        'objective': 'binary',
+        'metric': 'binary_logloss',
+        'boosting_type': 'gbdt',
+        'num_leaves': 31,
+        'learning_rate': 0.05,
+        'feature_fraction': 0.9,
+        'bagging_fraction': 0.8,
+        'bagging_freq': 5,
+        'verbose': -1
+    })
     
     # Ensemble validation
     ensemble_validation_split: float = 0.2
@@ -123,7 +123,6 @@ class AnalystEnsembleTrainer(BaseTrainer):
         ),
         context="analyst ensemble training"
     )
-    @log_execution_time
     async def train(self, data: pd.DataFrame, targets: Optional[pd.Series] = None) -> TrainingResult:
         """
         Train Analyst ensemble models.
@@ -438,28 +437,28 @@ class AnalystEnsembleTrainer(BaseTrainer):
                 self._ensemble_model = self._create_meta_learner()
                 self._ensemble_model.fit(base_predictions, targets)
                 
-                        elif self.config.ensemble_method == EnsembleMethod.VOTING:
-                            # For voting, we create a voting classifier
-                            from sklearn.ensemble import VotingClassifier
-                            
-                            estimators = []
-                            for model_name, trainer in self._base_trainers.items():
-                                model = trainer._model_state.get(f"{model_name}_model")
-                                if model is not None:
-                                    estimators.append((model_name, model))
-                            
-                            self._ensemble_model = VotingClassifier(estimators, voting='soft')
-                            self._ensemble_model.fit(base_predictions, targets)
-                            
-                        elif self.config.ensemble_method == EnsembleMethod.BLENDING:
-                            # For blending, we use a weighted combination with learned weights
-                            self._ensemble_model = self._create_blending_model()
-                            self._ensemble_model.fit(base_predictions, targets)
-                            
-                        elif self.config.ensemble_method == EnsembleMethod.WEIGHTED:
-                            # For weighted averaging, we learn optimal weights
-                            self._ensemble_model = self._create_weighted_model()
-                            self._ensemble_model.fit(base_predictions, targets)
+            elif self.config.ensemble_method == EnsembleMethod.VOTING:
+                # For voting, we create a voting classifier
+                from sklearn.ensemble import VotingClassifier
+                
+                estimators = []
+                for model_name, trainer in self._base_trainers.items():
+                    model = trainer._model_state.get(f"{model_name}_model")
+                    if model is not None:
+                        estimators.append((model_name, model))
+                
+                self._ensemble_model = VotingClassifier(estimators, voting='soft')
+                self._ensemble_model.fit(base_predictions, targets)
+                
+            elif self.config.ensemble_method == EnsembleMethod.BLENDING:
+                # For blending, we use a weighted combination with learned weights
+                self._ensemble_model = self._create_blending_model()
+                self._ensemble_model.fit(base_predictions, targets)
+                
+            elif self.config.ensemble_method == EnsembleMethod.WEIGHTED:
+                # For weighted averaging, we learn optimal weights
+                self._ensemble_model = self._create_weighted_model()
+                self._ensemble_model.fit(base_predictions, targets)
                 
             elif self.config.ensemble_method == EnsembleMethod.AVERAGING:
                 # For averaging, we create a simple averaging model
@@ -477,10 +476,10 @@ class AnalystEnsembleTrainer(BaseTrainer):
             self.logger.error(f"Ensemble model training failed: {e}")
             return {'success': False, 'error': str(e)}
     
-                def _create_meta_learner(self):
-                    """Create meta-learner for stacking."""
-                    try:
-                        if self.config.meta_learner_type == ModelType.LIGHTGBM:
+    def _create_meta_learner(self):
+        """Create meta-learner for stacking."""
+        try:
+            if self.config.meta_learner_type == ModelType.LIGHTGBM:
                             import lightgbm as lgb
                             params = {
                                 'objective': 'binary',

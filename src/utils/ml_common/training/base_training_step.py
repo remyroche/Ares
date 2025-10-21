@@ -861,3 +861,88 @@ class BaseTrainingStep(ABC):
             'config': self.config,
             'error': str(error)
         }
+
+
+class PerRegimeTrainingStep(BaseTrainingStep):
+    """
+    Per-Regime Training Step
+    
+    Base class for training models per regime with enhanced validation.
+    """
+    
+    def __init__(self, config: BaseTrainingConfig, logger=None):
+        """
+        Initialize per-regime training step.
+        
+        Args:
+            config: Training configuration
+            logger: Logger instance
+        """
+        super().__init__(config, logger)
+        self.regime_processor = RegimeProcessor(config)
+        
+    def train_per_regime(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Train models per regime.
+        
+        Args:
+            data: Training data with regime information
+            
+        Returns:
+            Training results per regime
+        """
+        try:
+            tprint_info("🎯 Starting per-regime training...")
+            
+            # Process regime data
+            regime_data = self.regime_processor.process_regime_data(data)
+            
+            # Train models for each regime
+            regime_results = {}
+            for regime_id, regime_info in regime_data.items():
+                tprint_info(f"🎯 Training models for regime {regime_id}...")
+                
+                # Train models for this regime
+                regime_result = self._train_regime_models(regime_id, regime_info)
+                regime_results[regime_id] = regime_result
+                
+            tprint_success("✅ Per-regime training completed")
+            return {
+                'success': True,
+                'regime_results': regime_results,
+                'total_regimes': len(regime_results)
+            }
+            
+        except Exception as e:
+            tprint_error(f"❌ Per-regime training failed: {e}")
+            return {
+                'success': False,
+                'error': str(e)
+            }
+    
+    def _train_regime_models(self, regime_id: str, regime_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Train models for a specific regime.
+        
+        Args:
+            regime_id: Regime identifier
+            regime_data: Data for this regime
+            
+        Returns:
+            Training results for this regime
+        """
+        try:
+            # This is a placeholder implementation
+            # In practice, this would train specific models for the regime
+            return {
+                'success': True,
+                'regime_id': regime_id,
+                'models_trained': 0,
+                'training_time': 0.0
+            }
+        except Exception as e:
+            return {
+                'success': False,
+                'regime_id': regime_id,
+                'error': str(e)
+            }

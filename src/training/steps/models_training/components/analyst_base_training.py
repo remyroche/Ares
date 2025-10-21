@@ -181,7 +181,6 @@ class AnalystBaseTraining(BaseStep):
         ),
         context="analyst base training"
     )
-    @traced
     async def run(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """
         Run the Analyst base training.

@@ -21,9 +21,17 @@ from enum import Enum
 import pandas as pd
 import numpy as np
 
-from ..core.tactician_ensemble_trainer import (
-    TacticianEnsembleTrainer, TacticianEnsembleTrainingConfig, TacticianEnsembleMethod
-)
+# from ..core.tactician_ensemble_trainer import (
+#     TacticianEnsembleTrainer, TacticianEnsembleTrainingConfig, TacticianEnsembleMethod
+# )
+
+# Simple enum for tactician ensemble methods
+from enum import Enum
+class TacticianEnsembleMethod(Enum):
+    STACKING = "stacking"
+    VOTING = "voting"
+    AVERAGING = "averaging"
+    BLENDING = "blending"
 from ..core.tactician_base_trainer import TacticianModelType
 from src.training.steps.base_step import BaseStep
 from src.utils.logger import system_logger
@@ -208,7 +216,6 @@ class TacticianEnsembleTraining(BaseStep):
         ),
         context="tactician ensemble training"
     )
-    @traced
     async def run(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """
         Run the Tactician ensemble training.

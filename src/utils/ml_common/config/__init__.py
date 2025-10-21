@@ -9,7 +9,6 @@ from .base_training_config import (
     HMMTrainingConfig
 )
 
-# Create PerRegimeTrainingConfig as an alias to BaseTrainingConfig
 # since we no longer train per-regime
 PerRegimeTrainingConfig = BaseTrainingConfig
 
@@ -30,6 +29,7 @@ __all__ = [
     'EnsembleTrainingConfig',
     'TacticianTrainingConfig',
     'HMMTrainingConfig',
+    'PerRegimeTrainingConfig',
     'save_config_to_file',
     'load_config_from_file'
 ]

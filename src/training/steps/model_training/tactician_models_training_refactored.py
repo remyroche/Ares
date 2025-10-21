@@ -27,8 +27,8 @@ from enum import Enum
 # Enhanced imports with comprehensive error handling
 try:
     from src.utils.logger import system_logger
-    from src.utils.ml_common.config import PerRegimeTrainingConfig
-    from src.utils.ml_common.training import PerRegimeTrainingStep
+    from src.utils.ml_common.config import BaseTrainingConfig
+    from src.utils.ml_common.training import BaseTrainingStep
 except ImportError as e:
     print(f"❌ CRITICAL: Failed to import core ML utilities: {e}")
     raise
@@ -199,7 +199,7 @@ except Exception as e:
     raise RuntimeError(f"CRITICAL: Failed to initialize system logger: {e}") from e
 
 @dataclass
-class TacticianTrainingConfig(PerRegimeTrainingConfig):
+class TacticianTrainingConfig(BaseTrainingConfig):
     """
     Configuration for Tactician models training with specific parameters.
 
@@ -300,7 +300,7 @@ class TrainingMetrics:
             return time.time() - self.start_time
         return self.end_time - self.start_time
 
-class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
+class TacticianModelsTrainingStepRefactored(BaseTrainingStep):
     """
     Enhanced Tactician Models Training Step with comprehensive error handling and reporting.
 
@@ -384,7 +384,7 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
             tprint_error(f"❌ Initialization failed: {e}")
             raise
 
-    def _validate_config_consolidated(self, config: PerRegimeTrainingConfig) -> None:
+    def _validate_config_consolidated(self, config: BaseTrainingConfig) -> None:
         """Consolidated configuration validation using common utilities."""
         try:
             if not config.model_types or len(config.model_types) == 0:
@@ -748,7 +748,7 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                     level="error"
                 )
 
-    def _validate_configuration(self, config: PerRegimeTrainingConfig) -> None:
+    def _validate_configuration(self, config: BaseTrainingConfig) -> None:
         """Validate configuration - delegates to consolidated method."""
         try:
             self._validate_config_consolidated(config)

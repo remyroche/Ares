@@ -116,7 +116,6 @@ class TacticianBaseTrainer(BaseTrainer):
         enable_pools=True
     )
     @performance_tracked(log_performance=True, track_memory=True)
-    @log_execution_time
     async def train(self, data: pd.DataFrame, targets: Optional[pd.Series] = None) -> TrainingResult:
         """
         Train Tactician models with given data.

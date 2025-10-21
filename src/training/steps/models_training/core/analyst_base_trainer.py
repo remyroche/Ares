@@ -107,7 +107,6 @@ class AnalystBaseTrainer(BaseTrainer):
         ),
         context="analyst training"
     )
-    @log_execution_time
     async def train(self, data: pd.DataFrame, targets: Optional[pd.Series] = None) -> TrainingResult:
         """
         Train Analyst models with given data.

@@ -117,6 +117,139 @@ try:
 except ImportError:
     PSUTIL_AVAILABLE: Final[bool] = False
 
+# Data preview configuration
+import os
+DATA_PREVIEW_CONFIG = {
+    'enabled': os.getenv('ENABLE_DATA_PREVIEW', 'false').lower() == 'true',
+    'max_rows': int(os.getenv('DATA_PREVIEW_MAX_ROWS', '5')),
+    'max_cols': int(os.getenv('DATA_PREVIEW_MAX_COLS', '10')),
+    'include_metadata': os.getenv('DATA_PREVIEW_METADATA', 'true').lower() == 'true',
+    'log_level': os.getenv('DATA_PREVIEW_LOG_LEVEL', 'DEBUG')
+}
+
+
+def tprint_data_preview(data: Any, name: str = "data", max_rows: int = None, 
+                       max_cols: int = None, level: LogLevel = LogLevel.DEBUG, 
+                       include_metadata: bool = None) -> None:
+    """
+    Smart data preview with performance optimization.
+    
+    Args:
+        data: Data to preview (DataFrame, array, or any data structure)
+        name: Name/description of the data
+        max_rows: Maximum rows to show (defaults to config)
+        max_cols: Maximum columns to show (defaults to config)
+        level: Log level for the preview
+        include_metadata: Whether to include metadata (defaults to config)
+    """
+    # Use config defaults if not specified
+    if not DATA_PREVIEW_CONFIG['enabled']:
+        return
+    
+    max_rows = max_rows or DATA_PREVIEW_CONFIG['max_rows']
+    max_cols = max_cols or DATA_PREVIEW_CONFIG['max_cols']
+    include_metadata = include_metadata if include_metadata is not None else DATA_PREVIEW_CONFIG['include_metadata']
+    
+    # Convert string log level to enum
+    if isinstance(level, str):
+        level = LogLevel(level.upper())
+    
+    try:
+        # Handle pandas DataFrames
+        if PANDAS_AVAILABLE and hasattr(data, 'shape') and hasattr(data, 'head'):
+            tprint_with_level(level, f"📊 {name} preview:")
+            tprint_with_level(level, f"  Shape: {data.shape}")
+            tprint_with_level(level, f"  Dtypes: {dict(data.dtypes)}")
+            
+            if include_metadata:
+                memory_mb = data.memory_usage(deep=True).sum() / 1024**2
+                tprint_with_level(level, f"  Memory: {memory_mb:.2f} MB")
+                
+                # Check for common data quality issues
+                null_count = data.isnull().sum().sum()
+                if null_count > 0:
+                    tprint_with_level(level, f"  ⚠️  Null values: {null_count}")
+                
+                # Check for infinite values
+                if hasattr(data, 'select_dtypes'):
+                    numeric_cols = data.select_dtypes(include=[np.number]).columns
+                    if len(numeric_cols) > 0:
+                        inf_count = np.isinf(data[numeric_cols]).sum().sum()
+                        if inf_count > 0:
+                            tprint_with_level(level, f"  ⚠️  Infinite values: {inf_count}")
+            
+            # Show sample data with smart truncation
+            if len(data) > 0:
+                preview_data = data.head(max_rows)
+                if len(data.columns) > max_cols:
+                    preview_data = preview_data.iloc[:, :max_cols]
+                    tprint_with_level(level, f"  Sample data (first {max_rows} rows, first {max_cols} cols):")
+                else:
+                    tprint_with_level(level, f"  Sample data (first {max_rows} rows):")
+                tprint_with_level(level, f"  {preview_data}")
+            else:
+                tprint_with_level(level, f"  Empty dataset")
+        
+        # Handle numpy arrays
+        elif NUMPY_AVAILABLE and hasattr(data, 'shape') and hasattr(data, 'dtype'):
+            tprint_with_level(level, f"📊 {name} preview:")
+            tprint_with_level(level, f"  Shape: {data.shape}")
+            tprint_with_level(level, f"  Dtype: {data.dtype}")
+            
+            if include_metadata:
+                memory_mb = data.nbytes / 1024**2
+                tprint_with_level(level, f"  Memory: {memory_mb:.2f} MB")
+                
+                # Check for data quality issues
+                if np.issubdtype(data.dtype, np.number):
+                    null_count = np.isnan(data).sum() if np.issubdtype(data.dtype, np.floating) else 0
+                    inf_count = np.isinf(data).sum() if np.issubdtype(data.dtype, np.floating) else 0
+                    
+                    if null_count > 0:
+                        tprint_with_level(level, f"  ⚠️  NaN values: {null_count}")
+                    if inf_count > 0:
+                        tprint_with_level(level, f"  ⚠️  Infinite values: {inf_count}")
+            
+            # Show sample data
+            if data.size > 0:
+                if data.ndim == 1:
+                    sample_size = min(max_rows, len(data))
+                    tprint_with_level(level, f"  Sample data (first {sample_size} values):")
+                    tprint_with_level(level, f"  {data[:sample_size]}")
+                elif data.ndim == 2:
+                    sample_rows = min(max_rows, data.shape[0])
+                    sample_cols = min(max_cols, data.shape[1])
+                    tprint_with_level(level, f"  Sample data (first {sample_rows} rows, first {sample_cols} cols):")
+                    tprint_with_level(level, f"  {data[:sample_rows, :sample_cols]}")
+                else:
+                    tprint_with_level(level, f"  Array shape: {data.shape}")
+            else:
+                tprint_with_level(level, f"  Empty array")
+        
+        # Handle other data types
+        else:
+            tprint_with_level(level, f"📊 {name} preview:")
+            tprint_with_level(level, f"  Type: {type(data).__name__}")
+            
+            if hasattr(data, '__len__'):
+                tprint_with_level(level, f"  Length: {len(data)}")
+            
+            if include_metadata:
+                try:
+                    size_bytes = sys.getsizeof(data)
+                    tprint_with_level(level, f"  Memory: {size_bytes / 1024**2:.2f} MB")
+                except:
+                    pass
+            
+            # Show string representation (truncated)
+            data_str = str(data)
+            if len(data_str) > 500:
+                data_str = data_str[:500] + "..."
+            tprint_with_level(level, f"  Preview: {data_str}")
+    
+    except Exception as e:
+        tprint_with_level(level, f"📊 {name} preview (error): {e}")
+
 
 class CompressionType(Enum):
     """Supported compression algorithms."""
@@ -673,6 +806,9 @@ class ArtifactManager:
                 tprint_info(f"💾 SAVING ARTIFACT: {artifact_name}")
                 tprint_info(f"📊 Data Preview:\n{preview}")
                 
+                # Add enhanced data preview
+                tprint_data_preview(data, f"saving_artifact_{artifact_name}", level=LogLevel.INFO)
+                
                 # Get current step name from path manager
                 step_name = self._path_manager._current_step_name or "unknown"
                 
@@ -768,6 +904,10 @@ class ArtifactManager:
                 
                 # Load artifact
                 data = self._storage.load_artifact(file_path)
+                
+                # Add enhanced data preview
+                if data is not None:
+                    tprint_data_preview(data, f"loaded_artifact_{artifact_name}", level=LogLevel.INFO)
                 
                 if data is not None:
                     # Cache if enabled
@@ -1210,21 +1350,27 @@ class ArtifactManager:
             if path.suffix == '.parquet':
                 if PANDAS_AVAILABLE:
                     tprint_debug(f"📊 Loading parquet file: {path}")
-                    return pd.read_parquet(path)
+                    data = pd.read_parquet(path)
+                    tprint_data_preview(data, f"parquet_{path.stem}", level=LogLevel.DEBUG)
+                    return data
                 else:
                     tprint_warning(f"⚠️ Pandas not available, cannot load parquet: {path}")
                     return None
             elif path.suffix == '.csv':
                 if PANDAS_AVAILABLE:
                     tprint_debug(f"📊 Loading CSV file: {path}")
-                    return pd.read_csv(path, index_col=0)
+                    data = pd.read_csv(path, index_col=0)
+                    tprint_data_preview(data, f"csv_{path.stem}", level=LogLevel.DEBUG)
+                    return data
                 else:
                     tprint_warning(f"⚠️ Pandas not available, cannot load CSV: {path}")
                     return None
             elif path.suffix == '.pkl':
                 tprint_debug(f"📦 Loading pickle file: {path}")
                 with open(path, 'rb') as f:
-                    return pickle.load(f)
+                    data = pickle.load(f)
+                    tprint_data_preview(data, f"pickle_{path.stem}", level=LogLevel.DEBUG)
+                    return data
             elif path.suffix == '.json':
                 tprint_debug(f"📄 Loading JSON file: {path}")
                 with open(path, 'r') as f:

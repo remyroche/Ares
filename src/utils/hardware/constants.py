@@ -20,3 +20,4 @@ class WorkloadType(Enum):
     DATA_PROCESSING = "data_processing"
     FEATURE_ENGINEERING = "feature_engineering"
     GENERAL = "general"
+    MODERATE = "moderate"  # Added missing MODERATE value

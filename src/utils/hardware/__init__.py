@@ -122,6 +122,9 @@ def get_comprehensive_optimizer(config=None):
     except ImportError:
         return None
 
+# Make it available at module level
+__all__ = ['get_comprehensive_optimizer']
+
 # Import other items normally
 from .m1_comprehensive_optimizer import (
     M1ComprehensiveOptimizer, ComprehensiveConfig, OptimizationStrategy,

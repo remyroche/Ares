@@ -26,7 +26,7 @@ from ..core.tactician_base_trainer import (
 )
 from src.training.steps.base_step import BaseStep
 from src.utils.logger import system_logger
-from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success, tprint_debug, tprint_performance
+from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success, tprint_debug, tprint_performance, tprint_data_format
 from src.core.decorators import handles_errors, traced, log_execution_time
 from src.utils.hardware.integrated_hardware_manager import (
     get_integrated_hardware_manager, WorkloadType, process_ml_training_data
@@ -160,6 +160,9 @@ class TacticianBaseTraining(BaseStep):
                 custom_params=self.config.training_params
             )
             
+            # Format analysis of trainer configuration for troubleshooting
+            tprint_data_format(trainer_config, "Tactician base trainer configuration", level="DEBUG")
+            
             # Create trainer
             self._trainer = TacticianBaseTrainer(trainer_config, self.logger)
             
@@ -208,19 +211,18 @@ class TacticianBaseTraining(BaseStep):
             
             start_time = time.time()
             
-            # Preview input data dictionary
-            from src.utils.tprint import tprint_data_preview
-            tprint_data_preview(data, "Input data dictionary", max_rows=5, level="INFO")
+            # Comprehensive data format analysis for troubleshooting
+            tprint_data_format(data, "Input data dictionary", level="INFO")
             
             # Extract data
             X_train = data.get('X_train')
             y_train = data.get('y_train')
             
-            # Preview extracted training data
+            # Detailed format analysis of training data
             if X_train is not None:
-                tprint_data_preview(X_train, "Extracted X_train", max_rows=5, level="INFO")
+                tprint_data_format(X_train, "Extracted X_train", level="INFO")
             if y_train is not None:
-                tprint_data_preview(y_train, "Extracted y_train", max_rows=10, level="INFO")
+                tprint_data_format(y_train, "Extracted y_train", level="INFO")
             
             if X_train is None or y_train is None:
                 return {
@@ -241,9 +243,9 @@ class TacticianBaseTraining(BaseStep):
                 X_train, WorkloadType.ML_TRAINING
             )
             
-            # Preview processed training data
-            tprint_data_preview(X_train, "Processed X_train", max_rows=5, level="DEBUG")
-            tprint_data_preview(y_train, "Processed y_train", max_rows=10, level="DEBUG")
+            # Comprehensive format analysis of processed data
+            tprint_data_format(X_train, "Processed X_train", level="DEBUG")
+            tprint_data_format(y_train, "Processed y_train", level="DEBUG")
             
             # Train models
             training_result = await self._trainer.train(X_train, y_train)
@@ -264,6 +266,12 @@ class TacticianBaseTraining(BaseStep):
                 feature_importance=self._extract_feature_importance(training_result)
             )
             
+            # Format analysis of training results for troubleshooting
+            tprint_data_format(result.models, "Trained models", level="DEBUG")
+            tprint_data_format(result.metrics, "Training metrics", level="INFO")
+            if result.feature_importance:
+                tprint_data_format(result.feature_importance, "Feature importance", level="DEBUG")
+            
             # Auto-save if enabled
             if self.config.auto_save:
                 await self._save_models(result)
@@ -282,6 +290,19 @@ class TacticianBaseTraining(BaseStep):
         except Exception as e:
             tprint_error(f"❌ Tactician base training failed: {e}")
             self.logger.error(f"Tactician base training failed: {e}")
+            
+            # Enhanced error troubleshooting with data format analysis
+            tprint_error("🔍 Error troubleshooting - analyzing data formats:")
+            try:
+                if 'data' in locals():
+                    tprint_data_format(data, "Failed training data", level="ERROR")
+                if 'X_train' in locals() and X_train is not None:
+                    tprint_data_format(X_train, "Failed X_train", level="ERROR")
+                if 'y_train' in locals() and y_train is not None:
+                    tprint_data_format(y_train, "Failed y_train", level="ERROR")
+            except Exception as format_error:
+                tprint_error(f"Could not analyze data formats during error: {format_error}")
+            
             return {
                 'success': False,
                 'error_message': str(e),
@@ -304,6 +325,13 @@ class TacticianBaseTraining(BaseStep):
             # Extract data
             X_val = data.get('X_val', data.get('X_train'))
             y_val = data.get('y_val', data.get('y_train'))
+            
+            # Format analysis of validation data
+            tprint_data_format(data, "Validation data dictionary", level="DEBUG")
+            if X_val is not None:
+                tprint_data_format(X_val, "Validation X_val", level="DEBUG")
+            if y_val is not None:
+                tprint_data_format(y_val, "Validation y_val", level="DEBUG")
             
             if X_val is None or y_val is None:
                 return {
@@ -356,6 +384,11 @@ class TacticianBaseTraining(BaseStep):
             
             # Extract data
             X_pred = data.get('X_pred', data.get('X_train'))
+            
+            # Format analysis of prediction data
+            tprint_data_format(data, "Prediction data dictionary", level="DEBUG")
+            if X_pred is not None:
+                tprint_data_format(X_pred, "Prediction X_pred", level="DEBUG")
             
             if X_pred is None:
                 return {
@@ -422,6 +455,9 @@ class TacticianBaseTraining(BaseStep):
             if not result.success or not result.models:
                 return
             
+            # Format analysis of models before saving for troubleshooting
+            tprint_data_format(result.models, "Models to be saved", level="DEBUG")
+            
             # This would implement model saving logic
             # For now, just log the save operation
             self.logger.info(f"Models saved: {list(result.models.keys())}")
@@ -429,6 +465,9 @@ class TacticianBaseTraining(BaseStep):
             
         except Exception as e:
             self.logger.warning(f"Model saving failed: {e}")
+            tprint_error(f"❌ Model saving failed: {e}")
+            # Format analysis of failed save operation
+            tprint_data_format(result, "Failed save result", level="ERROR")
     
     def get_training_summary(self) -> Dict[str, Any]:
         """Get comprehensive training summary."""

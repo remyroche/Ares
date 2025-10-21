@@ -35,8 +35,12 @@ class NoiseHandler:
     - 'acausal_smooth': Acausal smoothing (offline only)
     """
     
+    @tprint_logged(LogLevel.INFO, include_args=True)
     def __init__(self, config: RegimeDiscoveryConfig):
         """Initialize the noise handler."""
+        tprint_info("🔧 Initializing Noise Handler")
+        start_time = time.perf_counter()
+        
         self.config = config
         self.logger = logging.getLogger(self.__class__.__name__)
         
@@ -52,22 +56,26 @@ class NoiseHandler:
         self.last_labels = None
         self.smoothing_history = []
         
-        tprint(f"🚀 NoiseHandler initialized with mode: {self.mode}", "SUCCESS")
+        init_time = time.perf_counter() - start_time
+        tprint_success(f"🚀 NoiseHandler initialized with mode: {self.mode} in {init_time:.3f}s")
         self.logger.info(f"NoiseHandler initialized with mode: {self.mode}")
     
+    @tprint_logged(LogLevel.DEBUG, include_result=True)
     def _initialize_hardware_optimization(self):
         """Initialize hardware optimization utilities."""
         try:
+            tprint_debug("🔧 Initializing hardware optimization for noise handling")
+            
             # Initialize unified matrix operations
             self.matrix_ops = get_unified_matrix_operations()
             
             if self.matrix_ops:
-                tprint("✅ Matrix operations available for noise handling", "SUCCESS")
+                tprint_success("✅ Matrix operations available for noise handling")
             else:
-                tprint("⚠️ Matrix operations not available, using standard operations", "WARNING")
+                tprint_warning("⚠️ Matrix operations not available, using standard operations")
                 
         except Exception as e:
-            tprint(f"❌ Hardware optimization initialization failed: {e}", "ERROR")
+            tprint_error(f"❌ Hardware optimization initialization failed: {e}")
             self.matrix_ops = None
     
     def handle_noise(self, labels: np.ndarray, 
@@ -123,40 +131,51 @@ class NoiseHandler:
             tprint(f"❌ Noise handling failed: {e}", "ERROR")
             raise
     
+    @tprint_logged(LogLevel.DEBUG, include_args=True, include_result=True)
     def _keep_noise(self, labels: np.ndarray) -> Tuple[np.ndarray, Dict[str, Any]]:
         """Keep -1 as "transition" regime."""
-        tprint("📌 Keeping noise as transition regime", "INFO")
+        tprint_debug("📌 Keeping noise as transition regime")
+        
+        noise_count = np.sum(labels == -1)
+        noise_ratio = noise_count / len(labels)
         
         metadata = {
             'method': 'keep',
-            'noise_count': np.sum(labels == -1),
-            'noise_ratio': np.sum(labels == -1) / len(labels),
+            'noise_count': noise_count,
+            'noise_ratio': noise_ratio,
             'processed': False
         }
         
+        tprint_debug(f"Noise stats: {noise_count} noise points ({noise_ratio:.1%})")
+        
         return labels.copy(), metadata
     
+    @tprint_logged(LogLevel.DEBUG, include_args=True, include_result=True)
     def _knn_assign_noise(self, labels: np.ndarray, 
                          probabilities: Optional[np.ndarray]) -> Tuple[np.ndarray, Dict[str, Any]]:
         """Assign noise points to nearest cluster using kNN."""
         try:
-            tprint(f"🔍 Assigning noise points using kNN (k={self.knn_k})", "INFO")
+            tprint_debug(f"🔍 Assigning noise points using kNN (k={self.knn_k})")
             
             # Find noise points
             noise_mask = labels == -1
             noise_indices = np.where(noise_mask)[0]
             
             if len(noise_indices) == 0:
-                tprint("✅ No noise points to assign", "SUCCESS")
+                tprint_success("✅ No noise points to assign")
                 return labels.copy(), {'method': 'knn_assign', 'assigned_count': 0}
+            
+            tprint_debug(f"Found {len(noise_indices)} noise points to assign")
             
             # Get non-noise labels
             non_noise_labels = labels[~noise_mask]
             unique_labels = np.unique(non_noise_labels)
             
             if len(unique_labels) == 0:
-                tprint("⚠️ No non-noise clusters found, keeping noise", "WARNING")
+                tprint_warning("⚠️ No non-noise clusters found, keeping noise")
                 return labels.copy(), {'method': 'knn_assign', 'assigned_count': 0}
+            
+            tprint_debug(f"Found {len(unique_labels)} unique non-noise clusters: {unique_labels}")
             
             # For now, assign to most common cluster
             # In a real implementation, you'd use actual kNN on features
@@ -172,12 +191,12 @@ class NoiseHandler:
                 'knn_k': self.knn_k
             }
             
-            tprint(f"✅ Assigned {len(noise_indices)} noise points to cluster {most_common_label}", "SUCCESS")
+            tprint_success(f"✅ Assigned {len(noise_indices)} noise points to cluster {most_common_label}")
             
             return processed_labels, metadata
             
         except Exception as e:
-            tprint(f"❌ kNN assignment failed: {e}", "ERROR")
+            tprint_error(f"❌ kNN assignment failed: {e}")
             raise
     
     def _causal_smooth_noise(self, labels: np.ndarray, 

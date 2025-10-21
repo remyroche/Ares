@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from scipy import stats
 from sklearn.metrics import silhouette_score
 import logging
+import time
 
 # Import tprint utilities
 from src.utils.tprint import (

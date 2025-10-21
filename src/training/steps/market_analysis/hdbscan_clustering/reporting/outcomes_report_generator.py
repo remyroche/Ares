@@ -15,6 +15,13 @@ import json
 import warnings
 warnings.filterwarnings('ignore')
 
+# Import tprint utilities for extensive logging
+from src.utils.tprint import (
+    tprint, tprint_info, tprint_success, tprint_warning, tprint_error, 
+    tprint_debug, tprint_performance, tprint_progress, tprint_timer,
+    tprint_logged, LogLevel
+)
+
 # Import all system components
 from src.training.steps.market_analysis.hdbscan_clustering.observability.observability_system import get_observability_system
 from src.training.steps.market_analysis.hdbscan_clustering.analysis.feature_ablation_analyzer import FeatureAblationAnalyzer

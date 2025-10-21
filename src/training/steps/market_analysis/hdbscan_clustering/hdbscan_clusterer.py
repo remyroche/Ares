@@ -16,6 +16,13 @@ from sklearn.metrics import silhouette_score, calinski_harabasz_score, davies_bo
 from sklearn.neighbors import NearestNeighbors
 import warnings
 
+# Import tprint utilities for extensive logging
+from src.utils.tprint import (
+    tprint, tprint_info, tprint_success, tprint_warning, tprint_error, 
+    tprint_debug, tprint_performance, tprint_progress, tprint_timer,
+    tprint_logged, LogLevel
+)
+
 # Import enhanced hardware optimization tools
 from src.utils.hardware import (
     smart_cache, auto_optimize, memory_efficient, performance_tracked,
@@ -82,6 +89,7 @@ class HDBSCANClusterer:
     is not available, with basic parameter optimization and validation.
     """
     
+    @tprint_logged(LogLevel.INFO, include_args=True)
     def __init__(self, config: Optional[HDBSCANClustererConfig] = None):
         """
         Initialize HDBSCAN clusterer.
@@ -89,6 +97,9 @@ class HDBSCANClusterer:
         Args:
             config: Configuration for clustering
         """
+        tprint_info("🔧 Initializing HDBSCAN clusterer")
+        start_time = time.perf_counter()
+        
         self.config = config or HDBSCANClustererConfig()
         self.clusterer = None
         self.clustering_stats = {}
@@ -102,6 +113,10 @@ class HDBSCANClusterer:
                 'min_samples': [3, 5, 7, 10],
                 'cluster_selection_epsilon': [0.0, 0.1, 0.2, 0.3]
             }
+            tprint_debug(f"Set default parameter search space: {self.config.param_search_space}")
+        
+        init_time = time.perf_counter() - start_time
+        tprint_success(f"✅ HDBSCAN clusterer initialized in {init_time:.3f}s")
     
     @smart_cache(ttl=3600)  # Cache clustering results for 1 hour
     @auto_optimize(optimize_inputs=True, optimize_outputs=True)
@@ -160,40 +175,46 @@ class HDBSCANClusterer:
             # Return single cluster as fallback
             return np.zeros(len(features_df), dtype=int), {'error': str(e)}
     
+    @tprint_logged(LogLevel.DEBUG, include_args=True, include_result=True)
     def _validate_input(self, features_df: pd.DataFrame) -> pd.DataFrame:
         """Validate input features with enhanced validation using common utilities."""
         try:
+            tprint_debug(f"🔍 Validating input features: {features_df.shape}")
+            
             # Use safe dataframe operation for validation
             def validate_and_clean_dataframe(df):
+                tprint_debug("🧹 Starting dataframe validation and cleaning")
+                
                 # Check for NaN values using math validation
                 if df.isnull().any().any():
-                    logger.warning("⚠️ Found NaN values, filling with 0")
+                    tprint_warning("⚠️ Found NaN values, filling with 0")
                     df = df.fillna(0)
                 
                 # Check for infinite values using math validation
                 if np.isinf(df.values).sum() > 0:
-                    logger.warning("⚠️ Found infinite values, clipping")
+                    tprint_warning("⚠️ Found infinite values, clipping")
                     df = df.replace([np.inf, -np.inf], [np.finfo(np.float64).max, np.finfo(np.float64).min])
                 
                 # Validate finite values using math validation
                 df_values = df.values
                 if not validate_finite(df_values):
-                    logger.warning("⚠️ Found non-finite values, applying safe operations")
+                    tprint_warning("⚠️ Found non-finite values, applying safe operations")
                     df_values = np.where(np.isfinite(df_values), df_values, 0)
                     df = pd.DataFrame(df_values, columns=df.columns, index=df.index)
                 
                 # Check for constant columns
                 constant_cols = df.columns[df.nunique() <= 1]
                 if len(constant_cols) > 0:
-                    logger.warning(f"⚠️ Removing constant columns: {constant_cols.tolist()}")
+                    tprint_warning(f"⚠️ Removing constant columns: {constant_cols.tolist()}")
                     df = df.drop(columns=constant_cols)
                 
                 # Validate numeric range
                 for col in df.columns:
                     if not validate_numeric_range(df[col].values, min_val=-1e10, max_val=1e10):
-                        logger.warning(f"⚠️ Column {col} has values outside expected range, clipping")
+                        tprint_warning(f"⚠️ Column {col} has values outside expected range, clipping")
                         df[col] = df[col].clip(-1e10, 1e10)
                 
+                tprint_debug(f"✅ Dataframe validation completed: {df.shape}")
                 return df
             
             # Use safe dataframe operation
@@ -202,15 +223,19 @@ class HDBSCANClusterer:
             # Optimize memory usage
             optimized_df = optimize_dataframe_memory(validated_df)
             
+            tprint_success(f"✅ Input validation completed: {optimized_df.shape}")
             return optimized_df
             
         except Exception as e:
-            logger.error(f"❌ Input validation failed: {e}")
+            tprint_error(f"❌ Input validation failed: {e}")
             return features_df
     
+    @tprint_logged(LogLevel.DEBUG, include_result=True)
     def _get_default_params(self) -> Dict[str, Any]:
         """Get default HDBSCAN parameters."""
-        return {
+        tprint_debug("📋 Getting default HDBSCAN parameters")
+        
+        params = {
             'min_cluster_size': self.config.min_cluster_size,
             'min_samples': self.config.min_samples,
             'cluster_selection_epsilon': self.config.cluster_selection_epsilon,
@@ -221,11 +246,16 @@ class HDBSCANClusterer:
             'memory': self.config.memory,
             'n_jobs': self.config.n_jobs
         }
+        
+        tprint_debug(f"Default parameters: {params}")
+        return params
     
+    @tprint_logged(LogLevel.INFO, include_args=True, include_result=True)
     def _optimize_parameters(self, features: np.ndarray) -> Dict[str, Any]:
         """Optimize HDBSCAN parameters using grid search."""
         try:
-            logger.info("🔧 Optimizing HDBSCAN parameters...")
+            tprint_info("🔧 Optimizing HDBSCAN parameters...")
+            start_time = time.perf_counter()
             
             best_params = None
             best_score = -np.inf
@@ -233,7 +263,7 @@ class HDBSCANClusterer:
             # Generate parameter combinations
             param_combinations = self._generate_param_combinations()
             
-            logger.info(f"Testing {len(param_combinations)} parameter combinations...")
+            tprint_info(f"Testing {len(param_combinations)} parameter combinations...")
             
             for i, params in enumerate(param_combinations):
                 try:
@@ -246,37 +276,46 @@ class HDBSCANClusterer:
                     if score > best_score:
                         best_score = score
                         best_params = params
+                        tprint_debug(f"New best score: {best_score:.3f} with params: {params}")
                     
                     if (i + 1) % 10 == 0:
-                        logger.info(f"Completed {i + 1}/{len(param_combinations)} combinations. Best score: {best_score:.3f}")
+                        tprint_progress(f"Completed {i + 1}/{len(param_combinations)} combinations. Best score: {best_score:.3f}")
                 
                 except Exception as e:
-                    logger.debug(f"Parameter combination failed: {e}")
+                    tprint_debug(f"Parameter combination failed: {e}")
                     continue
             
             if best_params is None:
-                logger.warning("⚠️ Parameter optimization failed, using default parameters")
+                tprint_warning("⚠️ Parameter optimization failed, using default parameters")
                 best_params = self._get_default_params()
             else:
-                logger.info(f"✅ Best parameters found: {best_params} (score: {best_score:.3f})")
+                tprint_success(f"✅ Best parameters found: {best_params} (score: {best_score:.3f})")
             
             self.best_params = best_params
             self.best_score = best_score
             
+            opt_time = time.perf_counter() - start_time
+            tprint_performance(f"Parameter optimization completed in {opt_time:.3f}s")
+            
             return best_params
             
         except Exception as e:
-            logger.error(f"❌ Parameter optimization failed: {e}")
+            tprint_error(f"❌ Parameter optimization failed: {e}")
             return self._get_default_params()
     
+    @tprint_logged(LogLevel.DEBUG, include_result=True)
     def _generate_param_combinations(self) -> List[Dict[str, Any]]:
         """Generate parameter combinations for grid search."""
         try:
+            tprint_debug("🔄 Generating parameter combinations for grid search")
             import itertools
             
             # Get parameter names and values
             param_names = list(self.config.param_search_space.keys())
             param_values = list(self.config.param_search_space.values())
+            
+            tprint_debug(f"Parameter names: {param_names}")
+            tprint_debug(f"Parameter values: {param_values}")
             
             # Generate all combinations
             combinations = list(itertools.product(*param_values))
@@ -296,29 +335,37 @@ class HDBSCANClusterer:
                 })
                 param_combinations.append(params)
             
+            tprint_debug(f"Generated {len(param_combinations)} parameter combinations")
             return param_combinations
             
         except Exception as e:
-            logger.error(f"❌ Parameter combination generation failed: {e}")
+            tprint_error(f"❌ Parameter combination generation failed: {e}")
             return [self._get_default_params()]
     
+    @tprint_logged(LogLevel.DEBUG, include_args=True, include_result=True)
     def _perform_clustering(self, features: np.ndarray, params: Dict[str, Any]) -> Tuple[np.ndarray, Dict[str, Any]]:
         """Perform HDBSCAN clustering with given parameters."""
         try:
+            tprint_debug(f"🔍 Performing HDBSCAN clustering with params: {params}")
+            
             # Import HDBSCAN
             try:
                 import hdbscan
+                tprint_debug("✅ HDBSCAN imported successfully")
             except ImportError:
-                logger.error("❌ HDBSCAN not available. Please install: pip install hdbscan")
+                tprint_error("❌ HDBSCAN not available. Please install: pip install hdbscan")
                 raise ImportError("HDBSCAN not available")
             
             # Create clusterer
             clusterer = hdbscan.HDBSCAN(**params)
+            tprint_debug("✅ HDBSCAN clusterer created")
             
             # Perform clustering
-            start_time = time.time()
+            start_time = time.perf_counter()
             cluster_labels = clusterer.fit_predict(features)
-            clustering_time = time.time() - start_time
+            clustering_time = time.perf_counter() - start_time
+            
+            tprint_debug(f"Clustering completed in {clustering_time:.3f}s")
             
             # Create clustering info
             clustering_info = {
@@ -334,25 +381,33 @@ class HDBSCANClusterer:
                 'cluster_sizes': self._calculate_cluster_sizes(cluster_labels)
             }
             
+            tprint_debug(f"Clustering info: {clustering_info['n_clusters']} clusters, {clustering_info['n_noise_points']} noise points")
+            
             return cluster_labels, clustering_info
             
         except Exception as e:
-            logger.error(f"❌ HDBSCAN clustering failed: {e}")
+            tprint_error(f"❌ HDBSCAN clustering failed: {e}")
             raise
     
+    @tprint_logged(LogLevel.DEBUG, include_args=True, include_result=True)
     def _calculate_cluster_centers(self, features: np.ndarray, cluster_labels: np.ndarray) -> np.ndarray:
         """Calculate cluster centers with enhanced math validation."""
         try:
+            tprint_debug(f"📊 Calculating cluster centers for {features.shape[0]} samples")
+            
             # Validate inputs
             if not validate_finite(features) or not validate_finite(cluster_labels):
-                logger.debug("Non-finite values in features or labels, returning empty centers")
+                tprint_debug("Non-finite values in features or labels, returning empty centers")
                 return np.array([])
             
             unique_labels = np.unique(cluster_labels)
             unique_labels = unique_labels[unique_labels != -1]  # Remove noise
             
             if len(unique_labels) == 0:
+                tprint_debug("No valid clusters found, returning empty centers")
                 return np.array([])
+            
+            tprint_debug(f"Found {len(unique_labels)} unique clusters: {unique_labels}")
             
             centers = []
             for label in unique_labels:
@@ -362,7 +417,7 @@ class HDBSCANClusterer:
                     
                     # Validate cluster features
                     if not validate_finite(cluster_features):
-                        logger.debug(f"Non-finite values in cluster {label}, skipping")
+                        tprint_debug(f"Non-finite values in cluster {label}, skipping")
                         continue
                     
                     # Calculate center using safe operations
@@ -373,45 +428,60 @@ class HDBSCANClusterer:
                     
                     if center is not None and validate_finite(center):
                         centers.append(center)
+                        tprint_debug(f"✅ Calculated center for cluster {label}")
                     else:
-                        logger.debug(f"Invalid center for cluster {label}, skipping")
+                        tprint_debug(f"Invalid center for cluster {label}, skipping")
             
-            return np.array(centers) if centers else np.array([])
+            result = np.array(centers) if centers else np.array([])
+            tprint_debug(f"✅ Cluster centers calculation completed: {len(centers)} centers")
+            return result
             
         except Exception as e:
-            logger.debug(f"Cluster center calculation failed: {e}")
+            tprint_debug(f"Cluster center calculation failed: {e}")
             return np.array([])
     
+    @tprint_logged(LogLevel.DEBUG, include_args=True, include_result=True)
     def _calculate_cluster_sizes(self, cluster_labels: np.ndarray) -> Dict[int, int]:
         """Calculate cluster sizes."""
         try:
+            tprint_debug(f"📏 Calculating cluster sizes for {len(cluster_labels)} labels")
+            
             unique_labels, counts = np.unique(cluster_labels, return_counts=True)
-            return dict(zip(unique_labels, counts))
+            sizes = dict(zip(unique_labels, counts))
+            
+            tprint_debug(f"Cluster sizes: {sizes}")
+            return sizes
+            
         except Exception as e:
-            logger.debug(f"Cluster size calculation failed: {e}")
+            tprint_debug(f"Cluster size calculation failed: {e}")
             return {}
     
+    @tprint_logged(LogLevel.DEBUG, include_args=True, include_result=True)
     def _calculate_validation_score(self, cluster_labels: np.ndarray, features: np.ndarray) -> float:
         """Calculate validation score for clustering with enhanced math validation."""
         try:
+            tprint_debug(f"📊 Calculating validation score using {self.config.optimization_metric} metric")
+            
             # Remove noise points for validation
             valid_mask = cluster_labels != -1
             if valid_mask.sum() < 2:
+                tprint_debug("Insufficient valid samples for validation")
                 return -np.inf
             
             valid_labels = cluster_labels[valid_mask]
             valid_features = features[valid_mask]
             
             if len(set(valid_labels)) < 2:
+                tprint_debug("Insufficient unique clusters for validation")
                 return -np.inf
             
             # Validate inputs using math validation
             if not validate_finite(valid_features):
-                logger.debug("Non-finite values in features, skipping validation")
+                tprint_debug("Non-finite values in features, skipping validation")
                 return -np.inf
             
             if not validate_finite(valid_labels):
-                logger.debug("Non-finite values in labels, skipping validation")
+                tprint_debug("Non-finite values in labels, skipping validation")
                 return -np.inf
             
             # Calculate score based on optimization metric with safe operations
@@ -430,15 +500,17 @@ class HDBSCANClusterer:
             
             # Validate score is finite
             if not validate_finite(np.array([score])):
-                logger.debug("Non-finite validation score, returning -inf")
+                tprint_debug("Non-finite validation score, returning -inf")
                 return -np.inf
             
+            tprint_debug(f"✅ Validation score calculated: {score:.4f}")
             return score
             
         except Exception as e:
-            logger.debug(f"Validation score calculation failed: {e}")
+            tprint_debug(f"Validation score calculation failed: {e}")
             return -np.inf
     
+    @tprint_logged(LogLevel.INFO, include_args=True, include_result=True)
     def _handle_noise_points(self, cluster_labels: np.ndarray, features: np.ndarray) -> np.ndarray:
         """Handle noise points using specified strategy."""
         try:
@@ -446,39 +518,47 @@ class HDBSCANClusterer:
             n_noise = noise_mask.sum()
             
             if n_noise == 0:
+                tprint_debug("No noise points to handle")
                 return cluster_labels
             
-            logger.info(f"Handling {n_noise} noise points using {self.config.noise_strategy} strategy")
+            tprint_info(f"🔧 Handling {n_noise} noise points using {self.config.noise_strategy} strategy")
             
             if self.config.noise_strategy == 'keep':
                 # Keep noise points as -1
+                tprint_debug("Keeping noise points as -1")
                 return cluster_labels
             
             elif self.config.noise_strategy == 'knn_assign':
                 # Assign noise points to nearest cluster
+                tprint_debug("Assigning noise points to nearest cluster using kNN")
                 return self._assign_noise_to_nearest_cluster(cluster_labels, features, noise_mask)
             
             elif self.config.noise_strategy == 'causal_smooth':
                 # Apply causal smoothing to noise points
+                tprint_debug("Applying causal smoothing to noise points")
                 return self._causal_smooth_noise(cluster_labels, noise_mask)
             
             else:
-                logger.warning(f"⚠️ Unknown noise strategy: {self.config.noise_strategy}")
+                tprint_warning(f"⚠️ Unknown noise strategy: {self.config.noise_strategy}")
                 return cluster_labels
             
         except Exception as e:
-            logger.error(f"❌ Noise handling failed: {e}")
+            tprint_error(f"❌ Noise handling failed: {e}")
             return cluster_labels
     
+    @tprint_logged(LogLevel.DEBUG, include_args=True, include_result=True)
     def _assign_noise_to_nearest_cluster(self, cluster_labels: np.ndarray, features: np.ndarray, noise_mask: np.ndarray) -> np.ndarray:
         """Assign noise points to nearest cluster using KNN."""
         try:
+            tprint_debug(f"🔍 Assigning {noise_mask.sum()} noise points to nearest clusters using KNN")
+            
             # Get non-noise points and their labels
             valid_mask = ~noise_mask
             valid_features = features[valid_mask]
             valid_labels = cluster_labels[valid_mask]
             
             if len(valid_features) == 0:
+                tprint_warning("No valid features for KNN assignment")
                 return cluster_labels
             
             # Get noise points
@@ -487,9 +567,11 @@ class HDBSCANClusterer:
             # Find nearest neighbors
             knn = NearestNeighbors(n_neighbors=min(5, len(valid_features)), metric=self.config.metric)
             knn.fit(valid_features)
+            tprint_debug(f"KNN fitted with {knn.n_neighbors} neighbors")
             
             # Find nearest neighbors for noise points
             distances, indices = knn.kneighbors(noise_features)
+            tprint_debug(f"Found nearest neighbors for {len(noise_features)} noise points")
             
             # Assign to most common label among neighbors
             new_labels = cluster_labels.copy()
@@ -499,15 +581,19 @@ class HDBSCANClusterer:
                 most_common_label = unique_labels[np.argmax(counts)]
                 new_labels[noise_idx] = most_common_label
             
+            tprint_success(f"✅ Assigned {noise_mask.sum()} noise points to nearest clusters")
             return new_labels
             
         except Exception as e:
-            logger.error(f"❌ Noise assignment failed: {e}")
+            tprint_error(f"❌ Noise assignment failed: {e}")
             return cluster_labels
     
+    @tprint_logged(LogLevel.DEBUG, include_args=True, include_result=True)
     def _causal_smooth_noise(self, cluster_labels: np.ndarray, noise_mask: np.ndarray) -> np.ndarray:
         """Apply causal smoothing to noise points."""
         try:
+            tprint_debug(f"🔄 Applying causal smoothing to {noise_mask.sum()} noise points")
+            
             new_labels = cluster_labels.copy()
             
             # Find noise points
@@ -520,6 +606,7 @@ class HDBSCANClusterer:
                     prev_labels = cluster_labels[prev_mask]
                     # Use most recent non-noise label
                     new_labels[noise_idx] = prev_labels[-1]
+                    tprint_debug(f"Smoothed noise point {noise_idx} using previous label {prev_labels[-1]}")
                 else:
                     # Look at next non-noise points
                     next_mask = (np.arange(len(cluster_labels)) > noise_idx) & (~noise_mask)
@@ -527,29 +614,37 @@ class HDBSCANClusterer:
                         next_labels = cluster_labels[next_mask]
                         # Use first future non-noise label
                         new_labels[noise_idx] = next_labels[0]
+                        tprint_debug(f"Smoothed noise point {noise_idx} using next label {next_labels[0]}")
                     else:
                         # No non-noise points found, keep as noise
                         new_labels[noise_idx] = -1
+                        tprint_debug(f"Kept noise point {noise_idx} as noise (no neighbors)")
             
+            tprint_success(f"✅ Causal smoothing completed")
             return new_labels
             
         except Exception as e:
-            logger.error(f"❌ Causal smoothing failed: {e}")
+            tprint_error(f"❌ Causal smoothing failed: {e}")
             return cluster_labels
     
+    @tprint_logged(LogLevel.INFO, include_args=True)
     def _validate_clustering(self, cluster_labels: np.ndarray, features: np.ndarray):
         """Validate clustering results."""
         try:
+            tprint_info("🔍 Validating clustering results")
+            
             n_clusters = len(set(cluster_labels)) - (1 if -1 in cluster_labels else 0)
             n_noise_points = list(cluster_labels).count(-1)
             
+            tprint_debug(f"Clustering stats: {n_clusters} clusters, {n_noise_points} noise points")
+            
             # Check minimum clusters
             if n_clusters < self.config.min_clusters:
-                logger.warning(f"⚠️ Too few clusters: {n_clusters} < {self.config.min_clusters}")
+                tprint_warning(f"⚠️ Too few clusters: {n_clusters} < {self.config.min_clusters}")
             
             # Check maximum clusters
             if n_clusters > self.config.max_clusters:
-                logger.warning(f"⚠️ Too many clusters: {n_clusters} > {self.config.max_clusters}")
+                tprint_warning(f"⚠️ Too many clusters: {n_clusters} > {self.config.max_clusters}")
             
             # Check silhouette score
             if n_clusters >= 2:
@@ -561,19 +656,23 @@ class HDBSCANClusterer:
                         
                         if len(set(valid_labels)) >= 2:
                             silhouette = silhouette_score(valid_features, valid_labels)
+                            tprint_debug(f"Silhouette score: {silhouette:.3f}")
                             if silhouette < self.config.min_silhouette_score:
-                                logger.warning(f"⚠️ Low silhouette score: {silhouette:.3f} < {self.config.min_silhouette_score}")
+                                tprint_warning(f"⚠️ Low silhouette score: {silhouette:.3f} < {self.config.min_silhouette_score}")
                 except Exception as e:
-                    logger.debug(f"Silhouette score validation failed: {e}")
+                    tprint_debug(f"Silhouette score validation failed: {e}")
             
-            logger.info(f"✅ Clustering validation completed. Clusters: {n_clusters}, Noise: {n_noise_points}")
+            tprint_success(f"✅ Clustering validation completed. Clusters: {n_clusters}, Noise: {n_noise_points}")
             
         except Exception as e:
-            logger.error(f"❌ Clustering validation failed: {e}")
+            tprint_error(f"❌ Clustering validation failed: {e}")
     
+    @tprint_logged(LogLevel.DEBUG, include_args=True, include_result=True)
     def _calculate_clustering_stats(self, cluster_labels: np.ndarray, features: np.ndarray, clustering_info: Dict[str, Any]) -> Dict[str, Any]:
         """Calculate clustering statistics."""
         try:
+            tprint_debug("📊 Calculating clustering statistics")
+            
             n_clusters = len(set(cluster_labels)) - (1 if -1 in cluster_labels else 0)
             n_noise_points = list(cluster_labels).count(-1)
             n_samples = len(cluster_labels)
@@ -589,6 +688,8 @@ class HDBSCANClusterer:
                 'best_score': self.best_score
             }
             
+            tprint_debug(f"Basic stats: {n_clusters} clusters, {n_noise_points} noise, {n_samples} samples")
+            
             # Calculate silhouette score if possible
             if n_clusters >= 2:
                 try:
@@ -598,23 +699,27 @@ class HDBSCANClusterer:
                         valid_features = features[valid_mask]
                         
                         if len(set(valid_labels)) >= 2:
-                            stats['silhouette_score'] = silhouette_score(valid_features, valid_labels)
+                            silhouette = silhouette_score(valid_features, valid_labels)
+                            stats['silhouette_score'] = silhouette
+                            tprint_debug(f"Silhouette score: {silhouette:.3f}")
                         else:
                             stats['silhouette_score'] = 0.0
                     else:
                         stats['silhouette_score'] = 0.0
                 except Exception as e:
-                    logger.debug(f"Silhouette score calculation failed: {e}")
+                    tprint_debug(f"Silhouette score calculation failed: {e}")
                     stats['silhouette_score'] = 0.0
             else:
                 stats['silhouette_score'] = 0.0
             
+            tprint_success(f"✅ Clustering statistics calculated: {len(stats)} metrics")
             return stats
             
         except Exception as e:
-            logger.error(f"❌ Clustering stats calculation failed: {e}")
+            tprint_error(f"❌ Clustering stats calculation failed: {e}")
             return {'error': str(e)}
     
+    @tprint_logged(LogLevel.INFO, include_args=True, include_result=True)
     def approximate_predict_with_fallback(self, features: np.ndarray) -> Tuple[np.ndarray, np.ndarray, str]:
         """
         Predict cluster labels and probabilities for new data points.
@@ -629,25 +734,31 @@ class HDBSCANClusterer:
             Tuple of (labels, probabilities, method_used)
         """
         try:
+            tprint_info(f"🔮 Predicting cluster labels for {features.shape[0]} samples")
+            
             if self.clusterer is None:
-                logger.warning("⚠️ No trained clusterer available, using random assignment")
+                tprint_warning("⚠️ No trained clusterer available, using random assignment")
                 return self._random_fallback(features)
             
             # Try to use the clusterer's approximate_predict method if available
             if hasattr(self.clusterer, 'approximate_predict'):
                 try:
+                    tprint_debug("Using HDBSCAN approximate_predict method")
                     labels, probabilities = self.clusterer.approximate_predict(features)
+                    tprint_success(f"✅ HDBSCAN approximate_predict completed: {len(labels)} predictions")
                     return labels, probabilities, "hdbscan_approximate_predict"
                 except Exception as e:
-                    logger.debug(f"HDBSCAN approximate_predict failed: {e}")
+                    tprint_debug(f"HDBSCAN approximate_predict failed: {e}")
             
             # Try enhanced distance-based prediction with better probability estimation
+            tprint_debug("Using enhanced distance-based prediction")
             return self._enhanced_distance_based_prediction(features)
             
         except Exception as e:
-            logger.error(f"❌ Prediction failed: {e}")
+            tprint_error(f"❌ Prediction failed: {e}")
             return self._random_fallback(features)
     
+    @tprint_logged(LogLevel.INFO, include_args=True, include_result=True)
     def predict_regime_probabilities(self, features: np.ndarray) -> Tuple[np.ndarray, np.ndarray, Dict[str, Any]]:
         """
         Predict regime probabilities with detailed confidence measures.
@@ -659,23 +770,28 @@ class HDBSCANClusterer:
             Tuple of (labels, probabilities, confidence_info)
         """
         try:
-            logger.info("🔮 Predicting regime probabilities...")
+            tprint_info("🔮 Predicting regime probabilities...")
+            start_time = time.perf_counter()
             
             # Get basic prediction
             labels, probabilities, method = self.approximate_predict_with_fallback(features)
+            tprint_debug(f"Basic prediction completed using {method}")
             
             # Calculate confidence measures
             confidence_info = self._calculate_prediction_confidence(features, labels, probabilities)
+            tprint_debug(f"Confidence measures calculated: {len(confidence_info)} metrics")
             
             # Enhance probabilities with uncertainty quantification
             enhanced_probabilities = self._enhance_probability_estimation(features, labels, probabilities, confidence_info)
+            tprint_debug(f"Probability enhancement completed")
             
-            logger.info(f"✅ Regime prediction completed using {method}")
+            pred_time = time.perf_counter() - start_time
+            tprint_success(f"✅ Regime prediction completed using {method} in {pred_time:.3f}s")
             
             return labels, enhanced_probabilities, confidence_info
             
         except Exception as e:
-            logger.error(f"❌ Regime probability prediction failed: {e}")
+            tprint_error(f"❌ Regime probability prediction failed: {e}")
             return self._random_fallback(features)
     
     def predict_out_of_sample(self, features: np.ndarray, confidence_threshold: float = 0.5) -> Dict[str, Any]:
@@ -1021,14 +1137,29 @@ class HDBSCANClusterer:
             n_samples = len(features)
             return np.zeros(n_samples), np.ones(n_samples), "ultimate_fallback"
     
+    @tprint_logged(LogLevel.DEBUG, include_result=True)
     def get_clustering_stats(self) -> Dict[str, Any]:
         """Get clustering statistics."""
-        return self.clustering_stats.copy()
+        tprint_debug("📊 Retrieving clustering statistics")
+        stats = self.clustering_stats.copy()
+        tprint_debug(f"Retrieved {len(stats)} clustering statistics")
+        return stats
     
+    @tprint_logged(LogLevel.DEBUG, include_result=True)
     def get_best_params(self) -> Optional[Dict[str, Any]]:
         """Get best parameters from optimization."""
-        return self.best_params
+        tprint_debug("🔧 Retrieving best parameters from optimization")
+        params = self.best_params
+        if params:
+            tprint_debug(f"Best parameters: {params}")
+        else:
+            tprint_debug("No best parameters available")
+        return params
     
+    @tprint_logged(LogLevel.DEBUG, include_result=True)
     def get_best_score(self) -> float:
         """Get best score from optimization."""
-        return self.best_score
+        tprint_debug("📈 Retrieving best score from optimization")
+        score = self.best_score
+        tprint_debug(f"Best score: {score:.4f}")
+        return score

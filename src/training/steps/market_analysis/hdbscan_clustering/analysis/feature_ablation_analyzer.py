@@ -22,6 +22,13 @@ from sklearn.metrics import silhouette_score, adjusted_rand_score
 from sklearn.decomposition import PCA
 import umap
 
+# Import tprint utilities for extensive logging
+from src.utils.tprint import (
+    tprint, tprint_info, tprint_success, tprint_warning, tprint_error, 
+    tprint_debug, tprint_performance, tprint_progress, tprint_timer,
+    tprint_logged, LogLevel
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -73,6 +80,7 @@ class FeatureAblationAnalyzer:
     - Composite scoring
     """
     
+    @tprint_logged(LogLevel.INFO, include_args=True)
     def __init__(self, 
                  output_dir: str = "ablation_analysis",
                  enable_auto_reporting: bool = True):
@@ -83,22 +91,34 @@ class FeatureAblationAnalyzer:
             output_dir: Directory for analysis outputs
             enable_auto_reporting: Whether to enable automatic reporting
         """
+        tprint_info("🔧 Initializing Feature Ablation Analyzer")
+        start_time = time.perf_counter()
+        
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
+        tprint_debug(f"Output directory: {self.output_dir}")
         
         self.enable_auto_reporting = enable_auto_reporting
+        tprint_debug(f"Auto-reporting enabled: {enable_auto_reporting}")
         
         # Feature group definitions
         self.feature_groups = self._define_feature_groups()
+        tprint_debug(f"Defined {len(self.feature_groups)} feature groups")
         
         # Analysis results
         self.ablation_results: List[AblationResult] = []
         self.baseline_score = 0.0
         self.baseline_clusters = None
         
+        init_time = time.perf_counter() - start_time
+        tprint_success(f"✅ Feature Ablation Analyzer initialized in {init_time:.3f}s")
+        
+    @tprint_logged(LogLevel.DEBUG, include_result=True)
     def _define_feature_groups(self) -> Dict[str, FeatureGroup]:
         """Define feature groups for ablation analysis."""
-        return {
+        tprint_debug("📋 Defining feature groups for ablation analysis")
+        
+        groups = {
             'returns': FeatureGroup(
                 name='returns',
                 feature_indices=[],  # Will be populated dynamically
@@ -136,7 +156,11 @@ class FeatureAblationAnalyzer:
                 description='Macro-economic features (yield curves, spreads, etc.)'
             )
         }
+        
+        tprint_debug(f"Defined {len(groups)} feature groups: {list(groups.keys())}")
+        return groups
     
+    @tprint_logged(LogLevel.DEBUG, include_args=True, include_result=True)
     def _categorize_features(self, feature_names: List[str]) -> Dict[str, List[int]]:
         """
         Categorize features into groups based on naming patterns.
@@ -147,6 +171,8 @@ class FeatureAblationAnalyzer:
         Returns:
             Dictionary mapping group names to feature indices
         """
+        tprint_debug(f"🔍 Categorizing {len(feature_names)} features into groups")
+        
         group_indices = {group_name: [] for group_name in self.feature_groups.keys()}
         
         for i, feature_name in enumerate(feature_names):
@@ -169,6 +195,12 @@ class FeatureAblationAnalyzer:
                 # Default to technical if no clear category
                 group_indices['technical'].append(i)
         
+        # Log categorization results
+        for group_name, indices in group_indices.items():
+            if indices:
+                tprint_debug(f"  {group_name}: {len(indices)} features")
+        
+        tprint_success(f"✅ Feature categorization completed: {sum(len(indices) for indices in group_indices.values())} features categorized")
         return group_indices
     
     def _calculate_composite_score(self, 
@@ -226,6 +258,7 @@ class FeatureAblationAnalyzer:
         
         return composite_score
     
+    @tprint_logged(LogLevel.DEBUG, include_args=True, include_result=True)
     def _perform_clustering(self, 
                           features: np.ndarray,
                           n_components: int = 10) -> Tuple[np.ndarray, float]:
@@ -240,21 +273,28 @@ class FeatureAblationAnalyzer:
             Tuple of (cluster_labels, silhouette_score)
         """
         try:
+            tprint_debug(f"🔍 Performing clustering on {features.shape[0]} samples with {features.shape[1]} features")
+            
             # Dimensionality reduction
             if features.shape[1] > n_components:
+                tprint_debug(f"Applying PCA reduction: {features.shape[1]} -> {n_components}")
                 pca = PCA(n_components=n_components, random_state=42)
                 features_reduced = pca.fit_transform(features)
             else:
+                tprint_debug("Skipping PCA reduction (features <= n_components)")
                 features_reduced = features
             
             # UMAP for non-linear dimensionality reduction
             if features_reduced.shape[1] > 2:
+                tprint_debug("Applying UMAP reduction: {features_reduced.shape[1]} -> 2")
                 umap_reducer = umap.UMAP(n_components=2, random_state=42)
                 features_umap = umap_reducer.fit_transform(features_reduced)
             else:
+                tprint_debug("Skipping UMAP reduction (features <= 2)")
                 features_umap = features_reduced
             
             # HDBSCAN clustering
+            tprint_debug("Performing HDBSCAN clustering")
             clusterer = HDBSCAN(min_cluster_size=50, min_samples=10)
             cluster_labels = clusterer.fit_predict(features_umap)
             
@@ -262,15 +302,21 @@ class FeatureAblationAnalyzer:
             valid_mask = cluster_labels != -1
             if np.sum(valid_mask) > 1 and len(np.unique(cluster_labels[valid_mask])) > 1:
                 silhouette = silhouette_score(features_umap[valid_mask], cluster_labels[valid_mask])
+                tprint_debug(f"Silhouette score: {silhouette:.3f}")
             else:
                 silhouette = 0.0
+                tprint_debug("Insufficient valid clusters for silhouette score")
+            
+            n_clusters = len(np.unique(cluster_labels[cluster_labels != -1]))
+            tprint_debug(f"Clustering completed: {n_clusters} clusters, {np.sum(cluster_labels == -1)} noise points")
             
             return cluster_labels, silhouette
             
         except Exception as e:
-            logger.error(f"Clustering failed: {e}")
+            tprint_error(f"Clustering failed: {e}")
             return np.full(len(features), -1), 0.0
     
+    @tprint_logged(LogLevel.DEBUG, include_args=True, include_result=True)
     def _calculate_cluster_stability(self, 
                                    original_labels: np.ndarray,
                                    ablated_labels: np.ndarray) -> float:
@@ -284,17 +330,23 @@ class FeatureAblationAnalyzer:
         Returns:
             Stability score (0-1)
         """
+        tprint_debug(f"📊 Calculating cluster stability between {len(original_labels)} and {len(ablated_labels)} labels")
+        
         if len(original_labels) != len(ablated_labels):
+            tprint_warning("Label length mismatch, returning 0.0 stability")
             return 0.0
         
         try:
             # Calculate Adjusted Rand Index
             ari = adjusted_rand_score(original_labels, ablated_labels)
-            return max(0, ari)  # Ensure non-negative
+            stability = max(0, ari)  # Ensure non-negative
+            tprint_debug(f"Adjusted Rand Index: {ari:.3f}, Stability: {stability:.3f}")
+            return stability
         except Exception as e:
-            logger.error(f"Stability calculation failed: {e}")
+            tprint_error(f"Stability calculation failed: {e}")
             return 0.0
     
+    @tprint_logged(LogLevel.INFO, include_args=True, include_result=True)
     def run_ablation_analysis(self, 
                             features: np.ndarray,
                             feature_names: List[str],
@@ -312,7 +364,8 @@ class FeatureAblationAnalyzer:
         Returns:
             FeatureImportanceReport
         """
-        logger.info("Starting feature ablation analysis...")
+        tprint_info("🔬 Starting feature ablation analysis...")
+        start_time = time.perf_counter()
         
         # Categorize features
         group_indices = self._categorize_features(feature_names)
@@ -324,12 +377,12 @@ class FeatureAblationAnalyzer:
                 self.feature_groups[group_name].feature_names = [feature_names[i] for i in indices]
         
         # Baseline clustering
-        logger.info("Performing baseline clustering...")
+        tprint_info("📊 Performing baseline clustering...")
         baseline_labels, baseline_silhouette = self._perform_clustering(features, n_components)
         self.baseline_score = self._calculate_composite_score(baseline_labels, features, market_data)
         self.baseline_clusters = baseline_labels
         
-        logger.info(f"Baseline score: {self.baseline_score:.4f}")
+        tprint_success(f"Baseline score: {self.baseline_score:.4f}")
         
         # Perform ablation for each feature group
         ablation_results = []
@@ -338,7 +391,7 @@ class FeatureAblationAnalyzer:
             if not group.feature_indices:  # Skip empty groups
                 continue
             
-            logger.info(f"Ablating feature group: {group_name} ({len(group.feature_indices)} features)")
+            tprint_info(f"🔍 Ablating feature group: {group_name} ({len(group.feature_indices)} features)")
             
             # Create ablated feature matrix
             ablated_features = np.delete(features, group.feature_indices, axis=1)
@@ -377,8 +430,8 @@ class FeatureAblationAnalyzer:
             ablation_results.append(result)
             self.ablation_results.append(result)
             
-            logger.info(f"  Score delta: {score_delta:.4f} ({score_delta_pct:+.1f}%)")
-            logger.info(f"  Stability: {stability:.4f}")
+            tprint_debug(f"  Score delta: {score_delta:.4f} ({score_delta_pct:+.1f}%)")
+            tprint_debug(f"  Stability: {stability:.4f}")
         
         # Create feature importance ranking
         feature_importance_ranking = sorted(
@@ -414,7 +467,8 @@ class FeatureAblationAnalyzer:
         if self.enable_auto_reporting:
             self._generate_auto_report(report)
         
-        logger.info("Feature ablation analysis completed")
+        analysis_time = time.perf_counter() - start_time
+        tprint_success(f"✅ Feature ablation analysis completed in {analysis_time:.3f}s")
         
         return report
     
@@ -448,7 +502,7 @@ class FeatureAblationAnalyzer:
         
         return recommendations
     
-    def _save_report(self, report: FeatureImportanceReport):
+    def _save_report(self, report: FeatureImportanceReport) -> None:
         """Save feature importance report."""
         timestamp = report.timestamp.strftime('%Y%m%d_%H%M%S')
         report_file = self.output_dir / f"feature_ablation_report_{timestamp}.json"
@@ -458,7 +512,7 @@ class FeatureAblationAnalyzer:
         
         logger.info(f"Feature ablation report saved to {report_file}")
     
-    def _generate_auto_report(self, report: FeatureImportanceReport):
+    def _generate_auto_report(self, report: FeatureImportanceReport) -> None:
         """Generate automatic feature importance dashboard report."""
         timestamp = report.timestamp.strftime('%Y%m%d_%H%M%S')
         dashboard_file = self.output_dir / f"feature_importance_dashboard_{timestamp}.md"

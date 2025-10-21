@@ -13,6 +13,13 @@ import logging
 import time
 from pathlib import Path
 
+# Import tprint utilities for extensive logging
+from src.utils.tprint import (
+    tprint, tprint_info, tprint_success, tprint_warning, tprint_error, 
+    tprint_debug, tprint_performance, tprint_progress, tprint_timer,
+    tprint_logged, LogLevel
+)
+
 # Import economic validation components
 from ..optimization.economic_validator import EconomicValidator, EconomicValidationConfig
 from ..optimization.multi_objective_optimizer import MultiObjectiveOptimizer, MultiObjectiveConfig
@@ -34,11 +41,19 @@ class EconomicValidationExample:
     the data-driven clustering optimization process.
     """
     
+    @tprint_logged(LogLevel.INFO, include_args=True)
     def __init__(self, config: Optional[DataDrivenClusteringConfig] = None):
         """Initialize the economic validation example."""
+        tprint_info("🔧 Initializing EconomicValidationExample")
+        start_time = time.perf_counter()
+        
         self.config = config or DataDrivenClusteringConfig()
         self.results = {}
         
+        init_time = time.perf_counter() - start_time
+        tprint_success(f"✅ EconomicValidationExample initialized in {init_time:.3f}s")
+        
+    @tprint_logged(LogLevel.INFO, include_args=True, include_result=True)
     def run_complete_economic_validation(self, 
                                        market_data: pd.DataFrame,
                                        features: np.ndarray,
@@ -55,7 +70,8 @@ class EconomicValidationExample:
             Dictionary with comprehensive validation results
         """
         try:
-            logger.info("🚀 Starting complete economic validation example...")
+            tprint_info("🚀 Starting complete economic validation example...")
+            tprint_debug(f"Market data shape: {market_data.shape}, Features shape: {features.shape}")
             
             results = {
                 'start_time': time.time(),
@@ -66,48 +82,60 @@ class EconomicValidationExample:
             }
             
             # Step 1: Advanced feature engineering
-            logger.info("🔧 Step 1: Advanced feature engineering...")
-            advanced_features_result = self._run_advanced_feature_engineering(market_data)
+            tprint_info("🔧 Step 1: Advanced feature engineering...")
+            with tprint_timer("Advanced feature engineering"):
+                advanced_features_result = self._run_advanced_feature_engineering(market_data)
             results['steps_completed'].append('advanced_features')
             results['validation_results']['advanced_features'] = advanced_features_result
+            tprint_success("✅ Advanced feature engineering completed")
             
             # Step 2: Economic validation
-            logger.info("💰 Step 2: Economic validation...")
-            economic_validation_result = self._run_economic_validation(features, feature_names, market_data)
+            tprint_info("💰 Step 2: Economic validation...")
+            with tprint_timer("Economic validation"):
+                economic_validation_result = self._run_economic_validation(features, feature_names, market_data)
             results['steps_completed'].append('economic_validation')
             results['validation_results']['economic_validation'] = economic_validation_result
+            tprint_success("✅ Economic validation completed")
             
             # Step 3: Regime persistence validation
-            logger.info("⏱️ Step 3: Regime persistence validation...")
-            regime_persistence_result = self._run_regime_persistence_validation(features, feature_names, market_data)
+            tprint_info("⏱️ Step 3: Regime persistence validation...")
+            with tprint_timer("Regime persistence validation"):
+                regime_persistence_result = self._run_regime_persistence_validation(features, feature_names, market_data)
             results['steps_completed'].append('regime_persistence')
             results['validation_results']['regime_persistence'] = regime_persistence_result
+            tprint_success("✅ Regime persistence validation completed")
             
             # Step 4: Multi-objective optimization
-            logger.info("🎯 Step 4: Multi-objective optimization...")
-            multi_objective_result = self._run_multi_objective_optimization(features, feature_names, market_data)
+            tprint_info("🎯 Step 4: Multi-objective optimization...")
+            with tprint_timer("Multi-objective optimization"):
+                multi_objective_result = self._run_multi_objective_optimization(features, feature_names, market_data)
             results['steps_completed'].append('multi_objective')
             results['validation_results']['multi_objective'] = multi_objective_result
+            tprint_success("✅ Multi-objective optimization completed")
             
             # Step 5: Generate recommendations
-            logger.info("💡 Step 5: Generating recommendations...")
-            recommendations = self._generate_economic_recommendations(results['validation_results'])
+            tprint_info("💡 Step 5: Generating recommendations...")
+            with tprint_timer("Recommendation generation"):
+                recommendations = self._generate_economic_recommendations(results['validation_results'])
             results['recommendations'] = recommendations
+            tprint_success("✅ Recommendations generated")
             
             # Step 6: Calculate performance metrics
-            logger.info("📈 Step 6: Calculating performance metrics...")
-            performance_metrics = self._calculate_economic_performance_metrics(results)
+            tprint_info("📈 Step 6: Calculating performance metrics...")
+            with tprint_timer("Performance metrics calculation"):
+                performance_metrics = self._calculate_economic_performance_metrics(results)
             results['performance_metrics'] = performance_metrics
+            tprint_success("✅ Performance metrics calculated")
             
             results['end_time'] = time.time()
             results['total_time'] = results['end_time'] - results['start_time']
             
-            logger.info(f"✅ Complete economic validation example finished in {results['total_time']:.2f} seconds")
+            tprint_success(f"✅ Complete economic validation example finished in {results['total_time']:.2f} seconds")
             
             return results
             
         except Exception as e:
-            logger.error(f"❌ Complete economic validation example failed: {e}")
+            tprint_error(f"❌ Complete economic validation example failed: {e}")
             raise
     
     def _run_advanced_feature_engineering(self, market_data: pd.DataFrame) -> Dict[str, Any]:

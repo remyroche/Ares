@@ -15,6 +15,13 @@ import time
 import os
 from pathlib import Path
 
+# Import tprint utilities for extensive logging
+from src.utils.tprint import (
+    tprint, tprint_info, tprint_success, tprint_warning, tprint_error, 
+    tprint_debug, tprint_performance, tprint_progress, tprint_timer,
+    tprint_logged, LogLevel
+)
+
 # Import individual optimizers
 from .data_driven_feature_weights import DataDrivenFeatureWeightOptimizer, FeatureGroupWeightResult
 from .data_driven_merging_thresholds import DataDrivenMergingThresholdOptimizer, RegimeMergingThresholdResult
@@ -95,6 +102,7 @@ class DataDrivenClusteringOptimizer:
         # Initialize advanced feature engineering
         self.advanced_feature_engineer = AdvancedFinancialFeatureEngineer(AdvancedFeatureConfig())
         
+    @tprint_logged(LogLevel.INFO, include_args=True, include_result=True)
     def optimize_all_parameters(self, 
                                market_data: pd.DataFrame,
                                features: np.ndarray,
@@ -115,11 +123,15 @@ class DataDrivenClusteringOptimizer:
             DataDrivenClusteringResult with all optimized parameters
         """
         try:
+            tprint_info("🚀 Starting comprehensive data-driven clustering optimization...")
+            tprint_debug(f"Input shapes: market_data={market_data.shape}, features={features.shape}")
+            
             self.start_time = time.time()
-            logger.info("🚀 Starting comprehensive data-driven clustering optimization...")
             
             # Validate configuration
-            self.config.validate()
+            with tprint_timer("Configuration validation"):
+                self.config.validate()
+                tprint_debug("Configuration validation completed")
             
             # Initialize results
             results = {}
@@ -127,19 +139,22 @@ class DataDrivenClusteringOptimizer:
             
             # Run optimization in specified order
             for optimization_type in self.config.optimization_order:
-                logger.info(f"🔄 Optimizing {optimization_type}...")
+                tprint_info(f"🔄 Optimizing {optimization_type}...")
                 
                 if optimization_type == 'feature_weights' and self.config.feature_weights.enable_optimization:
-                    result = self._optimize_feature_weights(
-                        features, feature_names, market_data, clustering_func, economic_validation_func
-                    )
-                    results['feature_weights'] = result
-                    optimal_parameters.update(result.optimal_weights)
+                    with tprint_timer(f"Feature weights optimization"):
+                        result = self._optimize_feature_weights(
+                            features, feature_names, market_data, clustering_func, economic_validation_func
+                        )
+                        results['feature_weights'] = result
+                        optimal_parameters.update(result.optimal_weights)
+                        tprint_success(f"✅ Feature weights optimization completed")
                     
                 elif optimization_type == 'temporal_windows' and self.config.temporal_windows.enable_optimization:
-                    result = self._optimize_temporal_windows(
-                        market_data, clustering_func, economic_validation_func
-                    )
+                    with tprint_timer(f"Temporal windows optimization"):
+                        result = self._optimize_temporal_windows(
+                            market_data, clustering_func, economic_validation_func
+                        )
                     results['temporal_windows'] = result
                     optimal_parameters.update(result.optimal_windows)
                     

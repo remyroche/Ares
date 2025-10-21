@@ -15,6 +15,13 @@ from scipy import stats
 from scipy.signal import find_peaks
 import warnings
 
+# Import tprint utilities for extensive logging
+from src.utils.tprint import (
+    tprint, tprint_info, tprint_success, tprint_warning, tprint_error, 
+    tprint_debug, tprint_performance, tprint_progress, tprint_timer,
+    tprint_logged, LogLevel
+)
+
 logger = logging.getLogger(__name__)
 
 @dataclass
@@ -71,12 +78,20 @@ class AdvancedFinancialFeatureEngineer:
     features, volume analysis, and volatility-aware features.
     """
     
+    @tprint_logged(LogLevel.INFO, include_args=True)
     def __init__(self, config: Optional[AdvancedFeatureConfig] = None):
         """Initialize advanced feature engineer."""
+        tprint_info("🔧 Initializing AdvancedFinancialFeatureEngineer")
+        start_time = time.perf_counter()
+        
         self.config = config or AdvancedFeatureConfig()
         self.feature_names = []
         self.feature_categories = {}
         
+        init_time = time.perf_counter() - start_time
+        tprint_success(f"✅ AdvancedFinancialFeatureEngineer initialized in {init_time:.3f}s")
+        
+    @tprint_logged(LogLevel.INFO, include_args=True, include_result=True)
     def engineer_features(self, market_data: pd.DataFrame) -> Tuple[np.ndarray, List[str], Dict[str, List[str]]]:
         """
         Engineer comprehensive financial features.
@@ -88,10 +103,13 @@ class AdvancedFinancialFeatureEngineer:
             Tuple of (features_array, feature_names, feature_categories)
         """
         try:
-            logger.info("🔧 Starting advanced financial feature engineering...")
+            tprint_info("🔧 Starting advanced financial feature engineering...")
+            tprint_debug(f"Market data shape: {market_data.shape}")
             
             # Validate input data
-            market_data = self._validate_market_data(market_data)
+            with tprint_timer("Market data validation"):
+                market_data = self._validate_market_data(market_data)
+                tprint_debug(f"Validated market data shape: {market_data.shape}")
             
             # Initialize feature storage
             features = []
@@ -107,7 +125,9 @@ class AdvancedFinancialFeatureEngineer:
             }
             
             # Calculate base returns
-            returns = self._calculate_returns(market_data)
+            with tprint_timer("Base returns calculation"):
+                returns = self._calculate_returns(market_data)
+                tprint_debug(f"Calculated returns: {len(returns)} samples")
             
             # 1. Risk and Distributional Features
             if (self.config.enable_skewness_features or 
@@ -116,24 +136,30 @@ class AdvancedFinancialFeatureEngineer:
                 self.config.enable_cvar_features or 
                 self.config.enable_drawdown_features):
                 
-                risk_features, risk_names, risk_categories = self._engineer_risk_features(
-                    market_data, returns
-                )
-                features.extend(risk_features)
-                feature_names.extend(risk_names)
-                feature_categories.update(risk_categories)
+                tprint_info("📊 Engineering risk and distributional features...")
+                with tprint_timer("Risk features engineering"):
+                    risk_features, risk_names, risk_categories = self._engineer_risk_features(
+                        market_data, returns
+                    )
+                    features.extend(risk_features)
+                    feature_names.extend(risk_names)
+                    feature_categories.update(risk_categories)
+                    tprint_debug(f"Risk features: {len(risk_features)} features")
             
             # 2. Volatility Features
             if (self.config.enable_volatility_regimes or 
                 self.config.enable_volatility_scaling or 
                 self.config.enable_garch_features):
                 
-                vol_features, vol_names, vol_categories = self._engineer_volatility_features(
-                    market_data, returns
-                )
-                features.extend(vol_features)
-                feature_names.extend(vol_names)
-                feature_categories.update(vol_categories)
+                tprint_info("📈 Engineering volatility features...")
+                with tprint_timer("Volatility features engineering"):
+                    vol_features, vol_names, vol_categories = self._engineer_volatility_features(
+                        market_data, returns
+                    )
+                    features.extend(vol_features)
+                    feature_names.extend(vol_names)
+                    feature_categories.update(vol_categories)
+                    tprint_debug(f"Volatility features: {len(vol_features)} features")
             
             # 3. Volume Features
             if (self.config.enable_volume_features or 
@@ -141,80 +167,113 @@ class AdvancedFinancialFeatureEngineer:
                 self.config.enable_volume_volatility or 
                 self.config.enable_volume_price_correlation):
                 
-                volume_features, volume_names, volume_categories = self._engineer_volume_features(
-                    market_data, returns
-                )
-                features.extend(volume_features)
-                feature_names.extend(volume_names)
-                feature_categories.update(volume_categories)
+                tprint_info("📊 Engineering volume features...")
+                with tprint_timer("Volume features engineering"):
+                    volume_features, volume_names, volume_categories = self._engineer_volume_features(
+                        market_data, returns
+                    )
+                    features.extend(volume_features)
+                    feature_names.extend(volume_names)
+                    feature_categories.update(volume_categories)
+                    tprint_debug(f"Volume features: {len(volume_features)} features")
             
             # 4. Technical Indicators
             if (self.config.enable_technical_indicators or 
                 self.config.enable_momentum_indicators or 
                 self.config.enable_volatility_indicators):
                 
-                tech_features, tech_names, tech_categories = self._engineer_technical_features(
-                    market_data, returns
-                )
-                features.extend(tech_features)
-                feature_names.extend(tech_names)
-                feature_categories.update(tech_categories)
+                tprint_info("🔧 Engineering technical indicator features...")
+                with tprint_timer("Technical features engineering"):
+                    tech_features, tech_names, tech_categories = self._engineer_technical_features(
+                        market_data, returns
+                    )
+                    features.extend(tech_features)
+                    feature_names.extend(tech_names)
+                    feature_categories.update(tech_categories)
+                    tprint_debug(f"Technical features: {len(tech_features)} features")
             
             # Convert to numpy array
-            features_array = np.column_stack(features) if features else np.array([]).reshape(len(market_data), 0)
+            with tprint_timer("Feature array conversion"):
+                features_array = np.column_stack(features) if features else np.array([]).reshape(len(market_data), 0)
+                tprint_debug(f"Features array shape: {features_array.shape}")
             
             # Store feature information
             self.feature_names = feature_names
             self.feature_categories = feature_categories
             
-            logger.info(f"✅ Advanced feature engineering completed: {features_array.shape[1]} features")
-            logger.info(f"📊 Feature categories: {list(feature_categories.keys())}")
+            tprint_success(f"✅ Advanced feature engineering completed: {features_array.shape[1]} features")
+            tprint_info(f"📊 Feature categories: {list(feature_categories.keys())}")
             
             return features_array, feature_names, feature_categories
             
         except Exception as e:
-            logger.error(f"❌ Advanced feature engineering failed: {e}")
+            tprint_error(f"❌ Advanced feature engineering failed: {e}")
             raise
     
+    @tprint_logged(LogLevel.DEBUG, include_args=True, include_result=True)
     def _validate_market_data(self, market_data: pd.DataFrame) -> pd.DataFrame:
         """Validate and clean market data."""
         try:
+            tprint_debug(f"🔍 Validating market data: {market_data.shape}")
+            
             # Check required columns
             required_columns = ['close']
             missing_columns = [col for col in required_columns if col not in market_data.columns]
             if missing_columns:
+                tprint_error(f"Missing required columns: {missing_columns}")
                 raise ValueError(f"Missing required columns: {missing_columns}")
+            
+            tprint_debug("✅ Required columns validation passed")
             
             # Ensure numeric data
             for col in ['close', 'open', 'high', 'low', 'volume']:
                 if col in market_data.columns:
                     market_data[col] = pd.to_numeric(market_data[col], errors='coerce')
+                    tprint_debug(f"Converted {col} to numeric")
             
             # Remove rows with NaN values in critical columns
+            initial_rows = len(market_data)
             market_data = market_data.dropna(subset=['close'])
+            dropped_rows = initial_rows - len(market_data)
+            if dropped_rows > 0:
+                tprint_debug(f"Dropped {dropped_rows} rows with NaN close prices")
             
             # Ensure positive prices
+            initial_rows = len(market_data)
             market_data = market_data[market_data['close'] > 0]
+            dropped_rows = initial_rows - len(market_data)
+            if dropped_rows > 0:
+                tprint_debug(f"Dropped {dropped_rows} rows with non-positive close prices")
             
             if 'volume' in market_data.columns:
+                initial_rows = len(market_data)
                 market_data = market_data[market_data['volume'] >= 0]
+                dropped_rows = initial_rows - len(market_data)
+                if dropped_rows > 0:
+                    tprint_debug(f"Dropped {dropped_rows} rows with negative volume")
             
+            tprint_success(f"✅ Market data validation completed: {market_data.shape}")
             return market_data
             
         except Exception as e:
-            logger.error(f"Market data validation failed: {e}")
+            tprint_error(f"Market data validation failed: {e}")
             raise
     
+    @tprint_logged(LogLevel.DEBUG, include_args=True, include_result=True)
     def _calculate_returns(self, market_data: pd.DataFrame) -> pd.Series:
         """Calculate returns from market data."""
         try:
+            tprint_debug("📊 Calculating returns from market data")
+            
             if 'close' in market_data.columns:
                 returns = market_data['close'].pct_change().dropna()
+                tprint_debug(f"Calculated returns: {len(returns)} samples, range: [{returns.min():.4f}, {returns.max():.4f}]")
                 return returns
             else:
+                tprint_error("No close price data available")
                 raise ValueError("No close price data available")
         except Exception as e:
-            logger.error(f"Returns calculation failed: {e}")
+            tprint_error(f"Returns calculation failed: {e}")
             raise
     
     def _engineer_risk_features(self, market_data: pd.DataFrame, returns: pd.Series) -> Tuple[List[np.ndarray], List[str], Dict[str, List[str]]]:

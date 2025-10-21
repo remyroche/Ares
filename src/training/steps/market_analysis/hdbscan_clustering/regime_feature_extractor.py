@@ -38,6 +38,13 @@ from src.utils.math_validation import (
     validate_array, validate_numeric_range, safe_statistical_operation
 )
 
+# Import tprint utilities for enhanced debugging
+from src.utils.tprint import (
+    tprint, tprint_info, tprint_success, tprint_warning, tprint_error,
+    tprint_debug, tprint_performance, tprint_progress, tprint_timer,
+    tprint_logged, tprint_data_format, LogLevel
+)
+
 logger = logging.getLogger(__name__)
 
 @dataclass
@@ -123,6 +130,11 @@ class RegimeFeatureExtractor:
         """
         try:
             logger.info("🔍 Extracting regime-specific features...")
+            
+            # Enhanced data format analysis for troubleshooting
+            tprint_data_format(market_data, "input_market_data", level=LogLevel.INFO)
+            if existing_features is not None:
+                tprint_data_format(existing_features, "existing_features", level=LogLevel.INFO)
             
             # Enhanced input validation using common operations
             def validate_market_data(df):
@@ -291,6 +303,10 @@ class RegimeFeatureExtractor:
             self.feature_stats = self._calculate_feature_stats(features_df)
             
             logger.info(f"✅ Extracted {len(self.feature_names)} regime features")
+            
+            # Enhanced data format analysis for extracted features
+            tprint_data_format(features_df, "extracted_regime_features", level=LogLevel.INFO)
+            tprint_data_format(self.feature_stats, "feature_stats", level=LogLevel.DEBUG)
             
             return features_df
             

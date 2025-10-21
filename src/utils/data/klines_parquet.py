@@ -16,7 +16,7 @@ import pandas as pd
 import logging
 from src.utils.parquet_utils import ParquetUtils
 from src.utils.data.processing.data_processing import DataProcessor
-from src.utils.tprint import tprint, tprint_data_preview
+from src.utils.tprint import tprint, tprint_data_preview, tprint_data_format
 
 class KlinesParquetManager:
     """Unified manager for klines parquet data operations."""
@@ -85,6 +85,7 @@ class KlinesParquetManager:
                     max_date_str = max_date.date() if hasattr(max_date, 'date') else str(max_date)
                     self.logger.info(f"✅ Fallback data loaded: last {x_days} days from {max_date_str} -> {len(filtered_df)} records")
                     tprint_data_preview(filtered_df, f"fallback_data_{x_days}_days")
+                    tprint_data_format(filtered_df, f"fallback_data_format_{x_days}_days", level="DEBUG")
 
                     return filtered_df
 
@@ -871,6 +872,7 @@ class KlinesParquetManager:
             period_info = f"from {final_start_str} to {final_end_str}" if start_date and end_date else "full period"
             self.logger.info(f"✅ Data loaded: {symbol} {interval} {period_info} -> {len(combined_df)} records")
             tprint_data_preview(combined_df, f"klines_loaded_{symbol}_{interval}_{data_type}")
+            tprint_data_format(combined_df, f"klines_loaded_format_{symbol}_{interval}_{data_type}", level="DEBUG")
             return combined_df
 
         except Exception as e:
@@ -1383,6 +1385,7 @@ def load_klines_from_parquet(
     # Preview loaded data for debugging
     if os.getenv('ENABLE_DATA_PREVIEW', 'true').lower() == 'true' and result is not None:
         tprint_data_preview(result, f"loaded_klines_{symbol}_{interval}", max_rows=5, level="DEBUG")
+        tprint_data_format(result, f"loaded_klines_format_{symbol}_{interval}", level="DEBUG")
     
     return result
 

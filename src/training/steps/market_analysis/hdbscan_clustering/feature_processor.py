@@ -243,6 +243,10 @@ class FeatureProcessor:
             tprint_success(f"✅ Feature processing completed. Final shape: {features_df.shape}")
             tprint_debug(f"Processing stats: features_removed={self.processing_stats['features_removed']}, samples_removed={self.processing_stats['samples_removed']}")
             
+            # Enhanced data format analysis for processed features
+            tprint_data_format(features_df, "processed_features_df", level=LogLevel.INFO)
+            tprint_data_format(self.processing_stats, "processing_stats", level=LogLevel.DEBUG)
+            
             return ProcessedFeatures(
                 features_df=features_df,
                 feature_names=list(features_df.columns),

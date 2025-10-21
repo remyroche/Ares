@@ -18,7 +18,7 @@ from pathlib import Path
 from dataclasses import dataclass
 
 from src.training.steps.base_step import BaseStep
-from src.utils.tprint import tprint_data_preview, tprint
+from src.utils.tprint import tprint_data_preview, tprint, tprint_data_format
 
 # Import advanced quality validation components
 # Quality validation components - self-contained implementation
@@ -267,6 +267,9 @@ class FeatureGenerationDataValidationStep(BaseStep):
                 self.logger.info(f"   📊 Data range: {data.index.min()} to {data.index.max()}")
             else:
                 self.logger.warning(f"   ⚠️ EMPTY DATASET: {data.shape} - This will cause quality assessment to fail!")
+            
+            # Enhanced data format analysis for faster troubleshooting
+            tprint_data_format(data, f"validation_input_data_{symbol}_{timeframe}", level="INFO")
 
             # Use fallback validation for now to avoid complex dependencies
             return await self._fallback_validation(data, config)
@@ -337,6 +340,9 @@ class FeatureGenerationDataValidationStep(BaseStep):
             # Preview data before quality assessment
             if self.enable_data_preview:
                 tprint_data_preview(data, f"quality_assessment_input_{symbol}_{timeframe}", max_rows=5, level="DEBUG")
+            
+            # Enhanced data format analysis for comprehensive troubleshooting
+            tprint_data_format(data, f"comprehensive_validation_input_{symbol}_{timeframe}", level="DEBUG")
             
             # Step 1: Basic data quality framework validation
             quality_thresholds = QualityThresholds(
@@ -477,6 +483,9 @@ class FeatureGenerationDataValidationStep(BaseStep):
                 tprint_data_preview(data, "saved_validated_dataframe", max_rows=5, level="INFO")
                 tprint_data_preview(data, "saved_raw_dataframe", max_rows=5, level="INFO")
             
+            # Enhanced data format analysis for artifact validation
+            tprint_data_format(data, "validated_dataframe_format", level="INFO")
+            
             # Save artifacts using BaseStep methods
             self._save_dataframe(data.copy(), 'validated_dataframe')
             self._save_dataframe(data.copy(), 'raw_dataframe')
@@ -559,6 +568,9 @@ class FeatureGenerationDataValidationStep(BaseStep):
             if self.enable_data_preview:
                 tprint_data_preview(data, f"loaded_klines_data_{symbol}_{timeframe}", max_rows=10, level="DEBUG")
             
+            # Enhanced data format analysis for loaded data troubleshooting
+            tprint_data_format(data, f"loaded_klines_format_{symbol}_{timeframe}", level="DEBUG")
+            
             # Apply dynamic date filtering based on actual data range
             if 'timestamp' in data.columns and len(data) > 0:
                 # Get the actual data range
@@ -610,10 +622,16 @@ class FeatureGenerationDataValidationStep(BaseStep):
             if self.enable_data_preview:
                 tprint_data_preview(data, f"filtered_data_{symbol}_{timeframe}", max_rows=5, level="DEBUG")
             
+            # Enhanced data format analysis for filtered data troubleshooting
+            tprint_data_format(data, f"filtered_data_format_{symbol}_{timeframe}", level="DEBUG")
+            
             self.logger.info(f"✅ Loaded data: {len(data)} rows, {len(data.columns)} columns")
             
             # Preview loaded data for troubleshooting
             tprint_data_preview(data, "loaded_validation_data", level="INFO")
+            
+            # Enhanced data format analysis for final loaded data
+            tprint_data_format(data, "final_loaded_validation_data", level="INFO")
             return data
             
         except Exception as e:

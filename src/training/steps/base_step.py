@@ -108,7 +108,7 @@ from src.utils.hardware.unified_hardware_manager import WorkloadType
 from src.utils.tprint import (
     tprint, tprint_success, tprint_info, tprint_warning, tprint_error,
     tprint_debug, tprint_performance, tprint_progress, tprint_structured,
-    tprint_exception, tprint_with_level, LogLevel, TPrintConfig, tprint_data_preview
+    tprint_exception, tprint_with_level, LogLevel, TPrintConfig, tprint_data_preview, tprint_data_format
 )
 
 # Type definitions for better type safety
@@ -328,9 +328,10 @@ class BaseStep(ABC):
         
         tprint_info(f"💾 Saving DataFrame: {name}")
         
-        # Preview data before saving
+        # Preview data before saving and validate format
         if os.getenv('ENABLE_DATA_PREVIEW', 'true').lower() == 'true':
             tprint_data_preview(df, f"saving_{name}", max_rows=3, level="DEBUG")
+            tprint_data_format(df, f"saving_{name}", level=LogLevel.DEBUG)
         
         try:
             # Optimize DataFrame with hardware manager
@@ -373,9 +374,10 @@ class BaseStep(ABC):
         try:
             data = self._get_enhanced_artifact(name, "data")
             if data is not None:
-                # Preview loaded data
+                # Preview loaded data and validate format
                 if os.getenv('ENABLE_DATA_PREVIEW', 'true').lower() == 'true':
                     tprint_data_preview(data, f"loaded_{name}", max_rows=3, level="DEBUG")
+                    tprint_data_format(data, f"loaded_{name}", level=LogLevel.DEBUG)
                 
                 # Apply hardware optimization to loaded data
                 if self.hardware_manager is not None:
@@ -418,6 +420,9 @@ class BaseStep(ABC):
         
         tprint_info(f"💾 Saving model: {name}")
         
+        # Validate model format for troubleshooting
+        tprint_data_format(model, f"saving_model_{name}", level=LogLevel.DEBUG)
+        
         try:
             result = self._save_enhanced_artifact(model, name, "model", metadata)
             tprint_success(f"✅ Model saved successfully: {name}")
@@ -451,6 +456,8 @@ class BaseStep(ABC):
             model = self._get_enhanced_artifact(name, "model")
             if model is not None:
                 tprint_success(f"✅ Model loaded successfully: {name}")
+                # Validate loaded model format for troubleshooting
+                tprint_data_format(model, f"loaded_model_{name}", level=LogLevel.DEBUG)
             else:
                 tprint_warning(f"⚠️ Model not found: {name}")
             return model
@@ -480,6 +487,9 @@ class BaseStep(ABC):
             raise ValueError(f"name must be a non-empty string, got: {name}")
         
         tprint_info(f"💾 Saving metadata: {name}")
+        
+        # Validate metadata format for troubleshooting
+        tprint_data_format(metadata, f"saving_metadata_{name}", level=LogLevel.DEBUG)
         
         try:
             result = self._save_enhanced_artifact(metadata, name, "metadata")
@@ -513,6 +523,8 @@ class BaseStep(ABC):
             metadata = self._get_enhanced_artifact(name, "metadata")
             if metadata is not None:
                 tprint_success(f"✅ Metadata loaded successfully: {name}")
+                # Validate loaded metadata format for troubleshooting
+                tprint_data_format(metadata, f"loaded_metadata_{name}", level=LogLevel.DEBUG)
             else:
                 tprint_warning(f"⚠️ Metadata not found: {name}")
             return metadata
@@ -957,6 +969,9 @@ class BaseStep(ABC):
         
         tprint_info(f"💾 Saving artifact: {artifact_name} (type: {artifact_type})")
         
+        # Validate data format for troubleshooting
+        tprint_data_format(data, f"saving_artifact_{artifact_name}", level=LogLevel.DEBUG)
+        
         try:
             # Use the enhanced save method with automatic CSV generation
             artifact_path = self.artifact_manager.save(
@@ -1010,24 +1025,32 @@ class BaseStep(ABC):
             )
             if data is not None:
                 tprint_success(f"✅ Retrieved artifact from step-category: {artifact_name}")
+                # Validate retrieved data format for troubleshooting
+                tprint_data_format(data, f"retrieved_artifact_{artifact_name}", level=LogLevel.DEBUG)
                 return data
             
             # Fallback 1: Try direct artifacts/ directory search
             data = self._get_artifact_fallback_1(artifact_name, artifact_type)
             if data is not None:
                 tprint_success(f"✅ Retrieved artifact from fallback 1: {artifact_name}")
+                # Validate retrieved data format for troubleshooting
+                tprint_data_format(data, f"retrieved_artifact_fallback1_{artifact_name}", level=LogLevel.DEBUG)
                 return data
             
             # Fallback 2: Try without model type and direction variations
             data = self._get_artifact_fallback_2(artifact_name, artifact_type)
             if data is not None:
                 tprint_success(f"✅ Retrieved artifact from fallback 2: {artifact_name}")
+                # Validate retrieved data format for troubleshooting
+                tprint_data_format(data, f"retrieved_artifact_fallback2_{artifact_name}", level=LogLevel.DEBUG)
                 return data
             
             # Fallback 3: Try fuzzy matching for similar names
             data = self._get_artifact_fallback_3(artifact_name, artifact_type)
             if data is not None:
                 tprint_success(f"✅ Retrieved artifact from fallback 3: {artifact_name}")
+                # Validate retrieved data format for troubleshooting
+                tprint_data_format(data, f"retrieved_artifact_fallback3_{artifact_name}", level=LogLevel.DEBUG)
                 return data
             
             tprint_warning(f"⚠️ Artifact not found with any fallback method: {artifact_name}")

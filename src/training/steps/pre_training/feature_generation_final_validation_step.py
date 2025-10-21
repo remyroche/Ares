@@ -20,7 +20,7 @@ from src.training.steps.base_step import BaseStep
 
 from src.utils.common_operations import safe_dataframe_operation
 from src.utils.matrix_operations import safe_matrix_multiply, optimize_dataframe
-from src.utils.tprint import tprint_success, tprint_warning, tprint_data_preview
+from src.utils.tprint import tprint_success, tprint_warning, tprint_data_preview, tprint_data_format
 
 
 
@@ -332,6 +332,10 @@ class FeatureGenerationFinalValidationStep(BaseStep):
         tprint_info(f"⚡ Intensity: {intensity}")
         tprint_info(f"🔧 Custom overrides: {custom_overrides is not None}")
         
+        # Enhanced data format analysis for input troubleshooting
+        if data is not None:
+            tprint_data_format(data, f"final_validation_input_{symbol}_{timeframe}", level="INFO")
+        
         # Set context for enhanced file naming
         self._set_context(symbol=symbol, exchange='binance', direction=direction, model='Analyst')
         
@@ -348,6 +352,7 @@ class FeatureGenerationFinalValidationStep(BaseStep):
         if cached_dataset is not None:
             tprint_success("📦 Retrieved final dataset from artifact manager - using cached result")
             tprint_data_preview(cached_dataset, "cached_dataset_retrieved", level="INFO")
+            tprint_data_format(cached_dataset, "cached_dataset_format", level="INFO")
             self.logger.info("📦 Retrieved final dataset from artifact manager")
             return FinalValidationResult(
                 success=True,
@@ -374,6 +379,7 @@ class FeatureGenerationFinalValidationStep(BaseStep):
             )
             if final_features is not None and not final_features.empty:
                 tprint_data_preview(final_features, "final_features_loaded", level="INFO")
+                tprint_data_format(final_features, "final_features_format", level="INFO")
                 tprint_success(f"✅ Loaded final features: {final_features.shape}")
             else:
                 tprint_warning("⚠️ No final features found, trying alternative names")
@@ -385,6 +391,7 @@ class FeatureGenerationFinalValidationStep(BaseStep):
                     )
                     if final_features is not None and not final_features.empty:
                         tprint_data_preview(final_features, f"final_features_loaded_from_{alt_name}", level="INFO")
+                        tprint_data_format(final_features, f"final_features_format_from_{alt_name}", level="INFO")
                         tprint_success(f"✅ Loaded final features from {alt_name}: {final_features.shape}")
                         break
         except Exception as e:
@@ -400,6 +407,7 @@ class FeatureGenerationFinalValidationStep(BaseStep):
             if targets is not None and not targets.empty:
                 # Preview loaded targets for troubleshooting
                 tprint_data_preview(targets, "loaded_targets_for_final_validation", level="INFO")
+                tprint_data_format(targets, "loaded_targets_format", level="INFO")
                 tprint_success(f"✅ Loaded targets: {len(targets)} samples")
             else:
                 tprint_warning("⚠️ No targets found, trying alternative names")
@@ -411,6 +419,7 @@ class FeatureGenerationFinalValidationStep(BaseStep):
                     )
                     if targets is not None and not targets.empty:
                         tprint_data_preview(targets, f"targets_loaded_from_{alt_name}", level="INFO")
+                        tprint_data_format(targets, f"targets_format_from_{alt_name}", level="INFO")
                         tprint_success(f"✅ Loaded targets from {alt_name}: {len(targets)} samples")
                         break
         except Exception as e:
@@ -420,6 +429,7 @@ class FeatureGenerationFinalValidationStep(BaseStep):
         if final_features is not None:
             data = final_features
             tprint_data_preview(data, "data_from_final_features", level="INFO")
+            tprint_data_format(data, "data_format_from_final_features", level="INFO")
             tprint_info(f"📊 Using final features for validation: {data.shape}")
         
         if targets is not None:
@@ -427,6 +437,7 @@ class FeatureGenerationFinalValidationStep(BaseStep):
             aligned_data = data.join(targets.rename('target'), how='inner').dropna()
             if not aligned_data.empty:
                 tprint_data_preview(aligned_data, "aligned_data_with_targets", level="INFO")
+                tprint_data_format(aligned_data, "aligned_data_format_with_targets", level="INFO")
                 data = aligned_data
                 tprint_success(f"✅ Aligned data with targets: {data.shape}")
             else:
@@ -459,10 +470,12 @@ class FeatureGenerationFinalValidationStep(BaseStep):
             # Preview the final loaded data
             if data is not None and not data.empty:
                 tprint_data_preview(data, "final_loaded_data", level="INFO")
+                tprint_data_format(data, "final_loaded_data_format", level="INFO")
 
         if data is None or (hasattr(data, 'empty') and data.empty):
             tprint_error("❌ Input data is None or empty - validation failed")
             tprint_data_preview(data, "empty_data_error", level="ERROR")
+            tprint_data_format(data, "empty_data_format_error", level="ERROR")
             return {
                 'success': False,
                 'artifacts': [],
@@ -478,6 +491,7 @@ class FeatureGenerationFinalValidationStep(BaseStep):
         # Perform basic validation
         tprint_info("🔧 Performing basic validation")
         tprint_data_preview(data, "data_before_validation", level="DEBUG")
+        tprint_data_format(data, "data_format_before_validation", level="DEBUG")
         
         # Basic validation checks
         basic_checks = {
@@ -494,6 +508,7 @@ class FeatureGenerationFinalValidationStep(BaseStep):
         
         tprint_info(f"✅ Validation completed - Success: {success}, Score: {validation_score:.2f}")
         tprint_data_preview(data, "final_data_state", level="DEBUG")
+        tprint_data_format(data, "final_data_format_state", level="DEBUG")
         
         # Prepare result for BaseStep
         base_result = {
@@ -516,6 +531,7 @@ class FeatureGenerationFinalValidationStep(BaseStep):
         if success:
             tprint_debug("💾 Storing successful validation artifacts")
             tprint_data_preview(data, "final_dataset_before_saving", level="DEBUG")
+            tprint_data_format(data, "final_dataset_format_before_saving", level="DEBUG")
             self._save_dataframe(data, 'final_dataset')
             self._save_metadata(basic_checks, 'final_validation_metrics')
             tprint_success("✅ Final validation artifacts stored")

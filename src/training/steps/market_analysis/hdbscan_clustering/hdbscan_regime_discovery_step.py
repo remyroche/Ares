@@ -144,6 +144,9 @@ class HDBSCANRegimeDiscoveryStep(BaseStep):
         start_time = datetime.now()
         perf_start = time.perf_counter()
         
+        # Enhanced data format analysis for troubleshooting
+        tprint_data_format(config, "step_config", level=LogLevel.INFO)
+        
         try:
             symbol = config.get('symbol', 'UNKNOWN')
             tprint_info(f"🔍 Starting HDBSCAN regime discovery for {symbol}")
@@ -511,6 +514,9 @@ class HDBSCANRegimeDiscoveryStep(BaseStep):
                 )
             
             if market_data is not None and len(market_data) > 0:
+                # Enhanced data format analysis for troubleshooting
+                tprint_data_format(market_data, "loaded_market_data", level=LogLevel.INFO)
+                
                 # Enhanced data validation using common operations
                 def validate_and_optimize_data(df):
                     # Memory optimization

@@ -154,6 +154,10 @@ class HDBSCANClusterer:
             tprint_data_preview(features_df, "clustering_input_features", max_rows=5, level="DEBUG")
             tprint_data_preview(features, "clustering_input_array", max_rows=5, level="DEBUG")
             
+            # Enhanced data format analysis for troubleshooting
+            tprint_data_format(features_df, "clustering_input_features_df", level=LogLevel.INFO)
+            tprint_data_format(features, "clustering_input_features_array", level=LogLevel.INFO)
+            
             # Check minimum samples
             if len(features) < self.config.min_samples_for_clustering:
                 logger.warning(f"⚠️ Insufficient samples for clustering: {len(features)} < {self.config.min_samples_for_clustering}")
@@ -171,6 +175,10 @@ class HDBSCANClusterer:
             # Data preview of clustering results
             tprint_data_preview(cluster_labels, "raw_cluster_labels", max_rows=10, level="INFO")
             tprint_data_preview(clustering_info, "clustering_info", level="DEBUG")
+            
+            # Enhanced data format analysis for clustering results
+            tprint_data_format(cluster_labels, "raw_cluster_labels", level=LogLevel.INFO)
+            tprint_data_format(clustering_info, "clustering_info", level=LogLevel.DEBUG)
             
             # Handle noise if enabled
             if self.config.handle_noise:
@@ -190,6 +198,10 @@ class HDBSCANClusterer:
             # Final data preview
             tprint_data_preview(cluster_labels, "final_cluster_labels", max_rows=10, level="INFO")
             tprint_data_preview(self.clustering_stats, "clustering_stats", level="DEBUG")
+            
+            # Enhanced data format analysis for final results
+            tprint_data_format(cluster_labels, "final_cluster_labels", level=LogLevel.INFO)
+            tprint_data_format(self.clustering_stats, "clustering_stats", level=LogLevel.DEBUG)
             
             logger.info(f"✅ HDBSCAN clustering completed. Found {len(np.unique(cluster_labels[cluster_labels != -1]))} clusters")
             

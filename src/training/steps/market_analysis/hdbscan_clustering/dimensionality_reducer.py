@@ -215,6 +215,10 @@ class DimensionalityReducer:
             
             tprint_success(f"✅ Dimensionality reduction completed. Shape: {features.shape} -> {reduced_features.shape}")
             
+            # Enhanced data format analysis for reduced features
+            tprint_data_format(reduced_features, "reduced_features_array", level=LogLevel.INFO)
+            tprint_data_format(reduction_info, "reduction_info", level=LogLevel.DEBUG)
+            
             return reduced_features, reduction_info
             
         except Exception as e:

@@ -21,6 +21,14 @@ from .data_driven_merging_thresholds import DataDrivenMergingThresholdOptimizer,
 from .data_driven_temporal_windows import DataDrivenTemporalWindowOptimizer, TemporalWindowResult
 from .data_driven_validation_thresholds import DataDrivenValidationThresholdOptimizer, ClusterValidationThresholdResult
 
+# Import economic validation and multi-objective optimization
+from .economic_validator import EconomicValidator, EconomicValidationConfig
+from .multi_objective_optimizer import MultiObjectiveOptimizer, MultiObjectiveConfig
+from ..validation.regime_persistence_validator import RegimePersistenceValidator, RegimePersistenceConfig
+
+# Import advanced feature engineering
+from ..feature_engineering.advanced_financial_features import AdvancedFinancialFeatureEngineer, AdvancedFeatureConfig
+
 # Import configuration
 from ..config.data_driven_config import DataDrivenClusteringConfig
 
@@ -34,6 +42,14 @@ class DataDrivenClusteringResult:
     merging_thresholds_result: Optional[RegimeMergingThresholdResult]
     temporal_windows_result: Optional[TemporalWindowResult]
     validation_thresholds_result: Optional[ClusterValidationThresholdResult]
+    
+    # Economic validation results
+    economic_validation_result: Optional[Any]
+    regime_persistence_result: Optional[Any]
+    multi_objective_result: Optional[Any]
+    
+    # Advanced feature engineering results
+    advanced_features_result: Optional[Any]
     
     # Combined results
     optimal_parameters: Dict[str, Any]
@@ -70,6 +86,14 @@ class DataDrivenClusteringOptimizer:
         self.merging_threshold_optimizer = DataDrivenMergingThresholdOptimizer(config.merging_thresholds)
         self.temporal_window_optimizer = DataDrivenTemporalWindowOptimizer(config.temporal_windows)
         self.validation_threshold_optimizer = DataDrivenValidationThresholdOptimizer(config.validation_thresholds)
+        
+        # Initialize economic validation components
+        self.economic_validator = EconomicValidator(EconomicValidationConfig())
+        self.regime_persistence_validator = RegimePersistenceValidator(RegimePersistenceConfig())
+        self.multi_objective_optimizer = MultiObjectiveOptimizer(MultiObjectiveConfig())
+        
+        # Initialize advanced feature engineering
+        self.advanced_feature_engineer = AdvancedFinancialFeatureEngineer(AdvancedFeatureConfig())
         
     def optimize_all_parameters(self, 
                                market_data: pd.DataFrame,
@@ -135,6 +159,32 @@ class DataDrivenClusteringOptimizer:
                 
                 logger.info(f"✅ {optimization_type} optimization completed")
             
+            # Step 5: Advanced feature engineering
+            logger.info("🔧 Step 5: Advanced feature engineering...")
+            advanced_features_result = self._engineer_advanced_features(market_data)
+            results['advanced_features'] = advanced_features_result
+            
+            # Step 6: Economic validation
+            logger.info("💰 Step 6: Economic validation...")
+            economic_validation_result = self._perform_economic_validation(
+                cluster_labels, market_data, features, feature_names
+            )
+            results['economic_validation'] = economic_validation_result
+            
+            # Step 7: Regime persistence validation
+            logger.info("⏱️ Step 7: Regime persistence validation...")
+            regime_persistence_result = self._perform_regime_persistence_validation(
+                cluster_labels, market_data, features, feature_names
+            )
+            results['regime_persistence'] = regime_persistence_result
+            
+            # Step 8: Multi-objective optimization
+            logger.info("🎯 Step 8: Multi-objective optimization...")
+            multi_objective_result = self._perform_multi_objective_optimization(
+                cluster_labels, market_data, features, feature_names, clustering_func
+            )
+            results['multi_objective'] = multi_objective_result
+            
             # Calculate overall score
             overall_score = self._calculate_overall_score(results)
             
@@ -150,6 +200,10 @@ class DataDrivenClusteringOptimizer:
                 merging_thresholds_result=results.get('merging_thresholds'),
                 temporal_windows_result=results.get('temporal_windows'),
                 validation_thresholds_result=results.get('validation_thresholds'),
+                economic_validation_result=results.get('economic_validation'),
+                regime_persistence_result=results.get('regime_persistence'),
+                multi_objective_result=results.get('multi_objective'),
+                advanced_features_result=results.get('advanced_features'),
                 optimal_parameters=optimal_parameters,
                 overall_score=overall_score,
                 optimization_summary=optimization_summary,
@@ -425,3 +479,123 @@ class DataDrivenClusteringOptimizer:
         except Exception as e:
             logger.warning(f"Feature weight application failed: {e}")
             return features
+    
+    def _engineer_advanced_features(self, market_data: pd.DataFrame) -> Dict[str, Any]:
+        """Engineer advanced financial features."""
+        try:
+            logger.info("🔧 Engineering advanced financial features...")
+            
+            # Engineer features
+            features_array, feature_names, feature_categories = self.advanced_feature_engineer.engineer_features(market_data)
+            
+            return {
+                'features_array': features_array,
+                'feature_names': feature_names,
+                'feature_categories': feature_categories,
+                'n_features': features_array.shape[1] if len(features_array.shape) > 1 else 0,
+                'success': True
+            }
+            
+        except Exception as e:
+            logger.warning(f"Advanced feature engineering failed: {e}")
+            return {'success': False, 'error': str(e)}
+    
+    def _perform_economic_validation(self, 
+                                   cluster_labels: np.ndarray,
+                                   market_data: pd.DataFrame,
+                                   features: np.ndarray,
+                                   feature_names: List[str]) -> Dict[str, Any]:
+        """Perform comprehensive economic validation."""
+        try:
+            logger.info("💰 Performing economic validation...")
+            
+            # Perform economic validation
+            economic_result = self.economic_validator.validate_clustering(
+                cluster_labels, market_data, features, feature_names
+            )
+            
+            return {
+                'overall_economic_score': economic_result.overall_economic_score,
+                'return_separation_score': economic_result.return_separation_score,
+                'volatility_discrimination_score': economic_result.volatility_discrimination_score,
+                'risk_discrimination_score': economic_result.risk_discrimination_score,
+                'drawdown_discrimination_score': economic_result.drawdown_discrimination_score,
+                'volume_discrimination_score': economic_result.volume_discrimination_score,
+                'strategy_performance_score': economic_result.strategy_performance_score,
+                'validation_time': economic_result.validation_time,
+                'success': True
+            }
+            
+        except Exception as e:
+            logger.warning(f"Economic validation failed: {e}")
+            return {'success': False, 'error': str(e)}
+    
+    def _perform_regime_persistence_validation(self, 
+                                             cluster_labels: np.ndarray,
+                                             market_data: pd.DataFrame,
+                                             features: np.ndarray,
+                                             feature_names: List[str]) -> Dict[str, Any]:
+        """Perform regime persistence validation."""
+        try:
+            logger.info("⏱️ Performing regime persistence validation...")
+            
+            # Perform persistence validation
+            persistence_result = self.regime_persistence_validator.validate_persistence(
+                cluster_labels, market_data, features, feature_names
+            )
+            
+            return {
+                'overall_persistence_score': persistence_result.overall_persistence_score,
+                'lifespan_score': persistence_result.lifespan_score,
+                'transition_score': persistence_result.transition_score,
+                'economic_coherence_score': persistence_result.economic_coherence_score,
+                'volatility_persistence_score': persistence_result.volatility_persistence_score,
+                'n_regimes': persistence_result.n_regimes,
+                'n_transitions': persistence_result.n_transitions,
+                'avg_regime_lifespan': persistence_result.avg_regime_lifespan,
+                'validation_time': persistence_result.validation_time,
+                'success': True
+            }
+            
+        except Exception as e:
+            logger.warning(f"Regime persistence validation failed: {e}")
+            return {'success': False, 'error': str(e)}
+    
+    def _perform_multi_objective_optimization(self, 
+                                            cluster_labels: np.ndarray,
+                                            market_data: pd.DataFrame,
+                                            features: np.ndarray,
+                                            feature_names: List[str],
+                                            clustering_func: Callable) -> Dict[str, Any]:
+        """Perform multi-objective optimization."""
+        try:
+            logger.info("🎯 Performing multi-objective optimization...")
+            
+            # Define parameter ranges (example)
+            parameter_ranges = {
+                'similarity_threshold': (0.5, 0.95),
+                'distance_threshold': (0.1, 0.5),
+                'window_size': (50, 500),
+                'smoothing_window': (3, 20)
+            }
+            
+            # Perform multi-objective optimization
+            multi_obj_result = self.multi_objective_optimizer.optimize_parameters(
+                parameter_ranges=parameter_ranges,
+                clustering_func=clustering_func,
+                market_data=market_data,
+                features=features,
+                feature_names=feature_names
+            )
+            
+            return {
+                'optimal_parameters': multi_obj_result.get('optimal_parameters', {}),
+                'overall_score': multi_obj_result.get('overall_score', 0),
+                'detailed_scores': multi_obj_result.get('detailed_scores', {}),
+                'optimization_success': multi_obj_result.get('optimization_success', False),
+                'success': True
+            }
+            
+        except Exception as e:
+            logger.warning(f"Multi-objective optimization failed: {e}")
+            return {'success': False, 'error': str(e)}

@@ -14,7 +14,8 @@ from abc import ABC, abstractmethod
 # Import tprint utilities
 from src.utils.tprint import (
     tprint, tprint_debug, tprint_info, tprint_warning, tprint_error,
-    tprint_success, tprint_progress, tprint_performance, tprint_timer
+    tprint_success, tprint_progress, tprint_performance, tprint_timer,
+    tprint_data_format, LogLevel
 )
 
 # Use existing utilities
@@ -211,6 +212,11 @@ class BaseTrainingStep(ABC):
         """
         tprint(f"🔍 [BASE_TRAINING_STEP] validate_training_data() called for {model_type}", color="blue")
         tprint(f"📊 [BASE_TRAINING_STEP] Input: X={X.shape}, y={y.shape}, regimes={len(np.unique(regime_labels))}", color="cyan")
+        
+        # Validate data format for troubleshooting
+        tprint_data_format(X, f"training_data_X_{model_type}", level=LogLevel.DEBUG)
+        tprint_data_format(y, f"training_data_y_{model_type}", level=LogLevel.DEBUG)
+        tprint_data_format(regime_labels, f"training_data_regimes_{model_type}", level=LogLevel.DEBUG)
         # Split data for validation
         from sklearn.model_selection import train_test_split
         # Use stratified split only if every class has at least 2 samples; otherwise fallback
@@ -292,6 +298,13 @@ class BaseTrainingStep(ABC):
         """
         tprint(f"🔍 [BASE_TRAINING_STEP] validate_trained_model() called for {model_name} ({model_type})", color="blue")
         tprint(f"📊 [BASE_TRAINING_STEP] Model validation input: train={X_train.shape}, val={X_val.shape}", color="cyan")
+        
+        # Validate data format for troubleshooting
+        tprint_data_format(model, f"trained_model_{model_name}", level=LogLevel.DEBUG)
+        tprint_data_format(X_train, f"validation_X_train_{model_name}", level=LogLevel.DEBUG)
+        tprint_data_format(X_val, f"validation_X_val_{model_name}", level=LogLevel.DEBUG)
+        tprint_data_format(y_train, f"validation_y_train_{model_name}", level=LogLevel.DEBUG)
+        tprint_data_format(y_val, f"validation_y_val_{model_name}", level=LogLevel.DEBUG)
         # Validate trained model
         validation_results = self.validation_integrator.validate_trained_model(
             model=model,

@@ -24,7 +24,7 @@ import pandas as pd
 import numpy as np
 
 from src.utils.logger import system_logger
-from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success, tprint_debug, tprint_performance
+from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success, tprint_debug, tprint_performance, tprint_data_format, LogLevel
 from src.utils.common_operations import (
     safe_divide, safe_correlation, safe_mean, safe_std, safe_float, safe_int
 )
@@ -407,16 +407,18 @@ class BaseTrainer(ABC):
             
             # Memory usage is now tracked by enhanced hardware managers
             
-            # Preview raw input data
+            # Preview raw input data and validate format
             from src.utils.tprint import tprint_data_preview
             tprint_data_preview(data, "Raw input data", max_rows=5, level="INFO")
+            tprint_data_format(data, "Raw input data", level=LogLevel.DEBUG)
             
             # Calculate data quality metrics
             quality_metrics = calculate_data_quality_metrics(data)
             tprint_debug(f"📊 Data quality metrics: {quality_metrics}")
             
-            # Preview data after quality checks
+            # Preview data after quality checks and validate format
             tprint_data_preview(data, "Data after quality checks", max_rows=5, level="DEBUG")
+            tprint_data_format(data, "Data after quality checks", level=LogLevel.DEBUG)
             
             # Handle missing values using safe operations
             if data.isnull().any().any():

@@ -51,7 +51,7 @@ try:  # Logging helpers
     from src.utils.tprint import (
         tprint, tprint_info, tprint_success, tprint_warning, tprint_error, tprint_data_preview,
         tprint_data_format, tprint_performance, tprint_timer, tprint_structured, tprint_exception,
-        tprint_progress, tprint_debug, tprint_with_level, LogLevel
+        tprint_progress, tprint_debug, tprint_with_level, LogLevel, DataFormatConfig
     )
 except Exception:  # pragma: no cover
     def tprint(*args, **kwargs): print(*args, **kwargs)
@@ -61,6 +61,8 @@ except Exception:  # pragma: no cover
     def tprint_error(*args, **kwargs): print("ERROR:", *args, **kwargs)
     def tprint_data_preview(*args, **kwargs): pass  # No-op fallback
     def tprint_data_format(*args, **kwargs): pass  # No-op fallback
+    class DataFormatConfig:
+        def __init__(self, **kwargs): pass
     def tprint_performance(*args, **kwargs): pass  # No-op fallback
     def tprint_timer(*args, **kwargs): pass  # No-op fallback
     def tprint_structured(*args, **kwargs): pass  # No-op fallback
@@ -139,15 +141,42 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
         data = config.get('data')
         if data is None or not isinstance(data, pd.DataFrame) or data.empty:
             tprint_error("❌ Input data validation failed: data is None, not DataFrame, or empty")
+            
+            # Analyze the problematic data for troubleshooting
+            error_data_config = DataFormatConfig(
+                max_cols=10,
+                max_rows=5,
+                include_values=True,
+                include_memory=True,
+                include_semantics=True,
+                safe_sampling=True
+            )
+            
+            tprint_data_format(data, "invalid_input_data", level=LogLevel.ERROR, config=error_data_config)
+            
             tprint_structured({
-                "data_type": type(data).__name__ if data is not None else "None",
-                "is_dataframe": isinstance(data, pd.DataFrame) if data is not None else False,
-                "is_empty": data.empty if hasattr(data, 'empty') else "N/A"
+                "data_validation_failure": {
+                    "data_type": type(data).__name__ if data is not None else "None",
+                    "is_dataframe": isinstance(data, pd.DataFrame) if data is not None else False,
+                    "is_empty": data.empty if hasattr(data, 'empty') else "N/A",
+                    "data_repr": repr(data) if data is not None else "None"
+                }
             }, level=LogLevel.ERROR)
             raise ValueError("Input data must be a non‑empty DataFrame")
         
         # Comprehensive data format analysis for troubleshooting
-        tprint_data_format(data, "input_data", level=LogLevel.INFO)
+        # Use detailed configuration for input data analysis
+        input_data_config = DataFormatConfig(
+            max_cols=20,  # Show more columns for input data
+            max_rows=10,  # Show more rows for input data
+            include_values=True,
+            include_memory=True,
+            include_semantics=True,
+            safe_sampling=True,
+            sample_size=2000  # Larger sample for input data
+        )
+        
+        tprint_data_format(data, "input_data", level=LogLevel.INFO, config=input_data_config, return_summary=True)
         tprint_data_preview(data, "input_data", level=LogLevel.INFO)
         
         # Log data characteristics for troubleshooting
@@ -181,9 +210,32 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
         cached_targets = self._load_dataframe('targets')
         
         if isinstance(cached_labeled, pd.DataFrame) and isinstance(cached_targets, pd.Series):
-            # Comprehensive cache validation and preview
-            tprint_data_format(cached_labeled, "cached_labeled_data", level=LogLevel.INFO)
-            tprint_data_format(cached_targets, "cached_targets", level=LogLevel.INFO)
+            # Comprehensive cache validation and preview with detailed analysis
+            cache_config = DataFormatConfig(
+                max_cols=15,
+                max_rows=8,
+                include_values=True,
+                include_memory=True,
+                include_semantics=True,
+                safe_sampling=True
+            )
+            
+            cached_labeled_summary = tprint_data_format(cached_labeled, "cached_labeled_data", 
+                                                      level=LogLevel.INFO, config=cache_config, return_summary=True)
+            cached_targets_summary = tprint_data_format(cached_targets, "cached_targets", 
+                                                      level=LogLevel.INFO, config=cache_config, return_summary=True)
+            
+            # Log cache quality metrics for troubleshooting
+            if cached_labeled_summary and cached_targets_summary:
+                tprint_structured({
+                    "cache_quality_analysis": {
+                        "labeled_data_shape": cached_labeled_summary.get("shape"),
+                        "labeled_data_memory_mb": cached_labeled_summary.get("memory_mb"),
+                        "targets_length": cached_targets_summary.get("length"),
+                        "targets_dtype": cached_targets_summary.get("dtype"),
+                        "targets_memory_mb": cached_targets_summary.get("memory_mb")
+                    }
+                }, level=LogLevel.DEBUG)
             tprint_data_preview(cached_labeled, "cached_labeled_data", level=LogLevel.INFO)
             tprint_data_preview(cached_targets, "cached_targets", level=LogLevel.INFO)
             
@@ -215,11 +267,25 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
         required_cols = ['open', 'high', 'low', 'close']
         missing = [c for c in required_cols if c not in data.columns]
         
+        # Analyze column structure for troubleshooting
+        column_analysis_config = DataFormatConfig(
+            max_cols=50,  # Show all columns
+            max_rows=1,   # Just show column names
+            include_values=False,  # Don't show values, just structure
+            include_memory=False,
+            include_semantics=True,
+            safe_sampling=True
+        )
+        
+        tprint_data_format(data.columns, "data_columns", level=LogLevel.DEBUG, config=column_analysis_config)
+        
         tprint_structured({
             "required_columns": required_cols,
             "available_columns": list(data.columns),
             "missing_columns": missing,
-            "column_validation_passed": len(missing) == 0
+            "column_validation_passed": len(missing) == 0,
+            "total_columns": len(data.columns),
+            "column_types": {col: str(data[col].dtype) for col in data.columns}
         }, level=LogLevel.DEBUG)
         
         if missing:
@@ -250,17 +316,58 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
                 
                 if labels_df is None or labels_df.empty:
                     tprint_error("❌ Labeling produced no label columns")
+                    
+                    # Analyze the problematic labeler result for troubleshooting
+                    error_labels_config = DataFormatConfig(
+                        max_cols=10,
+                        max_rows=5,
+                        include_values=True,
+                        include_memory=True,
+                        include_semantics=True,
+                        safe_sampling=True
+                    )
+                    
+                    tprint_data_format(labels_df, "empty_labels_from_labeler", level=LogLevel.ERROR, config=error_labels_config)
+                    tprint_data_format(lr, "labeler_result_object", level=LogLevel.ERROR, config=error_labels_config)
+                    
                     tprint_structured({
-                        "labeler_result_type": type(lr).__name__,
-                        "labels_attribute_exists": hasattr(lr, 'labels'),
-                        "labels_df_type": type(labels_df).__name__ if labels_df is not None else "None",
-                        "labels_df_empty": labels_df.empty if hasattr(labels_df, 'empty') else "N/A"
+                        "labeling_failure_analysis": {
+                            "labeler_result_type": type(lr).__name__,
+                            "labels_attribute_exists": hasattr(lr, 'labels'),
+                            "labels_df_type": type(labels_df).__name__ if labels_df is not None else "None",
+                            "labels_df_empty": labels_df.empty if hasattr(labels_df, 'empty') else "N/A",
+                            "labeler_attributes": [attr for attr in dir(lr) if not attr.startswith('_')] if hasattr(lr, '__dir__') else []
+                        }
                     }, level=LogLevel.ERROR)
                     raise ValueError('Labeling produced no label columns')
                 
-                # Comprehensive analysis of raw labels
-                tprint_data_format(labels_df, "raw_labels_from_labeler", level=LogLevel.DEBUG)
+                # Comprehensive analysis of raw labels with detailed configuration
+                raw_labels_config = DataFormatConfig(
+                    max_cols=25,  # Show all columns from labeler
+                    max_rows=15,  # Show more rows for label analysis
+                    include_values=True,
+                    include_memory=True,
+                    include_semantics=True,
+                    safe_sampling=True,
+                    sample_size=3000  # Larger sample for label analysis
+                )
+                
+                raw_labels_summary = tprint_data_format(labels_df, "raw_labels_from_labeler", 
+                                                      level=LogLevel.DEBUG, config=raw_labels_config, return_summary=True)
                 tprint_data_preview(labels_df, "raw_labels_from_labeler", level=LogLevel.DEBUG)
+                
+                # Analyze label quality for troubleshooting
+                if raw_labels_summary:
+                    tprint_structured({
+                        "raw_labels_analysis": {
+                            "shape": raw_labels_summary.get("shape"),
+                            "columns": raw_labels_summary.get("columns", []),
+                            "dtypes": raw_labels_summary.get("dtypes", {}),
+                            "memory_mb": raw_labels_summary.get("memory_mb"),
+                            "null_counts": raw_labels_summary.get("null_counts", {}),
+                            "numeric_columns": raw_labels_summary.get("numeric_columns", [])
+                        }
+                    }, level=LogLevel.DEBUG)
                 
                 tprint_structured({
                     "raw_labels_shape": labels_df.shape,
@@ -270,37 +377,103 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
 
             tprint_progress(3, 3, "Processing and aligning labels...")
 
-            # Handle both Series and DataFrame cases with detailed logging
-            if isinstance(labels_df, pd.Series):
-                # Single target case - use the series directly
-                tprint_debug("📊 Processing single target series")
-                targets = labels_df.dropna().astype(float)
-                target_name = labels_df.name or 'target'
-                tprint_structured({
-                    "target_type": "single_series",
-                    "target_name": target_name,
-                    "original_length": len(labels_df),
-                    "after_dropna": len(targets)
-                }, level=LogLevel.DEBUG)
-            else:
-                # Multiple targets case - prefer columns that contain 'target'
-                tprint_debug("📊 Processing multiple target columns")
-                target_cols = [c for c in labels_df.columns if 'target' in str(c).lower()]
-                target_col = target_cols[0] if target_cols else labels_df.select_dtypes(include=[np.number]).columns[0]
-                targets = labels_df[target_col].dropna().astype(float)
-                target_name = target_col
-                
-                tprint_structured({
-                    "target_type": "multiple_columns",
-                    "available_target_cols": target_cols,
-                    "selected_target_col": target_col,
-                    "original_length": len(labels_df),
-                    "after_dropna": len(targets)
-                }, level=LogLevel.DEBUG)
+                # Handle both Series and DataFrame cases with detailed logging
+                if isinstance(labels_df, pd.Series):
+                    # Single target case - use the series directly
+                    tprint_debug("📊 Processing single target series")
+                    
+                    # Analyze series structure before processing
+                    series_config = DataFormatConfig(
+                        max_cols=5,
+                        max_rows=20,
+                        include_values=True,
+                        include_memory=True,
+                        include_semantics=True,
+                        safe_sampling=True
+                    )
+                    tprint_data_format(labels_df, "raw_series_labels", level=LogLevel.DEBUG, config=series_config)
+                    
+                    targets = labels_df.dropna().astype(float)
+                    target_name = labels_df.name or 'target'
+                    
+                    # Analyze processed series
+                    tprint_data_format(targets, "processed_series_targets", level=LogLevel.DEBUG, config=series_config)
+                    
+                    tprint_structured({
+                        "target_type": "single_series",
+                        "target_name": target_name,
+                        "original_length": len(labels_df),
+                        "after_dropna": len(targets),
+                        "na_count": labels_df.isna().sum(),
+                        "conversion_success": len(targets) > 0
+                    }, level=LogLevel.DEBUG)
+                else:
+                    # Multiple targets case - prefer columns that contain 'target'
+                    tprint_debug("📊 Processing multiple target columns")
+                    
+                    # Analyze DataFrame structure for column selection
+                    df_config = DataFormatConfig(
+                        max_cols=30,
+                        max_rows=5,
+                        include_values=True,
+                        include_memory=True,
+                        include_semantics=True,
+                        safe_sampling=True
+                    )
+                    tprint_data_format(labels_df, "raw_dataframe_labels", level=LogLevel.DEBUG, config=df_config)
+                    
+                    target_cols = [c for c in labels_df.columns if 'target' in str(c).lower()]
+                    target_col = target_cols[0] if target_cols else labels_df.select_dtypes(include=[np.number]).columns[0]
+                    
+                    # Analyze selected column before processing
+                    if target_col in labels_df.columns:
+                        tprint_data_format(labels_df[target_col], f"selected_target_column_{target_col}", 
+                                         level=LogLevel.DEBUG, config=series_config)
+                    
+                    targets = labels_df[target_col].dropna().astype(float)
+                    target_name = target_col
+                    
+                    # Analyze final processed targets
+                    tprint_data_format(targets, "processed_dataframe_targets", level=LogLevel.DEBUG, config=series_config)
+                    
+                    tprint_structured({
+                        "target_type": "multiple_columns",
+                        "available_target_cols": target_cols,
+                        "selected_target_col": target_col,
+                        "original_length": len(labels_df),
+                        "after_dropna": len(targets),
+                        "na_count": labels_df[target_col].isna().sum() if target_col in labels_df.columns else 0,
+                        "conversion_success": len(targets) > 0
+                    }, level=LogLevel.DEBUG)
 
-            # Preview processed targets for troubleshooting
-            tprint_data_format(targets, f"processed_targets_{target_name}", level=LogLevel.INFO)
+            # Preview processed targets for troubleshooting with detailed analysis
+            targets_config = DataFormatConfig(
+                max_cols=10,
+                max_rows=20,  # Show more rows for target analysis
+                include_values=True,
+                include_memory=True,
+                include_semantics=True,
+                safe_sampling=True,
+                sample_size=5000  # Large sample for target analysis
+            )
+            
+            targets_summary = tprint_data_format(targets, f"processed_targets_{target_name}", 
+                                               level=LogLevel.INFO, config=targets_config, return_summary=True)
             tprint_data_preview(targets, f"processed_targets_{target_name}", level=LogLevel.INFO)
+            
+            # Analyze target quality and distribution for troubleshooting
+            if targets_summary:
+                tprint_structured({
+                    "processed_targets_analysis": {
+                        "target_name": target_name,
+                        "length": targets_summary.get("length"),
+                        "dtype": targets_summary.get("dtype"),
+                        "memory_mb": targets_summary.get("memory_mb"),
+                        "null_count": targets_summary.get("null_count"),
+                        "unique_count": targets_summary.get("unique_count"),
+                        "numeric_stats": targets_summary.get("numeric_stats", {})
+                    }
+                }, level=LogLevel.DEBUG)
 
             # Align and build labeled DataFrame with performance monitoring
             with tprint_timer("data_alignment", LogLevel.DEBUG):
@@ -309,12 +482,32 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
                 # Validate alignment results
                 if len(common_idx) == 0:
                     tprint_error("❌ No common index found between data and targets")
+                    
+                    # Analyze index mismatch for troubleshooting
+                    index_analysis_config = DataFormatConfig(
+                        max_cols=5,
+                        max_rows=10,
+                        include_values=True,
+                        include_memory=False,
+                        include_semantics=True,
+                        safe_sampling=True
+                    )
+                    
+                    tprint_data_format(data.index, "data_index", level=LogLevel.ERROR, config=index_analysis_config)
+                    tprint_data_format(targets.index, "targets_index", level=LogLevel.ERROR, config=index_analysis_config)
+                    tprint_data_format(common_idx, "common_index", level=LogLevel.ERROR, config=index_analysis_config)
+                    
                     tprint_structured({
-                        "data_index_type": type(data.index).__name__,
-                        "data_index_sample": list(data.index[:5]) if len(data.index) > 0 else [],
-                        "targets_index_type": type(targets.index).__name__,
-                        "targets_index_sample": list(targets.index[:5]) if hasattr(targets, 'index') and len(targets.index) > 0 else [],
-                        "common_index_length": len(common_idx)
+                        "index_alignment_failure": {
+                            "data_index_type": type(data.index).__name__,
+                            "data_index_length": len(data.index),
+                            "data_index_sample": list(data.index[:5]) if len(data.index) > 0 else [],
+                            "targets_index_type": type(targets.index).__name__,
+                            "targets_index_length": len(targets.index) if hasattr(targets, 'index') else 0,
+                            "targets_index_sample": list(targets.index[:5]) if hasattr(targets, 'index') and len(targets.index) > 0 else [],
+                            "common_index_length": len(common_idx),
+                            "index_types_match": type(data.index) == type(targets.index) if hasattr(targets, 'index') else False
+                        }
                     }, level=LogLevel.ERROR)
                     raise ValueError("No common index found between data and targets")
                 
@@ -330,11 +523,50 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
                     "alignment_success": True
                 }, level=LogLevel.DEBUG)
             
-            # Preview final labeled data for troubleshooting
-            tprint_data_format(labeled, "final_labeled_dataframe", level=LogLevel.INFO)
-            tprint_data_format(targets, "final_targets_series", level=LogLevel.INFO)
+            # Preview final labeled data for troubleshooting with comprehensive analysis
+            final_data_config = DataFormatConfig(
+                max_cols=30,  # Show all columns including new target
+                max_rows=12,  # Show more rows for final validation
+                include_values=True,
+                include_memory=True,
+                include_semantics=True,
+                safe_sampling=True,
+                sample_size=4000  # Large sample for final validation
+            )
+            
+            final_labeled_summary = tprint_data_format(labeled, "final_labeled_dataframe", 
+                                                     level=LogLevel.INFO, config=final_data_config, return_summary=True)
+            final_targets_summary = tprint_data_format(targets, "final_targets_series", 
+                                                     level=LogLevel.INFO, config=final_data_config, return_summary=True)
+            
             tprint_data_preview(labeled, "final_labeled_dataframe", level=LogLevel.INFO)
             tprint_data_preview(targets, "final_targets_series", level=LogLevel.INFO)
+            
+            # Comprehensive final data validation for troubleshooting
+            if final_labeled_summary and final_targets_summary:
+                tprint_structured({
+                    "final_data_validation": {
+                        "labeled_dataframe": {
+                            "shape": final_labeled_summary.get("shape"),
+                            "columns": final_labeled_summary.get("columns", []),
+                            "memory_mb": final_labeled_summary.get("memory_mb"),
+                            "null_counts": final_labeled_summary.get("null_counts", {}),
+                            "has_target_column": target_name in final_labeled_summary.get("columns", [])
+                        },
+                        "targets_series": {
+                            "length": final_targets_summary.get("length"),
+                            "dtype": final_targets_summary.get("dtype"),
+                            "memory_mb": final_targets_summary.get("memory_mb"),
+                            "null_count": final_targets_summary.get("null_count"),
+                            "numeric_stats": final_targets_summary.get("numeric_stats", {})
+                        },
+                        "alignment_validation": {
+                            "data_length": final_labeled_summary.get("shape", [0])[0],
+                            "targets_length": final_targets_summary.get("length", 0),
+                            "lengths_match": final_labeled_summary.get("shape", [0])[0] == final_targets_summary.get("length", 0)
+                        }
+                    }
+                }, level=LogLevel.DEBUG)
             
             # Performance metrics
             tprint_performance("labeling_integration", 0, 
@@ -362,11 +594,43 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
             labeled = data.copy()
             labeled['target'] = targets
             
-            # Preview fallback data for troubleshooting
-            tprint_data_format(targets, "fallback_targets", level=LogLevel.WARNING)
-            tprint_data_format(labeled, "fallback_labeled_data", level=LogLevel.WARNING)
+            # Preview fallback data for troubleshooting with detailed analysis
+            fallback_config = DataFormatConfig(
+                max_cols=20,
+                max_rows=10,
+                include_values=True,
+                include_memory=True,
+                include_semantics=True,
+                safe_sampling=True
+            )
+            
+            fallback_targets_summary = tprint_data_format(targets, "fallback_targets", 
+                                                        level=LogLevel.WARNING, config=fallback_config, return_summary=True)
+            fallback_labeled_summary = tprint_data_format(labeled, "fallback_labeled_data", 
+                                                        level=LogLevel.WARNING, config=fallback_config, return_summary=True)
+            
             tprint_data_preview(targets, "fallback_targets", level=LogLevel.WARNING)
             tprint_data_preview(labeled, "fallback_labeled_data", level=LogLevel.WARNING)
+            
+            # Analyze fallback data quality for troubleshooting
+            if fallback_targets_summary and fallback_labeled_summary:
+                tprint_structured({
+                    "fallback_data_analysis": {
+                        "fallback_method": "simple_returns",
+                        "targets_quality": {
+                            "length": fallback_targets_summary.get("length"),
+                            "dtype": fallback_targets_summary.get("dtype"),
+                            "memory_mb": fallback_targets_summary.get("memory_mb"),
+                            "null_count": fallback_targets_summary.get("null_count"),
+                            "numeric_stats": fallback_targets_summary.get("numeric_stats", {})
+                        },
+                        "labeled_data_quality": {
+                            "shape": fallback_labeled_summary.get("shape"),
+                            "memory_mb": fallback_labeled_summary.get("memory_mb"),
+                            "has_target_column": "target" in fallback_labeled_summary.get("columns", [])
+                        }
+                    }
+                }, level=LogLevel.WARNING)
             
             tprint_structured({
                 "fallback_method": "simple_returns",
@@ -399,9 +663,45 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
                 }
             }, level=LogLevel.DEBUG)
             
-            # Preview data before saving for troubleshooting
-            tprint_data_format(labeled, "pre_save_labeled_dataframe", level=LogLevel.DEBUG)
-            tprint_data_format(targets, "pre_save_targets", level=LogLevel.DEBUG)
+            # Preview data before saving for troubleshooting with save validation
+            pre_save_config = DataFormatConfig(
+                max_cols=25,
+                max_rows=8,
+                include_values=True,
+                include_memory=True,
+                include_semantics=True,
+                safe_sampling=True
+            )
+            
+            pre_save_labeled_summary = tprint_data_format(labeled, "pre_save_labeled_dataframe", 
+                                                        level=LogLevel.DEBUG, config=pre_save_config, return_summary=True)
+            pre_save_targets_summary = tprint_data_format(targets, "pre_save_targets", 
+                                                        level=LogLevel.DEBUG, config=pre_save_config, return_summary=True)
+            
+            # Validate data integrity before saving
+            if pre_save_labeled_summary and pre_save_targets_summary:
+                tprint_structured({
+                    "pre_save_validation": {
+                        "labeled_dataframe": {
+                            "shape": pre_save_labeled_summary.get("shape"),
+                            "memory_mb": pre_save_labeled_summary.get("memory_mb"),
+                            "null_counts": pre_save_labeled_summary.get("null_counts", {}),
+                            "columns": pre_save_labeled_summary.get("columns", [])
+                        },
+                        "targets": {
+                            "length": pre_save_targets_summary.get("length"),
+                            "dtype": pre_save_targets_summary.get("dtype"),
+                            "memory_mb": pre_save_targets_summary.get("memory_mb"),
+                            "null_count": pre_save_targets_summary.get("null_count")
+                        },
+                        "save_readiness": {
+                            "has_data": pre_save_labeled_summary.get("shape", [0])[0] > 0,
+                            "has_targets": pre_save_targets_summary.get("length", 0) > 0,
+                            "memory_usage_acceptable": (pre_save_labeled_summary.get("memory_mb", 0) + 
+                                                      pre_save_targets_summary.get("memory_mb", 0)) < 1000  # 1GB threshold
+                        }
+                    }
+                }, level=LogLevel.DEBUG)
             tprint_data_preview(labeled, "pre_save_labeled_dataframe", level=LogLevel.DEBUG)
             tprint_data_preview(targets, "pre_save_targets", level=LogLevel.DEBUG)
             
@@ -462,7 +762,20 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
                     "post_cleanup_memory_stats": post_cleanup_memory
                 }, level=LogLevel.DEBUG)
         
-        # Final comprehensive summary for troubleshooting
+        # Final comprehensive summary with data format validation
+        final_summary_config = DataFormatConfig(
+            max_cols=20,
+            max_rows=5,
+            include_values=False,  # Don't show values in final summary
+            include_memory=True,
+            include_semantics=False,
+            safe_sampling=True
+        )
+        
+        # Quick final validation of all artifacts
+        tprint_data_format(labeled, "final_labeled_validation", level=LogLevel.DEBUG, config=final_summary_config)
+        tprint_data_format(targets, "final_targets_validation", level=LogLevel.DEBUG, config=final_summary_config)
+        
         tprint_structured({
             "step_completion_summary": {
                 "step_name": "feature_generation_labeling_integration_step",
@@ -470,7 +783,8 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
                 "artifacts_created": ['labeled_dataframe', 'targets', 'raw_dataframe'],
                 "final_metrics": final_metrics,
                 "hardware_optimization_available": HARDWARE_OPTIMIZATION_AVAILABLE,
-                "timestamp": datetime.now().isoformat()
+                "timestamp": datetime.now().isoformat(),
+                "data_format_validation_passed": True
             }
         }, level=LogLevel.INFO)
         
@@ -533,7 +847,32 @@ async def handle_feature_generation_labeling_integration_step(
                 )
                 data = loaded
                 
-                tprint_data_format(data, "auto_loaded_data", level=LogLevel.INFO)
+                # Comprehensive analysis of auto-loaded data
+                auto_load_config = DataFormatConfig(
+                    max_cols=25,
+                    max_rows=15,
+                    include_values=True,
+                    include_memory=True,
+                    include_semantics=True,
+                    safe_sampling=True,
+                    sample_size=3000
+                )
+                
+                auto_loaded_summary = tprint_data_format(data, "auto_loaded_data", 
+                                                       level=LogLevel.INFO, config=auto_load_config, return_summary=True)
+                
+                if auto_loaded_summary:
+                    tprint_structured({
+                        "auto_load_analysis": {
+                            "data_source": "feature_generation_data_validation_step",
+                            "shape": auto_loaded_summary.get("shape"),
+                            "columns": auto_loaded_summary.get("columns", []),
+                            "memory_mb": auto_loaded_summary.get("memory_mb"),
+                            "dtypes": auto_loaded_summary.get("dtypes", {}),
+                            "null_counts": auto_loaded_summary.get("null_counts", {})
+                        }
+                    }, level=LogLevel.DEBUG)
+                
                 tprint_success("✅ Data auto-loaded successfully")
                 
         except Exception as e:
@@ -542,7 +881,32 @@ async def handle_feature_generation_labeling_integration_step(
             raise
     else:
         tprint_info("📊 Using provided data for labeling integration")
-        tprint_data_format(data, "provided_data", level=LogLevel.INFO)
+        # Comprehensive analysis of provided data
+        provided_data_config = DataFormatConfig(
+            max_cols=30,
+            max_rows=12,
+            include_values=True,
+            include_memory=True,
+            include_semantics=True,
+            safe_sampling=True,
+            sample_size=2500
+        )
+        
+        provided_data_summary = tprint_data_format(data, "provided_data", 
+                                                 level=LogLevel.INFO, config=provided_data_config, return_summary=True)
+        
+        if provided_data_summary:
+            tprint_structured({
+                "provided_data_analysis": {
+                    "data_source": "user_provided",
+                    "shape": provided_data_summary.get("shape"),
+                    "columns": provided_data_summary.get("columns", []),
+                    "memory_mb": provided_data_summary.get("memory_mb"),
+                    "dtypes": provided_data_summary.get("dtypes", {}),
+                    "null_counts": provided_data_summary.get("null_counts", {}),
+                    "numeric_columns": provided_data_summary.get("numeric_columns", [])
+                }
+            }, level=LogLevel.DEBUG)
 
     # Create config for the step
     config = {
@@ -590,9 +954,44 @@ async def handle_feature_generation_labeling_integration_step(
         labeled_df = step._load_dataframe('labeled_dataframe') or pd.DataFrame()
         targets = step._load_dataframe('targets') or pd.Series(dtype=float)
         
-        # Validate loaded artifacts
-        tprint_data_format(labeled_df, "loaded_labeled_dataframe", level=LogLevel.DEBUG)
-        tprint_data_format(targets, "loaded_targets", level=LogLevel.DEBUG)
+        # Validate loaded artifacts with comprehensive analysis
+        loaded_artifacts_config = DataFormatConfig(
+            max_cols=25,
+            max_rows=10,
+            include_values=True,
+            include_memory=True,
+            include_semantics=True,
+            safe_sampling=True
+        )
+        
+        loaded_labeled_summary = tprint_data_format(labeled_df, "loaded_labeled_dataframe", 
+                                                  level=LogLevel.DEBUG, config=loaded_artifacts_config, return_summary=True)
+        loaded_targets_summary = tprint_data_format(targets, "loaded_targets", 
+                                                  level=LogLevel.DEBUG, config=loaded_artifacts_config, return_summary=True)
+        
+        # Validate artifact integrity
+        if loaded_labeled_summary and loaded_targets_summary:
+            tprint_structured({
+                "loaded_artifacts_validation": {
+                    "labeled_dataframe": {
+                        "shape": loaded_labeled_summary.get("shape"),
+                        "memory_mb": loaded_labeled_summary.get("memory_mb"),
+                        "columns": loaded_labeled_summary.get("columns", []),
+                        "null_counts": loaded_labeled_summary.get("null_counts", {})
+                    },
+                    "targets": {
+                        "length": loaded_targets_summary.get("length"),
+                        "dtype": loaded_targets_summary.get("dtype"),
+                        "memory_mb": loaded_targets_summary.get("memory_mb"),
+                        "null_count": loaded_targets_summary.get("null_count")
+                    },
+                    "integrity_check": {
+                        "has_labeled_data": loaded_labeled_summary.get("shape", [0])[0] > 0,
+                        "has_targets": loaded_targets_summary.get("length", 0) > 0,
+                        "lengths_compatible": loaded_labeled_summary.get("shape", [0])[0] == loaded_targets_summary.get("length", 0)
+                    }
+                }
+            }, level=LogLevel.DEBUG)
         
         tprint_structured({
             "loaded_artifacts": {

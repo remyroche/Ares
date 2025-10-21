@@ -324,7 +324,7 @@ class BaseStep(ABC):
         tprint_info(f"💾 Saving DataFrame: {name}")
         
         # Preview data before saving
-        if os.getenv('ENABLE_DATA_PREVIEW', 'false').lower() == 'true':
+        if os.getenv('ENABLE_DATA_PREVIEW', 'true').lower() == 'true':
             tprint_data_preview(df, f"saving_{name}", max_rows=3, level="DEBUG")
         
         try:
@@ -369,7 +369,7 @@ class BaseStep(ABC):
             data = self._get_enhanced_artifact(name, "data")
             if data is not None:
                 # Preview loaded data
-                if os.getenv('ENABLE_DATA_PREVIEW', 'false').lower() == 'true':
+                if os.getenv('ENABLE_DATA_PREVIEW', 'true').lower() == 'true':
                     tprint_data_preview(data, f"loaded_{name}", max_rows=3, level="DEBUG")
                 
                 # Apply hardware optimization to loaded data
@@ -551,7 +551,7 @@ class BaseStep(ABC):
         tprint_info(f"💾 Storing klines data: {symbol} {exchange} {interval}")
         
         # Preview data before storing
-        if os.getenv('ENABLE_DATA_PREVIEW', 'false').lower() == 'true':
+        if os.getenv('ENABLE_DATA_PREVIEW', 'true').lower() == 'true':
             tprint_data_preview(df, f"storing_klines_{symbol}_{interval}", max_rows=3, level="DEBUG")
         
         if not self._is_klines_available():
@@ -643,7 +643,7 @@ class BaseStep(ABC):
             
             if df is not None and not df.empty:
                 # Preview loaded klines data
-                if os.getenv('ENABLE_DATA_PREVIEW', 'false').lower() == 'true':
+                if os.getenv('ENABLE_DATA_PREVIEW', 'true').lower() == 'true':
                     tprint_data_preview(df, f"loaded_klines_{symbol}_{interval}", max_rows=3, level="DEBUG")
                 
                 # Apply hardware optimization to loaded data

@@ -167,7 +167,7 @@ class LoggingConfig:
     enable_console: bool = True
     enable_file: bool = False
     log_file: Optional[str] = None
-    enable_debug: bool = False
+    enable_debug: bool = True
     log_format: str = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 
 @dataclass

@@ -52,6 +52,9 @@ class SystemConfig:
 
     # NAS/TAS Enhancement removed
 
+    # Debug mode - enabled by default
+    debug_mode: bool = True
+    
     # Performance
     max_workers: int = 4
     batch_size: int = 1000

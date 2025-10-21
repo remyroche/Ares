@@ -106,7 +106,7 @@ except ImportError:
 try:
     from src.utils.tprint import (
         tprint, tprint_info, tprint_success, tprint_warning, tprint_error, tprint_debug,
-        tprint_performance, tprint_step, tprint_result, tprint_data_preview
+        tprint_performance, tprint_step, tprint_result, tprint_data_preview, tprint_data_format
     )
     TPRINT_AVAILABLE = True
 except ImportError:
@@ -124,6 +124,11 @@ except ImportError:
         # Simple fallback that works with both string and LogLevel enum
         level_str = str(level) if hasattr(level, 'value') else str(level)
         print(f"DATA_PREVIEW [{name}]: {type(data).__name__} - {getattr(data, 'shape', 'unknown shape')} [{level_str}]")
+    def tprint_data_format(data, name="data", level="DEBUG", config=None, return_summary=False):
+        # Simple fallback for tprint_data_format
+        level_str = str(level) if hasattr(level, 'value') else str(level)
+        print(f"DATA_FORMAT [{name}]: {type(data).__name__} - {getattr(data, 'shape', 'unknown shape')} [{level_str}]")
+        return None
 
 
 class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
@@ -269,6 +274,8 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
         """Optimize DataFrame data types using enhanced hardware optimization tools."""
         if verbose:
             tprint_step("Optimizing DataFrame data types with enhanced hardware tools")
+            # Add comprehensive data format analysis for troubleshooting
+            tprint_data_format(df, "dtype_optimization_input", level="DEBUG")
         try:
             if not isinstance(df, pd.DataFrame):
                 tprint_warning(f"Expected DataFrame, got {type(df)}")
@@ -320,10 +327,15 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             num_chunks = (total_rows + chunk_size - 1) // chunk_size
             
             tprint_info(f"Processing {total_rows} rows in {num_chunks} chunks of {chunk_size}")
+            # Add comprehensive data format analysis for troubleshooting
+            tprint_data_format(data, "chunk_processing_input", level="DEBUG")
             
             for i in range(0, total_rows, chunk_size):
                 chunk = data.iloc[i:i + chunk_size].copy()
                 tprint_data_preview(chunk, f"processing_chunk_{i//chunk_size + 1}", max_rows=3, level="DEBUG")
+                # Add data format analysis for each chunk (only for first few chunks to avoid spam)
+                if i // chunk_size < 3:  # Only analyze first 3 chunks
+                    tprint_data_format(chunk, f"chunk_{i//chunk_size + 1}", level="DEBUG")
                 
                 # Optimize chunk data types (silent for chunks)
                 chunk = self._optimize_dataframe_dtypes(chunk, verbose=False)
@@ -523,6 +535,8 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
     def _vectorbt_optimized_operations(self, data: pd.DataFrame) -> pd.DataFrame:
         """Apply VectorBT-optimized operations for vectorized calculations with enhanced GPU acceleration."""
         tprint_step("Applying VectorBT-optimized operations")
+        # Add comprehensive data format analysis for troubleshooting
+        tprint_data_format(data, "vectorbt_input", level="DEBUG")
         try:
             # Check if VectorBT is available
             try:
@@ -644,6 +658,8 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
         tprint_info(f"Data type: {type(data)}")
         tprint_info(f"Kwargs keys: {list(kwargs.keys())}")
         tprint_data_preview(data, "input_data", max_rows=5, level="DEBUG")
+        # Add comprehensive data format analysis for troubleshooting
+        tprint_data_format(data, "input_data", level="DEBUG")
         
         try:
             # Start memory monitoring
@@ -655,9 +671,11 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             artifact_manager = get_pretraining_artifact_manager()
             tprint_success("Artifact manager retrieved successfully")
             
-            # Optimize input data
-            tprint_info("🔧 Optimizing input data")
-            if isinstance(data, pd.DataFrame):
+        # Optimize input data
+        tprint_info("🔧 Optimizing input data")
+        # Add comprehensive data format analysis for troubleshooting
+        tprint_data_format(data, "data_optimization_input", level="DEBUG")
+        if isinstance(data, pd.DataFrame):
                 data = self._optimize_dataframe_dtypes(data)
                 tprint_success("Input data optimized for M1")
             
@@ -1146,6 +1164,10 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
         """
         tprint_step("Compiling feature-level analysis")
         tprint_info(f"Analysis parameters: max_features={max_features_to_analyze}, sample_rows={sample_rows}")
+        # Add comprehensive data format analysis for troubleshooting
+        tprint_data_format(data, "feature_analysis_input", level="DEBUG")
+        tprint_data_format(optimized_periods, "optimized_periods", level="DEBUG")
+        tprint_data_format(optimized_lookbacks, "optimized_lookbacks", level="DEBUG")
         
         try:
             import re
@@ -1353,6 +1375,10 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
     def _generate_optimization_report(self, result, data, **kwargs):
         """Generate a comprehensive human-readable optimization report."""
         try:
+            # Add comprehensive data format analysis for troubleshooting
+            tprint_data_format(result, "optimization_report_result", level="DEBUG")
+            tprint_data_format(data, "optimization_report_data", level="DEBUG")
+            
             # Get current timestamp for filename
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             
@@ -2249,6 +2275,10 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                                    outer_folds: int = 3, min_test_signals: int = 100,
                                    use_tpe: bool = True) -> Tuple[float, Dict[str, Any]]:
         # series and returns aligned, no NaNs
+        # Add data format analysis for troubleshooting (only for debugging)
+        tprint_data_format(series, "oos_sharpe_series", level="DEBUG")
+        tprint_data_format(returns, "oos_sharpe_returns", level="DEBUG")
+        
         af = self._annualization_factor_15m()
         n = len(series)
         if n < 500:
@@ -2807,6 +2837,8 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             if features_df is not None and not features_df.empty:
                 tprint_success(f"Loaded features from artifact manager: {features_df.shape}")
                 tprint_data_preview(features_df, "loaded_features", max_rows=5, level="INFO")
+                # Add comprehensive data format analysis for troubleshooting
+                tprint_data_format(features_df, "loaded_features", level="INFO")
             else:
                 tprint_warning("No features found in artifact manager, trying fallback")
                 # Try fallback loading
@@ -2816,12 +2848,14 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
         
         if features_df is None or features_df.empty:
             tprint_error("No features available for period/lookback optimization")
-            return {
+            error_result = {
                 'success': False,
                 'artifacts': [],
                 'metrics': {},
                 'error': 'No features available. Run feature_generation_feature_generation_step first.'
             }
+            tprint_data_format(error_result, "no_features_error", level="ERROR")
+            return error_result
         
         # Load targets from feature_generation_labeling_integration_step
         targets_series = None
@@ -2839,6 +2873,8 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                         targets_series = targets_series.iloc[:, 0]  # Take first column
                 tprint_success(f"Loaded targets from artifact manager: {len(targets_series)} samples")
                 tprint_data_preview(targets_series, "loaded_targets", max_rows=10, level="INFO")
+                # Add comprehensive data format analysis for troubleshooting
+                tprint_data_format(targets_series, "loaded_targets", level="INFO")
             else:
                 tprint_warning("No targets found in artifact manager, trying fallback")
                 # Try fallback loading
@@ -2848,24 +2884,28 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
         
         if targets_series is None or targets_series.empty:
             tprint_error("No targets available for period/lookback optimization")
-            return {
+            error_result = {
                 'success': False,
                 'artifacts': [],
                 'metrics': {},
                 'error': 'No targets available. Run feature_generation_labeling_integration_step first.'
             }
+            tprint_data_format(error_result, "no_targets_error", level="ERROR")
+            return error_result
         
         # Align features and targets
         tprint_info("Aligning features and targets for optimization")
         aligned_data = features_df.join(targets_series.rename('target'), how='inner').dropna()
         if aligned_data.empty:
             tprint_error("No overlapping timestamps between features and targets")
-            return {
+            error_result = {
                 'success': False,
                 'artifacts': [],
                 'metrics': {},
                 'error': 'No overlapping timestamps between features and targets.'
             }
+            tprint_data_format(error_result, "no_overlap_error", level="ERROR")
+            return error_result
         
         aligned_features = aligned_data.drop(columns=['target'])
         aligned_targets = aligned_data['target']
@@ -2875,8 +2915,15 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
         tprint_data_preview(aligned_features, "aligned_features", max_rows=5, level="DEBUG")
         tprint_data_preview(aligned_targets, "aligned_targets", max_rows=10, level="DEBUG")
         
-        # Use aligned data for optimization
-        data = aligned_features
+        # Add comprehensive data format analysis for troubleshooting
+        tprint_data_format(aligned_data, "aligned_data", level="INFO")
+        tprint_data_format(aligned_features, "aligned_features", level="DEBUG")
+        tprint_data_format(aligned_targets, "aligned_targets", level="DEBUG")
+        
+            # Use aligned data for optimization
+            data = aligned_features
+            # Add comprehensive data format analysis for troubleshooting
+            tprint_data_format(data, "final_optimization_data", level="DEBUG")
         
         try:
             # Log optimization configuration
@@ -2887,21 +2934,33 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             tprint_info(f"   - Aggressive GC: {self.aggressive_gc_enabled}")
             tprint_info(f"   - Data Type Optimization: {self.data_type_optimization}")
             tprint_info(f"   - Enhanced GPU Available: {self.gpu_manager.is_available()}")
+            # Add comprehensive data format analysis for troubleshooting
+            tprint_data_format(data, "optimization_config_data", level="DEBUG")
             
             # Process data through the optimization
             tprint_info("Processing data through M1-optimized pipeline")
             result = self._process_data(data, **config)
             tprint_info(f"Process data result: success={result.get('success', False)}")
+            # Add comprehensive data format analysis for troubleshooting
+            tprint_data_format(result, "process_data_result", level="INFO")
+            tprint_data_format(data, "process_data_input", level="DEBUG")
+            tprint_data_format(config, "process_data_config", level="DEBUG")
             
             # Save artifacts using BaseStep methods
             if result.get('success', False):
                 if 'optimized_features' in result.get('artifacts', {}):
                     tprint_data_preview(result['artifacts']['optimized_features'], "saved_optimized_features", max_rows=5, level="INFO")
+                    # Add comprehensive data format analysis for troubleshooting
+                    tprint_data_format(result['artifacts']['optimized_features'], "saved_optimized_features", level="INFO")
                     self._save_dataframe(result['artifacts']['optimized_features'], 'optimized_features')
                 if 'optimization_metadata' in result:
+                    # Add data format analysis for metadata
+                    tprint_data_format(result['optimization_metadata'], "optimization_metadata", level="DEBUG")
                     self._save_metadata(result['optimization_metadata'], 'optimization_metadata')
                 if 'family_diagnostics' in result.get('artifacts', {}):
                     tprint_data_preview(result['artifacts']['family_diagnostics'], "saved_family_diagnostics", max_rows=5, level="INFO")
+                    # Add comprehensive data format analysis for troubleshooting
+                    tprint_data_format(result['artifacts']['family_diagnostics'], "saved_family_diagnostics", level="INFO")
                     self._save_dataframe(result['artifacts']['family_diagnostics'], 'family_diagnostics')
             
             # Log optimization statistics
@@ -2911,14 +2970,20 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                 tprint_info(f"   - Workers Used: {optimization_stats.get('parallel_workers_used', 'N/A')}")
                 tprint_info(f"   - Final Memory Usage: {optimization_stats.get('final_memory_usage', 0):.1f}%")
                 tprint_info(f"   - GPU Acceleration: {optimization_stats.get('m1_gpu_acceleration', False)}")
+                # Add comprehensive data format analysis for troubleshooting
+                tprint_data_format(optimization_stats, "optimization_stats", level="INFO")
             
             # Generate human-readable report
             if result.get('success', False):
                 tprint_info("Generating human-readable optimization report")
+                # Add comprehensive data format analysis for troubleshooting
+                tprint_data_format(result, "report_generation_result", level="DEBUG")
+                tprint_data_format(data, "report_generation_data", level="DEBUG")
                 report_path = self._generate_optimization_report(result, data, **config)
                 tprint_success(f"📊 Optimization report saved to: {report_path}")
             
-            return {
+            # Add comprehensive data format analysis for final result
+            final_result = {
                 'success': result.get('success', False),
                 'artifacts': list(result.get('artifacts', {}).keys()),
                 'metrics': {
@@ -2927,10 +2992,14 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                 },
                 'error': None if result.get('success', False) else "Period + lookback optimization failed"
             }
+            tprint_data_format(final_result, "final_optimization_result", level="INFO")
+            return final_result
             
         except Exception as e:
             tprint_error(f"Period + lookback optimization execution failed: {e}")
             tprint_debug(f"Execution error details: {traceback.format_exc()}")
+            # Add data format analysis for error troubleshooting
+            tprint_data_format(data, "error_data_state", level="ERROR")
             self.logger.error(f"Period + lookback optimization execution failed: {e}")
             
             # Ensure cleanup even on error
@@ -2940,13 +3009,17 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                     self._aggressive_garbage_collection()
             except Exception as cleanup_error:
                 tprint_warning(f"Cleanup failed: {cleanup_error}")
+                # Add data format analysis for cleanup error troubleshooting
+                tprint_data_format(cleanup_error, "cleanup_error", level="ERROR")
             
-            return {
+            error_result = {
                 'success': False,
                 'artifacts': [],
                 'metrics': {},
                 'error': str(e)
             }
+            tprint_data_format(error_result, "error_result", level="ERROR")
+            return error_result
 
     @memory_efficient(OptimizationConfig(
         enable_dtype_optimization=True,
@@ -2958,6 +3031,9 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
         """Optimize periods using mutual information and out-of-sample Sharpe ratio."""
         tprint_step("Optimizing periods")
         tprint_data_preview(features, "period_optimization_input", max_rows=5, level="DEBUG")
+        # Add comprehensive data format analysis for troubleshooting
+        tprint_data_format(features, "period_optimization_input", level="DEBUG")
+        tprint_data_format(targets, "period_optimization_targets", level="DEBUG")
         
         period_scores = {}
         best_period = periods_to_test[0]
@@ -2970,6 +3046,10 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                 
                 if period_features.empty:
                     continue
+                
+                # Add data format analysis for period features (only for first few periods to avoid spam)
+                if period == periods_to_test[0]:  # Only analyze first period
+                    tprint_data_format(period_features, f"period_features_{period}", level="DEBUG")
                 
                 # Calculate mutual information
                 mi_scores = []
@@ -3006,6 +3086,8 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
         
         tprint_success(f"Best period: {best_period} (score: {best_score:.3f})")
         tprint_data_preview(period_scores, "period_optimization_scores", level="INFO")
+        # Add comprehensive data format analysis for troubleshooting
+        tprint_data_format(period_scores, "period_optimization_scores", level="INFO")
         return best_period, period_scores
     
     @memory_efficient(OptimizationConfig(
@@ -3018,6 +3100,9 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
         """Optimize lookbacks using mutual information and out-of-sample Sharpe ratio."""
         tprint_step("Optimizing lookbacks")
         tprint_data_preview(features, "lookback_optimization_input", max_rows=5, level="DEBUG")
+        # Add comprehensive data format analysis for troubleshooting
+        tprint_data_format(features, "lookback_optimization_input", level="DEBUG")
+        tprint_data_format(targets, "lookback_optimization_targets", level="DEBUG")
         
         lookback_scores = {}
         best_lookback = lookbacks_to_test[0]
@@ -3030,6 +3115,10 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                 
                 if lookback_features.empty:
                     continue
+                
+                # Add data format analysis for lookback features (only for first few lookbacks to avoid spam)
+                if lookback == lookbacks_to_test[0]:  # Only analyze first lookback
+                    tprint_data_format(lookback_features, f"lookback_features_{lookback}", level="DEBUG")
                 
                 # Calculate mutual information
                 mi_scores = []
@@ -3066,6 +3155,8 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
         
         tprint_success(f"Best lookback: {best_lookback} (score: {best_score:.3f})")
         tprint_data_preview(lookback_scores, "lookback_optimization_scores", level="INFO")
+        # Add comprehensive data format analysis for troubleshooting
+        tprint_data_format(lookback_scores, "lookback_optimization_scores", level="INFO")
         return best_lookback, lookback_scores
     
     def _create_period_features(self, features: pd.DataFrame, period: int) -> pd.DataFrame:
@@ -3075,6 +3166,9 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
         
         # Take every period-th row
         period_features = features.iloc[::period].copy()
+        
+        # Add data format analysis for period features (only for debugging)
+        tprint_data_format(period_features, f"period_features_created_{period}", level="DEBUG")
         
         # Ensure we have enough data
         if len(period_features) < 10:
@@ -3093,6 +3187,9 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
         # Drop rows with insufficient data
         lookback_features = lookback_features.dropna()
         
+        # Add data format analysis for lookback features (only for debugging)
+        tprint_data_format(lookback_features, f"lookback_features_created_{lookback}", level="DEBUG")
+        
         # Ensure we have enough data
         if len(lookback_features) < 10:
             return pd.DataFrame()
@@ -3103,6 +3200,10 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
         """Compute mutual information between two series."""
         try:
             from sklearn.feature_selection import mutual_info_regression
+            
+            # Add data format analysis for troubleshooting (only for debugging)
+            tprint_data_format(x, "mi_x_series", level="DEBUG")
+            tprint_data_format(y, "mi_y_series", level="DEBUG")
             
             # Align the series
             aligned_data = pd.concat([x, y], axis=1).dropna()

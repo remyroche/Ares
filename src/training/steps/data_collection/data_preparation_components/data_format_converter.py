@@ -1,6 +1,9 @@
 from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 import numpy as np
 
+# Import tprint for data preview
+from src.utils.tprint import tprint_data_preview
+
 """Data Format Converter Component
 
 Handles conversion between different data formats, particularly focusing on Parquet operations.
@@ -206,6 +209,15 @@ class DataFormatConverter:
 
         self.logger.info(f'📊 Schema enforcement complete: {conversion_results["success"]} successful, {conversion_results["failed"]} failed, {conversion_results["skipped"]} skipped')
         self.logger.info(f'📋 Final DataFrame dtypes: {dict(df.dtypes)}')
+
+        # Add data preview for troubleshooting data structure after conversion
+        tprint_data_preview(
+            df, 
+            name=f"schema_enforced_{schema_name}",
+            max_rows=3,
+            level="DEBUG",
+            include_metadata=True
+        )
 
         return df
 

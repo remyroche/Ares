@@ -36,7 +36,30 @@ from ..shared import HardwareInitializer
 from src.utils.common_utilities import safe_dataframe_operation, validate_dataframe_columns, calculate_data_quality_metrics
 from src.utils.math_validation import validate_finite, validate_positive, validate_range
 from ..shared import safe_divide, ClusteringValidationUtils
-from src.utils.matrix_operations import get_unified_matrix_operations, safe_matrix_multiply, safe_correlation_matrix
+# Lazy imports to avoid circular imports
+def get_safe_correlation_matrix():
+    """Lazy import of safe_correlation_matrix to avoid circular imports."""
+    try:
+        from src.utils.matrix_operations import safe_correlation_matrix
+        return safe_correlation_matrix
+    except ImportError:
+        return None
+
+def get_safe_matrix_multiply():
+    """Lazy import of safe_matrix_multiply to avoid circular imports."""
+    try:
+        from src.utils.matrix_operations import safe_matrix_multiply
+        return safe_matrix_multiply
+    except ImportError:
+        return None
+
+def get_unified_matrix_operations():
+    """Lazy import of get_unified_matrix_operations to avoid circular imports."""
+    try:
+        from src.utils.matrix_operations import get_unified_matrix_operations
+        return get_unified_matrix_operations
+    except ImportError:
+        return None
 
 # Import ML common utilities
 try:

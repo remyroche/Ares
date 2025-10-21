@@ -29,6 +29,10 @@ try:
     LIGHTGBM_AVAILABLE = True
 except ImportError:
     LIGHTGBM_AVAILABLE = False
+    # Create a dummy lgb module for type hints
+    class DummyLGBMRegressor:
+        pass
+    lgb = type('lgb', (), {'LGBMRegressor': DummyLGBMRegressor})()
 
 # Import project utilities
 from src.utils.tprint import tprint, tprint_success, tprint_warning, tprint_performance, tprint_debug

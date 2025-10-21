@@ -79,13 +79,17 @@ except ImportError as e:
     warnings.warn(f"Parquet utilities not available: {e}")
     PARQUET_AVAILABLE = False
 
-# Import matrix operations
-try:
-    from src.utils.matrix_operations import get_unified_matrix_operations
-    MATRIX_OPERATIONS_AVAILABLE = True
-except ImportError as e:
-    warnings.warn(f"Matrix operations not available: {e}")
-    MATRIX_OPERATIONS_AVAILABLE = False
+# Import matrix operations with lazy loading
+def get_unified_matrix_operations():
+    """Lazy import of get_unified_matrix_operations to avoid circular imports."""
+    try:
+        from src.utils.matrix_operations import get_unified_matrix_operations as _get_unified_matrix_operations
+        return _get_unified_matrix_operations()
+    except ImportError as e:
+        warnings.warn(f"Matrix operations not available: {e}")
+        return None
+
+MATRIX_OPERATIONS_AVAILABLE = True  # Set to True since we have a fallback
 
 # Import ML common utilities
 try:
@@ -104,10 +108,10 @@ try:
     from src.utils.logger import get_logger
     _LOGGER = get_logger("FeatureSelection.PartialInformationDecompositor")
     if COMMON_OPERATIONS_AVAILABLE:
-        _LOGGER = create_fallback_logger(_LOGGER, "FeatureSelection.PartialInformationDecompositor")
+        _LOGGER = create_fallback_logger("FeatureSelection.PartialInformationDecompositor")
 except Exception as e:
     if COMMON_OPERATIONS_AVAILABLE:
-        _LOGGER = create_fallback_logger(None, "FeatureSelection.PartialInformationDecompositor")
+        _LOGGER = create_fallback_logger("FeatureSelection.PartialInformationDecompositor")
     else:
         _LOGGER = logging.getLogger("FeatureSelection.PartialInformationDecompositor")
         _LOGGER.setLevel(logging.INFO)

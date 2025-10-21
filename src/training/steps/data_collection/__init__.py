@@ -34,21 +34,26 @@ except ImportError as e:
     print(f"Warning: Could not import DataReadingStep: {e}")
     STEP02_AVAILABLE = False
 
-# Register steps with the global registry
-from src.training.steps.base_step import step_registry
+# Register steps with the global registry (lazy import to avoid circular imports)
+def register_data_collection_steps():
+    """Register data collection steps with the global registry."""
+    try:
+        from src.training.steps.base_step import step_registry
+        
+        # Register DATA_COLLECTION steps if available
+        if KLINES_STEP_AVAILABLE:
+            step_registry.register('data_download', KlinesDataProcessingPipeline)
 
-# Register DATA_COLLECTION steps if available
-if KLINES_STEP_AVAILABLE:
-    step_registry.register('data_download', KlinesDataProcessingPipeline)
+        if ORCHESTRATOR_STEP_AVAILABLE:
+            step_registry.register('data_collection_orchestrator', DataCollectionOrchestrator)
 
-if ORCHESTRATOR_STEP_AVAILABLE:
-    step_registry.register('data_collection_orchestrator', DataCollectionOrchestrator)
+        if STEP01_AVAILABLE:
+            step_registry.register('data_collection_step01', DataCollectionStep)
 
-if STEP01_AVAILABLE:
-    step_registry.register('data_collection_step01', DataCollectionStep)
-
-if STEP02_AVAILABLE:
-    step_registry.register('data_reading_step02', DataReadingStep)
+        if STEP02_AVAILABLE:
+            step_registry.register('data_reading_step02', DataReadingStep)
+    except ImportError as e:
+        print(f"Warning: Could not register data collection steps: {e}")
 
 __all__ = [
     'KlinesDataProcessingPipeline' if KLINES_STEP_AVAILABLE else None

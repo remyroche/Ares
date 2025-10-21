@@ -32,7 +32,20 @@ import threading
 
 from ..common_operations import create_fallback_logger
 from src.utils.ml_common.utils import ParallelProcessor
-from src.utils.common_utilities import safe_dataframe_operation
+
+# Lazy import to avoid circular imports
+def safe_dataframe_operation(df, operation, *args, **kwargs):
+    """Lazy import of safe_dataframe_operation to avoid circular imports."""
+    try:
+        from src.utils.common_utilities import safe_dataframe_operation as _safe_dataframe_operation
+        return _safe_dataframe_operation(df, operation, *args, **kwargs)
+    except ImportError:
+        # Fallback implementation
+        try:
+            return operation(df, *args, **kwargs)
+        except Exception as e:
+            logger.warning(f"DataFrame operation failed: {e}")
+            return df
 
 logger = logging.getLogger(__name__)
 

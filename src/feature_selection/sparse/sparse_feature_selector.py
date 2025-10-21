@@ -16,14 +16,80 @@ from scipy.sparse.linalg import svds
 from sklearn.feature_selection import mutual_info_regression, f_regression
 
 # Import hardware optimization tools
-from src.utils.hardware import (
-    get_integrated_hardware_manager,
-    memory_efficient,
-    performance_tracked,
-    smart_cache,
-    WorkloadType,
-    OptimizationLevel
-)
+# Lazy imports to avoid circular imports
+def get_optimization_level():
+    """Lazy import of OptimizationLevel to avoid circular imports."""
+    try:
+        from src.utils.hardware.constants import OptimizationLevel
+        return OptimizationLevel
+    except ImportError:
+        from enum import Enum
+        class OptimizationLevel(Enum):
+            MINIMAL = "minimal"
+            BALANCED = "balanced"
+            AGGRESSIVE = "aggressive"
+            MAXIMUM = "maximum"
+        return OptimizationLevel
+
+def get_workload_type():
+    """Lazy import of WorkloadType to avoid circular imports."""
+    try:
+        from src.utils.hardware.constants import WorkloadType
+        return WorkloadType
+    except ImportError:
+        from enum import Enum
+        class WorkloadType(Enum):
+            MATRIX_OPERATIONS = "matrix_operations"
+            BACKTESTING = "backtesting"
+            MONTE_CARLO = "monte_carlo"
+            ML_TRAINING = "ml_training"
+            DATA_PROCESSING = "data_processing"
+            FEATURE_ENGINEERING = "feature_engineering"
+            GENERAL = "general"
+        return WorkloadType
+
+# Use lazy imports
+OptimizationLevel = get_optimization_level()
+WorkloadType = get_workload_type()
+
+# Lazy import of other hardware utilities
+def get_hardware_manager():
+    """Lazy import of hardware manager to avoid circular imports."""
+    try:
+        from src.utils.hardware import get_integrated_hardware_manager
+        return get_integrated_hardware_manager()
+    except ImportError:
+        return None
+
+def memory_efficient(*args, **kwargs):
+    """Lazy import of memory_efficient decorator."""
+    try:
+        from src.utils.hardware import memory_efficient as _memory_efficient
+        return _memory_efficient(*args, **kwargs)
+    except ImportError:
+        def decorator(func):
+            return func
+        return decorator
+
+def performance_tracked(*args, **kwargs):
+    """Lazy import of performance_tracked decorator."""
+    try:
+        from src.utils.hardware import performance_tracked as _performance_tracked
+        return _performance_tracked(*args, **kwargs)
+    except ImportError:
+        def decorator(func):
+            return func
+        return decorator
+
+def smart_cache(*args, **kwargs):
+    """Lazy import of smart_cache decorator."""
+    try:
+        from src.utils.hardware import smart_cache as _smart_cache
+        return _smart_cache(*args, **kwargs)
+    except ImportError:
+        def decorator(func):
+            return func
+        return decorator
 from src.utils.tprint import tprint, tprint_success, tprint_warning, tprint_performance, tprint_debug
 
 logger = logging.getLogger(__name__)

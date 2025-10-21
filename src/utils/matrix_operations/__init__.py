@@ -125,7 +125,7 @@ try:
         global _safe_correlation_matrix
         if _safe_correlation_matrix is None:
             try:
-                from ..base_matrix_operations import safe_correlation_matrix as _safe_correlation_matrix
+                from .unified_operations import safe_correlation_matrix as _safe_correlation_matrix
             except ImportError:
                 # Fallback implementation
                 def _safe_correlation_matrix(data):
@@ -148,8 +148,11 @@ try:
                 _unified_matrix_operations = _get_unified_matrix_operations()
             except ImportError:
                 # Fallback implementation
-                from ..base_matrix_operations import create_fallback_matrix_operations
-                _unified_matrix_operations = create_fallback_matrix_operations()
+                try:
+                    from ..base_matrix_operations import create_fallback_matrix_operations
+                    _unified_matrix_operations = create_fallback_matrix_operations()
+                except ImportError:
+                    _unified_matrix_operations = None
         return _unified_matrix_operations
 
     from .convenience import (

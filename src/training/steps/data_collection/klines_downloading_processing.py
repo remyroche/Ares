@@ -819,6 +819,67 @@ class KlinesDataProcessingPipeline(BaseStep):
                 "error": str(e)
             }
 
+    async def run(self, config: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Run the klines data processing pipeline as a BaseStep.
+        
+        This method is called by the ares_launcher.py and extracts parameters
+        from the config dictionary to run the complete pipeline.
+        
+        Args:
+            config: Configuration dictionary containing:
+                - symbol: Trading symbol (e.g., "ETHUSDT")
+                - exchange: Exchange name (e.g., "binance") 
+                - interval: Time interval (e.g., "1m")
+                - years: Number of years of data to download
+                - api_key: Exchange API key
+                - api_secret: Exchange API secret
+                - max_gap_minutes: Maximum allowed gap in minutes
+                - create_consolidated: Whether to create consolidated features file
+                - resampling_intervals: List of intervals for resampling
+                
+        Returns:
+            Dictionary containing execution results
+        """
+        try:
+            # Extract parameters from config with defaults
+            symbol = config.get('symbol', 'ETHUSDT')
+            exchange = config.get('exchange', self.exchange)
+            interval = config.get('interval', '1m')
+            years = config.get('years', None)
+            api_key = config.get('api_key', '')
+            api_secret = config.get('api_secret', '')
+            max_gap_minutes = config.get('max_gap_minutes', 1)
+            create_consolidated = config.get('create_consolidated', True)
+            resampling_intervals = config.get('resampling_intervals', None)
+            
+            self.logger.info(f"🚀 Starting klines data processing for {symbol} on {exchange}")
+            
+            # Run the complete pipeline
+            result = await self.run_complete_pipeline(
+                symbol=symbol,
+                years=years,
+                interval=interval,
+                api_key=api_key,
+                api_secret=api_secret,
+                max_gap_minutes=max_gap_minutes,
+                create_consolidated=create_consolidated,
+                resampling_intervals=resampling_intervals
+            )
+            
+            self.logger.info(f"✅ Klines data processing completed for {symbol}")
+            return result
+            
+        except Exception as e:
+            error_msg = f"❌ Klines data processing failed: {e}"
+            self.logger.error(error_msg)
+            return {
+                "success": False,
+                "error": str(e),
+                "symbol": config.get('symbol', 'unknown'),
+                "exchange": config.get('exchange', 'unknown')
+            }
+
 class KlinesDataQualityChecker:
     """Comprehensive data quality checker for klines data processing pipeline."""
 

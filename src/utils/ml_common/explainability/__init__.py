@@ -8,6 +8,8 @@ This module contains all explainability and interpretability functionality inclu
 - Feature importance analysis
 """
 
+from src.utils.tprint import tprint_data_format, LogLevel
+
 from .model_explainability import ModelExplainer
 # from .model_explanations import ModelExplanations, ExplanationResult  # Classes don't exist
 from .model_interpretability import ModelInterpretabilityEngine, ExplanationResult

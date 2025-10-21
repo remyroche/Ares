@@ -44,6 +44,7 @@ from src.core.decorators import (
 from src.core.errors import (
     ValidationError, DataIntegrityError, TimeoutError
 )
+from src.utils.tprint import tprint_data_format, LogLevel
 
 logger = logging.getLogger(__name__)
 
@@ -293,6 +294,14 @@ class EnsembleManager:
             self.logger.info(f"📊 Validation data shape: {X_val.shape}")
         if y_val is not None:
             self.logger.info(f"📊 Validation target shape: {y_val.shape}")
+
+        # Debug data format
+        tprint_data_format(X_train, "ensemble_training_features", level=LogLevel.DEBUG)
+        tprint_data_format(y_train, "ensemble_training_targets", level=LogLevel.DEBUG)
+        if X_val is not None:
+            tprint_data_format(X_val, "ensemble_validation_features", level=LogLevel.DEBUG)
+        if y_val is not None:
+            tprint_data_format(y_val, "ensemble_validation_targets", level=LogLevel.DEBUG)
 
         # Validate inputs
         self.logger.debug(f"🔍 Validating ensemble creation requirements...")

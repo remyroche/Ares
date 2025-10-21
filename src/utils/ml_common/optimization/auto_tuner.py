@@ -20,7 +20,7 @@ from dataclasses import dataclass
 
 from src.utils.math_validation import validate_positive
 from src.utils.math_validation import safe_divide, safe_log
-from src.utils.tprint import tprint_info, tprint_success, tprint_warning
+from src.utils.tprint import tprint_info, tprint_success, tprint_warning, tprint_data_format, LogLevel
 from src.utils.logger import system_logger
 
 from .bayesian_tpe_optimizer import OptimizationConfig
@@ -119,6 +119,10 @@ class AutoTuner:
             Optimized OptimizationConfig
         """
         tprint_info(f"🎯 Auto-tuning HPO config for {model_type}...")
+        
+        # Debug input data format
+        tprint_data_format(X, "auto_tuner_input_features", level=LogLevel.DEBUG)
+        tprint_data_format(y, "auto_tuner_input_targets", level=LogLevel.DEBUG)
 
         # Analyze dataset
         dataset_chars = self._analyze_dataset(X, y)
@@ -190,6 +194,9 @@ class AutoTuner:
 
         # Log configuration summary
         self._log_auto_tuned_config(config, dataset_chars, model_type, trial_time_seconds)
+        
+        # Debug final configuration
+        tprint_data_format(config.__dict__, "auto_tuned_config", level=LogLevel.DEBUG)
 
         return config
 

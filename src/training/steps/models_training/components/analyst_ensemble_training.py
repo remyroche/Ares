@@ -16,7 +16,7 @@ import numpy as np
 
 from src.training.steps.base_step import BaseStep
 from src.utils.logger import system_logger
-from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success
+from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success, tprint_data_format
 
 # Simple enum for ensemble methods
 class EnsembleMethod(Enum):
@@ -109,6 +109,9 @@ class AnalystEnsembleTraining(BaseStep):
         self.logger.info(f"📊 Configuration: {self.config.model_name}, {self.config.timeframe}")
         self.logger.info(f"🤖 Base models: {', '.join([m.value for m in self.config.base_models])}")
         self.logger.info(f"🔧 Ensemble method: {self.config.ensemble_method.value}")
+        
+        # Debug configuration format for troubleshooting
+        tprint_data_format(self.config.__dict__, "analyst_ensemble_config", level=tprint.LogLevel.DEBUG)
     
     async def execute(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -138,6 +141,10 @@ class AnalystEnsembleTraining(BaseStep):
                 features = pd.DataFrame(features)
             if not isinstance(targets, pd.Series):
                 targets = pd.Series(targets)
+            
+            # Debug data format for troubleshooting
+            tprint_data_format(features, "features", level=tprint.LogLevel.INFO)
+            tprint_data_format(targets, "targets", level=tprint.LogLevel.INFO)
             
             tprint_info(f"📊 Training data shape: {features.shape}")
             tprint_info(f"🎯 Target distribution: {targets.value_counts().to_dict()}")
@@ -189,6 +196,10 @@ class AnalystEnsembleTraining(BaseStep):
         try:
             tprint_info("🤖 Training ensemble models...")
             
+            # Debug input data format for troubleshooting
+            tprint_data_format(features, "ensemble_features", level=tprint.LogLevel.DEBUG)
+            tprint_data_format(targets, "ensemble_targets", level=tprint.LogLevel.DEBUG)
+            
             # For now, create a simple mock ensemble
             # In a real implementation, this would train actual models
             ensemble_models = {}
@@ -214,6 +225,9 @@ class AnalystEnsembleTraining(BaseStep):
                 'ensemble_accuracy': np.mean([m['accuracy'] for m in ensemble_models.values()]),
                 'total_models': len(ensemble_models)
             }
+            
+            # Debug ensemble result format for troubleshooting
+            tprint_data_format(ensemble_result, "ensemble_result", level=tprint.LogLevel.INFO)
             
             tprint_success(f"✅ Ensemble training completed with {len(ensemble_models)} models")
             tprint_info(f"📊 Average accuracy: {ensemble_result['ensemble_accuracy']:.4f}")

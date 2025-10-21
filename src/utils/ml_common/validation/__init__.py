@@ -6,6 +6,8 @@ Provides temporal alignment, leakage detection, window quality assessment,
 and performance benchmarking utilities.
 """
 
+from src.utils.tprint import tprint_data_format, LogLevel
+
 from .temporal import (
     assert_aligned,
     validate_temporal_consistency,

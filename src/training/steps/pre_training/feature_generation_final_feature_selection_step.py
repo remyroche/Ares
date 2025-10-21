@@ -71,7 +71,8 @@ except ImportError:
 try:
     from src.utils.tprint import (
         tprint, tprint_info, tprint_success, tprint_warning, tprint_error, tprint_debug,
-        tprint_data_preview
+        tprint_data_preview, tprint_data_format, tprint_performance, tprint_progress,
+        tprint_structured, tprint_timer, tprint_exception, LogLevel
     )
 except ImportError:
     def tprint(*args, **kwargs): print(*args, **kwargs)
@@ -81,6 +82,19 @@ except ImportError:
     def tprint_error(*args, **kwargs): print("ERROR:", *args, **kwargs)
     def tprint_debug(*args, **kwargs): print("DEBUG:", *args, **kwargs)
     def tprint_data_preview(*args, **kwargs): pass  # No-op fallback
+    def tprint_data_format(*args, **kwargs): return None  # No-op fallback
+    def tprint_performance(*args, **kwargs): pass  # No-op fallback
+    def tprint_progress(*args, **kwargs): pass  # No-op fallback
+    def tprint_structured(*args, **kwargs): pass  # No-op fallback
+    def tprint_timer(*args, **kwargs): return lambda f: f  # No-op fallback
+    def tprint_exception(*args, **kwargs): pass  # No-op fallback
+    class LogLevel:
+        DEBUG = "DEBUG"
+        INFO = "INFO"
+        WARNING = "WARNING"
+        ERROR = "ERROR"
+        SUCCESS = "SUCCESS"
+        PERFORMANCE = "PERFORMANCE"
 
 # Import artifact management functions
 from src.utils.artifact_manager import ArtifactManager
@@ -292,6 +306,16 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             
             # Get memory stats from hardware manager
             memory_stats = get_memory_stats()
+            
+            # Enhanced troubleshooting: Log memory statistics
+            tprint_structured({
+                'operation': 'memory_check',
+                'operation_counter': self.operation_counter,
+                'gc_runs': self.performance_stats['gc_runs'],
+                'memory_stats': memory_stats,
+                'timestamp': datetime.now().isoformat()
+            }, level=LogLevel.DEBUG)
+            
             if memory_stats.get('used_memory', 0) > 4096:  # > 4GB
                 force_cleanup()
                 tprint_warning(f"⚠️ High memory usage: {memory_stats.get('used_memory', 0):.0f}MB, forcing full cleanup")
@@ -337,6 +361,17 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
         symbol = config.get('symbol', 'ETHUSDT')
         timeframe = config.get('timeframe', '15m')
         
+        # Enhanced troubleshooting: Log configuration details
+        tprint_structured({
+            'step': 'feature_generation_final_feature_selection_step',
+            'model_type': model_type,
+            'direction': direction,
+            'symbol': symbol,
+            'timeframe': timeframe,
+            'config_keys': list(config.keys()) if config else [],
+            'timestamp': datetime.now().isoformat()
+        }, level=LogLevel.INFO)
+        
         tprint_info(f"🎯 Starting final feature selection for {model_type}_{direction}")
         
         # Set up enhanced artifact manager with context
@@ -355,10 +390,15 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             
             # Load artifacts from previous steps
             tprint_info("📦 Loading artifacts from previous steps")
-            features_df, targets = await self._load_artifacts(artifact_manager, model_type, direction)
+            with tprint_timer("artifact_loading", level=LogLevel.PERFORMANCE):
+                features_df, targets = await self._load_artifacts(artifact_manager, model_type, direction)
             
             if features_df is None or targets is None:
                 raise ValueError("Failed to load required artifacts from previous steps")
+            
+            # Enhanced troubleshooting: Data format analysis
+            tprint_data_format(features_df, "loaded_features", level=LogLevel.DEBUG)
+            tprint_data_format(targets, "loaded_targets", level=LogLevel.DEBUG)
             
             # Data preview after loading
             tprint_data_preview(features_df, "loaded_features", max_rows=3, max_cols=10)
@@ -366,8 +406,13 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             
             # Convert to float32 end-to-end with enhanced optimization
             tprint_info("🔄 Converting data to float32 (end-to-end with enhanced optimization)")
-            features_df = self._convert_to_float32(features_df)
-            targets = targets.astype('float32', copy=False)
+            with tprint_timer("float32_conversion", level=LogLevel.PERFORMANCE):
+                features_df = self._convert_to_float32(features_df)
+                targets = targets.astype('float32', copy=False)
+            
+            # Enhanced troubleshooting: Data format analysis after conversion
+            tprint_data_format(features_df, "features_float32_converted", level=LogLevel.DEBUG)
+            tprint_data_format(targets, "targets_float32_converted", level=LogLevel.DEBUG)
             
             # Data preview after float32 conversion
             tprint_data_preview(features_df, "features_float32_converted", max_rows=3, max_cols=10)
@@ -375,10 +420,14 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             
             # Apply comprehensive hardware optimization
             tprint_info("🚀 Applying comprehensive hardware optimization")
-            features_df = self.hardware_manager.process_data_with_optimization(
-                features_df, WorkloadType.FEATURE_ENGINEERING
-            )
-            self.performance_stats['hardware_optimizations_applied'] += 1
+            with tprint_timer("hardware_optimization", level=LogLevel.PERFORMANCE):
+                features_df = self.hardware_manager.process_data_with_optimization(
+                    features_df, WorkloadType.FEATURE_ENGINEERING
+                )
+                self.performance_stats['hardware_optimizations_applied'] += 1
+            
+            # Enhanced troubleshooting: Data format analysis after optimization
+            tprint_data_format(features_df, "features_hardware_optimized", level=LogLevel.DEBUG)
             
             # Data preview after hardware optimization
             tprint_data_preview(features_df, "features_hardware_optimized", max_rows=3, max_cols=10)
@@ -391,42 +440,76 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             tprint_info("=" * 80)
             tprint_info("🔍 STAGE 1: PCA + Approximate MI Filter")
             stage1_start = time.time()
-            features_200 = await self._stage1_pca_mi_filter(features_df, targets)
+            
+            with tprint_timer("stage1_pca_mi", level=LogLevel.PERFORMANCE):
+                features_200 = await self._stage1_pca_mi_filter(features_df, targets)
+            
             self.performance_stats['stage_times']['stage1_pca_mi'] = time.time() - stage1_start
+            tprint_performance("Stage 1: PCA + MI Filter", time.time() - stage1_start)
             tprint_success(f"✅ Stage 1 complete: {len(features_200)} features selected")
+            
+            # Enhanced troubleshooting: Data format analysis after Stage 1
+            tprint_data_format(pd.DataFrame(features_df[features_200]), "stage1_selected_features", level=LogLevel.DEBUG)
+            
             self._check_memory_and_gc()
             
             # Stage 2: Ultra-optimized mRMR (200 → 150 features)
             tprint_info("=" * 80)
             tprint_info("🔍 STAGE 2: Ultra-Optimized mRMR Selection")
             stage2_start = time.time()
-            features_150 = await self._stage2_mrmr_selection(
-                features_df[features_200], targets
-            )
+            
+            with tprint_timer("stage2_mrmr", level=LogLevel.PERFORMANCE):
+                features_150 = await self._stage2_mrmr_selection(
+                    features_df[features_200], targets
+                )
+            
             self.performance_stats['stage_times']['stage2_mrmr'] = time.time() - stage2_start
+            tprint_performance("Stage 2: mRMR Selection", time.time() - stage2_start)
             tprint_success(f"✅ Stage 2 complete: {len(features_150)} features selected")
+            
+            # Enhanced troubleshooting: Data format analysis after Stage 2
+            tprint_data_format(pd.DataFrame(features_df[features_150]), "stage2_selected_features", level=LogLevel.DEBUG)
+            
             self._check_memory_and_gc()
             
             # Stage 3: LASSO + Stability Selection (150 → 100 features)
             tprint_info("=" * 80)
             tprint_info("🔍 STAGE 3: LASSO + Stability Selection")
             stage3_start = time.time()
-            features_100 = await self._stage3_lasso_stability(
-                features_df[features_150], targets
-            )
+            
+            with tprint_timer("stage3_lasso_stability", level=LogLevel.PERFORMANCE):
+                features_100 = await self._stage3_lasso_stability(
+                    features_df[features_150], targets
+                )
+            
             self.performance_stats['stage_times']['stage3_lasso_stability'] = time.time() - stage3_start
+            tprint_performance("Stage 3: LASSO + Stability Selection", time.time() - stage3_start)
             tprint_success(f"✅ Stage 3 complete: {len(features_100)} features selected")
+            
+            # Enhanced troubleshooting: Data format analysis after Stage 3
+            tprint_data_format(pd.DataFrame(features_df[features_100]), "stage3_selected_features", level=LogLevel.DEBUG)
+            
             self._check_memory_and_gc()
             
             # Stage 4: LGBM + RFE + SHAP (100 → 60/50/40 features)
             tprint_info("=" * 80)
             tprint_info("🔍 STAGE 4: LGBM + RFE + SHAP")
             stage4_start = time.time()
-            result_dict = await self._stage4_lgbm_rfe_shap(
-                features_df[features_100], targets
-            )
+            
+            with tprint_timer("stage4_lgbm_rfe_shap", level=LogLevel.PERFORMANCE):
+                result_dict = await self._stage4_lgbm_rfe_shap(
+                    features_df[features_100], targets
+                )
+            
             self.performance_stats['stage_times']['stage4_lgbm_rfe_shap'] = time.time() - stage4_start
+            tprint_performance("Stage 4: LGBM + RFE + SHAP", time.time() - stage4_start)
             tprint_success("✅ Stage 4 complete: Generated 3 feature sets (60, 50, 40)")
+            
+            # Enhanced troubleshooting: Data format analysis after Stage 4
+            tprint_data_format(pd.DataFrame(features_df[result_dict['features_60']]), "stage4_features_60", level=LogLevel.DEBUG)
+            tprint_data_format(pd.DataFrame(features_df[result_dict['features_50']]), "stage4_features_50", level=LogLevel.DEBUG)
+            tprint_data_format(pd.DataFrame(features_df[result_dict['features_40']]), "stage4_features_40", level=LogLevel.DEBUG)
+            
             self._check_memory_and_gc()
             
             # Create result
@@ -507,6 +590,18 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
         except Exception as e:
             execution_time = time.time() - start_time
             tprint_error(f"❌ Final feature selection failed: {e}")
+            tprint_exception(e, "Final feature selection failed")
+            
+            # Enhanced troubleshooting: Log performance stats even on failure
+            tprint_structured({
+                'error': str(e),
+                'execution_time': execution_time,
+                'performance_stats': self.performance_stats,
+                'stage_times': self.performance_stats.get('stage_times', {}),
+                'memory_optimizations': self.performance_stats.get('memory_optimizations_applied', 0),
+                'gc_runs': self.performance_stats.get('gc_runs', 0)
+            }, level=LogLevel.ERROR)
+            
             self.logger.error(f"Final feature selection failed: {e}", exc_info=True)
             
             return {
@@ -523,6 +618,14 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
     async def _load_artifacts(self, artifact_manager, model_type: str, direction: str) -> Tuple[Optional[pd.DataFrame], Optional[pd.Series]]:
         """Load features and targets from previous steps."""
         try:
+            # Enhanced troubleshooting: Log loading parameters
+            tprint_structured({
+                'operation': 'load_artifacts',
+                'model_type': model_type,
+                'direction': direction,
+                'timestamp': datetime.now().isoformat()
+            }, level=LogLevel.DEBUG)
+            
             # Load original features from feature_generation_feature_generation_step
             tprint_info("📦 Loading original features from feature_generation_feature_generation_step")
             original_features = artifact_manager.get_dataframe(
@@ -530,8 +633,9 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
                 ArtifactKeys.GENERATED_FEATURES
             )
             
-            # Data preview after loading original features
+            # Enhanced troubleshooting: Data format analysis after loading original features
             if original_features is not None:
+                tprint_data_format(original_features, "original_features_loaded", level=LogLevel.DEBUG)
                 tprint_data_preview(original_features, "original_features_loaded", max_rows=3, max_cols=5)
             
             # Load periods/lookbacks (top1) from feature_generation_period_lookback_optimization_step
@@ -552,8 +656,9 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
                 ArtifactKeys.INTERACTION_FEATURES
             )
             
-            # Data preview after loading analyst interaction features
+            # Enhanced troubleshooting: Data format analysis after loading analyst interaction features
             if analyst_interaction_features is not None:
+                tprint_data_format(analyst_interaction_features, "analyst_interactions_loaded", level=LogLevel.DEBUG)
                 tprint_data_preview(analyst_interaction_features, "analyst_interactions_loaded", max_rows=3, max_cols=5)
             
             tprint_info("📦 Loading interaction features from interaction_generation_step_tactician")
@@ -562,8 +667,9 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
                 ArtifactKeys.INTERACTION_FEATURES
             )
             
-            # Data preview after loading tactician interaction features
+            # Enhanced troubleshooting: Data format analysis after loading tactician interaction features
             if tactician_interaction_features is not None:
+                tprint_data_format(tactician_interaction_features, "tactician_interactions_loaded", level=LogLevel.DEBUG)
                 tprint_data_preview(tactician_interaction_features, "tactician_interactions_loaded", max_rows=3, max_cols=5)
             
             # Merge features from all sources
@@ -609,6 +715,9 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
                 features_df = pd.concat(merged_features, axis=1)
                 tprint_success(f"✅ Merged features: {features_df.shape}")
                 
+                # Enhanced troubleshooting: Data format analysis after merging features
+                tprint_data_format(features_df, "merged_features", level=LogLevel.DEBUG)
+                
                 # Data preview after merging features
                 tprint_data_preview(features_df, "merged_features", max_rows=3, max_cols=10)
             
@@ -652,6 +761,10 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             
             tprint_success(f"✅ Final aligned data: Features={features_df.shape}, Targets={len(targets)}")
             
+            # Enhanced troubleshooting: Data format analysis after alignment and cleaning
+            tprint_data_format(features_df, "aligned_features", level=LogLevel.DEBUG)
+            tprint_data_format(targets, "aligned_targets", level=LogLevel.DEBUG)
+            
             # Data preview after alignment and cleaning
             tprint_data_preview(features_df, "aligned_features", max_rows=3, max_cols=10)
             tprint_data_preview(targets, "aligned_targets", max_rows=10)
@@ -660,6 +773,7 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             
         except Exception as e:
             tprint_error(f"❌ Failed to load artifacts: {e}")
+            tprint_exception(e, "Failed to load artifacts")
             self.logger.error(f"Failed to load artifacts: {e}", exc_info=True)
             return None, None
     
@@ -674,12 +788,19 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
         with memory_managed_operation("Stage 1: PCA + MI Filter"):
             tprint_info(f"📊 Input: {X.shape[1]} features")
             
+            # Enhanced troubleshooting: Input data analysis
+            tprint_data_format(X, "stage1_input_features", level=LogLevel.DEBUG)
+            tprint_data_format(y, "stage1_input_targets", level=LogLevel.DEBUG)
+            
             # Step 1: PCA dimensionality reduction (98% variance)
             tprint_info("🔍 Step 1.1: PCA dimensionality reduction (98% variance)")
             pca_start = time.time()
             
             # Ensure float32
             X_numeric = X.select_dtypes(include=[np.number]).astype('float32', copy=False)
+            
+            # Enhanced troubleshooting: Data format analysis before PCA
+            tprint_data_format(X_numeric, "X_numeric_for_pca", level=LogLevel.DEBUG)
             
             # Data preview after numeric selection
             tprint_data_preview(X_numeric, "X_numeric_for_pca", max_rows=3, max_cols=10)
@@ -695,7 +816,12 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
                 pca_selected.add(X_numeric.columns[top_feature_idx])
             
             pca_features = list(pca_selected)
-            tprint_success(f"✅ PCA selected {len(pca_features)} features in {time.time() - pca_start:.2f}s")
+            pca_duration = time.time() - pca_start
+            tprint_performance("PCA dimensionality reduction", pca_duration)
+            tprint_success(f"✅ PCA selected {len(pca_features)} features in {pca_duration:.2f}s")
+            
+            # Enhanced troubleshooting: Data format analysis after PCA
+            tprint_data_format(pd.DataFrame(X[pca_features]), "pca_selected_features", level=LogLevel.DEBUG)
             
             # Data preview after PCA selection
             tprint_data_preview(pd.DataFrame(X[pca_features]), "pca_selected_features", max_rows=3, max_cols=10)
@@ -738,9 +864,15 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             all_mi_scores = []
             all_columns = []
             
+            tprint_info(f"📊 Computing MI in {len(range(0, len(X_sampled.columns), batch_size))} batches of {batch_size}")
+            
             for i in range(0, len(X_sampled.columns), batch_size):
                 batch_cols = X_sampled.columns[i:i + batch_size]
                 batch_data = X_sampled[batch_cols]
+                
+                # Enhanced troubleshooting: Progress tracking
+                tprint_progress(i // batch_size + 1, len(range(0, len(X_sampled.columns), batch_size)), 
+                              f"Processing MI batch {i//batch_size + 1}")
                 
                 try:
                     # Clean data with enhanced optimization
@@ -771,9 +903,15 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             cutoff = mi_series.quantile(self.mi_quantile)
             selected_features = mi_series[mi_series >= cutoff].index.tolist()
             
-            tprint_success(f"✅ MI filter selected {len(selected_features)} features in {time.time() - mi_start:.2f}s")
+            mi_duration = time.time() - mi_start
+            tprint_performance("MI filter calculation", mi_duration)
+            tprint_success(f"✅ MI filter selected {len(selected_features)} features in {mi_duration:.2f}s")
             tprint_info(f"📊 MI range: {min(all_mi_scores):.4f} - {max(all_mi_scores):.4f}")
             tprint_info(f"📊 MI cutoff (quantile {self.mi_quantile}): {cutoff:.4f}")
+            
+            # Enhanced troubleshooting: Data format analysis after MI
+            tprint_data_format(mi_series, "mi_scores", level=LogLevel.DEBUG)
+            tprint_data_format(pd.DataFrame(X[selected_features]), "mi_selected_features", level=LogLevel.DEBUG)
             
             # Data preview after MI scoring
             tprint_data_preview(mi_series, "mi_scores", max_rows=20)
@@ -793,9 +931,16 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
         with memory_managed_operation("Stage 2: mRMR Selection"):
             tprint_info(f"📊 Input: {X.shape[1]} features")
             
+            # Enhanced troubleshooting: Input data analysis
+            tprint_data_format(X, "stage2_input_features", level=LogLevel.DEBUG)
+            tprint_data_format(y, "stage2_input_targets", level=LogLevel.DEBUG)
+            
             # Ensure float32 with enhanced optimization
             X = optimize_dataframe(X.astype('float32', copy=False))
             y = y.astype('float32', copy=False)
+            
+            # Enhanced troubleshooting: Data format analysis after optimization
+            tprint_data_format(X, "X_for_mrmr", level=LogLevel.DEBUG)
             
             # Data preview after float32 conversion for mRMR
             tprint_data_preview(X, "X_for_mrmr", max_rows=3, max_cols=10)
@@ -841,7 +986,12 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
                     if self.aggressive_gc:
                         gc.collect()
             
-            tprint_success(f"✅ MI matrix computed in {time.time() - mi_cache_start:.2f}s")
+            mi_cache_duration = time.time() - mi_cache_start
+            tprint_performance("MI matrix computation", mi_cache_duration)
+            tprint_success(f"✅ MI matrix computed in {mi_cache_duration:.2f}s")
+            
+            # Enhanced troubleshooting: Data format analysis of MI matrix
+            tprint_data_format(pd.DataFrame(mi_matrix), "mi_matrix", level=LogLevel.DEBUG)
             
             # Data preview of MI matrix
             tprint_data_preview(pd.DataFrame(mi_matrix), "mi_matrix", max_rows=5, max_cols=10)
@@ -920,6 +1070,9 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             
             tprint_success(f"✅ mRMR selected {len(selected_features)} features in {iterations} iterations")
             
+            # Enhanced troubleshooting: Data format analysis after mRMR
+            tprint_data_format(pd.DataFrame(X[selected_features[:target_features]]), "mrmr_selected_features", level=LogLevel.DEBUG)
+            
             # Data preview after mRMR selection
             tprint_data_preview(pd.DataFrame(X[selected_features[:target_features]]), "mrmr_selected_features", max_rows=3, max_cols=10)
             
@@ -937,9 +1090,16 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
         with memory_managed_operation("Stage 3: LASSO + Stability"):
             tprint_info(f"📊 Input: {X.shape[1]} features")
             
+            # Enhanced troubleshooting: Input data analysis
+            tprint_data_format(X, "stage3_input_features", level=LogLevel.DEBUG)
+            tprint_data_format(y, "stage3_input_targets", level=LogLevel.DEBUG)
+            
             # Ensure float32 with enhanced optimization
             X = optimize_dataframe(X.astype('float32', copy=False))
             y = y.astype('float32', copy=False)
+            
+            # Enhanced troubleshooting: Data format analysis after optimization
+            tprint_data_format(X, "X_for_lasso", level=LogLevel.DEBUG)
             
             # Data preview after float32 conversion for LASSO
             tprint_data_preview(X, "X_for_lasso", max_rows=3, max_cols=10)
@@ -1014,8 +1174,13 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
                 for col, count in feature_selection_counts.items()
             }
             
-            tprint_success(f"✅ Stability selection completed in {time.time() - stability_start:.2f}s")
+            stability_duration = time.time() - stability_start
+            tprint_performance("Stability selection", stability_duration)
+            tprint_success(f"✅ Stability selection completed in {stability_duration:.2f}s")
             tprint_info(f"📊 Stability scores range: {min(stability_scores.values()):.3f} - {max(stability_scores.values()):.3f}")
+            
+            # Enhanced troubleshooting: Data format analysis of stability scores
+            tprint_data_format(pd.Series(stability_scores), "stability_scores", level=LogLevel.DEBUG)
             
             # Data preview of stability scores
             tprint_data_preview(pd.Series(stability_scores), "stability_scores", max_rows=20)
@@ -1058,8 +1223,13 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
                 if self.aggressive_gc:
                     gc.collect()
             
-            tprint_success(f"✅ LASSO + RFE completed in {time.time() - rfe_start:.2f}s")
+            rfe_duration = time.time() - rfe_start
+            tprint_performance("LASSO + RFE", rfe_duration)
+            tprint_success(f"✅ LASSO + RFE completed in {rfe_duration:.2f}s")
             tprint_success(f"✅ Selected {len(current_features)} features")
+            
+            # Enhanced troubleshooting: Data format analysis after LASSO + RFE
+            tprint_data_format(pd.DataFrame(X[current_features]), "lasso_selected_features", level=LogLevel.DEBUG)
             
             # Data preview after LASSO + RFE selection
             tprint_data_preview(pd.DataFrame(X[current_features]), "lasso_selected_features", max_rows=3, max_cols=10)
@@ -1078,6 +1248,10 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
         with memory_managed_operation("Stage 4: LGBM + RFE + SHAP"):
             tprint_info(f"📊 Input: {X.shape[1]} features")
             
+            # Enhanced troubleshooting: Input data analysis
+            tprint_data_format(X, "stage4_input_features", level=LogLevel.DEBUG)
+            tprint_data_format(y, "stage4_input_targets", level=LogLevel.DEBUG)
+            
             if not LGBM_SHAP_AVAILABLE:
                 tprint_error("❌ LightGBM/SHAP not available")
                 raise ImportError("LightGBM and SHAP are required for Stage 4")
@@ -1085,6 +1259,9 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             # Ensure float32 with enhanced optimization
             X = optimize_dataframe(X.astype('float32', copy=False))
             y = y.astype('float32', copy=False)
+            
+            # Enhanced troubleshooting: Data format analysis after optimization
+            tprint_data_format(X, "X_for_lgbm", level=LogLevel.DEBUG)
             
             # Data preview after float32 conversion for LGBM
             tprint_data_preview(X, "X_for_lgbm", max_rows=3, max_cols=10)
@@ -1131,7 +1308,12 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
                     gc.collect()
             
             features_60 = current_features
-            tprint_success(f"✅ RFE to 60 features completed in {time.time() - rfe_start:.2f}s")
+            rfe_60_duration = time.time() - rfe_start
+            tprint_performance("RFE to 60 features", rfe_60_duration)
+            tprint_success(f"✅ RFE to 60 features completed in {rfe_60_duration:.2f}s")
+            
+            # Enhanced troubleshooting: Data format analysis after RFE to 60
+            tprint_data_format(pd.DataFrame(X[features_60]), "lgbm_features_60", level=LogLevel.DEBUG)
             
             # Data preview after RFE to 60 features
             tprint_data_preview(pd.DataFrame(X[features_60]), "lgbm_features_60", max_rows=3, max_cols=10)
@@ -1166,6 +1348,9 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             features_50 = current_features
             tprint_success(f"✅ RFE to 50 features completed")
             
+            # Enhanced troubleshooting: Data format analysis after RFE to 50
+            tprint_data_format(pd.DataFrame(X[features_50]), "lgbm_features_50", level=LogLevel.DEBUG)
+            
             # Data preview after RFE to 50 features
             tprint_data_preview(pd.DataFrame(X[features_50]), "lgbm_features_50", max_rows=3, max_cols=10)
             
@@ -1198,6 +1383,9 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             
             features_40 = current_features
             tprint_success(f"✅ RFE to 40 features completed")
+            
+            # Enhanced troubleshooting: Data format analysis after RFE to 40
+            tprint_data_format(pd.DataFrame(X[features_40]), "lgbm_features_40", level=LogLevel.DEBUG)
             
             # Data preview after RFE to 40 features
             tprint_data_preview(pd.DataFrame(X[features_40]), "lgbm_features_40", max_rows=3, max_cols=10)
@@ -1251,7 +1439,12 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             for i, feat in enumerate(features_60):
                 feature_scores[feat] = float(np.mean(np.abs(shap_values_60[:, i])))
             
-            tprint_success(f"✅ SHAP analysis completed in {time.time() - shap_start:.2f}s")
+            shap_duration = time.time() - shap_start
+            tprint_performance("SHAP analysis", shap_duration)
+            tprint_success(f"✅ SHAP analysis completed in {shap_duration:.2f}s")
+            
+            # Enhanced troubleshooting: Data format analysis of final feature scores
+            tprint_data_format(pd.Series(feature_scores), "final_feature_scores", level=LogLevel.DEBUG)
             
             # Data preview of final feature scores
             tprint_data_preview(pd.Series(feature_scores), "final_feature_scores", max_rows=20)
@@ -1276,6 +1469,15 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
         """Save artifacts to artifact manager."""
         try:
             step_name = f'feature_generation_final_feature_selection_step_{model_type}_{direction}'
+            
+            # Enhanced troubleshooting: Log saving parameters
+            tprint_structured({
+                'operation': 'save_artifacts',
+                'step_name': step_name,
+                'model_type': model_type,
+                'direction': direction,
+                'timestamp': datetime.now().isoformat()
+            }, level=LogLevel.DEBUG)
             
             artifact_manager.save(
                 step_name=step_name,
@@ -1305,6 +1507,7 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             
         except Exception as e:
             tprint_error(f"❌ Failed to save artifacts: {e}")
+            tprint_exception(e, "Failed to save artifacts")
             self.logger.error(f"Failed to save artifacts: {e}", exc_info=True)
     
     def get_hardware_optimization_status(self) -> Dict[str, Any]:
@@ -1340,6 +1543,18 @@ async def handle_feature_generation_final_feature_selection_step(
     Returns:
         FinalFeatureSelectionResult
     """
+    # Enhanced troubleshooting: Log handler parameters
+    tprint_structured({
+        'handler': 'handle_feature_generation_final_feature_selection_step',
+        'symbol': symbol,
+        'timeframe': timeframe,
+        'model_type': model_type,
+        'direction': direction,
+        'config_keys': list(config.keys()) if config else [],
+        'kwargs_keys': list(kwargs.keys()) if kwargs else [],
+        'timestamp': datetime.now().isoformat()
+    }, level=LogLevel.INFO)
+    
     tprint_info(f"🚀 Starting final feature selection handler for {model_type}_{direction}")
     
     # Create step instance

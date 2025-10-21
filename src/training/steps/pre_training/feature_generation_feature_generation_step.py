@@ -59,7 +59,8 @@ HARDWARE_OPTIMIZATION_AVAILABLE = False
 try:
     from src.utils.tprint import (
         tprint, tprint_info, tprint_success, tprint_warning, tprint_error, tprint_debug,
-        tprint_data_preview
+        tprint_data_preview, tprint_data_format, tprint_performance, tprint_progress,
+        tprint_structured, tprint_timer, tprint_exception
     )
 except ImportError:
     # Fallback if tprint is not available
@@ -70,6 +71,12 @@ except ImportError:
     def tprint_error(*args, **kwargs): print("ERROR:", *args)
     def tprint_debug(*args, **kwargs): print("DEBUG:", *args)
     def tprint_data_preview(*args, **kwargs): pass  # Silent fallback for data preview
+    def tprint_data_format(*args, **kwargs): return None  # Silent fallback for data format
+    def tprint_performance(*args, **kwargs): pass  # Silent fallback for performance
+    def tprint_progress(*args, **kwargs): pass  # Silent fallback for progress
+    def tprint_structured(*args, **kwargs): pass  # Silent fallback for structured
+    def tprint_timer(*args, **kwargs): pass  # Silent fallback for timer
+    def tprint_exception(*args, **kwargs): pass  # Silent fallback for exception
 
 # Self-contained CMI complementarity components
 @dataclass
@@ -321,6 +328,17 @@ class FeatureGenerationStep(BaseStep):
         start_time = time.time()
         self.logger.info("Starting M1-optimized enhanced feature generation step with auto-optimization")
         
+        # Enhanced troubleshooting: Log execution start with structured data
+        tprint_structured({
+            "step": "feature_generation_execute",
+            "phase": "start",
+            "timestamp": datetime.now().isoformat(),
+            "config_keys": list(config.keys()) if config else [],
+            "hardware_optimization_available": HARDWARE_OPTIMIZATION_AVAILABLE,
+            "feature_generation_available": FEATURE_GENERATION_AVAILABLE,
+            "cmi_complementarity_available": CMI_COMPLEMENTARITY_AVAILABLE
+        }, level="INFO")
+        
         # Extract parameters from config
         data = config.get('data')
         targets = config.get('targets')
@@ -335,16 +353,59 @@ class FeatureGenerationStep(BaseStep):
         custom_overrides = config.get('custom_overrides')
         pipeline_state = config.get('pipeline_state', {})
         
+        # Enhanced troubleshooting: Log extracted parameters
+        tprint_structured({
+            "step": "feature_generation_execute",
+            "phase": "parameter_extraction",
+            "symbol": symbol,
+            "timeframe": timeframe,
+            "direction": direction,
+            "intensity": intensity,
+            "lookback_days": lookback_days,
+            "start_date": start_date,
+            "end_date": end_date,
+            "exchange": exchange,
+            "has_data": data is not None,
+            "has_targets": targets is not None,
+            "has_custom_overrides": custom_overrides is not None,
+            "has_pipeline_state": pipeline_state is not None
+        }, level="DEBUG")
+        
         # Data preview: Input data from config
         if data is not None:
             tprint_data_preview(data, f"Input data from config ({symbol}, {timeframe}, {direction})", level="INFO")
+            # Enhanced troubleshooting: Detailed data format analysis
+            data_format_info = tprint_data_format(data, f"Input data format analysis ({symbol})", level="DEBUG", return_summary=True)
+            if data_format_info:
+                tprint_structured({
+                    "step": "feature_generation_execute",
+                    "phase": "input_data_analysis",
+                    "data_shape": data_format_info.get('shape', 'unknown'),
+                    "data_types": data_format_info.get('dtypes_summary', 'unknown'),
+                    "memory_usage_mb": data_format_info.get('memory_usage_mb', 0),
+                    "null_counts": data_format_info.get('null_counts', {}),
+                    "numeric_columns": data_format_info.get('numeric_columns', 0),
+                    "categorical_columns": data_format_info.get('categorical_columns', 0)
+                }, level="DEBUG")
+        else:
+            tprint_warning("⚠️ No input data provided in config")
         
         # Check if data is provided
         if data is None:
-            self.logger.error("❌ No data provided in config. This step requires input data.")
+            error_msg = "No data provided in config. This step requires input data."
+            self.logger.error(f"❌ {error_msg}")
+            tprint_error(f"❌ {error_msg}")
+            tprint_structured({
+                "step": "feature_generation_execute",
+                "phase": "error",
+                "error_type": "missing_data",
+                "error_message": error_msg,
+                "config_provided": bool(config),
+                "config_keys": list(config.keys()) if config else []
+            }, level="ERROR")
             return {
                 'success': False,
-                'error_message': 'No data provided in config',
+                'error_message': error_msg,
                 'feature_names': [],
                 'feature_data': pd.DataFrame(),
                 'generated_features': pd.DataFrame(),
@@ -373,26 +434,68 @@ class FeatureGenerationStep(BaseStep):
             pipeline_state.get('tactician_mode', False)
         )
         
+        # Enhanced troubleshooting: Log CMI complementarity status
+        tprint_structured({
+            "step": "feature_generation_execute",
+            "phase": "cmi_complementarity_check",
+            "cmi_available": CMI_COMPLEMENTARITY_AVAILABLE,
+            "cmi_scorer_available": self.cmi_scorer is not None,
+            "pipeline_state_available": pipeline_state is not None,
+            "tactician_mode": pipeline_state.get('tactician_mode', False) if pipeline_state else False,
+            "enable_cmi_complementarity": enable_cmi_complementarity
+        }, level="DEBUG")
+        
         if enable_cmi_complementarity:
             self.logger.info("🎯 CMI complementarity enabled for Tactician mode")
+            tprint_info("🎯 CMI complementarity enabled for Tactician mode")
         else:
             self.logger.info("📊 Standard feature generation (Analyst mode or CMI unavailable)")
+            tprint_info("📊 Standard feature generation (Analyst mode or CMI unavailable)")
 
         try:
+            # Enhanced troubleshooting: Log cache check attempt
+            tprint_debug("🔍 Checking for cached features...")
+            
             # Try to load cached features using BaseStep methods
             cached_features = self._load_dataframe('generated_features')
             cached_feature_names = self._load_metadata('feature_names')
             cached_categories = self._load_metadata('feature_categories')
+            
+            # Enhanced troubleshooting: Log cache results
+            tprint_structured({
+                "step": "feature_generation_execute",
+                "phase": "cache_check",
+                "cached_features_available": cached_features is not None and not cached_features.empty,
+                "cached_feature_names_available": cached_feature_names is not None,
+                "cached_categories_available": cached_categories is not None,
+                "cached_features_shape": cached_features.shape if cached_features is not None else None,
+                "cached_feature_count": len(cached_feature_names) if cached_feature_names else 0
+            }, level="DEBUG")
 
-            # DEBUG: Check data quality at the start of execute
+            # Enhanced troubleshooting: Comprehensive data quality analysis
+            tprint_debug("🔍 Performing comprehensive data quality analysis...")
             self.logger.debug("Execute - data shape: %s", data.shape)
             numeric = data.select_dtypes(include=[np.number])
             non_finite_total = (~np.isfinite(numeric)).to_numpy().sum()
             self.logger.debug("Execute - non-finite total: %d", non_finite_total)
+            
+            # Enhanced troubleshooting: Log detailed data quality metrics
+            quality_issues = {}
             for col in numeric.columns:
                 nf = (~np.isfinite(numeric[col])).sum()
                 if nf:
                     self.logger.debug("Execute - %s: %d non-finite", col, nf)
+                    quality_issues[col] = nf
+            
+            tprint_structured({
+                "step": "feature_generation_execute",
+                "phase": "data_quality_analysis",
+                "data_shape": data.shape,
+                "numeric_columns": len(numeric.columns),
+                "non_finite_total": int(non_finite_total),
+                "quality_issues": quality_issues,
+                "quality_issues_count": len(quality_issues)
+            }, level="DEBUG")
             
             # Data preview: Validated input data with quality metrics
             tprint_data_preview(data, "Validated input data (after quality checks)", level="DEBUG")
@@ -405,18 +508,45 @@ class FeatureGenerationStep(BaseStep):
             else:
                 base_cfg = None
 
+            # Enhanced troubleshooting: Comprehensive data validation
+            tprint_debug("🔍 Performing comprehensive data validation...")
+            
             # Validate input data
             if data is None or len(data) == 0:
-                raise ValueError("Input data is None or empty")
+                error_msg = "Input data is None or empty"
+                tprint_error(f"❌ {error_msg}")
+                raise ValueError(error_msg)
             
             # Use proper validation that matches FeatureConfig requirements
             required_columns = getattr(self.feature_config, 'required_columns', ['open', 'high', 'low', 'close', 'volume'])
             missing_columns = [col for col in required_columns if col not in data.columns]
             if missing_columns:
-                raise ValueError(f"Missing required columns: {missing_columns}. Available: {list(data.columns)}")
+                error_msg = f"Missing required columns: {missing_columns}. Available: {list(data.columns)}"
+                tprint_error(f"❌ {error_msg}")
+                tprint_structured({
+                    "step": "feature_generation_execute",
+                    "phase": "validation_error",
+                    "error_type": "missing_columns",
+                    "missing_columns": missing_columns,
+                    "required_columns": required_columns,
+                    "available_columns": list(data.columns)
+                }, level="ERROR")
+                raise ValueError(error_msg)
+            
             if not FEATURE_GENERATION_AVAILABLE or self.feature_bank is None:
+                error_msg = "Enhanced feature generation components are not available"
+                tprint_error(f"❌ {error_msg}")
+                tprint_structured({
+                    "step": "feature_generation_execute",
+                    "phase": "validation_error",
+                    "error_type": "missing_components",
+                    "feature_generation_available": FEATURE_GENERATION_AVAILABLE,
+                    "feature_bank_available": self.feature_bank is not None
+                }, level="ERROR")
                 # Fast fail if enhanced components are not available
-                raise RuntimeError("Enhanced feature generation components are not available")
+                raise RuntimeError(error_msg)
+            
+            tprint_success("✅ Data validation passed successfully")
 
             # Apply comprehensive M1 hardware optimization to input data
             if self.comprehensive_optimizer:
@@ -428,16 +558,43 @@ class FeatureGenerationStep(BaseStep):
             # Monitor memory usage
             self._monitor_memory_usage()
 
-            # Perform comprehensive feature generation
-            generation_result = await self._perform_enhanced_feature_generation(
-                data, symbol, timeframe, direction, custom_overrides, base_cfg,
-                enable_cmi_complementarity, pipeline_state, targets
-            )
+            # Enhanced troubleshooting: Log feature generation start
+            tprint_structured({
+                "step": "feature_generation_execute",
+                "phase": "feature_generation_start",
+                "data_shape": data.shape,
+                "symbol": symbol,
+                "timeframe": timeframe,
+                "direction": direction,
+                "enable_cmi_complementarity": enable_cmi_complementarity,
+                "has_targets": targets is not None,
+                "custom_overrides_keys": list(custom_overrides.keys()) if custom_overrides else []
+            }, level="INFO")
+            
+            # Perform comprehensive feature generation with performance tracking
+            with tprint_timer("feature_generation", level="PERFORMANCE"):
+                generation_result = await self._perform_enhanced_feature_generation(
+                    data, symbol, timeframe, direction, custom_overrides, base_cfg,
+                    enable_cmi_complementarity, pipeline_state, targets
+                )
 
             if generation_result.success:
                 # Update performance statistics
                 end_time = time.time()
-                self.performance_stats['total_processing_time'] = end_time - start_time
+                total_processing_time = end_time - start_time
+                self.performance_stats['total_processing_time'] = total_processing_time
+                
+                # Enhanced troubleshooting: Log successful generation with performance metrics
+                tprint_performance("feature_generation_complete", total_processing_time)
+                tprint_structured({
+                    "step": "feature_generation_execute",
+                    "phase": "generation_success",
+                    "total_processing_time": total_processing_time,
+                    "features_generated": len(generation_result.generated_features.columns),
+                    "feature_categories": generation_result.feature_categories,
+                    "memory_usage_mb": generation_result.memory_usage_mb,
+                    "generation_time": generation_result.generation_time
+                }, level="INFO")
                 
                 # Add comprehensive M1 optimization statistics to generation result
                 if hasattr(generation_result, 'optimization_stats'):
@@ -517,12 +674,30 @@ class FeatureGenerationStep(BaseStep):
                 )
                 self.logger.info(f"📊 Final report generated: {report_path}")
             else:
-                self.logger.error(f"Feature generation failed: {generation_result.error_message}")
+                error_msg = f"Feature generation failed: {generation_result.error_message}"
+                self.logger.error(error_msg)
+                tprint_error(f"❌ {error_msg}")
+                tprint_structured({
+                    "step": "feature_generation_execute",
+                    "phase": "generation_failed",
+                    "error_message": generation_result.error_message,
+                    "success": generation_result.success,
+                    "features_generated": generation_result.n_features_generated
+                }, level="ERROR")
 
             return generation_result
 
         except Exception as e:
-            self.logger.error(f"Enhanced feature generation step failed with exception: {e}")
+            error_msg = f"Enhanced feature generation step failed with exception: {e}"
+            self.logger.error(error_msg)
+            tprint_exception(e, "Feature generation step failed")
+            tprint_structured({
+                "step": "feature_generation_execute",
+                "phase": "exception",
+                "error_type": type(e).__name__,
+                "error_message": str(e),
+                "execution_time": time.time() - start_time
+            }, level="ERROR")
             return {
                 'success': False,
                 'feature_names': [],
@@ -560,6 +735,15 @@ class FeatureGenerationStep(BaseStep):
         """Apply comprehensive M1 optimization to input data."""
         try:
             tprint_info("🚀 Applying M1 comprehensive optimization to input data")
+            
+            # Enhanced troubleshooting: Log optimization start with data metrics
+            tprint_structured({
+                "step": "m1_comprehensive_optimization",
+                "phase": "start",
+                "data_shape": data.shape,
+                "data_memory_mb": data.memory_usage(deep=True).sum() / 1024 / 1024,
+                "data_types": data.dtypes.value_counts().to_dict()
+            }, level="DEBUG")
             
             if not isinstance(data, pd.DataFrame) or data.empty:
                 return data
@@ -617,6 +801,16 @@ class FeatureGenerationStep(BaseStep):
                 tprint_success(f"🚀 M1 optimization: {memory_saved / 1024**2:.2f} MB saved")
                 self.performance_stats['memory_savings_mb'] += memory_saved / 1024**2
             
+            # Enhanced troubleshooting: Log optimization results
+            tprint_structured({
+                "step": "m1_comprehensive_optimization",
+                "phase": "complete",
+                "initial_memory_mb": initial_memory / 1024 / 1024,
+                "final_memory_mb": final_memory / 1024 / 1024,
+                "memory_saved_mb": memory_saved / 1024 / 1024,
+                "optimization_applied": self.performance_stats['optimization_applied']
+            }, level="DEBUG")
+            
             # Data preview: Data after M1 optimization
             tprint_data_preview(optimized_data, "Data after M1 optimization", level="DEBUG")
             
@@ -624,6 +818,14 @@ class FeatureGenerationStep(BaseStep):
             
         except Exception as e:
             tprint_warning(f"⚠️ M1 comprehensive optimization failed: {e}")
+            tprint_exception(e, "M1 comprehensive optimization failed")
+            tprint_structured({
+                "step": "m1_comprehensive_optimization",
+                "phase": "error",
+                "error_type": type(e).__name__,
+                "error_message": str(e),
+                "fallback_used": True
+            }, level="WARNING")
             return optimize_dataframe_default(data)
 
     @memory_optimized(optimization_level=MemoryOptimizationLevel.AGGRESSIVE)
@@ -675,13 +877,32 @@ class FeatureGenerationStep(BaseStep):
         """Check current memory usage and trigger optimizations if needed."""
         try:
             if not self.memory_manager:
+                tprint_debug("🔍 Memory monitoring skipped - memory manager not available")
                 return
                 
             memory_stats = get_memory_optimization_stats()
             memory_percent = memory_stats.get('memory_percent', 0)
             
+            # Enhanced troubleshooting: Log memory monitoring
+            tprint_structured({
+                "step": "monitor_memory_usage",
+                "phase": "check",
+                "memory_percent": memory_percent,
+                "aggressive_gc_threshold": self.aggressive_gc_threshold,
+                "memory_stats": memory_stats
+            }, level="DEBUG")
+            
             if memory_percent > self.aggressive_gc_threshold:
                 tprint_info(f"🚀 High memory usage detected ({memory_percent:.1f}%), triggering enhanced cleanup")
+                
+                # Enhanced troubleshooting: Log memory cleanup start
+                tprint_structured({
+                    "step": "monitor_memory_usage",
+                    "phase": "cleanup_start",
+                    "memory_percent": memory_percent,
+                    "threshold_exceeded": True,
+                    "cleanup_triggered": True
+                }, level="WARNING")
                 
                 # Use enhanced memory manager for cleanup
                 if self.memory_manager:
@@ -696,6 +917,14 @@ class FeatureGenerationStep(BaseStep):
                 if memory_saved > 0:
                     tprint_info(f"🚀 Enhanced memory optimization: {memory_saved:.1f} MB saved")
                     self.performance_stats['memory_savings_mb'] += memory_saved
+                    
+                    # Enhanced troubleshooting: Log cleanup results
+                    tprint_structured({
+                        "step": "monitor_memory_usage",
+                        "phase": "cleanup_complete",
+                        "memory_saved_mb": memory_saved,
+                        "cleanup_stats": cleanup_stats
+                    }, level="INFO")
                             
         except Exception as e:
             tprint_warning(f"Enhanced memory monitoring failed: {e}")
@@ -707,19 +936,41 @@ class FeatureGenerationStep(BaseStep):
     def _chunk_data_for_processing(self, data: pd.DataFrame) -> List[pd.DataFrame]:
         """Split DataFrame into smaller chunks for processing."""
         if len(data) <= self.chunk_size:
+            tprint_debug(f"🔍 Data size ({len(data)}) <= chunk size ({self.chunk_size}), no chunking needed")
             return [data]
         
         chunks = []
+        total_chunks = (len(data) + self.chunk_size - 1) // self.chunk_size
+        
+        # Enhanced troubleshooting: Log chunking start
+        tprint_structured({
+            "step": "chunk_data_for_processing",
+            "phase": "start",
+            "data_size": len(data),
+            "chunk_size": self.chunk_size,
+            "total_chunks": total_chunks
+        }, level="DEBUG")
+        
         for i in range(0, len(data), self.chunk_size):
             chunk = data.iloc[i:i + self.chunk_size].copy()
             chunks.append(chunk)
         
+        tprint_debug(f"🔍 Data chunked into {len(chunks)} chunks")
         return chunks
 
     @chunked_processing_auto(chunk_size_mb=50.0)
     def _process_chunk_with_optimization(self, chunk: pd.DataFrame, chunk_idx: int, **kwargs) -> pd.DataFrame:
         """Process a single data chunk with enhanced hardware optimizations."""
         try:
+            # Enhanced troubleshooting: Log chunk processing start
+            tprint_structured({
+                "step": "process_chunk_with_optimization",
+                "phase": "start",
+                "chunk_idx": chunk_idx,
+                "chunk_shape": chunk.shape,
+                "chunk_memory_mb": chunk.memory_usage(deep=True).sum() / 1024 / 1024
+            }, level="DEBUG")
+            
             # Apply comprehensive hardware optimization
             chunk = self._optimize_dataframe_with_hardware(chunk)
             
@@ -735,6 +986,15 @@ class FeatureGenerationStep(BaseStep):
             # Use enhanced memory cleanup
             if self.memory_manager:
                 self.memory_manager.cleanup_chunk_memory()
+            
+            # Enhanced troubleshooting: Log chunk processing completion
+            tprint_structured({
+                "step": "process_chunk_with_optimization",
+                "phase": "complete",
+                "chunk_idx": chunk_idx,
+                "output_shape": chunk.shape,
+                "gpu_accelerations_used": self.performance_stats.get('gpu_accelerations_used', 0)
+            }, level="DEBUG")
             
             return chunk
             
@@ -797,6 +1057,18 @@ class FeatureGenerationStep(BaseStep):
         
         try:
             tprint_info("🚀 Starting M1-optimized feature generation")
+            
+            # Enhanced troubleshooting: Log M1 optimization start
+            tprint_structured({
+                "step": "perform_m1_optimized_feature_generation",
+                "phase": "start",
+                "data_shape": data.shape,
+                "feature_categories": feature_categories,
+                "neural_engine_available": self.neural_engine_manager.is_available() if self.neural_engine_manager else False,
+                "gpu_available": self.gpu_manager.is_available() if self.gpu_manager else False,
+                "cpu_optimizer_available": self.cpu_optimizer is not None,
+                "hardware_manager_available": self.hardware_manager is not None
+            }, level="DEBUG")
             
             # Initialize result tracking
             neural_engine_utilization = 0.0
@@ -904,6 +1176,19 @@ class FeatureGenerationStep(BaseStep):
             # Update performance stats
             self.performance_stats['optimization_applied'].extend(optimization_applied)
             
+            # Enhanced troubleshooting: Log M1 optimization completion
+            tprint_structured({
+                "step": "perform_m1_optimized_feature_generation",
+                "phase": "complete",
+                "neural_engine_utilization": neural_engine_utilization,
+                "gpu_utilization": gpu_utilization,
+                "cpu_utilization": cpu_utilization,
+                "memory_efficiency": memory_efficiency,
+                "optimization_applied": optimization_applied,
+                "features_generated": len(generated_features_df.columns),
+                "generated_features_shape": generated_features_df.shape
+            }, level="INFO")
+            
             tprint_success(f"🚀 M1-optimized feature generation completed")
             tprint_info(f"📊 Neural Engine utilization: {neural_engine_utilization:.1f}%")
             tprint_info(f"📊 GPU utilization: {gpu_utilization:.1f}%")
@@ -913,7 +1198,16 @@ class FeatureGenerationStep(BaseStep):
             return generated_features_df
             
         except Exception as e:
-            self.logger.error(f"M1-optimized feature generation failed: {e}")
+            error_msg = f"M1-optimized feature generation failed: {e}"
+            self.logger.error(error_msg)
+            tprint_exception(e, "M1-optimized feature generation failed")
+            tprint_structured({
+                "step": "perform_m1_optimized_feature_generation",
+                "phase": "error",
+                "error_type": type(e).__name__,
+                "error_message": str(e),
+                "fallback_used": True
+            }, level="ERROR")
             # Fallback to basic feature generation
             return self._fallback_feature_generation(data)
 
@@ -921,6 +1215,15 @@ class FeatureGenerationStep(BaseStep):
         """Fallback feature generation when M1 optimizations fail."""
         try:
             tprint_info("🔄 Using fallback feature generation")
+            
+            # Enhanced troubleshooting: Log fallback start
+            tprint_structured({
+                "step": "fallback_feature_generation",
+                "phase": "start",
+                "data_shape": data.shape,
+                "data_columns": list(data.columns),
+                "reason": "M1 optimizations failed"
+            }, level="WARNING")
             
             # Basic technical indicators as fallback
             features = {}
@@ -939,10 +1242,27 @@ class FeatureGenerationStep(BaseStep):
                 features['volume_sma'] = data['volume'].rolling(window=20).mean()
                 features['volume_ratio'] = data['volume'] / features['volume_sma']
             
+            # Enhanced troubleshooting: Log fallback completion
+            tprint_structured({
+                "step": "fallback_feature_generation",
+                "phase": "complete",
+                "features_generated": len(features),
+                "feature_names": list(features.keys()),
+                "output_shape": (len(data), len(features))
+            }, level="INFO")
+            
             return pd.DataFrame(features, index=data.index)
             
         except Exception as e:
             tprint_error(f"❌ Fallback feature generation failed: {e}")
+            tprint_exception(e, "Fallback feature generation failed")
+            tprint_structured({
+                "step": "fallback_feature_generation",
+                "phase": "error",
+                "error_type": type(e).__name__,
+                "error_message": str(e),
+                "data_shape": data.shape if data is not None else None
+            }, level="ERROR")
             return pd.DataFrame(index=data.index)
 
     @memory_optimized(optimization_level=MemoryOptimizationLevel.AGGRESSIVE)
@@ -957,6 +1277,20 @@ class FeatureGenerationStep(BaseStep):
         """Perform enhanced feature generation using FeatureBank."""
         
         start_time = time.time()
+        
+        # Enhanced troubleshooting: Log feature generation start
+        tprint_structured({
+            "step": "perform_enhanced_feature_generation",
+            "phase": "start",
+            "data_shape": data.shape,
+            "symbol": symbol,
+            "timeframe": timeframe,
+            "direction": direction,
+            "enable_cmi_complementarity": enable_cmi_complementarity,
+            "has_targets": targets is not None,
+            "has_custom_overrides": custom_overrides is not None,
+            "has_pipeline_state": pipeline_state is not None
+        }, level="INFO")
         
         try:
             # Use the provided base config or create a fresh copy
@@ -986,10 +1320,30 @@ class FeatureGenerationStep(BaseStep):
             
             self.logger.info(f"🎯 Generating features for {len(feature_categories)} categories: {', '.join(feature_categories)}")
             
+            # Enhanced troubleshooting: Log feature categories
+            tprint_structured({
+                "step": "perform_enhanced_feature_generation",
+                "phase": "feature_categories_selection",
+                "total_categories": len(feature_categories),
+                "excluded_categories": list(excluded_categories),
+                "selected_categories": feature_categories
+            }, level="DEBUG")
+            
             # Add progress monitoring during feature generation
             self.logger.info("📊 Starting feature generation process...")
             self.logger.info(f"📈 Data shape: {data.shape[0]} rows × {data.shape[1]} columns")
             self.logger.info(f"🧮 Total memory usage: {data.memory_usage(deep=True).sum() / 1024 / 1024:.2f} MB")
+            
+            # Enhanced troubleshooting: Log detailed generation parameters
+            tprint_structured({
+                "step": "perform_enhanced_feature_generation",
+                "phase": "generation_parameters",
+                "data_rows": data.shape[0],
+                "data_columns": data.shape[1],
+                "memory_usage_mb": data.memory_usage(deep=True).sum() / 1024 / 1024,
+                "feature_categories_count": len(feature_categories),
+                "comprehensive_optimizer_available": self.comprehensive_optimizer is not None
+            }, level="INFO")
             
             # Use FeatureBank to generate features with enhanced hardware optimization
             generation_start_time = time.time()
@@ -999,16 +1353,39 @@ class FeatureGenerationStep(BaseStep):
                 data = self.comprehensive_optimizer.optimize_dataframe(data)
                 self.performance_stats['hardware_optimizations_applied'] += 1
             
-            # Use M1-optimized feature generation
+            # Use M1-optimized feature generation with progress tracking
+            tprint_progress(1, 3, "Starting M1-optimized feature generation...")
             generated_features_df = await self._perform_m1_optimized_feature_generation(
                 data, feature_categories, custom_overrides
             )
+            tprint_progress(2, 3, "M1-optimized feature generation completed")
             
             generation_duration = time.time() - generation_start_time
+            
+            # Enhanced troubleshooting: Log generation completion
+            tprint_structured({
+                "step": "perform_enhanced_feature_generation",
+                "phase": "m1_generation_complete",
+                "generation_duration": generation_duration,
+                "features_generated": len(generated_features_df.columns),
+                "generated_features_shape": generated_features_df.shape,
+                "generated_features_memory_mb": generated_features_df.memory_usage(deep=True).sum() / 1024 / 1024
+            }, level="INFO")
             
             # Apply CMI complementarity filtering if enabled
             if enable_cmi_complementarity and targets is not None:
                 tprint_info("🎯 Applying CMI complementarity filtering to generated features")
+                tprint_progress(3, 3, "Applying CMI complementarity filtering...")
+                
+                # Enhanced troubleshooting: Log CMI filtering start
+                tprint_structured({
+                    "step": "perform_enhanced_feature_generation",
+                    "phase": "cmi_filtering_start",
+                    "features_before_filtering": len(generated_features_df.columns),
+                    "targets_available": targets is not None,
+                    "targets_shape": targets.shape if hasattr(targets, 'shape') else None
+                }, level="DEBUG")
+                
                 # Data preview: Features before CMI filtering
                 tprint_data_preview(generated_features_df, "Features before CMI filtering", level="DEBUG")
                 try:
@@ -1063,6 +1440,17 @@ class FeatureGenerationStep(BaseStep):
             self.logger.info(f"✅ Feature generation completed in {generation_duration:.2f} seconds")
             self.logger.info(f"📊 Generated {len(generated_features_df.columns)} features")
             self.logger.info(f"💾 Output memory usage: {generated_features_df.memory_usage(deep=True).sum() / 1024 / 1024:.2f} MB")
+            
+            # Enhanced troubleshooting: Log final generation summary
+            tprint_structured({
+                "step": "perform_enhanced_feature_generation",
+                "phase": "generation_complete",
+                "total_duration": generation_duration,
+                "features_generated": len(generated_features_df.columns),
+                "output_memory_mb": generated_features_df.memory_usage(deep=True).sum() / 1024 / 1024,
+                "feature_categories": feature_categories,
+                "success": True
+            }, level="INFO")
             
             # Store the generated features dataframe with memory optimization
             try:
@@ -1252,9 +1640,19 @@ class FeatureGenerationStep(BaseStep):
             }
             
         except Exception as e:
-            self.logger.error(f"Enhanced feature generation failed: {e}")
+            error_msg = f"Enhanced feature generation failed: {e}"
+            self.logger.error(error_msg)
+            tprint_exception(e, "Enhanced feature generation failed")
+            tprint_structured({
+                "step": "perform_enhanced_feature_generation",
+                "phase": "error",
+                "error_type": type(e).__name__,
+                "error_message": str(e),
+                "execution_time": time.time() - start_time,
+                "data_shape": data.shape if data is not None else None
+            }, level="ERROR")
             # Fast fail - no fallback, just raise the error
-            raise RuntimeError(f"Feature generation failed: {e}") from e
+            raise RuntimeError(error_msg) from e
     
     @memory_optimized(optimization_level=MemoryOptimizationLevel.MAXIMUM)
     def _optimize_dataframe_for_saving(self, df):
@@ -1358,6 +1756,18 @@ class FeatureGenerationStep(BaseStep):
         try:
             from datetime import datetime
             import os
+            
+            # Enhanced troubleshooting: Log report generation start
+            tprint_structured({
+                "step": "generate_final_report",
+                "phase": "start",
+                "symbol": symbol,
+                "timeframe": timeframe,
+                "direction": direction,
+                "exchange": exchange,
+                "generation_success": generation_result.success,
+                "features_generated": generation_result.n_features_generated
+            }, level="DEBUG")
             
             # Create outcomes directory if it doesn't exist
             outcomes_dir = "outcomes"
@@ -1515,10 +1925,28 @@ class FeatureGenerationStep(BaseStep):
             with open(report_path, 'w', encoding='utf-8') as f:
                 f.write(report_content)
             
+            # Enhanced troubleshooting: Log report generation completion
+            tprint_structured({
+                "step": "generate_final_report",
+                "phase": "complete",
+                "report_path": report_path,
+                "report_size_bytes": len(report_content),
+                "success": True
+            }, level="INFO")
+            
             return report_path
             
         except Exception as e:
-            self.logger.error(f"Failed to generate final report: {e}")
+            error_msg = f"Failed to generate final report: {e}"
+            self.logger.error(error_msg)
+            tprint_exception(e, "Final report generation failed")
+            tprint_structured({
+                "step": "generate_final_report",
+                "phase": "error",
+                "error_type": type(e).__name__,
+                "error_message": str(e),
+                "success": False
+            }, level="ERROR")
             return ""
 
     def _serialize_config(self, config: Any) -> Dict[str, Any]:
@@ -1564,9 +1992,26 @@ async def handle_feature_generation_step(
     Returns:
         ComponentResult: Result of the feature generation step
     """
+    # Enhanced troubleshooting: Log handler function start
+    tprint_structured({
+        "step": "handle_feature_generation_step",
+        "phase": "start",
+        "symbol": symbol,
+        "timeframe": timeframe,
+        "exchange": exchange,
+        "direction": direction,
+        "intensity": intensity,
+        "lookback_days": lookback_days,
+        "start_date": start_date,
+        "end_date": end_date,
+        "has_custom_overrides": custom_overrides is not None,
+        "kwargs_keys": list(kwargs.keys())
+    }, level="INFO")
+    
     # Handle None intensity by defaulting to light mode (more reasonable default)
     if intensity is None:
         intensity = "light"
+        tprint_debug("🔧 Defaulting intensity to 'light' mode")
 
     try:
         # Create the step instance
@@ -1598,14 +2043,34 @@ async def handle_feature_generation_step(
         }
 
         # Execute the step
+        tprint_debug("🚀 Executing feature generation step...")
         result = await step.execute(training_input)
+        
+        # Enhanced troubleshooting: Log handler function completion
+        tprint_structured({
+            "step": "handle_feature_generation_step",
+            "phase": "complete",
+            "success": result.get('success', False),
+            "features_generated": result.get('n_features_generated', 0),
+            "generation_time": result.get('generation_time', 0),
+            "error_message": result.get('error_message')
+        }, level="INFO")
 
         return result
 
     except Exception as e:
         import logging
         logger = logging.getLogger(__name__)
-        logger.error(f"❌ Handler function failed: {e}")
+        error_msg = f"❌ Handler function failed: {e}"
+        logger.error(error_msg)
+        tprint_exception(e, "Handler function failed")
+        tprint_structured({
+            "step": "handle_feature_generation_step",
+            "phase": "error",
+            "error_type": type(e).__name__,
+            "error_message": str(e),
+            "success": False
+        }, level="ERROR")
         return ComponentResult(
             success=False,
             metadata={},

@@ -18,7 +18,11 @@ from pathlib import Path
 from dataclasses import dataclass
 
 from src.training.steps.base_step import BaseStep
-from src.utils.tprint import tprint_data_preview, tprint, tprint_data_format
+from src.utils.tprint import (
+    tprint_data_preview, tprint, tprint_data_format, tprint_info, tprint_success, 
+    tprint_warning, tprint_error, tprint_debug, tprint_performance, tprint_structured, 
+    tprint_step, tprint_result
+)
 
 # Import advanced quality validation components
 # Quality validation components - self-contained implementation
@@ -214,28 +218,38 @@ class FeatureGenerationDataValidationStep(BaseStep):
 
     def __init__(self, step_name: str, config: Optional[Dict[str, Any]] = None):
         """Initialize the enhanced data validation step."""
+        tprint_step("🔧 Initializing FeatureGenerationDataValidationStep")
+        tprint_debug(f"⚙️ Config provided: {config is not None}")
+        
         super().__init__(step_name, config)
         
         # Enable data preview via environment variable
         self.enable_data_preview = os.getenv('ENABLE_DATA_PREVIEW', 'true').lower() == 'true'
+        tprint_info(f"📊 Data preview enabled: {self.enable_data_preview}")
         
         # Initialize quality assessment components
+        tprint_debug("🔍 Checking quality components availability")
         if QUALITY_COMPONENTS_AVAILABLE:
+            tprint_success("✅ Quality components available, initializing advanced components")
             self.quality_scorer = ComprehensiveQualityScorer()
             self.data_quality_framework = DataQualityFramework()
             self.advanced_metrics = AdvancedQualityMetrics()
             self.alert_system = QualityAlertSystem()
+            tprint_success("✅ Advanced quality components initialized")
         else:
+            tprint_warning("⚠️ Quality components not available, using fallback validation")
             self.logger.warning("⚠️ Quality components not available, using fallback validation")
             self.quality_scorer = None
             self.data_quality_framework = None
             self.advanced_metrics = None
             self.alert_system = None
+        
+        tprint_success("🎉 FeatureGenerationDataValidationStep initialization complete")
 
     async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """Execute enhanced data validation step using comprehensive quality assessment."""
-
-        self.logger.info("🔍 Starting enhanced data validation step with comprehensive quality assessment")
+        tprint_step("🚀 Starting enhanced data validation execution")
+        tprint_info("🔍 Starting enhanced data validation step with comprehensive quality assessment")
 
         # Set context for enhanced file naming
         symbol = config.get('symbol', 'ETHUSDT')
@@ -244,7 +258,11 @@ class FeatureGenerationDataValidationStep(BaseStep):
         direction = config.get('direction', 'long')
         model = config.get('model', 'Analyst')
         
+        tprint_info(f"🎯 Validation parameters - Symbol: {symbol}, Exchange: {exchange}, Timeframe: {timeframe}")
+        tprint_info(f"🎯 Additional parameters - Direction: {direction}, Model: {model}")
+        
         self._set_context(symbol=symbol, exchange=exchange, direction=direction, model=model)
+        tprint_success("✅ Context set for enhanced file naming")
 
         # Extract parameters from config
         lookback_days = config.get('lookback_days')

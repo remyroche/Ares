@@ -342,6 +342,7 @@ class FeatureGenerationInteractionGenerationStepTactician(BaseStep):
         
         # Data preview after memory optimization
         tprint_data_preview(optimized_chunk, f"chunk_{chunk_idx}_after_memory_optimization", level="DEBUG")
+        tprint_data_format(optimized_chunk, f"chunk_{chunk_idx}_after_memory_optimization", level="DEBUG")
         
         # Use comprehensive optimizer for GPU acceleration
         try:
@@ -364,6 +365,7 @@ class FeatureGenerationInteractionGenerationStepTactician(BaseStep):
                 
                 # Data preview after comprehensive optimization
                 tprint_data_preview(optimized_chunk, f"chunk_{chunk_idx}_after_comprehensive_optimization", level="DEBUG")
+                tprint_data_format(optimized_chunk, f"chunk_{chunk_idx}_after_comprehensive_optimization", level="DEBUG")
         except Exception as e:
             tprint(f"⚠️ Comprehensive optimization failed for chunk {chunk_idx + 1}: {e}")
         
@@ -514,6 +516,7 @@ class FeatureGenerationInteractionGenerationStepTactician(BaseStep):
             
             # Data preview for interaction features creation
             tprint_data_preview(interaction_features, "interaction_features_created", level="INFO")
+            tprint_data_format(interaction_features, "interaction_features_created", level="INFO")
             
             # Apply CMI complementarity filtering if available
             if CMI_COMPLEMENTARITY_AVAILABLE and self.cmi_scorer is not None:
@@ -539,6 +542,7 @@ class FeatureGenerationInteractionGenerationStepTactician(BaseStep):
                                 tprint_data_format(interaction_features, "interaction_features_after_cmi_filtering", level="INFO", return_summary=True)
                                 # Data preview after CMI filtering
                                 tprint_data_preview(interaction_features, "interaction_features_after_cmi_filtering", level="INFO")
+                                tprint_data_format(interaction_features, "interaction_features_after_cmi_filtering", level="INFO")
                 except Exception as e:
                     tprint(f"⚠️ CMI filtering failed: {e}")
             
@@ -767,8 +771,11 @@ class FeatureGenerationInteractionGenerationStepTactician(BaseStep):
         
         # Data preview for cached data retrieval
         tprint_data_preview(cached_interactions, "cached_interactions", level="INFO")
+        tprint_data_format(cached_interactions, "cached_interactions", level="INFO")
         tprint_data_preview(cached_metadata, "cached_metadata", level="DEBUG")
+        tprint_data_format(cached_metadata, "cached_metadata", level="DEBUG")
         tprint_data_preview(cached_metrics, "cached_metrics", level="DEBUG")
+        tprint_data_format(cached_metrics, "cached_metrics", level="DEBUG")
         
         tprint(f"📦 [TACTICIAN] Cache check: interactions={cached_interactions is not None}, metadata={cached_metadata is not None}, metrics={cached_metrics is not None}")
         
@@ -834,14 +841,12 @@ class FeatureGenerationInteractionGenerationStepTactician(BaseStep):
                 # Backward-compatibility: alternative step naming
                 selected_df = artifact_manager.get_dataframe('feature_generation_feature_selection_step', 'SELECTED_FEATURES')
             
-        # Comprehensive data format analysis for selected features
-        tprint_data_format(selected_df, "selected_features_from_artifact_manager", level="INFO", return_summary=True)
-        
-        # Data preview for selected features retrieval
-        tprint_data_preview(selected_df, "selected_features_from_artifact_manager", level="INFO")
-        
-        if selected_df is None or selected_df.empty:
-            tprint_error("❌ No selected features available; interaction generation requires prior feature selection")
+            # Data preview for selected features retrieval
+            tprint_data_preview(selected_df, "selected_features_from_artifact_manager", level="INFO")
+            tprint_data_format(selected_df, "selected_features_from_artifact_manager", level="INFO")
+            
+            if selected_df is None or selected_df.empty:
+                tprint("❌ No selected features available; interaction generation requires prior feature selection")
                 return InteractionGenerationResult(
                     success=False,
                     interaction_features=pd.DataFrame(),
@@ -858,6 +863,7 @@ class FeatureGenerationInteractionGenerationStepTactician(BaseStep):
             
             # Data preview after memory optimization
             tprint_data_preview(data, "selected_features_after_memory_optimization", level="DEBUG")
+            tprint_data_format(data, "selected_features_after_memory_optimization", level="DEBUG")
             
             # Check if memory mapping should be used
             if self._should_use_memory_mapping(len(data)):
@@ -877,6 +883,7 @@ class FeatureGenerationInteractionGenerationStepTactician(BaseStep):
             
             # Data preview for targets series retrieval
             tprint_data_preview(targets_series, "targets_series", level="INFO")
+            tprint_data_format(targets_series, "targets_series", level="INFO")
 
             if targets_series is None or targets_series.empty:
                 tprint("❌ Labeling targets not found for interaction generation")
@@ -911,7 +918,9 @@ class FeatureGenerationInteractionGenerationStepTactician(BaseStep):
             
             # Data previews for data alignment
             tprint_data_preview(data, "aligned_features_data", level="INFO")
+            tprint_data_format(data, "aligned_features_data", level="INFO")
             tprint_data_preview(targets, "aligned_targets", level="INFO")
+            tprint_data_format(targets, "aligned_targets", level="INFO")
         except Exception as e:
             return InteractionGenerationResult(
                 success=False,
@@ -949,7 +958,9 @@ class FeatureGenerationInteractionGenerationStepTactician(BaseStep):
             tprint_data_format(opt_lookbacks, "optimized_lookbacks", level="DEBUG", return_summary=True)
             
             tprint_data_preview(opt_periods, "optimized_periods", level="DEBUG")
+            tprint_data_format(opt_periods, "optimized_periods", level="DEBUG")
             tprint_data_preview(opt_lookbacks, "optimized_lookbacks", level="DEBUG")
+            tprint_data_format(opt_lookbacks, "optimized_lookbacks", level="DEBUG")
                     
         except Exception:
             opt_periods, opt_lookbacks = None, None
@@ -979,6 +990,7 @@ class FeatureGenerationInteractionGenerationStepTactician(BaseStep):
         
         # Data preview after comprehensive optimization
         tprint_data_preview(optimized_data, "data_after_comprehensive_optimization", level="DEBUG")
+        tprint_data_format(optimized_data, "data_after_comprehensive_optimization", level="DEBUG")
             
         # Generate interaction features directly
         tprint("🚀 Generating interaction features with comprehensive optimization")
@@ -1061,6 +1073,7 @@ class FeatureGenerationInteractionGenerationStepTactician(BaseStep):
                                     tprint_data_format(interaction_features, "interaction_features_after_cmi_filtering", level="INFO", return_summary=True)
                                     # Data preview after CMI filtering
                                     tprint_data_preview(interaction_features, "interaction_features_after_cmi_filtering", level="INFO")
+                                    tprint_data_format(interaction_features, "interaction_features_after_cmi_filtering", level="INFO")
                                     self.logger.info(f"✅ CMI complementarity filtering: {original_count} → {filtered_count} interactions")
                                     
                                     # Store CMI diagnostics in metadata
@@ -1098,6 +1111,7 @@ class FeatureGenerationInteractionGenerationStepTactician(BaseStep):
         
         # Data preview before final storage
         tprint_data_preview(interaction_features, "final_interaction_features_for_storage", level="INFO")
+        tprint_data_format(interaction_features, "final_interaction_features_for_storage", level="INFO")
         artifact_manager.store_enhanced('INTERACTION_FEATURES', interaction_features, {
             'step': 'interaction_generation_tactician',
             'shape': interaction_features.shape if hasattr(interaction_features, 'shape') else None,
@@ -1107,6 +1121,7 @@ class FeatureGenerationInteractionGenerationStepTactician(BaseStep):
         tprint("💾 Storing interaction metadata in artifact manager")
         # Data preview before final storage
         tprint_data_preview(interaction_metadata, "final_interaction_metadata_for_storage", level="DEBUG")
+        tprint_data_format(interaction_metadata, "final_interaction_metadata_for_storage", level="DEBUG")
         artifact_manager.store_enhanced('INTERACTION_METADATA', interaction_metadata, {
             'step': 'interaction_generation_tactician',
             'created_at': datetime.now().isoformat()
@@ -1115,6 +1130,7 @@ class FeatureGenerationInteractionGenerationStepTactician(BaseStep):
         tprint("💾 Storing generation metrics in artifact manager")
         # Data preview before final storage
         tprint_data_preview(generation_metrics, "final_generation_metrics_for_storage", level="DEBUG")
+        tprint_data_format(generation_metrics, "final_generation_metrics_for_storage", level="DEBUG")
         artifact_manager.store_enhanced('INTERACTION_GENERATION_METRICS', generation_metrics, {
             'step': 'interaction_generation_tactician',
             'created_at': datetime.now().isoformat()
@@ -1456,6 +1472,7 @@ def handle_feature_generation_interaction_generation_step_tactician(
         
         # Data preview for handler selected features retrieval
         tprint_data_preview(data, "handler_selected_features_raw", level="INFO")
+        tprint_data_format(data, "handler_selected_features_raw", level="INFO")
         
         if data is None or not isinstance(data, pd.DataFrame) or data.empty:
             return InteractionGenerationResult(
@@ -1472,9 +1489,11 @@ def handle_feature_generation_interaction_generation_step_tactician(
         data = optimize_dataframe(data)
         # Data preview after basic optimization
         tprint_data_preview(data, "handler_selected_features_optimized", level="DEBUG")
+        tprint_data_format(data, "handler_selected_features_optimized", level="DEBUG")
         data = hardware_manager.optimize_dataframe(data)
         # Data preview after hardware optimization
         tprint_data_preview(data, "handler_selected_features_hardware_optimized", level="DEBUG")
+        tprint_data_format(data, "handler_selected_features_hardware_optimized", level="DEBUG")
         tprint(f"✅ Data optimized comprehensively: {data.shape}")
 
         tprint("🚀 Generating interaction features from handler")

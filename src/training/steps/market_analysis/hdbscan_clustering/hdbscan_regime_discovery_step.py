@@ -26,6 +26,17 @@ from src.training.steps.market_analysis.hdbscan_clustering import (
     RegimeResult
 )
 
+# Import new data-driven clustering system
+from src.training.steps.market_analysis.hdbscan_clustering.optimization.data_driven_clustering_optimizer import (
+    DataDrivenClusteringOptimizer, DataDrivenClusteringResult
+)
+from src.training.steps.market_analysis.hdbscan_clustering.config.data_driven_config import (
+    DataDrivenClusteringConfig
+)
+from src.training.steps.market_analysis.hdbscan_clustering.feature_engineering.advanced_financial_features import (
+    AdvancedFinancialFeatureEngineer, AdvancedFeatureConfig
+)
+
 # Import utilities
 from src.utils.tprint import (
     tprint, tprint_info, tprint_success, tprint_warning, tprint_error, 
@@ -56,7 +67,7 @@ class HDBSCANRegimeDiscoveryStep(BaseStep):
     """
     
     def __init__(self, step_name: str = "hdbscan_regime_discovery", config: Optional[Dict[str, Any]] = None):
-        """Initialize the HDBSCAN regime discovery step."""
+        """Initialize the HDBSCAN regime discovery step with economic validation."""
         tprint_debug(f"Initializing HDBSCANRegimeDiscoveryStep with name: {step_name}")
         start_time = time.perf_counter()
         
@@ -66,6 +77,16 @@ class HDBSCANRegimeDiscoveryStep(BaseStep):
         # Initialize regime discovery system
         self.regime_discovery = None
         self.config = None
+        
+        # Initialize data-driven clustering optimizer
+        self.enable_data_driven = config.get('enable_data_driven', True) if config else True
+        self.enable_economic_validation = config.get('enable_economic_validation', True) if config else True
+        
+        if self.enable_data_driven:
+            self.data_driven_config = DataDrivenClusteringConfig()
+            self.data_driven_optimizer = DataDrivenClusteringOptimizer(self.data_driven_config)
+            self.advanced_feature_engineer = AdvancedFinancialFeatureEngineer(AdvancedFeatureConfig())
+            tprint_info("✅ Data-driven clustering optimizer initialized")
         
         # Performance tracking
         self.performance_stats = {
@@ -160,6 +181,16 @@ class HDBSCANRegimeDiscoveryStep(BaseStep):
                     raise ValueError(f"Regime discovery failed: {regime_result.error_message}")
                 
                 tprint_success(f"✅ Regime discovery completed: {regime_result.validation_metrics['n_regimes']} regimes")
+            
+            # Economic validation and data-driven optimization
+            if self.enable_data_driven and self.enable_economic_validation:
+                with tprint_timer("Economic validation and data-driven optimization"):
+                    economic_validation_result = await self._perform_economic_validation(
+                        regime_result, market_data, config
+                    )
+                    tprint_success("✅ Economic validation completed")
+            else:
+                economic_validation_result = None
             
             # Create artifacts
             with tprint_timer("Artifacts creation"):
@@ -588,6 +619,72 @@ class HDBSCANRegimeDiscoveryStep(BaseStep):
         except Exception as e:
             tprint(f"⚠️ Failed to calculate metrics: {e}", "WARNING")
             return {'success': False, 'error': str(e)}
+    
+    async def _perform_economic_validation(self, 
+                                         regime_result: RegimeResult, 
+                                         market_data: pd.DataFrame, 
+                                         config: Dict[str, Any]) -> Dict[str, Any]:
+        """Perform comprehensive economic validation."""
+        try:
+            tprint_info("💰 Starting economic validation...")
+            
+            # Extract cluster labels
+            cluster_labels = regime_result.regime_labels
+            
+            # Engineer advanced features
+            advanced_features, feature_names, feature_categories = self.advanced_feature_engineer.engineer_features(market_data)
+            
+            # Perform data-driven optimization
+            optimization_result = self.data_driven_optimizer.optimize_all_parameters(
+                market_data=market_data,
+                features=advanced_features,
+                feature_names=feature_names,
+                clustering_func=lambda x: cluster_labels  # Use existing labels
+            )
+            
+            # Extract economic validation results
+            economic_validation_result = {
+                'overall_economic_score': optimization_result.economic_validation_result.overall_economic_score if optimization_result.economic_validation_result else 0.0,
+                'return_separation_score': optimization_result.economic_validation_result.return_separation_score if optimization_result.economic_validation_result else 0.0,
+                'volatility_discrimination_score': optimization_result.economic_validation_result.volatility_discrimination_score if optimization_result.economic_validation_result else 0.0,
+                'risk_discrimination_score': optimization_result.economic_validation_result.risk_discrimination_score if optimization_result.economic_validation_result else 0.0,
+                'drawdown_discrimination_score': optimization_result.economic_validation_result.drawdown_discrimination_score if optimization_result.economic_validation_result else 0.0,
+                'volume_discrimination_score': optimization_result.economic_validation_result.volume_discrimination_score if optimization_result.economic_validation_result else 0.0,
+                'strategy_performance_score': optimization_result.economic_validation_result.strategy_performance_score if optimization_result.economic_validation_result else 0.0,
+                'overall_persistence_score': optimization_result.regime_persistence_result.overall_persistence_score if optimization_result.regime_persistence_result else 0.0,
+                'lifespan_score': optimization_result.regime_persistence_result.lifespan_score if optimization_result.regime_persistence_result else 0.0,
+                'transition_score': optimization_result.regime_persistence_result.transition_score if optimization_result.regime_persistence_result else 0.0,
+                'economic_coherence_score': optimization_result.regime_persistence_result.economic_coherence_score if optimization_result.regime_persistence_result else 0.0,
+                'volatility_persistence_score': optimization_result.regime_persistence_result.volatility_persistence_score if optimization_result.regime_persistence_result else 0.0,
+                'optimal_parameters': optimization_result.optimal_parameters,
+                'optimization_summary': optimization_result.optimization_summary,
+                'success': True
+            }
+            
+            tprint_success(f"✅ Economic validation completed - Score: {economic_validation_result['overall_economic_score']:.3f}")
+            
+            return economic_validation_result
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Economic validation failed: {e}")
+            return {
+                'overall_economic_score': 0.0,
+                'return_separation_score': 0.0,
+                'volatility_discrimination_score': 0.0,
+                'risk_discrimination_score': 0.0,
+                'drawdown_discrimination_score': 0.0,
+                'volume_discrimination_score': 0.0,
+                'strategy_performance_score': 0.0,
+                'overall_persistence_score': 0.0,
+                'lifespan_score': 0.0,
+                'transition_score': 0.0,
+                'economic_coherence_score': 0.0,
+                'volatility_persistence_score': 0.0,
+                'optimal_parameters': {},
+                'optimization_summary': {},
+                'success': False,
+                'error': str(e)
+            }
     
     def _create_outcome_report(self, regime_result: RegimeResult, metrics: Dict[str, Any], config: Dict[str, Any]) -> str:
         """Create comprehensive outcome report markdown."""

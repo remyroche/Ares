@@ -1,8 +1,8 @@
 """
-Step 1: Feature Preparation for NAS-TAS Clustering.
+Step 1: Data-Driven Feature Preparation for NAS-TAS Clustering.
 
 This module handles feature selection, dimensionality reduction, and regime-specific
-feature integration for the clustering process.
+feature integration for the clustering process with data-driven parameter optimization.
 """
 
 import numpy as np
@@ -15,6 +15,19 @@ from sklearn.decomposition import PCA
 from src.utils.tprint import (
     tprint, tprint_info, tprint_success, tprint_warning, tprint_error
 )
+
+# Import data-driven optimization
+try:
+    from ..hdbscan_clustering.optimization.data_driven_feature_weights import (
+        DataDrivenFeatureWeightOptimizer, FeatureGroupWeightResult
+    )
+    from ..hdbscan_clustering.config.data_driven_config import (
+        DataDrivenClusteringConfig, FeatureGroupWeightConfig
+    )
+    DATA_DRIVEN_AVAILABLE = True
+except ImportError:
+    DATA_DRIVEN_AVAILABLE = False
+    tprint("⚠️ Data-driven optimization not available, will use hardcoded weights", "WARNING")
 
 # Import weighted category PCA
 try:
@@ -65,6 +78,10 @@ class ClusteringContext:
     pre_pca_feature_names: Optional[List[str]] = None
     pre_pca_feature_count: Optional[int] = None
 
+    # Data-driven optimization results
+    data_driven_weights: Optional[Dict[str, float]] = None
+    optimization_results: Optional[Dict[str, Any]] = None
+
     # Clustering results
     initial_assignments: Optional[np.ndarray] = None
     optimized_assignments: Optional[np.ndarray] = None
@@ -79,21 +96,28 @@ class ClusteringContext:
     fusion_metadata: Dict[str, Any] = field(default_factory=dict)
     summary: Dict[str, Any] = field(default_factory=dict)
 
-class FeaturePreparationStep:
-    """Step 1: Feature preparation and optimization."""
+class DataDrivenFeaturePreparationStep:
+    """Step 1: Data-driven feature preparation and optimization."""
 
-    def __init__(self, verbose: bool = True):
-        """Initialize the feature preparation step."""
+    def __init__(self, verbose: bool = True, enable_data_driven: bool = True):
+        """Initialize the data-driven feature preparation step."""
         self.verbose = verbose
-        self.logger = get_logger('FeaturePreparationStep')
+        self.enable_data_driven = enable_data_driven and DATA_DRIVEN_AVAILABLE
+        self.logger = get_logger('DataDrivenFeaturePreparationStep')
+        
+        # Initialize data-driven optimizer if available
+        if self.enable_data_driven:
+            self.feature_weight_optimizer = DataDrivenFeatureWeightOptimizer(
+                FeatureGroupWeightConfig()
+            )
 
     async def execute(self, context: ClusteringContext, config: Any) -> ClusteringContext:
-        """Execute feature preparation step."""
+        """Execute data-driven feature preparation step."""
         try:
-            tprint("Step 1: Starting feature preparation and optimization...", "INFO")
+            tprint("Step 1: Starting data-driven feature preparation and optimization...", "INFO")
 
             # Step 1a: Add regime-discriminative features to market data (BEFORE feature extraction)
-            use_cv_enhancement = getattr(config, 'use_cv_enhancement', True)  # Default: enabled
+            use_cv_enhancement = getattr(config, 'use_cv_enhancement', True)
             if use_cv_enhancement and CV_ENHANCEMENT_AVAILABLE:
                 try:
                     tprint("⭐ Applying CV enhancement strategies to market data...", "INFO")
@@ -112,15 +136,15 @@ class FeaturePreparationStep:
             # Step 1c: Inject prepared feature data into the context before optimization
             context = self._integrate_feature_result_into_context(context, feature_result)
 
-            # Step 1d: Apply regime-specific feature optimization (PCA, etc.)
-            context = await self._optimize_features(context, config)
+            # Step 1d: Apply data-driven feature optimization
+            context = await self._optimize_features_data_driven(context, config)
 
-            tprint("Step 1: Feature preparation completed successfully", "SUCCESS")
+            tprint("Step 1: Data-driven feature preparation completed successfully", "SUCCESS")
             return context
 
         except Exception as e:
-            tprint(f"Step 1: Feature preparation failed: {e}", "ERROR")
-            raise ValueError(f"Feature preparation failed: {e}")
+            tprint(f"Step 1: Data-driven feature preparation failed: {e}", "ERROR")
+            raise ValueError(f"Data-driven feature preparation failed: {e}")
 
     def _integrate_feature_result_into_context(
         self,
@@ -251,7 +275,7 @@ class FeaturePreparationStep:
             tprint(f"Shared feature preparation failed: {e}", "ERROR")
             raise
 
-    async def _optimize_features(self, context: ClusteringContext, config: Any) -> ClusteringContext:
+    async def _optimize_features_data_driven(self, context: ClusteringContext, config: Any) -> ClusteringContext:
         """Optimize features using data-driven dimensionality reduction."""
         try:
             tprint("Starting data-driven feature optimization...", "INFO")
@@ -272,8 +296,65 @@ class FeaturePreparationStep:
             tprint(f"Feature standardization completed: {context.original_features.shape}", "SUCCESS")
             tprint(f"🔍 MEMORY: Scaled features created - {features_scaled.nbytes / 1024 / 1024:.2f} MB", "INFO")
 
+            # Step 2: Data-driven feature weight optimization
+            if self.enable_data_driven:
+                try:
+                    tprint("⭐ Starting data-driven feature weight optimization...", "INFO")
+                    
+                    # Create a simple clustering function for optimization
+                    def simple_clustering_func(features):
+                        from sklearn.cluster import KMeans
+                        n_clusters = min(5, features.shape[0] // 10)
+                        if n_clusters < 2:
+                            n_clusters = 2
+                        kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
+                        return kmeans.fit_predict(features)
+                    
+                    # Optimize feature weights
+                    weight_result = self.feature_weight_optimizer.optimize_weights(
+                        features=features_scaled,
+                        feature_names=feature_names,
+                        market_data=context.market_data,
+                        clustering_func=simple_clustering_func
+                    )
+                    
+                    # Store optimization results
+                    context.data_driven_weights = weight_result.optimal_weights
+                    context.optimization_results = {
+                        'feature_weights': weight_result.__dict__
+                    }
+                    
+                    tprint(f"✅ Data-driven weights: {weight_result.optimal_weights}", "SUCCESS")
+                    
+                    # Apply optimized weights
+                    features_scaled = self._apply_data_driven_weights(
+                        features_scaled, feature_names, weight_result.optimal_weights
+                    )
+                    
+                except Exception as e:
+                    tprint(f"⚠️ Data-driven optimization failed: {e}, falling back to hardcoded weights", "WARNING")
+                    # Fall back to hardcoded weights
+                    features_scaled = self._apply_hardcoded_weights(features_scaled, feature_names)
+            else:
+                # Use hardcoded weights
+                features_scaled = self._apply_hardcoded_weights(features_scaled, feature_names)
+
+            # Step 3: Apply dimensionality reduction
+            if context.original_features.shape[1] < 2:
+                tprint_warning("⚠️ Fewer than two features available after pruning - skipping PCA")
+                features_final = self._validate_feature_quality_minimal(features_scaled, context.market_data)
+                context.optimized_features = features_final
+                context.optimized_feature_names = list(feature_names)
+                context.dropped_feature_names = context.dropped_feature_names or []
+                context.pca_loading_scores = {name: 1.0 for name in feature_names}
+                if context.feature_scores:
+                    context.feature_scores = {
+                        name: float(context.feature_scores.get(name, 0.0)) for name in feature_names
+                    }
+                return context
+
             # Try Weighted Category PCA first (ENHANCED APPROACH)
-            use_weighted_pca = getattr(config, 'use_weighted_category_pca', True)  # Default to True
+            use_weighted_pca = getattr(config, 'use_weighted_category_pca', True)
             if WEIGHTED_PCA_AVAILABLE and use_weighted_pca and context.original_features.shape[1] >= 4:
                 tprint("⭐ Attempting Weighted Category PCA (ENHANCED APPROACH)...", "INFO")
                 try:
@@ -327,27 +408,6 @@ class FeaturePreparationStep:
                 except Exception as pca_err:
                     tprint(f"⚠️ Weighted Category PCA failed: {pca_err}, falling back to standard PCA", "WARNING")
 
-            if context.original_features.shape[1] < 2:
-                tprint_warning("⚠️ Fewer than two features available after pruning - skipping PCA")
-                tprint(f"🔍 DEBUG: Insufficient features for PCA - only {context.original_features.shape[1]} features available", "WARNING")
-                features_final = self._validate_feature_quality_minimal(features_scaled, context.market_data)
-                context.optimized_features = features_final
-                context.optimized_feature_names = list(feature_names)
-                context.dropped_feature_names = context.dropped_feature_names or []
-                context.pca_loading_scores = {name: 1.0 for name in feature_names}
-                if context.feature_scores:
-                    context.feature_scores = {
-                        name: float(context.feature_scores.get(name, 0.0)) for name in feature_names
-                    }
-
-                tprint(
-                    f"Data-driven feature optimization (PCA skipped): {context.original_features.shape} -> {features_final.shape}",
-                    "SUCCESS",
-                )
-
-                self._safe_memory_cleanup([features_scaled])
-                return context
-
             # Try UMAP reduction as an alternative to PCA
             umap_features = self._try_umap_reduction(features_scaled, target_features=20)
             if umap_features is not None:
@@ -369,135 +429,125 @@ class FeaturePreparationStep:
                 self._safe_memory_cleanup([features_scaled, umap_features])
                 return context
 
-            # Group-weighted, per-group PCA
-            tprint("🔧 Using group weighting and per-group PCA for dimensionality reduction", "INFO")
+            # Fallback to standard PCA with data-driven or hardcoded weights
+            tprint("🔧 Using standard PCA for dimensionality reduction", "INFO")
             n_samples, n_features = features_scaled.shape
             n_components_total = min(20, n_features - 1)
-            tprint(f"  📊 Input data: {n_samples} samples × {n_features} features", "DEBUG")
-            tprint(f"  🎯 Total target components: {n_components_total}", "DEBUG")
-
-            # Build group masks (returns/volatility/volume), leave others as passthrough block
-            names = context.pre_pca_feature_names
-            names_lower = [str(n).lower() for n in names]
-            returns_mask = np.array([
-                ('return' in name) or ('log_return' in name) or ('close_return' in name) for name in names_lower
-            ], dtype=bool)
-            volatility_mask = np.array([
-                any(term in name for term in ['volatility', 'vol_', 'atr', 'std', 'boll', 'bb']) for name in names_lower
-            ], dtype=bool)
-            volume_mask = np.array([
-                ('volume' in name) or ('vwap' in name) or ('obv' in name) or ('accumulation' in name) or ('distribution' in name) for name in names_lower
-            ], dtype=bool)
-            other_mask = ~(returns_mask | volatility_mask | volume_mask)
-
-            # Weights per group (sqrt-applied so group variance ≈ weight)
-            w_returns, w_vol, w_volume = 0.50, 0.30, 0.20
-            features_w = features_scaled.copy()
-            if np.any(returns_mask):
-                features_w[:, returns_mask] *= np.sqrt(w_returns)
-            if np.any(volatility_mask):
-                features_w[:, volatility_mask] *= np.sqrt(w_vol)
-            if np.any(volume_mask):
-                features_w[:, volume_mask] *= np.sqrt(w_volume)
-
-            # Allocate components per group proportional to weights and availability
-            present = np.array([
-                max(1, int(np.sum(returns_mask))),
-                max(1, int(np.sum(volatility_mask))),
-                max(1, int(np.sum(volume_mask)))
-            ], dtype=int)
-            weights = np.array([w_returns, w_vol, w_volume], dtype=float)
-            weights = weights * (present > 0)
-            if np.sum(weights) == 0:
-                weights = np.array([1.0, 1.0, 1.0], dtype=float)
-            weights /= np.sum(weights)
-            allocated = np.maximum(1, np.round(weights * n_components_total).astype(int))
-            # Clip to available dims
-            allocated[0] = min(allocated[0], int(np.sum(returns_mask)))
-            allocated[1] = min(allocated[1], int(np.sum(volatility_mask)))
-            allocated[2] = min(allocated[2], int(np.sum(volume_mask)))
-            # Ensure sum <= n_components_total
-            while np.sum(allocated) > n_components_total:
-                idx = np.argmax(allocated)
-                if allocated[idx] > 1:
-                    allocated[idx] -= 1
-                else:
-                    break
-
-            def fit_group_pca(block: np.ndarray, ncomp: int):
-                if block.shape[1] == 0:
-                    return None, [], []
-                if block.shape[1] == 1 or ncomp <= 1:
-                    # passthrough or single-component PCA
-                    comp = block if ncomp <= 0 else block[:, :1]
-                    names_blk = ["PC1"] if comp.shape[1] == 1 else []
-                    vars_blk = [1.0] if comp.shape[1] == 1 else []
-                    return comp, names_blk, vars_blk
-                ncomp = min(ncomp, block.shape[1])
-                p = PCA(n_components=ncomp)
-                comp = p.fit_transform(block)
-                return comp, [f"PC{i+1}_var{p.explained_variance_ratio_[i]:.3f}" for i in range(ncomp)], list(p.explained_variance_ratio_)
-
-            comps = []
-            comp_names = []
-            comp_scores = []
-            # Returns
-            if np.any(returns_mask):
-                comp, names_blk, vars_blk = fit_group_pca(features_w[:, returns_mask], int(allocated[0]))
-                if comp is not None and comp != []:
-                    comps.append(comp)
-                    comp_names += [f"RET_{n}" for n in names_blk] if names_blk else ["RET_PC1"]
-                    comp_scores += (vars_blk if vars_blk else [1.0])
-            # Volatility
-            if np.any(volatility_mask):
-                comp, names_blk, vars_blk = fit_group_pca(features_w[:, volatility_mask], int(allocated[1]))
-                if comp is not None and comp != []:
-                    comps.append(comp)
-                    comp_names += [f"VOL_{n}" for n in names_blk] if names_blk else ["VOL_PC1"]
-                    comp_scores += (vars_blk if vars_blk else [1.0])
-            # Volume
-            if np.any(volume_mask):
-                comp, names_blk, vars_blk = fit_group_pca(features_w[:, volume_mask], int(allocated[2]))
-                if comp is not None and comp != []:
-                    comps.append(comp)
-                    comp_names += [f"VLM_{n}" for n in names_blk] if names_blk else ["VLM_PC1"]
-                    comp_scores += (vars_blk if vars_blk else [1.0])
-            # Others: optional passthrough (no PCA) – cap to keep dimensionality reasonable
-            if np.any(other_mask):
-                # Keep at most 2 top-variance columns as-is
-                other_block = features_w[:, other_mask]
-                var_rank = np.argsort(-np.var(other_block, axis=0))
-                keep = min(2, other_block.shape[1])
-                passthrough = other_block[:, var_rank[:keep]] if keep > 0 else None
-                if passthrough is not None and keep > 0:
-                    comps.append(passthrough)
-                    comp_names += [f"OTH_{i+1}" for i in range(keep)]
-                    comp_scores += [1.0] * keep
-
-            if len(comps) == 0:
-                features_final = self._validate_feature_quality_minimal(features_scaled, context.market_data)
-                context.optimized_features = features_final
-                context.optimized_feature_names = list(feature_names)
-                context.pca_loading_scores = {feature_names[i]: 1.0 for i in range(len(feature_names))}
-            else:
-                features_pca_group = np.concatenate(comps, axis=1)
-                features_final = self._validate_feature_quality_minimal(features_pca_group, context.market_data)
-                context.optimized_features = features_final
-                context.optimized_feature_names = comp_names
-                context.pca_loading_scores = {comp_names[i]: float(comp_scores[i]) for i in range(len(comp_names))}
-                tprint(f"📈 Group PCA: RET={int(np.sum(returns_mask))}->{allocated[0]}, VOL={int(np.sum(volatility_mask))}->{allocated[1]}, VLM={int(np.sum(volume_mask))}->{allocated[2]}", "INFO")
-                tprint(f"  📊 Final features: {features_final.shape[1]}", "INFO")
-
+            
+            pca = PCA(n_components=n_components_total, whiten=True, random_state=42)
+            features_pca = pca.fit_transform(features_scaled)
+            
+            # Create PCA feature names
+            pca_feature_names = [f"PC{i+1}_var{pca.explained_variance_ratio_[i]:.3f}" for i in range(features_pca.shape[1])]
+            
+            # Validate features
+            features_final = self._validate_feature_quality_minimal(features_pca, context.market_data)
+            
+            # Update context
+            context.optimized_features = features_final
+            context.optimized_feature_names = pca_feature_names
+            context.dropped_feature_names = context.dropped_feature_names or []
+            context.pca_loading_scores = {pca_feature_names[i]: float(pca.explained_variance_ratio_[i]) for i in range(len(pca_feature_names))}
+            
             if context.feature_scores:
-                context.feature_scores = {n: float(context.pca_loading_scores.get(n, 1.0)) for n in context.optimized_feature_names}
+                context.feature_scores = {pca_feature_names[i]: float(pca.explained_variance_ratio_[i]) for i in range(len(pca_feature_names))}
+
+            tprint(f"📈 Standard PCA: {context.original_features.shape} -> {features_final.shape}", "SUCCESS")
 
             self._safe_memory_cleanup([features_scaled])
 
         except Exception as e:
-            tprint(f"Feature optimization failed: {e}", "ERROR")
-            raise ValueError(f"Feature optimization failed: {e}")
+            tprint(f"Data-driven feature optimization failed: {e}", "ERROR")
+            raise ValueError(f"Data-driven feature optimization failed: {e}")
 
         return context
+
+    def _apply_data_driven_weights(self, 
+                                 features: np.ndarray, 
+                                 feature_names: List[str], 
+                                 weights: Dict[str, float]) -> np.ndarray:
+        """Apply data-driven feature group weights."""
+        try:
+            weighted_features = features.copy()
+            
+            # Categorize features
+            feature_groups = self._categorize_features(feature_names)
+            
+            # Apply weights to each group
+            for group, group_features in feature_groups.items():
+                if group in weights:
+                    # Find indices of features in this group
+                    feature_indices = [i for i, name in enumerate(feature_names) if name in group_features]
+                    
+                    # Apply weight (sqrt because we're scaling variance)
+                    weight = np.sqrt(weights[group])
+                    weighted_features[:, feature_indices] *= weight
+                    
+                    tprint(f"Applied weight {weights[group]:.3f} to {group} group ({len(feature_indices)} features)", "DEBUG")
+            
+            return weighted_features
+            
+        except Exception as e:
+            tprint(f"Data-driven weight application failed: {e}", "WARNING")
+            return features
+
+    def _apply_hardcoded_weights(self, 
+                               features: np.ndarray, 
+                               feature_names: List[str]) -> np.ndarray:
+        """Apply hardcoded feature group weights (fallback)."""
+        try:
+            # Use the original hardcoded weights as fallback
+            w_returns, w_vol, w_volume = 0.50, 0.30, 0.20
+            
+            # Categorize features
+            feature_groups = self._categorize_features(feature_names)
+            
+            # Apply hardcoded weights
+            weighted_features = features.copy()
+            
+            if 'returns' in feature_groups:
+                feature_indices = [i for i, name in enumerate(feature_names) if name in feature_groups['returns']]
+                weighted_features[:, feature_indices] *= np.sqrt(w_returns)
+                
+            if 'volatility' in feature_groups:
+                feature_indices = [i for i, name in enumerate(feature_names) if name in feature_groups['volatility']]
+                weighted_features[:, feature_indices] *= np.sqrt(w_vol)
+                
+            if 'volume' in feature_groups:
+                feature_indices = [i for i, name in enumerate(feature_names) if name in feature_groups['volume']]
+                weighted_features[:, feature_indices] *= np.sqrt(w_volume)
+            
+            tprint(f"Applied hardcoded weights: returns={w_returns}, vol={w_vol}, volume={w_volume}", "INFO")
+            return weighted_features
+            
+        except Exception as e:
+            tprint(f"Hardcoded weight application failed: {e}", "WARNING")
+            return features
+
+    def _categorize_features(self, feature_names: List[str]) -> Dict[str, List[str]]:
+        """Categorize features into groups based on naming patterns."""
+        groups = {'returns': [], 'volatility': [], 'volume': [], 'other': []}
+        
+        for name in feature_names:
+            name_lower = name.lower()
+            
+            # Returns group
+            if any(term in name_lower for term in ['return', 'log_return', 'close_return', 'pct_change']):
+                groups['returns'].append(name)
+            # Volatility group
+            elif any(term in name_lower for term in ['volatility', 'vol_', 'atr', 'std', 'boll', 'bb']):
+                groups['volatility'].append(name)
+            # Volume group
+            elif any(term in name_lower for term in ['volume', 'vwap', 'obv', 'accumulation', 'distribution']):
+                groups['volume'].append(name)
+            # Other group
+            else:
+                groups['other'].append(name)
+        
+        # Remove empty groups
+        groups = {k: v for k, v in groups.items() if v}
+        
+        return groups
 
     def _try_umap_reduction(self, features: np.ndarray, target_features: int = 20) -> Optional[np.ndarray]:
         """Try UMAP reduction as an alternative to PCA."""
@@ -518,46 +568,6 @@ class FeaturePreparationStep:
         except Exception as e:
             tprint(f"UMAP reduction failed: {e}, falling back to PCA", "WARNING")
             return None
-
-    def _categorize_feature(self, feature_name: str) -> str:
-        """Categorize a feature by its name to identify type (volatility, momentum, trend, etc.)."""
-        feature_name_lower = feature_name.lower()
-
-        # Volatility indicators
-        if any(term in feature_name_lower for term in ['vol', 'volatility', 'atr', 'std', 'dev', 'range', 'bb', 'bollinger']):
-            return "VOLATILITY"
-
-        # Momentum indicators
-        elif any(term in feature_name_lower for term in ['rsi', 'momentum', 'roc', 'rate_of_change', 'stoch', 'stochastic', 'williams', 'cci']):
-            return "MOMENTUM"
-
-        # Trend indicators
-        elif any(term in feature_name_lower for term in ['ma', 'moving_average', 'ema', 'sma', 'trend', 'macd', 'adx', 'dmi', 'aroon']):
-            return "TREND"
-
-        # Volume indicators
-        elif any(term in feature_name_lower for term in ['volume', 'vol', 'obv', 'ad', 'accumulation', 'distribution', 'mfi', 'money_flow']):
-            return "VOLUME"
-
-        # Price-based features
-        elif any(term in feature_name_lower for term in ['price', 'close', 'open', 'high', 'low', 'return', 'change', 'pct']):
-            return "PRICE"
-
-        # Statistical features
-        elif any(term in feature_name_lower for term in ['skew', 'kurt', 'stat', 'corr', 'correlation', 'beta', 'alpha']):
-            return "STATISTICAL"
-
-        # Regime features
-        elif any(term in feature_name_lower for term in ['regime', 'state', 'phase', 'cycle']):
-            return "REGIME"
-
-        # Technical patterns
-        elif any(term in feature_name_lower for term in ['pattern', 'signal', 'crossover', 'breakout', 'support', 'resistance']):
-            return "PATTERN"
-
-        # Default category
-        else:
-            return "OTHER"
 
     def _validate_feature_quality_minimal(self, features: np.ndarray, market_data: pd.DataFrame) -> np.ndarray:
         """Validate feature quality with minimal checks."""

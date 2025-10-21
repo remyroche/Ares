@@ -1,9 +1,9 @@
 """
-Similarity Merger
+Data-Driven Similarity Merger
 
 This module provides regime merging capabilities for HDBSCAN-based
-regime discovery, including similarity-based merging, cluster
-consolidation, and regime optimization.
+regime discovery with data-driven threshold optimization, including 
+similarity-based merging, cluster consolidation, and regime optimization.
 """
 
 import numpy as np
@@ -18,19 +18,35 @@ from scipy.cluster.hierarchy import linkage, fcluster
 from scipy.stats import wasserstein_distance
 import warnings
 
+# Import data-driven optimization
+try:
+    from .optimization.data_driven_merging_thresholds import (
+        DataDrivenMergingThresholdOptimizer, RegimeMergingThresholdResult
+    )
+    from .config.data_driven_config import (
+        RegimeMergingThresholdConfig, OptimizationStrategy
+    )
+    DATA_DRIVEN_AVAILABLE = True
+except ImportError:
+    DATA_DRIVEN_AVAILABLE = False
+    logging.warning("Data-driven merging optimization not available")
+
 logger = logging.getLogger(__name__)
 
 @dataclass
-class SimilarityMergerConfig:
-    """Configuration for similarity-based merging."""
-    # Merging parameters
-    enable_merging: bool = True
-    merging_method: str = 'similarity'  # 'similarity', 'hierarchical', 'statistical'
+class DataDrivenSimilarityMergerConfig:
+    """Configuration for data-driven similarity-based merging."""
+    # Enable data-driven optimization
+    enable_data_driven_optimization: bool = True
     
-    # Similarity thresholds
+    # Fallback parameters (used if data-driven optimization fails)
     similarity_threshold: float = 0.8
     distance_threshold: float = 0.2
     statistical_threshold: float = 0.05
+    
+    # Merging parameters
+    enable_merging: bool = True
+    merging_method: str = 'similarity'  # 'similarity', 'hierarchical', 'statistical'
     
     # Similarity metrics
     similarity_metric: str = 'cosine'  # 'cosine', 'euclidean', 'manhattan', 'wasserstein'
@@ -57,33 +73,42 @@ class SimilarityMergerConfig:
     min_cluster_size_after_merge: int = 5
     max_clusters_after_merge: Optional[int] = None
 
-class SimilarityMerger:
+class DataDrivenSimilarityMerger:
     """
-    Similarity-based regime merger for regime discovery.
+    Data-driven similarity-based regime merger for regime discovery.
     
-    Provides intelligent merging of similar regimes based on various
-    similarity metrics and statistical tests.
+    Provides intelligent merging of similar regimes based on data-driven
+    threshold optimization and various similarity metrics.
     """
     
-    def __init__(self, config: Optional[SimilarityMergerConfig] = None):
+    def __init__(self, config: Optional[DataDrivenSimilarityMergerConfig] = None):
         """
-        Initialize similarity merger.
+        Initialize data-driven similarity merger.
         
         Args:
-            config: Configuration for similarity merging
+            config: Configuration for data-driven similarity merging
         """
-        self.config = config or SimilarityMergerConfig()
+        self.config = config or DataDrivenSimilarityMergerConfig()
         self.merging_stats = {}
         self.original_labels = None
         self.merged_labels = None
         self.similarity_matrix = None
+        self.optimization_result = None
+        
+        # Initialize data-driven optimizer if available
+        if self.config.enable_data_driven_optimization and DATA_DRIVEN_AVAILABLE:
+            self.threshold_optimizer = DataDrivenMergingThresholdOptimizer(
+                RegimeMergingThresholdConfig()
+            )
+        else:
+            self.threshold_optimizer = None
         
     def merge_regimes(self, 
                      cluster_labels: np.ndarray,
                      features: np.ndarray,
                      target_metric: Optional[str] = None) -> Tuple[np.ndarray, Dict[str, Any]]:
         """
-        Merge similar regimes based on specified criteria.
+        Merge similar regimes based on data-driven threshold optimization.
         
         Args:
             cluster_labels: Cluster labels to merge
@@ -98,7 +123,7 @@ class SimilarityMerger:
                 logger.info("Regime merging disabled")
                 return cluster_labels, {'merging_performed': False}
             
-            logger.info("🔗 Starting regime merging...")
+            logger.info("🔗 Starting data-driven regime merging...")
             
             # Store original data
             self.original_labels = cluster_labels.copy()
@@ -107,30 +132,103 @@ class SimilarityMerger:
             if self.config.validate_merging:
                 cluster_labels, features = self._validate_input(cluster_labels, features)
             
-            # Calculate initial quality
-            initial_quality = self._calculate_quality_metric(cluster_labels, features, target_metric)
+            # Optimize thresholds if data-driven optimization is enabled
+            if self.config.enable_data_driven_optimization and self.threshold_optimizer:
+                try:
+                    logger.info("🔍 Optimizing merging thresholds using data-driven methods...")
+                    
+                    # Create merging function for optimization
+                    def merging_func(labels, features, thresholds):
+                        return self._merge_with_thresholds(labels, features, thresholds, target_metric)
+                    
+                    # Optimize thresholds
+                    self.optimization_result = self.threshold_optimizer.optimize_thresholds(
+                        cluster_labels, features, merging_func
+                    )
+                    
+                    # Use optimized thresholds
+                    optimal_thresholds = self.optimization_result.optimal_thresholds
+                    logger.info(f"✅ Optimized thresholds: {optimal_thresholds}")
+                    
+                except Exception as e:
+                    logger.warning(f"Data-driven optimization failed: {e}, using fallback thresholds")
+                    optimal_thresholds = {
+                        'similarity_threshold': self.config.similarity_threshold,
+                        'distance_threshold': self.config.distance_threshold,
+                        'p_value_threshold': self.config.statistical_threshold
+                    }
+            else:
+                # Use fallback thresholds
+                optimal_thresholds = {
+                    'similarity_threshold': self.config.similarity_threshold,
+                    'distance_threshold': self.config.distance_threshold,
+                    'p_value_threshold': self.config.statistical_threshold
+                }
             
-            # Perform merging
-            merged_labels = self._perform_merging(cluster_labels, features, target_metric)
-            
-            # Calculate final quality
-            final_quality = self._calculate_quality_metric(merged_labels, features, target_metric)
+            # Perform merging with optimized/fallback thresholds
+            merged_labels = self._merge_with_thresholds(cluster_labels, features, optimal_thresholds, target_metric)
             
             # Calculate merging statistics
             merging_info = self._calculate_merging_stats(
-                cluster_labels, merged_labels, features, initial_quality, final_quality
+                cluster_labels, merged_labels, features, optimal_thresholds
             )
+            
+            # Add optimization results if available
+            if self.optimization_result:
+                merging_info['optimization_results'] = {
+                    'optimization_score': self.optimization_result.optimization_score,
+                    'validation_scores': self.optimization_result.validation_scores,
+                    'merging_statistics': self.optimization_result.merging_statistics
+                }
             
             self.merging_stats = merging_info
             self.merged_labels = merged_labels
             
-            logger.info(f"✅ Regime merging completed. Quality change: {final_quality - initial_quality:.4f}")
+            logger.info(f"✅ Data-driven regime merging completed. Quality change: {merging_info.get('quality_change', 0):.4f}")
             
             return merged_labels, merging_info
             
         except Exception as e:
-            logger.error(f"❌ Regime merging failed: {e}")
+            logger.error(f"❌ Data-driven regime merging failed: {e}")
             return cluster_labels, {'error': str(e)}
+    
+    def _merge_with_thresholds(self, 
+                              cluster_labels: np.ndarray,
+                              features: np.ndarray,
+                              thresholds: Dict[str, float],
+                              target_metric: Optional[str]) -> np.ndarray:
+        """Merge regimes using specified thresholds."""
+        try:
+            # Update config with optimized thresholds
+            original_sim_thresh = self.config.similarity_threshold
+            original_dist_thresh = self.config.distance_threshold
+            original_stat_thresh = self.config.statistical_threshold
+            
+            self.config.similarity_threshold = thresholds.get('similarity_threshold', original_sim_thresh)
+            self.config.distance_threshold = thresholds.get('distance_threshold', original_dist_thresh)
+            self.config.statistical_threshold = thresholds.get('p_value_threshold', original_stat_thresh)
+            
+            # Perform merging based on method
+            if self.config.merging_method == 'similarity':
+                merged_labels = self._merge_by_similarity(cluster_labels, features, target_metric)
+            elif self.config.merging_method == 'hierarchical':
+                merged_labels = self._merge_by_hierarchical(cluster_labels, features, target_metric)
+            elif self.config.merging_method == 'statistical':
+                merged_labels = self._merge_by_statistical(cluster_labels, features, target_metric)
+            else:
+                logger.warning(f"⚠️ Unknown merging method: {self.config.merging_method}")
+                merged_labels = self._merge_by_similarity(cluster_labels, features, target_metric)
+            
+            # Restore original thresholds
+            self.config.similarity_threshold = original_sim_thresh
+            self.config.distance_threshold = original_dist_thresh
+            self.config.statistical_threshold = original_stat_thresh
+            
+            return merged_labels
+            
+        except Exception as e:
+            logger.error(f"❌ Merging with thresholds failed: {e}")
+            return cluster_labels
     
     def _validate_input(self, cluster_labels: np.ndarray, features: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         """Validate input data for merging."""
@@ -157,26 +255,6 @@ class SimilarityMerger:
         except Exception as e:
             logger.error(f"❌ Input validation failed: {e}")
             return cluster_labels, features
-    
-    def _perform_merging(self, 
-                        cluster_labels: np.ndarray, 
-                        features: np.ndarray,
-                        target_metric: Optional[str] = None) -> np.ndarray:
-        """Perform regime merging based on specified method."""
-        try:
-            if self.config.merging_method == 'similarity':
-                return self._merge_by_similarity(cluster_labels, features, target_metric)
-            elif self.config.merging_method == 'hierarchical':
-                return self._merge_by_hierarchical(cluster_labels, features, target_metric)
-            elif self.config.merging_method == 'statistical':
-                return self._merge_by_statistical(cluster_labels, features, target_metric)
-            else:
-                logger.warning(f"⚠️ Unknown merging method: {self.config.merging_method}")
-                return self._merge_by_similarity(cluster_labels, features, target_metric)
-                
-        except Exception as e:
-            logger.error(f"❌ Merging process failed: {e}")
-            return cluster_labels
     
     def _merge_by_similarity(self, 
                            cluster_labels: np.ndarray, 
@@ -454,7 +532,7 @@ class SimilarityMerger:
             n_clusters = len(unique_labels)
             
             # Apply multiple testing correction
-            alpha = self.config.p_value_threshold
+            alpha = self.config.statistical_threshold
             if self.config.multiple_testing_correction == 'bonferroni':
                 alpha = alpha / (n_clusters * (n_clusters - 1) / 2)
             elif self.config.multiple_testing_correction == 'fdr':
@@ -623,8 +701,7 @@ class SimilarityMerger:
                                original_labels: np.ndarray,
                                merged_labels: np.ndarray,
                                features: np.ndarray,
-                               initial_quality: float,
-                               final_quality: float) -> Dict[str, Any]:
+                               thresholds: Dict[str, float]) -> Dict[str, Any]:
         """Calculate merging statistics."""
         try:
             # Basic statistics
@@ -635,7 +712,9 @@ class SimilarityMerger:
             merged_regimes = len(set(merged_labels)) - (1 if -1 in merged_labels else 0)
             
             # Quality changes
-            quality_change = final_quality - initial_quality
+            original_quality = self._calculate_quality_metric(original_labels, features)
+            merged_quality = self._calculate_quality_metric(merged_labels, features)
+            quality_change = merged_quality - original_quality
             
             # Regime size changes
             original_sizes = self._calculate_regime_sizes(original_labels)
@@ -647,12 +726,13 @@ class SimilarityMerger:
                 'original_regimes': original_regimes,
                 'merged_regimes': merged_regimes,
                 'regime_reduction': original_regimes - merged_regimes,
-                'initial_quality': initial_quality,
-                'final_quality': final_quality,
+                'original_quality': original_quality,
+                'merged_quality': merged_quality,
                 'quality_change': quality_change,
                 'original_regime_sizes': original_sizes,
                 'merged_regime_sizes': merged_sizes,
-                'similarity_matrix': self.similarity_matrix
+                'similarity_matrix': self.similarity_matrix,
+                'thresholds_used': thresholds
             }
             
             return stats
@@ -685,3 +765,7 @@ class SimilarityMerger:
     def get_similarity_matrix(self) -> Optional[np.ndarray]:
         """Get similarity matrix."""
         return self.similarity_matrix.copy() if self.similarity_matrix is not None else None
+    
+    def get_optimization_results(self) -> Optional[RegimeMergingThresholdResult]:
+        """Get data-driven optimization results."""
+        return self.optimization_result

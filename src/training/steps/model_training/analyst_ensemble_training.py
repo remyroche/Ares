@@ -54,7 +54,7 @@ from dataclasses import dataclass
 from src.utils.tprint import (
     tprint, tprint_info, tprint_warning, tprint_error, tprint_success,
     tprint_debug, tprint_progress, tprint_performance, tprint_structured,
-    tprint_timer, tprint_data_preview, LogLevel
+    tprint_timer, tprint_data_preview, tprint_data_format, LogLevel
 )
 
 from src.utils.logger import system_logger
@@ -314,6 +314,8 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
                     model_save_path="generated/model_training/models/analyst_ensemble_models_5m",
                     evaluation_metrics=["mse", "mae", "r2", "mape", "smape"]
                 )
+            # Debug configuration format for troubleshooting
+            tprint_data_format(config.__dict__, "ensemble_config", level=LogLevel.DEBUG)
             return config
         except Exception as e:
             tprint_error(f"Configuration setup failed: {e}")
@@ -1030,6 +1032,11 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
         tprint_data_preview(X, "input_features_X")
         tprint_data_preview(y, "input_targets_y")
         tprint_data_preview(regime_labels, "input_regime_labels")
+        
+        # Debug data format for troubleshooting
+        tprint_data_format(X, "input_features_X", level=LogLevel.INFO)
+        tprint_data_format(y, "input_targets_y", level=LogLevel.INFO)
+        tprint_data_format(regime_labels, "input_regime_labels", level=LogLevel.INFO)
 
         # Initialize NAS models if available
         nas_models = None

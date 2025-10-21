@@ -43,7 +43,7 @@ try:
     from src.utils.tprint import (
         tprint, tprint_info, tprint_warning, tprint_error, tprint_success,
         tprint_debug, tprint_progress, tprint_performance, tprint_structured,
-        tprint_timer, tprint_data_preview, LogLevel
+        tprint_timer, tprint_data_preview, tprint_data_format, LogLevel
     )
     TPRINT_AVAILABLE = True
 except ImportError as e:
@@ -397,6 +397,9 @@ class AnalystModelsTrainingStepRefactored(BaseStep):
             timeframe = config.get('timeframe', '15m')
             direction = config.get('direction', 'longs')
             execution_mode = config.get('execution_mode', 'light')
+            
+            # Debug configuration format for troubleshooting
+            tprint_data_format(config, "analyst_training_config", level=LogLevel.DEBUG)
             
             if not symbol:
                 raise ValueError("Symbol is required for analyst models training")
@@ -917,6 +920,7 @@ class AnalystModelsTrainingStepRefactored(BaseStep):
                 'sentiment_data': {}
             }
             tprint_data_preview(feature_data, "prepared_features")
+            tprint_data_format(feature_data, "prepared_features", level=LogLevel.INFO)
             return feature_data
         except Exception as e:
             return {'success': False, 'error': str(e)}
@@ -925,12 +929,14 @@ class AnalystModelsTrainingStepRefactored(BaseStep):
         """Analyze regimes with enhanced error handling."""
         try:
             # This would contain the actual regime analysis logic
-            return {
+            regime_data = {
                 'success': True,
                 'regimes_count': 3,
                 'regime_labels': [0, 1, 2],
                 'regime_characteristics': {}
             }
+            tprint_data_format(regime_data, "regime_analysis", level=LogLevel.INFO)
+            return regime_data
         except Exception as e:
             return {'success': False, 'error': str(e)}
 

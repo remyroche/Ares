@@ -36,7 +36,7 @@ from .logger import system_logger
 from .tprint import (
     tprint, tprint_success, tprint_info, tprint_warning, tprint_error,
     tprint_debug, tprint_performance, tprint_progress, tprint_structured,
-    tprint_exception, tprint_with_level, LogLevel, TPrintConfig
+    tprint_exception, tprint_with_level, tprint_data_preview, LogLevel, TPrintConfig
 )
 from .common_operations import ensure_directory
 from .version_manager import get_version_manager
@@ -116,6 +116,7 @@ try:
     PSUTIL_AVAILABLE: Final[bool] = True
 except ImportError:
     PSUTIL_AVAILABLE: Final[bool] = False
+
 
 
 class CompressionType(Enum):
@@ -673,6 +674,9 @@ class ArtifactManager:
                 tprint_info(f"💾 SAVING ARTIFACT: {artifact_name}")
                 tprint_info(f"📊 Data Preview:\n{preview}")
                 
+                # Add enhanced data preview
+                tprint_data_preview(data, f"saving_artifact_{artifact_name}", level=LogLevel.INFO)
+                
                 # Get current step name from path manager
                 step_name = self._path_manager._current_step_name or "unknown"
                 
@@ -768,6 +772,10 @@ class ArtifactManager:
                 
                 # Load artifact
                 data = self._storage.load_artifact(file_path)
+                
+                # Add enhanced data preview
+                if data is not None:
+                    tprint_data_preview(data, f"loaded_artifact_{artifact_name}", level=LogLevel.INFO)
                 
                 if data is not None:
                     # Cache if enabled
@@ -1210,21 +1218,27 @@ class ArtifactManager:
             if path.suffix == '.parquet':
                 if PANDAS_AVAILABLE:
                     tprint_debug(f"📊 Loading parquet file: {path}")
-                    return pd.read_parquet(path)
+                    data = pd.read_parquet(path)
+                    tprint_data_preview(data, f"parquet_{path.stem}", level=LogLevel.DEBUG)
+                    return data
                 else:
                     tprint_warning(f"⚠️ Pandas not available, cannot load parquet: {path}")
                     return None
             elif path.suffix == '.csv':
                 if PANDAS_AVAILABLE:
                     tprint_debug(f"📊 Loading CSV file: {path}")
-                    return pd.read_csv(path, index_col=0)
+                    data = pd.read_csv(path, index_col=0)
+                    tprint_data_preview(data, f"csv_{path.stem}", level=LogLevel.DEBUG)
+                    return data
                 else:
                     tprint_warning(f"⚠️ Pandas not available, cannot load CSV: {path}")
                     return None
             elif path.suffix == '.pkl':
                 tprint_debug(f"📦 Loading pickle file: {path}")
                 with open(path, 'rb') as f:
-                    return pickle.load(f)
+                    data = pickle.load(f)
+                    tprint_data_preview(data, f"pickle_{path.stem}", level=LogLevel.DEBUG)
+                    return data
             elif path.suffix == '.json':
                 tprint_debug(f"📄 Loading JSON file: {path}")
                 with open(path, 'r') as f:

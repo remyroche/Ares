@@ -1306,6 +1306,299 @@ def enhanced_traceback(depth: int = 0, show_locals: bool = True, compact: bool =
         _global_manager.config.show_locals = old_locals
         _global_manager.config.compact_traceback = old_compact
 
+def tprint_data_preview(data: Any, name: str = "data", max_rows: int = None, 
+                       max_cols: int = None, level: LogLevel = LogLevel.DEBUG, 
+                       include_metadata: bool = True, force_log: bool = False) -> None:
+    """
+    Smart data preview with performance optimization.
+    
+    Args:
+        data: Data to preview (DataFrame, array, or any data structure)
+        name: Name/description of the data
+        max_rows: Maximum rows to show (default: from config or 5)
+        max_cols: Maximum columns to show (default: from config or 10)
+        level: Log level for the preview
+        include_metadata: Whether to include metadata (default: True)
+        force_log: Force logging even for large datasets (default: False)
+    """
+    # Check if data preview is enabled
+    try:
+        import os
+        if not os.getenv('ENABLE_DATA_PREVIEW', 'false').lower() == 'true':
+            return
+    except:
+        pass
+    
+    # Load configuration defaults
+    try:
+        import os
+        DATA_PREVIEW_CONFIG = {
+            'max_rows': int(os.getenv('DATA_PREVIEW_MAX_ROWS', '5')),
+            'max_cols': int(os.getenv('DATA_PREVIEW_MAX_COLS', '10')),
+            'large_dataset_threshold': int(os.getenv('DATA_PREVIEW_LARGE_THRESHOLD', '10000'))
+        }
+    except:
+        DATA_PREVIEW_CONFIG = {
+            'max_rows': 5,
+            'max_cols': 10,
+            'large_dataset_threshold': 10000
+        }
+    
+    # Use config defaults if not provided
+    if max_rows is None:
+        max_rows = DATA_PREVIEW_CONFIG['max_rows']
+    if max_cols is None:
+        max_cols = DATA_PREVIEW_CONFIG['max_cols']
+    
+    # Convert string log level to enum safely
+    if isinstance(level, str):
+        try:
+            level = LogLevel[level.upper()]
+        except KeyError:
+            level = LogLevel.DEBUG
+    
+    # Check for large datasets to prevent log pollution (with improved __len__ check)
+    try:
+        if not force_log and hasattr(data, '__len__'):
+            try:
+                data_len = len(data)
+                if data_len > DATA_PREVIEW_CONFIG['large_dataset_threshold']:
+                    tprint_with_level(level, f"📊 {name} preview: Large dataset ({data_len} items) - use force_log=True to preview")
+                    return
+            except TypeError:
+                # Handle 0-D arrays or other types that don't support len()
+                pass
+    except:
+        pass
+    
+    try:
+        # Try to import required libraries for type checking
+        try:
+            import pandas as pd
+            import numpy as np
+            PANDAS_AVAILABLE = True
+            NUMPY_AVAILABLE = True
+        except ImportError:
+            PANDAS_AVAILABLE = False
+            NUMPY_AVAILABLE = False
+        
+        try:
+            import pyarrow as pa
+            import pyarrow.parquet as pq
+            PYARROW_AVAILABLE = True
+        except ImportError:
+            PYARROW_AVAILABLE = False
+        
+        # Handle PyArrow Tables
+        if PYARROW_AVAILABLE and isinstance(data, pa.Table):
+            tprint_with_level(level, f"📊 {name} preview (Arrow Table):")
+            tprint_with_level(level, f"  Schema: {data.schema}")
+            tprint_with_level(level, f"  Num rows: {data.num_rows}, Num columns: {data.num_columns}")
+            
+            if include_metadata:
+                try:
+                    size_bytes = data.nbytes
+                    tprint_with_level(level, f"  Estimated memory: {size_bytes / 1024**2:.2f} MB")
+                except Exception as mem_err:
+                    tprint_with_level(level, f"  Memory: (Could not measure: {mem_err})")
+            
+            # Preview first few rows
+            try:
+                if PANDAS_AVAILABLE:
+                    preview_df = data.slice(0, max_rows).to_pandas()
+                    tprint_with_level(level, f"  Sample data (first {max_rows} rows):")
+                    tprint_with_level(level, f"  {preview_df}")
+                else:
+                    # Fallback to Arrow table slice
+                    preview_table = data.slice(0, max_rows)
+                    tprint_with_level(level, f"  Sample data (first {max_rows} rows):")
+                    tprint_with_level(level, f"  {preview_table}")
+            except Exception as err:
+                tprint_with_level(level, f"  ⚠️  Could not preview rows: {err}")
+        
+        # Handle Parquet files by path
+        elif PYARROW_AVAILABLE and isinstance(data, str) and data.endswith('.parquet'):
+            try:
+                pf = pq.ParquetFile(data)
+                tprint_with_level(level, f"📊 {name} preview (Parquet file):")
+                tprint_with_level(level, f"  Path: {data}")
+                tprint_with_level(level, f"  Schema: {pf.schema_arrow}")
+                tprint_with_level(level, f"  Num rows: {pf.metadata.num_rows}, Num row groups: {pf.num_row_groups}")
+                
+                if include_metadata:
+                    try:
+                        import os
+                        file_size = os.path.getsize(data)
+                        tprint_with_level(level, f"  File size: {file_size / 1024**2:.2f} MB")
+                    except Exception as size_err:
+                        tprint_with_level(level, f"  File size: (Could not measure: {size_err})")
+                
+                # Read first few rows (efficiently)
+                if pf.num_row_groups > 0:
+                    table = pf.read_row_group(0).slice(0, max_rows)
+                    if PANDAS_AVAILABLE:
+                        preview_df = table.to_pandas()
+                        tprint_with_level(level, f"  Sample data (first {max_rows} rows from first row group):")
+                        tprint_with_level(level, f"  {preview_df}")
+                    else:
+                        tprint_with_level(level, f"  Sample data (first {max_rows} rows from first row group):")
+                        tprint_with_level(level, f"  {table}")
+                else:
+                    tprint_with_level(level, f"  No row groups available")
+            
+            except Exception as err:
+                tprint_with_level(level, f"  ⚠️  Could not preview Parquet file: {err}")
+        
+        # Handle pandas DataFrames
+        elif PANDAS_AVAILABLE and isinstance(data, pd.DataFrame):
+            tprint_with_level(level, f"📊 {name} preview:")
+            tprint_with_level(level, f"  Shape: {data.shape}")
+            tprint_with_level(level, f"  Dtypes: {dict(data.dtypes)}")
+            
+            if include_metadata:
+                try:
+                    memory_mb = data.memory_usage(deep=True).sum() / 1024**2
+                    tprint_with_level(level, f"  Memory: {memory_mb:.2f} MB")
+                except Exception as mem_err:
+                    tprint_with_level(level, f"  Memory: (Could not measure: {mem_err})")
+                
+                # Check for common data quality issues
+                try:
+                    null_count = data.isnull().sum().sum()
+                    if null_count > 0:
+                        tprint_with_level(level, f"  ⚠️  Null values: {null_count}")
+                except Exception as null_err:
+                    tprint_with_level(level, f"  ⚠️  Could not check null values: {null_err}")
+                
+                # Check for infinite values
+                try:
+                    if NUMPY_AVAILABLE:
+                        numeric_cols = data.select_dtypes(include=[np.number]).columns
+                        if len(numeric_cols) > 0:
+                            inf_count = np.isinf(data[numeric_cols]).sum().sum()
+                            if inf_count > 0:
+                                tprint_with_level(level, f"  ⚠️  Infinite values: {inf_count}")
+                except Exception as inf_err:
+                    tprint_with_level(level, f"  ⚠️  Could not check infinite values: {inf_err}")
+            
+            # Show sample data with smart truncation
+            if len(data) > 0:
+                preview_data = data.head(max_rows)
+                if len(data.columns) > max_cols:
+                    preview_data = preview_data.iloc[:, :max_cols]
+                    tprint_with_level(level, f"  Sample data (first {max_rows} rows, first {max_cols} cols):")
+                else:
+                    tprint_with_level(level, f"  Sample data (first {max_rows} rows):")
+                tprint_with_level(level, f"  {preview_data}")
+            else:
+                tprint_with_level(level, f"  Empty dataset")
+        
+        # Handle numpy arrays
+        elif NUMPY_AVAILABLE and isinstance(data, np.ndarray):
+            tprint_with_level(level, f"📊 {name} preview:")
+            tprint_with_level(level, f"  Shape: {data.shape}")
+            tprint_with_level(level, f"  Dtype: {data.dtype}")
+            
+            if include_metadata:
+                try:
+                    memory_mb = data.nbytes / 1024**2
+                    tprint_with_level(level, f"  Memory: {memory_mb:.2f} MB")
+                except Exception as mem_err:
+                    tprint_with_level(level, f"  Memory: (Could not measure: {mem_err})")
+                
+                # Check for data quality issues - simplified
+                try:
+                    if np.issubdtype(data.dtype, np.floating):
+                        null_count = np.isnan(data).sum()
+                        inf_count = np.isinf(data).sum()
+                        
+                        if null_count > 0:
+                            tprint_with_level(level, f"  ⚠️  NaN values: {null_count}")
+                        if inf_count > 0:
+                            tprint_with_level(level, f"  ⚠️  Infinite values: {inf_count}")
+                except Exception as quality_err:
+                    tprint_with_level(level, f"  ⚠️  Could not check data quality: {quality_err}")
+            
+            # Show sample data
+            if data.size > 0:
+                if data.ndim == 1:
+                    sample_size = min(max_rows, len(data))
+                    tprint_with_level(level, f"  Sample data (first {sample_size} values):")
+                    tprint_with_level(level, f"  {data[:sample_size]}")
+                elif data.ndim == 2:
+                    sample_rows = min(max_rows, data.shape[0])
+                    sample_cols = min(max_cols, data.shape[1])
+                    tprint_with_level(level, f"  Sample data (first {sample_rows} rows, first {sample_cols} cols):")
+                    tprint_with_level(level, f"  {data[:sample_rows, :sample_cols]}")
+                else:
+                    tprint_with_level(level, f"  Array shape: {data.shape}")
+            else:
+                tprint_with_level(level, f"  Empty array")
+        
+        # Handle dictionaries with deep preview
+        elif isinstance(data, dict):
+            tprint_with_level(level, f"📊 {name} preview:")
+            tprint_with_level(level, f"  Type: dict")
+            tprint_with_level(level, f"  Keys: {len(data)}")
+            
+            if include_metadata:
+                try:
+                    import sys
+                    size_bytes = sys.getsizeof(data)
+                    tprint_with_level(level, f"  Memory: {size_bytes / 1024**2:.2f} MB")
+                except Exception as mem_err:
+                    tprint_with_level(level, f"  Memory: (Could not measure: {mem_err})")
+            
+            # Show sample keys and values
+            sample_keys = list(data.keys())[:max_rows]
+            tprint_with_level(level, f"  Sample keys: {sample_keys}")
+            
+            # Try to pretty print if it's JSON-serializable
+            try:
+                import json
+                json_str = json.dumps(data, indent=2, default=str)
+                if len(json_str) > 1000:
+                    json_str = json_str[:1000] + "..."
+                tprint_with_level(level, f"  JSON preview:\n{json_str}")
+            except Exception:
+                # Fallback to string representation
+                data_str = str(data)
+                if len(data_str) > 500:
+                    data_str = data_str[:500] + "..."
+                tprint_with_level(level, f"  Preview: {data_str}")
+        
+        # Handle other data types
+        else:
+            tprint_with_level(level, f"📊 {name} preview:")
+            tprint_with_level(level, f"  Type: {type(data).__name__}")
+            
+            if hasattr(data, '__len__'):
+                try:
+                    tprint_with_level(level, f"  Length: {len(data)}")
+                except Exception:
+                    pass
+            
+            if include_metadata:
+                try:
+                    import sys
+                    size_bytes = sys.getsizeof(data)
+                    tprint_with_level(level, f"  Memory: {size_bytes / 1024**2:.2f} MB")
+                except Exception as mem_err:
+                    tprint_with_level(level, f"  Memory: (Could not measure: {mem_err})")
+            
+            # Show string representation (truncated)
+            try:
+                data_str = str(data)
+                if len(data_str) > 500:
+                    data_str = data_str[:500] + "..."
+                tprint_with_level(level, f"  Preview: {data_str}")
+            except Exception as str_err:
+                tprint_with_level(level, f"  Preview: (Could not convert to string: {str_err})")
+    
+    except Exception as e:
+        tprint_with_level(level, f"📊 {name} preview (error): {e}")
+
+
 # Export all functions
 __all__ = [
     # Core functions
@@ -1322,6 +1615,7 @@ __all__ = [
     'tprint_with_level',
     'tprint_batch',
     'tprint_numba_compatible',
+    'tprint_data_preview',
 
     # Enhanced print functions
     'enhanced_print',

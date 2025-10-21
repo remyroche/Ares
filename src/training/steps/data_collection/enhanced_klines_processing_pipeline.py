@@ -224,7 +224,8 @@ from src.trading.execution.exchange_interface import ExchangeInterface, create_e
 
 # Import the proper classes from their locations
 from exchanges.shared.unified_ohlcv_standardizer import UnifiedOHLCVStandardizer
-from src.utils.data.klines_parquet import KlinesParquetManager
+# Import BaseStep for inheritance
+from src.training.steps.base_step import BaseStep
 
 # Initialize quality utilities at module level
 _lazy_import_quality_utilities()
@@ -336,7 +337,7 @@ class PipelineConfig:
     batch_compatible: bool = True
     storage_config: Optional[StorageConfig] = None
 
-class EnhancedKlinesProcessingPipeline:
+class EnhancedKlinesProcessingPipeline(BaseStep):
     """
     Enhanced klines data processing pipeline with comprehensive type hints,
     exchange-agnostic design, and fast-fail patterns.
@@ -360,6 +361,10 @@ class EnhancedKlinesProcessingPipeline:
         Args:
             config: Pipeline configuration
         """
+        # Initialize BaseStep first
+        step_name = f"enhanced_klines_processing_{config.exchange if config else 'default'}"
+        super().__init__(step_name)
+        
         self.config = config or PipelineConfig()
         self.data_dir = Path(self.config.data_dir)
         self.exchange = self.config.exchange.lower()
@@ -372,24 +377,8 @@ class EnhancedKlinesProcessingPipeline:
         _lazy_import_quality_utilities()
         self.duplicate_analyzer = _COMPREHENSIVE_DUPLICATE_ANALYZER()
 
-        # Initialize KlinesParquetManager with optimized configuration
-        if self.config.storage_config:
-            self.klines_manager = KlinesParquetManager(self.config.data_dir)
-        else:
-            # Create optimized storage config
-            storage_config = StorageConfig(
-                base_dir=str(self.data_dir),
-                compression="zstd",  # Better compression than snappy
-                compression_level=3,  # ZSTD compression level
-                index=False,  # Don't store index as separate column
-                row_group_size=50000,  # Optimized row group size
-                use_dictionary_encoding=True,  # Enable dictionary encoding
-                enable_schema_optimization=True,  # Enable schema optimization
-                enable_compression_analysis=True,  # Enable compression analysis
-                enable_metadata=True,
-                enable_validation=True
-            )
-            self.klines_manager = KlinesParquetManager(self.config.data_dir)
+        # Note: KlinesParquetManager is now available via BaseStep integration
+        # Use self._store_klines(), self._load_klines(), etc. methods
 
         # Processing state
         self.current_symbol: Optional[str] = None
@@ -406,6 +395,115 @@ class EnhancedKlinesProcessingPipeline:
 
         if self.enable_logging:
             tprint_success(f"✅ Enhanced Klines Processing Pipeline initialized for {self.exchange}")
+
+    async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Execute the enhanced klines processing pipeline (required by BaseStep).
+        
+        Args:
+            config: Configuration containing symbol, exchange, interval, etc.
+            
+        Returns:
+            Execution result with artifacts and metrics
+        """
+        try:
+            self.logger.info("🚀 Starting enhanced klines processing pipeline execution")
+            
+            # Extract configuration
+            symbol = config.get('symbol', 'ETHUSDT')
+            exchange = config.get('exchange', 'binance')
+            interval = config.get('interval', '1m')
+            years = config.get('years', 3)
+            
+            if not symbol:
+                raise ValueError("Symbol is required for klines processing")
+            
+            # Set context for klines operations
+            self._set_context(
+                symbol=symbol,
+                exchange=exchange,
+                direction=config.get('direction', 'long'),
+                model=config.get('model', 'Analyst')
+            )
+            
+            self.logger.info(f"Processing klines data for {symbol} from {exchange}")
+            self.logger.info(f"Interval: {interval}, Years: {years}")
+            
+            # Initialize artifacts list
+            artifacts = []
+            metrics = {}
+            
+            # Process klines data using the existing pipeline
+            results = await self.process_klines_data(
+                symbol=symbol,
+                interval=interval,
+                years=years,
+                exchange_interface=None,  # Will be created internally
+                resampling_config=None,
+                max_gap_minutes=1,
+                create_consolidated=True
+            )
+            
+            if results.get('pipeline_success', False):
+                # Store processed data using KlinesParquetManager
+                if 'final_data' in results and results['final_data'] is not None:
+                    success = self._store_klines_with_context(
+                        df=results['final_data'],
+                        interval=interval,
+                        batch_id=f"processing_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+                        metadata={
+                            'years': years,
+                            'processing_timestamp': datetime.now().isoformat(),
+                            'data_quality': results.get('data_quality', 'unknown'),
+                            'final_shape': results.get('final_data_shape', 'unknown')
+                        }
+                    )
+                    
+                    if success:
+                        self.logger.info(f"✅ Processed klines data stored using KlinesParquetManager")
+                        artifacts.append({
+                            'name': f"processed_klines_{interval}",
+                            'type': 'klines_data',
+                            'size': f"Processed successfully"
+                        })
+                    else:
+                        self.logger.warning(f"⚠️ Failed to store processed klines data")
+                
+                # Calculate metrics
+                metrics = {
+                    'symbol': symbol,
+                    'exchange': exchange,
+                    'interval': interval,
+                    'years': years,
+                    'data_quality': results.get('data_quality', 'unknown'),
+                    'final_shape': results.get('final_data_shape', 'unknown'),
+                    'pipeline_success': results.get('pipeline_success', False)
+                }
+                
+                self.logger.info(f"✅ Enhanced klines processing completed successfully")
+                return {
+                    'success': True,
+                    'artifacts': artifacts,
+                    'metrics': metrics,
+                    'results': results
+                }
+            else:
+                self.logger.error("❌ Enhanced klines processing failed")
+                return {
+                    'success': False,
+                    'artifacts': artifacts,
+                    'metrics': metrics,
+                    'error': 'Pipeline processing failed'
+                }
+                
+        except Exception as e:
+            self.logger.error(f"❌ Enhanced klines processing failed: {e}")
+            return {
+                'success': False,
+                'artifacts': [],
+                'metrics': {},
+                'error': str(e)
+            }
             tprint_info(f"   📁 Data directory: {self.data_dir}")
             tprint_info(f"   🔧 Gap filling: {'enabled' if self.config.enable_gap_filling else 'disabled'}")
             tprint_info(f"   📊 Resampling: {'enabled' if self.config.enable_resampling else 'disabled'}")
@@ -1867,19 +1965,35 @@ class EnhancedKlinesProcessingPipeline:
             # Create consolidated batch ID
             consolidated_batch_id = f"{batch_id}_consolidated" if batch_id else "consolidated"
 
-            # Store using KlinesParquetManager
-            success = self.klines_manager.write_data(
-                df, symbol, f"{interval}_consolidated", "processed", overwrite=True
-            )
+            # Store using BaseStep KlinesParquetManager integration
+            if self._is_klines_available():
+                success = self._store_klines(
+                    df=df,
+                    symbol=symbol,
+                    exchange=self.exchange,
+                    interval=f"{interval}_consolidated",
+                    batch_id=consolidated_batch_id,
+                    metadata={
+                        'consolidation_timestamp': datetime.now().isoformat(),
+                        'total_records': len(df),
+                        'consolidated': True
+                    }
+                )
 
-            if not success:
-                raise RuntimeError("Failed to store consolidated file using KlinesParquetManager")
+                if not success:
+                    raise RuntimeError("Failed to store consolidated file using KlinesParquetManager")
 
-            # Log optimization benefits for consolidated file
-            if self.enable_logging:
-                compression_stats = self.klines_manager.get_compression_stats()
-                if compression_stats.get("total_files", 0) > 0:
-                    tprint_info(f"📊 Consolidated file compression: {compression_stats.get('overall_compression_ratio', 0):.1f}%")
+                # Log optimization benefits for consolidated file
+                if self.enable_logging:
+                    compression_stats = self._get_klines_compression_stats()
+                    if compression_stats.get("total_files", 0) > 0:
+                        tprint_info(f"📊 Consolidated file compression: {compression_stats.get('overall_compression_ratio', 0):.1f}%")
+            else:
+                # Fallback to direct parquet storage
+                output_file = self.data_dir / self.exchange / symbol.lower() / "processed" / f"{symbol.lower()}_{interval}_consolidated.parquet"
+                output_file.parent.mkdir(parents=True, exist_ok=True)
+                df.to_parquet(output_file, index=False, compression='snappy')
+                success = True
 
             # Get the actual file path from the manager
             output_file = self.data_dir / self.exchange / symbol.lower() / "processed" / f"{symbol.lower()}_{interval}_consolidated"
@@ -1931,16 +2045,34 @@ class EnhancedKlinesProcessingPipeline:
             if self.enable_logging:
                 tprint_info(f"💾 Storing original data for {symbol} {interval}")
 
-            # Store data using KlinesParquetManager
-            success = self.klines_manager.write_data(
-                df, symbol, interval, "raw", overwrite=True
-            )
+            # Store data using BaseStep KlinesParquetManager integration
+            if self._is_klines_available():
+                success = self._store_klines(
+                    df=df,
+                    symbol=symbol,
+                    exchange=self.exchange,
+                    interval=interval,
+                    batch_id=batch_id,
+                    metadata={
+                        'processing_timestamp': datetime.now().isoformat(),
+                        'total_records': len(df),
+                        'original_data': True
+                    }
+                )
 
-            if success:
+                if success:
+                    result.success = True
+
+                    # Get compression statistics
+                    compression_stats = self._get_klines_compression_stats()
+            else:
+                # Fallback to direct parquet storage
+                output_file = self.data_dir / self.exchange / symbol.lower() / "raw" / f"{symbol.lower()}_{interval}.parquet"
+                output_file.parent.mkdir(parents=True, exist_ok=True)
+                df.to_parquet(output_file, index=False, compression='snappy')
+                success = True
                 result.success = True
-
-                # Get compression statistics
-                compression_stats = self.klines_manager.get_compression_stats()
+                compression_stats = {}
 
                 result.metadata = {
                     "stored_files": [f"{symbol}_{interval}_original"],
@@ -2017,10 +2149,27 @@ class EnhancedKlinesProcessingPipeline:
                     resampled_df = self._perform_resampling(df, target_interval, resampling_config)
 
                     if not resampled_df.empty:
-                        # Store resampled data
-                        success = self.klines_manager.write_data(
-                            resampled_df, symbol, target_interval, "processed", overwrite=True
-                        )
+                        # Store resampled data using BaseStep KlinesParquetManager integration
+                        if self._is_klines_available():
+                            success = self._store_klines(
+                                df=resampled_df,
+                                symbol=symbol,
+                                exchange=self.exchange,
+                                interval=target_interval,
+                                batch_id=f"resampled_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+                                metadata={
+                                    'resampling_timestamp': datetime.now().isoformat(),
+                                    'total_records': len(resampled_df),
+                                    'resampled_from': interval,
+                                    'resampled_to': target_interval
+                                }
+                            )
+                        else:
+                            # Fallback to direct parquet storage
+                            output_file = self.data_dir / self.exchange / symbol.lower() / "processed" / f"{symbol.lower()}_{target_interval}.parquet"
+                            output_file.parent.mkdir(parents=True, exist_ok=True)
+                            resampled_df.to_parquet(output_file, index=False, compression='snappy')
+                            success = True
 
                         if success:
                             resampled_intervals.append(target_interval)

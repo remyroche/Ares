@@ -247,8 +247,37 @@ class KlinesDataProcessingPipeline(BaseStep):
             # Sort by timestamp
             consolidated_df = consolidated_df.sort_values('timestamp').reset_index(drop=True)
 
-            # Save consolidated file
-            consolidated_df.to_parquet(output_file, index=False, compression='snappy')
+            # Store consolidated data using KlinesParquetManager
+            if self._is_klines_available():
+                # Set context for klines operations
+                self._set_context(
+                    symbol=symbol,
+                    exchange=exchange,
+                    direction='long',  # Default direction
+                    model='Analyst'    # Default model
+                )
+                
+                # Store consolidated data
+                success = self._store_klines_with_context(
+                    df=consolidated_df,
+                    interval=interval,
+                    batch_id="consolidated",
+                    metadata={
+                        'consolidation_timestamp': datetime.now().isoformat(),
+                        'total_files': len(parquet_files),
+                        'total_records': len(consolidated_df)
+                    }
+                )
+                
+                if success:
+                    tprint_success(f"✅ Consolidated data stored using KlinesParquetManager")
+                else:
+                    tprint_warning(f"⚠️ Failed to store consolidated data using KlinesParquetManager, falling back to direct parquet")
+                    # Fallback to direct parquet storage
+                    consolidated_df.to_parquet(output_file, index=False, compression='snappy')
+            else:
+                # Fallback to direct parquet storage
+                consolidated_df.to_parquet(output_file, index=False, compression='snappy')
 
             # Create results summary
             result = {
@@ -338,7 +367,34 @@ class KlinesDataProcessingPipeline(BaseStep):
                         downloaded_data[timeframe] = result
                         total_downloads += 1
                         
-                        # Save as artifact
+                        # Set context for klines operations
+                        self._set_context(
+                            symbol=symbol,
+                            exchange=exchange,
+                            direction=config.get('direction', 'long'),
+                            model=config.get('model', 'Analyst')
+                        )
+                        
+                        # Store klines data using BaseStep integration
+                        if hasattr(result, 'get') and 'data' in result:
+                            klines_data = result['data']
+                            if klines_data is not None:
+                                success = self._store_klines_with_context(
+                                    df=klines_data,
+                                    interval=timeframe,
+                                    batch_id=f"download_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+                                    metadata={
+                                        'execution_mode': execution_mode,
+                                        'years': years,
+                                        'download_timestamp': datetime.now().isoformat()
+                                    }
+                                )
+                                if success:
+                                    self.logger.info(f"✅ Stored {timeframe} klines data using KlinesParquetManager")
+                                else:
+                                    self.logger.warning(f"⚠️ Failed to store {timeframe} klines data")
+                        
+                        # Also save as traditional artifact for backward compatibility
                         artifact_path = self._save_artifact(
                             data=result,
                             artifact_name=f"raw_data_{timeframe}",

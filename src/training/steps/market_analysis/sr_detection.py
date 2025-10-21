@@ -24,6 +24,7 @@ import gc
 from src.training.steps.base_step import BaseStep
 
 from src.utils.logger import system_logger
+from src.utils.tprint import tprint_data_preview
 
 # Initialize logger early to avoid usage before definition
 logger = system_logger.getChild('SRDetection')
@@ -233,12 +234,18 @@ class SRDetectionStep(BaseStep):
                 raise ValueError("No market data found in artifacts")
 
             self.logger.info(f'📊 Data loaded: {data.shape[0]:,} rows, {data.shape[1]} columns')
+            
+            # Preview loaded market data for troubleshooting
+            tprint_data_preview(data, "market_data_loaded", max_rows=5, level="INFO")
 
             # Update SR optimization config from config
             self.sr_optimization_config.update(config.get('sr_optimization', {}))
 
             # Detect SR levels
             sr_levels = self._detect_sr_levels(data)
+            
+            # Preview detected SR levels for troubleshooting
+            tprint_data_preview(sr_levels, "detected_sr_levels", max_rows=10, level="INFO")
 
             # Save results using artifact manager
             self._save_artifact('sr_levels', sr_levels)
@@ -286,6 +293,9 @@ class SRDetectionStep(BaseStep):
         self.logger.info(f'📊 Input data shape: {data.shape[0]:,} rows × {data.shape[1]} columns')
         self.logger.info(f'📊 Input data columns: {list(data.columns)}')
         self.logger.info(f'📊 Input data memory usage: {data.memory_usage(deep=True).sum() / 1024**2:.2f} MB')
+        
+        # Preview input data for SR detection troubleshooting
+        tprint_data_preview(data, "input_data_for_sr_detection", max_rows=5, level="DEBUG")
 
         # Use comprehensive data validation
         self.logger.info('🔍 Starting comprehensive data validation for SR detection...')
@@ -296,6 +306,9 @@ class SRDetectionStep(BaseStep):
         self.logger.info(f'✅ S/R detection input validation passed: {len(clean_data)} rows, {len(clean_data.columns)} columns')
         self.logger.info(f'⏱️ Data validation took: {validation_time:.2f} seconds')
         self.logger.info(f'📊 Data reduction: {len(data) - len(clean_data)} rows removed ({(len(data) - len(clean_data))/len(data)*100:.1f}%)')
+        
+        # Preview validated data before SR detection
+        tprint_data_preview(clean_data, "validated_data_before_sr_detection", max_rows=5, level="DEBUG")
 
         try:
             # Local imports to avoid circular dependencies
@@ -344,6 +357,9 @@ class SRDetectionStep(BaseStep):
             basic_sr_levels = detector.detect_sr_levels(clean_data)
             basic_detection_time = time.time() - basic_detection_start
             self.logger.info(f'✅ Basic SR level detection completed in {basic_detection_time:.2f} seconds')
+            
+            # Preview basic SR levels detected
+            tprint_data_preview(basic_sr_levels, "basic_sr_levels_detected", max_rows=10, level="DEBUG")
 
             # Convert to list format for further processing
             self.logger.info('🔄 Converting basic SR levels to list format...')

@@ -29,7 +29,7 @@ except ImportError:
 
 from src.training.steps.base_step import BaseStep
 from src.utils.logger import system_logger
-from src.utils.tprint import tprint, tprint_info, tprint_success, tprint_warning, tprint_error
+from src.utils.tprint import tprint, tprint_info, tprint_success, tprint_warning, tprint_error, tprint_data_preview
 
 # Import SR clustering components
 try:
@@ -106,6 +106,9 @@ class SRParameterOptimizationStep(BaseStep):
                 raise ValueError("No market data found")
             
             tprint(f"✅ Loaded market data: {market_data.shape[0]} rows, {market_data.shape[1]} columns", "SUCCESS")
+            
+            # Preview loaded market data for troubleshooting
+            tprint_data_preview(market_data, "market_data_for_optimization", max_rows=5, level="INFO")
 
             # Load SR levels
             sr_levels = self._load_sr_levels(config)
@@ -113,6 +116,9 @@ class SRParameterOptimizationStep(BaseStep):
                 raise ValueError("No SR levels found")
             
             tprint(f"✅ Loaded SR levels: {len(sr_levels)} levels", "SUCCESS")
+            
+            # Preview loaded SR levels for troubleshooting
+            tprint_data_preview(sr_levels, "sr_levels_for_optimization", max_rows=10, level="INFO")
 
             # Get parameter grid
             parameter_grid = self._get_parameter_grid(config)
@@ -122,6 +128,9 @@ class SRParameterOptimizationStep(BaseStep):
 
             # Ensure data has proper datetime indexing for backtesting
             market_data = self._prepare_data_for_backtesting(market_data)
+            
+            # Preview prepared data for backtesting
+            tprint_data_preview(market_data, "prepared_data_for_backtesting", max_rows=5, level="DEBUG")
 
             # Create backtesting engine with validated hardware optimizations
             backtest_config = self._create_validated_backtest_config()
@@ -130,6 +139,10 @@ class SRParameterOptimizationStep(BaseStep):
 
             # Create sample SR levels for optimization with proper data splitting
             level_creation_data, backtest_data = self._split_data_for_optimization(market_data)
+            
+            # Preview split data for troubleshooting
+            tprint_data_preview(level_creation_data, "level_creation_data", max_rows=5, level="DEBUG")
+            tprint_data_preview(backtest_data, "backtest_data", max_rows=5, level="DEBUG")
 
             # Run parameter optimization
             optimization_result = await self._run_parameter_optimization(
@@ -202,6 +215,9 @@ class SRParameterOptimizationStep(BaseStep):
             # Check data size and optimize memory usage
             data_size_mb = data.memory_usage(deep=True).sum() / (1024 * 1024)
             self.logger.info(f"Data size: {data_size_mb:.2f} MB")
+            
+            # Preview loaded market data for troubleshooting
+            tprint_data_preview(data, "loaded_market_data", max_rows=5, level="DEBUG")
 
             # For large datasets, optimize memory usage
             if data_size_mb > 100:  # Large dataset (> 100MB)
@@ -238,6 +254,9 @@ class SRParameterOptimizationStep(BaseStep):
         self.logger.info(f"Data index type before conversion: {type(data.index)}")
         self.logger.info(f"Data columns: {list(data.columns)}")
         self.logger.info(f"Data shape: {data.shape}")
+        
+        # Preview data before backtest preparation
+        tprint_data_preview(data, "data_before_backtest_prep", max_rows=5, level="DEBUG")
 
         if not isinstance(data.index, pd.DatetimeIndex):
             self.logger.info("Converting data to datetime index for backtesting")
@@ -322,6 +341,9 @@ class SRParameterOptimizationStep(BaseStep):
 
         self.logger.info(f"Final data index type: {type(data.index)}")
         self.logger.info(f"Data index sample: {data.index[:3] if len(data) > 0 else 'empty'}")
+        
+        # Preview data after backtest preparation
+        tprint_data_preview(data, "data_after_backtest_prep", max_rows=5, level="DEBUG")
 
         return data
 
@@ -559,6 +581,11 @@ class SRParameterOptimizationStep(BaseStep):
         backtest_data = market_data.iloc[split_point:]
 
         self.logger.info(f"Data split: {len(level_creation_data)} rows for training, {len(backtest_data)} rows for testing")
+        
+        # Preview split data for troubleshooting
+        tprint_data_preview(level_creation_data, "training_data_split", max_rows=5, level="DEBUG")
+        tprint_data_preview(backtest_data, "testing_data_split", max_rows=5, level="DEBUG")
+        
         return level_creation_data, backtest_data
 
     def _get_current_data(self):

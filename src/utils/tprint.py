@@ -1306,6 +1306,208 @@ def enhanced_traceback(depth: int = 0, show_locals: bool = True, compact: bool =
         _global_manager.config.show_locals = old_locals
         _global_manager.config.compact_traceback = old_compact
 
+def tprint_data_format(data: Any, name: str = "data", level: LogLevel = LogLevel.DEBUG) -> None:
+    """
+    Universal data format checker - lightweight version for fast troubleshooting.
+    
+    Focuses only on essential data formatting information:
+    - Data types (int64 vs int32, dict, string, etc.)
+    - Shapes and dimensions
+    - Basic properties (length, size)
+    - Key parameters and structure
+    
+    Args:
+        data: Data to check format for
+        name: Name/description of the data
+        level: Log level for the output
+    
+    Example:
+        tprint_data_format(my_dataframe, "training_data")  # Quick format check
+        tprint_data_format(42, "my_int")  # Shows type and value
+    """
+    # Get caller information for debugging
+    try:
+        import inspect
+        frame = inspect.currentframe()
+        caller_frame = frame.f_back if frame else None
+        caller_info = ""
+        if caller_frame:
+            caller_file = caller_frame.f_code.co_filename
+            caller_line = caller_frame.f_lineno
+            caller_function = caller_frame.f_code.co_name
+            # Extract just the filename from the full path
+            caller_filename = caller_file.split('/')[-1] if '/' in caller_file else caller_file.split('\\')[-1]
+            caller_info = f" (called from {caller_filename}:{caller_line} in {caller_function})"
+    except Exception:
+        caller_info = ""
+    
+    try:
+        # Try to import required libraries for type checking
+        try:
+            import pandas as pd
+            import numpy as np
+            PANDAS_AVAILABLE = True
+            NUMPY_AVAILABLE = True
+        except ImportError:
+            PANDAS_AVAILABLE = False
+            NUMPY_AVAILABLE = False
+        
+        try:
+            import pyarrow as pa
+            PYARROW_AVAILABLE = True
+        except ImportError:
+            PYARROW_AVAILABLE = False
+        
+        # Handle PyArrow Tables
+        if PYARROW_AVAILABLE and isinstance(data, pa.Table):
+            tprint_with_level(level, f"🔍 {name} format{caller_info}:")
+            tprint_with_level(level, f"  Type: Arrow Table")
+            tprint_with_level(level, f"  Shape: {data.num_rows} rows × {data.num_columns} cols")
+            tprint_with_level(level, f"  Schema: {[str(field.type) for field in data.schema]}")
+            return
+        
+        # Handle Parquet files by path
+        elif PYARROW_AVAILABLE and isinstance(data, str) and data.endswith('.parquet'):
+            try:
+                import pyarrow.parquet as pq
+                pf = pq.ParquetFile(data)
+                tprint_with_level(level, f"🔍 {name} format{caller_info}:")
+                tprint_with_level(level, f"  Type: Parquet file")
+                tprint_with_level(level, f"  Shape: {pf.metadata.num_rows} rows × {len(pf.schema_arrow)} cols")
+                tprint_with_level(level, f"  Schema: {[str(field.type) for field in pf.schema_arrow]}")
+                return
+            except Exception as err:
+                tprint_with_level(level, f"🔍 {name} format{caller_info}: Parquet file (error reading: {err})")
+                return
+        
+        # Handle pandas DataFrames
+        elif PANDAS_AVAILABLE and isinstance(data, pd.DataFrame):
+            tprint_with_level(level, f"🔍 {name} format{caller_info}:")
+            tprint_with_level(level, f"  Type: DataFrame")
+            tprint_with_level(level, f"  Shape: {data.shape}")
+            tprint_with_level(level, f"  Dtypes: {dict(data.dtypes)}")
+            tprint_with_level(level, f"  Index: {type(data.index).__name__}")
+            return
+        
+        # Handle pandas Series
+        elif PANDAS_AVAILABLE and isinstance(data, pd.Series):
+            tprint_with_level(level, f"🔍 {name} format{caller_info}:")
+            tprint_with_level(level, f"  Type: Series")
+            tprint_with_level(level, f"  Length: {len(data)}")
+            tprint_with_level(level, f"  Dtype: {data.dtype}")
+            tprint_with_level(level, f"  Index: {type(data.index).__name__}")
+            return
+        
+        # Handle numpy arrays
+        elif NUMPY_AVAILABLE and isinstance(data, np.ndarray):
+            tprint_with_level(level, f"🔍 {name} format{caller_info}:")
+            tprint_with_level(level, f"  Type: ndarray")
+            tprint_with_level(level, f"  Shape: {data.shape}")
+            tprint_with_level(level, f"  Dtype: {data.dtype}")
+            tprint_with_level(level, f"  Strides: {data.strides}")
+            return
+        
+        # Handle lists
+        elif isinstance(data, list):
+            tprint_with_level(level, f"🔍 {name} format{caller_info}:")
+            tprint_with_level(level, f"  Type: list")
+            tprint_with_level(level, f"  Length: {len(data)}")
+            if len(data) > 0:
+                tprint_with_level(level, f"  Element types: {[type(item).__name__ for item in data[:5]]}{'...' if len(data) > 5 else ''}")
+            return
+        
+        # Handle tuples
+        elif isinstance(data, tuple):
+            tprint_with_level(level, f"🔍 {name} format{caller_info}:")
+            tprint_with_level(level, f"  Type: tuple")
+            tprint_with_level(level, f"  Length: {len(data)}")
+            if len(data) > 0:
+                tprint_with_level(level, f"  Element types: {[type(item).__name__ for item in data[:5]]}{'...' if len(data) > 5 else ''}")
+            return
+        
+        # Handle dictionaries
+        elif isinstance(data, dict):
+            tprint_with_level(level, f"🔍 {name} format{caller_info}:")
+            tprint_with_level(level, f"  Type: dict")
+            tprint_with_level(level, f"  Keys: {len(data)}")
+            if len(data) > 0:
+                sample_keys = list(data.keys())[:5]
+                tprint_with_level(level, f"  Sample keys: {sample_keys}{'...' if len(data) > 5 else ''}")
+                # Show value types for sample keys
+                value_types = {k: type(data[k]).__name__ for k in sample_keys}
+                tprint_with_level(level, f"  Value types: {value_types}")
+            return
+        
+        # Handle sets
+        elif isinstance(data, set):
+            tprint_with_level(level, f"🔍 {name} format{caller_info}:")
+            tprint_with_level(level, f"  Type: set")
+            tprint_with_level(level, f"  Length: {len(data)}")
+            if len(data) > 0:
+                sample_items = list(data)[:5]
+                tprint_with_level(level, f"  Element types: {[type(item).__name__ for item in sample_items]}{'...' if len(data) > 5 else ''}")
+            return
+        
+        # Handle strings
+        elif isinstance(data, str):
+            tprint_with_level(level, f"🔍 {name} format{caller_info}:")
+            tprint_with_level(level, f"  Type: str")
+            tprint_with_level(level, f"  Length: {len(data)}")
+            tprint_with_level(level, f"  Encoding: {data.encode('utf-8', errors='ignore').decode('utf-8', errors='ignore')[:50]}{'...' if len(data) > 50 else ''}")
+            return
+        
+        # Handle numbers
+        elif isinstance(data, (int, float, complex)):
+            tprint_with_level(level, f"🔍 {name} format{caller_info}:")
+            tprint_with_level(level, f"  Type: {type(data).__name__}")
+            tprint_with_level(level, f"  Value: {data}")
+            if isinstance(data, (int, float)):
+                tprint_with_level(level, f"  Bits: {data.bit_length() if isinstance(data, int) else 'N/A'}")
+            return
+        
+        # Handle booleans
+        elif isinstance(data, bool):
+            tprint_with_level(level, f"🔍 {name} format{caller_info}:")
+            tprint_with_level(level, f"  Type: bool")
+            tprint_with_level(level, f"  Value: {data}")
+            return
+        
+        # Handle None
+        elif data is None:
+            tprint_with_level(level, f"🔍 {name} format{caller_info}:")
+            tprint_with_level(level, f"  Type: NoneType")
+            tprint_with_level(level, f"  Value: None")
+            return
+        
+        # Handle other objects with length
+        elif hasattr(data, '__len__'):
+            try:
+                length = len(data)
+                tprint_with_level(level, f"🔍 {name} format{caller_info}:")
+                tprint_with_level(level, f"  Type: {type(data).__name__}")
+                tprint_with_level(level, f"  Length: {length}")
+                # Try to get more specific info if it's a common data structure
+                if hasattr(data, 'shape'):
+                    tprint_with_level(level, f"  Shape: {data.shape}")
+                if hasattr(data, 'dtype'):
+                    tprint_with_level(level, f"  Dtype: {data.dtype}")
+                if hasattr(data, 'keys'):
+                    keys = list(data.keys())[:5] if length > 0 else []
+                    tprint_with_level(level, f"  Sample keys: {keys}{'...' if length > 5 else ''}")
+            except Exception:
+                tprint_with_level(level, f"🔍 {name} format{caller_info}: {type(data).__name__} (length unknown)")
+            return
+        
+        # Handle other objects
+        else:
+            tprint_with_level(level, f"🔍 {name} format{caller_info}:")
+            tprint_with_level(level, f"  Type: {type(data).__name__}")
+            tprint_with_level(level, f"  Value: {str(data)[:100]}{'...' if len(str(data)) > 100 else ''}")
+            return
+    
+    except Exception as e:
+        tprint_with_level(level, f"🔍 {name} format (error){caller_info}: {e}")
+
 def tprint_data_preview(data: Any, name: str = "data", max_rows: int = None, 
                        max_cols: int = None, level: LogLevel = LogLevel.DEBUG, 
                        include_metadata: bool = True, force_log: bool = False) -> None:
@@ -1632,6 +1834,7 @@ __all__ = [
     'tprint_batch',
     'tprint_numba_compatible',
     'tprint_data_preview',
+    'tprint_data_format',
 
     # Enhanced print functions
     'enhanced_print',

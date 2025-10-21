@@ -7,9 +7,48 @@ including log returns, cumulative returns, rolling returns, and return statistic
 
 import numpy as np
 import pandas as pd
+import logging
 from typing import Any, Dict, List, Optional, Union
 
 from ..core.feature_generator import FeatureGenerator, FeatureResult, VectorizedFeatureGenerator, FeatureConfig, FeatureCategory
+
+
+class ReturnsFeatureExtractor:
+    """Feature extractor for returns-based features."""
+    
+    def __init__(self, config: Optional[FeatureConfig] = None):
+        """Initialize the returns feature extractor."""
+        self.config = config or FeatureConfig()
+        self.logger = logging.getLogger(__name__)
+    
+    def extract_features(self, data: pd.DataFrame) -> pd.DataFrame:
+        """
+        Extract returns-based features from data.
+        
+        Args:
+            data: Input DataFrame with OHLCV data
+            
+        Returns:
+            DataFrame with extracted features
+        """
+        try:
+            features = pd.DataFrame(index=data.index)
+            
+            # Basic returns
+            if 'close' in data.columns:
+                features['log_returns'] = np.log(data['close'] / data['close'].shift(1))
+                features['simple_returns'] = data['close'].pct_change()
+            
+            # Rolling returns
+            for window in [5, 10, 20, 50]:
+                if 'close' in data.columns:
+                    features[f'returns_{window}d'] = data['close'].pct_change(window)
+            
+            return features
+            
+        except Exception as e:
+            self.logger.error(f"Feature extraction failed: {e}")
+            return pd.DataFrame(index=data.index)
 
 # Optimization utilities
 try:

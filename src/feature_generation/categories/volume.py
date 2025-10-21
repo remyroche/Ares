@@ -25,6 +25,47 @@ from typing import Any, Dict, List, Optional, Union, Callable
 from dataclasses import dataclass
 
 from ..core.feature_generator import FeatureGenerator, FeatureResult, VectorizedFeatureGenerator, FeatureConfig, FeatureCategory
+
+
+class VolumeFeatureExtractor:
+    """Feature extractor for volume-based features."""
+    
+    def __init__(self, config: Optional[FeatureConfig] = None):
+        """Initialize the volume feature extractor."""
+        self.config = config or FeatureConfig()
+        self.logger = logging.getLogger(__name__)
+    
+    def extract_features(self, data: pd.DataFrame) -> pd.DataFrame:
+        """
+        Extract volume-based features from data.
+        
+        Args:
+            data: Input DataFrame with OHLCV data
+            
+        Returns:
+            DataFrame with extracted features
+        """
+        try:
+            features = pd.DataFrame(index=data.index)
+            
+            # Basic volume features
+            if 'volume' in data.columns:
+                # Volume moving averages
+                for window in [5, 10, 20, 50]:
+                    features[f'volume_ma_{window}'] = data['volume'].rolling(window).mean()
+                
+                # Volume rate of change
+                for window in [5, 10, 20]:
+                    features[f'volume_roc_{window}'] = data['volume'].pct_change(window)
+                
+                # Volume volatility
+                features['volume_volatility_20'] = data['volume'].rolling(20).std()
+            
+            return features
+            
+        except Exception as e:
+            self.logger.error(f"Volume feature extraction failed: {e}")
+            return pd.DataFrame(index=data.index)
 from ..core.vectorbt_feature_generator import VectorBTFeatureGenerator
 from ..core.vectorbt_optimization_mixin import VectorBTOptimizationMixin
 

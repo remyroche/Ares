@@ -16,8 +16,11 @@ Key Features:
 
 # Standard library imports
 import warnings
+import logging
 from typing import Any, Dict, List, Optional, Union, Tuple
 from dataclasses import dataclass
+
+logger = logging.getLogger(__name__)
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import time
@@ -87,6 +90,36 @@ except ImportError:
 
 # Local imports
 from ..core.feature_generator import FeatureGenerator, FeatureResult, VectorizedFeatureGenerator, FeatureConfig, FeatureCategory
+
+
+def create_default_regime_generators(config: Optional[FeatureConfig] = None) -> List[FeatureGenerator]:
+    """
+    Create default regime feature generators.
+    
+    Args:
+        config: Feature configuration
+        
+    Returns:
+        List of feature generators
+    """
+    try:
+        generators = []
+        
+        # Create basic regime generators
+        if config is None:
+            config = FeatureConfig()
+        
+        # Add basic regime feature generators
+        generators.append(StatisticalRegimeGenerator(config))
+        generators.append(StructuralTrendRegimeGenerator(config))
+        generators.append(VolatilityRegimeGenerator(config))
+        generators.append(VolumeRegimeGenerator(config))
+        
+        return generators
+        
+    except Exception as e:
+        logger.error(f"Failed to create default regime generators: {e}")
+        return []
 from ..base_calculations import (
     BaseCalculator,
     BaseCalculationType,

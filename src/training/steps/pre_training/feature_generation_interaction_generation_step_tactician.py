@@ -17,7 +17,11 @@ import concurrent.futures
 import time
 
 import pandas as pd
-from src.utils.tprint import tprint, tprint_data_preview
+from src.utils.tprint import (
+    tprint, tprint_data_preview, tprint_performance, tprint_progress, 
+    tprint_structured, tprint_data_format, tprint_timer, tprint_exception,
+    tprint_success, tprint_warning, tprint_error, tprint_debug, tprint_info
+)
 from src.training.steps.base_step import BaseStep
 
 # Enhanced hardware optimization imports
@@ -167,7 +171,7 @@ class FeatureGenerationInteractionGenerationStepTactician(BaseStep):
         super().__init__("feature_generation_interaction_generation_step_tactician", config)
         
         # Initialize comprehensive hardware optimization system
-        tprint("🧠 Initializing comprehensive hardware optimization system...")
+        tprint_info("🧠 Initializing comprehensive hardware optimization system...")
         
         # Get integrated hardware manager with optimized configuration
         hardware_config = IntegratedHardwareConfig(
@@ -180,6 +184,19 @@ class FeatureGenerationInteractionGenerationStepTactician(BaseStep):
             default_optimization_level=HardwareOptimizationLevel.AGGRESSIVE
         )
         self.hardware_manager = get_integrated_hardware_manager(hardware_config)
+        
+        # Log hardware configuration for troubleshooting
+        tprint_structured({
+            'tactician_hardware_config': {
+                'enable_automatic_optimization': hardware_config.enable_automatic_optimization,
+                'enable_caching': hardware_config.enable_caching,
+                'enable_memory_monitoring': hardware_config.enable_memory_monitoring,
+                'enable_performance_tracking': hardware_config.enable_performance_tracking,
+                'memory_limit_gb': hardware_config.memory_limit_gb,
+                'cache_memory_limit_mb': hardware_config.cache_memory_limit_mb,
+                'default_optimization_level': str(hardware_config.default_optimization_level)
+            }
+        }, level="DEBUG")
         
         # Get comprehensive optimizer for M1-specific optimizations
         comprehensive_config = ComprehensiveConfig(
@@ -234,7 +251,22 @@ class FeatureGenerationInteractionGenerationStepTactician(BaseStep):
             'cache_misses': 0
         }
         
-        tprint("✅ Comprehensive hardware-optimized Tactician interaction generation step initialized")
+        tprint_success("✅ Comprehensive hardware-optimized Tactician interaction generation step initialized")
+        
+        # Log initialization summary for troubleshooting
+        tprint_structured({
+            'tactician_initialization_summary': {
+                'hardware_manager_initialized': self.hardware_manager is not None,
+                'comprehensive_optimizer_initialized': self.comprehensive_optimizer is not None,
+                'unified_hardware_manager_initialized': self.unified_hardware_manager is not None,
+                'cmi_scorer_initialized': self.cmi_scorer is not None,
+                'analyst_handler_initialized': self.analyst_handler is not None,
+                'parallel_workers': self.parallel_workers,
+                'chunk_size': self.chunk_size,
+                'memory_mapped_threshold': self.memory_mapped_threshold,
+                'performance_stats_initialized': len(self.performance_stats) > 0
+            }
+        }, level="INFO")
 
     @memory_optimized(
         optimization_level=MemoryOptimizationLevel.AGGRESSIVE,
@@ -426,16 +458,26 @@ class FeatureGenerationInteractionGenerationStepTactician(BaseStep):
             memory_stats = get_memory_stats()
             memory_percent = memory_stats.get('memory_percent', 0)
             
+            # Log memory stats for troubleshooting
+            tprint_structured({
+                'memory_monitoring': {
+                    'memory_percent': memory_percent,
+                    'aggressive_gc_threshold': self.aggressive_gc_threshold * 100,
+                    'memory_stats': memory_stats,
+                    'cleanup_triggered': memory_percent > self.aggressive_gc_threshold * 100
+                }
+            }, level="DEBUG")
+            
             if memory_percent > self.aggressive_gc_threshold * 100:
-                tprint(f"🧠 High memory usage detected: {memory_percent:.1f}%, applying comprehensive cleanup...")
+                tprint_warning(f"🧠 High memory usage detected: {memory_percent:.1f}%, applying comprehensive cleanup...")
                 force_cleanup()
                 
                 # Clear all caches through hardware manager
                 self.hardware_manager.clear_all_caches()
                 
-                tprint("✅ Comprehensive memory cleanup completed")
+                tprint_success("✅ Comprehensive memory cleanup completed")
         except Exception as e:
-            tprint(f"⚠️ Memory monitoring failed: {e}")
+            tprint_exception(e, "Memory monitoring failed")
 
     @m1_optimized(workload_category=WorkloadCategory.FINANCIAL_MODELING)
     def _generate_interaction_features_sync(self, data: pd.DataFrame, symbol: str, 
@@ -527,22 +569,44 @@ class FeatureGenerationInteractionGenerationStepTactician(BaseStep):
 
     def _create_interaction_features(self, data: pd.DataFrame) -> pd.DataFrame:
         """Create interaction features from the input data."""
-        tprint("🔧 Creating interaction features")
+        tprint_info("🔧 Creating interaction features")
+        
+        # Log input data analysis for troubleshooting
+        tprint_data_format(data, "interaction_features_input", level="DEBUG")
         
         if data.empty:
+            tprint_warning("⚠️ Input data is empty, returning empty DataFrame")
             return pd.DataFrame()
         
         # Get numeric columns only
         numeric_cols = data.select_dtypes(include=[np.number]).columns
         if len(numeric_cols) < 2:
-            tprint("⚠️ Not enough numeric columns for interaction generation")
+            tprint_warning("⚠️ Not enough numeric columns for interaction generation")
+            tprint_structured({
+                'interaction_creation_warning': {
+                    'total_columns': len(data.columns),
+                    'numeric_columns': len(numeric_cols),
+                    'numeric_columns_list': list(numeric_cols),
+                    'data_types': data.dtypes.value_counts().to_dict()
+                }
+            }, level="WARNING")
             return data
         
         # Limit to top features to avoid memory issues
         max_features = min(50, len(numeric_cols))
         selected_cols = numeric_cols[:max_features]
         
-        tprint(f"📊 Creating interactions from {len(selected_cols)} features")
+        tprint_info(f"📊 Creating interactions from {len(selected_cols)} features")
+        
+        # Log interaction creation parameters for troubleshooting
+        tprint_structured({
+            'interaction_creation_params': {
+                'selected_columns_count': len(selected_cols),
+                'selected_columns': list(selected_cols),
+                'max_interactions': 100,
+                'data_shape': data.shape
+            }
+        }, level="DEBUG")
         
         interaction_features = data[selected_cols].copy()
         
@@ -550,27 +614,50 @@ class FeatureGenerationInteractionGenerationStepTactician(BaseStep):
         interaction_count = 0
         max_interactions = 100  # Limit to prevent memory issues
         
-        for i, col1 in enumerate(selected_cols):
-            if interaction_count >= max_interactions:
-                break
-            for j, col2 in enumerate(selected_cols[i+1:], i+1):
+        with tprint_timer("interaction_creation", level="PERFORMANCE"):
+            for i, col1 in enumerate(selected_cols):
                 if interaction_count >= max_interactions:
                     break
-                
-                # Create interaction feature
-                interaction_name = f"{col1}_x_{col2}"
-                interaction_features[interaction_name] = data[col1] * data[col2]
-                interaction_count += 1
+                for j, col2 in enumerate(selected_cols[i+1:], i+1):
+                    if interaction_count >= max_interactions:
+                        break
+                    
+                    # Create interaction feature
+                    interaction_name = f"{col1}_x_{col2}"
+                    interaction_features[interaction_name] = data[col1] * data[col2]
+                    interaction_count += 1
         
-        tprint(f"✅ Created {interaction_count} interaction features")
+        tprint_success(f"✅ Created {interaction_count} interaction features")
+        
+        # Log interaction creation summary for troubleshooting
+        tprint_structured({
+            'interaction_creation_summary': {
+                'interactions_created': interaction_count,
+                'max_interactions_limit': max_interactions,
+                'final_shape': interaction_features.shape,
+                'memory_usage_mb': interaction_features.memory_usage(deep=True).sum() / (1024**2)
+            }
+        }, level="INFO")
+        
         return interaction_features
 
     @m1_optimized(workload_category=WorkloadCategory.FINANCIAL_MODELING)
     @comprehensive_memory_optimization()
     def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
         start_time = time.time()
-        tprint("🚀 [TACTICIAN] Starting comprehensive hardware-optimized Tactician interaction generation")
+        tprint_info("🚀 [TACTICIAN] Starting comprehensive hardware-optimized Tactician interaction generation")
         self.logger.info("🔧 Starting comprehensive hardware-optimized Tactician interaction generation")
+        
+        # Log execution start parameters for troubleshooting
+        tprint_structured({
+            'tactician_execution_start': {
+                'config_keys': list(config.keys()) if config else [],
+                'timestamp': datetime.now().isoformat(),
+                'hardware_manager_available': self.hardware_manager is not None,
+                'comprehensive_optimizer_available': self.comprehensive_optimizer is not None,
+                'cmi_complementarity_available': CMI_COMPLEMENTARITY_AVAILABLE
+            }
+        }, level="INFO")
         
         # Get training input and pipeline state from config
         training_input = config.get('training_input', {})
@@ -723,11 +810,12 @@ class FeatureGenerationInteractionGenerationStepTactician(BaseStep):
                 # Backward-compatibility: alternative step naming
                 selected_df = artifact_manager.get_dataframe('feature_generation_feature_selection_step', 'SELECTED_FEATURES')
             
-            # Data preview for selected features retrieval
-            tprint_data_preview(selected_df, "selected_features_from_artifact_manager", level="INFO")
-            
-            if selected_df is None or selected_df.empty:
-                tprint("❌ No selected features available; interaction generation requires prior feature selection")
+        # Data preview for selected features retrieval
+        tprint_data_preview(selected_df, "selected_features_from_artifact_manager", level="INFO")
+        tprint_data_format(selected_df, "selected_features_format_check", level="DEBUG")
+        
+        if selected_df is None or selected_df.empty:
+            tprint_error("❌ No selected features available; interaction generation requires prior feature selection")
                 return InteractionGenerationResult(
                     success=False,
                     interaction_features=pd.DataFrame(),
@@ -1023,12 +1111,28 @@ class FeatureGenerationInteractionGenerationStepTactician(BaseStep):
         # Final performance summary
         total_time = time.time() - start_time
         self.performance_stats['total_processing_time'] = total_time
-        tprint(f"⏱️ Total processing time: {total_time:.2f}s")
-        tprint(f"🧠 Memory optimizations applied: {self.performance_stats['memory_optimizations_applied']}")
-        tprint(f"📦 Chunks processed: {self.performance_stats['chunks_processed']}")
-        tprint(f"🚀 GPU accelerations used: {self.performance_stats['gpu_accelerations_used']}")
-        tprint(f"🎯 Comprehensive optimizations used: {self.performance_stats['comprehensive_optimizations_used']}")
-        tprint(f"💾 Cache hits: {self.performance_stats['cache_hits']}, misses: {self.performance_stats['cache_misses']}")
+        tprint_performance("Total Tactician processing", total_time)
+        tprint_success(f"✅ Memory optimizations applied: {self.performance_stats['memory_optimizations_applied']}")
+        tprint_info(f"📦 Chunks processed: {self.performance_stats['chunks_processed']}")
+        tprint_info(f"🚀 GPU accelerations used: {self.performance_stats['gpu_accelerations_used']}")
+        tprint_info(f"🎯 Comprehensive optimizations used: {self.performance_stats['comprehensive_optimizations_used']}")
+        tprint_info(f"💾 Cache hits: {self.performance_stats['cache_hits']}, misses: {self.performance_stats['cache_misses']}")
+        
+        # Log comprehensive performance summary for troubleshooting
+        tprint_structured({
+            'tactician_performance_summary': {
+                'total_processing_time': total_time,
+                'memory_optimizations_applied': self.performance_stats['memory_optimizations_applied'],
+                'chunks_processed': self.performance_stats['chunks_processed'],
+                'gpu_accelerations_used': self.performance_stats['gpu_accelerations_used'],
+                'comprehensive_optimizations_used': self.performance_stats['comprehensive_optimizations_used'],
+                'cache_hits': self.performance_stats['cache_hits'],
+                'cache_misses': self.performance_stats['cache_misses'],
+                'parallel_workers_used': self.parallel_workers,
+                'chunk_size_used': self.chunk_size,
+                'final_interactions_count': len(result_obj.interaction_features.columns) if hasattr(result_obj, 'interaction_features') else 0
+            }
+        }, level="INFO")
         
         # Build human-readable report
         tprint("📊 Generating interaction report")
@@ -1051,12 +1155,25 @@ class FeatureGenerationInteractionGenerationStepTactician(BaseStep):
             return result_obj
             
         except Exception as e:
-            tprint(f"❌ Interaction generation failed: {e}")
+            tprint_exception(e, "Tactician interaction generation failed")
             self.logger.error(f"Interaction generation failed: {e}")
             
             # Add error information to performance stats
             self.performance_stats['error_occurred'] = True
             self.performance_stats['error_message'] = str(e)
+            
+            # Log detailed error information for troubleshooting
+            tprint_structured({
+                'tactician_error_details': {
+                    'error_type': type(e).__name__,
+                    'error_message': str(e),
+                    'processing_time_seconds': time.time() - start_time,
+                    'performance_stats': self.performance_stats,
+                    'hardware_manager_status': self.hardware_manager is not None,
+                    'comprehensive_optimizer_status': self.comprehensive_optimizer is not None,
+                    'cmi_complementarity_available': CMI_COMPLEMENTARITY_AVAILABLE
+                }
+            }, level="ERROR")
             
             return InteractionGenerationResult(
                 success=False,
@@ -1363,7 +1480,19 @@ def handle_feature_generation_interaction_generation_step_tactician(
             manager.save('feature_generation_interaction_generation_step_tactician', result.artifacts, metadata=result.interaction_metadata)
             tprint("✅ Artifacts saved successfully")
 
-        tprint("✅ Handler completed, returning result")
+        tprint_success("✅ Handler completed, returning result")
+        
+        # Log final handler success summary for troubleshooting
+        tprint_structured({
+            'tactician_handler_success_summary': {
+                'handler_processing_time': time.time() - start_time,
+                'result_success': result.success,
+                'interaction_features_count': len(result.interaction_features.columns) if hasattr(result, 'interaction_features') else 0,
+                'hardware_optimizations_applied': result.generation_metrics.get('memory_optimizations_applied', 0) if hasattr(result, 'generation_metrics') else 0,
+                'comprehensive_optimizations_used': result.generation_metrics.get('comprehensive_optimizations_used', 0) if hasattr(result, 'generation_metrics') else 0
+            }
+        }, level="INFO")
+        
         return result
         
     except Exception as e:

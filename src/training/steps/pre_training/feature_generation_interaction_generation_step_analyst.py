@@ -23,7 +23,11 @@ import threading
 import time
 import os
 
-from src.utils.tprint import tprint, tprint_data_preview
+from src.utils.tprint import (
+    tprint, tprint_data_preview, tprint_performance, tprint_progress, 
+    tprint_structured, tprint_data_format, tprint_timer, tprint_exception,
+    tprint_success, tprint_warning, tprint_error, tprint_debug, tprint_info
+)
 import os
 
 # Configure data preview settings for this complex step
@@ -363,7 +367,7 @@ class FeatureGenerationInteractionGenerationStepAnalyst(BaseStep):
         self.phase_config = PhaseConfig()
         
         # Initialize enhanced hardware optimization system
-        tprint("🧠 Initializing enhanced hardware optimization system...")
+        tprint_info("🧠 Initializing enhanced hardware optimization system...")
         
         # Get integrated hardware manager with optimized configuration
         hardware_config = IntegratedHardwareConfig(
@@ -375,6 +379,18 @@ class FeatureGenerationInteractionGenerationStepAnalyst(BaseStep):
             enable_performance_tracking=True
         )
         self.hardware_manager = get_integrated_hardware_manager(hardware_config)
+        
+        # Log hardware configuration for troubleshooting
+        tprint_structured({
+            'hardware_config': {
+                'memory_limit_gb': hardware_config.memory_limit_gb,
+                'cache_memory_limit_mb': hardware_config.cache_memory_limit_mb,
+                'enable_automatic_optimization': hardware_config.enable_automatic_optimization,
+                'enable_caching': hardware_config.enable_caching,
+                'enable_memory_monitoring': hardware_config.enable_memory_monitoring,
+                'enable_performance_tracking': hardware_config.enable_performance_tracking
+            }
+        }, level="DEBUG")
         
         # Get comprehensive optimizer for advanced operations
         comprehensive_config = ComprehensiveConfig(
@@ -407,7 +423,18 @@ class FeatureGenerationInteractionGenerationStepAnalyst(BaseStep):
             'cache_misses': 0
         }
         
-        tprint("✅ Enhanced hardware-optimized Analyst interaction generation step initialized")
+        tprint_success("✅ Enhanced hardware-optimized Analyst interaction generation step initialized")
+        
+        # Log initialization summary for troubleshooting
+        tprint_structured({
+            'initialization_summary': {
+                'hardware_manager_initialized': self.hardware_manager is not None,
+                'comprehensive_optimizer_initialized': self.comprehensive_optimizer is not None,
+                'variant_generator_initialized': self.variant_generator is not None,
+                'interaction_generator_initialized': self.interaction_generator is not None,
+                'performance_stats_initialized': len(self.performance_stats) > 0
+            }
+        }, level="INFO")
 
     @memory_optimized(optimization_level='aggressive')
     def _optimize_dataframe_memory(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -481,8 +508,22 @@ class FeatureGenerationInteractionGenerationStepAnalyst(BaseStep):
                        volume: Optional[pd.Series] = None,
                        timeframes: List[str] = None) -> Tuple[pd.DataFrame, Dict[str, Any]]:
         """Execute Phase 1: Variant generation & shallow LGBM sweep with hardware optimization."""
-        tprint("🔧 [PHASE1] Starting Phase 1: Variant generation & shallow LGBM sweep")
-        phase_start_time = time.time()
+        tprint_info("🔧 [PHASE1] Starting Phase 1: Variant generation & shallow LGBM sweep")
+        
+        # Log phase 1 input parameters for troubleshooting
+        tprint_structured({
+            'phase1_inputs': {
+                'features_shape': features_df.shape if features_df is not None else None,
+                'targets_shape': targets.shape if targets is not None else None,
+                'price_data_shape': price_data.shape if price_data is not None else None,
+                'volume_shape': volume.shape if volume is not None else None,
+                'timeframes': timeframes,
+                'features_columns_count': len(features_df.columns) if features_df is not None else 0
+            }
+        }, level="DEBUG")
+        
+        with tprint_timer("phase1_execution", level="PERFORMANCE"):
+            phase_start_time = time.time()
         
         # Optimize hardware for variant generation workload
         self.hardware_manager.optimize_for_workload(WorkloadType.FEATURE_ENGINEERING)
@@ -491,20 +532,31 @@ class FeatureGenerationInteractionGenerationStepAnalyst(BaseStep):
             # Generate variants for each timeframe
             all_variants = {}
             
-            for tf in timeframes:
-                tprint(f"📊 [PHASE1] Processing timeframe: {tf}")
+            for i, tf in enumerate(timeframes):
+                tprint_progress(i + 1, len(timeframes), f"Processing timeframe: {tf}")
                 
                 # Resample features to timeframe
                 tf_features = self.variant_generator._resample_to_timeframe(features_df, tf)
                 tf_price = self.variant_generator._resample_to_timeframe(price_data, tf) if price_data is not None else None
                 tf_volume = self.variant_generator._resample_to_timeframe(volume, tf) if volume is not None else None
                 
+                # Log timeframe processing details for troubleshooting
+                tprint_structured({
+                    'timeframe_processing': {
+                        'timeframe': tf,
+                        'tf_features_shape': tf_features.shape if tf_features is not None else None,
+                        'tf_price_shape': tf_price.shape if tf_price is not None else None,
+                        'tf_volume_shape': tf_volume.shape if tf_volume is not None else None,
+                        'tf_features_empty': tf_features.empty if tf_features is not None else True
+                    }
+                }, level="DEBUG")
+                
                 if tf_features.empty:
-                    tprint(f"⚠️ [PHASE1] No data for timeframe {tf}, skipping")
+                    tprint_warning(f"⚠️ [PHASE1] No data for timeframe {tf}, skipping")
                     continue
                     
                 # Generate variants
-                tprint(f"🔄 [PHASE1] Generating variants for timeframe {tf}")
+                tprint_info(f"🔄 [PHASE1] Generating variants for timeframe {tf}")
                 variants = self.variant_generator.generate_all_variants(
                     tf_features, 
                     price_data=tf_price,
@@ -556,6 +608,7 @@ class FeatureGenerationInteractionGenerationStepAnalyst(BaseStep):
             tprint(f"📊 Phase 1: Aligned data shape: {features_aligned.shape}")
             
             # SHAP scoring with shallow LGBM
+            tprint_info("🎯 [PHASE1] Starting SHAP scoring with shallow LGBM")
             shap_config = SHAPScorerConfig(
                 lgbm_params=self.phase_config.phase1_lgbm_params,
                 n_folds=self.phase_config.phase1_n_folds,
@@ -564,11 +617,30 @@ class FeatureGenerationInteractionGenerationStepAnalyst(BaseStep):
                 stability_weight=0.2
             )
             
+            # Log SHAP configuration for troubleshooting
+            tprint_structured({
+                'shap_config': {
+                    'lgbm_params': shap_config.lgbm_params,
+                    'n_folds': shap_config.n_folds,
+                    'shap_weight': shap_config.shap_weight,
+                    'interaction_centrality_weight': shap_config.interaction_centrality_weight,
+                    'stability_weight': shap_config.stability_weight
+                }
+            }, level="DEBUG")
+            
             shap_scorer = SHAPInteractionScorer(shap_config)
             shap_results = shap_scorer.score_features(features_aligned, targets_aligned)
             
             if not shap_results.get('success', False):
-                tprint("❌ Phase 1 SHAP scoring failed")
+                tprint_error("❌ Phase 1 SHAP scoring failed")
+                tprint_structured({
+                    'shap_failure': {
+                        'success': shap_results.get('success', False),
+                        'error': shap_results.get('error', 'Unknown error'),
+                        'features_shape': features_aligned.shape,
+                        'targets_shape': targets_aligned.shape
+                    }
+                }, level="ERROR")
                 return pd.DataFrame(), {}
                 
             # Select top 40% features
@@ -598,12 +670,32 @@ class FeatureGenerationInteractionGenerationStepAnalyst(BaseStep):
             }
             
             self.performance_stats['phase1_time'] = time.time() - phase_start_time
-            tprint(f"✅ Phase 1 completed in {self.performance_stats['phase1_time']:.2f}s")
+            tprint_performance("Phase 1 execution", self.performance_stats['phase1_time'])
+            tprint_success(f"✅ Phase 1 completed in {self.performance_stats['phase1_time']:.2f}s")
+            
+            # Log phase 1 completion summary for troubleshooting
+            tprint_structured({
+                'phase1_completion': {
+                    'execution_time': self.performance_stats['phase1_time'],
+                    'selected_features_count': len(selected_features.columns),
+                    'total_variants_generated': phase1_metadata.get('total_variants_generated', 0),
+                    'selection_ratio': phase1_metadata.get('selection_ratio', 0.0),
+                    'timeframes_processed': phase1_metadata.get('timeframes_processed', [])
+                }
+            }, level="INFO")
             
             return selected_features, phase1_metadata
             
         except Exception as e:
-            tprint(f"❌ Phase 1 failed: {e}")
+            tprint_exception(e, "Phase 1 failed")
+            tprint_structured({
+                'phase1_error': {
+                    'error_message': str(e),
+                    'features_shape': features_df.shape if features_df is not None else None,
+                    'targets_shape': targets.shape if targets is not None else None,
+                    'timeframes': timeframes
+                }
+            }, level="ERROR")
             return pd.DataFrame(), {'error': str(e)}
 
     @m1_optimized(operation_type="feature_refinement", workload_category=WorkloadCategory.MACHINE_LEARNING)
@@ -806,8 +898,18 @@ class FeatureGenerationInteractionGenerationStepAnalyst(BaseStep):
     @m1_optimized(operation_type="feature_engineering", workload_category=WorkloadCategory.FEATURE_ENGINEERING)
     async def execute(self, training_input: Dict[str, Any]) -> Dict[str, Any]:
         start_time = time.time()
-        tprint("🚀 [ANALYST] Starting three-phase LGBM+SHAP interaction generation pipeline")
+        tprint_info("🚀 [ANALYST] Starting three-phase LGBM+SHAP interaction generation pipeline")
         self.logger.info("🔧 Starting Analyst mode three-phase interaction generation")
+        
+        # Log execution start parameters for troubleshooting
+        tprint_structured({
+            'execution_start': {
+                'training_input_keys': list(training_input.keys()) if training_input else [],
+                'timestamp': datetime.now().isoformat(),
+                'hardware_manager_available': self.hardware_manager is not None,
+                'comprehensive_optimizer_available': self.comprehensive_optimizer is not None
+            }
+        }, level="INFO")
         
         # Set up enhanced artifact manager with Analyst context
         symbol = training_input.get('symbol', 'ETHUSDT')
@@ -831,7 +933,22 @@ class FeatureGenerationInteractionGenerationStepAnalyst(BaseStep):
             exchange = training_input.get('exchange', 'binance')
             custom_overrides = training_input.get('custom_overrides')
             
-            tprint(f"📊 [ANALYST] Configuration: Symbol={symbol}, Timeframe={timeframe}, Direction={direction}, Intensity={intensity}")
+            tprint_info(f"📊 [ANALYST] Configuration: Symbol={symbol}, Timeframe={timeframe}, Direction={direction}, Intensity={intensity}")
+            
+            # Log detailed configuration for troubleshooting
+            tprint_structured({
+                'analyst_configuration': {
+                    'symbol': symbol,
+                    'timeframe': timeframe,
+                    'direction': direction,
+                    'intensity': intensity,
+                    'lookback_days': lookback_days,
+                    'start_date': start_date,
+                    'end_date': end_date,
+                    'exchange': exchange,
+                    'custom_overrides_available': custom_overrides is not None
+                }
+            }, level="DEBUG")
             
             # Get artifact manager
             artifact_manager = get_pretraining_artifact_manager()
@@ -853,7 +970,8 @@ class FeatureGenerationInteractionGenerationStepAnalyst(BaseStep):
             
             # Preview loaded selected features for troubleshooting
             tprint_data_preview(selected_df, "selected_features_input", level="INFO")
-            tprint(f"✅ [ANALYST] Loaded {len(selected_df.columns)} selected features with shape {selected_df.shape}")
+            tprint_data_format(selected_df, "selected_features_format_check", level="DEBUG")
+            tprint_success(f"✅ [ANALYST] Loaded {len(selected_df.columns)} selected features with shape {selected_df.shape}")
             
             # Load targets
             tprint("📥 [ANALYST] Loading targets from labeling integration step")
@@ -887,13 +1005,28 @@ class FeatureGenerationInteractionGenerationStepAnalyst(BaseStep):
             tprint_data_preview(sampled_targets, f"sampled_targets_{intensity}_mode", level="INFO")
             
             # Align features and targets
-            tprint("🔍 [ANALYST] Aligning features and targets timestamps")
+            tprint_info("🔍 [ANALYST] Aligning features and targets timestamps")
+            
+            # Log alignment parameters for troubleshooting
+            tprint_structured({
+                'alignment_parameters': {
+                    'sampled_features_shape': sampled_features.shape,
+                    'sampled_targets_shape': sampled_targets.shape,
+                    'features_index_type': type(sampled_features.index).__name__,
+                    'targets_index_type': type(sampled_targets.index).__name__,
+                    'features_index_range': f"{sampled_features.index.min()} to {sampled_features.index.max()}" if not sampled_features.empty else "empty",
+                    'targets_index_range': f"{sampled_targets.index.min()} to {sampled_targets.index.max()}" if not sampled_targets.empty else "empty"
+                }
+            }, level="DEBUG")
+            
             aligned = sampled_features.join(sampled_targets.rename("target"), how="inner").dropna()
             if aligned.empty:
-                tprint("❌ [ANALYST] No overlapping timestamps between features and targets")
+                tprint_error("❌ [ANALYST] No overlapping timestamps between features and targets")
                 # Preview data for debugging empty alignment
                 tprint_data_preview(sampled_features, "sampled_features_empty_alignment", level="ERROR")
                 tprint_data_preview(sampled_targets, "sampled_targets_empty_alignment", level="ERROR")
+                tprint_data_format(sampled_features, "sampled_features_format_debug", level="ERROR")
+                tprint_data_format(sampled_targets, "sampled_targets_format_debug", level="ERROR")
                 return InteractionGenerationResult(
                     success=False,
                     interaction_features=pd.DataFrame(),
@@ -932,13 +1065,14 @@ class FeatureGenerationInteractionGenerationStepAnalyst(BaseStep):
                 tprint(f"⚠️ Could not load OHLCV data: {e}")
             
             # Execute three-phase pipeline
-            tprint("🔄 [ANALYST] ========== PHASE 1: VARIANT GENERATION & SHALLOW LGBM SWEEP ==========")
+            tprint_info("🔄 [ANALYST] ========== PHASE 1: VARIANT GENERATION & SHALLOW LGBM SWEEP ==========")
             
             # Phase 1: Variant generation & shallow LGBM sweep
+            tprint_progress(1, 3, "Starting Phase 1: Variant generation & shallow LGBM sweep")
             phase1_features, phase1_metadata = self._execute_phase1(
                 features_df, targets, price_data, volume, timeframes
             )
-            tprint(f"✅ [ANALYST] Phase 1 completed: {len(phase1_features.columns)} features selected")
+            tprint_success(f"✅ [ANALYST] Phase 1 completed: {len(phase1_features.columns)} features selected")
             
             if phase1_features.empty:
                 # Preview input data for debugging Phase 1 failure
@@ -954,9 +1088,10 @@ class FeatureGenerationInteractionGenerationStepAnalyst(BaseStep):
                 )
             
             # Phase 2: Middle refinement
-            tprint("🔄 [ANALYST] ========== PHASE 2: MIDDLE REFINEMENT WITH DEEPER LGBM ==========")
+            tprint_info("🔄 [ANALYST] ========== PHASE 2: MIDDLE REFINEMENT WITH DEEPER LGBM ==========")
+            tprint_progress(2, 3, "Starting Phase 2: Middle refinement with deeper LGBM")
             phase2_features, phase2_metadata = self._execute_phase2(phase1_features, targets)
-            tprint(f"✅ [ANALYST] Phase 2 completed: {len(phase2_features.columns)} features selected")
+            tprint_success(f"✅ [ANALYST] Phase 2 completed: {len(phase2_features.columns)} features selected")
             
             if phase2_features.empty:
                 # Preview input data for debugging Phase 2 failure
@@ -975,9 +1110,10 @@ class FeatureGenerationInteractionGenerationStepAnalyst(BaseStep):
                 )
             
             # Phase 3: Deep interaction discovery
-            tprint("🔄 [ANALYST] ========== PHASE 3: DEEP INTERACTION DISCOVERY WITH FULL LGBM ==========")
+            tprint_info("🔄 [ANALYST] ========== PHASE 3: DEEP INTERACTION DISCOVERY WITH FULL LGBM ==========")
+            tprint_progress(3, 3, "Starting Phase 3: Deep interaction discovery with full LGBM")
             phase3_interactions, phase3_metadata = self._execute_phase3(phase2_features, targets, phase2_metadata)
-            tprint(f"✅ [ANALYST] Phase 3 completed: {len(phase3_interactions.columns)} interaction features generated")
+            tprint_success(f"✅ [ANALYST] Phase 3 completed: {len(phase3_interactions.columns)} interaction features generated")
             
             if phase3_interactions.empty:
                 # Preview input data for debugging Phase 3 failure
@@ -1085,9 +1221,26 @@ class FeatureGenerationInteractionGenerationStepAnalyst(BaseStep):
             )
             
             # Final performance summary
-            tprint(f"⏱️ [ANALYST] Total processing time: {total_time:.2f}s")
-            tprint(f"📊 [ANALYST] Final interactions: {len(final_interactions.columns)}")
-            tprint(f"🧠 [ANALYST] Memory optimizations applied: {self.performance_stats['memory_optimizations_applied']}")
+            tprint_performance("Total Analyst processing", total_time)
+            tprint_success(f"✅ [ANALYST] Final interactions: {len(final_interactions.columns)}")
+            tprint_info(f"🧠 [ANALYST] Memory optimizations applied: {self.performance_stats['memory_optimizations_applied']}")
+            
+            # Log comprehensive performance summary for troubleshooting
+            tprint_structured({
+                'analyst_performance_summary': {
+                    'total_processing_time': total_time,
+                    'phase_times': {
+                        'phase1': self.performance_stats.get('phase1_time', 0.0),
+                        'phase2': self.performance_stats.get('phase2_time', 0.0),
+                        'phase3': self.performance_stats.get('phase3_time', 0.0)
+                    },
+                    'final_interactions_count': len(final_interactions.columns),
+                    'memory_optimizations_applied': self.performance_stats['memory_optimizations_applied'],
+                    'hardware_optimizations': self.performance_stats.get('hardware_optimizations', 0),
+                    'cache_hits': self.performance_stats.get('cache_hits', 0),
+                    'cache_misses': self.performance_stats.get('cache_misses', 0)
+                }
+            }, level="INFO")
             
             # Generate comprehensive report
             tprint("📋 [ANALYST] Generating comprehensive interaction report")
@@ -1101,12 +1254,38 @@ class FeatureGenerationInteractionGenerationStepAnalyst(BaseStep):
                 tprint(f"⚠️ [ANALYST] Report generation failed: {e}")
                 pass
             
-            tprint("🎉 [ANALYST] Three-phase interaction generation completed successfully")
+            tprint_success("🎉 [ANALYST] Three-phase interaction generation completed successfully")
+            
+            # Log final success summary for troubleshooting
+            tprint_structured({
+                'analyst_success_summary': {
+                    'total_processing_time': total_time,
+                    'final_interactions_count': len(final_interactions.columns),
+                    'phase1_features': len(phase1_features.columns),
+                    'phase2_features': len(phase2_features.columns),
+                    'phase3_interactions': len(phase3_interactions.columns),
+                    'memory_optimizations_applied': self.performance_stats['memory_optimizations_applied'],
+                    'success': True
+                }
+            }, level="INFO")
+            
             return result
             
         except Exception as e:
-            tprint(f"❌ [ANALYST] Interaction generation failed: {e}")
+            tprint_exception(e, "Analyst interaction generation failed")
             self.logger.error(f"Analyst interaction generation failed: {e}")
+            
+            # Log detailed error information for troubleshooting
+            tprint_structured({
+                'analyst_error_details': {
+                    'error_type': type(e).__name__,
+                    'error_message': str(e),
+                    'processing_time_seconds': time.time() - start_time,
+                    'performance_stats': self.performance_stats,
+                    'hardware_manager_status': self.hardware_manager is not None,
+                    'comprehensive_optimizer_status': self.comprehensive_optimizer is not None
+                }
+            }, level="ERROR")
             
             return InteractionGenerationResult(
                 success=False,

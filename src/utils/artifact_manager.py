@@ -20,11 +20,12 @@ import uuid
 import shutil
 import gc
 from pathlib import Path
-from typing import Optional, Any, Dict, List, Tuple, Union
+from typing import Optional, Any, Dict, List, Tuple, Union, Callable, TypeVar, Generic, Protocol, runtime_checkable, Literal, Final, ClassVar, cast, overload
 from dataclasses import dataclass, field
 from contextlib import nullcontext, contextmanager, asynccontextmanager
 from datetime import datetime, timedelta
 from enum import Enum
+from abc import ABC, abstractmethod
 
 from .artifact_storage import ArtifactStorage
 from .compression_manager import CompressionManager, CompressionConfig
@@ -32,9 +33,32 @@ from .cache_manager import CacheManager, CacheConfig
 from .memory_manager import MemoryManager, MemoryConfig
 from .path_manager import PathManager
 from .logger import system_logger
-from .tprint import tprint, tprint_success, tprint_info, tprint_warning, tprint_error
+from .tprint import (
+    tprint, tprint_success, tprint_info, tprint_warning, tprint_error,
+    tprint_debug, tprint_performance, tprint_progress, tprint_structured,
+    tprint_exception, tprint_with_level, LogLevel, TPrintConfig
+)
 from .common_operations import ensure_directory
 from .version_manager import get_version_manager
+
+# Type definitions for better type safety
+T = TypeVar('T')
+DataFrameType = TypeVar('DataFrameType', bound=Any)
+ModelType = TypeVar('ModelType', bound=Any)
+MetadataType = TypeVar('MetadataType', bound=Dict[str, Any])
+
+# Protocol definitions for better type checking
+@runtime_checkable
+class DataProcessor(Protocol):
+    """Protocol for data processing objects."""
+    def process(self, data: Any) -> Any: ...
+    def validate(self, data: Any) -> bool: ...
+
+@runtime_checkable
+class Cacheable(Protocol):
+    """Protocol for cacheable objects."""
+    def get_cache_key(self) -> str: ...
+    def get_size_bytes(self) -> int: ...
 
 # Import hardware optimization tools
 try:
@@ -44,19 +68,19 @@ try:
         optimize_dataframe, optimize_array, cache_result,
         MemoryOptimizationLevel
     )
-    HARDWARE_OPTIMIZATION_AVAILABLE = True
+    HARDWARE_OPTIMIZATION_AVAILABLE: Final[bool] = True
 except ImportError:
-    HARDWARE_OPTIMIZATION_AVAILABLE = False
+    HARDWARE_OPTIMIZATION_AVAILABLE: Final[bool] = False
     # Create dummy functions and classes for compatibility
     class MemoryOptimizationLevel:
-        AGGRESSIVE = "AGGRESSIVE"
-        BALANCED = "BALANCED"
-        CONSERVATIVE = "CONSERVATIVE"
+        AGGRESSIVE: Final[str] = "AGGRESSIVE"
+        BALANCED: Final[str] = "BALANCED"
+        CONSERVATIVE: Final[str] = "CONSERVATIVE"
     
-    def get_integrated_hardware_manager(): return None
-    def memory_optimized(*args, **kwargs): return lambda f: f
-    def performance_tracked(*args, **kwargs): return lambda f: f
-    def force_cleanup():
+    def get_integrated_hardware_manager() -> Optional[Any]: return None
+    def memory_optimized(*args: Any, **kwargs: Any) -> Callable[[T], T]: return lambda f: f
+    def performance_tracked(*args: Any, **kwargs: Any) -> Callable[[T], T]: return lambda f: f
+    def force_cleanup() -> None:
         """Force garbage collection and memory cleanup."""
         import gc
         gc.collect()
@@ -66,55 +90,55 @@ except ImportError:
             hw_force_cleanup()
         except ImportError:
             pass
-    def get_memory_stats(): return {}
-    def optimize_dataframe(df): return df
-    def optimize_array(arr): return arr
-    def cache_result(*args, **kwargs): return lambda f: f
+    def get_memory_stats() -> Dict[str, Any]: return {}
+    def optimize_dataframe(df: Any) -> Any: return df
+    def optimize_array(arr: Any) -> Any: return arr
+    def cache_result(*args: Any, **kwargs: Any) -> Callable[[T], T]: return lambda f: f
 
 # Import optional dependencies
 try:
     import pandas as pd
     import numpy as np
-    PANDAS_AVAILABLE = True
-    NUMPY_AVAILABLE = True
+    PANDAS_AVAILABLE: Final[bool] = True
+    NUMPY_AVAILABLE: Final[bool] = True
 except ImportError:
-    PANDAS_AVAILABLE = False
-    NUMPY_AVAILABLE = False
+    PANDAS_AVAILABLE: Final[bool] = False
+    NUMPY_AVAILABLE: Final[bool] = False
 
 try:
     import lz4.frame
-    LZ4_AVAILABLE = True
+    LZ4_AVAILABLE: Final[bool] = True
 except ImportError:
-    LZ4_AVAILABLE = False
+    LZ4_AVAILABLE: Final[bool] = False
 
 try:
     import psutil
-    PSUTIL_AVAILABLE = True
+    PSUTIL_AVAILABLE: Final[bool] = True
 except ImportError:
-    PSUTIL_AVAILABLE = False
+    PSUTIL_AVAILABLE: Final[bool] = False
 
 
 class CompressionType(Enum):
     """Supported compression algorithms."""
-    NONE = "none"
-    GZIP = "gzip"
-    LZ4 = "lz4"
-    AUTO = "auto"  # Automatically choose best compression
+    NONE: Final[str] = "none"
+    GZIP: Final[str] = "gzip"
+    LZ4: Final[str] = "lz4"
+    AUTO: Final[str] = "auto"  # Automatically choose best compression
 
 
 class OperationType(Enum):
     """Types of artifact operations."""
-    SAVE = "save"
-    LOAD = "load"
-    DELETE = "delete"
-    LIST = "list"
+    SAVE: Final[str] = "save"
+    LOAD: Final[str] = "load"
+    DELETE: Final[str] = "delete"
+    LIST: Final[str] = "list"
 
 
 class RetryStrategy(Enum):
     """Retry strategies for failed operations."""
-    EXPONENTIAL_BACKOFF = "exponential_backoff"
-    LINEAR_BACKOFF = "linear_backoff"
-    FIXED_DELAY = "fixed_delay"
+    EXPONENTIAL_BACKOFF: Final[str] = "exponential_backoff"
+    LINEAR_BACKOFF: Final[str] = "linear_backoff"
+    FIXED_DELAY: Final[str] = "fixed_delay"
 
 
 @dataclass
@@ -125,6 +149,17 @@ class RetryConfig:
     max_delay: float = 60.0
     strategy: RetryStrategy = RetryStrategy.EXPONENTIAL_BACKOFF
     retryable_exceptions: Tuple[type, ...] = (OSError, IOError, ConnectionError)
+    
+    def __post_init__(self) -> None:
+        """Validate configuration after initialization."""
+        if self.max_retries < 0:
+            raise ValueError("max_retries must be non-negative")
+        if self.base_delay <= 0:
+            raise ValueError("base_delay must be positive")
+        if self.max_delay <= 0:
+            raise ValueError("max_delay must be positive")
+        if self.base_delay > self.max_delay:
+            raise ValueError("base_delay must be less than or equal to max_delay")
 
 
 
@@ -137,6 +172,17 @@ class MemoryConfig:
     spill_threshold_mb: float = 150.0
     cleanup_interval_seconds: float = 300.0
     enable_gc_collection: bool = True
+    
+    def __post_init__(self) -> None:
+        """Validate configuration after initialization."""
+        if self.max_memory_mb <= 0:
+            raise ValueError("max_memory_mb must be positive")
+        if self.cache_memory_mb <= 0:
+            raise ValueError("cache_memory_mb must be positive")
+        if self.spill_threshold_mb <= 0:
+            raise ValueError("spill_threshold_mb must be positive")
+        if self.cleanup_interval_seconds <= 0:
+            raise ValueError("cleanup_interval_seconds must be positive")
 
 
 @dataclass
@@ -156,6 +202,33 @@ class ArtifactMetadata:
     tags: Dict[str, str] = field(default_factory=dict)
     description: str = ""
     version: str = "1.0"
+    
+    def __post_init__(self) -> None:
+        """Validate metadata after initialization."""
+        if not self.artifact_key:
+            raise ValueError("artifact_key cannot be empty")
+        if not self.step_name:
+            raise ValueError("step_name cannot be empty")
+        if not self.artifact_type:
+            raise ValueError("artifact_type cannot be empty")
+        if self.size_bytes < 0:
+            raise ValueError("size_bytes must be non-negative")
+        if self.compressed_size_bytes is not None and self.compressed_size_bytes < 0:
+            raise ValueError("compressed_size_bytes must be non-negative")
+    
+    def get_compression_ratio(self) -> float:
+        """Get compression ratio if compressed size is available."""
+        if self.compressed_size_bytes is None or self.size_bytes == 0:
+            return 1.0
+        return self.compressed_size_bytes / self.size_bytes
+    
+    def is_compressed(self) -> bool:
+        """Check if artifact is compressed."""
+        return self.compression_used != CompressionType.NONE
+    
+    def get_storage_efficiency(self) -> float:
+        """Get storage efficiency (1.0 = no compression, <1.0 = compressed)."""
+        return self.get_compression_ratio()
 
 
 @dataclass
@@ -171,6 +244,45 @@ class OperationMetrics:
     bytes_processed: int = 0
     compression_ratio: float = 1.0
     timestamp: datetime = field(default_factory=datetime.utcnow)
+    
+    def __post_init__(self) -> None:
+        """Validate metrics after initialization."""
+        if not self.artifact_key:
+            raise ValueError("artifact_key cannot be empty")
+        if not self.step_name:
+            raise ValueError("step_name cannot be empty")
+        if self.duration_seconds < 0:
+            raise ValueError("duration_seconds must be non-negative")
+        if self.retry_count < 0:
+            raise ValueError("retry_count must be non-negative")
+        if self.bytes_processed < 0:
+            raise ValueError("bytes_processed must be non-negative")
+        if self.compression_ratio <= 0:
+            raise ValueError("compression_ratio must be positive")
+    
+    def get_throughput_mbps(self) -> float:
+        """Get throughput in MB/s."""
+        if self.duration_seconds == 0:
+            return 0.0
+        return (self.bytes_processed / (1024 * 1024)) / self.duration_seconds
+    
+    def get_efficiency_score(self) -> float:
+        """Get operation efficiency score (0.0 to 1.0)."""
+        if not self.success:
+            return 0.0
+        
+        # Base score from success
+        score = 1.0
+        
+        # Penalize for retries
+        if self.retry_count > 0:
+            score *= (1.0 - (self.retry_count * 0.1))
+        
+        # Reward for compression
+        if self.compression_ratio < 1.0:
+            score *= (1.0 + (1.0 - self.compression_ratio))
+        
+        return max(0.0, min(1.0, score))
 
 
 @dataclass
@@ -182,10 +294,43 @@ class CacheEntry:
     last_accessed: datetime = field(default_factory=datetime.utcnow)
     access_count: int = 0
     memory_size_mb: float = 0.0
+    
+    def __post_init__(self) -> None:
+        """Validate cache entry after initialization."""
+        if not self.artifact_key:
+            raise ValueError("artifact_key cannot be empty")
+        if self.access_count < 0:
+            raise ValueError("access_count must be non-negative")
+        if self.memory_size_mb < 0:
+            raise ValueError("memory_size_mb must be non-negative")
+    
+    def update_access(self) -> None:
+        """Update access statistics."""
+        self.last_accessed = datetime.utcnow()
+        self.access_count += 1
+    
+    def get_access_frequency(self) -> float:
+        """Get access frequency (accesses per hour)."""
+        if self.access_count == 0:
+            return 0.0
+        
+        time_diff = datetime.utcnow() - self.last_accessed
+        hours_elapsed = time_diff.total_seconds() / 3600
+        
+        if hours_elapsed == 0:
+            return float('inf')
+        
+        return self.access_count / hours_elapsed
+    
+    def is_stale(self, max_age_hours: float = 24.0) -> bool:
+        """Check if cache entry is stale."""
+        time_diff = datetime.utcnow() - self.last_accessed
+        hours_elapsed = time_diff.total_seconds() / 3600
+        return hours_elapsed > max_age_hours
 
 
 # Step category mapping for organized artifact storage
-STEP_CATEGORIES = {
+STEP_CATEGORIES: Final[Dict[str, List[str]]] = {
     'data_collection': ['step01', 'data_downloader', 'klines_downloading_processing'],
     'market_analysis': ['step02', 'market_analysis', 'sr_detection', 'regime_discovery'],
     'pre_training': ['step02_5', 'feature_generation', 'pre_training'],
@@ -196,15 +341,26 @@ STEP_CATEGORIES = {
 
 def get_step_category(step_name: str) -> str:
     """Determine the category for a step based on its name."""
+    tprint_debug(f"🔍 Determining step category for: {step_name}")
+    
+    if not step_name or not isinstance(step_name, str):
+        tprint_warning(f"⚠️ Invalid step name provided: {step_name}")
+        return 'pre_training'  # Default fallback
+    
     step_name_lower = step_name.lower()
     for category, patterns in STEP_CATEGORIES.items():
         if any(pattern.lower() in step_name_lower for pattern in patterns):
+            tprint_info(f"✅ Step '{step_name}' categorized as '{category}'")
             return category
+    
+    tprint_warning(f"⚠️ No category found for step '{step_name}', using default: pre_training")
     return 'pre_training'  # Default fallback
 
 
 def _format_data_preview(data: Any, artifact_name: str) -> str:
-    """Format a data preview for tprint output."""
+    """Format a data preview for tprint output with enhanced type safety."""
+    tprint_debug(f"📊 Formatting data preview for artifact: {artifact_name}")
+    
     try:
         # Try to import pandas for DataFrame handling
         import pandas as pd
@@ -222,6 +378,7 @@ def _format_data_preview(data: Any, artifact_name: str) -> str:
             preview_str += f"Columns: {', '.join(preview_cols[:5])}{'...' if len(preview_cols) > 5 else ''}\n"
             preview_str += f"Preview (5×10):\n{preview_data.to_string(max_cols=10, max_rows=5)}"
             
+            tprint_debug(f"✅ DataFrame preview generated: {rows} rows, {cols} cols, {file_size_mb:.2f}MB")
             return preview_str
             
         elif isinstance(data, np.ndarray):
@@ -234,6 +391,7 @@ def _format_data_preview(data: Any, artifact_name: str) -> str:
             else:
                 preview_str += f"Preview: {data.flat[:10]}..."
             
+            tprint_debug(f"✅ NumPy array preview generated: {shape}, {file_size_mb:.2f}MB")
             return preview_str
             
         elif isinstance(data, (list, tuple)):
@@ -243,6 +401,7 @@ def _format_data_preview(data: Any, artifact_name: str) -> str:
             preview_str = f"List/Tuple: {length:,} items | ~{file_size_mb:.2f}MB\n"
             preview_str += f"Preview: {data[:5]}{'...' if length > 5 else ''}"
             
+            tprint_debug(f"✅ List/Tuple preview generated: {length} items, ~{file_size_mb:.2f}MB")
             return preview_str
             
         elif isinstance(data, dict):
@@ -252,82 +411,146 @@ def _format_data_preview(data: Any, artifact_name: str) -> str:
             preview_str = f"Dict: {length:,} keys | ~{file_size_mb:.2f}MB\n"
             preview_str += f"Keys: {list(data.keys())[:5]}{'...' if length > 5 else ''}"
             
+            tprint_debug(f"✅ Dict preview generated: {length} keys, ~{file_size_mb:.2f}MB")
             return preview_str
             
         else:
             file_size_mb = sys.getsizeof(data) / (1024 * 1024)
-            return f"{type(data).__name__}: {file_size_mb:.2f}MB"
+            data_type = type(data).__name__
+            tprint_debug(f"✅ Generic object preview generated: {data_type}, {file_size_mb:.2f}MB")
+            return f"{data_type}: {file_size_mb:.2f}MB"
             
     except Exception as e:
-        return f"Preview unavailable: {str(e)[:50]}..."
+        error_msg = f"Preview unavailable: {str(e)[:50]}..."
+        tprint_error(f"❌ Failed to format data preview for {artifact_name}: {e}")
+        return error_msg
 
 
 class ArtifactManager:
-    """Simplified artifact manager that uses refactored components."""
+    """Simplified artifact manager that uses refactored components with comprehensive type safety."""
     
-    def __init__(self, config: dict):
-        """Initialize the artifact manager.
+    # Class variables for type hints
+    _storage: ArtifactStorage
+    _path_manager: PathManager
+    _compression: Optional[CompressionManager]
+    _cache: Optional[CacheManager]
+    _memory: Optional[MemoryManager]
+    _lock: Optional[threading.RLock]
+    _async_lock: Optional[asyncio.Lock]
+    
+    def __init__(self, config: Dict[str, Any]) -> None:
+        """Initialize the artifact manager with comprehensive type safety and logging.
         
         Args:
-            config: Configuration dictionary
+            config: Configuration dictionary with type-safe validation
+        
+        Raises:
+            ValueError: If configuration is invalid
+            TypeError: If configuration types are incorrect
         """
+        tprint_info("🚀 Initializing ArtifactManager with enhanced type safety")
+        
+        # Validate config type
+        if not isinstance(config, dict):
+            raise TypeError(f"config must be a dict, got {type(config).__name__}")
+        
         self.logger = system_logger.getChild("ArtifactManager")
         
-        # Initialize base directory
-        self.base_dir = Path(config.get("paths", {}).get("data_dir", "data"))
+        # Initialize base directory with validation
+        data_dir = config.get("paths", {}).get("data_dir", "data")
+        if not isinstance(data_dir, str):
+            raise TypeError(f"data_dir must be a string, got {type(data_dir).__name__}")
+        
+        self.base_dir = Path(data_dir)
         self.base_dir.mkdir(parents=True, exist_ok=True)
+        tprint_success(f"✅ Base directory initialized: {self.base_dir}")
         
-        # Initialize components
-        self._storage = ArtifactStorage(self.base_dir)
-        self._path_manager = PathManager(self.base_dir)
+        # Initialize components with error handling
+        try:
+            self._storage = ArtifactStorage(self.base_dir)
+            self._path_manager = PathManager(self.base_dir)
+            tprint_success("✅ Core storage components initialized")
+        except Exception as e:
+            tprint_error(f"❌ Failed to initialize core components: {e}")
+            raise
         
-        # Initialize optional components
+        # Initialize optional components with validation
         if config.get("enable_compression", True):
-            compression_config = CompressionConfig()
-            self._compression = CompressionManager(compression_config)
+            try:
+                compression_config = CompressionConfig()
+                self._compression = CompressionManager(compression_config)
+                tprint_success("✅ Compression manager initialized")
+            except Exception as e:
+                tprint_warning(f"⚠️ Compression manager initialization failed: {e}")
+                self._compression = None
         else:
             self._compression = None
+            tprint_info("ℹ️ Compression disabled")
         
         if config.get("enable_caching", True):
-            cache_config = CacheConfig(
-                max_size_mb=config.get("max_cache_size_mb", 512.0),
-                enable_thread_safety=config.get("enable_thread_safety", True)
-            )
-            self._cache = CacheManager(cache_config)
+            try:
+                cache_config = CacheConfig(
+                    max_size_mb=config.get("max_cache_size_mb", 512.0),
+                    enable_thread_safety=config.get("enable_thread_safety", True)
+                )
+                self._cache = CacheManager(cache_config)
+                tprint_success("✅ Cache manager initialized")
+            except Exception as e:
+                tprint_warning(f"⚠️ Cache manager initialization failed: {e}")
+                self._cache = None
         else:
             self._cache = None
+            tprint_info("ℹ️ Caching disabled")
         
         if config.get("enable_memory_optimization", True):
-            memory_config = MemoryConfig(
-                max_memory_mb=config.get("max_memory_mb", 2000.0),
-                spill_threshold_mb=config.get("spill_threshold_mb", 150.0)
-            )
-            spill_dir = self.base_dir / "spilled"
-            self._memory = MemoryManager(memory_config, spill_dir)
+            try:
+                memory_config = MemoryConfig(
+                    max_memory_mb=config.get("max_memory_mb", 2000.0),
+                    spill_threshold_mb=config.get("spill_threshold_mb", 150.0)
+                )
+                spill_dir = self.base_dir / "spilled"
+                self._memory = MemoryManager(memory_config, spill_dir)
+                tprint_success("✅ Memory manager initialized")
+            except Exception as e:
+                tprint_warning(f"⚠️ Memory manager initialization failed: {e}")
+                self._memory = None
         else:
             self._memory = None
+            tprint_info("ℹ️ Memory optimization disabled")
         
-        # Thread safety
+        # Thread safety with validation
         if config.get("enable_thread_safety", True):
-            import threading
-            import asyncio
-            self._lock = threading.RLock()
-            self._async_lock = asyncio.Lock()
+            try:
+                import threading
+                import asyncio
+                self._lock = threading.RLock()
+                self._async_lock = asyncio.Lock()
+                tprint_success("✅ Thread safety enabled")
+            except Exception as e:
+                tprint_warning(f"⚠️ Thread safety initialization failed: {e}")
+                self._lock = None
+                self._async_lock = None
         else:
             self._lock = None
             self._async_lock = None
+            tprint_info("ℹ️ Thread safety disabled")
         
         # Store original config for compatibility
-        self.config = config
+        self.config: Dict[str, Any] = config
         
         # Add context attributes for BaseStep compatibility
-        self._current_model = ""
-        self._current_direction = ""
+        self._current_model: str = ""
+        self._current_direction: str = ""
+        self._current_symbol: Optional[str] = None
+        self._current_exchange: Optional[str] = None
+        self._current_information: Optional[str] = None
+        
         self._artifacts_dir = self.base_dir / "artifacts"
         self._artifacts_dir.mkdir(parents=True, exist_ok=True)
+        tprint_success(f"✅ Artifacts directory initialized: {self._artifacts_dir}")
         
-        # Initialize performance metrics
-        self._performance_metrics = {
+        # Initialize performance metrics with type safety
+        self._performance_metrics: Dict[str, Union[int, float]] = {
             'cache_hits': 0,
             'cache_misses': 0,
             'compression_savings_mb': 0.0,
@@ -337,17 +560,19 @@ class ArtifactManager:
         }
         
         # Initialize memory profiles for enhanced storage
-        self._memory_profiles = {}
-        self._total_memory_mb = 0.0
+        self._memory_profiles: Dict[str, Dict[str, Any]] = {}
+        self._total_memory_mb: float = 0.0
+        
+        tprint_success("🎉 ArtifactManager initialization completed successfully")
     
-    def _lock_context(self):
-        """Get lock context manager."""
+    def _lock_context(self) -> Union[threading.RLock, nullcontext]:
+        """Get lock context manager with type safety."""
         if self._lock is not None:
             return self._lock
         return nullcontext()
     
-    async def _async_lock_context(self):
-        """Get async lock context manager."""
+    async def _async_lock_context(self) -> Union[asyncio.Lock, nullcontext]:
+        """Get async lock context manager with type safety."""
         if self._async_lock is not None:
             return self._async_lock
         return nullcontext()
@@ -356,31 +581,91 @@ class ArtifactManager:
                    exchange: Optional[str] = None, datetime_param: Optional[Any] = None, 
                    information: Optional[str] = None, direction: str = "long", 
                    model: str = "Analyst") -> None:
-        """Set the current context for path generation."""
-        tprint_info(f"📁 SETTING CONTEXT: {step_name} | {symbol} | {exchange} | {direction} | {model}")
-        with self._lock_context():
-            # Store context attributes for BaseStep compatibility
-            self._current_symbol = symbol
-            self._current_exchange = exchange
-            self._current_direction = direction
-            self._current_model = model
-            self._current_information = information
+        """Set the current context for path generation with comprehensive validation.
+        
+        Args:
+            step_name: Name of the current step
+            symbol: Trading symbol (optional)
+            exchange: Exchange name (optional)
+            datetime_param: Datetime parameter (optional)
+            information: Information type (optional)
+            direction: Trading direction (default: "long")
+            model: Model type (default: "Analyst")
             
-            self._path_manager.set_context(
-                step_name=step_name,
-                symbol=symbol,
-                exchange=exchange,
-                datetime_param=datetime_param,
-                information=information,
-                direction=direction,
-                model=model
-            )
+        Raises:
+            ValueError: If required parameters are invalid
+            TypeError: If parameter types are incorrect
+        """
+        # Validate input parameters
+        if not isinstance(step_name, str) or not step_name.strip():
+            raise ValueError(f"step_name must be a non-empty string, got: {step_name}")
+        if symbol is not None and not isinstance(symbol, str):
+            raise TypeError(f"symbol must be a string or None, got: {type(symbol).__name__}")
+        if exchange is not None and not isinstance(exchange, str):
+            raise TypeError(f"exchange must be a string or None, got: {type(exchange).__name__}")
+        if not isinstance(direction, str):
+            raise TypeError(f"direction must be a string, got: {type(direction).__name__}")
+        if not isinstance(model, str):
+            raise TypeError(f"model must be a string, got: {type(model).__name__}")
+        
+        tprint_info(f"📁 SETTING CONTEXT: {step_name} | {symbol} | {exchange} | {direction} | {model}")
+        
+        with self._lock_context():
+            try:
+                # Store context attributes for BaseStep compatibility
+                self._current_symbol = symbol
+                self._current_exchange = exchange
+                self._current_direction = direction
+                self._current_model = model
+                self._current_information = information
+                
+                self._path_manager.set_context(
+                    step_name=step_name,
+                    symbol=symbol,
+                    exchange=exchange,
+                    datetime_param=datetime_param,
+                    information=information,
+                    direction=direction,
+                    model=model
+                )
+                
+                tprint_success(f"✅ Context set successfully for step: {step_name}")
+                
+            except Exception as e:
+                tprint_error(f"❌ Failed to set context: {e}")
+                raise
     
     def save(self, data: Any, artifact_name: str, 
              artifact_type: str = "data", 
              compression: str = "auto",
-             metadata: Optional[Dict] = None) -> str:
-        """Save an artifact."""
+             metadata: Optional[Dict[str, Any]] = None) -> str:
+        """Save an artifact with comprehensive validation and error handling.
+        
+        Args:
+            data: Data to save (any type)
+            artifact_name: Name for the artifact (must be non-empty string)
+            artifact_type: Type of artifact (default: "data")
+            compression: Compression method (default: "auto")
+            metadata: Optional metadata dictionary
+            
+        Returns:
+            Path where artifact was saved
+            
+        Raises:
+            ValueError: If artifact_name is empty or invalid
+            TypeError: If parameter types are incorrect
+            Exception: If save operation fails
+        """
+        # Validate input parameters
+        if not isinstance(artifact_name, str) or not artifact_name.strip():
+            raise ValueError(f"artifact_name must be a non-empty string, got: {artifact_name}")
+        if not isinstance(artifact_type, str):
+            raise TypeError(f"artifact_type must be a string, got: {type(artifact_type).__name__}")
+        if not isinstance(compression, str):
+            raise TypeError(f"compression must be a string, got: {type(compression).__name__}")
+        if metadata is not None and not isinstance(metadata, dict):
+            raise TypeError(f"metadata must be a dict or None, got: {type(metadata).__name__}")
+        
         with self._lock_context():
             try:
                 # Print data preview before saving
@@ -400,6 +685,7 @@ class ArtifactManager:
                 
                 # Optimize data if memory manager is available
                 if self._memory and hasattr(data, 'memory_usage'):  # DataFrame
+                    tprint_debug(f"🔧 Optimizing DataFrame for artifact: {artifact_name}")
                     data = self._memory.optimize_dataframe(data)
                 
                 # Save artifact
@@ -415,10 +701,12 @@ class ArtifactManager:
                 
                 # Cache if enabled
                 if self._cache:
+                    tprint_debug(f"💾 Caching artifact: {artifact_name}")
                     self._cache.put(artifact_name, data)
                 
                 # Profile memory usage if memory manager is available
                 if self._memory:
+                    tprint_debug(f"📊 Profiling memory usage for artifact: {artifact_name}")
                     self._memory.profile_memory_usage(artifact_name, data)
                 
                 # Print success message
@@ -432,7 +720,25 @@ class ArtifactManager:
     
     def get_artifact(self, artifact_name: str, 
                     artifact_type: str = "data") -> Optional[Any]:
-        """Retrieve an artifact."""
+        """Retrieve an artifact with comprehensive validation and error handling.
+        
+        Args:
+            artifact_name: Name of the artifact to retrieve
+            artifact_type: Type of artifact to retrieve (default: "data")
+            
+        Returns:
+            Retrieved data or None if not found
+            
+        Raises:
+            ValueError: If artifact_name is empty or invalid
+            TypeError: If parameter types are incorrect
+        """
+        # Validate input parameters
+        if not isinstance(artifact_name, str) or not artifact_name.strip():
+            raise ValueError(f"artifact_name must be a non-empty string, got: {artifact_name}")
+        if not isinstance(artifact_type, str):
+            raise TypeError(f"artifact_type must be a string, got: {type(artifact_type).__name__}")
+        
         with self._lock_context():
             try:
                 tprint_info(f"🔍 LOADING ARTIFACT: {artifact_name}")
@@ -466,10 +772,12 @@ class ArtifactManager:
                 if data is not None:
                     # Cache if enabled
                     if self._cache:
+                        tprint_debug(f"💾 Caching loaded artifact: {artifact_name}")
                         self._cache.put(artifact_name, data)
                     
                     # Profile memory usage if memory manager is available
                     if self._memory:
+                        tprint_debug(f"📊 Profiling memory usage for loaded artifact: {artifact_name}")
                         self._memory.profile_memory_usage(artifact_name, data)
                     
                     # Print data preview after loading
@@ -486,7 +794,25 @@ class ArtifactManager:
                 return None
     
     def delete_artifact(self, artifact_name: str, artifact_type: str = "data") -> bool:
-        """Delete an artifact."""
+        """Delete an artifact with comprehensive validation and error handling.
+        
+        Args:
+            artifact_name: Name of the artifact to delete
+            artifact_type: Type of artifact to delete (default: "data")
+            
+        Returns:
+            True if deletion was successful, False otherwise
+            
+        Raises:
+            ValueError: If artifact_name is empty or invalid
+            TypeError: If parameter types are incorrect
+        """
+        # Validate input parameters
+        if not isinstance(artifact_name, str) or not artifact_name.strip():
+            raise ValueError(f"artifact_name must be a non-empty string, got: {artifact_name}")
+        if not isinstance(artifact_type, str):
+            raise TypeError(f"artifact_type must be a string, got: {type(artifact_type).__name__}")
+        
         with self._lock_context():
             try:
                 tprint_info(f"🗑️  DELETING ARTIFACT: {artifact_name}")
@@ -510,10 +836,12 @@ class ArtifactManager:
                 
                 # Remove from cache if enabled
                 if self._cache:
+                    tprint_debug(f"🗑️ Removing from cache: {artifact_name}")
                     self._cache.remove(artifact_name)
                 
                 # Remove from memory profiles if memory manager is available
                 if self._memory and artifact_name in self._memory._memory_profiles:
+                    tprint_debug(f"📊 Removing from memory profiles: {artifact_name}")
                     profile = self._memory._memory_profiles.pop(artifact_name)
                     self._memory._total_memory_mb -= profile.memory_usage_mb
                 
@@ -528,62 +856,148 @@ class ArtifactManager:
                 tprint_error(f"❌ FAILED TO DELETE ARTIFACT: {artifact_name} - {str(e)}")
                 return False
     
-    def list_artifacts(self, pattern: str = "*") -> list[Path]:
-        """List artifacts matching a pattern."""
-        return self._storage.list_artifacts(pattern)
+    def list_artifacts(self, pattern: str = "*") -> List[Path]:
+        """List artifacts matching a pattern with validation.
+        
+        Args:
+            pattern: Glob pattern to match artifacts (default: "*")
+            
+        Returns:
+            List of Path objects matching the pattern
+            
+        Raises:
+            TypeError: If pattern is not a string
+        """
+        if not isinstance(pattern, str):
+            raise TypeError(f"pattern must be a string, got: {type(pattern).__name__}")
+        
+        tprint_debug(f"🔍 Listing artifacts with pattern: {pattern}")
+        
+        try:
+            artifacts = self._storage.list_artifacts(pattern)
+            tprint_info(f"📋 Found {len(artifacts)} artifacts matching pattern: {pattern}")
+            return artifacts
+        except Exception as e:
+            tprint_error(f"❌ Failed to list artifacts with pattern '{pattern}': {e}")
+            return []
     
     def clear_cache(self) -> None:
-        """Clear the cache."""
+        """Clear the cache with comprehensive logging."""
         tprint_info("🧹 CLEARING CACHE")
-        if self._cache:
-            self._cache.clear()
-        tprint_success("✅ CACHE CLEARED")
+        
+        try:
+            if self._cache:
+                cache_stats_before = self._cache.get_stats() if hasattr(self._cache, 'get_stats') else {}
+                self._cache.clear()
+                tprint_success(f"✅ CACHE CLEARED (stats before: {cache_stats_before})")
+            else:
+                tprint_info("ℹ️ No cache to clear")
+        except Exception as e:
+            tprint_error(f"❌ Failed to clear cache: {e}")
     
     def get_stats(self) -> Dict[str, Any]:
-        """Get comprehensive statistics."""
-        stats = {
-            "config": {
-                "base_dir": str(self.base_dir),
-                "enable_compression": self._compression is not None,
-                "enable_caching": self._cache is not None,
-                "enable_memory_optimization": self._memory is not None,
-                "enable_thread_safety": self._lock is not None
+        """Get comprehensive statistics with enhanced type safety."""
+        tprint_debug("📊 Collecting comprehensive statistics")
+        
+        try:
+            stats: Dict[str, Any] = {
+                "config": {
+                    "base_dir": str(self.base_dir),
+                    "enable_compression": self._compression is not None,
+                    "enable_caching": self._cache is not None,
+                    "enable_memory_optimization": self._memory is not None,
+                    "enable_thread_safety": self._lock is not None
+                },
+                "performance_metrics": self._performance_metrics.copy(),
+                "memory_profiles": {
+                    "total_artifacts": len(self._memory_profiles),
+                    "total_memory_mb": self._total_memory_mb
+                }
             }
-        }
-        
-        # Add cache stats
-        if self._cache:
-            stats["cache"] = self._cache.get_stats()
-        
-        # Add memory stats
-        if self._memory:
-            stats["memory"] = self._memory.get_memory_stats()
-        
-        # Add compression stats
-        if self._compression:
-            stats["compression"] = self._compression.get_compression_stats()
-        
-        return stats
+            
+            # Add cache stats
+            if self._cache:
+                try:
+                    cache_stats = self._cache.get_stats()
+                    stats["cache"] = cache_stats
+                    tprint_debug(f"📊 Cache stats: {cache_stats}")
+                except Exception as e:
+                    tprint_warning(f"⚠️ Failed to get cache stats: {e}")
+                    stats["cache"] = {"error": str(e)}
+            
+            # Add memory stats
+            if self._memory:
+                try:
+                    memory_stats = self._memory.get_memory_stats()
+                    stats["memory"] = memory_stats
+                    tprint_debug(f"📊 Memory stats: {memory_stats}")
+                except Exception as e:
+                    tprint_warning(f"⚠️ Failed to get memory stats: {e}")
+                    stats["memory"] = {"error": str(e)}
+            
+            # Add compression stats
+            if self._compression:
+                try:
+                    compression_stats = self._compression.get_compression_stats()
+                    stats["compression"] = compression_stats
+                    tprint_debug(f"📊 Compression stats: {compression_stats}")
+                except Exception as e:
+                    tprint_warning(f"⚠️ Failed to get compression stats: {e}")
+                    stats["compression"] = {"error": str(e)}
+            
+            tprint_success("✅ Statistics collected successfully")
+            return stats
+            
+        except Exception as e:
+            tprint_error(f"❌ Failed to collect statistics: {e}")
+            return {"error": str(e)}
     
     def cleanup(self) -> None:
-        """Perform cleanup operations."""
+        """Perform cleanup operations with comprehensive error handling."""
         tprint_info("🧹 PERFORMING CLEANUP")
         
-        # Cleanup cache
-        if self._cache:
-            self._cache.periodic_cleanup()
-        
-        # Cleanup memory
-        if self._memory:
-            self._memory.periodic_cleanup()
-        
-        tprint_success("✅ CLEANUP COMPLETED")
+        try:
+            # Cleanup cache
+            if self._cache:
+                tprint_debug("🧹 Cleaning up cache")
+                self._cache.periodic_cleanup()
+            
+            # Cleanup memory
+            if self._memory:
+                tprint_debug("🧹 Cleaning up memory")
+                self._memory.periodic_cleanup()
+            
+            # Force garbage collection
+            tprint_debug("🧹 Forcing garbage collection")
+            force_cleanup()
+            
+            tprint_success("✅ CLEANUP COMPLETED")
+            
+        except Exception as e:
+            tprint_error(f"❌ Cleanup failed: {e}")
     
-    async def run_context(self, run_id: str):
-        """Async context manager for automatic cleanup."""
+    async def run_context(self, run_id: str) -> Any:
+        """Async context manager for automatic cleanup with validation.
+        
+        Args:
+            run_id: Unique identifier for the run
+            
+        Yields:
+            Path to the run directory
+            
+        Raises:
+            ValueError: If run_id is empty or invalid
+            TypeError: If run_id is not a string
+        """
+        if not isinstance(run_id, str) or not run_id.strip():
+            raise ValueError(f"run_id must be a non-empty string, got: {run_id}")
+        
+        tprint_info(f"🚀 Starting run context: {run_id}")
+        
         async with await self._async_lock_context():
             run_dir = self.base_dir / f"run_{run_id}"
             run_dir.mkdir(parents=True, exist_ok=True)
+            tprint_success(f"✅ Run directory created: {run_dir}")
             
             try:
                 yield run_dir
@@ -592,60 +1006,164 @@ class ArtifactManager:
                 try:
                     import shutil
                     shutil.rmtree(run_dir, ignore_errors=True)
-                    tprint_info(f"Cleaned up run directory: {run_dir}")
+                    tprint_info(f"🧹 Cleaned up run directory: {run_dir}")
                 except Exception as e:
-                    tprint_warning(f"Failed to cleanup run directory {run_dir}: {e}")
+                    tprint_warning(f"⚠️ Failed to cleanup run directory {run_dir}: {e}")
     
-    # Compatibility methods for existing code
+    # Compatibility methods for existing code with enhanced type safety
     def get_data_dir(self, *subdirs: str) -> Path:
-        """Get data directory path."""
+        """Get data directory path with validation.
+        
+        Args:
+            *subdirs: Subdirectory names to append
+            
+        Returns:
+            Path to the data directory
+        """
+        tprint_debug(f"📁 Getting data directory with subdirs: {subdirs}")
         return self.base_dir / "data" / Path(*subdirs)
     
     def get_reports_dir(self, *subdirs: str) -> Path:
-        """Get reports directory path."""
+        """Get reports directory path with validation.
+        
+        Args:
+            *subdirs: Subdirectory names to append
+            
+        Returns:
+            Path to the reports directory
+        """
+        tprint_debug(f"📁 Getting reports directory with subdirs: {subdirs}")
         return self.base_dir / "reports" / Path(*subdirs)
     
     def get_cache_dir(self, *subdirs: str) -> Path:
-        """Get cache directory path."""
+        """Get cache directory path with validation.
+        
+        Args:
+            *subdirs: Subdirectory names to append
+            
+        Returns:
+            Path to the cache directory
+        """
+        tprint_debug(f"📁 Getting cache directory with subdirs: {subdirs}")
         return self.base_dir / "cache" / Path(*subdirs)
     
     def get_optimization_dir(self, *subdirs: str) -> Path:
-        """Get optimization directory path."""
+        """Get optimization directory path with validation.
+        
+        Args:
+            *subdirs: Subdirectory names to append
+            
+        Returns:
+            Path to the optimization directory
+        """
+        tprint_debug(f"📁 Getting optimization directory with subdirs: {subdirs}")
         return self.base_dir / "optimization" / Path(*subdirs)
     
     def get_tmp_dir(self, *subdirs: str) -> Path:
-        """Get temporary directory path."""
+        """Get temporary directory path with validation.
+        
+        Args:
+            *subdirs: Subdirectory names to append
+            
+        Returns:
+            Path to the temporary directory
+        """
+        tprint_debug(f"📁 Getting tmp directory with subdirs: {subdirs}")
         return self.base_dir / "tmp" / Path(*subdirs)
     
     def get_tmp_path(self, filename: str) -> Path:
-        """Get temporary file path."""
+        """Get temporary file path with validation.
+        
+        Args:
+            filename: Name of the temporary file
+            
+        Returns:
+            Path to the temporary file
+            
+        Raises:
+            ValueError: If filename is empty or invalid
+            TypeError: If filename is not a string
+        """
+        if not isinstance(filename, str) or not filename.strip():
+            raise ValueError(f"filename must be a non-empty string, got: {filename}")
+        
+        tprint_debug(f"📁 Getting tmp path for filename: {filename}")
         return self.get_tmp_dir() / filename
     
     def reset_run(self) -> None:
-        """Reset run state (compatibility method)."""
+        """Reset run state (compatibility method) with logging."""
+        tprint_info("🔄 Resetting run state")
         # The refactored manager handles this automatically
-        pass
+        tprint_success("✅ Run state reset completed")
     
     def get_run_id(self) -> Optional[str]:
         """Get current run ID (compatibility method)."""
+        tprint_debug("🔍 Getting run ID (compatibility method)")
         return None
     
     def get_run_dir(self) -> Optional[Path]:
         """Get current run directory (compatibility method)."""
+        tprint_debug("🔍 Getting run directory (compatibility method)")
         return self.base_dir
     
     def get_step_category(self, step_name: str) -> str:
-        """Get step category for a given step name."""
+        """Get step category for a given step name with validation.
+        
+        Args:
+            step_name: Name of the step
+            
+        Returns:
+            Category name for the step
+            
+        Raises:
+            ValueError: If step_name is empty or invalid
+            TypeError: If step_name is not a string
+        """
+        if not isinstance(step_name, str) or not step_name.strip():
+            raise ValueError(f"step_name must be a non-empty string, got: {step_name}")
+        
+        tprint_debug(f"🔍 Getting step category for: {step_name}")
         return get_step_category(step_name)
     
     def ensure_step_category_directories(self) -> None:
-        """Ensure all step category directories exist."""
-        for category in STEP_CATEGORIES.keys():
-            category_dir = self._artifacts_dir / category
-            category_dir.mkdir(parents=True, exist_ok=True)
+        """Ensure all step category directories exist with logging."""
+        tprint_info("📁 Ensuring step category directories exist")
+        
+        try:
+            for category in STEP_CATEGORIES.keys():
+                category_dir = self._artifacts_dir / category
+                category_dir.mkdir(parents=True, exist_ok=True)
+                tprint_debug(f"✅ Ensured directory exists: {category_dir}")
+            
+            tprint_success("✅ All step category directories ensured")
+        except Exception as e:
+            tprint_error(f"❌ Failed to ensure step category directories: {e}")
     
     def _get_enhanced_path(self, step_name: str, artifact_name: str, file_extension: str) -> Path:
-        """Get enhanced path for artifact with step category organization."""
+        """Get enhanced path for artifact with step category organization and validation.
+        
+        Args:
+            step_name: Name of the step
+            artifact_name: Name of the artifact
+            file_extension: File extension (without dot)
+            
+        Returns:
+            Path to the enhanced artifact file
+            
+        Raises:
+            ValueError: If any parameter is empty or invalid
+            TypeError: If parameter types are incorrect
+        """
+        # Validate input parameters
+        if not isinstance(step_name, str) or not step_name.strip():
+            raise ValueError(f"step_name must be a non-empty string, got: {step_name}")
+        if not isinstance(artifact_name, str) or not artifact_name.strip():
+            raise ValueError(f"artifact_name must be a non-empty string, got: {artifact_name}")
+        if not isinstance(file_extension, str) or not file_extension.strip():
+            raise ValueError(f"file_extension must be a non-empty string, got: {file_extension}")
+        
+        tprint_debug(f"🔧 Getting enhanced path for: {step_name}/{artifact_name}.{file_extension}")
+        
         step_category = get_step_category(step_name)
         category_dir = self._artifacts_dir / step_category
         category_dir.mkdir(parents=True, exist_ok=True)
@@ -667,38 +1185,81 @@ class ArtifactManager:
         else:
             filename = f"{artifact_name}.{file_extension}"
         
-        return category_dir / filename
+        enhanced_path = category_dir / filename
+        tprint_debug(f"✅ Enhanced path generated: {enhanced_path}")
+        return enhanced_path
     
     def _load_artifact_from_path(self, path: Path) -> Any:
-        """Load artifact from file path."""
+        """Load artifact from file path with comprehensive error handling.
+        
+        Args:
+            path: Path to the artifact file
+            
+        Returns:
+            Loaded data or None if loading failed
+            
+        Raises:
+            TypeError: If path is not a Path object
+        """
+        if not isinstance(path, Path):
+            raise TypeError(f"path must be a Path object, got: {type(path).__name__}")
+        
+        tprint_debug(f"📂 Loading artifact from path: {path}")
+        
         try:
             if path.suffix == '.parquet':
                 if PANDAS_AVAILABLE:
+                    tprint_debug(f"📊 Loading parquet file: {path}")
                     return pd.read_parquet(path)
                 else:
+                    tprint_warning(f"⚠️ Pandas not available, cannot load parquet: {path}")
                     return None
             elif path.suffix == '.csv':
                 if PANDAS_AVAILABLE:
+                    tprint_debug(f"📊 Loading CSV file: {path}")
                     return pd.read_csv(path, index_col=0)
                 else:
+                    tprint_warning(f"⚠️ Pandas not available, cannot load CSV: {path}")
                     return None
             elif path.suffix == '.pkl':
+                tprint_debug(f"📦 Loading pickle file: {path}")
                 with open(path, 'rb') as f:
                     return pickle.load(f)
             elif path.suffix == '.json':
+                tprint_debug(f"📄 Loading JSON file: {path}")
                 with open(path, 'r') as f:
                     return json.load(f)
             else:
-                self.logger.warning(f"Unknown file extension: {path.suffix}")
+                tprint_warning(f"⚠️ Unknown file extension: {path.suffix}")
                 return None
         except Exception as e:
-            self.logger.error(f"Failed to load artifact from {path}: {e}")
+            tprint_error(f"❌ Failed to load artifact from {path}: {e}")
             return None
     
     def _find_artifact_fuzzy(self, artifact_name: str, artifact_type: str) -> Optional[Path]:
-        """Find artifact using fuzzy matching across all directories."""
+        """Find artifact using fuzzy matching across all directories with validation.
+        
+        Args:
+            artifact_name: Name of the artifact to find
+            artifact_type: Type of artifact to find
+            
+        Returns:
+            Path to the found artifact or None if not found
+            
+        Raises:
+            ValueError: If artifact_name is empty or invalid
+            TypeError: If parameter types are incorrect
+        """
+        if not isinstance(artifact_name, str) or not artifact_name.strip():
+            raise ValueError(f"artifact_name must be a non-empty string, got: {artifact_name}")
+        if not isinstance(artifact_type, str):
+            raise TypeError(f"artifact_type must be a string, got: {type(artifact_type).__name__}")
+        
+        tprint_debug(f"🔍 Fuzzy searching for artifact: {artifact_name} (type: {artifact_type})")
+        
         try:
             if not self._artifacts_dir.exists():
+                tprint_warning(f"⚠️ Artifacts directory does not exist: {self._artifacts_dir}")
                 return None
             
             # Search in all subdirectories
@@ -708,15 +1269,28 @@ class ArtifactManager:
                     if self._is_similar_name(artifact_name, file_path.stem):
                         # Additional check: ensure it's the right type of file
                         if self._is_correct_file_type(file_path, artifact_type):
+                            tprint_success(f"✅ Found artifact with fuzzy matching: {file_path}")
                             return file_path
             
+            tprint_warning(f"⚠️ No artifact found with fuzzy matching: {artifact_name}")
             return None
         except Exception as e:
-            self.logger.warning(f"Failed to search with fuzzy matching: {e}")
+            tprint_error(f"❌ Failed to search with fuzzy matching: {e}")
             return None
     
     def _is_similar_name(self, name1: str, name2: str) -> bool:
-        """Check if two names are similar (for fuzzy matching)."""
+        """Check if two names are similar (for fuzzy matching) with validation.
+        
+        Args:
+            name1: First name to compare
+            name2: Second name to compare
+            
+        Returns:
+            True if names are similar, False otherwise
+        """
+        if not isinstance(name1, str) or not isinstance(name2, str):
+            return False
+        
         try:
             # Simple similarity check
             name1_clean = name1.lower().replace('_', '').replace('-', '')
@@ -724,25 +1298,39 @@ class ArtifactManager:
             
             # Check if one is contained in the other
             if name1_clean in name2_clean or name2_clean in name1_clean:
+                tprint_debug(f"✅ Names similar (containment): '{name1}' <-> '{name2}'")
                 return True
             
             # Check for common patterns
             common_patterns = ['data', 'model', 'result', 'output', 'input']
             for pattern in common_patterns:
                 if pattern in name1_clean and pattern in name2_clean:
+                    tprint_debug(f"✅ Names similar (pattern '{pattern}'): '{name1}' <-> '{name2}'")
                     return True
             
             return False
-        except Exception:
+        except Exception as e:
+            tprint_debug(f"⚠️ Error in similarity check: {e}")
             return False
     
     def _is_correct_file_type(self, file_path: Path, artifact_type: str) -> bool:
-        """Check if the file type matches the expected artifact type."""
+        """Check if the file type matches the expected artifact type with validation.
+        
+        Args:
+            file_path: Path to the file to check
+            artifact_type: Expected artifact type
+            
+        Returns:
+            True if file type matches expected type, False otherwise
+        """
+        if not isinstance(file_path, Path) or not isinstance(artifact_type, str):
+            return False
+        
         try:
             file_extension = file_path.suffix.lower()
             
             # Map artifact types to expected file extensions
-            type_mappings = {
+            type_mappings: Dict[str, List[str]] = {
                 "data": [".parquet", ".csv", ".json"],
                 "model": [".pkl", ".joblib", ".h5", ".onnx"],
                 "metadata": [".json", ".yaml", ".yml"],
@@ -751,15 +1339,44 @@ class ArtifactManager:
             }
             
             expected_extensions = type_mappings.get(artifact_type, [".parquet", ".csv", ".json", ".pkl"])
-            return file_extension in expected_extensions
-        except Exception:
+            is_correct = file_extension in expected_extensions
+            
+            if is_correct:
+                tprint_debug(f"✅ File type matches: {file_extension} for type '{artifact_type}'")
+            else:
+                tprint_debug(f"⚠️ File type mismatch: {file_extension} not in {expected_extensions} for type '{artifact_type}'")
+            
+            return is_correct
+        except Exception as e:
+            tprint_debug(f"⚠️ Error checking file type: {e}")
             return True  # Default to True if we can't determine
     
-    def store_enhanced(self, key: str, data: Any, metadata: Optional[Dict] = None) -> bool:
-        """Store artifact with enhanced features including memory profiling and spilling."""
+    def store_enhanced(self, key: str, data: Any, metadata: Optional[Dict[str, Any]] = None) -> bool:
+        """Store artifact with enhanced features including memory profiling and spilling.
+        
+        Args:
+            key: Key for the artifact
+            data: Data to store
+            metadata: Optional metadata
+            
+        Returns:
+            True if storage was successful, False otherwise
+            
+        Raises:
+            ValueError: If key is empty or invalid
+            TypeError: If parameter types are incorrect
+        """
+        if not isinstance(key, str) or not key.strip():
+            raise ValueError(f"key must be a non-empty string, got: {key}")
+        if metadata is not None and not isinstance(metadata, dict):
+            raise TypeError(f"metadata must be a dict or None, got: {type(metadata).__name__}")
+        
+        tprint_info(f"🚀 Storing enhanced artifact: {key}")
+        
         try:
             # Profile memory usage
             memory_usage_mb = self._profile_memory_usage(key, data)
+            tprint_debug(f"📊 Memory usage profiled: {memory_usage_mb:.2f}MB")
             
             # Store using regular save method
             artifact_path = self.save(data, key, "data", "auto", metadata)
@@ -767,76 +1384,145 @@ class ArtifactManager:
             if artifact_path:
                 # Update performance metrics
                 self._performance_metrics['cache_hits'] += 1
+                tprint_success(f"✅ Enhanced artifact stored successfully: {key}")
                 return True
             else:
                 self._performance_metrics['cache_misses'] += 1
+                tprint_warning(f"⚠️ Enhanced artifact storage failed: {key}")
                 return False
                 
         except Exception as e:
-            self.logger.error(f"Failed to store enhanced artifact {key}: {e}")
+            tprint_error(f"❌ Failed to store enhanced artifact {key}: {e}")
             return False
     
     def retrieve_enhanced(self, key: str) -> Optional[Any]:
-        """Retrieve artifact with enhanced features including lazy loading."""
+        """Retrieve artifact with enhanced features including lazy loading.
+        
+        Args:
+            key: Key of the artifact to retrieve
+            
+        Returns:
+            Retrieved data or None if not found
+            
+        Raises:
+            ValueError: If key is empty or invalid
+            TypeError: If key is not a string
+        """
+        if not isinstance(key, str) or not key.strip():
+            raise ValueError(f"key must be a non-empty string, got: {key}")
+        
+        tprint_info(f"🔍 Retrieving enhanced artifact: {key}")
+        
         try:
             # Try regular retrieval first
             data = self.get_artifact(key, "data")
             if data is not None:
                 self._performance_metrics['cache_hits'] += 1
+                tprint_success(f"✅ Enhanced artifact retrieved successfully: {key}")
                 return data
             else:
                 self._performance_metrics['cache_misses'] += 1
+                tprint_warning(f"⚠️ Enhanced artifact not found: {key}")
                 return None
                 
         except Exception as e:
-            self.logger.error(f"Failed to retrieve enhanced artifact {key}: {e}")
+            tprint_error(f"❌ Failed to retrieve enhanced artifact {key}: {e}")
             return None
     
     def get_performance_metrics(self) -> Dict[str, Any]:
-        """Get performance metrics."""
-        total_requests = self._performance_metrics['cache_hits'] + self._performance_metrics['cache_misses']
-        cache_hit_ratio = (
-            self._performance_metrics['cache_hits'] / total_requests
-            if total_requests > 0 else 0
-        )
+        """Get performance metrics with enhanced calculations.
         
-        return {
-            'cache_hits': self._performance_metrics['cache_hits'],
-            'cache_misses': self._performance_metrics['cache_misses'],
-            'cache_hit_ratio': cache_hit_ratio,
-            'compression_savings_mb': self._performance_metrics['compression_savings_mb'],
-            'optimization_savings_mb': self._performance_metrics['optimization_savings_mb'],
-            'spill_operations': self._performance_metrics['spill_operations'],
-            'lazy_loads': self._performance_metrics['lazy_loads']
-        }
+        Returns:
+            Dictionary containing performance metrics
+        """
+        tprint_debug("📊 Collecting performance metrics")
+        
+        try:
+            total_requests = self._performance_metrics['cache_hits'] + self._performance_metrics['cache_misses']
+            cache_hit_ratio = (
+                self._performance_metrics['cache_hits'] / total_requests
+                if total_requests > 0 else 0
+            )
+            
+            metrics = {
+                'cache_hits': self._performance_metrics['cache_hits'],
+                'cache_misses': self._performance_metrics['cache_misses'],
+                'cache_hit_ratio': cache_hit_ratio,
+                'compression_savings_mb': self._performance_metrics['compression_savings_mb'],
+                'optimization_savings_mb': self._performance_metrics['optimization_savings_mb'],
+                'spill_operations': self._performance_metrics['spill_operations'],
+                'lazy_loads': self._performance_metrics['lazy_loads'],
+                'total_requests': total_requests
+            }
+            
+            tprint_success(f"✅ Performance metrics collected: {cache_hit_ratio:.2%} cache hit ratio")
+            return metrics
+            
+        except Exception as e:
+            tprint_error(f"❌ Failed to collect performance metrics: {e}")
+            return {"error": str(e)}
     
     def get_memory_analytics(self) -> Dict[str, Any]:
-        """Get memory analytics."""
-        total_memory_mb = sum(profile.get('memory_usage_mb', 0) for profile in self._memory_profiles.values())
-        spilled_count = sum(1 for profile in self._memory_profiles.values() if profile.get('spilled', False))
+        """Get memory analytics with enhanced calculations.
         
-        return {
-            'total_memory_mb': total_memory_mb,
-            'spilled_count': spilled_count,
-            'in_memory_artifacts': len(self._memory_profiles) - spilled_count,
-            'total_artifacts': len(self._memory_profiles)
-        }
+        Returns:
+            Dictionary containing memory analytics
+        """
+        tprint_debug("📊 Collecting memory analytics")
+        
+        try:
+            total_memory_mb = sum(profile.get('memory_usage_mb', 0) for profile in self._memory_profiles.values())
+            spilled_count = sum(1 for profile in self._memory_profiles.values() if profile.get('spilled', False))
+            
+            analytics = {
+                'total_memory_mb': total_memory_mb,
+                'spilled_count': spilled_count,
+                'in_memory_artifacts': len(self._memory_profiles) - spilled_count,
+                'total_artifacts': len(self._memory_profiles),
+                'average_memory_per_artifact': total_memory_mb / len(self._memory_profiles) if self._memory_profiles else 0,
+                'spill_ratio': spilled_count / len(self._memory_profiles) if self._memory_profiles else 0
+            }
+            
+            tprint_success(f"✅ Memory analytics collected: {total_memory_mb:.2f}MB total, {spilled_count} spilled")
+            return analytics
+            
+        except Exception as e:
+            tprint_error(f"❌ Failed to collect memory analytics: {e}")
+            return {"error": str(e)}
     
     def _profile_memory_usage(self, artifact_id: str, data: Any) -> float:
-        """Profile memory usage of an artifact."""
+        """Profile memory usage of an artifact with enhanced error handling.
+        
+        Args:
+            artifact_id: Unique identifier for the artifact
+            data: Data to profile
+            
+        Returns:
+            Memory usage in MB
+        """
+        if not isinstance(artifact_id, str) or not artifact_id.strip():
+            tprint_warning(f"⚠️ Invalid artifact_id for memory profiling: {artifact_id}")
+            return 0.0
+        
+        tprint_debug(f"📊 Profiling memory usage for artifact: {artifact_id}")
+        
         try:
-            memory_usage_mb = 0
+            memory_usage_mb = 0.0
             
             if PANDAS_AVAILABLE and hasattr(data, 'memory_usage'):
                 memory_usage_mb = data.memory_usage(deep=True).sum() / (1024 * 1024)
+                tprint_debug(f"📊 DataFrame memory usage: {memory_usage_mb:.2f}MB")
             elif NUMPY_AVAILABLE and hasattr(data, 'nbytes'):
                 memory_usage_mb = data.nbytes / (1024 * 1024)
+                tprint_debug(f"📊 NumPy array memory usage: {memory_usage_mb:.2f}MB")
             else:
                 # Estimate for other types
                 try:
                     memory_usage_mb = sys.getsizeof(data) / (1024 * 1024)
-                except:
-                    memory_usage_mb = 0
+                    tprint_debug(f"📊 Generic object memory usage: {memory_usage_mb:.2f}MB")
+                except Exception as e:
+                    tprint_warning(f"⚠️ Failed to estimate memory usage: {e}")
+                    memory_usage_mb = 0.0
             
             # Store profile
             self._memory_profiles[artifact_id] = {
@@ -846,27 +1532,100 @@ class ArtifactManager:
             }
             
             self._total_memory_mb += memory_usage_mb
+            tprint_success(f"✅ Memory profiled: {artifact_id} = {memory_usage_mb:.2f}MB")
             return memory_usage_mb
             
         except Exception as e:
-            self.logger.warning(f"Failed to profile memory usage for {artifact_id}: {e}")
+            tprint_warning(f"⚠️ Failed to profile memory usage for {artifact_id}: {e}")
             return 0.0
 
 
 def get_analyst_context(config: Dict[str, Any]) -> Dict[str, Any]:
-    """Get analyst context from configuration."""
-    return {
+    """Get analyst context from configuration with validation.
+    
+    Args:
+        config: Configuration dictionary
+        
+    Returns:
+        Dictionary containing analyst context
+        
+    Raises:
+        TypeError: If config is not a dictionary
+    """
+    if not isinstance(config, dict):
+        raise TypeError(f"config must be a dictionary, got: {type(config).__name__}")
+    
+    tprint_debug("🔍 Extracting analyst context from configuration")
+    
+    context = {
         'symbol': config.get('symbol', 'UNKNOWN'),
         'timeframe': config.get('timeframe', '15m'),
         'exchange': config.get('exchange', 'binance'),
         'execution_mode': config.get('execution_mode', 'light')
     }
+    
+    tprint_success(f"✅ Analyst context extracted: {context}")
+    return context
 
-def setup_enhanced_artifact_manager(config: Dict[str, Any]) -> 'ArtifactManager':
-    """Setup enhanced artifact manager with configuration."""
-    return ArtifactManager(config)
+def setup_enhanced_artifact_manager(config: Dict[str, Any]) -> ArtifactManager:
+    """Setup enhanced artifact manager with configuration and validation.
+    
+    Args:
+        config: Configuration dictionary
+        
+    Returns:
+        Configured ArtifactManager instance
+        
+    Raises:
+        TypeError: If config is not a dictionary
+        ValueError: If configuration is invalid
+    """
+    if not isinstance(config, dict):
+        raise TypeError(f"config must be a dictionary, got: {type(config).__name__}")
+    
+    tprint_info("🚀 Setting up enhanced artifact manager")
+    
+    try:
+        manager = ArtifactManager(config)
+        tprint_success("✅ Enhanced artifact manager setup completed")
+        return manager
+    except Exception as e:
+        tprint_error(f"❌ Failed to setup enhanced artifact manager: {e}")
+        raise
 
-def get_pretraining_artifact_manager(config: Dict[str, Any]) -> 'ArtifactManager':
-    """Get pre-training artifact manager with configuration."""
-    return ArtifactManager(config)
+def get_pretraining_artifact_manager(config: Dict[str, Any]) -> ArtifactManager:
+    """Get pre-training artifact manager with configuration and validation.
+    
+    Args:
+        config: Configuration dictionary
+        
+    Returns:
+        Configured ArtifactManager instance for pre-training
+        
+    Raises:
+        TypeError: If config is not a dictionary
+        ValueError: If configuration is invalid
+    """
+    if not isinstance(config, dict):
+        raise TypeError(f"config must be a dictionary, got: {type(config).__name__}")
+    
+    tprint_info("🚀 Setting up pre-training artifact manager")
+    
+    try:
+        # Add pre-training specific configuration
+        pretraining_config = config.copy()
+        pretraining_config.update({
+            'enable_compression': True,
+            'enable_caching': True,
+            'enable_memory_optimization': True,
+            'max_cache_size_mb': 1024.0,  # Larger cache for pre-training
+            'max_memory_mb': 4000.0  # More memory for pre-training
+        })
+        
+        manager = ArtifactManager(pretraining_config)
+        tprint_success("✅ Pre-training artifact manager setup completed")
+        return manager
+    except Exception as e:
+        tprint_error(f"❌ Failed to setup pre-training artifact manager: {e}")
+        raise
 

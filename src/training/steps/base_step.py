@@ -99,22 +99,52 @@ The klines manager is automatically configured with:
 import os
 import logging
 from abc import ABC, abstractmethod
-from typing import Dict, Any, Optional, Union, List
+from typing import Dict, Any, Optional, Union, List, TypeVar, Generic, Protocol, runtime_checkable, Literal, Final, ClassVar, cast, overload, Callable, Type, Tuple, Set, FrozenSet, Mapping, MutableMapping, Sequence, MutableSequence, Iterable, Iterator, Generator, Awaitable, Coroutine, AnyStr, Text, BinaryIO, IO, Union, Optional, Any, Dict, List, Tuple, Set, FrozenSet, Mapping, MutableMapping, Sequence, MutableSequence, Iterable, Iterator, Generator, Awaitable, Coroutine, AnyStr, Text, BinaryIO, IO
 from datetime import datetime
 import traceback
 
-from src.utils.artifact_manager import ArtifactManager
+from src.utils.artifact_manager import ArtifactManager, ArtifactMetadata, OperationMetrics, CacheEntry, CompressionType, OperationType, RetryStrategy, RetryConfig, MemoryConfig
 from src.utils.hardware.unified_hardware_manager import WorkloadType
+from src.utils.tprint import (
+    tprint, tprint_success, tprint_info, tprint_warning, tprint_error,
+    tprint_debug, tprint_performance, tprint_progress, tprint_structured,
+    tprint_exception, tprint_with_level, LogLevel, TPrintConfig
+)
+
+# Type definitions for better type safety
+T = TypeVar('T')
+DataFrameType = TypeVar('DataFrameType', bound=Any)
+ModelType = TypeVar('ModelType', bound=Any)
+MetadataType = TypeVar('MetadataType', bound=Dict[str, Any])
+ConfigType = TypeVar('ConfigType', bound=Dict[str, Any])
+
+# Protocol definitions for better type checking
+@runtime_checkable
+class DataProcessor(Protocol):
+    """Protocol for data processing objects."""
+    def process(self, data: Any) -> Any: ...
+    def validate(self, data: Any) -> bool: ...
+
+@runtime_checkable
+class Cacheable(Protocol):
+    """Protocol for cacheable objects."""
+    def get_cache_key(self) -> str: ...
+    def get_size_bytes(self) -> int: ...
+
+@runtime_checkable
+class Executable(Protocol):
+    """Protocol for executable objects."""
+    async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]: ...
 
 # Import KlinesParquetManager with error handling
 try:
     from src.utils.kline_parquet import KlinesParquetManager, StorageConfig
-    KLINES_PARQUET_AVAILABLE = True
+    KLINES_PARQUET_AVAILABLE: Final[bool] = True
 except ImportError as e:
     # Fallback for environments without pandas/pyarrow
     KlinesParquetManager = None
     StorageConfig = None
-    KLINES_PARQUET_AVAILABLE = False
+    KLINES_PARQUET_AVAILABLE: Final[bool] = False
     import logging
     logging.getLogger(__name__).warning(f"KlinesParquetManager not available: {e}")
 # Enhanced hardware optimization imports
@@ -131,6 +161,7 @@ try:
     from src.utils.hardware.optimization_decorators import (
         smart_cache, auto_optimize, performance_tracked, memory_efficient, OptimizationConfig
     )
+    HARDWARE_OPTIMIZATION_AVAILABLE: Final[bool] = True
 except ImportError:
     # Fallback to minimal hardware module
     from src.utils.hardware_minimal import (
@@ -140,11 +171,12 @@ except ImportError:
         MemoryOptimizationLevel, memory_efficient, OptimizationConfig,
         smart_cache, auto_optimize, performance_tracked
     )
+    HARDWARE_OPTIMIZATION_AVAILABLE: Final[bool] = False
 
 
 class BaseStep(ABC):
     """
-    Abstract base class for all autonomous pipeline steps.
+    Abstract base class for all autonomous pipeline steps with comprehensive type safety.
     
     Each step must:
     - Inherit from this class
@@ -152,29 +184,59 @@ class BaseStep(ABC):
     - Use artifact_manager for all data I/O
     - Generate Markdown outcome files
     - Be callable only via launcher (no standalone CLI)
+    
+    Type Safety Features:
+    - Comprehensive type hints for all methods
+    - Protocol-based interfaces for better type checking
+    - Generic type support for data processing
+    - Runtime type validation
     """
     
+    # Class variables for type hints
+    step_name: str
+    logger: logging.Logger
+    hardware_manager: Any
+    artifact_manager: ArtifactManager
+    klines_manager: Optional[Any]
+    
     @memory_optimized(optimization_level='balanced')
-    def __init__(self, step_name: str, config: Optional[Dict[str, Any]] = None):
+    def __init__(self, step_name: str, config: Optional[Dict[str, Any]] = None) -> None:
         """
         Initialize the base step with enhanced artifact management and hardware optimization.
         
         Args:
             step_name: Unique name for this step (used for artifact paths and outcomes)
             config: Optional configuration dictionary for artifact manager
+            
+        Raises:
+            ValueError: If step_name is empty or invalid
+            TypeError: If parameter types are incorrect
         """
+        # Validate input parameters
+        if not isinstance(step_name, str) or not step_name.strip():
+            raise ValueError(f"step_name must be a non-empty string, got: {step_name}")
+        if config is not None and not isinstance(config, dict):
+            raise TypeError(f"config must be a dictionary or None, got: {type(config).__name__}")
+        
+        tprint_info(f"🚀 Initializing BaseStep: {step_name}")
+        
         self.step_name = step_name
         self.logger = logging.getLogger(f"ares.step.{step_name}")
         
         # Initialize hardware optimization for all steps
-        hardware_config = IntegratedHardwareConfig(
-            enable_automatic_optimization=True,
-            enable_caching=True,
-            enable_memory_monitoring=True,
-            memory_limit_gb=4.0,
-            cache_memory_limit_mb=256.0
-        )
-        self.hardware_manager = get_integrated_hardware_manager(hardware_config)
+        try:
+            hardware_config = IntegratedHardwareConfig(
+                enable_automatic_optimization=True,
+                enable_caching=True,
+                enable_memory_monitoring=True,
+                memory_limit_gb=4.0,
+                cache_memory_limit_mb=256.0
+            )
+            self.hardware_manager = get_integrated_hardware_manager(hardware_config)
+            tprint_success("✅ Hardware manager initialized")
+        except Exception as e:
+            tprint_warning(f"⚠️ Hardware manager initialization failed: {e}")
+            self.hardware_manager = None
         
         # Initialize artifact manager with enhanced configuration
         artifact_config = config or {}
@@ -183,25 +245,37 @@ class BaseStep(ABC):
             'memory_optimization': True,
             'compression': 'auto'
         })
-        self.artifact_manager = ArtifactManager(config=artifact_config)
+        
+        try:
+            self.artifact_manager = ArtifactManager(config=artifact_config)
+            tprint_success("✅ Artifact manager initialized")
+        except Exception as e:
+            tprint_error(f"❌ Artifact manager initialization failed: {e}")
+            raise
         
         # Initialize KlinesParquetManager for klines data operations (if available)
         if KLINES_PARQUET_AVAILABLE:
-            klines_config = StorageConfig(
-                base_dir=str(self.artifact_manager.base_dir / "klines_data"),
-                compression="zstd",
-                compression_level=3,
-                enable_metadata=True,
-                enable_validation=True
-            )
-            self.klines_manager = KlinesParquetManager(config=klines_config)
-            self.logger.info("✅ KlinesParquetManager initialized")
+            try:
+                klines_config = StorageConfig(
+                    base_dir=str(self.artifact_manager.base_dir / "klines_data"),
+                    compression="zstd",
+                    compression_level=3,
+                    enable_metadata=True,
+                    enable_validation=True
+                )
+                self.klines_manager = KlinesParquetManager(config=klines_config)
+                tprint_success("✅ KlinesParquetManager initialized")
+            except Exception as e:
+                tprint_warning(f"⚠️ KlinesParquetManager initialization failed: {e}")
+                self.klines_manager = None
         else:
             self.klines_manager = None
-            self.logger.warning("⚠️ KlinesParquetManager not available (pandas/pyarrow required)")
+            tprint_warning("⚠️ KlinesParquetManager not available (pandas/pyarrow required)")
         
         # Integrate hardware manager with artifact manager
-        self.artifact_manager._hardware_manager = self.hardware_manager
+        if self.hardware_manager is not None:
+            self.artifact_manager._hardware_manager = self.hardware_manager
+            tprint_debug("🔗 Hardware manager integrated with artifact manager")
         
         # Set up artifact manager context with step-category organization
         self.artifact_manager.set_context(
@@ -216,16 +290,16 @@ class BaseStep(ABC):
         self.artifact_manager.ensure_step_category_directories()
         
         if self._is_klines_available():
-            self.logger.info(f"🔧 BaseStep initialized: {step_name} with enhanced artifact management, klines parquet management, and hardware optimization")
+            tprint_success(f"🎉 BaseStep initialized: {step_name} with enhanced artifact management, klines parquet management, and hardware optimization")
         else:
-            self.logger.info(f"🔧 BaseStep initialized: {step_name} with enhanced artifact management and hardware optimization (klines parquet management not available)")
+            tprint_success(f"🎉 BaseStep initialized: {step_name} with enhanced artifact management and hardware optimization (klines parquet management not available)")
     
     @memory_efficient(
         memory_threshold_mb=100.0,
         enable_compression=True,
         optimization_level=OptimizationLevel.BALANCED
     )
-    def _save_dataframe(self, df: Any, name: str, metadata: Optional[Dict] = None) -> str:
+    def _save_dataframe(self, df: Any, name: str, metadata: Optional[Dict[str, Any]] = None) -> str:
         """
         Convenience method to save a DataFrame with automatic optimization and hardware acceleration.
         
@@ -236,10 +310,35 @@ class BaseStep(ABC):
             
         Returns:
             Path where artifact was saved
+            
+        Raises:
+            ValueError: If name is empty or invalid
+            TypeError: If parameter types are incorrect
         """
-        # Optimize DataFrame with hardware manager
-        optimized_df = self.hardware_manager.optimize_dataframe(df)
-        return self._save_enhanced_artifact(optimized_df, name, "data", metadata)
+        # Validate input parameters
+        if not isinstance(name, str) or not name.strip():
+            raise ValueError(f"name must be a non-empty string, got: {name}")
+        if metadata is not None and not isinstance(metadata, dict):
+            raise TypeError(f"metadata must be a dict or None, got: {type(metadata).__name__}")
+        
+        tprint_info(f"💾 Saving DataFrame: {name}")
+        
+        try:
+            # Optimize DataFrame with hardware manager
+            if self.hardware_manager is not None:
+                optimized_df = self.hardware_manager.optimize_dataframe(df)
+                tprint_debug(f"🔧 DataFrame optimized for hardware acceleration")
+            else:
+                optimized_df = df
+                tprint_debug(f"⚠️ Hardware manager not available, skipping optimization")
+            
+            result = self._save_enhanced_artifact(optimized_df, name, "data", metadata)
+            tprint_success(f"✅ DataFrame saved successfully: {name}")
+            return result
+            
+        except Exception as e:
+            tprint_error(f"❌ Failed to save DataFrame {name}: {e}")
+            raise
     
     @smart_cache(ttl=1800)
     def _load_dataframe(self, name: str) -> Any:
@@ -251,15 +350,38 @@ class BaseStep(ABC):
             
         Returns:
             Loaded DataFrame or None if not found
+            
+        Raises:
+            ValueError: If name is empty or invalid
+            TypeError: If name is not a string
         """
-        data = self._get_enhanced_artifact(name, "data")
-        if data is not None:
-            # Apply hardware optimization to loaded data
-            return self.hardware_manager.optimize_dataframe(data)
-        return data
+        # Validate input parameters
+        if not isinstance(name, str) or not name.strip():
+            raise ValueError(f"name must be a non-empty string, got: {name}")
+        
+        tprint_info(f"📂 Loading DataFrame: {name}")
+        
+        try:
+            data = self._get_enhanced_artifact(name, "data")
+            if data is not None:
+                # Apply hardware optimization to loaded data
+                if self.hardware_manager is not None:
+                    optimized_data = self.hardware_manager.optimize_dataframe(data)
+                    tprint_success(f"✅ DataFrame loaded and optimized: {name}")
+                    return optimized_data
+                else:
+                    tprint_success(f"✅ DataFrame loaded (no optimization): {name}")
+                    return data
+            else:
+                tprint_warning(f"⚠️ DataFrame not found: {name}")
+                return None
+                
+        except Exception as e:
+            tprint_error(f"❌ Failed to load DataFrame {name}: {e}")
+            return None
     
     @memory_optimized(optimization_level=MemoryOptimizationLevel.AGGRESSIVE)
-    def _save_model(self, model: Any, name: str, metadata: Optional[Dict] = None) -> str:
+    def _save_model(self, model: Any, name: str, metadata: Optional[Dict[str, Any]] = None) -> str:
         """
         Convenience method to save a model with enhanced storage.
         
@@ -270,8 +392,26 @@ class BaseStep(ABC):
             
         Returns:
             Path where artifact was saved
+            
+        Raises:
+            ValueError: If name is empty or invalid
+            TypeError: If parameter types are incorrect
         """
-        return self._save_enhanced_artifact(model, name, "model", metadata)
+        # Validate input parameters
+        if not isinstance(name, str) or not name.strip():
+            raise ValueError(f"name must be a non-empty string, got: {name}")
+        if metadata is not None and not isinstance(metadata, dict):
+            raise TypeError(f"metadata must be a dict or None, got: {type(metadata).__name__}")
+        
+        tprint_info(f"💾 Saving model: {name}")
+        
+        try:
+            result = self._save_enhanced_artifact(model, name, "model", metadata)
+            tprint_success(f"✅ Model saved successfully: {name}")
+            return result
+        except Exception as e:
+            tprint_error(f"❌ Failed to save model {name}: {e}")
+            raise
     
     @smart_cache(ttl=1800)
     def _load_model(self, name: str) -> Any:
@@ -283,8 +423,27 @@ class BaseStep(ABC):
             
         Returns:
             Loaded model or None if not found
+            
+        Raises:
+            ValueError: If name is empty or invalid
+            TypeError: If name is not a string
         """
-        return self._get_enhanced_artifact(name, "model")
+        # Validate input parameters
+        if not isinstance(name, str) or not name.strip():
+            raise ValueError(f"name must be a non-empty string, got: {name}")
+        
+        tprint_info(f"📂 Loading model: {name}")
+        
+        try:
+            model = self._get_enhanced_artifact(name, "model")
+            if model is not None:
+                tprint_success(f"✅ Model loaded successfully: {name}")
+            else:
+                tprint_warning(f"⚠️ Model not found: {name}")
+            return model
+        except Exception as e:
+            tprint_error(f"❌ Failed to load model {name}: {e}")
+            return None
     
     def _save_metadata(self, metadata: Dict[str, Any], name: str) -> str:
         """
@@ -296,8 +455,26 @@ class BaseStep(ABC):
             
         Returns:
             Path where artifact was saved
+            
+        Raises:
+            ValueError: If name is empty or invalid
+            TypeError: If parameter types are incorrect
         """
-        return self._save_enhanced_artifact(metadata, name, "metadata")
+        # Validate input parameters
+        if not isinstance(metadata, dict):
+            raise TypeError(f"metadata must be a dict, got: {type(metadata).__name__}")
+        if not isinstance(name, str) or not name.strip():
+            raise ValueError(f"name must be a non-empty string, got: {name}")
+        
+        tprint_info(f"💾 Saving metadata: {name}")
+        
+        try:
+            result = self._save_enhanced_artifact(metadata, name, "metadata")
+            tprint_success(f"✅ Metadata saved successfully: {name}")
+            return result
+        except Exception as e:
+            tprint_error(f"❌ Failed to save metadata {name}: {e}")
+            raise
     
     def _load_metadata(self, name: str) -> Any:
         """
@@ -308,12 +485,31 @@ class BaseStep(ABC):
             
         Returns:
             Loaded metadata or None if not found
+            
+        Raises:
+            ValueError: If name is empty or invalid
+            TypeError: If name is not a string
         """
-        return self._get_enhanced_artifact(name, "metadata")
+        # Validate input parameters
+        if not isinstance(name, str) or not name.strip():
+            raise ValueError(f"name must be a non-empty string, got: {name}")
+        
+        tprint_info(f"📂 Loading metadata: {name}")
+        
+        try:
+            metadata = self._get_enhanced_artifact(name, "metadata")
+            if metadata is not None:
+                tprint_success(f"✅ Metadata loaded successfully: {name}")
+            else:
+                tprint_warning(f"⚠️ Metadata not found: {name}")
+            return metadata
+        except Exception as e:
+            tprint_error(f"❌ Failed to load metadata {name}: {e}")
+            return None
     
     @memory_optimized(optimization_level=MemoryOptimizationLevel.AGGRESSIVE)
     def _store_klines(self, df: Any, symbol: str, exchange: str, interval: str, 
-                     batch_id: Optional[str] = None, metadata: Optional[Dict] = None) -> bool:
+                     batch_id: Optional[str] = None, metadata: Optional[Dict[str, Any]] = None) -> bool:
         """
         Convenience method to store klines data using KlinesParquetManager.
         
@@ -327,14 +523,37 @@ class BaseStep(ABC):
             
         Returns:
             True if storage was successful, False otherwise
+            
+        Raises:
+            ValueError: If required parameters are empty or invalid
+            TypeError: If parameter types are incorrect
         """
+        # Validate input parameters
+        if not isinstance(symbol, str) or not symbol.strip():
+            raise ValueError(f"symbol must be a non-empty string, got: {symbol}")
+        if not isinstance(exchange, str) or not exchange.strip():
+            raise ValueError(f"exchange must be a non-empty string, got: {exchange}")
+        if not isinstance(interval, str) or not interval.strip():
+            raise ValueError(f"interval must be a non-empty string, got: {interval}")
+        if batch_id is not None and not isinstance(batch_id, str):
+            raise TypeError(f"batch_id must be a string or None, got: {type(batch_id).__name__}")
+        if metadata is not None and not isinstance(metadata, dict):
+            raise TypeError(f"metadata must be a dict or None, got: {type(metadata).__name__}")
+        
+        tprint_info(f"💾 Storing klines data: {symbol} {exchange} {interval}")
+        
         if not self._is_klines_available():
-            self.logger.error("❌ KlinesParquetManager not available (pandas/pyarrow required)")
+            tprint_error("❌ KlinesParquetManager not available (pandas/pyarrow required)")
             return False
             
         try:
             # Optimize DataFrame with hardware manager
-            optimized_df = self.hardware_manager.optimize_dataframe(df)
+            if self.hardware_manager is not None:
+                optimized_df = self.hardware_manager.optimize_dataframe(df)
+                tprint_debug(f"🔧 DataFrame optimized for klines storage")
+            else:
+                optimized_df = df
+                tprint_debug(f"⚠️ Hardware manager not available, skipping optimization")
             
             # Store using KlinesParquetManager
             success = self.klines_manager.store_klines(
@@ -347,14 +566,14 @@ class BaseStep(ABC):
             )
             
             if success:
-                self.logger.info(f"✅ Klines data stored: {symbol} {exchange} {interval}")
+                tprint_success(f"✅ Klines data stored: {symbol} {exchange} {interval}")
             else:
-                self.logger.error(f"❌ Failed to store klines data: {symbol} {exchange} {interval}")
+                tprint_error(f"❌ Failed to store klines data: {symbol} {exchange} {interval}")
             
             return success
             
         except Exception as e:
-            self.logger.error(f"❌ Error storing klines data: {e}")
+            tprint_error(f"❌ Error storing klines data: {e}")
             return False
     
     @smart_cache(ttl=1800)
@@ -374,9 +593,29 @@ class BaseStep(ABC):
             
         Returns:
             DataFrame containing klines data or None if not found
+            
+        Raises:
+            ValueError: If required parameters are empty or invalid
+            TypeError: If parameter types are incorrect
         """
+        # Validate input parameters
+        if not isinstance(symbol, str) or not symbol.strip():
+            raise ValueError(f"symbol must be a non-empty string, got: {symbol}")
+        if not isinstance(exchange, str) or not exchange.strip():
+            raise ValueError(f"exchange must be a non-empty string, got: {exchange}")
+        if not isinstance(interval, str) or not interval.strip():
+            raise ValueError(f"interval must be a non-empty string, got: {interval}")
+        if start_time is not None and not isinstance(start_time, datetime):
+            raise TypeError(f"start_time must be a datetime or None, got: {type(start_time).__name__}")
+        if end_time is not None and not isinstance(end_time, datetime):
+            raise TypeError(f"end_time must be a datetime or None, got: {type(end_time).__name__}")
+        if batch_id is not None and not isinstance(batch_id, str):
+            raise TypeError(f"batch_id must be a string or None, got: {type(batch_id).__name__}")
+        
+        tprint_info(f"📂 Loading klines data: {symbol} {exchange} {interval}")
+        
         if not self._is_klines_available():
-            self.logger.error("❌ KlinesParquetManager not available (pandas/pyarrow required)")
+            tprint_error("❌ KlinesParquetManager not available (pandas/pyarrow required)")
             return None
             
         try:
@@ -392,15 +631,19 @@ class BaseStep(ABC):
             
             if df is not None and not df.empty:
                 # Apply hardware optimization to loaded data
-                optimized_df = self.hardware_manager.optimize_dataframe(df)
-                self.logger.info(f"✅ Klines data loaded: {symbol} {exchange} {interval} ({len(optimized_df)} records)")
-                return optimized_df
+                if self.hardware_manager is not None:
+                    optimized_df = self.hardware_manager.optimize_dataframe(df)
+                    tprint_success(f"✅ Klines data loaded and optimized: {symbol} {exchange} {interval} ({len(optimized_df)} records)")
+                    return optimized_df
+                else:
+                    tprint_success(f"✅ Klines data loaded (no optimization): {symbol} {exchange} {interval} ({len(df)} records)")
+                    return df
             else:
-                self.logger.warning(f"⚠️ No klines data found: {symbol} {exchange} {interval}")
+                tprint_warning(f"⚠️ No klines data found: {symbol} {exchange} {interval}")
                 return None
                 
         except Exception as e:
-            self.logger.error(f"❌ Error loading klines data: {e}")
+            tprint_error(f"❌ Error loading klines data: {e}")
             return None
     
     def _update_klines(self, df: Any, symbol: str, exchange: str, interval: str, 
@@ -417,14 +660,35 @@ class BaseStep(ABC):
             
         Returns:
             True if update was successful, False otherwise
+            
+        Raises:
+            ValueError: If required parameters are empty or invalid
+            TypeError: If parameter types are incorrect
         """
+        # Validate input parameters
+        if not isinstance(symbol, str) or not symbol.strip():
+            raise ValueError(f"symbol must be a non-empty string, got: {symbol}")
+        if not isinstance(exchange, str) or not exchange.strip():
+            raise ValueError(f"exchange must be a non-empty string, got: {exchange}")
+        if not isinstance(interval, str) or not interval.strip():
+            raise ValueError(f"interval must be a non-empty string, got: {interval}")
+        if not isinstance(append_mode, bool):
+            raise TypeError(f"append_mode must be a bool, got: {type(append_mode).__name__}")
+        
+        tprint_info(f"🔄 Updating klines data: {symbol} {exchange} {interval} (append_mode={append_mode})")
+        
         if not self._is_klines_available():
-            self.logger.error("❌ KlinesParquetManager not available (pandas/pyarrow required)")
+            tprint_error("❌ KlinesParquetManager not available (pandas/pyarrow required)")
             return False
             
         try:
             # Optimize DataFrame with hardware manager
-            optimized_df = self.hardware_manager.optimize_dataframe(df)
+            if self.hardware_manager is not None:
+                optimized_df = self.hardware_manager.optimize_dataframe(df)
+                tprint_debug(f"🔧 DataFrame optimized for klines update")
+            else:
+                optimized_df = df
+                tprint_debug(f"⚠️ Hardware manager not available, skipping optimization")
             
             # Update using KlinesParquetManager
             success = self.klines_manager.update_klines(
@@ -436,14 +700,14 @@ class BaseStep(ABC):
             )
             
             if success:
-                self.logger.info(f"✅ Klines data updated: {symbol} {exchange} {interval}")
+                tprint_success(f"✅ Klines data updated: {symbol} {exchange} {interval}")
             else:
-                self.logger.error(f"❌ Failed to update klines data: {symbol} {exchange} {interval}")
+                tprint_error(f"❌ Failed to update klines data: {symbol} {exchange} {interval}")
             
             return success
             
         except Exception as e:
-            self.logger.error(f"❌ Error updating klines data: {e}")
+            tprint_error(f"❌ Error updating klines data: {e}")
             return False
     
     def _delete_klines(self, symbol: str, exchange: str, interval: str, 
@@ -459,9 +723,25 @@ class BaseStep(ABC):
             
         Returns:
             True if deletion was successful, False otherwise
+            
+        Raises:
+            ValueError: If required parameters are empty or invalid
+            TypeError: If parameter types are incorrect
         """
+        # Validate input parameters
+        if not isinstance(symbol, str) or not symbol.strip():
+            raise ValueError(f"symbol must be a non-empty string, got: {symbol}")
+        if not isinstance(exchange, str) or not exchange.strip():
+            raise ValueError(f"exchange must be a non-empty string, got: {exchange}")
+        if not isinstance(interval, str) or not interval.strip():
+            raise ValueError(f"interval must be a non-empty string, got: {interval}")
+        if batch_id is not None and not isinstance(batch_id, str):
+            raise TypeError(f"batch_id must be a string or None, got: {type(batch_id).__name__}")
+        
+        tprint_info(f"🗑️ Deleting klines data: {symbol} {exchange} {interval}")
+        
         if not self._is_klines_available():
-            self.logger.error("❌ KlinesParquetManager not available (pandas/pyarrow required)")
+            tprint_error("❌ KlinesParquetManager not available (pandas/pyarrow required)")
             return False
             
         try:
@@ -474,14 +754,14 @@ class BaseStep(ABC):
             )
             
             if success:
-                self.logger.info(f"✅ Klines data deleted: {symbol} {exchange} {interval}")
+                tprint_success(f"✅ Klines data deleted: {symbol} {exchange} {interval}")
             else:
-                self.logger.error(f"❌ Failed to delete klines data: {symbol} {exchange} {interval}")
+                tprint_error(f"❌ Failed to delete klines data: {symbol} {exchange} {interval}")
             
             return success
             
         except Exception as e:
-            self.logger.error(f"❌ Error deleting klines data: {e}")
+            tprint_error(f"❌ Error deleting klines data: {e}")
             return False
     
     def _list_available_klines(self) -> List[Dict[str, Any]]:
@@ -491,17 +771,19 @@ class BaseStep(ABC):
         Returns:
             List of dictionaries containing available klines data information
         """
+        tprint_info("📋 Listing available klines data")
+        
         if not self._is_klines_available():
-            self.logger.error("❌ KlinesParquetManager not available (pandas/pyarrow required)")
+            tprint_error("❌ KlinesParquetManager not available (pandas/pyarrow required)")
             return []
             
         try:
             available_data = self.klines_manager.list_available_data()
-            self.logger.info(f"📊 Found {len(available_data)} klines datasets")
+            tprint_success(f"✅ Found {len(available_data)} klines datasets")
             return available_data
             
         except Exception as e:
-            self.logger.error(f"❌ Error listing available klines data: {e}")
+            tprint_error(f"❌ Error listing available klines data: {e}")
             return []
     
     def _get_klines_storage_stats(self) -> Dict[str, Any]:
@@ -511,19 +793,21 @@ class BaseStep(ABC):
         Returns:
             Dictionary containing storage statistics
         """
+        tprint_info("📊 Getting klines storage statistics")
+        
         if not self._is_klines_available():
-            self.logger.error("❌ KlinesParquetManager not available (pandas/pyarrow required)")
+            tprint_error("❌ KlinesParquetManager not available (pandas/pyarrow required)")
             return {}
             
         try:
             stats = self.klines_manager.get_storage_stats()
-            self.logger.info(f"📊 Klines storage stats: {stats.get('total_files', 0)} files, "
-                           f"{stats.get('total_size_mb', 0):.2f}MB, "
-                           f"{stats.get('total_records', 0)} records")
+            tprint_success(f"✅ Klines storage stats: {stats.get('total_files', 0)} files, "
+                         f"{stats.get('total_size_mb', 0):.2f}MB, "
+                         f"{stats.get('total_records', 0)} records")
             return stats
             
         except Exception as e:
-            self.logger.error(f"❌ Error getting klines storage stats: {e}")
+            tprint_error(f"❌ Error getting klines storage stats: {e}")
             return {}
     
     def _get_klines_optimization_recommendations(self, df: Any) -> Dict[str, Any]:
@@ -535,19 +819,28 @@ class BaseStep(ABC):
             
         Returns:
             Dictionary containing optimization recommendations
+            
+        Raises:
+            TypeError: If df is not a DataFrame or compatible object
         """
+        if df is None:
+            tprint_warning("⚠️ Cannot get optimization recommendations for None DataFrame")
+            return {}
+        
+        tprint_info("🔧 Getting klines optimization recommendations")
+        
         if not self._is_klines_available():
-            self.logger.error("❌ KlinesParquetManager not available (pandas/pyarrow required)")
+            tprint_error("❌ KlinesParquetManager not available (pandas/pyarrow required)")
             return {}
             
         try:
             recommendations = self.klines_manager.get_optimization_recommendations(df)
-            self.logger.info(f"🔧 Klines optimization recommendations: {recommendations.get('compression', 'unknown')} compression, "
-                           f"row group size: {recommendations.get('row_group_size', 'unknown')}")
+            tprint_success(f"✅ Klines optimization recommendations: {recommendations.get('compression', 'unknown')} compression, "
+                         f"row group size: {recommendations.get('row_group_size', 'unknown')}")
             return recommendations
             
         except Exception as e:
-            self.logger.error(f"❌ Error getting klines optimization recommendations: {e}")
+            tprint_error(f"❌ Error getting klines optimization recommendations: {e}")
             return {}
     
     def _get_klines_compression_stats(self) -> Dict[str, Any]:
@@ -557,23 +850,25 @@ class BaseStep(ABC):
         Returns:
             Dictionary containing compression statistics
         """
+        tprint_info("📊 Getting klines compression statistics")
+        
         if not self._is_klines_available():
-            self.logger.error("❌ KlinesParquetManager not available (pandas/pyarrow required)")
+            tprint_error("❌ KlinesParquetManager not available (pandas/pyarrow required)")
             return {}
             
         try:
             stats = self.klines_manager.get_compression_stats()
-            self.logger.info(f"📊 Klines compression stats: {stats.get('overall_compression_ratio', 0):.1f}% compression ratio")
+            tprint_success(f"✅ Klines compression stats: {stats.get('overall_compression_ratio', 0):.1f}% compression ratio")
             return stats
             
         except Exception as e:
-            self.logger.error(f"❌ Error getting klines compression stats: {e}")
+            tprint_error(f"❌ Error getting klines compression stats: {e}")
             return {}
     
     @abstractmethod
-    def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
+    async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Execute the step logic.
+        Execute the step logic with comprehensive type safety.
         
         Args:
             config: Configuration dictionary containing all necessary parameters
@@ -586,13 +881,25 @@ class BaseStep(ABC):
             - 'metrics': dict of performance metrics
             - 'error': error message if step failed (optional)
             - 'execution_time': float seconds taken to execute
+            
+        Raises:
+            TypeError: If config is not a dictionary
+            ValueError: If required configuration parameters are missing
         """
-        pass
+        # Validate input parameters
+        if not isinstance(config, dict):
+            raise TypeError(f"config must be a dictionary, got: {type(config).__name__}")
+        
+        tprint_info(f"🚀 Executing step: {self.step_name}")
+        tprint_debug(f"📋 Configuration: {config}")
+        
+        # This method must be implemented by subclasses
+        raise NotImplementedError("Subclasses must implement the execute method")
     
     def _save_artifact(self, data: Any, artifact_name: str, 
                       artifact_type: str = "data", 
                       compression: str = "auto",
-                      metadata: Optional[Dict] = None) -> str:
+                      metadata: Optional[Dict[str, Any]] = None) -> str:
         """
         Save an artifact using the enhanced artifact manager with step-category organization.
         
@@ -611,7 +918,24 @@ class BaseStep(ABC):
             
         Returns:
             Path where artifact was saved
+            
+        Raises:
+            ValueError: If artifact_name is empty or invalid
+            TypeError: If parameter types are incorrect
+            Exception: If save operation fails
         """
+        # Validate input parameters
+        if not isinstance(artifact_name, str) or not artifact_name.strip():
+            raise ValueError(f"artifact_name must be a non-empty string, got: {artifact_name}")
+        if not isinstance(artifact_type, str):
+            raise TypeError(f"artifact_type must be a string, got: {type(artifact_type).__name__}")
+        if not isinstance(compression, str):
+            raise TypeError(f"compression must be a string, got: {type(compression).__name__}")
+        if metadata is not None and not isinstance(metadata, dict):
+            raise TypeError(f"metadata must be a dict or None, got: {type(metadata).__name__}")
+        
+        tprint_info(f"💾 Saving artifact: {artifact_name} (type: {artifact_type})")
+        
         try:
             # Use the enhanced save method with automatic CSV generation
             artifact_path = self.artifact_manager.save(
@@ -621,10 +945,10 @@ class BaseStep(ABC):
                 compression=compression,
                 metadata=metadata
             )
-            self.logger.info(f"✅ Saved artifact: {artifact_name} -> {artifact_path}")
+            tprint_success(f"✅ Saved artifact: {artifact_name} -> {artifact_path}")
             return artifact_path
         except Exception as e:
-            self.logger.error(f"❌ Failed to save artifact {artifact_name}: {e}")
+            tprint_error(f"❌ Failed to save artifact {artifact_name}: {e}")
             raise
     
     def _get_artifact(self, artifact_name: str, 
@@ -644,7 +968,19 @@ class BaseStep(ABC):
             
         Returns:
             Retrieved data or None if not found
+            
+        Raises:
+            ValueError: If artifact_name is empty or invalid
+            TypeError: If parameter types are incorrect
         """
+        # Validate input parameters
+        if not isinstance(artifact_name, str) or not artifact_name.strip():
+            raise ValueError(f"artifact_name must be a non-empty string, got: {artifact_name}")
+        if not isinstance(artifact_type, str):
+            raise TypeError(f"artifact_type must be a string, got: {type(artifact_type).__name__}")
+        
+        tprint_info(f"🔍 Retrieving artifact: {artifact_name} (type: {artifact_type})")
+        
         try:
             # Primary: Try step-category structure
             data = self.artifact_manager.get_artifact(
@@ -652,32 +988,32 @@ class BaseStep(ABC):
                 artifact_type=artifact_type
             )
             if data is not None:
-                self.logger.info(f"✅ Retrieved artifact from step-category: {artifact_name}")
+                tprint_success(f"✅ Retrieved artifact from step-category: {artifact_name}")
                 return data
             
             # Fallback 1: Try direct artifacts/ directory search
             data = self._get_artifact_fallback_1(artifact_name, artifact_type)
             if data is not None:
-                self.logger.info(f"✅ Retrieved artifact from fallback 1: {artifact_name}")
+                tprint_success(f"✅ Retrieved artifact from fallback 1: {artifact_name}")
                 return data
             
             # Fallback 2: Try without model type and direction variations
             data = self._get_artifact_fallback_2(artifact_name, artifact_type)
             if data is not None:
-                self.logger.info(f"✅ Retrieved artifact from fallback 2: {artifact_name}")
+                tprint_success(f"✅ Retrieved artifact from fallback 2: {artifact_name}")
                 return data
             
             # Fallback 3: Try fuzzy matching for similar names
             data = self._get_artifact_fallback_3(artifact_name, artifact_type)
             if data is not None:
-                self.logger.info(f"✅ Retrieved artifact from fallback 3: {artifact_name}")
+                tprint_success(f"✅ Retrieved artifact from fallback 3: {artifact_name}")
                 return data
             
-            self.logger.warning(f"⚠️ Artifact not found with any fallback method: {artifact_name}")
+            tprint_warning(f"⚠️ Artifact not found with any fallback method: {artifact_name}")
             return None
             
         except Exception as e:
-            self.logger.error(f"❌ Failed to retrieve artifact {artifact_name}: {e}")
+            tprint_error(f"❌ Failed to retrieve artifact {artifact_name}: {e}")
             return None
     
     def _get_artifact_fallback_1(self, artifact_name: str, artifact_type: str) -> Any:
@@ -691,6 +1027,8 @@ class BaseStep(ABC):
         Returns:
             Retrieved data or None if not found
         """
+        tprint_debug(f"🔍 Fallback 1: Searching in general artifacts directory for {artifact_name}")
+        
         try:
             # Use the artifact manager's fallback search
             from src.utils.artifact_manager import get_step_category
@@ -699,6 +1037,7 @@ class BaseStep(ABC):
             # Search in artifacts/ directory recursively
             artifacts_dir = self.artifact_manager._artifacts_dir
             if not artifacts_dir.exists():
+                tprint_debug(f"⚠️ Artifacts directory does not exist: {artifacts_dir}")
                 return None
             
             # Search for any file containing the artifact name
@@ -706,11 +1045,13 @@ class BaseStep(ABC):
                 if file_path.is_file():
                     data = self.artifact_manager._load_artifact_from_path(file_path)
                     if data is not None:
+                        tprint_debug(f"✅ Found artifact in fallback 1: {file_path}")
                         return data
             
+            tprint_debug(f"⚠️ No artifact found in fallback 1: {artifact_name}")
             return None
         except Exception as e:
-            self.logger.debug(f"Fallback 1 failed for {artifact_name}: {e}")
+            tprint_debug(f"⚠️ Fallback 1 failed for {artifact_name}: {e}")
             return None
     
     def _get_artifact_fallback_2(self, artifact_name: str, artifact_type: str) -> Any:
@@ -727,6 +1068,8 @@ class BaseStep(ABC):
         Returns:
             Retrieved data or None if not found
         """
+        tprint_debug(f"🔍 Fallback 2: Searching without model/direction context for {artifact_name}")
+        
         try:
             # Clear model and direction context for generic search
             original_model = self.artifact_manager._current_model
@@ -743,11 +1086,13 @@ class BaseStep(ABC):
                     artifact_type=artifact_type
                 )
                 if data is not None:
+                    tprint_debug(f"✅ Found artifact in fallback 2 (generic context): {artifact_name}")
                     return data
                 
                 # Also try searching with just the artifact name in different locations
                 data = self._search_generic_artifact(artifact_name, artifact_type)
                 if data is not None:
+                    tprint_debug(f"✅ Found artifact in fallback 2 (generic search): {artifact_name}")
                     return data
                 
             finally:
@@ -755,9 +1100,10 @@ class BaseStep(ABC):
                 self.artifact_manager._current_model = original_model
                 self.artifact_manager._current_direction = original_direction
             
+            tprint_debug(f"⚠️ No artifact found in fallback 2: {artifact_name}")
             return None
         except Exception as e:
-            self.logger.debug(f"Fallback 2 failed for {artifact_name}: {e}")
+            tprint_debug(f"⚠️ Fallback 2 failed for {artifact_name}: {e}")
             return None
     
     def _get_artifact_fallback_3(self, artifact_name: str, artifact_type: str) -> Any:
@@ -774,15 +1120,19 @@ class BaseStep(ABC):
         Returns:
             Retrieved data or None if not found
         """
+        tprint_debug(f"🔍 Fallback 3: Fuzzy matching for {artifact_name}")
+        
         try:
             # Use the artifact manager's fuzzy search
             data = self.artifact_manager._find_artifact_fuzzy(artifact_name, artifact_type)
             if data is not None:
+                tprint_debug(f"✅ Found artifact in fallback 3 (fuzzy match): {data}")
                 return self.artifact_manager._load_artifact_from_path(data)
             
+            tprint_debug(f"⚠️ No artifact found in fallback 3: {artifact_name}")
             return None
         except Exception as e:
-            self.logger.debug(f"Fallback 3 failed for {artifact_name}: {e}")
+            tprint_debug(f"⚠️ Fallback 3 failed for {artifact_name}: {e}")
             return None
     
     def _search_generic_artifact(self, artifact_name: str, artifact_type: str) -> Any:
@@ -796,10 +1146,13 @@ class BaseStep(ABC):
         Returns:
             Retrieved data or None if not found
         """
+        tprint_debug(f"🔍 Generic search for {artifact_name} (no model/direction context)")
+        
         try:
             # Search in artifacts directory with generic patterns
             artifacts_dir = self.artifact_manager._artifacts_dir
             if not artifacts_dir.exists():
+                tprint_debug(f"⚠️ Artifacts directory does not exist: {artifacts_dir}")
                 return None
             
             # Search patterns that don't include model/direction
@@ -823,11 +1176,13 @@ class BaseStep(ABC):
                             
                             # Prefer files without model/direction context
                             if not has_model and not has_direction:
+                                tprint_debug(f"✅ Found generic artifact: {file_path}")
                                 return self.artifact_manager._load_artifact_from_path(file_path)
             
+            tprint_debug(f"⚠️ No generic artifact found: {artifact_name}")
             return None
         except Exception as e:
-            self.logger.debug(f"Generic search failed for {artifact_name}: {e}")
+            tprint_debug(f"⚠️ Generic search failed for {artifact_name}: {e}")
             return None
     
     def _set_context(self, symbol: Optional[str] = None, exchange: Optional[str] = None, 
@@ -842,25 +1197,48 @@ class BaseStep(ABC):
             information: Information type
             direction: Trading direction (long/short)
             model: Model type (Analyst/Tactician)
+            
+        Raises:
+            ValueError: If required parameters are invalid
+            TypeError: If parameter types are incorrect
         """
-        # Set artifact manager context
-        self.artifact_manager.set_context(
-            step_name=self.step_name,
-            symbol=symbol,
-            exchange=exchange,
-            information=information,
-            direction=direction,
-            model=model
-        )
+        # Validate input parameters
+        if symbol is not None and not isinstance(symbol, str):
+            raise TypeError(f"symbol must be a string or None, got: {type(symbol).__name__}")
+        if exchange is not None and not isinstance(exchange, str):
+            raise TypeError(f"exchange must be a string or None, got: {type(exchange).__name__}")
+        if information is not None and not isinstance(information, str):
+            raise TypeError(f"information must be a string or None, got: {type(information).__name__}")
+        if not isinstance(direction, str):
+            raise TypeError(f"direction must be a string, got: {type(direction).__name__}")
+        if not isinstance(model, str):
+            raise TypeError(f"model must be a string, got: {type(model).__name__}")
         
-        # Store context for klines operations (KlinesParquetManager uses these directly)
-        self._current_symbol = symbol
-        self._current_exchange = exchange
-        self._current_direction = direction
-        self._current_model = model
-        self._current_information = information
+        tprint_info(f"📁 Setting context: symbol={symbol}, exchange={exchange}, information={information}, direction={direction}, model={model}")
         
-        self.logger.info(f"📁 Context set: symbol={symbol}, exchange={exchange}, information={information}, direction={direction}, model={model}")
+        try:
+            # Set artifact manager context
+            self.artifact_manager.set_context(
+                step_name=self.step_name,
+                symbol=symbol,
+                exchange=exchange,
+                information=information,
+                direction=direction,
+                model=model
+            )
+            
+            # Store context for klines operations (KlinesParquetManager uses these directly)
+            self._current_symbol = symbol
+            self._current_exchange = exchange
+            self._current_direction = direction
+            self._current_model = model
+            self._current_information = information
+            
+            tprint_success(f"✅ Context set successfully")
+            
+        except Exception as e:
+            tprint_error(f"❌ Failed to set context: {e}")
+            raise
     
     def _is_klines_available(self) -> bool:
         """
@@ -869,7 +1247,9 @@ class BaseStep(ABC):
         Returns:
             True if klines manager is available, False otherwise
         """
-        return KLINES_PARQUET_AVAILABLE and self.klines_manager is not None
+        is_available = KLINES_PARQUET_AVAILABLE and self.klines_manager is not None
+        tprint_debug(f"🔍 Klines availability check: {is_available}")
+        return is_available
     
     def _get_klines_context(self) -> Dict[str, Optional[str]]:
         """
@@ -878,17 +1258,19 @@ class BaseStep(ABC):
         Returns:
             Dictionary containing current context (symbol, exchange, direction, model, information)
         """
-        return {
+        context = {
             'symbol': getattr(self, '_current_symbol', None),
             'exchange': getattr(self, '_current_exchange', None),
             'direction': getattr(self, '_current_direction', 'long'),
             'model': getattr(self, '_current_model', 'Analyst'),
             'information': getattr(self, '_current_information', None)
         }
+        tprint_debug(f"📋 Klines context: {context}")
+        return context
     
     def _store_klines_with_context(self, df: Any, interval: str, 
                                  batch_id: Optional[str] = None, 
-                                 metadata: Optional[Dict] = None) -> bool:
+                                 metadata: Optional[Dict[str, Any]] = None) -> bool:
         """
         Store klines data using current context (symbol, exchange from context).
         
@@ -900,9 +1282,23 @@ class BaseStep(ABC):
             
         Returns:
             True if storage was successful, False otherwise
+            
+        Raises:
+            ValueError: If interval is empty or invalid
+            TypeError: If parameter types are incorrect
         """
+        # Validate input parameters
+        if not isinstance(interval, str) or not interval.strip():
+            raise ValueError(f"interval must be a non-empty string, got: {interval}")
+        if batch_id is not None and not isinstance(batch_id, str):
+            raise TypeError(f"batch_id must be a string or None, got: {type(batch_id).__name__}")
+        if metadata is not None and not isinstance(metadata, dict):
+            raise TypeError(f"metadata must be a dict or None, got: {type(metadata).__name__}")
+        
+        tprint_info(f"💾 Storing klines with context: {interval}")
+        
         if not self._is_klines_available():
-            self.logger.error("❌ KlinesParquetManager not available (pandas/pyarrow required)")
+            tprint_error("❌ KlinesParquetManager not available (pandas/pyarrow required)")
             return False
             
         context = self._get_klines_context()
@@ -910,7 +1306,7 @@ class BaseStep(ABC):
         exchange = context.get('exchange')
         
         if not symbol or not exchange:
-            self.logger.error("❌ Cannot store klines: symbol and exchange must be set in context")
+            tprint_error("❌ Cannot store klines: symbol and exchange must be set in context")
             return False
         
         return self._store_klines(df, symbol, exchange, interval, batch_id, metadata)
@@ -930,9 +1326,25 @@ class BaseStep(ABC):
             
         Returns:
             DataFrame containing klines data or None if not found
+            
+        Raises:
+            ValueError: If interval is empty or invalid
+            TypeError: If parameter types are incorrect
         """
+        # Validate input parameters
+        if not isinstance(interval, str) or not interval.strip():
+            raise ValueError(f"interval must be a non-empty string, got: {interval}")
+        if start_time is not None and not isinstance(start_time, datetime):
+            raise TypeError(f"start_time must be a datetime or None, got: {type(start_time).__name__}")
+        if end_time is not None and not isinstance(end_time, datetime):
+            raise TypeError(f"end_time must be a datetime or None, got: {type(end_time).__name__}")
+        if batch_id is not None and not isinstance(batch_id, str):
+            raise TypeError(f"batch_id must be a string or None, got: {type(batch_id).__name__}")
+        
+        tprint_info(f"📂 Loading klines with context: {interval}")
+        
         if not self._is_klines_available():
-            self.logger.error("❌ KlinesParquetManager not available (pandas/pyarrow required)")
+            tprint_error("❌ KlinesParquetManager not available (pandas/pyarrow required)")
             return None
             
         context = self._get_klines_context()
@@ -940,14 +1352,14 @@ class BaseStep(ABC):
         exchange = context.get('exchange')
         
         if not symbol or not exchange:
-            self.logger.error("❌ Cannot load klines: symbol and exchange must be set in context")
+            tprint_error("❌ Cannot load klines: symbol and exchange must be set in context")
             return None
         
         return self._load_klines(symbol, exchange, interval, start_time, end_time, batch_id)
     
     def _save_enhanced_artifact(self, data: Any, artifact_name: str, 
                                artifact_type: str = "data", 
-                               metadata: Optional[Dict] = None) -> str:
+                               metadata: Optional[Dict[str, Any]] = None) -> str:
         """
         Save an artifact using the most advanced features from Artifact_manager.
         
@@ -965,7 +1377,22 @@ class BaseStep(ABC):
             
         Returns:
             Path where artifact was saved
+            
+        Raises:
+            ValueError: If artifact_name is empty or invalid
+            TypeError: If parameter types are incorrect
+            Exception: If enhanced storage fails
         """
+        # Validate input parameters
+        if not isinstance(artifact_name, str) or not artifact_name.strip():
+            raise ValueError(f"artifact_name must be a non-empty string, got: {artifact_name}")
+        if not isinstance(artifact_type, str):
+            raise TypeError(f"artifact_type must be a string, got: {type(artifact_type).__name__}")
+        if metadata is not None and not isinstance(metadata, dict):
+            raise TypeError(f"metadata must be a dict or None, got: {type(metadata).__name__}")
+        
+        tprint_info(f"🚀 Saving enhanced artifact: {artifact_name} (type: {artifact_type})")
+        
         try:
             # Use the enhanced storage method
             success = self.artifact_manager.store_enhanced(
@@ -980,14 +1407,15 @@ class BaseStep(ABC):
                 artifact_path = self.artifact_manager._get_enhanced_path(
                     self.step_name, artifact_name, "parquet"
                 )
-                self.logger.info(f"✅ Enhanced artifact saved: {artifact_name} -> {artifact_path}")
+                tprint_success(f"✅ Enhanced artifact saved: {artifact_name} -> {artifact_path}")
                 return str(artifact_path)
             else:
                 raise Exception("Enhanced storage failed")
                 
         except Exception as e:
-            self.logger.error(f"❌ Failed to save enhanced artifact {artifact_name}: {e}")
+            tprint_error(f"❌ Failed to save enhanced artifact {artifact_name}: {e}")
             # Fallback to regular save
+            tprint_info(f"🔄 Falling back to regular save for {artifact_name}")
             return self._save_artifact(data, artifact_name, artifact_type, "auto", metadata)
     
     def _get_enhanced_artifact(self, artifact_name: str, 
@@ -1006,19 +1434,32 @@ class BaseStep(ABC):
             
         Returns:
             Retrieved data or None if not found
+            
+        Raises:
+            ValueError: If artifact_name is empty or invalid
+            TypeError: If parameter types are incorrect
         """
+        # Validate input parameters
+        if not isinstance(artifact_name, str) or not artifact_name.strip():
+            raise ValueError(f"artifact_name must be a non-empty string, got: {artifact_name}")
+        if not isinstance(artifact_type, str):
+            raise TypeError(f"artifact_type must be a string, got: {type(artifact_type).__name__}")
+        
+        tprint_info(f"🔍 Retrieving enhanced artifact: {artifact_name} (type: {artifact_type})")
+        
         try:
             # Try enhanced retrieval first
             data = self.artifact_manager.retrieve_enhanced(artifact_name)
             if data is not None:
-                self.logger.info(f"✅ Enhanced artifact retrieved: {artifact_name}")
+                tprint_success(f"✅ Enhanced artifact retrieved: {artifact_name}")
                 return data
             
             # Fallback to regular retrieval with multiple fallbacks
+            tprint_info(f"🔄 Falling back to regular retrieval for {artifact_name}")
             return self._get_artifact(artifact_name, artifact_type)
             
         except Exception as e:
-            self.logger.error(f"❌ Failed to retrieve enhanced artifact {artifact_name}: {e}")
+            tprint_error(f"❌ Failed to retrieve enhanced artifact {artifact_name}: {e}")
             return None
     
     def _get_performance_metrics(self) -> Dict[str, Any]:
@@ -1028,10 +1469,14 @@ class BaseStep(ABC):
         Returns:
             Dictionary containing performance metrics
         """
+        tprint_debug("📊 Getting performance metrics")
+        
         try:
-            return self.artifact_manager.get_performance_metrics()
+            metrics = self.artifact_manager.get_performance_metrics()
+            tprint_success(f"✅ Performance metrics retrieved: {len(metrics)} metrics")
+            return metrics
         except Exception as e:
-            self.logger.error(f"Failed to get performance metrics: {e}")
+            tprint_error(f"❌ Failed to get performance metrics: {e}")
             return {}
     
     def _get_memory_analytics(self) -> Dict[str, Any]:
@@ -1041,10 +1486,14 @@ class BaseStep(ABC):
         Returns:
             Dictionary containing memory analytics
         """
+        tprint_debug("📊 Getting memory analytics")
+        
         try:
-            return self.artifact_manager.get_memory_analytics()
+            analytics = self.artifact_manager.get_memory_analytics()
+            tprint_success(f"✅ Memory analytics retrieved: {len(analytics)} analytics")
+            return analytics
         except Exception as e:
-            self.logger.error(f"Failed to get memory analytics: {e}")
+            tprint_error(f"❌ Failed to get memory analytics: {e}")
             return {}
     
     def _get_comprehensive_stats(self) -> Dict[str, Any]:
@@ -1054,6 +1503,8 @@ class BaseStep(ABC):
         Returns:
             Dictionary containing comprehensive statistics
         """
+        tprint_info("📊 Getting comprehensive statistics")
+        
         try:
             stats = {
                 'step_name': self.step_name,
@@ -1072,27 +1523,35 @@ class BaseStep(ABC):
                 stats['klines_storage_stats'] = {'error': 'KlinesParquetManager not available'}
                 stats['klines_compression_stats'] = {'error': 'KlinesParquetManager not available'}
             
-            self.logger.info(f"📊 Comprehensive stats generated for {self.step_name}")
+            tprint_success(f"✅ Comprehensive stats generated for {self.step_name}")
             return stats
             
         except Exception as e:
-            self.logger.error(f"❌ Failed to get comprehensive stats: {e}")
+            tprint_error(f"❌ Failed to get comprehensive stats: {e}")
             return {'error': str(e)}
     
     def _clear_cache(self) -> None:
         """
         Clear the artifact manager cache and hardware caches.
         """
+        tprint_info("🧹 Clearing caches")
+        
         try:
             self.artifact_manager.clear_cache()
-            self.hardware_manager.clear_all_caches()
+            
+            if self.hardware_manager is not None:
+                self.hardware_manager.clear_all_caches()
+                tprint_debug("🔧 Hardware caches cleared")
+            else:
+                tprint_debug("⚠️ Hardware manager not available, skipping hardware cache clear")
+            
             force_cleanup()
-            self.logger.info("🧹 Artifact and hardware caches cleared")
+            tprint_success("✅ Artifact and hardware caches cleared")
         except Exception as e:
-            self.logger.error(f"Failed to clear cache: {e}")
+            tprint_error(f"❌ Failed to clear cache: {e}")
     
     @memory_optimized(optimization_level=MemoryOptimizationLevel.AGGRESSIVE)
-    def _optimize_dataframe(self, df) -> Any:
+    def _optimize_dataframe(self, df: Any) -> Any:
         """
         Optimize DataFrame using hardware acceleration.
         
@@ -1103,11 +1562,21 @@ class BaseStep(ABC):
             Optimized DataFrame
         """
         if df is None:
+            tprint_debug("⚠️ Cannot optimize None DataFrame")
             return df
+        
+        tprint_debug("🔧 Optimizing DataFrame with hardware acceleration")
+        
         try:
-            return self.hardware_manager.optimize_dataframe(df)
+            if self.hardware_manager is not None:
+                optimized_df = self.hardware_manager.optimize_dataframe(df)
+                tprint_success("✅ DataFrame optimized with hardware acceleration")
+                return optimized_df
+            else:
+                tprint_warning("⚠️ Hardware manager not available, using fallback optimization")
+                return optimize_dataframe(df)
         except Exception as e:
-            self.logger.warning(f"Hardware optimization failed, using fallback: {e}")
+            tprint_warning(f"⚠️ Hardware optimization failed, using fallback: {e}")
             return optimize_dataframe(df)
     
     @smart_cache(ttl=1800)
@@ -1118,10 +1587,18 @@ class BaseStep(ABC):
         Returns:
             Dictionary containing hardware performance metrics
         """
+        tprint_debug("📊 Getting hardware statistics")
+        
         try:
-            return self.hardware_manager.get_performance_metrics()
+            if self.hardware_manager is not None:
+                stats = self.hardware_manager.get_performance_metrics()
+                tprint_success(f"✅ Hardware stats retrieved: {len(stats)} metrics")
+                return stats
+            else:
+                tprint_warning("⚠️ Hardware manager not available, returning empty stats")
+                return {}
         except Exception as e:
-            self.logger.warning(f"Failed to get hardware stats: {e}")
+            tprint_warning(f"⚠️ Failed to get hardware stats: {e}")
             return {}
     
     async def run(self, config: Dict[str, Any]) -> Dict[str, Any]:
@@ -1136,17 +1613,25 @@ class BaseStep(ABC):
             
         Returns:
             Execution result with outcome report path
+            
+        Raises:
+            TypeError: If config is not a dictionary
         """
+        # Validate input parameters
+        if not isinstance(config, dict):
+            raise TypeError(f"config must be a dictionary, got: {type(config).__name__}")
+        
         start_time = datetime.now()
         
         try:
-            self.logger.info(f"🚀 Starting execution of {self.step_name}")
+            tprint_info(f"🚀 Starting execution of {self.step_name}")
             
             # Optimize hardware for step execution
             if self.hardware_manager is not None:
                 self.hardware_manager.optimize_for_workload(WorkloadType.DATA_PROCESSING)
+                tprint_success("✅ Hardware optimized for data processing workload")
             else:
-                self.logger.warning("⚠️ Hardware manager not available, skipping hardware optimization")
+                tprint_warning("⚠️ Hardware manager not available, skipping hardware optimization")
             
             # Set context from config if available
             symbol = config.get('symbol')
@@ -1183,17 +1668,17 @@ class BaseStep(ABC):
                     execution_result['klines_available'] = False
                     
             except Exception as e:
-                self.logger.warning(f"Failed to get performance metrics: {e}")
+                tprint_warning(f"⚠️ Failed to get performance metrics: {e}")
             
             # Log completion with enhanced information
             if execution_result.get('success', False):
-                self.logger.info(f"✅ Successfully completed {self.step_name} in {execution_time:.2f}s")
+                tprint_success(f"✅ Successfully completed {self.step_name} in {execution_time:.2f}s")
                 if 'performance_metrics' in execution_result:
                     metrics = execution_result['performance_metrics']
-                    self.logger.info(f"📊 Performance: Cache hit ratio: {metrics.get('cache_hit_ratio', 0):.2%}, "
-                                   f"Compression savings: {metrics.get('compression_savings_mb', 0):.1f}MB")
+                    tprint_info(f"📊 Performance: Cache hit ratio: {metrics.get('cache_hit_ratio', 0):.2%}, "
+                              f"Compression savings: {metrics.get('compression_savings_mb', 0):.1f}MB")
             else:
-                self.logger.error(f"❌ Failed to complete {self.step_name} after {execution_time:.2f}s")
+                tprint_error(f"❌ Failed to complete {self.step_name} after {execution_time:.2f}s")
             
             return execution_result
             
@@ -1201,7 +1686,7 @@ class BaseStep(ABC):
             execution_time = (datetime.now() - start_time).total_seconds()
             error_msg = f"Step {self.step_name} failed: {str(e)}\n{traceback.format_exc()}"
             
-            self.logger.error(error_msg)
+            tprint_error(error_msg)
             
             # Create failure result
             failure_result = {
@@ -1215,6 +1700,7 @@ class BaseStep(ABC):
             return failure_result
         finally:
             # Force cleanup after step execution
+            tprint_debug("🧹 Performing final cleanup")
             force_cleanup()
     
     def _ensure_directory_structure(self) -> None:
@@ -1223,6 +1709,8 @@ class BaseStep(ABC):
         
         This method creates the necessary directories in the artifacts/STEP-CATEGORY/ structure.
         """
+        tprint_info("📁 Ensuring directory structure")
+        
         try:
             from src.utils.artifact_manager import get_step_category
             
@@ -1237,39 +1725,51 @@ class BaseStep(ABC):
             category_dir = artifacts_dir / step_category
             category_dir.mkdir(parents=True, exist_ok=True)
             
-            self.logger.info(f"📁 Directory structure ensured: {category_dir}")
+            tprint_success(f"✅ Directory structure ensured: {category_dir}")
             
         except Exception as e:
-            self.logger.error(f"Failed to ensure directory structure: {e}")
+            tprint_error(f"❌ Failed to ensure directory structure: {e}")
 
 
 class StepRegistry:
     """
-    Registry for all autonomous steps.
+    Registry for all autonomous steps with comprehensive type safety.
     
     Used by the launcher to discover and execute steps.
     """
     
-    def __init__(self):
-        self._steps: Dict[str, type] = {}
+    def __init__(self) -> None:
+        self._steps: Dict[str, Type[BaseStep]] = {}
+        tprint_info("📋 StepRegistry initialized")
     
-    def register(self, step_name: str, step_class: type):
+    def register(self, step_name: str, step_class: Type[BaseStep]) -> None:
         """
-        Register a step class.
+        Register a step class with validation.
         
         Args:
             step_name: Unique name for the step
             step_class: Step class that inherits from BaseStep
+            
+        Raises:
+            ValueError: If step_name is empty or step_class doesn't inherit from BaseStep
+            TypeError: If parameter types are incorrect
         """
+        # Validate input parameters
+        if not isinstance(step_name, str) or not step_name.strip():
+            raise ValueError(f"step_name must be a non-empty string, got: {step_name}")
+        if not isinstance(step_class, type):
+            raise TypeError(f"step_class must be a class, got: {type(step_class).__name__}")
         if not issubclass(step_class, BaseStep):
             raise ValueError(f"Step class {step_class} must inherit from BaseStep")
         
+        tprint_info(f"📝 Registering step: {step_name}")
+        
         self._steps[step_name] = step_class
-        logging.getLogger("ares.registry").info(f"Registered step: {step_name}")
+        tprint_success(f"✅ Registered step: {step_name}")
     
-    def get_step(self, step_name: str) -> type:
+    def get_step(self, step_name: str) -> Type[BaseStep]:
         """
-        Get a registered step class.
+        Get a registered step class with validation.
         
         Args:
             step_name: Name of the step
@@ -1278,34 +1778,59 @@ class StepRegistry:
             Step class
             
         Raises:
+            ValueError: If step_name is empty or invalid
+            TypeError: If step_name is not a string
             KeyError: If step is not registered
         """
-        if step_name not in self._steps:
-            raise KeyError(f"Step '{step_name}' not found in registry. Available steps: {list(self._steps.keys())}")
+        # Validate input parameters
+        if not isinstance(step_name, str) or not step_name.strip():
+            raise ValueError(f"step_name must be a non-empty string, got: {step_name}")
         
+        tprint_info(f"🔍 Getting step: {step_name}")
+        
+        if step_name not in self._steps:
+            available_steps = list(self._steps.keys())
+            tprint_error(f"❌ Step '{step_name}' not found in registry. Available steps: {available_steps}")
+            raise KeyError(f"Step '{step_name}' not found in registry. Available steps: {available_steps}")
+        
+        tprint_success(f"✅ Retrieved step: {step_name}")
         return self._steps[step_name]
     
-    def list_steps(self) -> list:
+    def list_steps(self) -> List[str]:
         """
         List all registered step names.
         
         Returns:
             List of step names
         """
-        return list(self._steps.keys())
+        tprint_info("📋 Listing all registered steps")
+        steps = list(self._steps.keys())
+        tprint_success(f"✅ Found {len(steps)} registered steps")
+        return steps
     
     def is_registered(self, step_name: str) -> bool:
         """
-        Check if a step is registered.
+        Check if a step is registered with validation.
         
         Args:
             step_name: Name of the step
             
         Returns:
             True if step is registered
+            
+        Raises:
+            ValueError: If step_name is empty or invalid
+            TypeError: If step_name is not a string
         """
-        return step_name in self._steps
+        # Validate input parameters
+        if not isinstance(step_name, str) or not step_name.strip():
+            raise ValueError(f"step_name must be a non-empty string, got: {step_name}")
+        
+        is_registered = step_name in self._steps
+        tprint_debug(f"🔍 Step '{step_name}' registered: {is_registered}")
+        return is_registered
 
 
 # Global step registry instance
-step_registry = StepRegistry()
+step_registry: Final[StepRegistry] = StepRegistry()
+tprint_info("🎉 Global step registry initialized")

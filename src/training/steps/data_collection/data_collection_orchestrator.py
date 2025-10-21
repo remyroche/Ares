@@ -24,7 +24,17 @@ import pandas as pd
 project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.training.steps.base_step import BaseStep
+# Lazy import to avoid circular imports
+def get_base_step():
+    """Lazy import of BaseStep to avoid circular imports."""
+    try:
+        from src.training.steps.base_step import BaseStep
+        return BaseStep
+    except ImportError:
+        return None
+
+# Use lazy import
+BaseStep = get_base_step()
 from src.utils.logger import system_logger
 from src.utils.error_handler import handles_errors
 

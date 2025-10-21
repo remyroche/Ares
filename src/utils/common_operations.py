@@ -1632,6 +1632,32 @@ def create_fallback_logger(name: str) -> logging.Logger:
     """Create fallback logger."""
     return logging.getLogger(name)
 
+
+def create_fallback_decorator(func_name: str = "unknown"):
+    """Create a fallback decorator when the main decorator system is not available."""
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            try:
+                return func(*args, **kwargs)
+            except Exception as e:
+                logger = create_fallback_logger("fallback_decorator")
+                logger.warning(f"Fallback decorator for {func_name}: {e}")
+                return None
+        return wrapper
+    return decorator
+
+
+def create_directory_safe(directory_path: str) -> bool:
+    """Safely create a directory if it doesn't exist."""
+    try:
+        os.makedirs(directory_path, exist_ok=True)
+        return True
+    except Exception as e:
+        logger = create_fallback_logger()
+        logger.warning(f"Failed to create directory {directory_path}: {e}")
+        return False
+
 def get_logger(name: str) -> logging.Logger:
     """Get logger instance."""
     return logging.getLogger(name)
@@ -2252,6 +2278,7 @@ __all__ = [
     'get_current_datetime',
     'format_datetime',
     'create_fallback_logger',
+    'create_fallback_decorator',
     'get_logger',
     'cleanup_m1_optimizers',
     'get_m1_gpu_manager',

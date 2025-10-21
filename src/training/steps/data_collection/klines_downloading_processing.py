@@ -32,7 +32,17 @@ from enum import Enum
 # Add src to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from src.training.steps.base_step import BaseStep
+# Lazy import to avoid circular imports
+def get_base_step():
+    """Lazy import of BaseStep to avoid circular imports."""
+    try:
+        from src.training.steps.base_step import BaseStep
+        return BaseStep
+    except ImportError:
+        return None
+
+# Use lazy import
+BaseStep = get_base_step()
 from src.utils.logger import system_logger
 from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success
 from src.utils.data.quality.comprehensive_duplicate_analyzer import (

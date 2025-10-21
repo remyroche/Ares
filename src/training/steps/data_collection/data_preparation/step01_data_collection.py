@@ -11,7 +11,17 @@ from pathlib import Path
 from typing import Any, Dict, Tuple
 
 from src.core.decorators import handles_errors
-from src.training.steps.base_step import BaseStep
+# Lazy import to avoid circular imports
+def get_base_step():
+    """Lazy import of BaseStep to avoid circular imports."""
+    try:
+        from src.training.steps.base_step import BaseStep
+        return BaseStep
+    except ImportError:
+        return None
+
+# Use lazy import
+BaseStep = get_base_step()
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
 import pandas as pd
 import numpy as np

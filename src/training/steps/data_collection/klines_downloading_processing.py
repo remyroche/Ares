@@ -53,21 +53,29 @@ class KlinesDataProcessingPipeline(BaseStep):
     backward compatibility and additional convenience methods.
     """
     
-    def __init__(self, step_name: str = "data_download", data_dir: str = "historical_data", exchange: str = "binance"):
+    def __init__(self, step_name: str = "data_download", config: Optional[Dict[str, Any]] = None, exchange: str = "binance"):
         """Initialize the klines data processing pipeline as an autonomous step.
 
         Args:
             step_name: Name for this autonomous step
-            data_dir: Base directory for historical data
-            exchange: Default exchange name
+            config: Configuration dictionary (when called by launcher) or data_dir string (legacy)
+            exchange: Default exchange name (only used when config is None)
         """
         super().__init__(step_name)
-        self.data_dir = data_dir
-        self.exchange = exchange.lower()
+        
+        # Handle both launcher call (config dict) and legacy call (data_dir string)
+        if isinstance(config, dict):
+            self.data_dir = config.get('data_dir', 'historical_data')
+            self.exchange = config.get('exchange', 'binance').lower()
+        else:
+            # Legacy call - config is actually data_dir string
+            self.data_dir = config if config else 'historical_data'
+            self.exchange = exchange.lower()
+            
         self.logger = system_logger.getChild("KlinesDataProcessingPipeline")
 
         # Try to import and initialize components dynamically
-        self._initialize_components(data_dir, exchange)
+        self._initialize_components(self.data_dir, self.exchange)
 
         # Quality checker will be initialized when first used
         self._quality_checker: Optional[KlinesDataQualityChecker] = None

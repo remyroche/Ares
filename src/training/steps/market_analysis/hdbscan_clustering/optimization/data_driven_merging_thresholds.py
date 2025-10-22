@@ -17,15 +17,34 @@ from scipy.spatial.distance import pdist, squareform
 from scipy.stats import ks_2samp, ttest_ind, mannwhitneyu
 import warnings
 
-# Import optimization utilities
+# Import optimization utilities with BOHB for clustering optimization (Phase 3 Migration)
+try:
+    from src.utils.ml_common.optimization.bohb_optimizer import (
+        BOHBOptimizer, BOHBConfig, BOHBResult
+    )
+    BOHB_AVAILABLE = True
+    logging.info("✅ BOHB optimizer loaded for merging threshold optimization")
+except ImportError as e:
+    BOHB_AVAILABLE = False
+    BOHBOptimizer = None
+    BOHBConfig = None
+    BOHBResult = None
+    logging.warning(f"BOHB optimizer not available: {e}")
+
+# Import Bayesian TPE as fallback for simple cases
 try:
     from src.utils.ml_common.optimization.bayesian_tpe_optimizer import (
         BayesianTPEOptimizer, OptimizationConfig
     )
-    OPTIMIZATION_AVAILABLE = True
-except ImportError:
-    OPTIMIZATION_AVAILABLE = False
-    logging.warning("Bayesian TPE optimizer not available")
+    BAYESIAN_TPE_AVAILABLE = True
+    logging.info("✅ Bayesian TPE optimizer loaded as fallback")
+except ImportError as e:
+    BAYESIAN_TPE_AVAILABLE = False
+    BayesianTPEOptimizer = None
+    OptimizationConfig = None
+    logging.warning(f"Bayesian TPE optimizer not available: {e}")
+
+OPTIMIZATION_AVAILABLE = BOHB_AVAILABLE or BAYESIAN_TPE_AVAILABLE
 
 from ..config.data_driven_config import (
     RegimeMergingThresholdConfig, ValidationMetric, OptimizationStrategy
@@ -220,18 +239,97 @@ class DataDrivenMergingThresholdOptimizer:
                 logger.debug(f"Trial failed: {e}")
                 return -np.inf
         
-        # Create optimization config
-        opt_config = OptimizationConfig(
-            n_trials=self.config.n_trials,
-            timeout=self.config.timeout_seconds,
-            n_startup_trials=self.config.n_startup_trials,
-            direction='maximize',
-            metric_name='quality_score'
-        )
-        
-        # Run optimization
-        optimizer = BayesianTPEOptimizer(opt_config)
-        best_params, best_score = optimizer.optimize(objective)
+        # Run optimization with BOHB (Phase 3: Clustering Migration)
+        if BOHB_AVAILABLE:
+            try:
+                # Create BOHB configuration for merging threshold optimization
+                bohb_config = BOHBConfig(
+                    n_trials=self.config.n_trials,
+                    timeout=self.config.timeout_seconds,
+                    direction='maximize',
+                    metric_name='quality_score',
+                    resource_name='iteration',  # Use iterations as resource for multi-fidelity
+                    min_resource=1,  # Minimum iterations
+                    max_resource=3,  # Maximum iterations
+                    reduction_factor=2,  # Successive halving factor
+                    n_startup_trials=self.config.n_startup_trials,
+                    pruner_type='hyperband',  # Use Hyperband pruning
+                    enable_hardware_optimization=True,
+                    enable_vectorbt_optimization=True,
+                    enable_explainability=True,
+                    enable_cv=True,
+                    enable_oof_stacking=False,  # Not needed for merging thresholds
+                    seed=42
+                )
+
+                # Define multi-fidelity objective function for BOHB
+                def bohb_objective(params: Dict[str, Any], resource: int = None) -> float:
+                    """Multi-fidelity objective function for BOHB merging threshold optimization."""
+                    try:
+                        # Use resource (iterations) for multi-fidelity evaluation
+                        if resource and resource < 3:
+                            # Limit iterations based on resource level
+                            limited_thresholds = {
+                                'similarity_threshold': params.get('similarity_threshold', 0.8),
+                                'distance_threshold': params.get('distance_threshold', 0.2),
+                                'p_value_threshold': params.get('p_value_threshold', 0.05)
+                            }
+                            return objective(limited_thresholds, resource)
+                        else:
+                            return objective(params)
+                    except Exception as e:
+                        logger.debug(f"BOHB objective function failed: {e}")
+                        return -np.inf
+
+                # Create and run BOHB optimizer
+                optimizer = BOHBOptimizer(bohb_config)
+                result = optimizer.optimize(bohb_objective, search_space)
+
+                if result.success:
+                    best_params = result.best_params
+                    best_score = result.best_value
+                    logger.info("✅ BOHB merging threshold optimization completed successfully")
+                    logger.info(f"📊 Resource efficiency: {result.resource_efficiency:.2f}x")
+                else:
+                    logger.warning(f"⚠️ BOHB optimization failed: {result.error_message}")
+                    # Fall through to TPE fallback
+                    raise Exception("BOHB optimization failed")
+
+            except Exception as e:
+                logger.warning(f"⚠️ BOHB optimization error: {e}, falling back to TPE")
+                # Fall through to TPE fallback
+
+        # Fallback to Bayesian TPE with enhanced early stopping
+        if BAYESIAN_TPE_AVAILABLE:
+            try:
+                logger.info("🔄 Falling back to enhanced Bayesian TPE optimization...")
+                
+                # Create enhanced optimization configuration with aggressive early stopping
+                opt_config = OptimizationConfig(
+                    n_trials=self.config.n_trials,
+                    timeout=self.config.timeout_seconds,
+                    n_startup_trials=self.config.n_startup_trials,
+                    direction='maximize',
+                    metric_name='quality_score',
+                    early_stopping_patience=3,  # More aggressive early stopping
+                    early_stopping_threshold=0.001,  # Stricter threshold
+                    enable_pruner=True,  # Enable trial-level pruning
+                    pruner_type='hyperband',  # Use Hyperband pruner
+                    adaptive_patience=True,  # Enable adaptive patience
+                    confidence_based_stopping=True,  # Enable confidence-based stopping
+                    seed=42
+                )
+
+                optimizer = BayesianTPEOptimizer(opt_config)
+                best_params, best_score = optimizer.optimize(objective)
+                logger.info("✅ Enhanced Bayesian TPE optimization completed successfully")
+
+            except Exception as e:
+                logger.error(f"❌ Enhanced Bayesian TPE optimization error: {e}")
+                raise
+        else:
+            logger.error("❌ No optimizers available")
+            raise RuntimeError("No optimizers available for merging threshold optimization")
         
         # Extract optimal thresholds
         optimal_thresholds = {

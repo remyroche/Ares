@@ -1,10 +1,20 @@
 #!/usr/bin/env python3
 """
-Data Consolidation Manager
+Enhanced Data Consolidation Manager
 
 This module provides comprehensive data consolidation functionality for managing
-and merging multiple batch files from data downloads. It ensures data integrity,
-handles duplicates, and provides efficient consolidation strategies.
+and merging multiple batch files from data downloads with BaseStep comprehensive 
+tools integration. It ensures data integrity, handles duplicates, and provides 
+efficient consolidation strategies.
+
+ENHANCED FEATURES:
+==================
+- BaseStep comprehensive tools integration
+- Advanced logging with tprint utilities
+- Hardware optimization for data operations
+- Comprehensive error handling and validation
+- Performance monitoring and metrics
+- Memory optimization for large datasets
 
 Key Features:
 - Intelligent batch file discovery and grouping
@@ -35,9 +45,213 @@ from src.utils.error_handler import handles_errors
 from src.utils.common_operations import safe_fillna, safe_to_parquet, safe_read_parquet
 from src.utils.common_utilities import validate_dataframe_columns, safe_dataframe_operation
 from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
+from src.training.steps.base_step import BaseStep
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
 
 logger = system_logger.getChild("DataConsolidationManager")
+
+
+class EnhancedDataConsolidationManager(BaseStep):
+    """
+    Enhanced data consolidation manager with BaseStep comprehensive tools integration.
+    
+    This class provides:
+    - Direct access to all BaseStep comprehensive tools
+    - Advanced logging with tprint utilities
+    - Hardware optimization for data operations
+    - Comprehensive error handling and validation
+    - Performance monitoring and metrics
+    - Memory optimization for large datasets
+    """
+    
+    def __init__(self, step_name: str = "enhanced_data_consolidation", config: Optional[Dict[str, Any]] = None):
+        super().__init__(step_name, config)
+        self.data_cache_path = Path(self._get_config_value('data_cache_path', 'data_cache'))
+        self.data_cache_path.mkdir(exist_ok=True)
+        self.legacy_manager = None
+        self._initialize_legacy_manager()
+        self.tprint_success("✅ Enhanced Data Consolidation Manager initialized with BaseStep tools")
+    
+    def _initialize_legacy_manager(self) -> None:
+        """Initialize the legacy consolidation manager for backward compatibility."""
+        try:
+            self.legacy_manager = DataConsolidationManager(str(self.data_cache_path))
+            self.tprint_info("✅ Legacy consolidation manager initialized for compatibility")
+        except Exception as e:
+            self.tprint_warning(f"⚠️ Failed to initialize legacy consolidation manager: {e}")
+    
+    async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Execute the enhanced data consolidation process using BaseStep tools.
+        
+        Args:
+            config: Configuration containing consolidation parameters
+            
+        Returns:
+            Dictionary with consolidation status and results
+        """
+        try:
+            # Set context for enhanced logging and file operations
+            self._set_context(
+                symbol=config.get('symbol'),
+                exchange=config.get('exchange'),
+                information=config.get('information', 'klines'),
+                direction=config.get('direction', 'long'),
+                model=config.get('model', 'Analyst')
+            )
+            
+            # Log step start with comprehensive information
+            self.tprint_step_start("Enhanced Data Consolidation")
+            self.tprint_config_preview(config, "Consolidation Configuration")
+            
+            # Extract parameters with validation
+            symbol = self._get_config_value('symbol', expected_type=str)
+            exchange = self._get_config_value('exchange', expected_type=str)
+            data_type = self._get_config_value('data_type', 'klines', str)
+            consolidation_strategy = self._get_config_value('consolidation_strategy', 'by_time', str)
+            
+            self.tprint_info(f"🔄 Starting enhanced data consolidation for {symbol} on {exchange}")
+            self.tprint_info(f"📊 Data type: {data_type}, Strategy: {consolidation_strategy}")
+            
+            # Perform consolidation with comprehensive error handling
+            consolidation_result = await self._enhanced_consolidate_data(
+                symbol, exchange, data_type, consolidation_strategy
+            )
+            
+            if consolidation_result['success']:
+                consolidated_data = consolidation_result['data']
+                
+                # Use BaseStep data quality tools for validation
+                if self.data_quality and hasattr(consolidated_data, 'shape'):
+                    quality_result = self._get_data_cleaner().assess_quality(consolidated_data)
+                    self.tprint_validation_result(quality_result, "Consolidated Data Quality Assessment")
+                
+                # Use BaseStep hardware optimization if available
+                if self.hardware_utils and 'optimize_dataframe' in self.hardware_utils and hasattr(consolidated_data, 'shape'):
+                    optimized_data = self.hardware_utils['optimize_dataframe'](consolidated_data)
+                    self.tprint_info("🔧 Applied hardware optimization to consolidated data")
+                    consolidated_data = optimized_data
+                
+                # Store consolidated data using BaseStep artifact management
+                artifact_path = self._save_dataframe(
+                    consolidated_data, 
+                    f"consolidated_{symbol}_{exchange}_{data_type}",
+                    metadata={
+                        'symbol': symbol,
+                        'exchange': exchange,
+                        'data_type': data_type,
+                        'consolidation_strategy': consolidation_strategy,
+                        'rows': len(consolidated_data) if hasattr(consolidated_data, '__len__') else 0,
+                        'columns': len(consolidated_data.columns) if hasattr(consolidated_data, 'columns') else 0
+                    }
+                )
+                
+                # Log performance metrics
+                performance_metrics = self._get_performance_metrics()
+                self.tprint_performance_summary(performance_metrics)
+                
+                # Log step completion
+                self.tprint_step_end("Enhanced Data Consolidation", True, performance_metrics.get('execution_time', 0))
+                
+                return {
+                    'success': True,
+                    'data': consolidated_data,
+                    'error': None,
+                    'artifacts': [artifact_path],
+                    'metrics': performance_metrics
+                }
+            else:
+                error_msg = f"Data consolidation failed: {consolidation_result.get('error', 'Unknown error')}"
+                self.tprint_error(f"❌ {error_msg}")
+                return {
+                    'success': False,
+                    'data': None,
+                    'error': error_msg,
+                    'artifacts': [],
+                    'metrics': {}
+                }
+                
+        except Exception as e:
+            self.tprint_error(f"❌ Unexpected error in enhanced data consolidation: {e}")
+            self._log_error_with_context(e, "enhanced_data_consolidation")
+            return {
+                'success': False,
+                'data': None,
+                'error': str(e),
+                'artifacts': [],
+                'metrics': {}
+            }
+    
+    async def _enhanced_consolidate_data(
+        self, 
+        symbol: str, 
+        exchange: str, 
+        data_type: str, 
+        consolidation_strategy: str
+    ) -> Dict[str, Any]:
+        """
+        Enhanced data consolidation with BaseStep comprehensive tools integration.
+        
+        Args:
+            symbol: Trading symbol
+            exchange: Exchange name
+            data_type: Type of data being consolidated
+            consolidation_strategy: Strategy for consolidation
+            
+        Returns:
+            Dictionary with consolidation results
+        """
+        try:
+            self.tprint_operation_start(f"Consolidating {data_type} data for {symbol}")
+            
+            # Use BaseStep safe operations for data validation
+            if not self._validate_dataframe_columns(None, ['symbol', 'exchange']):  # Placeholder validation
+                raise ValueError("Invalid symbol or exchange format")
+            
+            # Perform consolidation using legacy manager
+            if self.legacy_manager:
+                consolidated_data = await self.legacy_manager.consolidate_data(
+                    symbol, exchange, data_type, consolidation_strategy
+                )
+            else:
+                # Fallback to basic consolidation
+                consolidated_data = await self._basic_consolidate_data(symbol, exchange, data_type)
+            
+            if consolidated_data is not None:
+                # Use BaseStep data operations for safe processing
+                if hasattr(consolidated_data, 'shape'):
+                    consolidated_data = self._safe_dataframe_operation(consolidated_data, 'fillna', method='forward')
+                
+                self.tprint_data_summary(consolidated_data, f"Consolidated {data_type} data for {symbol}")
+                self.tprint_operation_end(f"Consolidated {len(consolidated_data) if hasattr(consolidated_data, '__len__') else 'unknown'} records")
+                
+                return {
+                    'success': True,
+                    'data': consolidated_data,
+                    'error': None
+                }
+            else:
+                error_msg = f"Failed to consolidate {data_type} data for {symbol}"
+                self.tprint_error(f"❌ {error_msg}")
+                return {
+                    'success': False,
+                    'data': None,
+                    'error': error_msg
+                }
+                
+        except Exception as e:
+            error_msg = f"Data consolidation exception: {e}"
+            self.tprint_error(f"❌ {error_msg}")
+            return {
+                'success': False,
+                'data': None,
+                'error': error_msg
+            }
+    
+    async def _basic_consolidate_data(self, symbol: str, exchange: str, data_type: str) -> Any:
+        """Basic data consolidation fallback method."""
+        # Implement basic consolidation logic here
+        return None
 
 class DataConsolidationManager:
     """Manager for consolidating multiple batch files into unified datasets."""

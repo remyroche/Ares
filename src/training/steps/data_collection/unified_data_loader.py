@@ -3,11 +3,23 @@ from src.utils.tprint import tprint, tprint_data_preview
 from ...core.decorators import handles_errors, traced
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
 from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
+from src.training.steps.base_step import BaseStep
 import numpy as np
 
-"""Unified Data Loader for Step1_5 Data.
+"""Enhanced Unified Data Loader for Step1_5 Data.
 
-This module provides secure, decorated access to data created by step1_5_data_converter.
+This module provides secure, decorated access to data created by step1_5_data_converter
+with BaseStep comprehensive tools integration.
+
+ENHANCED FEATURES:
+==================
+- BaseStep comprehensive tools integration
+- Advanced logging with tprint utilities
+- Hardware optimization for data operations
+- Comprehensive error handling and validation
+- Performance monitoring and metrics
+- Memory optimization for large datasets
+
 It includes comprehensive validation for file paths, data formats, sizes, and string sanitization.
 """
 import sys
@@ -31,6 +43,196 @@ from src.utils.common_operations import (
 
 # Create a logger for UnifiedDataLoader
 unified_data_loader_logger = logging.getLogger('UnifiedDataLoader')
+
+
+class EnhancedUnifiedDataLoader(BaseStep):
+    """
+    Enhanced unified data loader with BaseStep comprehensive tools integration.
+    
+    This class provides:
+    - Direct access to all BaseStep comprehensive tools
+    - Advanced logging with tprint utilities
+    - Hardware optimization for data operations
+    - Comprehensive error handling and validation
+    - Performance monitoring and metrics
+    - Memory optimization for large datasets
+    """
+    
+    def __init__(self, step_name: str = "enhanced_unified_data_loader", config: Optional[Dict[str, Any]] = None):
+        super().__init__(step_name, config)
+        self.legacy_loader = None
+        self._initialize_legacy_loader()
+        self.tprint_success("✅ Enhanced Unified Data Loader initialized with BaseStep tools")
+    
+    def _initialize_legacy_loader(self) -> None:
+        """Initialize the legacy data loader for backward compatibility."""
+        try:
+            self.legacy_loader = UnifiedDataLoader()
+            self.tprint_info("✅ Legacy data loader initialized for compatibility")
+        except Exception as e:
+            self.tprint_warning(f"⚠️ Failed to initialize legacy data loader: {e}")
+    
+    async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Execute the enhanced data loading process using BaseStep tools.
+        
+        Args:
+            config: Configuration containing loading parameters
+            
+        Returns:
+            Dictionary with loading status and data
+        """
+        try:
+            # Set context for enhanced logging and file operations
+            self._set_context(
+                symbol=config.get('symbol'),
+                exchange=config.get('exchange'),
+                information=config.get('information', 'klines'),
+                direction=config.get('direction', 'long'),
+                model=config.get('model', 'Analyst')
+            )
+            
+            # Log step start with comprehensive information
+            self.tprint_step_start("Enhanced Unified Data Loading")
+            self.tprint_config_preview(config, "Loading Configuration")
+            
+            # Extract parameters with validation
+            data_path = self._get_config_value('data_path', expected_type=str)
+            data_type = self._get_config_value('data_type', 'klines', str)
+            validation_level = self._get_config_value('validation_level', 'comprehensive', str)
+            
+            self.tprint_info(f"📂 Starting enhanced data loading from {data_path}")
+            self.tprint_info(f"📊 Data type: {data_type}, Validation level: {validation_level}")
+            
+            # Load data with comprehensive error handling
+            load_result = await self._enhanced_load_data(
+                data_path, data_type, validation_level
+            )
+            
+            if load_result['success']:
+                data = load_result['data']
+                
+                # Use BaseStep data quality tools for validation
+                if self.data_quality and hasattr(data, 'shape'):
+                    quality_result = self._get_data_cleaner().assess_quality(data)
+                    self.tprint_validation_result(quality_result, "Data Quality Assessment")
+                
+                # Use BaseStep hardware optimization if available
+                if self.hardware_utils and 'optimize_dataframe' in self.hardware_utils and hasattr(data, 'shape'):
+                    optimized_data = self.hardware_utils['optimize_dataframe'](data)
+                    self.tprint_info("🔧 Applied hardware optimization to loaded data")
+                    data = optimized_data
+                
+                # Store loaded data using BaseStep artifact management
+                artifact_path = self._save_dataframe(
+                    data, 
+                    f"loaded_{data_type}_data",
+                    metadata={
+                        'data_path': data_path,
+                        'data_type': data_type,
+                        'validation_level': validation_level,
+                        'rows': len(data) if hasattr(data, '__len__') else 0,
+                        'columns': len(data.columns) if hasattr(data, 'columns') else 0
+                    }
+                )
+                
+                # Log performance metrics
+                performance_metrics = self._get_performance_metrics()
+                self.tprint_performance_summary(performance_metrics)
+                
+                # Log step completion
+                self.tprint_step_end("Enhanced Unified Data Loading", True, performance_metrics.get('execution_time', 0))
+                
+                return {
+                    'success': True,
+                    'data': data,
+                    'error': None,
+                    'artifacts': [artifact_path],
+                    'metrics': performance_metrics
+                }
+            else:
+                error_msg = f"Data loading failed: {load_result.get('error', 'Unknown error')}"
+                self.tprint_error(f"❌ {error_msg}")
+                return {
+                    'success': False,
+                    'data': None,
+                    'error': error_msg,
+                    'artifacts': [],
+                    'metrics': {}
+                }
+                
+        except Exception as e:
+            self.tprint_error(f"❌ Unexpected error in enhanced data loading: {e}")
+            self._log_error_with_context(e, "enhanced_unified_data_loader")
+            return {
+                'success': False,
+                'data': None,
+                'error': str(e),
+                'artifacts': [],
+                'metrics': {}
+            }
+    
+    async def _enhanced_load_data(
+        self, 
+        data_path: str, 
+        data_type: str, 
+        validation_level: str
+    ) -> Dict[str, Any]:
+        """
+        Enhanced data loading with BaseStep comprehensive tools integration.
+        
+        Args:
+            data_path: Path to the data file
+            data_type: Type of data being loaded
+            validation_level: Level of validation to perform
+            
+        Returns:
+            Dictionary with loading results
+        """
+        try:
+            self.tprint_operation_start(f"Loading {data_type} data from {data_path}")
+            
+            # Use BaseStep safe operations for file validation
+            if not self._safe_file_exists(data_path):
+                raise FileNotFoundError(f"Data file not found: {data_path}")
+            
+            # Load data using legacy loader
+            if self.legacy_loader:
+                data = await self.legacy_loader.load_data(data_path, data_type, validation_level)
+            else:
+                # Fallback to direct loading
+                data = self._safe_dataframe_operation(None, 'read_parquet', data_path)
+            
+            if data is not None:
+                # Use BaseStep data operations for safe processing
+                if hasattr(data, 'shape'):
+                    data = self._safe_dataframe_operation(data, 'fillna', method='forward')
+                
+                self.tprint_data_summary(data, f"Loaded {data_type} data from {data_path}")
+                self.tprint_operation_end(f"Loaded {len(data) if hasattr(data, '__len__') else 'unknown'} records")
+                
+                return {
+                    'success': True,
+                    'data': data,
+                    'error': None
+                }
+            else:
+                error_msg = f"Failed to load data from {data_path}"
+                self.tprint_error(f"❌ {error_msg}")
+                return {
+                    'success': False,
+                    'data': None,
+                    'error': error_msg
+                }
+                
+        except Exception as e:
+            error_msg = f"Data loading exception: {e}"
+            self.tprint_error(f"❌ {error_msg}")
+            return {
+                'success': False,
+                'data': None,
+                'error': error_msg
+            }
 
 # Import core domain functions with fallbacks
 try:

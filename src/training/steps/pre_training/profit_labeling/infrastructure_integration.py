@@ -21,8 +21,8 @@ from datetime import datetime
 import warnings
 
 # Import existing infrastructure components
-from src.training.steps.pre_training.profit_labeling.volatility_aware_labeler import (
-    VolatilityAwareMultiHorizonLabeler, VolatilityAwareConfig
+from src.training.steps.pre_training.profit_labeling.volatility_aware_profit_labeler import (
+    VolatilityAwareProfitLabeler as VolatilityAwareMultiHorizonLabeler, VolatilityAwareConfig
 )
 from src.training.steps.pre_training.profit_labeling.enhanced_data_labels_system import (
     EnhancedDataLabelsSystem, EnhancedDataLabelsConfig, create_trading_optimized_config

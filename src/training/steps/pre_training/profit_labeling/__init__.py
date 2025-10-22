@@ -22,10 +22,10 @@ Components:
 - multi_target_scheme: Multi-target labeling with data-driven selection
 """
 
-from .volatility_aware_labeler import (
-    VolatilityAwareMultiHorizonLabeler,
+from .volatility_aware_profit_labeler import (
+    VolatilityAwareProfitLabeler as VolatilityAwareMultiHorizonLabeler,
     VolatilityAwareConfig,
-    LabelQualityScore,
+    LabelQualityMetrics as LabelQualityScore,
     LabelingResult
 )
 

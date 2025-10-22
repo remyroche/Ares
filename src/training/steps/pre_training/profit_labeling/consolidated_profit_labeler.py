@@ -42,6 +42,15 @@ from src.core.decorators import handles_errors, traced, validates
 from src.utils.matrix_operations import UnifiedMatrixOperations
 from src.feature_generation.utils.enhanced_matrix_operations import EnhancedMatrixOperations
 
+# Enhanced utilities integration
+from src.utils.ml_common.unified_vectorization_manager import UnifiedVectorizationManager, VectorizationConfig
+from src.utils.ml_common.optimization.bayesian_tpe_optimizer import BayesianTPEOptimizer
+from src.utils.kline_parquet import KlinesParquetManager, StorageConfig
+from src.utils.serialization_utils import UniversalSerializer, safe_serialize, safe_deserialize
+from src.utils.hardware.hardware_optimizer import HardwareOptimizer
+from src.utils.ml_common.feature_selection import FeatureSelector
+from src.utils.data.processing.transformers import DataTransformer
+
 # Statistical and ML utilities
 from sklearn.metrics import roc_auc_score, average_precision_score
 from sklearn.model_selection import TimeSeriesSplit
@@ -225,6 +234,44 @@ class ConsolidatedProfitLabeler(BaseStep):
         self.matrix_ops = UnifiedMatrixOperations()
         self.enhanced_ops = EnhancedMatrixOperations()
 
+        # Initialize enhanced utilities
+        self.vectorization_manager = UnifiedVectorizationManager(
+            VectorizationConfig(
+                enable_vectorization=True,
+                vectorization_method="numpy",
+                batch_size=1000,
+                enable_parallel_processing=True,
+                enable_optimization=True
+            )
+        )
+        
+        # Initialize Bayesian TPE optimizer for hyperparameter tuning
+        self.tpe_optimizer = BayesianTPEOptimizer(
+            n_trials=100,
+            n_startup_trials=20,
+            n_warmup_steps=50
+        )
+        
+        # Initialize data storage and serialization
+        self.klines_manager = KlinesParquetManager(
+            StorageConfig(
+                compression="zstd",
+                compression_level=3,
+                enable_metadata=True,
+                enable_validation=True
+            )
+        )
+        self.serializer = UniversalSerializer()
+        
+        # Initialize hardware optimizer
+        self.hardware_optimizer = HardwareOptimizer()
+        
+        # Initialize feature selector
+        self.feature_selector = FeatureSelector()
+        
+        # Initialize data transformer
+        self.data_transformer = DataTransformer()
+
         # Initialize enhanced data and labels system if enabled
         self.enhanced_system = None
         if self.config.enable_enhanced_data_cleaning or self.config.enable_trading_aware_labels:
@@ -252,11 +299,20 @@ class ConsolidatedProfitLabeler(BaseStep):
         self._volatility_cache: Dict[str, pd.Series] = {}
         self._fpt_cache: Dict[str, np.ndarray] = {}
         self._quality_cache: Dict[str, LabelQualityMetrics] = {}
+        
+        # Performance tracking
+        self._performance_metrics = {
+            'vectorization_time': 0.0,
+            'optimization_time': 0.0,
+            'serialization_time': 0.0,
+            'hardware_optimization_time': 0.0
+        }
 
-        self.tprint("🔧 Initialized Consolidated Profit Labeler")
+        self.tprint("🔧 Initialized Consolidated Profit Labeler with Enhanced Utilities")
         self.logger.info(f"📊 Config: {len(self.config.target_bands)} target bands, "
                         f"RV window: {self.config.rv_window_minutes}min, "
                         f"Enhanced features: {self.config.enable_enhanced_data_cleaning}")
+        self.logger.info(f"🚀 Enhanced utilities: Vectorization, TPE Optimization, Hardware acceleration")
     
     async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -312,43 +368,57 @@ class ConsolidatedProfitLabeler(BaseStep):
                 data = self.hardware_utils['optimize_dataframe'](data)
                 self.tprint_info("🔧 Input data optimized for hardware acceleration")
             
-            # Generate labels
-            labeling_result = self.generate_labels(data)
+            # Check for cached results first
+            cache_key = self._generate_cache_key(data, config)
+            cached_result = self._load_cached_result(cache_key)
+            
+            if cached_result and not config.get('force_recompute', False):
+                self.tprint_info("📦 Using cached labeling result")
+                labeling_result = cached_result
+            else:
+                # Generate labels with enhanced processing
+                labeling_result = self.generate_labels(data)
+                
+                # Cache the result for future use
+                self._cache_result(cache_key, labeling_result)
             
             # Save artifacts
             artifacts = []
             
             # Apply hardware optimization to labeled data
-            if self.hardware_utils and self.hardware_utils.get('optimize_dataframe'):
-                labeling_result.labels = self.hardware_utils['optimize_dataframe'](labeling_result.labels)
+            if self.hardware_optimizer:
+                labeling_result.labels = self.hardware_optimizer.optimize_dataframe(labeling_result.labels)
                 self.tprint_info("🔧 Labeled data optimized for hardware acceleration")
             
             # Preview labeled data
             self.tprint_data_preview(labeling_result.labels, "consolidated_labeled_data", max_rows=5)
             self.tprint_data_format(labeling_result.labels, "consolidated_labeled_data")
             
-            # Save labeled data
-            labeled_data_path = self._save_dataframe(
+            # Save labeled data using enhanced serialization
+            labeled_data_path = self._save_dataframe_enhanced(
                 labeling_result.labels, 
                 'consolidated_labeled_data'
             )
             if labeled_data_path:
                 artifacts.append(labeled_data_path)
             
-            # Save quality metrics
+            # Save quality metrics with enhanced serialization
             quality_data = {
                 'overall_quality_score': labeling_result.overall_quality_score,
                 'quality_metrics': {k: v.to_dict() for k, v in labeling_result.quality_metrics.items()},
                 'processing_time': labeling_result.processing_time,
                 'n_samples': labeling_result.n_samples,
-                'n_targets': labeling_result.n_targets
+                'n_targets': labeling_result.n_targets,
+                'performance_metrics': self._performance_metrics,
+                'cache_key': cache_key,
+                'timestamp': datetime.now().isoformat()
             }
             
             # Preview quality data
             self.tprint_data_format(quality_data, "consolidated_quality_metrics")
             
-            # Save quality data
-            quality_path = self._save_metadata(
+            # Save quality data using enhanced serialization
+            quality_path = self._save_metadata_enhanced(
                 quality_data, 
                 'consolidated_quality_metrics'
             )
@@ -423,6 +493,110 @@ class ConsolidatedProfitLabeler(BaseStep):
 """
         
         return content
+
+    def _generate_cache_key(self, data: pd.DataFrame, config: Dict[str, Any]) -> str:
+        """Generate a cache key for the labeling operation."""
+        import hashlib
+        
+        # Create a hash based on data characteristics and config
+        data_hash = hashlib.md5(
+            f"{len(data)}_{data.index[0]}_{data.index[-1]}_{data.shape}".encode()
+        ).hexdigest()[:16]
+        
+        config_hash = hashlib.md5(
+            str(sorted(config.items())).encode()
+        ).hexdigest()[:16]
+        
+        return f"labeling_{data_hash}_{config_hash}"
+
+    def _load_cached_result(self, cache_key: str) -> Optional[LabelingResult]:
+        """Load cached labeling result."""
+        try:
+            cache_path = f"cache/{cache_key}.pkl"
+            if os.path.exists(cache_path):
+                cached_data = safe_deserialize(cache_path)
+                if cached_data and isinstance(cached_data, dict):
+                    # Reconstruct LabelingResult from cached data
+                    return LabelingResult(**cached_data)
+        except Exception as e:
+            self.logger.warning(f"⚠️ Failed to load cached result: {e}")
+        return None
+
+    def _cache_result(self, cache_key: str, result: LabelingResult) -> None:
+        """Cache labeling result."""
+        try:
+            os.makedirs("cache", exist_ok=True)
+            cache_path = f"cache/{cache_key}.pkl"
+            
+            # Convert result to dictionary for serialization
+            result_dict = {
+                'labels': result.labels,
+                'confidence_scores': result.confidence_scores,
+                'eligibility_masks': result.eligibility_masks,
+                'quality_metrics': result.quality_metrics,
+                'overall_quality_score': result.overall_quality_score,
+                'config_used': result.config_used,
+                'processing_time': result.processing_time,
+                'n_samples': result.n_samples,
+                'n_targets': result.n_targets,
+                'timestamp': result.timestamp
+            }
+            
+            safe_serialize(result_dict, cache_path, format='pickle')
+            self.tprint_info(f"💾 Cached result: {cache_path}")
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Failed to cache result: {e}")
+
+    def _save_dataframe_enhanced(self, df: pd.DataFrame, name: str) -> Optional[str]:
+        """Save DataFrame using enhanced serialization."""
+        try:
+            # Use KlinesParquetManager for efficient storage
+            if hasattr(self, 'klines_manager'):
+                # Create a temporary DataFrame with required columns
+                temp_df = df.copy()
+                if 'timestamp' not in temp_df.columns and hasattr(temp_df.index, 'to_pydatetime'):
+                    temp_df['timestamp'] = temp_df.index
+                
+                # Use parquet for better compression and performance
+                success = self.klines_manager.store_klines(
+                    temp_df, 
+                    symbol="temp", 
+                    exchange="cache", 
+                    interval="1m",
+                    batch_id=name
+                )
+                
+                if success:
+                    return f"cache/temp/cache/klines/{name}.parquet"
+            
+            # Fallback to regular DataFrame saving
+            return self._save_dataframe(df, name)
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Enhanced DataFrame save failed: {e}")
+            return self._save_dataframe(df, name)
+
+    def _save_metadata_enhanced(self, metadata: Dict[str, Any], name: str) -> Optional[str]:
+        """Save metadata using enhanced serialization."""
+        try:
+            # Use enhanced serialization with compression
+            metadata_path = f"artifacts/{name}.json"
+            os.makedirs(os.path.dirname(metadata_path), exist_ok=True)
+            
+            # Add performance metrics
+            metadata['performance_metrics'] = self._performance_metrics
+            metadata['vectorization_config'] = self.vectorization_manager.get_performance_metrics()
+            
+            success = safe_serialize(metadata, metadata_path, format='json')
+            if success:
+                return metadata_path
+            else:
+                return self._save_metadata(metadata, name)
+                
+        except Exception as e:
+            self.logger.warning(f"⚠️ Enhanced metadata save failed: {e}")
+            return self._save_metadata(metadata, name)
 
     def generate_labels(self, data: pd.DataFrame) -> LabelingResult:
         """
@@ -533,11 +707,19 @@ class ConsolidatedProfitLabeler(BaseStep):
         return result
 
     def _prepare_and_clean_data(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Step 0: Clean and prepare data for labeling."""
-        self.tprint("🔍 Preparing and cleaning data...")
+        """Step 0: Clean and prepare data for labeling with enhanced utilities."""
+        self.tprint("🔍 Preparing and cleaning data with enhanced utilities...")
 
-        # Create copy for modification
-        data_clean = data.copy()
+        # Apply hardware optimization to input data
+        if self.hardware_optimizer:
+            data = self.hardware_optimizer.optimize_dataframe(data)
+            self.tprint_info("🔧 Applied hardware optimization to input data")
+
+        # Use data transformer for comprehensive cleaning
+        data_clean = self.data_transformer.transform(
+            data,
+            operations=['outlier_detection', 'missing_value_handling', 'data_validation']
+        )
 
         # Ensure required columns exist
         required_cols = ['open', 'high', 'low', 'close']
@@ -549,14 +731,23 @@ class ConsolidatedProfitLabeler(BaseStep):
         if 'volume' not in data_clean.columns:
             data_clean['volume'] = 1000.0  # Default volume for compatibility
 
-        # Compute returns and outlier handling
+        # Use vectorized operations for better performance
+        data_clean = self.vectorization_manager.vectorize_data(data_clean)
+        
+        # Compute returns with enhanced outlier handling
         data_clean['returns'] = data_clean['close'].pct_change()
 
-        # Cap extreme returns
+        # Use feature selector for outlier detection
+        outlier_mask = self.feature_selector.detect_outliers(
+            data_clean['returns'].dropna(),
+            method='isolation_forest'
+        )
+        
+        # Cap extreme returns using percentile-based approach
         return_cap = np.percentile(data_clean['returns'].dropna(), self.config.outlier_cap_percentile)
         data_clean['returns'] = np.clip(data_clean['returns'], -return_cap, return_cap)
 
-        # Compute true range for microstructure filtering
+        # Compute true range for microstructure filtering using vectorized operations
         data_clean['true_range'] = np.maximum(
             data_clean['high'] - data_clean['low'],
             np.maximum(
@@ -565,10 +756,16 @@ class ConsolidatedProfitLabeler(BaseStep):
             )
         )
 
-        # Forward fill any missing values
-        data_clean = data_clean.fillna(method='ffill').dropna()
+        # Enhanced missing value handling
+        data_clean = self.data_transformer.handle_missing_values(
+            data_clean, 
+            strategy='forward_fill_interpolation'
+        )
 
-        self.tprint(f"✅ Data prepared: {len(data_clean)} bars, {data_clean.shape[1]} columns")
+        # Apply final data validation
+        data_clean = self.data_transformer.validate_data_integrity(data_clean)
+
+        self.tprint(f"✅ Data prepared with enhanced utilities: {len(data_clean)} bars, {data_clean.shape[1]} columns")
         return data_clean
 
     def _apply_enhanced_data_cleaning(self, data: pd.DataFrame) -> pd.DataFrame:
@@ -617,51 +814,85 @@ class ConsolidatedProfitLabeler(BaseStep):
             return {}
 
     def _compute_volatility_series(self, data: pd.DataFrame) -> pd.Series:
-        """Step 1: Compute volatility series using EWMA of realized volatility and ATR."""
-        self.tprint("📊 Computing volatility series...")
+        """Step 1: Compute volatility series using enhanced methods with optimization."""
+        self.tprint("📊 Computing volatility series with enhanced optimization...")
 
+        # Use vectorized operations for better performance
+        data_vectorized = self.vectorization_manager.vectorize_data(data)
+        
         # Ensure returns are computed
-        if 'returns' not in data.columns:
-            data = data.copy()
-            data['returns'] = data['close'].pct_change()
+        if 'returns' not in data_vectorized.columns:
+            data_vectorized = data_vectorized.copy()
+            data_vectorized['returns'] = data_vectorized['close'].pct_change()
 
-        # Realized volatility (RV) - rolling std of returns
-        returns = data['returns'].dropna()
+        # Use optimized rolling operations
+        returns = data_vectorized['returns'].dropna()
         if len(returns) < self.config.rv_window_minutes:
             # Fallback for short data
             rv_window = min(len(returns), 20)
         else:
             rv_window = self.config.rv_window_minutes
 
-        # Rolling realized volatility (in return units)
-        rolling_rv = returns.rolling(window=rv_window).std() * np.sqrt(rv_window)
+        # Enhanced realized volatility computation with better numerical stability
+        rolling_rv = returns.rolling(window=rv_window, min_periods=rv_window//2).std()
+        rolling_rv = rolling_rv * np.sqrt(rv_window)  # Scale to return units
 
         # ATR (Average True Range) - ensure it exists
-        if 'true_range' not in data.columns:
-            data['true_range'] = np.maximum(
-                data['high'] - data['low'],
+        if 'true_range' not in data_vectorized.columns:
+            data_vectorized['true_range'] = np.maximum(
+                data_vectorized['high'] - data_vectorized['low'],
                 np.maximum(
-                    abs(data['high'] - data['close'].shift(1)),
-                    abs(data['low'] - data['close'].shift(1))
+                    abs(data_vectorized['high'] - data_vectorized['close'].shift(1)),
+                    abs(data_vectorized['low'] - data_vectorized['close'].shift(1))
                 )
             )
 
-        atr = data['true_range'].rolling(window=self.config.atr_window_bars).mean()
+        # Use optimized ATR computation
+        atr = data_vectorized['true_range'].rolling(
+            window=self.config.atr_window_bars, 
+            min_periods=self.config.atr_window_bars//2
+        ).mean()
         
         # Convert ATR to return-scale by normalizing by price
-        atr_returns = atr / data['close']
+        atr_returns = atr / data_vectorized['close']
 
-        # Combine RV and ATR using EWMA (both in return units now)
-        combined_vol = (rolling_rv + atr_returns) / 2
+        # Enhanced volatility combination using weighted approach
+        # Use adaptive weights based on data characteristics
+        rv_weight = 0.6  # Higher weight for realized volatility
+        atr_weight = 0.4  # Lower weight for ATR
+        
+        # Check for data quality and adjust weights
+        rv_quality = 1.0 - (rolling_rv.isnull().sum() / len(rolling_rv))
+        atr_quality = 1.0 - (atr_returns.isnull().sum() / len(atr_returns))
+        
+        if rv_quality < 0.8:
+            rv_weight = 0.3
+            atr_weight = 0.7
+        elif atr_quality < 0.8:
+            rv_weight = 0.8
+            atr_weight = 0.2
 
-        # Apply EWMA smoothing
-        vol_ewma = combined_vol.ewm(alpha=1-self.config.volatility_ewma_lambda).mean()
+        combined_vol = (rv_weight * rolling_rv + atr_weight * atr_returns)
 
-        # Floor at small epsilon to avoid division blowups
-        vol_ewma = vol_ewma.clip(lower=1e-6)
+        # Apply EWMA smoothing with optimized parameters
+        vol_ewma = combined_vol.ewm(
+            alpha=1-self.config.volatility_ewma_lambda,
+            min_periods=10
+        ).mean()
 
-        self.tprint(f"✅ Volatility computed: mean={vol_ewma.mean():.6f}, "
+        # Enhanced flooring using percentile-based approach
+        vol_percentile_5 = vol_ewma.quantile(0.05)
+        vol_floor = max(1e-6, vol_percentile_5 * 0.1)  # 10% of 5th percentile
+        vol_ewma = vol_ewma.clip(lower=vol_floor)
+
+        # Apply hardware optimization if available
+        if self.hardware_optimizer:
+            vol_ewma = self.hardware_optimizer.optimize_series(vol_ewma)
+
+        self.tprint(f"✅ Enhanced volatility computed: mean={vol_ewma.mean():.6f}, "
                f"std={vol_ewma.std():.6f}, range=[{vol_ewma.min():.6f}, {vol_ewma.max():.6f}]")
+        self.tprint(f"   → RV weight: {rv_weight:.2f}, ATR weight: {atr_weight:.2f}")
+        self.tprint(f"   → Data quality - RV: {rv_quality:.2f}, ATR: {atr_quality:.2f}")
 
         return vol_ewma
 
@@ -775,74 +1006,135 @@ class ConsolidatedProfitLabeler(BaseStep):
         noise_gates: Dict[str, pd.Series]
     ) -> Dict[str, Dict[str, Any]]:
         """
-        Step 3: Optimize target configurations for each band (small/medium/high).
+        Step 3: Optimize target configurations using Bayesian TPE optimization.
 
-        This searches over k values within each band to maximize label quality,
-        then filters for cross-target correlation constraints.
+        This uses Tree-structured Parzen Estimator for efficient hyperparameter search
+        within each band to maximize label quality, then filters for cross-target correlation constraints.
         """
-        self.tprint("🔍 Optimizing target configurations...")
+        self.tprint("🔍 Optimizing target configurations with Bayesian TPE...")
 
-        # Step 1: Find best config for each target independently
+        # Step 1: Find best config for each target using TPE optimization
         per_target_configs = {}
 
         for target_name, (k_min, k_max) in self.config.target_bands.items():
-            self.tprint(f"🎯 Optimizing {target_name} target (k ∈ [{k_min}, {k_max}])...")
+            self.tprint(f"🎯 Optimizing {target_name} target (k ∈ [{k_min}, {k_max}]) with TPE...")
 
-            # Search over k values in this band
-            best_config = None
-            best_lqs = -np.inf
+            # Define search space for TPE optimization
+            search_space = {
+                'k': (k_min, k_max),
+                'fpt_quantile': (0.5, 0.8),
+                'micro_range_alpha': (1.0, 2.0)
+            }
 
-            # Generate candidate k values (grid search within band)
-            k_candidates = [k for k in self.config.search_grid_k
-                          if k_min <= k <= k_max]
-
-            # Add some additional candidates in the band
-            k_candidates.extend(np.linspace(k_min, k_max, 5))
-
-            for k in sorted(set(k_candidates)):
-                # For each k, try different quantile configurations
-                for q in self.config.search_grid_quantile:
-                    for alpha in self.config.search_grid_alpha:
-                        config = {
-                            'k': k,
-                            'fpt_quantile': q,
-                            'micro_range_alpha': alpha
-                        }
-
-                        # Test this configuration
-                        try:
-                            quality_metrics = self._evaluate_config_quality(
-                                data, volatility, noise_gates, config, target_name
-                            )
-
-                            if quality_metrics.label_quality_score > best_lqs:
-                                best_lqs = quality_metrics.label_quality_score
-                                best_config = config.copy()
-                                best_config['quality_metrics'] = quality_metrics
-
-                        except Exception as e:
-                            self.logger.warning(f"⚠️ Failed to evaluate config k={k}, q={q}, alpha={alpha}: {e}")
-                            continue
-
-            if best_config:
-                per_target_configs[target_name] = best_config
-                self.tprint(f"✅ Best {target_name}: k={best_config['k']:.2f}, "
-                       f"q={best_config['fpt_quantile']:.2f}, "
-                       f"LQS={best_lqs:.3f}")
-            else:
-                # Fallback to reasonable defaults
-                per_target_configs[target_name] = {
-                    'k': (k_min + k_max) / 2,
-                    'fpt_quantile': self.config.fpt_quantile,
-                    'micro_range_alpha': self.config.micro_range_alpha,
-                    'quality_metrics': LabelQualityMetrics()
+            # Define objective function for TPE
+            def objective(trial):
+                config = {
+                    'k': trial.suggest_float('k', k_min, k_max),
+                    'fpt_quantile': trial.suggest_float('fpt_quantile', 0.5, 0.8),
+                    'micro_range_alpha': trial.suggest_float('micro_range_alpha', 1.0, 2.0)
                 }
-                self.tprint(f"⚠️ Using fallback config for {target_name}")
+
+                try:
+                    quality_metrics = self._evaluate_config_quality(
+                        data, volatility, noise_gates, config, target_name
+                    )
+                    return quality_metrics.label_quality_score
+                except Exception as e:
+                    self.logger.warning(f"⚠️ TPE trial failed: {e}")
+                    return 0.0
+
+            # Run TPE optimization
+            try:
+                best_trial = self.tpe_optimizer.optimize(
+                    objective=objective,
+                    search_space=search_space,
+                    n_trials=50,  # Reduced for efficiency
+                    timeout=300   # 5 minutes timeout
+                )
+
+                if best_trial and best_trial.value > 0:
+                    best_config = {
+                        'k': best_trial.params['k'],
+                        'fpt_quantile': best_trial.params['fpt_quantile'],
+                        'micro_range_alpha': best_trial.params['micro_range_alpha']
+                    }
+                    
+                    # Get final quality metrics
+                    quality_metrics = self._evaluate_config_quality(
+                        data, volatility, noise_gates, best_config, target_name
+                    )
+                    best_config['quality_metrics'] = quality_metrics
+                    
+                    per_target_configs[target_name] = best_config
+                    self.tprint(f"✅ TPE optimized {target_name}: k={best_config['k']:.3f}, "
+                           f"q={best_config['fpt_quantile']:.3f}, "
+                           f"LQS={quality_metrics.label_quality_score:.3f}")
+                else:
+                    raise ValueError("TPE optimization failed")
+                    
+            except Exception as e:
+                self.logger.warning(f"⚠️ TPE optimization failed for {target_name}: {e}")
+                # Fallback to grid search
+                best_config = self._fallback_grid_search(
+                    data, volatility, noise_gates, target_name, k_min, k_max
+                )
+                per_target_configs[target_name] = best_config
+                self.tprint(f"⚠️ Using fallback grid search for {target_name}")
 
         # Step 2: Filter configurations based on cross-target correlations
         optimal_configs = self._filter_by_correlation(per_target_configs, data, volatility, noise_gates)
 
         return optimal_configs
+
+    def _fallback_grid_search(
+        self,
+        data: pd.DataFrame,
+        volatility: pd.Series,
+        noise_gates: Dict[str, pd.Series],
+        target_name: str,
+        k_min: float,
+        k_max: float
+    ) -> Dict[str, Any]:
+        """Fallback grid search when TPE optimization fails."""
+        best_config = None
+        best_lqs = -np.inf
+
+        # Generate candidate k values (grid search within band)
+        k_candidates = [k for k in self.config.search_grid_k if k_min <= k <= k_max]
+        k_candidates.extend(np.linspace(k_min, k_max, 5))
+
+        for k in sorted(set(k_candidates)):
+            for q in self.config.search_grid_quantile:
+                for alpha in self.config.search_grid_alpha:
+                    config = {
+                        'k': k,
+                        'fpt_quantile': q,
+                        'micro_range_alpha': alpha
+                    }
+
+                    try:
+                        quality_metrics = self._evaluate_config_quality(
+                            data, volatility, noise_gates, config, target_name
+                        )
+
+                        if quality_metrics.label_quality_score > best_lqs:
+                            best_lqs = quality_metrics.label_quality_score
+                            best_config = config.copy()
+                            best_config['quality_metrics'] = quality_metrics
+
+                    except Exception as e:
+                        continue
+
+        if best_config:
+            return best_config
+        else:
+            # Ultimate fallback
+            return {
+                'k': (k_min + k_max) / 2,
+                'fpt_quantile': self.config.fpt_quantile,
+                'micro_range_alpha': self.config.micro_range_alpha,
+                'quality_metrics': LabelQualityMetrics()
+            }
 
     def _filter_by_correlation(
         self,
@@ -1426,7 +1718,7 @@ class ConsolidatedProfitLabeler(BaseStep):
         data: pd.DataFrame,
         target_name: str
     ) -> LabelQualityMetrics:
-        """Compute comprehensive label quality metrics."""
+        """Compute comprehensive label quality metrics with enhanced feature engineering."""
 
         metrics = LabelQualityMetrics()
 
@@ -1446,56 +1738,58 @@ class ConsolidatedProfitLabeler(BaseStep):
         # Balance score: closer to 0.5 is better (penalize imbalance)
         metrics.class_balance_score = 1.0 - abs(metrics.positive_balance - 0.5) * 2
 
-        # 2. Simple feature-based predictability (using lagged returns as proxy)
-        # Create simple features for testing
-        feature_data = []
-        label_values = []
+        # 2. Enhanced feature-based predictability using feature engineering
+        try:
+            # Use feature selector to create comprehensive features
+            feature_data = self._create_enhanced_features(data, valid_labels)
+            
+            if len(feature_data) >= 50:
+                X = feature_data.values
+                y = valid_labels['target'].values
+                
+                # Use feature selection to identify most relevant features
+                selected_features = self.feature_selector.select_features(
+                    X, y, method='mutual_info', k_best=10
+                )
+                
+                if len(selected_features) > 0:
+                    X_selected = X[:, selected_features]
+                else:
+                    X_selected = X
 
-        for pos, idx in enumerate(valid_labels.index):
-            if pos < 10:  # Need some history (use positional index)
-                continue
-
-            # Simple features: lagged returns, volatility, volume
-            features = [
-                data.loc[idx, 'returns'] if idx in data.index else 0,
-                data.loc[idx, 'volume'] if idx in data.index else 0,
-            ]
-
-            # Add some lagged values
-            for lag in [1, 2, 5]:
-                lag_idx = data.index.get_loc(idx) - lag if idx in data.index else None
-                if lag_idx is not None and lag_idx >= 0:
-                    features.append(data.iloc[lag_idx]['returns'])
-                    features.append(data.iloc[lag_idx]['volume'])
-
-            feature_data.append(features)
-            label_values.append(1 if valid_labels.loc[idx, 'target'] == 1 else 0)
-
-        if len(feature_data) >= 50:
-            X = np.array(feature_data)
-            y = np.array(label_values)
-
-            # Simple logistic regression for AUC
-            try:
-                # Time series split for proper validation
-                tscv = TimeSeriesSplit(n_splits=min(5, len(X)//50))
+                # Enhanced model evaluation with cross-validation
+                from sklearn.model_selection import TimeSeriesSplit
+                from sklearn.ensemble import RandomForestClassifier
+                from sklearn.preprocessing import StandardScaler
+                
+                tscv = TimeSeriesSplit(n_splits=min(5, len(X_selected)//50))
+                scaler = StandardScaler()
 
                 auc_scores = []
                 pr_scores = []
 
-                for train_idx, test_idx in tscv.split(X):
+                for train_idx, test_idx in tscv.split(X_selected):
                     if len(train_idx) < 10 or len(test_idx) < 10:
                         continue
 
-                    X_train, X_test = X[train_idx], X[test_idx]
+                    X_train, X_test = X_selected[train_idx], X_selected[test_idx]
                     y_train, y_test = y[train_idx], y[test_idx]
 
-                    # Simple model
-                    model = LogisticRegression(random_state=42, max_iter=1000)
-                    model.fit(X_train, y_train)
+                    # Scale features
+                    X_train_scaled = scaler.fit_transform(X_train)
+                    X_test_scaled = scaler.transform(X_test)
+
+                    # Use Random Forest for better feature importance
+                    model = RandomForestClassifier(
+                        n_estimators=100,
+                        random_state=42,
+                        max_depth=10,
+                        min_samples_split=5
+                    )
+                    model.fit(X_train_scaled, y_train)
 
                     # Predict probabilities
-                    y_pred_proba = model.predict_proba(X_test)[:, 1]
+                    y_pred_proba = model.predict_proba(X_test_scaled)[:, 1]
 
                     # AUC
                     auc = roc_auc_score(y_test, y_pred_proba)
@@ -1511,76 +1805,99 @@ class ConsolidatedProfitLabeler(BaseStep):
                     metrics.pr_auc_mean = np.mean(pr_scores)
                     metrics.pr_auc_std = np.std(pr_scores)
 
-            except Exception as e:
-                self.logger.warning(f"⚠️ Failed to compute predictability metrics: {e}")
+        except Exception as e:
+            self.logger.warning(f"⚠️ Failed to compute enhanced predictability metrics: {e}")
 
-        # 3. Stability metrics (PSI - Population Stability Index)
+        # 3. Enhanced stability metrics using statistical tests
         if len(valid_labels) > 200:
-            # Split into two halves for PSI calculation
-            mid_point = len(valid_labels) // 2
-            first_half = valid_labels.iloc[:mid_point]
-            second_half = valid_labels.iloc[mid_point:]
-
-            # Compute probability distributions
-            def compute_prob_dist(labels_subset):
-                total = len(labels_subset)
-                pos_rate = (labels_subset['target'] == 1).sum() / total
-                neg_rate = (labels_subset['target'] == -1).sum() / total
-                return [pos_rate, neg_rate]
-
-            dist1 = compute_prob_dist(first_half)
-            dist2 = compute_prob_dist(second_half)
-
-            # PSI calculation
-            psi = 0.0
-            for p1, p2 in zip(dist1, dist2):
-                if p1 > 0 and p2 > 0:
-                    psi += (p1 - p2) * np.log(p1 / p2)
-
-            metrics.psi_score = min(psi, 1.0)  # Cap at 1.0
-
-        # 4. Flip rate (temporal consistency)
-        flip_count = 0
-        for i in range(1, len(valid_labels)):
-            if valid_labels.iloc[i]['target'] != valid_labels.iloc[i-1]['target']:
-                flip_count += 1
-
-        metrics.flip_rate = flip_count / (len(valid_labels) - 1) if len(valid_labels) > 1 else 0.0
-
-        # 5. SNR proxy (correlation between features and labels)
-        if len(feature_data) >= 50:
             try:
-                # Simple feature z-scores correlation with labels
-                feature_zscores = stats.zscore(X, axis=0, nan_policy='omit')
-                label_binary = np.array([1 if valid_labels.iloc[i]['target'] == 1 else -1
-                                       for i in range(len(valid_labels))])
+                # Use more sophisticated stability measures
+                from scipy import stats
+                
+                # Split into two halves for stability analysis
+                mid_point = len(valid_labels) // 2
+                first_half = valid_labels.iloc[:mid_point]
+                second_half = valid_labels.iloc[mid_point:]
 
-                # Mean absolute correlation across features
-                correlations = []
-                for feat_idx in range(X.shape[1]):
-                    if not np.all(np.isnan(feature_zscores[:, feat_idx])):
-                        corr = abs(stats.spearmanr(
-                            feature_zscores[:, feat_idx],
-                            label_binary[:len(feature_zscores)],
-                            nan_policy='omit'
-                        )[0])
-                        if not np.isnan(corr):
-                            correlations.append(corr)
+                # Kolmogorov-Smirnov test for distribution stability
+                ks_stat, ks_pvalue = stats.ks_2samp(
+                    first_half['target'], 
+                    second_half['target']
+                )
+                
+                # PSI calculation with better binning
+                def compute_psi_enhanced(labels1, labels2, bins=10):
+                    # Create bins based on quantiles
+                    all_labels = pd.concat([labels1, labels2])
+                    bin_edges = np.quantile(all_labels, np.linspace(0, 1, bins + 1))
+                    bin_edges = np.unique(bin_edges)  # Remove duplicates
+                    
+                    # Compute distributions
+                    dist1 = np.histogram(labels1, bins=bin_edges)[0] / len(labels1)
+                    dist2 = np.histogram(labels2, bins=bin_edges)[0] / len(labels2)
+                    
+                    # Add small epsilon to avoid log(0)
+                    dist1 = np.maximum(dist1, 1e-8)
+                    dist2 = np.maximum(dist2, 1e-8)
+                    
+                    # PSI calculation
+                    psi = np.sum((dist1 - dist2) * np.log(dist1 / dist2))
+                    return psi
 
-                metrics.feature_ic_mean = np.mean(correlations) if correlations else 0.0
-
+                psi_score = compute_psi_enhanced(
+                    first_half['target'], 
+                    second_half['target']
+                )
+                
+                metrics.psi_score = min(psi_score, 1.0)  # Cap at 1.0
+                
             except Exception as e:
-                self.logger.warning(f"⚠️ Failed to compute SNR metrics: {e}")
+                self.logger.warning(f"⚠️ Failed to compute enhanced stability metrics: {e}")
 
-        # 6. Composite Label Quality Score (LQS)
+        # 4. Enhanced flip rate with temporal analysis
+        try:
+            # Calculate flip rate with different time windows
+            flip_rates = []
+            for window in [1, 2, 5]:  # Different time windows
+                flip_count = 0
+                for i in range(window, len(valid_labels)):
+                    if valid_labels.iloc[i]['target'] != valid_labels.iloc[i-window]['target']:
+                        flip_count += 1
+                flip_rate = flip_count / (len(valid_labels) - window) if len(valid_labels) > window else 0.0
+                flip_rates.append(flip_rate)
+            
+            # Use average flip rate across windows
+            metrics.flip_rate = np.mean(flip_rates)
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Failed to compute enhanced flip rate: {e}")
+
+        # 5. Enhanced SNR using mutual information
+        try:
+            if len(feature_data) >= 50:
+                from sklearn.feature_selection import mutual_info_classif
+                
+                # Calculate mutual information between features and labels
+                mi_scores = mutual_info_classif(
+                    feature_data.values, 
+                    valid_labels['target'].values,
+                    random_state=42
+                )
+                
+                metrics.feature_ic_mean = np.mean(mi_scores) if len(mi_scores) > 0 else 0.0
+                
+        except Exception as e:
+            self.logger.warning(f"⚠️ Failed to compute enhanced SNR metrics: {e}")
+
+        # 6. Enhanced composite Label Quality Score (LQS)
         weights = self.config.lqs_weights
 
         # Normalize components to [0,1] range where applicable
-        auc_score = metrics.auc_mean if metrics.auc_mean > 0 else 0.0
+        auc_score = min(metrics.auc_mean, 1.0) if metrics.auc_mean > 0 else 0.0
         stability_score = 1.0 - min(metrics.psi_score, 1.0)  # Lower PSI is better
         balance_score = metrics.class_balance_score
         snr_score = min(metrics.feature_ic_mean, 1.0) if metrics.feature_ic_mean > 0 else 0.0
-        consistency_score = 1.0 - metrics.flip_rate  # Lower flip rate is better
+        consistency_score = 1.0 - min(metrics.flip_rate, 1.0)  # Lower flip rate is better
 
         metrics.label_quality_score = (
             weights['predictability'] * auc_score +
@@ -1591,6 +1908,92 @@ class ConsolidatedProfitLabeler(BaseStep):
         )
 
         return metrics
+
+    def _create_enhanced_features(self, data: pd.DataFrame, valid_labels: pd.DataFrame) -> pd.DataFrame:
+        """Create enhanced features for label quality evaluation."""
+        try:
+            features = []
+            
+            for idx in valid_labels.index:
+                if idx not in data.index:
+                    continue
+                    
+                # Get data up to current index (no lookahead)
+                current_data = data.loc[:idx]
+                
+                if len(current_data) < 10:
+                    continue
+                
+                feature_row = []
+                
+                # Basic price features
+                if 'close' in current_data.columns:
+                    feature_row.extend([
+                        current_data['close'].iloc[-1],  # Current price
+                        current_data['close'].pct_change().iloc[-1],  # Current return
+                        current_data['close'].pct_change().rolling(5).mean().iloc[-1],  # 5-period return
+                        current_data['close'].pct_change().rolling(10).mean().iloc[-1],  # 10-period return
+                        current_data['close'].pct_change().rolling(20).std().iloc[-1],  # 20-period volatility
+                    ])
+                
+                # Volume features
+                if 'volume' in current_data.columns:
+                    feature_row.extend([
+                        current_data['volume'].iloc[-1],  # Current volume
+                        current_data['volume'].rolling(5).mean().iloc[-1],  # 5-period avg volume
+                        current_data['volume'].rolling(10).std().iloc[-1],  # Volume volatility
+                    ])
+                
+                # Technical indicators
+                if 'high' in current_data.columns and 'low' in current_data.columns:
+                    # True range
+                    tr = np.maximum(
+                        current_data['high'] - current_data['low'],
+                        np.maximum(
+                            abs(current_data['high'] - current_data['close'].shift(1)),
+                            abs(current_data['low'] - current_data['close'].shift(1))
+                        )
+                    )
+                    feature_row.extend([
+                        tr.rolling(14).mean().iloc[-1],  # ATR
+                        tr.iloc[-1],  # Current TR
+                    ])
+                
+                # Momentum features
+                if 'close' in current_data.columns:
+                    # RSI-like momentum
+                    returns = current_data['close'].pct_change()
+                    gains = returns.where(returns > 0, 0)
+                    losses = -returns.where(returns < 0, 0)
+                    
+                    avg_gain = gains.rolling(14).mean().iloc[-1]
+                    avg_loss = losses.rolling(14).mean().iloc[-1]
+                    
+                    if not pd.isna(avg_gain) and not pd.isna(avg_loss) and avg_loss != 0:
+                        rs = avg_gain / avg_loss
+                        rsi = 100 - (100 / (1 + rs))
+                        feature_row.append(rsi)
+                    else:
+                        feature_row.append(50)  # Neutral RSI
+                
+                # Time-based features
+                if hasattr(current_data.index, 'hour'):
+                    feature_row.extend([
+                        current_data.index[-1].hour,
+                        current_data.index[-1].dayofweek,
+                    ])
+                
+                features.append(feature_row)
+            
+            if features:
+                feature_df = pd.DataFrame(features, index=valid_labels.index[:len(features)])
+                return feature_df
+            else:
+                return pd.DataFrame()
+                
+        except Exception as e:
+            self.logger.warning(f"⚠️ Failed to create enhanced features: {e}")
+            return pd.DataFrame()
 
     def _calculate_overall_quality_score(self, quality_metrics: Dict[str, LabelQualityMetrics]) -> float:
         """Calculate overall quality score across all targets."""

@@ -31,6 +31,16 @@ try:
 except ImportError:
     MATRIX_OPS_AVAILABLE = False
 
+# Enhanced utilities integration
+try:
+    from src.utils.ml_common.unified_vectorization_manager import UnifiedVectorizationManager, VectorizationConfig
+    from src.utils.ml_common.optimization.bayesian_tpe_optimizer import BayesianTPEOptimizer
+    from src.utils.hardware.hardware_optimizer import HardwareOptimizer
+    from src.utils.serialization_utils import UniversalSerializer, safe_serialize, safe_deserialize
+    ENHANCED_UTILS_AVAILABLE = True
+except ImportError:
+    ENHANCED_UTILS_AVAILABLE = False
+
 from src.utils.tprint import (
     tprint, tprint_info, tprint_warning, tprint_error, tprint_success
 )
@@ -141,12 +151,49 @@ class VolatilityModeler:
             self.matrix_ops = None
             tprint_warning("   → Matrix operations: Not available, using pandas/numpy")
 
-        tprint_info("📈 Volatility Modeler initialized")
+        # Initialize enhanced utilities
+        if ENHANCED_UTILS_AVAILABLE:
+            self.vectorization_manager = UnifiedVectorizationManager(
+                VectorizationConfig(
+                    enable_vectorization=True,
+                    vectorization_method="numpy",
+                    batch_size=1000,
+                    enable_parallel_processing=True,
+                    enable_optimization=True
+                )
+            )
+            
+            self.tpe_optimizer = BayesianTPEOptimizer(
+                n_trials=50,
+                n_startup_trials=10,
+                n_warmup_steps=25
+            )
+            
+            self.hardware_optimizer = HardwareOptimizer()
+            self.serializer = UniversalSerializer()
+            
+            tprint_info("   → Enhanced utilities: Available")
+        else:
+            self.vectorization_manager = None
+            self.tpe_optimizer = None
+            self.hardware_optimizer = None
+            self.serializer = None
+            tprint_warning("   → Enhanced utilities: Not available")
+
+        # Performance tracking
+        self._performance_metrics = {
+            'vectorization_time': 0.0,
+            'optimization_time': 0.0,
+            'hardware_optimization_time': 0.0
+        }
+
+        tprint_info("📈 Enhanced Volatility Modeler initialized")
         tprint_info(f"   → Method: {self.config.method.value}")
+        tprint_info(f"   → Enhanced features: {ENHANCED_UTILS_AVAILABLE}")
     
     def model_volatility(self, bars: pd.DataFrame) -> VolatilityResult:
         start_time = datetime.now()
-        tprint_info("📊 Modeling volatility")
+        tprint_info("📊 Modeling volatility with enhanced optimization")
 
         empty_series = pd.Series(dtype=float, index=bars.index if isinstance(bars, pd.DataFrame) else None)
         result = VolatilityResult(
@@ -159,15 +206,25 @@ class VolatilityModeler:
             if not self._validate_input_data(bars):
                 return result
 
-            # Compute close-to-close returns (per period)
+            # Apply hardware optimization to input data
+            if self.hardware_optimizer:
+                bars = self.hardware_optimizer.optimize_dataframe(bars)
+                tprint_info("🔧 Applied hardware optimization to input data")
+
+            # Compute close-to-close returns (per period) with vectorization
             close = bars["close"].astype(float)
             rets = close.pct_change().rename("returns")
+            
+            # Apply vectorization for better performance
+            if self.vectorization_manager:
+                rets = self.vectorization_manager.vectorize_data(rets)
+                tprint_info("🚀 Applied vectorization to returns calculation")
 
             # 1) Component estimators (all on per-period scale, trailing)
-            tprint_info("📈 Step 1: Calculating volatility components")
-            rv = self._calculate_realized_volatility(rets)
-            atr = self._calculate_atr_volatility(bars)
-            ew = self._calculate_ewma_volatility(rets)
+            tprint_info("📈 Step 1: Calculating volatility components with optimization")
+            rv = self._calculate_realized_volatility_enhanced(rets)
+            atr = self._calculate_atr_volatility_enhanced(bars)
+            ew = self._calculate_ewma_volatility_enhanced(rets)
 
             # Align components and keep common index
             comps = pd.concat({"rv": rv, "atr": atr, "ewma": ew}, axis=1).dropna(how="all")
@@ -175,8 +232,8 @@ class VolatilityModeler:
             result.atr_volatility = comps["atr"]
             result.ewma_volatility = comps["ewma"]
 
-            # 2) Choose / combine
-            tprint_info("🔗 Step 2: Combining volatility estimates")
+            # 2) Choose / combine with enhanced optimization
+            tprint_info("🔗 Step 2: Combining volatility estimates with TPE optimization")
             if self.config.method == VolatilityMethod.REALIZED:
                 combined = comps["rv"]
                 weights = {"rv": 1.0, "atr": 0.0, "ewma": 0.0}
@@ -187,20 +244,24 @@ class VolatilityModeler:
                 combined = comps["ewma"]
                 weights = {"rv": 0.0, "atr": 0.0, "ewma": 1.0}
             else:
-                combined, weights = self._combine_data_driven(comps, rets)
+                combined, weights = self._combine_data_driven_enhanced(comps, rets)
 
             # 3) Normalize (floor/cap) and optional smoothing (trailing)
             tprint_info("⚖️ Step 3: Normalizing scale (percentile floor/cap)")
-            combined = self._normalize_volatility_units(combined)
+            combined = self._normalize_volatility_units_enhanced(combined)
 
             if self.config.enable_smoothing and len(combined) >= self.config.smoothing_window:
-                tprint_info("🔧 Step 4: Trailing smoothing")
-                combined = combined.rolling(self.config.smoothing_window, min_periods=1).mean()
+                tprint_info("🔧 Step 4: Trailing smoothing with optimization")
+                combined = self._apply_enhanced_smoothing(combined)
 
-            # 4) Stats & quality
-            tprint_info("📊 Step 5: Calculating statistics and quality metrics")
-            stats = self._calculate_volatility_statistics(combined)
-            quality = self._calculate_volatility_quality(combined)
+            # 4) Stats & quality with enhanced metrics
+            tprint_info("📊 Step 5: Calculating enhanced statistics and quality metrics")
+            stats = self._calculate_volatility_statistics_enhanced(combined)
+            quality = self._calculate_volatility_quality_enhanced(combined)
+
+            # Apply final hardware optimization
+            if self.hardware_optimizer:
+                combined = self.hardware_optimizer.optimize_series(combined)
 
             result.volatility_series = combined.astype(float)
             result.mean_volatility = float(stats["mean_volatility"])
@@ -211,16 +272,17 @@ class VolatilityModeler:
             result.combo_weights = weights
 
         except Exception as e:
-            tprint_error(f"❌ Volatility modeling failed: {e}")
+            tprint_error(f"❌ Enhanced volatility modeling failed: {e}")
             return result
         finally:
             result.processing_time = (datetime.now() - start_time).total_seconds()
-            tprint_success("✅ Volatility modeling completed")
+            tprint_success("✅ Enhanced volatility modeling completed")
             tprint_info(f"   → Samples: {len(result.volatility_series)}")
             tprint_info(f"   → Mean: {result.mean_volatility:.6f}")
             tprint_info(f"   → Std: {result.volatility_std:.6f}")
             if result.combo_weights:
                 tprint_info(f"   → Weights: {result.combo_weights}")
+            tprint_info(f"   → Performance metrics: {self._performance_metrics}")
 
         return result
     
@@ -268,6 +330,28 @@ class VolatilityModeler:
         rv = self._rolling_std(returns, self.config.rv_window, self.config.rv_min_periods)
         return rv.rename("rv")
     
+    def _calculate_realized_volatility_enhanced(self, returns: pd.Series) -> pd.Series:
+        """Enhanced realized volatility calculation with optimization."""
+        returns = returns.astype(float)
+        if returns.dropna().shape[0] < self.config.rv_min_periods:
+            return pd.Series(index=returns.index, dtype=float)
+        
+        # Use vectorized operations for better performance
+        if self.vectorization_manager:
+            returns = self.vectorization_manager.vectorize_data(returns)
+        
+        # Enhanced rolling std with better numerical stability
+        rv = returns.rolling(
+            window=self.config.rv_window, 
+            min_periods=self.config.rv_min_periods
+        ).std()
+        
+        # Apply additional smoothing for noise reduction
+        if len(rv) > 10:
+            rv = rv.ewm(alpha=0.1, min_periods=5).mean()
+        
+        return rv.rename("rv")
+    
     def _calculate_atr_volatility(self, bars: pd.DataFrame) -> pd.Series:
         """
         ATR-based per-period volatility: True Range divided by close (trailing mean).
@@ -291,6 +375,42 @@ class VolatilityModeler:
         atr_vol = (atr / close).rename("atr")  # per-period magnitude in return units
         return atr_vol
     
+    def _calculate_atr_volatility_enhanced(self, bars: pd.DataFrame) -> pd.Series:
+        """Enhanced ATR-based volatility calculation with optimization."""
+        high = bars["high"].astype(float)
+        low = bars["low"].astype(float)
+        close = bars["close"].astype(float)
+        prev_close = close.shift(1)
+
+        # Use vectorized operations for better performance
+        if self.vectorization_manager:
+            high = self.vectorization_manager.vectorize_data(high)
+            low = self.vectorization_manager.vectorize_data(low)
+            close = self.vectorization_manager.vectorize_data(close)
+            prev_close = self.vectorization_manager.vectorize_data(prev_close)
+
+        # True range components with enhanced calculation
+        c1 = high - low
+        c2 = (high - prev_close).abs()
+        c3 = (low - prev_close).abs()
+        tr = pd.concat([c1, c2, c3], axis=1).max(axis=1)
+
+        if tr.dropna().shape[0] < self.config.atr_min_periods:
+            return pd.Series(index=bars.index, dtype=float)
+
+        # Enhanced ATR calculation with better smoothing
+        atr = tr.rolling(
+            window=self.config.atr_window, 
+            min_periods=self.config.atr_min_periods
+        ).mean()
+        
+        # Apply additional smoothing for noise reduction
+        if len(atr) > 10:
+            atr = atr.ewm(alpha=0.1, min_periods=5).mean()
+        
+        atr_vol = (atr / close).rename("atr")  # per-period magnitude in return units
+        return atr_vol
+    
     def _calculate_ewma_volatility(self, returns: pd.Series) -> pd.Series:
         """
         EWMA variance -> volatility on per-period scale.
@@ -303,6 +423,34 @@ class VolatilityModeler:
         ew_var = r.ewm(alpha=self.config.ewma_alpha, min_periods=self.config.ewma_min_periods).var(bias=False)
         ew_vol = np.sqrt(ew_var).rename("ewma")
         return ew_vol
+    
+    def _calculate_ewma_volatility_enhanced(self, returns: pd.Series) -> pd.Series:
+        """Enhanced EWMA volatility calculation with optimization."""
+        r = returns.astype(float)
+        if r.dropna().shape[0] < self.config.ewma_min_periods:
+            return pd.Series(index=r.index, dtype=float)
+
+        # Use vectorized operations for better performance
+        if self.vectorization_manager:
+            r = self.vectorization_manager.vectorize_data(r)
+
+        # Enhanced EWMA calculation with better numerical stability
+        ew_var = r.ewm(
+            alpha=self.config.ewma_alpha, 
+            min_periods=self.config.ewma_min_periods
+        ).var(bias=False)
+        
+        # Apply additional smoothing and clipping for stability
+        ew_vol = np.sqrt(ew_var)
+        
+        # Clip extreme values to prevent numerical issues
+        ew_vol = ew_vol.clip(lower=1e-8, upper=1.0)
+        
+        # Apply final smoothing
+        if len(ew_vol) > 10:
+            ew_vol = ew_vol.ewm(alpha=0.05, min_periods=5).mean()
+        
+        return ew_vol.rename("ewma")
     
     def _combine_data_driven(self, comps: pd.DataFrame, returns: pd.Series) -> tuple[pd.Series, Dict[str, float]]:
         """
@@ -327,6 +475,95 @@ class VolatilityModeler:
             X = X_all.iloc[-self.config.combo_lookback:, :]
             y = y_all.iloc[-self.config.combo_lookback:]
             w = self._fit_simplex_pg(X.to_numpy(), y.to_numpy())
+
+        w = self._project_to_simplex(w)  # safety
+
+        # Build combined estimator on full timeline (no shift here; per-period vol estimate)
+        combined = (X_all @ pd.Series(w, index=X_all.columns)).reindex(comps.index)
+
+        weights = {col: float(w[i]) for i, col in enumerate(X_all.columns)}
+        # If some component columns were fully NA earlier, pad their weights with 0
+        for col in ["rv", "atr", "ewma"]:
+            weights.setdefault(col, 0.0)
+
+        return combined.astype(float), weights
+    
+    def _combine_data_driven_enhanced(self, comps: pd.DataFrame, returns: pd.Series) -> tuple[pd.Series, Dict[str, float]]:
+        """Enhanced data-driven combination using TPE optimization."""
+        # Regressors at t, target at t+1
+        X_all = comps.dropna(how="any")
+        if X_all.empty or X_all.shape[1] == 0:
+            return pd.Series(index=comps.index, dtype=float), {"rv": 1/3, "atr": 1/3, "ewma": 1/3}
+
+        y_all = returns.abs().reindex(X_all.index).shift(-1)  # |r_{t+1}|
+        # Keep rows where y exists (drop tail to avoid look-ahead)
+        mask = y_all.notna()
+        X_all, y_all = X_all[mask], y_all[mask]
+
+        if len(X_all) < max(30, self.config.combo_lookback // 4):
+            # Not enough data to learn reliably
+            w = np.ones(X_all.shape[1]) / X_all.shape[1]
+        else:
+            # Use TPE optimization for better weight learning
+            if self.tpe_optimizer and len(X_all) > 100:
+                try:
+                    # Define search space for TPE
+                    search_space = {
+                        'w_rv': (0.0, 1.0),
+                        'w_atr': (0.0, 1.0),
+                        'w_ewma': (0.0, 1.0)
+                    }
+                    
+                    def objective(trial):
+                        w = np.array([
+                            trial.suggest_float('w_rv', 0.0, 1.0),
+                            trial.suggest_float('w_atr', 0.0, 1.0),
+                            trial.suggest_float('w_ewma', 0.0, 1.0)
+                        ])
+                        
+                        # Normalize weights
+                        w = w / (w.sum() + 1e-8)
+                        
+                        # Use last combo_lookback samples to train
+                        X = X_all.iloc[-self.config.combo_lookback:, :]
+                        y = y_all.iloc[-self.config.combo_lookback:]
+                        
+                        # Calculate prediction error
+                        y_pred = X @ w
+                        mse = np.mean((y_pred - y) ** 2)
+                        return -mse  # Minimize MSE
+                    
+                    # Run TPE optimization
+                    best_trial = self.tpe_optimizer.optimize(
+                        objective=objective,
+                        search_space=search_space,
+                        n_trials=30,
+                        timeout=60
+                    )
+                    
+                    if best_trial and best_trial.value < 0:
+                        w = np.array([
+                            best_trial.params['w_rv'],
+                            best_trial.params['w_atr'],
+                            best_trial.params['w_ewma']
+                        ])
+                        w = w / (w.sum() + 1e-8)
+                    else:
+                        # Fallback to original method
+                        X = X_all.iloc[-self.config.combo_lookback:, :]
+                        y = y_all.iloc[-self.config.combo_lookback:]
+                        w = self._fit_simplex_pg(X.to_numpy(), y.to_numpy())
+                except Exception as e:
+                    self.logger.warning(f"⚠️ TPE optimization failed: {e}")
+                    # Fallback to original method
+                    X = X_all.iloc[-self.config.combo_lookback:, :]
+                    y = y_all.iloc[-self.config.combo_lookback:]
+                    w = self._fit_simplex_pg(X.to_numpy(), y.to_numpy())
+            else:
+                # Use last combo_lookback samples to train
+                X = X_all.iloc[-self.config.combo_lookback:, :]
+                y = y_all.iloc[-self.config.combo_lookback:]
+                w = self._fit_simplex_pg(X.to_numpy(), y.to_numpy())
 
         w = self._project_to_simplex(w)  # safety
 
@@ -432,6 +669,73 @@ class VolatilityModeler:
 
         return vol
     
+    def _normalize_volatility_units_enhanced(self, vol: pd.Series) -> pd.Series:
+        """Enhanced volatility normalization with adaptive thresholds."""
+        vol = vol.astype(float)
+        if vol.empty:
+            return vol
+
+        # Ensure finite positives
+        vol = vol.replace([np.inf, -np.inf], np.nan).dropna()
+        if vol.empty:
+            return pd.Series(index=vol.index, dtype=float)
+
+        # Apply vectorization for better performance
+        if self.vectorization_manager:
+            vol = self.vectorization_manager.vectorize_data(vol)
+
+        if self.config.use_percentile_floor_cap:
+            # Use adaptive percentiles based on data characteristics
+            data_std = vol.std()
+            data_mean = vol.mean()
+            
+            # Adjust percentiles based on data distribution
+            if data_std > data_mean:
+                # High volatility data - use more conservative percentiles
+                floor_pct = max(1.0, self.config.floor_percentile - 5)
+                cap_pct = min(99.0, self.config.cap_percentile + 5)
+            else:
+                # Low volatility data - use standard percentiles
+                floor_pct = self.config.floor_percentile
+                cap_pct = self.config.cap_percentile
+            
+            lo = np.nanpercentile(vol, floor_pct)
+            hi = np.nanpercentile(vol, cap_pct)
+            lo = max(float(lo), self.config.absolute_floor)
+            hi = max(float(hi), lo)
+            vol = vol.clip(lower=lo, upper=hi)
+        else:
+            vol = vol.clip(lower=self.config.absolute_floor)
+
+        return vol
+    
+    def _apply_enhanced_smoothing(self, vol: pd.Series) -> pd.Series:
+        """Apply enhanced smoothing with adaptive parameters."""
+        if len(vol) < self.config.smoothing_window:
+            return vol
+        
+        # Use adaptive smoothing based on volatility characteristics
+        vol_std = vol.std()
+        vol_mean = vol.mean()
+        
+        if vol_std > vol_mean:
+            # High volatility - use stronger smoothing
+            window = min(self.config.smoothing_window * 2, len(vol) // 4)
+            alpha = 0.1
+        else:
+            # Low volatility - use lighter smoothing
+            window = self.config.smoothing_window
+            alpha = 0.2
+        
+        # Apply rolling mean with adaptive window
+        smoothed = vol.rolling(window=window, min_periods=window//2).mean()
+        
+        # Apply additional EWMA smoothing
+        if len(smoothed) > 10:
+            smoothed = smoothed.ewm(alpha=alpha, min_periods=5).mean()
+        
+        return smoothed
+    
     
     def _calculate_volatility_statistics(self, vol: pd.Series) -> Dict[str, Any]:
         if vol.empty:
@@ -443,6 +747,32 @@ class VolatilityModeler:
         pct = {f"p{p}": float(np.nanpercentile(vol, p)) for p in ps}
         return {"mean_volatility": mean_vol, "volatility_std": std_vol, "volatility_percentiles": pct}
     
+    def _calculate_volatility_statistics_enhanced(self, vol: pd.Series) -> Dict[str, Any]:
+        """Enhanced volatility statistics with additional metrics."""
+        if vol.empty:
+            return {"mean_volatility": 0.0, "volatility_std": 0.0, "volatility_percentiles": {}}
+
+        # Basic statistics
+        mean_vol = float(vol.mean())
+        std_vol = float(vol.std())
+        ps = [5, 10, 25, 50, 75, 90, 95]
+        pct = {f"p{p}": float(np.nanpercentile(vol, p)) for p in ps}
+        
+        # Enhanced statistics
+        enhanced_stats = {
+            "mean_volatility": mean_vol,
+            "volatility_std": std_vol,
+            "volatility_percentiles": pct,
+            "volatility_skewness": float(vol.skew()) if len(vol) > 10 else 0.0,
+            "volatility_kurtosis": float(vol.kurtosis()) if len(vol) > 10 else 0.0,
+            "volatility_range": float(vol.max() - vol.min()),
+            "volatility_cv": float(std_vol / mean_vol) if mean_vol > 0 else 0.0,
+            "volatility_median": float(vol.median()),
+            "volatility_iqr": float(vol.quantile(0.75) - vol.quantile(0.25))
+        }
+        
+        return enhanced_stats
+    
     def _calculate_volatility_quality(self, vol: pd.Series) -> Dict[str, float]:
         if vol.empty:
             return {"consistency": 0.0, "stability": 0.0}
@@ -453,6 +783,50 @@ class VolatilityModeler:
         consistency = float(np.clip(1.0 - diff1.mean() / m, 0.0, 1.0))
         stability = float(np.clip(1.0 - vol.std() / m, 0.0, 1.0))
         return {"consistency": consistency, "stability": stability}
+    
+    def _calculate_volatility_quality_enhanced(self, vol: pd.Series) -> Dict[str, float]:
+        """Enhanced volatility quality metrics with additional measures."""
+        if vol.empty:
+            return {"consistency": 0.0, "stability": 0.0, "smoothness": 0.0, "trend_stability": 0.0}
+        
+        m = float(vol.mean())
+        if m <= 0:
+            return {"consistency": 0.0, "stability": 0.0, "smoothness": 0.0, "trend_stability": 0.0}
+        
+        # Basic quality metrics
+        diff1 = vol.diff().abs()
+        consistency = float(np.clip(1.0 - diff1.mean() / m, 0.0, 1.0))
+        stability = float(np.clip(1.0 - vol.std() / m, 0.0, 1.0))
+        
+        # Enhanced quality metrics
+        # Smoothness: measure of local variation
+        diff2 = vol.diff().diff().abs()
+        smoothness = float(np.clip(1.0 - diff2.mean() / m, 0.0, 1.0)) if len(vol) > 2 else 0.0
+        
+        # Trend stability: measure of trend consistency
+        if len(vol) > 10:
+            # Calculate rolling trend
+            rolling_trend = vol.rolling(window=10, min_periods=5).apply(
+                lambda x: np.polyfit(range(len(x)), x, 1)[0] if len(x) > 1 else 0
+            )
+            trend_stability = float(np.clip(1.0 - rolling_trend.std() / m, 0.0, 1.0))
+        else:
+            trend_stability = 0.0
+        
+        # Autocorrelation-based consistency
+        if len(vol) > 20:
+            autocorr = vol.autocorr(lag=1)
+            autocorr_consistency = float(np.clip(abs(autocorr), 0.0, 1.0)) if not pd.isna(autocorr) else 0.0
+        else:
+            autocorr_consistency = 0.0
+        
+        return {
+            "consistency": consistency,
+            "stability": stability,
+            "smoothness": smoothness,
+            "trend_stability": trend_stability,
+            "autocorr_consistency": autocorr_consistency
+        }
 
 
 # --------------------------------------------------------------------------------------

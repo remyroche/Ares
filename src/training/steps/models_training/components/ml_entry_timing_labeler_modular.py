@@ -1,12 +1,9 @@
 """
-ML-Based Entry Timing Labeler - ModularComponent Implementation
+ML-Based Entry Timing Labeler - Enhanced with Comprehensive BaseStep Utilities
 
 This module provides a ModularComponent implementation of the ML-Based Entry Timing Labeler
-that implements machine learning-based entry timing labeling that:
-1. Uses initial rule-based labeling as training data
-2. Trains ML models to predict entry quality
-3. Generates refined labels based on ML predictions
-4. Iteratively improves labeling quality
+that implements machine learning-based entry timing labeling with comprehensive BaseStep
+utility integration.
 
 The approach follows this workflow:
 Initial Rule-Based Labels → ML Model Training → Refined Labels → Model Retraining → Final Labels
@@ -18,6 +15,11 @@ ENHANCED FEATURES:
 - Configuration management and validation
 - Training progress tracking and health monitoring
 - Iterative labeling improvement
+- Comprehensive BaseStep utility integration
+- Advanced logging and data visualization
+- Hardware optimization and memory management
+- Data quality validation and cleaning
+- Model persistence and caching
 """
 
 import numpy as np
@@ -31,9 +33,7 @@ from enum import Enum
 
 from .base_component import BaseModelsTrainingComponent
 from src.training.steps.base_step import BaseStep
-# from ..unified_data_driven_pipeline.core.modular_architecture import (
-#     ErrorInfo, ErrorSeverity, ErrorCategory, ValidationResult
-# )  # REMOVED - unified pipeline deleted
+from src.core.decorators import handles_errors, traced, log_execution_time
 
 
 class LabelingMethod(Enum):
@@ -81,10 +81,11 @@ class MLEntryTimingResult:
 
 class MLEntryTimingLabelerModular(BaseModelsTrainingComponent, BaseStep):
     """
-    ModularComponent implementation of ML-Based Entry Timing Labeler.
+    ModularComponent implementation of ML-Based Entry Timing Labeler with comprehensive
+    BaseStep utility integration.
     
     This component implements machine learning-based entry timing labeling with
-    comprehensive state management, performance monitoring, and error handling.
+    comprehensive state management, performance monitoring, error handling, and utility integration.
     """
     
     def __init__(
@@ -94,14 +95,14 @@ class MLEntryTimingLabelerModular(BaseModelsTrainingComponent, BaseStep):
         logger: Optional[logging.Logger] = None
     ):
         """
-        Initialize the ML Entry Timing Labeler component.
+        Initialize the ML Entry Timing Labeler component with comprehensive utilities.
         
         Args:
             name: Component name
             config: Configuration dictionary
             logger: Logger instance
         """
-        # Set default configuration
+        # Set default configuration using BaseStep utilities
         default_config = {
             'model': {
                 'type': 'ml_labeler',
@@ -160,7 +161,37 @@ class MLEntryTimingLabelerModular(BaseModelsTrainingComponent, BaseStep):
         self._quality_metrics = {}
         self._iteration_count = 0
         
+        # Log initialization with comprehensive utilities
+        self.tprint_banner("ML Entry Timing Labeler Component")
+        self.tprint_info(f"🔧 Initialized MLEntryTimingLabelerModular: {name}")
+        self.tprint_config_preview(self.config, "ML Entry Timing Labeler Config")
+        
+        # Log utility availability status
+        self._log_utility_availability()
+        
+        # Initialize performance tracking
+        self._performance_metrics = {}
+        
         self.logger.info(f"Initialized MLEntryTimingLabelerModular: {name}")
+    
+    def _safe_merge_configs(self, default: Dict[str, Any], provided: Dict[str, Any]) -> Dict[str, Any]:
+        """Safely merge configuration dictionaries using BaseStep utilities."""
+        try:
+            # Use safe operations for deep merge
+            if self.common_ops and 'safe_dict_merge' in self.common_ops:
+                return self.common_ops['safe_dict_merge'](default, provided)
+            else:
+                # Fallback implementation
+                result = default.copy()
+                for key, value in provided.items():
+                    if key in result and isinstance(result[key], dict) and isinstance(value, dict):
+                        result[key] = self._safe_merge_configs(result[key], value)
+                    else:
+                        result[key] = value
+                return result
+        except Exception as e:
+            self.tprint_warning(f"⚠️ Config merge failed, using defaults: {e}")
+            return default
     
     def _initialize_resources(self) -> bool:
         """Initialize component-specific resources."""
@@ -762,6 +793,105 @@ class MLEntryTimingLabelerModular(BaseModelsTrainingComponent, BaseStep):
             # Cleanup component
             if hasattr(self, 'cleanup'):
                 self.cleanup()
+
+
+    def _extract_and_validate_training_data(self, data: Dict[str, Any]) -> Tuple[Optional[pd.DataFrame], Optional[pd.Series]]:
+        """Extract and validate training data using BaseStep utilities."""
+        try:
+            # Extract data
+            features = data.get('features')
+            targets = data.get('targets')
+            
+            if features is None or targets is None:
+                self.tprint_error("❌ Missing required data: features or targets")
+                return None, None
+            
+            # Convert to pandas if needed using safe operations
+            if not isinstance(features, pd.DataFrame):
+                features = pd.DataFrame(features)
+            if not isinstance(targets, pd.Series):
+                targets = pd.Series(targets)
+            
+            # Validate data using BaseStep utilities
+            if not self._validate_dataframe_columns(features, []):
+                self.tprint_error("❌ Invalid training features")
+                return None, None
+            
+            # Data preview using BaseStep utilities
+            self.tprint_data_summary(features, "Training Features", max_rows=5)
+            self.tprint_data_summary(targets, "Training Targets", max_rows=5)
+            
+            return features, targets
+            
+        except Exception as e:
+            self.tprint_error(f"❌ Data extraction failed: {e}")
+            return None, None
+    
+    def _analyze_data_quality(self, features: pd.DataFrame, targets: pd.Series) -> None:
+        """Analyze data quality using BaseStep utilities."""
+        try:
+            if self.data_quality:
+                # Use data quality utilities
+                quality_metrics = self.data_quality['calculate_quality_metrics'](features, targets)
+                self.tprint_validation_result(quality_metrics, "Data Quality Analysis")
+            else:
+                # Fallback analysis
+                self.tprint_info(f"📊 Training data shape: {features.shape}")
+                self.tprint_info(f"📊 Target data shape: {targets.shape}")
+                self.tprint_info(f"📊 Missing values in features: {features.isnull().sum().sum()}")
+                self.tprint_info(f"📊 Missing values in targets: {targets.isnull().sum()}")
+        except Exception as e:
+            self.tprint_warning(f"⚠️ Data quality analysis failed: {e}")
+    
+    def _optimize_training_data(self, features: pd.DataFrame, targets: pd.Series) -> Tuple[pd.DataFrame, pd.Series]:
+        """Optimize training data using hardware utilities."""
+        try:
+            if self.hardware_utils and 'optimize_dataframe' in self.hardware_utils:
+                features = self.hardware_utils['optimize_dataframe'](features)
+                self.tprint_success("✅ Training data optimized for hardware")
+            return features, targets
+        except Exception as e:
+            self.tprint_warning(f"⚠️ Data optimization failed: {e}")
+            return features, targets
+    
+    def _analyze_training_performance(self, result: Dict[str, Any]) -> None:
+        """Analyze training performance using BaseStep utilities."""
+        try:
+            # Performance summary
+            self.tprint_performance_summary({
+                'iteration_count': getattr(self, '_iteration_count', 0),
+                'success': result.get('success', False),
+                'labels_generated': result.get('labels_generated', 0),
+                'model_accuracy': result.get('model_accuracy', 0.0)
+            })
+            
+            # Memory usage analysis
+            if self.hardware_utils and 'get_memory_usage' in self.hardware_utils:
+                memory_usage = self.hardware_utils['get_memory_usage']()
+                self.tprint_memory_usage(memory_usage)
+            
+        except Exception as e:
+            self.tprint_warning(f"⚠️ Performance analysis failed: {e}")
+    
+    async def _save_training_artifacts(self, result: Dict[str, Any]) -> None:
+        """Save training artifacts using BaseStep utilities."""
+        try:
+            # Save model using BaseStep utilities
+            if result.get('model'):
+                self._save_model(result['model'], 'ml_entry_timing_model')
+            
+            # Save labels using BaseStep utilities
+            if result.get('labels'):
+                self._save_dataframe(result['labels'], 'ml_entry_timing_labels')
+            
+            # Save metrics using BaseStep utilities
+            if result.get('metrics'):
+                self._save_metadata(result['metrics'], 'ml_entry_timing_metrics')
+            
+            self.tprint_success("✅ Training artifacts saved successfully")
+            
+        except Exception as e:
+            self.tprint_error(f"❌ Artifact saving failed: {e}")
 
 
 def create_ml_entry_timing_labeler(

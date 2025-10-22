@@ -45,6 +45,14 @@ from src.utils.hardware.m1_advanced_cpu_optimizer import (
 from src.utils.hardware.m1_enhanced_gpu_manager import (
     M1EnhancedGPUManager, get_enhanced_gpu_manager, GPUOperationType
 )
+# Enhanced caching system
+from src.utils.hardware.enhanced_caching_system import (
+    EnhancedCachingSystem, CacheConfig, CacheStrategy, DataTypeOptimization
+)
+# Bayesian TPE optimizer
+from src.utils.ml_common.optimization.bayesian_tpe_optimizer import (
+    BayesianTPEOptimizer, OptimizationConfig as TPEConfig
+)
 from src.training.steps.base_step import BaseStep
 # ComponentResult moved to local definition
 from dataclasses import dataclass
@@ -77,6 +85,63 @@ class ComponentResult:
 from dataclasses import field
 from src.utils.common_operations import safe_dataframe_operation
 from src.utils.matrix_operations import safe_matrix_multiply, optimize_dataframe
+
+# Input validation utilities
+class ValidationError(Exception):
+    """Custom exception for validation errors."""
+    pass
+
+class InputValidator:
+    """Comprehensive input validation utilities."""
+    
+    @staticmethod
+    def validate_dataframe(data: Any, min_rows: int = 100, required_columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """Validate DataFrame input with comprehensive checks."""
+        if not isinstance(data, pd.DataFrame):
+            raise ValidationError(f"Expected DataFrame, got {type(data)}")
+        
+        if len(data) < min_rows:
+            raise ValidationError(f"DataFrame must have at least {min_rows} rows, got {len(data)}")
+        
+        if data.empty:
+            raise ValidationError("DataFrame cannot be empty")
+        
+        if required_columns:
+            missing_cols = [col for col in required_columns if col not in data.columns]
+            if missing_cols:
+                raise ValidationError(f"Missing required columns: {missing_cols}")
+        
+        return data
+    
+    @staticmethod
+    def validate_series(series: Any, min_length: int = 10) -> pd.Series:
+        """Validate Series input."""
+        if not isinstance(series, pd.Series):
+            raise ValidationError(f"Expected Series, got {type(series)}")
+        
+        if len(series) < min_length:
+            raise ValidationError(f"Series must have at least {min_length} elements, got {len(series)}")
+        
+        return series
+    
+    @staticmethod
+    def validate_positive_int(value: Any, param_name: str) -> int:
+        """Validate positive integer parameter."""
+        if not isinstance(value, int) or value <= 0:
+            raise ValidationError(f"{param_name} must be a positive integer, got {value}")
+        return value
+    
+    @staticmethod
+    def validate_float_range(value: Any, param_name: str, min_val: float = 0.0, max_val: float = 1.0) -> float:
+        """Validate float parameter within range."""
+        if not isinstance(value, (int, float)):
+            raise ValidationError(f"{param_name} must be a number, got {value}")
+        
+        value = float(value)
+        if not (min_val <= value <= max_val):
+            raise ValidationError(f"{param_name} must be between {min_val} and {max_val}, got {value}")
+        
+        return value
 
 # Import missing dependencies
 try:
@@ -159,6 +224,31 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
         self.memory_manager = get_unified_memory_manager()
         self.cpu_optimizer = get_advanced_cpu_optimizer()
         self.gpu_manager = get_enhanced_gpu_manager()
+        
+        # Initialize enhanced caching system
+        tprint_info("💾 Initializing enhanced caching system")
+        cache_config = CacheConfig(
+            max_memory_mb=1024.0,  # 1GB cache
+            max_items=1000,
+            strategy=CacheStrategy.LRU,
+            data_type_optimization=DataTypeOptimization.AGGRESSIVE,
+            enable_compression=True
+        )
+        self.cache_system = EnhancedCachingSystem(config=cache_config)
+        
+        # Initialize Bayesian TPE optimizer
+        tprint_info("🎯 Initializing Bayesian TPE optimizer")
+        tpe_config = TPEConfig(
+            n_trials=100,
+            enable_staged_optimization=True,
+            coarse_grid_trials=25,
+            fine_grid_trials=25,
+            tpe_trials=50
+        )
+        self.tpe_optimizer = BayesianTPEOptimizer(config=tpe_config)
+        
+        # Initialize input validator
+        self.validator = InputValidator()
         
         # Enhanced hardware optimization components initialized
         
@@ -654,6 +744,15 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
     def _process_data(self, data, **kwargs):
         """Process data through period + lookback optimization with artifact manager integration."""
         tprint_step("Starting period + lookback optimization data processing")
+        
+        # Input validation
+        try:
+            data = self.validator.validate_dataframe(data, min_rows=100)
+            tprint_success("Input validation passed")
+        except ValidationError as e:
+            tprint_error(f"Input validation failed: {e}")
+            raise
+        
         tprint_info(f"Data shape: {data.shape if hasattr(data, 'shape') else 'Unknown'}")
         tprint_info(f"Data type: {type(data)}")
         tprint_info(f"Kwargs keys: {list(kwargs.keys())}")
@@ -851,6 +950,9 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                     tprint_warning("No targets found, using synthetic targets for optimization")
                     # Create synthetic targets for optimization
                     targets = pd.Series(np.random.randn(len(data)), index=data.index)
+            
+            # Validate all optimization inputs
+            self._validate_optimization_inputs(data, targets, periods_to_test, lookbacks_to_test, direction)
             except Exception as e:
                 tprint_warning(f"Failed to load targets: {e}, using synthetic targets")
                 targets = pd.Series(np.random.randn(len(data)), index=data.index)
@@ -2271,6 +2373,8 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
         # 365.25 days * 24 hours * 4 (15m per hour) ≈ 35064 bars/year, sqrt for Sharpe
         return float(np.sqrt(365.25 * 24 * 4))
 
+    @smart_cache(cache_key_func=lambda self, series, returns, direction, outer_folds, min_test_signals, use_tpe: 
+                 f"oos_sharpe_{hash(str(series.values))}_{hash(str(returns.values))}_{direction}_{outer_folds}_{min_test_signals}_{use_tpe}")
     def _compute_oos_sharpe_nested(self, series: pd.Series, returns: pd.Series, direction: str,
                                    outer_folds: int = 3, min_test_signals: int = 100,
                                    use_tpe: bool = True) -> Tuple[float, Dict[str, Any]]:
@@ -3026,30 +3130,42 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
         optimization_level=OptimizationLevel.AGGRESSIVE,
         enable_compression=True
     ))
+    @smart_cache(cache_key_func=lambda self, features, targets, periods_to_test, direction: 
+                 f"period_opt_{hash(str(features.shape))}_{hash(str(targets.shape))}_{hash(tuple(periods_to_test))}_{direction}")
     def _optimize_periods(self, features: pd.DataFrame, targets: pd.Series, 
                          periods_to_test: List[int], direction: str) -> Tuple[int, Dict[str, float]]:
         """Optimize periods using mutual information and out-of-sample Sharpe ratio."""
         tprint_step("Optimizing periods")
+        
+        # Input validation
+        try:
+            features = self.validator.validate_dataframe(features, min_rows=50)
+            targets = self.validator.validate_series(targets, min_length=50)
+            periods_to_test = [self.validator.validate_positive_int(p, f"period_{p}") for p in periods_to_test]
+            if direction not in ['longs', 'shorts']:
+                raise ValidationError(f"Direction must be 'longs' or 'shorts', got {direction}")
+        except ValidationError as e:
+            tprint_error(f"Period optimization validation failed: {e}")
+            raise
+        
         tprint_data_preview(features, "period_optimization_input", max_rows=5, level="DEBUG")
         # Add comprehensive data format analysis for troubleshooting
         tprint_data_format(features, "period_optimization_input", level="DEBUG")
         tprint_data_format(targets, "period_optimization_targets", level="DEBUG")
         
-        period_scores = {}
-        best_period = periods_to_test[0]
-        best_score = -np.inf
+        # Use TPE optimizer for sophisticated period optimization
+        tprint_info("🎯 Using Bayesian TPE optimizer for period optimization")
         
-        for period in periods_to_test:
+        def period_objective(trial):
+            """Objective function for TPE optimization."""
+            period = trial.suggest_int('period', min(periods_to_test), max(periods_to_test))
+            
             try:
                 # Create period-based features
                 period_features = self._create_period_features(features, period)
                 
                 if period_features.empty:
-                    continue
-                
-                # Add data format analysis for period features (only for first few periods to avoid spam)
-                if period == periods_to_test[0]:  # Only analyze first period
-                    tprint_data_format(period_features, f"period_features_{period}", level="DEBUG")
+                    return -np.inf
                 
                 # Calculate mutual information
                 mi_scores = []
@@ -3059,7 +3175,7 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                         mi_scores.append(mi)
                 
                 if not mi_scores:
-                    continue
+                    return -np.inf
                 
                 avg_mi = np.mean(mi_scores)
                 
@@ -3072,17 +3188,93 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                 
                 # Combined score (weighted average)
                 combined_score = 0.7 * avg_mi + 0.3 * sharpe_score
-                period_scores[str(period)] = combined_score
-                
-                if combined_score > best_score:
-                    best_score = combined_score
-                    best_period = period
-                    
-                tprint_info(f"Period {period}: MI={avg_mi:.3f}, Sharpe={sharpe_score:.3f}, Combined={combined_score:.3f}")
+                return combined_score
                 
             except Exception as e:
-                tprint_warning(f"Failed to optimize period {period}: {e}")
-                continue
+                tprint_warning(f"TPE trial failed for period {period}: {e}")
+                return -np.inf
+        
+        # Run TPE optimization
+        try:
+            study = self.tpe_optimizer.optimize(period_objective, {
+                'period': {'type': 'int', 'low': min(periods_to_test), 'high': max(periods_to_test)}
+            })
+            
+            best_period = study.best_params['period']
+            best_score = study.best_value
+            
+            # Generate scores for all tested periods for reporting
+            period_scores = {}
+            for period in periods_to_test:
+                try:
+                    period_features = self._create_period_features(features, period)
+                    if period_features.empty:
+                        period_scores[str(period)] = 0.0
+                        continue
+                    
+                    mi_scores = []
+                    for col in period_features.columns:
+                        if not period_features[col].isna().all():
+                            mi = self._compute_mutual_information(period_features[col], targets)
+                            mi_scores.append(mi)
+                    
+                    if not mi_scores:
+                        period_scores[str(period)] = 0.0
+                        continue
+                    
+                    avg_mi = np.mean(mi_scores)
+                    sharpe_score = self._compute_oos_sharpe_nested(
+                        period_features.iloc[:, 0] if len(period_features.columns) > 0 else pd.Series(),
+                        targets,
+                        direction
+                    )[0]
+                    
+                    combined_score = 0.7 * avg_mi + 0.3 * sharpe_score
+                    period_scores[str(period)] = combined_score
+                    
+                except Exception as e:
+                    tprint_warning(f"Failed to score period {period}: {e}")
+                    period_scores[str(period)] = 0.0
+                    
+        except Exception as e:
+            tprint_warning(f"TPE optimization failed, falling back to grid search: {e}")
+            # Fallback to original grid search
+            period_scores = {}
+            best_period = periods_to_test[0]
+            best_score = -np.inf
+            
+            for period in periods_to_test:
+                try:
+                    period_features = self._create_period_features(features, period)
+                    if period_features.empty:
+                        continue
+                    
+                    mi_scores = []
+                    for col in period_features.columns:
+                        if not period_features[col].isna().all():
+                            mi = self._compute_mutual_information(period_features[col], targets)
+                            mi_scores.append(mi)
+                    
+                    if not mi_scores:
+                        continue
+                    
+                    avg_mi = np.mean(mi_scores)
+                    sharpe_score = self._compute_oos_sharpe_nested(
+                        period_features.iloc[:, 0] if len(period_features.columns) > 0 else pd.Series(),
+                        targets,
+                        direction
+                    )[0]
+                    
+                    combined_score = 0.7 * avg_mi + 0.3 * sharpe_score
+                    period_scores[str(period)] = combined_score
+                    
+                    if combined_score > best_score:
+                        best_score = combined_score
+                        best_period = period
+                        
+                except Exception as e:
+                    tprint_warning(f"Failed to optimize period {period}: {e}")
+                    continue
         
         tprint_success(f"Best period: {best_period} (score: {best_score:.3f})")
         tprint_data_preview(period_scores, "period_optimization_scores", level="INFO")
@@ -3095,30 +3287,42 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
         optimization_level=OptimizationLevel.AGGRESSIVE,
         enable_compression=True
     ))
+    @smart_cache(cache_key_func=lambda self, features, targets, lookbacks_to_test, direction: 
+                 f"lookback_opt_{hash(str(features.shape))}_{hash(str(targets.shape))}_{hash(tuple(lookbacks_to_test))}_{direction}")
     def _optimize_lookbacks(self, features: pd.DataFrame, targets: pd.Series, 
                            lookbacks_to_test: List[int], direction: str) -> Tuple[int, Dict[str, float]]:
         """Optimize lookbacks using mutual information and out-of-sample Sharpe ratio."""
         tprint_step("Optimizing lookbacks")
+        
+        # Input validation
+        try:
+            features = self.validator.validate_dataframe(features, min_rows=50)
+            targets = self.validator.validate_series(targets, min_length=50)
+            lookbacks_to_test = [self.validator.validate_positive_int(l, f"lookback_{l}") for l in lookbacks_to_test]
+            if direction not in ['longs', 'shorts']:
+                raise ValidationError(f"Direction must be 'longs' or 'shorts', got {direction}")
+        except ValidationError as e:
+            tprint_error(f"Lookback optimization validation failed: {e}")
+            raise
+        
         tprint_data_preview(features, "lookback_optimization_input", max_rows=5, level="DEBUG")
         # Add comprehensive data format analysis for troubleshooting
         tprint_data_format(features, "lookback_optimization_input", level="DEBUG")
         tprint_data_format(targets, "lookback_optimization_targets", level="DEBUG")
         
-        lookback_scores = {}
-        best_lookback = lookbacks_to_test[0]
-        best_score = -np.inf
+        # Use TPE optimizer for sophisticated lookback optimization
+        tprint_info("🎯 Using Bayesian TPE optimizer for lookback optimization")
         
-        for lookback in lookbacks_to_test:
+        def lookback_objective(trial):
+            """Objective function for TPE optimization."""
+            lookback = trial.suggest_int('lookback', min(lookbacks_to_test), max(lookbacks_to_test))
+            
             try:
                 # Create lookback-based features
                 lookback_features = self._create_lookback_features(features, lookback)
                 
                 if lookback_features.empty:
-                    continue
-                
-                # Add data format analysis for lookback features (only for first few lookbacks to avoid spam)
-                if lookback == lookbacks_to_test[0]:  # Only analyze first lookback
-                    tprint_data_format(lookback_features, f"lookback_features_{lookback}", level="DEBUG")
+                    return -np.inf
                 
                 # Calculate mutual information
                 mi_scores = []
@@ -3128,7 +3332,7 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                         mi_scores.append(mi)
                 
                 if not mi_scores:
-                    continue
+                    return -np.inf
                 
                 avg_mi = np.mean(mi_scores)
                 
@@ -3141,17 +3345,93 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                 
                 # Combined score (weighted average)
                 combined_score = 0.7 * avg_mi + 0.3 * sharpe_score
-                lookback_scores[str(lookback)] = combined_score
-                
-                if combined_score > best_score:
-                    best_score = combined_score
-                    best_lookback = lookback
-                    
-                tprint_info(f"Lookback {lookback}: MI={avg_mi:.3f}, Sharpe={sharpe_score:.3f}, Combined={combined_score:.3f}")
+                return combined_score
                 
             except Exception as e:
-                tprint_warning(f"Failed to optimize lookback {lookback}: {e}")
-                continue
+                tprint_warning(f"TPE trial failed for lookback {lookback}: {e}")
+                return -np.inf
+        
+        # Run TPE optimization
+        try:
+            study = self.tpe_optimizer.optimize(lookback_objective, {
+                'lookback': {'type': 'int', 'low': min(lookbacks_to_test), 'high': max(lookbacks_to_test)}
+            })
+            
+            best_lookback = study.best_params['lookback']
+            best_score = study.best_value
+            
+            # Generate scores for all tested lookbacks for reporting
+            lookback_scores = {}
+            for lookback in lookbacks_to_test:
+                try:
+                    lookback_features = self._create_lookback_features(features, lookback)
+                    if lookback_features.empty:
+                        lookback_scores[str(lookback)] = 0.0
+                        continue
+                    
+                    mi_scores = []
+                    for col in lookback_features.columns:
+                        if not lookback_features[col].isna().all():
+                            mi = self._compute_mutual_information(lookback_features[col], targets)
+                            mi_scores.append(mi)
+                    
+                    if not mi_scores:
+                        lookback_scores[str(lookback)] = 0.0
+                        continue
+                    
+                    avg_mi = np.mean(mi_scores)
+                    sharpe_score = self._compute_oos_sharpe_nested(
+                        lookback_features.iloc[:, 0] if len(lookback_features.columns) > 0 else pd.Series(),
+                        targets,
+                        direction
+                    )[0]
+                    
+                    combined_score = 0.7 * avg_mi + 0.3 * sharpe_score
+                    lookback_scores[str(lookback)] = combined_score
+                    
+                except Exception as e:
+                    tprint_warning(f"Failed to score lookback {lookback}: {e}")
+                    lookback_scores[str(lookback)] = 0.0
+                    
+        except Exception as e:
+            tprint_warning(f"TPE optimization failed, falling back to grid search: {e}")
+            # Fallback to original grid search
+            lookback_scores = {}
+            best_lookback = lookbacks_to_test[0]
+            best_score = -np.inf
+            
+            for lookback in lookbacks_to_test:
+                try:
+                    lookback_features = self._create_lookback_features(features, lookback)
+                    if lookback_features.empty:
+                        continue
+                    
+                    mi_scores = []
+                    for col in lookback_features.columns:
+                        if not lookback_features[col].isna().all():
+                            mi = self._compute_mutual_information(lookback_features[col], targets)
+                            mi_scores.append(mi)
+                    
+                    if not mi_scores:
+                        continue
+                    
+                    avg_mi = np.mean(mi_scores)
+                    sharpe_score = self._compute_oos_sharpe_nested(
+                        lookback_features.iloc[:, 0] if len(lookback_features.columns) > 0 else pd.Series(),
+                        targets,
+                        direction
+                    )[0]
+                    
+                    combined_score = 0.7 * avg_mi + 0.3 * sharpe_score
+                    lookback_scores[str(lookback)] = combined_score
+                    
+                    if combined_score > best_score:
+                        best_score = combined_score
+                        best_lookback = lookback
+                        
+                except Exception as e:
+                    tprint_warning(f"Failed to optimize lookback {lookback}: {e}")
+                    continue
         
         tprint_success(f"Best lookback: {best_lookback} (score: {best_score:.3f})")
         tprint_data_preview(lookback_scores, "lookback_optimization_scores", level="INFO")
@@ -3196,8 +3476,9 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
         
         return lookback_features
     
+    @smart_cache(cache_key_func=lambda self, x, y: f"mi_{hash(str(x.values))}_{hash(str(y.values))}")
     def _compute_mutual_information(self, x: pd.Series, y: pd.Series) -> float:
-        """Compute mutual information between two series."""
+        """Compute mutual information between two series with caching."""
         try:
             from sklearn.feature_selection import mutual_info_regression
             
@@ -3220,5 +3501,56 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
         except Exception as e:
             tprint_warning(f"Failed to compute mutual information: {e}")
             return 0.0
+
+    def clear_cache(self) -> None:
+        """Clear all cached optimization results."""
+        tprint_step("Clearing optimization cache")
+        try:
+            if hasattr(self, 'cache_system') and self.cache_system:
+                self.cache_system.clear()
+                tprint_success("Cache cleared successfully")
+            else:
+                tprint_warning("Cache system not available")
+        except Exception as e:
+            tprint_error(f"Failed to clear cache: {e}")
+    
+    def get_cache_stats(self) -> Dict[str, Any]:
+        """Get cache statistics."""
+        try:
+            if hasattr(self, 'cache_system') and self.cache_system:
+                return self.cache_system.get_stats()
+            else:
+                return {"error": "Cache system not available"}
+        except Exception as e:
+            return {"error": f"Failed to get cache stats: {e}"}
+    
+    def _validate_optimization_inputs(self, features: pd.DataFrame, targets: pd.Series, 
+                                    periods_to_test: List[int], lookbacks_to_test: List[int], 
+                                    direction: str) -> None:
+        """Comprehensive validation of optimization inputs."""
+        try:
+            # Validate features
+            features = self.validator.validate_dataframe(features, min_rows=100)
+            
+            # Validate targets
+            targets = self.validator.validate_series(targets, min_length=100)
+            
+            # Validate periods
+            if not periods_to_test or not all(isinstance(p, int) and p > 0 for p in periods_to_test):
+                raise ValidationError("periods_to_test must be a non-empty list of positive integers")
+            
+            # Validate lookbacks
+            if not lookbacks_to_test or not all(isinstance(l, int) and l > 0 for l in lookbacks_to_test):
+                raise ValidationError("lookbacks_to_test must be a non-empty list of positive integers")
+            
+            # Validate direction
+            if direction not in ['longs', 'shorts']:
+                raise ValidationError(f"direction must be 'longs' or 'shorts', got {direction}")
+            
+            tprint_success("All optimization inputs validated successfully")
+            
+        except ValidationError as e:
+            tprint_error(f"Optimization input validation failed: {e}")
+            raise
 
     # Required utility methods for BasePreTrainingComponent

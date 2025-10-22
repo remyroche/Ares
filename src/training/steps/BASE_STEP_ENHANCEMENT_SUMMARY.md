@@ -166,6 +166,149 @@ class AdvancedStep(BaseStep):
 
 See `src/training/steps/example_enhanced_step.py` for a complete example demonstrating all the new capabilities.
 
+## Pre-Training Specific Enhancements
+
+### 7. **Pre-Training Utilities and Abstractions**
+- **Standardized data structures**: `PreTrainingConfig`, `FeatureGenerationResult`, `DataValidationResult`
+- **Pre-training utility mixin**: `PreTrainingUtilitiesMixin` for common operations
+- **Base class for pre-training steps**: `PreTrainingStepBase` with comprehensive utilities
+- **Factory functions**: `create_pre_training_step()` for easy step creation
+- **Configuration validation**: `validate_pre_training_config()` and `get_pre_training_defaults()`
+
+### 8. **Pre-Training Specific Methods**
+- **Data loading**: `_load_data_standardized()` with fallback mechanisms
+- **Data validation**: `_validate_data_standardized()` with quality scoring
+- **Feature generation**: `_generate_features_standardized()` with hardware optimization
+- **Artifact management**: `_save_artifacts_standardized()` with metadata tracking
+- **Performance monitoring**: `_monitor_performance_standardized()` with memory management
+
+### 9. **Pre-Training Configuration Management**
+- **Standardized config**: `PreTrainingConfig` dataclass with sensible defaults
+- **Context management**: Automatic symbol, exchange, direction, and model context
+- **Date filtering**: Support for lookback days, start/end date filtering
+- **Hardware optimization**: Configurable hardware optimization settings
+- **Memory management**: Configurable memory monitoring and chunk processing
+
+### 10. **Pre-Training Data Structures**
+```python
+@dataclass
+class PreTrainingConfig:
+    symbol: str = 'ETHUSDT'
+    exchange: str = 'binance'
+    timeframe: str = '15m'
+    direction: str = 'long'
+    model: str = 'Analyst'
+    enable_hardware_optimization: bool = True
+    enable_data_preview: bool = True
+    enable_memory_monitoring: bool = True
+    chunk_size: int = 10000
+    max_memory_usage: float = 0.8
+    quality_threshold: float = 0.7
+
+@dataclass
+class FeatureGenerationResult:
+    success: bool
+    features: pd.DataFrame
+    feature_names: List[str]
+    feature_categories: Dict[str, List[str]]
+    generation_metrics: Dict[str, Any]
+    optimization_stats: Dict[str, Any]
+    quality_score: float
+    artifacts: List[str] = field(default_factory=list)
+    error_message: Optional[str] = None
+```
+
+### 11. **Pre-Training Usage Examples**
+
+#### Basic Pre-Training Step
+```python
+class MyPreTrainingStep(PreTrainingStepBase):
+    async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
+        # Use standardized execution
+        return await self.execute_standardized(config)
+```
+
+#### Custom Pre-Training Step
+```python
+class CustomPreTrainingStep(PreTrainingStepBase):
+    async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
+        # Initialize configuration
+        pre_config = self._initialize_pre_training_config(config)
+        
+        # Load data with standardized patterns
+        data = await self._load_data_standardized(config)
+        
+        # Custom processing
+        processed_data = await self._custom_processing(data, pre_config)
+        
+        # Generate features with hardware optimization
+        features = await self._generate_features_standardized(processed_data, pre_config)
+        
+        # Save artifacts
+        artifacts = await self._save_artifacts_standardized(features, pre_config)
+        
+        return {
+            'success': True,
+            'artifacts': artifacts,
+            'metrics': {'custom_processing': 'completed'}
+        }
+```
+
+### 12. **Pre-Training Migration Guide**
+
+#### Step 1: Replace Direct Imports
+```python
+# ❌ Remove direct tprint imports
+from src.utils.tprint import tprint_info, tprint_data_preview
+
+# ✅ Use BaseStep's built-in methods
+self.tprint_info("Starting process")
+self.tprint_data_preview(data, "input_data")
+```
+
+#### Step 2: Use Pre-Training Utilities
+```python
+# ❌ Manual configuration management
+symbol = config.get('symbol', 'ETHUSDT')
+exchange = config.get('exchange', 'binance')
+
+# ✅ Use standardized configuration
+pre_config = self._initialize_pre_training_config(config)
+```
+
+#### Step 3: Leverage Standardized Methods
+```python
+# ❌ Manual data loading and validation
+data = load_data_manually(symbol, timeframe)
+validate_data_manually(data)
+
+# ✅ Use standardized methods
+data = await self._load_data_standardized(config)
+validation_result = await self._validate_data_standardized(data, pre_config)
+```
+
+### 13. **Pre-Training Benefits**
+
+#### Eliminates Code Duplication
+- **Standardized patterns**: All pre-training steps use the same patterns
+- **Common utilities**: Shared functionality across all steps
+- **Consistent configuration**: Unified configuration management
+
+#### Improved Performance
+- **Hardware optimization**: Built-in M1 optimization for all operations
+- **Memory management**: Automatic memory monitoring and cleanup
+- **Chunked processing**: Efficient processing of large datasets
+
+#### Enhanced Developer Experience
+- **Consistent API**: Same interface across all pre-training steps
+- **Comprehensive logging**: Rich logging and debugging capabilities
+- **Error handling**: Graceful error handling and fallbacks
+
+#### Better Maintainability
+- **Single source of truth**: All common functionality in one place
+- **Easy updates**: Changes propagate to all steps automatically
+- **Backward compatibility**: Existing steps continue to work
+
 ## Conclusion
 
 The enhanced BaseStep provides a comprehensive foundation for all training steps with:
@@ -174,5 +317,8 @@ The enhanced BaseStep provides a comprehensive foundation for all training steps
 - **Hardware optimization** built-in
 - **Graceful fallbacks** when utilities are unavailable
 - **Consistent patterns** across all steps
+- **Pre-training specific utilities** for feature generation and data processing
+- **Standardized data structures** for consistent results
+- **Factory functions** for easy step creation
 
-This enhancement significantly improves the developer experience while maintaining backward compatibility and providing a solid foundation for all future training steps.
+This enhancement significantly improves the developer experience while maintaining backward compatibility and providing a solid foundation for all future training steps, with special focus on pre-training operations that require feature generation, data validation, and hardware optimization.

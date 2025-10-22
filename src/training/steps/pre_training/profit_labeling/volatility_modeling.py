@@ -36,7 +36,11 @@ try:
     from src.utils.ml_common.unified_vectorization_manager import UnifiedVectorizationManager, VectorizationConfig
     from src.utils.ml_common.optimization.bayesian_tpe_optimizer import BayesianTPEOptimizer
     from src.utils.hardware.hardware_optimizer import HardwareOptimizer
+    from src.utils.hardware.enhanced_cpu_optimizer import EnhancedCPUOptimizer
+    from src.utils.hardware.advanced_memory_optimizer import AdvancedMemoryOptimizer
+    from src.utils.hardware.enhanced_caching_system import EnhancedCachingSystem
     from src.utils.serialization_utils import UniversalSerializer, safe_serialize, safe_deserialize
+    from src.utils.ml_common.optimization.vectorbt_rolling_optimizer import VectorBTRollingOptimizer
     ENHANCED_UTILS_AVAILABLE = True
 except ImportError:
     ENHANCED_UTILS_AVAILABLE = False
@@ -159,7 +163,9 @@ class VolatilityModeler:
                     vectorization_method="numpy",
                     batch_size=1000,
                     enable_parallel_processing=True,
-                    enable_optimization=True
+                    enable_optimization=True,
+                    enable_gpu_acceleration=True,
+                    memory_efficient=True
                 )
             )
             
@@ -170,13 +176,23 @@ class VolatilityModeler:
             )
             
             self.hardware_optimizer = HardwareOptimizer()
+            self.cpu_optimizer = EnhancedCPUOptimizer()
+            self.memory_optimizer = AdvancedMemoryOptimizer()
+            self.caching_system = EnhancedCachingSystem()
+            self.vectorbt_optimizer = VectorBTRollingOptimizer()
             self.serializer = UniversalSerializer()
             
             tprint_info("   → Enhanced utilities: Available")
+            tprint_info("   → VectorBTRollingOptimizer: Available")
+            tprint_info("   → Hardware acceleration: Available")
         else:
             self.vectorization_manager = None
             self.tpe_optimizer = None
             self.hardware_optimizer = None
+            self.cpu_optimizer = None
+            self.memory_optimizer = None
+            self.caching_system = None
+            self.vectorbt_optimizer = None
             self.serializer = None
             tprint_warning("   → Enhanced utilities: Not available")
 
@@ -184,7 +200,10 @@ class VolatilityModeler:
         self._performance_metrics = {
             'vectorization_time': 0.0,
             'optimization_time': 0.0,
-            'hardware_optimization_time': 0.0
+            'hardware_optimization_time': 0.0,
+            'caching_time': 0.0,
+            'gpu_acceleration_time': 0.0,
+            'memory_optimization_time': 0.0
         }
 
         tprint_info("📈 Enhanced Volatility Modeler initialized")
@@ -331,24 +350,44 @@ class VolatilityModeler:
         return rv.rename("rv")
     
     def _calculate_realized_volatility_enhanced(self, returns: pd.Series) -> pd.Series:
-        """Enhanced realized volatility calculation with optimization."""
+        """Enhanced realized volatility calculation with VectorBTRollingOptimizer."""
         returns = returns.astype(float)
         if returns.dropna().shape[0] < self.config.rv_min_periods:
             return pd.Series(index=returns.index, dtype=float)
         
-        # Use vectorized operations for better performance
-        if self.vectorization_manager:
-            returns = self.vectorization_manager.vectorize_data(returns)
+        # Check cache first
+        cache_key = f"rv_{len(returns)}_{self.config.rv_window}_{self.config.rv_min_periods}"
+        if self.caching_system:
+            cached_result = self.caching_system.get(cache_key)
+            if cached_result is not None:
+                return cached_result
         
-        # Enhanced rolling std with better numerical stability
-        rv = returns.rolling(
-            window=self.config.rv_window, 
-            min_periods=self.config.rv_min_periods
-        ).std()
+        # Use VectorBTRollingOptimizer for enhanced rolling calculations
+        if self.vectorbt_optimizer:
+            rv = self.vectorbt_optimizer.rolling_std(
+                returns, 
+                window=self.config.rv_window,
+                min_periods=self.config.rv_min_periods,
+                use_gpu=True
+            )
+        else:
+            # Fallback to vectorized operations
+            if self.vectorization_manager:
+                returns = self.vectorization_manager.vectorize_data(returns)
+            
+            # Enhanced rolling std with better numerical stability
+            rv = returns.rolling(
+                window=self.config.rv_window, 
+                min_periods=self.config.rv_min_periods
+            ).std()
         
         # Apply additional smoothing for noise reduction
         if len(rv) > 10:
             rv = rv.ewm(alpha=0.1, min_periods=5).mean()
+        
+        # Cache the result
+        if self.caching_system:
+            self.caching_system.set(cache_key, rv)
         
         return rv.rename("rv")
     
@@ -376,7 +415,14 @@ class VolatilityModeler:
         return atr_vol
     
     def _calculate_atr_volatility_enhanced(self, bars: pd.DataFrame) -> pd.Series:
-        """Enhanced ATR-based volatility calculation with optimization."""
+        """Enhanced ATR-based volatility calculation with VectorBTRollingOptimizer."""
+        # Check cache first
+        cache_key = f"atr_{len(bars)}_{self.config.atr_window}_{self.config.atr_min_periods}"
+        if self.caching_system:
+            cached_result = self.caching_system.get(cache_key)
+            if cached_result is not None:
+                return cached_result
+        
         high = bars["high"].astype(float)
         low = bars["low"].astype(float)
         close = bars["close"].astype(float)
@@ -389,7 +435,7 @@ class VolatilityModeler:
             close = self.vectorization_manager.vectorize_data(close)
             prev_close = self.vectorization_manager.vectorize_data(prev_close)
 
-        # True range components with enhanced calculation
+        # True range components with enhanced calculation using vectorized operations
         c1 = high - low
         c2 = (high - prev_close).abs()
         c3 = (low - prev_close).abs()
@@ -398,17 +444,31 @@ class VolatilityModeler:
         if tr.dropna().shape[0] < self.config.atr_min_periods:
             return pd.Series(index=bars.index, dtype=float)
 
-        # Enhanced ATR calculation with better smoothing
-        atr = tr.rolling(
-            window=self.config.atr_window, 
-            min_periods=self.config.atr_min_periods
-        ).mean()
+        # Use VectorBTRollingOptimizer for enhanced ATR calculation
+        if self.vectorbt_optimizer:
+            atr = self.vectorbt_optimizer.rolling_mean(
+                tr, 
+                window=self.config.atr_window,
+                min_periods=self.config.atr_min_periods,
+                use_gpu=True
+            )
+        else:
+            # Enhanced ATR calculation with better smoothing
+            atr = tr.rolling(
+                window=self.config.atr_window, 
+                min_periods=self.config.atr_min_periods
+            ).mean()
         
         # Apply additional smoothing for noise reduction
         if len(atr) > 10:
             atr = atr.ewm(alpha=0.1, min_periods=5).mean()
         
         atr_vol = (atr / close).rename("atr")  # per-period magnitude in return units
+        
+        # Cache the result
+        if self.caching_system:
+            self.caching_system.set(cache_key, atr_vol)
+        
         return atr_vol
     
     def _calculate_ewma_volatility(self, returns: pd.Series) -> pd.Series:
@@ -425,7 +485,14 @@ class VolatilityModeler:
         return ew_vol
     
     def _calculate_ewma_volatility_enhanced(self, returns: pd.Series) -> pd.Series:
-        """Enhanced EWMA volatility calculation with optimization."""
+        """Enhanced EWMA volatility calculation with VectorBTRollingOptimizer."""
+        # Check cache first
+        cache_key = f"ewma_{len(returns)}_{self.config.ewma_alpha}_{self.config.ewma_min_periods}"
+        if self.caching_system:
+            cached_result = self.caching_system.get(cache_key)
+            if cached_result is not None:
+                return cached_result
+        
         r = returns.astype(float)
         if r.dropna().shape[0] < self.config.ewma_min_periods:
             return pd.Series(index=r.index, dtype=float)
@@ -434,11 +501,21 @@ class VolatilityModeler:
         if self.vectorization_manager:
             r = self.vectorization_manager.vectorize_data(r)
 
-        # Enhanced EWMA calculation with better numerical stability
-        ew_var = r.ewm(
-            alpha=self.config.ewma_alpha, 
-            min_periods=self.config.ewma_min_periods
-        ).var(bias=False)
+        # Use VectorBTRollingOptimizer for enhanced EWMA calculation
+        if self.vectorbt_optimizer:
+            ew_var = self.vectorbt_optimizer.ewm_var(
+                r,
+                alpha=self.config.ewma_alpha,
+                min_periods=self.config.ewma_min_periods,
+                bias=False,
+                use_gpu=True
+            )
+        else:
+            # Enhanced EWMA calculation with better numerical stability
+            ew_var = r.ewm(
+                alpha=self.config.ewma_alpha, 
+                min_periods=self.config.ewma_min_periods
+            ).var(bias=False)
         
         # Apply additional smoothing and clipping for stability
         ew_vol = np.sqrt(ew_var)
@@ -449,6 +526,10 @@ class VolatilityModeler:
         # Apply final smoothing
         if len(ew_vol) > 10:
             ew_vol = ew_vol.ewm(alpha=0.05, min_periods=5).mean()
+        
+        # Cache the result
+        if self.caching_system:
+            self.caching_system.set(cache_key, ew_vol)
         
         return ew_vol.rename("ewma")
     
@@ -489,7 +570,14 @@ class VolatilityModeler:
         return combined.astype(float), weights
     
     def _combine_data_driven_enhanced(self, comps: pd.DataFrame, returns: pd.Series) -> tuple[pd.Series, Dict[str, float]]:
-        """Enhanced data-driven combination using TPE optimization."""
+        """Enhanced data-driven combination using TPE optimization with parallel processing."""
+        # Check cache first
+        cache_key = f"combo_{len(comps)}_{self.config.combo_lookback}"
+        if self.caching_system:
+            cached_result = self.caching_system.get(cache_key)
+            if cached_result is not None:
+                return cached_result['combined'], cached_result['weights']
+        
         # Regressors at t, target at t+1
         X_all = comps.dropna(how="any")
         if X_all.empty or X_all.shape[1] == 0:
@@ -504,7 +592,7 @@ class VolatilityModeler:
             # Not enough data to learn reliably
             w = np.ones(X_all.shape[1]) / X_all.shape[1]
         else:
-            # Use TPE optimization for better weight learning
+            # Use TPE optimization for better weight learning with parallel processing
             if self.tpe_optimizer and len(X_all) > 100:
                 try:
                     # Define search space for TPE
@@ -528,17 +616,23 @@ class VolatilityModeler:
                         X = X_all.iloc[-self.config.combo_lookback:, :]
                         y = y_all.iloc[-self.config.combo_lookback:]
                         
-                        # Calculate prediction error
+                        # Use vectorized operations for better performance
+                        if self.vectorization_manager:
+                            X = self.vectorization_manager.vectorize_data(X)
+                            y = self.vectorization_manager.vectorize_data(y)
+                        
+                        # Calculate prediction error using vectorized operations
                         y_pred = X @ w
                         mse = np.mean((y_pred - y) ** 2)
                         return -mse  # Minimize MSE
                     
-                    # Run TPE optimization
+                    # Run TPE optimization with parallel processing
                     best_trial = self.tpe_optimizer.optimize(
                         objective=objective,
                         search_space=search_space,
                         n_trials=30,
-                        timeout=60
+                        timeout=60,
+                        n_jobs=-1  # Use all available cores
                     )
                     
                     if best_trial and best_trial.value < 0:
@@ -567,13 +661,24 @@ class VolatilityModeler:
 
         w = self._project_to_simplex(w)  # safety
 
-        # Build combined estimator on full timeline (no shift here; per-period vol estimate)
-        combined = (X_all @ pd.Series(w, index=X_all.columns)).reindex(comps.index)
+        # Build combined estimator on full timeline using vectorized operations
+        if self.vectorization_manager:
+            X_all_vectorized = self.vectorization_manager.vectorize_data(X_all)
+            combined = (X_all_vectorized @ pd.Series(w, index=X_all.columns)).reindex(comps.index)
+        else:
+            combined = (X_all @ pd.Series(w, index=X_all.columns)).reindex(comps.index)
 
         weights = {col: float(w[i]) for i, col in enumerate(X_all.columns)}
         # If some component columns were fully NA earlier, pad their weights with 0
         for col in ["rv", "atr", "ewma"]:
             weights.setdefault(col, 0.0)
+
+        # Cache the result
+        if self.caching_system:
+            self.caching_system.set(cache_key, {
+                'combined': combined.astype(float),
+                'weights': weights
+            })
 
         return combined.astype(float), weights
 

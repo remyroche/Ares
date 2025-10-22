@@ -32,6 +32,11 @@ from src.utils.math_validation import MathValidation
 # Import ML optimization utilities
 try:
     from src.utils.ml_common.optimization.bayesian_tpe_optimizer import BayesianTPEOptimizer
+    from src.utils.ml_common.unified_vectorization_manager import UnifiedVectorizationManager, VectorizationConfig
+    from src.utils.hardware.enhanced_cpu_optimizer import EnhancedCPUOptimizer
+    from src.utils.hardware.advanced_memory_optimizer import AdvancedMemoryOptimizer
+    from src.utils.hardware.enhanced_caching_system import EnhancedCachingSystem
+    from src.utils.ml_common.optimization.vectorbt_rolling_optimizer import VectorBTRollingOptimizer
     BAYESIAN_OPTIMIZER_AVAILABLE = True
 except ImportError:
     BAYESIAN_OPTIMIZER_AVAILABLE = False
@@ -400,9 +405,31 @@ class EventBasedBarConstructor:
         # Initialize optimization if available
         if BAYESIAN_OPTIMIZER_AVAILABLE and self.config.enable_optimization:
             self.optimizer = BayesianTPEOptimizer()
+            self.vectorization_manager = UnifiedVectorizationManager(
+                VectorizationConfig(
+                    enable_vectorization=True,
+                    vectorization_method="numpy",
+                    batch_size=1000,
+                    enable_parallel_processing=True,
+                    enable_optimization=True,
+                    enable_gpu_acceleration=True,
+                    memory_efficient=True
+                )
+            )
+            self.cpu_optimizer = EnhancedCPUOptimizer()
+            self.memory_optimizer = AdvancedMemoryOptimizer()
+            self.caching_system = EnhancedCachingSystem()
+            self.vectorbt_optimizer = VectorBTRollingOptimizer()
             tprint_info("   → Bayesian optimization: Available")
+            tprint_info("   → VectorBTRollingOptimizer: Available")
+            tprint_info("   → Hardware acceleration: Available")
         else:
             self.optimizer = None
+            self.vectorization_manager = None
+            self.cpu_optimizer = None
+            self.memory_optimizer = None
+            self.caching_system = None
+            self.vectorbt_optimizer = None
             tprint_warning("   → Bayesian optimization: Not available, using fixed parameters")
         
         tprint_info("📊 Event-Based Bar Constructor initialized")
@@ -728,95 +755,155 @@ class EventBasedBarConstructor:
         }
     
     def _construct_volume_based_bars(self, tick_data: pd.DataFrame, params: Dict[str, float]) -> pd.DataFrame:
-        """Construct bars based on volume triggers."""
+        """Construct bars based on volume triggers with vectorized operations."""
         try:
-            bars = []
-            current_bar = None
-            cumulative_volume = 0.0
+            # Check cache first
+            cache_key = f"volume_bars_{len(tick_data)}_{params['volume_threshold']}_{params['volume_multiplier']}"
+            if self.caching_system:
+                cached_result = self.caching_system.get(cache_key)
+                if cached_result is not None:
+                    return cached_result
             
-            for idx, row in tick_data.iterrows():
-                if current_bar is None:
-                    # Start new bar
-                    current_bar = {
-                        'timestamp': row['timestamp'],
-                        'open': row['open'],
-                        'high': row['high'],
-                        'low': row['low'],
-                        'close': row['close'],
-                        'volume': row['volume']
-                    }
-                    cumulative_volume = row['volume']
-                else:
-                    # Update current bar
-                    current_bar['high'] = max(current_bar['high'], row['high'])
-                    current_bar['low'] = min(current_bar['low'], row['low'])
-                    current_bar['close'] = row['close']
-                    current_bar['volume'] += row['volume']
-                    cumulative_volume += row['volume']
-                    
-                    # Check if volume threshold is reached
-                    if cumulative_volume >= params['volume_threshold'] * params['volume_multiplier']:
-                        bars.append(current_bar)
-                        current_bar = None
-                        cumulative_volume = 0.0
+            # Use vectorized operations for better performance
+            if self.vectorization_manager:
+                tick_data = self.vectorization_manager.vectorize_data(tick_data)
             
-            # Add final bar if exists
-            if current_bar is not None:
-                bars.append(current_bar)
+            # Vectorized volume-based bar construction
+            if self.vectorbt_optimizer:
+                bars = self.vectorbt_optimizer.construct_volume_bars(
+                    tick_data,
+                    volume_threshold=params['volume_threshold'] * params['volume_multiplier'],
+                    use_gpu=True
+                )
+            else:
+                # Fallback to iterative method with optimizations
+                bars = self._construct_volume_bars_iterative(tick_data, params)
             
-            return pd.DataFrame(bars)
+            # Cache the result
+            if self.caching_system:
+                self.caching_system.set(cache_key, bars)
+            
+            return bars
             
         except Exception as e:
             tprint_warning(f"⚠️ Error constructing volume-based bars: {e}")
             return pd.DataFrame()
     
+    def _construct_volume_bars_iterative(self, tick_data: pd.DataFrame, params: Dict[str, float]) -> pd.DataFrame:
+        """Fallback iterative method for volume-based bar construction."""
+        bars = []
+        current_bar = None
+        cumulative_volume = 0.0
+        
+        for idx, row in tick_data.iterrows():
+            if current_bar is None:
+                # Start new bar
+                current_bar = {
+                    'timestamp': row['timestamp'],
+                    'open': row['open'],
+                    'high': row['high'],
+                    'low': row['low'],
+                    'close': row['close'],
+                    'volume': row['volume']
+                }
+                cumulative_volume = row['volume']
+            else:
+                # Update current bar
+                current_bar['high'] = max(current_bar['high'], row['high'])
+                current_bar['low'] = min(current_bar['low'], row['low'])
+                current_bar['close'] = row['close']
+                current_bar['volume'] += row['volume']
+                cumulative_volume += row['volume']
+                
+                # Check if volume threshold is reached
+                if cumulative_volume >= params['volume_threshold'] * params['volume_multiplier']:
+                    bars.append(current_bar)
+                    current_bar = None
+                    cumulative_volume = 0.0
+        
+        # Add final bar if exists
+        if current_bar is not None:
+            bars.append(current_bar)
+        
+        return pd.DataFrame(bars)
+    
     def _construct_volatility_based_bars(self, tick_data: pd.DataFrame, params: Dict[str, float]) -> pd.DataFrame:
-        """Construct bars based on volatility triggers."""
+        """Construct bars based on volatility triggers with vectorized operations."""
         try:
-            bars = []
-            current_bar = None
-            bar_returns = []
+            # Check cache first
+            cache_key = f"volatility_bars_{len(tick_data)}_{params['volatility_threshold']}_{params['volatility_multiplier']}"
+            if self.caching_system:
+                cached_result = self.caching_system.get(cache_key)
+                if cached_result is not None:
+                    return cached_result
             
-            for idx, row in tick_data.iterrows():
-                if current_bar is None:
-                    # Start new bar
-                    current_bar = {
-                        'timestamp': row['timestamp'],
-                        'open': row['open'],
-                        'high': row['high'],
-                        'low': row['low'],
-                        'close': row['close'],
-                        'volume': row['volume']
-                    }
-                    bar_returns = []
-                else:
-                    # Update current bar
-                    current_bar['high'] = max(current_bar['high'], row['high'])
-                    current_bar['low'] = min(current_bar['low'], row['low'])
-                    current_bar['close'] = row['close']
-                    current_bar['volume'] += row['volume']
-                    
-                    # Calculate return
-                    return_val = (row['close'] - current_bar['open']) / current_bar['open']
-                    bar_returns.append(return_val)
-                    
-                    # Check if volatility threshold is reached
-                    if len(bar_returns) > 1:
-                        volatility = np.std(bar_returns)
-                        if volatility >= params['volatility_threshold'] * params['volatility_multiplier']:
-                            bars.append(current_bar)
-                            current_bar = None
-                            bar_returns = []
+            # Use vectorized operations for better performance
+            if self.vectorization_manager:
+                tick_data = self.vectorization_manager.vectorize_data(tick_data)
             
-            # Add final bar if exists
-            if current_bar is not None:
-                bars.append(current_bar)
+            # Vectorized volatility-based bar construction
+            if self.vectorbt_optimizer:
+                bars = self.vectorbt_optimizer.construct_volatility_bars(
+                    tick_data,
+                    volatility_threshold=params['volatility_threshold'] * params['volatility_multiplier'],
+                    use_gpu=True
+                )
+            else:
+                # Fallback to iterative method with optimizations
+                bars = self._construct_volatility_bars_iterative(tick_data, params)
             
-            return pd.DataFrame(bars)
+            # Cache the result
+            if self.caching_system:
+                self.caching_system.set(cache_key, bars)
+            
+            return bars
             
         except Exception as e:
             tprint_warning(f"⚠️ Error constructing volatility-based bars: {e}")
             return pd.DataFrame()
+    
+    def _construct_volatility_bars_iterative(self, tick_data: pd.DataFrame, params: Dict[str, float]) -> pd.DataFrame:
+        """Fallback iterative method for volatility-based bar construction."""
+        bars = []
+        current_bar = None
+        bar_returns = []
+        
+        for idx, row in tick_data.iterrows():
+            if current_bar is None:
+                # Start new bar
+                current_bar = {
+                    'timestamp': row['timestamp'],
+                    'open': row['open'],
+                    'high': row['high'],
+                    'low': row['low'],
+                    'close': row['close'],
+                    'volume': row['volume']
+                }
+                bar_returns = []
+            else:
+                # Update current bar
+                current_bar['high'] = max(current_bar['high'], row['high'])
+                current_bar['low'] = min(current_bar['low'], row['low'])
+                current_bar['close'] = row['close']
+                current_bar['volume'] += row['volume']
+                
+                # Calculate return
+                return_val = (row['close'] - current_bar['open']) / current_bar['open']
+                bar_returns.append(return_val)
+                
+                # Check if volatility threshold is reached
+                if len(bar_returns) > 1:
+                    volatility = np.std(bar_returns)
+                    if volatility >= params['volatility_threshold'] * params['volatility_multiplier']:
+                        bars.append(current_bar)
+                        current_bar = None
+                        bar_returns = []
+        
+        # Add final bar if exists
+        if current_bar is not None:
+            bars.append(current_bar)
+        
+        return pd.DataFrame(bars)
     
     def _construct_time_based_bars(self, tick_data: pd.DataFrame, params: Dict[str, float]) -> pd.DataFrame:
         """Construct bars based on time triggers."""
@@ -862,62 +949,94 @@ class EventBasedBarConstructor:
             return pd.DataFrame()
     
     def _construct_hybrid_bars(self, tick_data: pd.DataFrame, params: Dict[str, float]) -> pd.DataFrame:
-        """Construct bars using hybrid approach (volume + volatility + time)."""
+        """Construct bars using hybrid approach with vectorized operations."""
         try:
-            bars = []
-            current_bar = None
-            cumulative_volume = 0.0
-            bar_returns = []
-            bar_start_time = None
+            # Check cache first
+            cache_key = f"hybrid_bars_{len(tick_data)}_{params['volume_threshold']}_{params['volatility_threshold']}"
+            if self.caching_system:
+                cached_result = self.caching_system.get(cache_key)
+                if cached_result is not None:
+                    return cached_result
             
-            for idx, row in tick_data.iterrows():
-                if current_bar is None:
-                    # Start new bar
-                    current_bar = {
-                        'timestamp': row['timestamp'],
-                        'open': row['open'],
-                        'high': row['high'],
-                        'low': row['low'],
-                        'close': row['close'],
-                        'volume': row['volume']
-                    }
-                    cumulative_volume = row['volume']
-                    bar_returns = []
-                    bar_start_time = row['timestamp']
-                else:
-                    # Update current bar
-                    current_bar['high'] = max(current_bar['high'], row['high'])
-                    current_bar['low'] = min(current_bar['low'], row['low'])
-                    current_bar['close'] = row['close']
-                    current_bar['volume'] += row['volume']
-                    
-                    # Update tracking variables
-                    cumulative_volume += row['volume']
-                    return_val = (row['close'] - current_bar['open']) / current_bar['open']
-                    bar_returns.append(return_val)
-                    
-                    # Check multiple triggers
-                    volume_trigger = cumulative_volume >= params['volume_threshold'] * params['volume_multiplier']
-                    volatility_trigger = len(bar_returns) > 1 and np.std(bar_returns) >= params['volatility_threshold'] * params['volatility_multiplier']
-                    time_trigger = (row['timestamp'] - bar_start_time) >= self.config.max_bar_duration
-                    
-                    # Complete bar if any trigger is met
-                    if volume_trigger or volatility_trigger or time_trigger:
-                        bars.append(current_bar)
-                        current_bar = None
-                        cumulative_volume = 0.0
-                        bar_returns = []
-                        bar_start_time = None
+            # Use vectorized operations for better performance
+            if self.vectorization_manager:
+                tick_data = self.vectorization_manager.vectorize_data(tick_data)
             
-            # Add final bar if exists
-            if current_bar is not None:
-                bars.append(current_bar)
+            # Vectorized hybrid bar construction
+            if self.vectorbt_optimizer:
+                bars = self.vectorbt_optimizer.construct_hybrid_bars(
+                    tick_data,
+                    volume_threshold=params['volume_threshold'] * params['volume_multiplier'],
+                    volatility_threshold=params['volatility_threshold'] * params['volatility_multiplier'],
+                    max_duration=self.config.max_bar_duration,
+                    use_gpu=True
+                )
+            else:
+                # Fallback to iterative method with optimizations
+                bars = self._construct_hybrid_bars_iterative(tick_data, params)
             
-            return pd.DataFrame(bars)
+            # Cache the result
+            if self.caching_system:
+                self.caching_system.set(cache_key, bars)
+            
+            return bars
             
         except Exception as e:
             tprint_warning(f"⚠️ Error constructing hybrid bars: {e}")
             return pd.DataFrame()
+    
+    def _construct_hybrid_bars_iterative(self, tick_data: pd.DataFrame, params: Dict[str, float]) -> pd.DataFrame:
+        """Fallback iterative method for hybrid bar construction."""
+        bars = []
+        current_bar = None
+        cumulative_volume = 0.0
+        bar_returns = []
+        bar_start_time = None
+        
+        for idx, row in tick_data.iterrows():
+            if current_bar is None:
+                # Start new bar
+                current_bar = {
+                    'timestamp': row['timestamp'],
+                    'open': row['open'],
+                    'high': row['high'],
+                    'low': row['low'],
+                    'close': row['close'],
+                    'volume': row['volume']
+                }
+                cumulative_volume = row['volume']
+                bar_returns = []
+                bar_start_time = row['timestamp']
+            else:
+                # Update current bar
+                current_bar['high'] = max(current_bar['high'], row['high'])
+                current_bar['low'] = min(current_bar['low'], row['low'])
+                current_bar['close'] = row['close']
+                current_bar['volume'] += row['volume']
+                
+                # Update tracking variables
+                cumulative_volume += row['volume']
+                return_val = (row['close'] - current_bar['open']) / current_bar['open']
+                bar_returns.append(return_val)
+                
+                # Check multiple triggers
+                volume_trigger = cumulative_volume >= params['volume_threshold'] * params['volume_multiplier']
+                volatility_trigger = len(bar_returns) > 1 and np.std(bar_returns) >= params['volatility_threshold'] * params['volatility_multiplier']
+                time_trigger = (row['timestamp'] - bar_start_time) >= self.config.max_bar_duration
+                
+                # Complete bar if any trigger is met
+                if volume_trigger or volatility_trigger or time_trigger:
+                    bars.append(current_bar)
+                    current_bar = None
+                    cumulative_volume = 0.0
+                    bar_returns = []
+                    bar_start_time = None
+        
+        # Add final bar if exists
+        if current_bar is not None:
+            bars.append(current_bar)
+        
+        return pd.DataFrame(bars)
     
     def _calculate_bar_statistics(self, bars: pd.DataFrame) -> Dict[str, Any]:
         """Calculate bar construction statistics."""

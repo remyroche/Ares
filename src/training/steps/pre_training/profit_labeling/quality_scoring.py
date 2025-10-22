@@ -47,6 +47,12 @@ except ImportError:
 # Import ML optimization utilities
 try:
     from src.utils.ml_common.optimization.bayesian_tpe_optimizer import BayesianTPEOptimizer
+    from src.utils.ml_common.unified_vectorization_manager import UnifiedVectorizationManager, VectorizationConfig
+    from src.utils.hardware.enhanced_cpu_optimizer import EnhancedCPUOptimizer
+    from src.utils.hardware.advanced_memory_optimizer import AdvancedMemoryOptimizer
+    from src.utils.hardware.enhanced_caching_system import EnhancedCachingSystem
+    from src.utils.hardware.hardware_optimized_parallel_processor import HardwareOptimizedParallelProcessor
+    from src.utils.ml_common.optimization.vectorbt_rolling_optimizer import VectorBTRollingOptimizer
     BAYESIAN_OPTIMIZER_AVAILABLE = True
 except ImportError:
     BAYESIAN_OPTIMIZER_AVAILABLE = False
@@ -208,6 +214,35 @@ class LabelQualityScorer(BaseStep):
         else:
             self.matrix_ops = None
             self.tprint_warning("   → Matrix operations: Not available, using fallback")
+
+        # Initialize enhanced utilities
+        if BAYESIAN_OPTIMIZER_AVAILABLE:
+            self.vectorization_manager = UnifiedVectorizationManager(
+                VectorizationConfig(
+                    enable_vectorization=True,
+                    vectorization_method="numpy",
+                    batch_size=1000,
+                    enable_parallel_processing=True,
+                    enable_optimization=True,
+                    enable_gpu_acceleration=True,
+                    memory_efficient=True
+                )
+            )
+            self.cpu_optimizer = EnhancedCPUOptimizer()
+            self.memory_optimizer = AdvancedMemoryOptimizer()
+            self.caching_system = EnhancedCachingSystem()
+            self.parallel_processor = HardwareOptimizedParallelProcessor()
+            self.vectorbt_optimizer = VectorBTRollingOptimizer()
+            self.tprint_info("   → Enhanced utilities: Available")
+            self.tprint_info("   → VectorBTRollingOptimizer: Available")
+            self.tprint_info("   → Hardware acceleration: Available")
+        else:
+            self.vectorization_manager = None
+            self.cpu_optimizer = None
+            self.memory_optimizer = None
+            self.caching_system = None
+            self.parallel_processor = None
+            self.vectorbt_optimizer = None
 
         # Initialize Pareto optimizer if available
         if PARETO_OPTIMIZER_AVAILABLE and self.config.enable_pareto_optimization:
@@ -585,16 +620,27 @@ class LabelQualityScorer(BaseStep):
             return QualityMetrics(n_samples=len(target_labels))
     
     def _generate_baseline_features(self, bars: pd.DataFrame, target_index: pd.Index) -> pd.DataFrame:
-        """Generate baseline features for quality assessment."""
+        """Generate baseline features for quality assessment with parallel processing."""
         try:
             if bars.empty or len(target_index) == 0:
                 return pd.DataFrame()
+            
+            # Check cache first
+            cache_key = f"features_{len(bars)}_{len(target_index)}_{self.config.feature_window}"
+            if self.caching_system:
+                cached_result = self.caching_system.get(cache_key)
+                if cached_result is not None:
+                    return cached_result
             
             # Align bars with target index
             bars_aligned = bars.reindex(target_index, method='ffill')
             
             if bars_aligned.empty:
                 return pd.DataFrame()
+            
+            # Use vectorized operations for better performance
+            if self.vectorization_manager:
+                bars_aligned = self.vectorization_manager.vectorize_data(bars_aligned)
             
             # Vectorized feature calculation using matrix operations where possible
             close_prices = bars_aligned['close'].values
@@ -614,9 +660,16 @@ class LabelQualityScorer(BaseStep):
             log_ret = np.log(close / close.shift(1)).replace([np.inf, -np.inf], np.nan).fillna(0.0)
             features_data['log_returns'] = log_ret.values
 
-            # Volatility (rolling std) - use vectorized operations
+            # Volatility (rolling std) - use VectorBTRollingOptimizer if available
             returns_series = pd.Series(features_data['returns'], index=target_index)
-            features_data['volatility'] = returns_series.rolling(self.config.feature_window).std().fillna(0).values
+            if self.vectorbt_optimizer:
+                features_data['volatility'] = self.vectorbt_optimizer.rolling_std(
+                    returns_series, 
+                    window=self.config.feature_window,
+                    use_gpu=True
+                ).fillna(0).values
+            else:
+                features_data['volatility'] = returns_series.rolling(self.config.feature_window).std().fillna(0).values
 
             # Price momentum
             shifted_close = close.shift(self.config.feature_window)
@@ -638,8 +691,15 @@ class LabelQualityScorer(BaseStep):
             rolling_close_mean = pd.Series(close_prices, index=target_index).rolling(self.config.feature_window).mean().fillna(method='bfill').values
             features_data['sma_ratio'] = close_prices / rolling_close_mean
 
-            # RSI calculation
-            features_data['rsi'] = self._rsi_wilder(close, self.config.feature_window).fillna(50.0).values
+            # RSI calculation with vectorized operations
+            if self.vectorbt_optimizer:
+                features_data['rsi'] = self.vectorbt_optimizer.rolling_rsi(
+                    close, 
+                    window=self.config.feature_window,
+                    use_gpu=True
+                ).fillna(50.0).values
+            else:
+                features_data['rsi'] = self._rsi_wilder(close, self.config.feature_window).fillna(50.0).values
 
             # Create DataFrame efficiently
             features = pd.DataFrame(features_data, index=target_index)
@@ -649,6 +709,10 @@ class LabelQualityScorer(BaseStep):
                 # Use correlation with target to select features
                 # For now, just take the first n_features
                 features = features.iloc[:, :self.config.n_features]
+            
+            # Cache the result
+            if self.caching_system:
+                self.caching_system.set(cache_key, features)
             
             return features
             
@@ -777,64 +841,115 @@ class LabelQualityScorer(BaseStep):
                     'baseline_performance': {}
                 }
             
-            # Cross-validation
+            # Cross-validation with parallel processing
             tscv = TimeSeriesSplit(n_splits=self.config.n_splits)
             auc_scores = []
             pr_auc_scores = []
             baseline_performance = {}
             
-            for model_name in self.config.baseline_models:
-                model_auc_scores = []
-                model_pr_auc_scores = []
+            # Use parallel processing for cross-validation if available
+            if self.parallel_processor and len(self.config.baseline_models) > 1:
+                # Prepare tasks for parallel processing
+                cv_tasks = []
+                for model_name in self.config.baseline_models:
+                    for fold_idx, (train_idx, test_idx) in enumerate(tscv.split(X)):
+                        task = {
+                            'model_name': model_name,
+                            'fold_idx': fold_idx,
+                            'X_train': X.iloc[train_idx],
+                            'X_test': X.iloc[test_idx],
+                            'y_train': y_binary.iloc[train_idx],
+                            'y_test': y_binary.iloc[test_idx],
+                            'random_state': self.config.random_state
+                        }
+                        cv_tasks.append(task)
                 
-                for train_idx, test_idx in tscv.split(X):
-                    X_train, X_test = X.iloc[train_idx], X.iloc[test_idx]
-                    y_train, y_test = y_binary.iloc[train_idx], y_binary.iloc[test_idx]
-                    
-                    # Skip fold if single class
-                    if y_train.nunique() < 2 or y_test.nunique() < 2:
-                        continue
-                    
-                    # Scale features
-                    scaler = StandardScaler()
-                    X_train_scaled = scaler.fit_transform(X_train)
-                    X_test_scaled = scaler.transform(X_test)
-                    
-                    # Train model
-                    if model_name == 'logistic':
-                        model = LogisticRegression(random_state=self.config.random_state, max_iter=1000)
-                    elif model_name == 'random_forest':
-                        model = RandomForestClassifier(n_estimators=50, random_state=self.config.random_state)
-                    else:
-                        continue
-                    
-                    try:
-                        model.fit(X_train_scaled, y_train)
-                        y_pred_proba = model.predict_proba(X_test_scaled)[:, 1]
+                # Process tasks in parallel
+                cv_results = self.parallel_processor.process_parallel(
+                    self._evaluate_model_fold,
+                    cv_tasks,
+                    n_jobs=-1,  # Use all available cores
+                    backend='threading'  # Use threading for I/O bound tasks
+                )
+                
+                # Aggregate results
+                model_results = {}
+                for result in cv_results:
+                    if result and 'model_name' in result:
+                        model_name = result['model_name']
+                        if model_name not in model_results:
+                            model_results[model_name] = {'auc_scores': [], 'pr_auc_scores': []}
                         
-                        # Calculate AUC
-                        if len(np.unique(y_test)) > 1:
-                            auc_score = roc_auc_score(y_test, y_pred_proba)
-                            model_auc_scores.append(auc_score)
+                        if 'auc_score' in result and result['auc_score'] is not None:
+                            model_results[model_name]['auc_scores'].append(result['auc_score'])
+                        if 'pr_auc_score' in result and result['pr_auc_score'] is not None:
+                            model_results[model_name]['pr_auc_scores'].append(result['pr_auc_score'])
+                
+                # Calculate baseline performance
+                for model_name, results in model_results.items():
+                    if results['auc_scores']:
+                        baseline_performance[model_name] = {
+                            'auc_mean': np.mean(results['auc_scores']),
+                            'auc_std': np.std(results['auc_scores']),
+                            'pr_auc_mean': np.mean(results['pr_auc_scores']),
+                            'pr_auc_std': np.std(results['pr_auc_scores'])
+                        }
+                        auc_scores.extend(results['auc_scores'])
+                        pr_auc_scores.extend(results['pr_auc_scores'])
+            else:
+                # Fallback to sequential processing
+                for model_name in self.config.baseline_models:
+                    model_auc_scores = []
+                    model_pr_auc_scores = []
+                    
+                    for train_idx, test_idx in tscv.split(X):
+                        X_train, X_test = X.iloc[train_idx], X.iloc[test_idx]
+                        y_train, y_test = y_binary.iloc[train_idx], y_binary.iloc[test_idx]
+                        
+                        # Skip fold if single class
+                        if y_train.nunique() < 2 or y_test.nunique() < 2:
+                            continue
+                        
+                        # Scale features
+                        scaler = StandardScaler()
+                        X_train_scaled = scaler.fit_transform(X_train)
+                        X_test_scaled = scaler.transform(X_test)
+                        
+                        # Train model
+                        if model_name == 'logistic':
+                            model = LogisticRegression(random_state=self.config.random_state, max_iter=1000)
+                        elif model_name == 'random_forest':
+                            model = RandomForestClassifier(n_estimators=50, random_state=self.config.random_state)
+                        else:
+                            continue
+                        
+                        try:
+                            model.fit(X_train_scaled, y_train)
+                            y_pred_proba = model.predict_proba(X_test_scaled)[:, 1]
                             
-                            # Calculate PR-AUC
-                            precision, recall, _ = precision_recall_curve(y_test, y_pred_proba)
-                            pr_auc_score = auc(recall, precision)
-                            model_pr_auc_scores.append(pr_auc_score)
-                        
-                    except Exception as e:
-                        tprint_warning(f"⚠️ Error training {model_name}: {e}")
-                        continue
-                
-                if model_auc_scores:
-                    baseline_performance[model_name] = {
-                        'auc_mean': np.mean(model_auc_scores),
-                        'auc_std': np.std(model_auc_scores),
-                        'pr_auc_mean': np.mean(model_pr_auc_scores),
-                        'pr_auc_std': np.std(model_pr_auc_scores)
-                    }
-                    auc_scores.extend(model_auc_scores)
-                    pr_auc_scores.extend(model_pr_auc_scores)
+                            # Calculate AUC
+                            if len(np.unique(y_test)) > 1:
+                                auc_score = roc_auc_score(y_test, y_pred_proba)
+                                model_auc_scores.append(auc_score)
+                                
+                                # Calculate PR-AUC
+                                precision, recall, _ = precision_recall_curve(y_test, y_pred_proba)
+                                pr_auc_score = auc(recall, precision)
+                                model_pr_auc_scores.append(pr_auc_score)
+                            
+                        except Exception as e:
+                            tprint_warning(f"⚠️ Error training {model_name}: {e}")
+                            continue
+                    
+                    if model_auc_scores:
+                        baseline_performance[model_name] = {
+                            'auc_mean': np.mean(model_auc_scores),
+                            'auc_std': np.std(model_auc_scores),
+                            'pr_auc_mean': np.mean(model_pr_auc_scores),
+                            'pr_auc_std': np.std(model_pr_auc_scores)
+                        }
+                        auc_scores.extend(model_auc_scores)
+                        pr_auc_scores.extend(model_pr_auc_scores)
             
             # Calculate overall metrics
             auc_mean = float(np.mean(auc_scores)) if auc_scores else 0.0
@@ -1169,7 +1284,57 @@ class LabelQualityScorer(BaseStep):
         d = 1.0 - H
         w = d / (d.sum() + eps)
         return w
-    
+
+    def _evaluate_model_fold(self, task: Dict[str, Any]) -> Dict[str, Any]:
+        """Evaluate a single model fold for parallel processing."""
+        try:
+            model_name = task['model_name']
+            X_train = task['X_train']
+            X_test = task['X_test']
+            y_train = task['y_train']
+            y_test = task['y_test']
+            random_state = task['random_state']
+            
+            # Skip fold if single class
+            if y_train.nunique() < 2 or y_test.nunique() < 2:
+                return {'model_name': model_name, 'auc_score': None, 'pr_auc_score': None}
+            
+            # Scale features
+            scaler = StandardScaler()
+            X_train_scaled = scaler.fit_transform(X_train)
+            X_test_scaled = scaler.transform(X_test)
+            
+            # Train model
+            if model_name == 'logistic':
+                model = LogisticRegression(random_state=random_state, max_iter=1000)
+            elif model_name == 'random_forest':
+                model = RandomForestClassifier(n_estimators=50, random_state=random_state)
+            else:
+                return {'model_name': model_name, 'auc_score': None, 'pr_auc_score': None}
+            
+            model.fit(X_train_scaled, y_train)
+            y_pred_proba = model.predict_proba(X_test_scaled)[:, 1]
+            
+            # Calculate AUC
+            auc_score = None
+            pr_auc_score = None
+            if len(np.unique(y_test)) > 1:
+                auc_score = roc_auc_score(y_test, y_pred_proba)
+                
+                # Calculate PR-AUC
+                precision, recall, _ = precision_recall_curve(y_test, y_pred_proba)
+                pr_auc_score = auc(recall, precision)
+            
+            return {
+                'model_name': model_name,
+                'auc_score': auc_score,
+                'pr_auc_score': pr_auc_score
+            }
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Error evaluating model fold: {e}")
+            return {'model_name': task.get('model_name', 'unknown'), 'auc_score': None, 'pr_auc_score': None}
+
     def optimize_target_selection_pareto(self, quality_results: Dict[str, QualityMetrics]) -> List[str]:
         """Use Pareto optimization to select optimal targets."""
         try:

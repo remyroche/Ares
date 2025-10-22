@@ -62,11 +62,34 @@ except ImportError:
             return func
         return decorator
 
-# Import ML utilities
+# Import ML utilities with BOHB for clustering optimization (Phase 3 Migration)
+try:
+    from src.utils.ml_common.optimization.bohb_optimizer import (
+        BOHBOptimizer, BOHBConfig, BOHBResult
+    )
+    BOHB_AVAILABLE = True
+    tprint_debug("✅ BOHB optimizer loaded for clustering optimization")
+except ImportError as e:
+    BOHB_AVAILABLE = False
+    BOHBOptimizer = None
+    BOHBConfig = None
+    BOHBResult = None
+    tprint_debug(f"BOHB optimizer not available: {e}")
+
+# Import Bayesian TPE as fallback for simple cases
 try:
     from src.utils.ml_common.optimization.bayesian_tpe_optimizer import (
         BayesianTPEOptimizer, OptimizationConfig
     )
+    BAYESIAN_TPE_AVAILABLE = True
+    tprint_debug("✅ Bayesian TPE optimizer loaded as fallback")
+except ImportError as e:
+    BAYESIAN_TPE_AVAILABLE = False
+    BayesianTPEOptimizer = None
+    OptimizationConfig = None
+    tprint_debug(f"Bayesian TPE optimizer not available: {e}")
+
+try:
     from src.utils.ml_common.unified_vectorization_manager import (
         UnifiedVectorizationManager, get_unified_vectorization_manager
     )
@@ -1338,14 +1361,90 @@ class DataDrivenSimilarityMerger:
                     tprint_debug(f"Objective function failed: {e}")
                     return float('-inf')
             
-            # Run optimization
-            optimizer = BayesianTPEOptimizer(OptimizationConfig(
-                n_trials=optimization_config['n_trials'],
-                timeout=optimization_config['timeout'],
-                direction=optimization_config['direction']
-            ))
-            
-            best_params = optimizer.optimize(objective, search_space)
+            # Run optimization with BOHB (Phase 3: Clustering Migration)
+            if BOHB_AVAILABLE:
+                try:
+                    # Create BOHB configuration for clustering optimization
+                    bohb_config = BOHBConfig(
+                        n_trials=optimization_config['n_trials'],
+                        timeout=optimization_config['timeout'],
+                        direction=optimization_config['direction'],
+                        resource_name='iteration',  # Use iterations as resource for multi-fidelity
+                        min_resource=1,  # Minimum iterations
+                        max_resource=5,  # Maximum iterations
+                        reduction_factor=2,  # Successive halving factor
+                        n_startup_trials=3,  # Startup trials before pruning
+                        pruner_type='hyperband',  # Use Hyperband pruning
+                        enable_hardware_optimization=True,
+                        enable_vectorbt_optimization=True,
+                        enable_explainability=True,
+                        enable_cv=True,
+                        enable_oof_stacking=False,  # Not needed for clustering
+                        seed=42
+                    )
+
+                    # Define multi-fidelity objective function for BOHB
+                    def bohb_objective(params: Dict[str, Any], resource: int = None) -> float:
+                        """Multi-fidelity objective function for BOHB clustering optimization."""
+                        try:
+                            # Use resource (iterations) for multi-fidelity evaluation
+                            if resource and resource < optimization_config.get('max_iterations', 5):
+                                # Limit iterations based on resource level
+                                limited_config = optimization_config.copy()
+                                limited_config['max_iterations'] = resource
+                                return objective(params, limited_config)
+                            else:
+                                return objective(params, optimization_config)
+                        except Exception as e:
+                            tprint_debug(f"BOHB objective function failed: {e}")
+                            return float('-inf')
+
+                    # Create and run BOHB optimizer
+                    optimizer = BOHBOptimizer(bohb_config)
+                    result = optimizer.optimize(bohb_objective, search_space)
+
+                    if result.success:
+                        best_params = result.best_params
+                        tprint_info("✅ BOHB clustering optimization completed successfully")
+                        tprint_info(f"📊 Resource efficiency: {result.resource_efficiency:.2f}x")
+                    else:
+                        tprint_warning(f"⚠️ BOHB optimization failed: {result.error_message}")
+                        # Fall through to TPE fallback
+                        raise Exception("BOHB optimization failed")
+
+                except Exception as e:
+                    tprint_warning(f"⚠️ BOHB optimization error: {e}, falling back to TPE")
+                    # Fall through to TPE fallback
+
+            # Fallback to Bayesian TPE with enhanced early stopping
+            if BAYESIAN_TPE_AVAILABLE:
+                try:
+                    tprint_info("🔄 Falling back to enhanced Bayesian TPE optimization...")
+                    
+                    # Create enhanced optimization configuration with aggressive early stopping
+                    opt_config = OptimizationConfig(
+                        n_trials=optimization_config['n_trials'],
+                        timeout=optimization_config['timeout'],
+                        direction=optimization_config['direction'],
+                        early_stopping_patience=3,  # More aggressive early stopping
+                        early_stopping_threshold=0.001,  # Stricter threshold
+                        enable_pruner=True,  # Enable trial-level pruning
+                        pruner_type='hyperband',  # Use Hyperband pruner
+                        adaptive_patience=True,  # Enable adaptive patience
+                        confidence_based_stopping=True,  # Enable confidence-based stopping
+                        seed=42
+                    )
+
+                    optimizer = BayesianTPEOptimizer(opt_config)
+                    best_params = optimizer.optimize(objective, search_space)
+                    tprint_info("✅ Enhanced Bayesian TPE optimization completed successfully")
+
+                except Exception as e:
+                    tprint_error(f"❌ Enhanced Bayesian TPE optimization error: {e}")
+                    raise
+            else:
+                tprint_error("❌ No optimizers available")
+                raise RuntimeError("No optimizers available for clustering optimization")
             
             # Update configuration with best parameters
             self._update_config_with_params(best_params)

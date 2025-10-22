@@ -37,10 +37,13 @@ from src.training.steps.pre_training.utils.artifact_manager import PreTrainingAr
 from src.utils.artifact_pickup_utils import get_artifact_pickup_utils
 from src.utils.version_manager import get_version_manager
 
-# Optimization utilities
+# Optimization utilities with BOHB for backtesting optimization (Phase 4 Migration)
 from src.utils.nonlinear_optimization_helpers import (
     NonLinearConfig, NonLinearParameterSampler, apply_nonlinear_scoring,
     create_enhanced_search_space, convert_parameters_to_original_space
+)
+from src.utils.ml_common.optimization.bohb_optimizer import (
+    BOHBOptimizer, BOHBConfig, BOHBResult
 )
 from src.utils.ml_common.optimization.bayesian_tpe_optimizer import (
     BayesianTPEOptimizer, OptimizationConfig
@@ -228,9 +231,9 @@ class FinalParametersOptimizer(BaseStep):
             self.leakage_detector = DataLeakageDetector()
             tprint("✅ CV utilities initialized", "success")
 
-        # Initialize BayesianTPEOptimizer for each category
+        # Initialize BOHB and TPE optimizers for each category (Phase 4 Migration)
         self.tpe_optimizers = {}
-        self._init_tpe_optimizers()
+        self._init_optimizers()
 
         # Initialize hardware optimization if available
         self.hardware_enabled = M1_HARDWARE_AVAILABLE and config.get('enable_hardware_optimization', True)
@@ -473,12 +476,36 @@ class FinalParametersOptimizer(BaseStep):
                 'error': str(e)
             }
 
-    def _init_tpe_optimizers(self):
-        """Initialize BayesianTPEOptimizer instances for optimization"""
+    def _init_optimizers(self):
+        """Initialize BOHB and TPE optimizers for backtesting optimization (Phase 4 Migration)"""
         try:
-            tprint("🔧 Initializing Bayesian TPE Optimizers", "info")
+            tprint("🔧 Initializing BOHB and TPE Optimizers", "info")
 
-            # Create optimizer config
+            # Create BOHB config for backtesting optimization
+            bohb_config = BOHBConfig(
+                n_trials=self.n_trials,
+                timeout=self.timeout,
+                direction='maximize',
+                metric_name='backtesting_score',
+                resource_name='iteration',  # Use iterations as resource for multi-fidelity
+                min_resource=1,  # Minimum iterations
+                max_resource=5,  # Maximum iterations
+                reduction_factor=2,  # Successive halving factor
+                n_startup_trials=5,  # Startup trials before pruning
+                pruner_type='hyperband',  # Use Hyperband pruning
+                enable_hardware_optimization=self.hardware_enabled,
+                enable_vectorbt_optimization=True,
+                enable_explainability=True,
+                enable_cv=True,
+                enable_oof_stacking=False,  # Not needed for backtesting
+                seed=42
+            )
+
+            # Create BOHB optimizer instance (primary)
+            self.bohb_optimizer = BOHBOptimizer(bohb_config)
+            tprint(f"✅ BOHB Optimizer initialized", "success")
+
+            # Create TPE config as fallback
             opt_config = OptimizationConfig(
                 n_trials=self.n_trials,
                 timeout=self.timeout,
@@ -487,20 +514,26 @@ class FinalParametersOptimizer(BaseStep):
                 coarse_grid_trials=min(25, self.n_trials // 4),
                 fine_grid_trials=min(25, self.n_trials // 4),
                 tpe_trials=max(20, self.n_trials // 2),
-                early_stopping_patience=self.early_stopping_patience,
-                early_stopping_threshold=self.early_stopping_threshold,
+                early_stopping_patience=3,  # More aggressive early stopping
+                early_stopping_threshold=0.001,  # Stricter threshold
+                enable_pruner=True,  # Enable trial-level pruning
+                pruner_type='hyperband',  # Use Hyperband pruner
+                adaptive_patience=True,  # Enable adaptive patience
+                confidence_based_stopping=True,  # Enable confidence-based stopping
                 enable_hardware_optimization=self.hardware_enabled,
                 enable_batch_processing=self.enable_parallel,
-                batch_size=self.max_workers
+                batch_size=self.max_workers,
+                seed=42
             )
 
-            # Create optimizer instance (will be shared across categories)
+            # Create TPE optimizer instance (fallback)
             self.bayesian_optimizer = BayesianTPEOptimizer(opt_config)
-            tprint(f"✅ Bayesian TPE Optimizer initialized", "success")
+            tprint(f"✅ Enhanced Bayesian TPE Optimizer initialized as fallback", "success")
 
         except Exception as e:
-            self.logger.error(f"Failed to initialize TPE optimizers: {e}")
-            tprint(f"⚠️  TPE optimizer initialization failed: {e}", "warning")
+            self.logger.error(f"Failed to initialize optimizers: {e}")
+            tprint(f"⚠️  Optimizer initialization failed: {e}", "warning")
+            self.bohb_optimizer = None
             self.bayesian_optimizer = None
 
     def _init_hardware_optimization(self):
@@ -1951,12 +1984,61 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
 
                 return score
 
-            # Run optimization
+            # Run optimization with BOHB (Phase 4: Backtesting Migration)
             start_time = time.time()
-            optimization_results = self.bayesian_optimizer.optimize(
-                objective=objective,
-                search_space=search_space
-            )
+            
+            if self.bohb_optimizer:
+                try:
+                    # Define multi-fidelity objective function for BOHB
+                    def bohb_objective(params: Dict[str, Any], resource: int = None) -> float:
+                        """Multi-fidelity objective function for BOHB backtesting optimization."""
+                        try:
+                            # Use resource (iterations) for multi-fidelity evaluation
+                            if resource and resource < 5:
+                                # Limit iterations based on resource level
+                                limited_params = params.copy()
+                                limited_params['max_iterations'] = resource
+                                return objective(limited_params)
+                            else:
+                                return objective(params)
+                        except Exception as e:
+                            tprint_debug(f"BOHB objective function failed: {e}")
+                            return -np.inf
+
+                    optimization_results = self.bohb_optimizer.optimize(
+                        objective_function=bohb_objective,
+                        search_space=search_space
+                    )
+                    
+                    if optimization_results.success:
+                        tprint(f"✅ BOHB backtesting optimization completed successfully", "success")
+                        tprint(f"📊 Resource efficiency: {optimization_results.resource_efficiency:.2f}x", "info")
+                    else:
+                        tprint(f"⚠️ BOHB optimization failed: {optimization_results.error_message}", "warning")
+                        raise Exception("BOHB optimization failed")
+
+                except Exception as e:
+                    tprint(f"⚠️ BOHB optimization error: {e}, falling back to TPE", "warning")
+                    
+                    # Fallback to enhanced TPE
+                    if self.bayesian_optimizer:
+                        optimization_results = self.bayesian_optimizer.optimize(
+                            objective=objective,
+                            search_space=search_space
+                        )
+                        tprint(f"✅ Enhanced Bayesian TPE optimization completed successfully", "success")
+                    else:
+                        raise Exception("No optimizers available")
+            else:
+                # Fallback to TPE if BOHB not available
+                if self.bayesian_optimizer:
+                    optimization_results = self.bayesian_optimizer.optimize(
+                        objective=objective,
+                        search_space=search_space
+                    )
+                else:
+                    raise Exception("No optimizers available")
+            
             optimization_time = time.time() - start_time
 
             # Extract results

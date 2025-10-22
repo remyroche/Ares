@@ -31,7 +31,10 @@ from src.utils.common_utilities import safe_dataframe_operation as safe_df_op
 from src.utils.math_validation import validate_finite, safe_divide, safe_log, safe_sqrt
 from src.utils.serialization_utils import save_pickle, load_pickle
 
-# Import enhanced ML common utilities
+# Import enhanced ML common utilities with BOHB for clustering optimization (Phase 3 Migration)
+from src.utils.ml_common.optimization.bohb_optimizer import (
+    BOHBOptimizer, BOHBConfig, BOHBResult
+)
 from src.utils.ml_common.optimization.bayesian_tpe_optimizer import (
     BayesianTPEOptimizer, OptimizationConfig, TPEConfig
 )
@@ -362,8 +365,31 @@ class HDBSCANRegimeDiscovery:
         try:
             tprint_info("Initializing ML common utilities")
             
-            # Initialize Bayesian TPE optimizer for hyperparameter optimization
-            with tprint_timer("Bayesian TPE optimizer initialization"):
+            # Initialize BOHB optimizer for hyperparameter optimization (Phase 3: Clustering Migration)
+            with tprint_timer("BOHB optimizer initialization"):
+                bohb_config = BOHBConfig(
+                    n_trials=100,
+                    timeout=3600,
+                    direction='maximize',
+                    metric_name='regime_quality_score',
+                    resource_name='iteration',  # Use iterations as resource for multi-fidelity
+                    min_resource=1,  # Minimum iterations
+                    max_resource=5,  # Maximum iterations
+                    reduction_factor=2,  # Successive halving factor
+                    n_startup_trials=5,  # Startup trials before pruning
+                    pruner_type='hyperband',  # Use Hyperband pruning
+                    enable_hardware_optimization=True,
+                    enable_vectorbt_optimization=True,
+                    enable_explainability=True,
+                    enable_cv=True,
+                    enable_oof_stacking=False,  # Not needed for regime discovery
+                    seed=42
+                )
+                self.bohb_optimizer = BOHBOptimizer(bohb_config)
+                tprint_success("✅ BOHB optimizer initialized for regime discovery")
+            
+            # Initialize Bayesian TPE as fallback
+            with tprint_timer("Bayesian TPE fallback optimizer initialization"):
                 tpe_config = TPEConfig(
                     n_trials=100,
                     timeout_seconds=3600,
@@ -371,7 +397,7 @@ class HDBSCANRegimeDiscovery:
                     enable_memory_optimization=True
                 )
                 self.bayesian_optimizer = BayesianTPEOptimizer(tpe_config)
-                tprint_success("✅ Bayesian TPE optimizer initialized")
+                tprint_success("✅ Bayesian TPE fallback optimizer initialized")
             
             # Initialize unified vectorization manager
             with tprint_timer("Unified vectorization manager initialization"):
@@ -985,14 +1011,64 @@ class HDBSCANRegimeDiscovery:
                     tprint_debug(f"Trial failed: {e}")
                     return -1.0
             
-            # Run optimization
-            with tprint_timer("Bayesian TPE optimization"):
-                optimization_result = self.bayesian_optimizer.optimize(
-                    objective_function=objective,
-                    search_space=search_space,
-                    n_trials=50,
-                    timeout_seconds=1800
-                )
+            # Run optimization with BOHB (Phase 3: Clustering Migration)
+            try:
+                with tprint_timer("BOHB optimization"):
+                    # Define multi-fidelity objective function for BOHB
+                    def bohb_objective(params: Dict[str, Any], resource: int = None) -> float:
+                        """Multi-fidelity objective function for BOHB regime discovery optimization."""
+                        try:
+                            # Use resource (iterations) for multi-fidelity evaluation
+                            if resource and resource < 5:
+                                # Limit iterations based on resource level
+                                limited_params = params.copy()
+                                limited_params['max_iterations'] = resource
+                                return objective(limited_params)
+                            else:
+                                return objective(params)
+                        except Exception as e:
+                            tprint_debug(f"BOHB objective function failed: {e}")
+                            return -1.0
+
+                    optimization_result = self.bohb_optimizer.optimize(
+                        objective_function=bohb_objective,
+                        search_space=search_space
+                    )
+                    
+                    if optimization_result.success:
+                        tprint_success("✅ BOHB regime discovery optimization completed successfully")
+                        tprint_info(f"📊 Resource efficiency: {optimization_result.resource_efficiency:.2f}x")
+                    else:
+                        tprint_warning(f"⚠️ BOHB optimization failed: {optimization_result.error_message}")
+                        raise Exception("BOHB optimization failed")
+
+            except Exception as e:
+                tprint_warning(f"⚠️ BOHB optimization error: {e}, falling back to TPE")
+                
+                # Fallback to Bayesian TPE with enhanced early stopping
+                with tprint_timer("Enhanced Bayesian TPE optimization"):
+                    # Create enhanced optimization configuration with aggressive early stopping
+                    opt_config = OptimizationConfig(
+                        n_trials=50,
+                        timeout=1800,
+                        direction='maximize',
+                        metric_name='regime_quality_score',
+                        early_stopping_patience=5,  # More aggressive early stopping
+                        early_stopping_threshold=0.001,  # Stricter threshold
+                        enable_pruner=True,  # Enable trial-level pruning
+                        pruner_type='hyperband',  # Use Hyperband pruner
+                        adaptive_patience=True,  # Enable adaptive patience
+                        confidence_based_stopping=True,  # Enable confidence-based stopping
+                        seed=42
+                    )
+
+                    optimization_result = self.bayesian_optimizer.optimize(
+                        objective_function=objective,
+                        search_space=search_space,
+                        n_trials=50,
+                        timeout_seconds=1800
+                    )
+                    tprint_success("✅ Enhanced Bayesian TPE optimization completed successfully")
             
             if optimization_result and optimization_result.best_params:
                 tprint_success(f"✅ Hyperparameter optimization completed. Best score: {optimization_result.best_value:.3f}")

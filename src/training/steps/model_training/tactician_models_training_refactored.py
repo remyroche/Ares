@@ -143,13 +143,27 @@ except ImportError as e:
     ML_COMMON_AVAILABLE = False
     raise ImportError(f"CRITICAL: ML common utilities are required but not available: {e}") from e
 
-# Import Bayesian TPE optimizer for advanced HPO
+# Import BOHB optimizer for advanced HPO (Phase 1: Model Training Migration)
+try:
+    from src.utils.ml_common.optimization.bohb_optimizer import (
+        BOHBOptimizer, BOHBConfig, BOHBResult
+    )
+    BOHB_AVAILABLE = True
+    tprint_info("✅ BOHB optimizer loaded for model training")
+except ImportError as e:
+    BOHB_AVAILABLE = False
+    BOHBOptimizer = None
+    BOHBConfig = None
+    BOHBResult = None
+    tprint_warning(f"⚠️ BOHB optimizer not available: {e} (will use fallback HPO)")
+
+# Import Bayesian TPE optimizer as fallback for simple cases
 try:
     from src.utils.ml_common.optimization.bayesian_tpe_optimizer import (
         BayesianTPEOptimizer, OptimizationConfig, OptimizationResult
     )
     BAYESIAN_TPE_AVAILABLE = True
-    tprint_info("✅ Bayesian TPE optimizer loaded")
+    tprint_info("✅ Bayesian TPE optimizer loaded as fallback")
 except ImportError as e:
     BAYESIAN_TPE_AVAILABLE = False
     BayesianTPEOptimizer = None
@@ -599,7 +613,7 @@ class TacticianModelsTrainingStepRefactored(BaseTrainingStep):
             from sklearn.ensemble import RandomForestRegressor
             return RandomForestRegressor(n_estimators=200, random_state=42)
 
-    def _optimize_hyperparameters_with_bayesian_tpe(
+    def _optimize_hyperparameters_with_bohb(
         self,
         model_type: str,
         X: np.ndarray,
@@ -609,7 +623,7 @@ class TacticianModelsTrainingStepRefactored(BaseTrainingStep):
         timeout: Optional[float] = None
     ) -> Dict[str, Any]:
         """
-        Optimize hyperparameters using Bayesian TPE with staged optimization (coarse grid -> fine grid -> TPE).
+        Optimize hyperparameters using BOHB for model training (Phase 1 Migration).
 
         Args:
             model_type: Type of model to optimize
@@ -622,83 +636,179 @@ class TacticianModelsTrainingStepRefactored(BaseTrainingStep):
         Returns:
             Dictionary containing best parameters and optimization results
         """
-        tprint_info(f"🔍 Starting Bayesian TPE hyperparameter optimization for {model_type}...")
+        tprint_info(f"🔍 Starting BOHB hyperparameter optimization for {model_type}...")
 
-        if not BAYESIAN_TPE_AVAILABLE:
-            tprint_warning("⚠️ Bayesian TPE optimizer not available, skipping HPO")
+        # Try BOHB first (Phase 1: Model Training Migration)
+        if BOHB_AVAILABLE:
+            try:
+                # Create BOHB configuration for model training
+                bohb_config = BOHBConfig(
+                    n_trials=n_trials,
+                    timeout=timeout,
+                    direction='maximize',  # Maximize validation score
+                    metric_name='validation_score',
+                    resource_name='epoch',  # Use epochs as resource for multi-fidelity
+                    min_resource=1,  # Minimum epochs
+                    max_resource=10,  # Maximum epochs
+                    reduction_factor=3,  # Successive halving factor
+                    n_startup_trials=5,  # Startup trials before pruning
+                    pruner_type='hyperband',  # Use Hyperband pruning
+                    enable_hardware_optimization=hasattr(self, 'm1_optimizers_available') and self.m1_optimizers_available,
+                    enable_vectorbt_optimization=True,
+                    enable_explainability=True,
+                    enable_cv=True,
+                    enable_oof_stacking=True,
+                    seed=42
+                )
+
+                # Define multi-fidelity objective function for BOHB
+                def bohb_objective(params: Dict[str, Any], resource: int = None) -> float:
+                    """Multi-fidelity objective function for BOHB optimization."""
+                    try:
+                        # Create model with these parameters
+                        model = self._create_model_instance(model_type)
+
+                        # Set parameters
+                        if hasattr(model, 'set_params'):
+                            model.set_params(**params)
+
+                        # Use resource (epochs) for multi-fidelity evaluation
+                        if hasattr(model, 'n_estimators') and resource:
+                            # For tree-based models, adjust n_estimators based on resource
+                            model.set_params(n_estimators=max(10, int(resource * 10)))
+                        elif hasattr(model, 'max_iter') and resource:
+                            # For iterative models, adjust max_iter based on resource
+                            model.set_params(max_iter=max(50, int(resource * 50)))
+
+                        # Perform cross-validation with limited epochs
+                        from sklearn.model_selection import cross_val_score
+                        scores = cross_val_score(
+                            model, X, y,
+                            cv=5,
+                            scoring='neg_mean_squared_error',
+                            n_jobs=-1
+                        )
+
+                        # Return negative MSE (higher is better)
+                        return -np.mean(scores)
+
+                    except Exception as e:
+                        tprint_warning(f"⚠️ BOHB objective evaluation failed: {e}")
+                        return -np.inf
+
+                # Create and run BOHB optimizer
+                optimizer = BOHBOptimizer(bohb_config)
+                result = optimizer.optimize(bohb_objective, search_space)
+
+                if result.success:
+                    tprint_success(f"✅ BOHB optimization completed successfully")
+                    tprint_info(f"📊 Best score: {result.best_value:.6f}")
+                    tprint_info(f"📊 Total trials: {result.n_trials}")
+                    tprint_info(f"📊 Optimization time: {result.optimization_time:.2f}s")
+                    tprint_info(f"📊 Resource efficiency: {result.resource_efficiency:.2f}x")
+
+                    return {
+                        'best_params': result.best_params,
+                        'best_score': result.best_value,
+                        'n_trials': result.n_trials,
+                        'optimization_time': result.optimization_time,
+                        'optimization_history': result.optimization_history,
+                        'resource_efficiency': result.resource_efficiency,
+                        'success': True,
+                        'optimizer_type': 'BOHB'
+                    }
+                else:
+                    tprint_warning(f"⚠️ BOHB optimization failed: {result.error_message}")
+                    # Fall through to TPE fallback
+
+            except Exception as e:
+                tprint_warning(f"⚠️ BOHB optimization error: {e}, falling back to TPE")
+                # Fall through to TPE fallback
+
+        # Fallback to Bayesian TPE with enhanced early stopping
+        if BAYESIAN_TPE_AVAILABLE:
+            try:
+                tprint_info(f"🔄 Falling back to enhanced Bayesian TPE optimization for {model_type}...")
+                
+                # Create enhanced optimization configuration with aggressive early stopping
+                opt_config = OptimizationConfig(
+                    n_trials=n_trials,
+                    timeout=timeout,
+                    direction='maximize',  # Maximize validation score
+                    metric_name='validation_score',
+                    enable_staged_optimization=True,
+                    coarse_grid_points=5,
+                    fine_grid_points=5,
+                    coarse_grid_trials=25,
+                    fine_grid_trials=25,
+                    tpe_trials=max(50, n_trials - 50),
+                    enable_hardware_optimization=hasattr(self, 'm1_optimizers_available') and self.m1_optimizers_available,
+                    enable_adaptive_optimization=True,
+                    early_stopping_patience=5,  # More aggressive early stopping
+                    early_stopping_threshold=0.001,  # Stricter threshold
+                    enable_pruner=True,  # Enable trial-level pruning
+                    pruner_type='hyperband',  # Use Hyperband pruner
+                    adaptive_patience=True,  # Enable adaptive patience
+                    confidence_based_stopping=True,  # Enable confidence-based stopping
+                    seed=42
+                )
+
+                # Define objective function for optimization
+                def objective(params: Dict[str, Any]) -> float:
+                    """Objective function for hyperparameter optimization."""
+                    try:
+                        # Create model with these parameters
+                        model = self._create_model_instance(model_type)
+
+                        # Set parameters
+                        if hasattr(model, 'set_params'):
+                            model.set_params(**params)
+
+                        # Perform cross-validation
+                        from sklearn.model_selection import cross_val_score
+                        scores = cross_val_score(
+                            model, X, y,
+                            cv=5,
+                            scoring='neg_mean_squared_error',
+                            n_jobs=-1
+                        )
+
+                        # Return negative MSE (higher is better)
+                        return -np.mean(scores)
+
+                    except Exception as e:
+                        tprint_warning(f"⚠️ Objective evaluation failed: {e}")
+                        return -np.inf
+
+                # Create and run optimizer
+                optimizer = BayesianTPEOptimizer(search_space, opt_config)
+                result = optimizer.optimize(objective)
+
+                if result.success:
+                    tprint_success(f"✅ Enhanced Bayesian TPE optimization completed successfully")
+                    tprint_info(f"📊 Best score: {result.best_value:.6f}")
+                    tprint_info(f"📊 Total trials: {result.n_trials}")
+                    tprint_info(f"📊 Optimization time: {result.optimization_time:.2f}s")
+
+                    return {
+                        'best_params': result.best_params,
+                        'best_score': result.best_value,
+                        'n_trials': result.n_trials,
+                        'optimization_time': result.optimization_time,
+                        'optimization_history': result.optimization_history,
+                        'success': True,
+                        'optimizer_type': 'Enhanced_TPE'
+                    }
+                else:
+                    tprint_warning(f"⚠️ Enhanced Bayesian TPE optimization failed: {result.error_message}")
+                    return {'best_params': {}, 'success': False, 'error': result.error_message}
+
+            except Exception as e:
+                tprint_error(f"❌ Enhanced Bayesian TPE optimization error: {e}")
+                return {'best_params': {}, 'success': False, 'error': str(e)}
+        else:
+            tprint_warning("⚠️ No optimizers available, skipping HPO")
             return {'best_params': {}, 'optimization_skipped': True}
-
-        try:
-            # Create optimization configuration
-            opt_config = OptimizationConfig(
-                n_trials=n_trials,
-                timeout=timeout,
-                direction='maximize',  # Maximize validation score
-                metric_name='validation_score',
-                enable_staged_optimization=True,
-                coarse_grid_points=5,
-                fine_grid_points=5,
-                coarse_grid_trials=25,
-                fine_grid_trials=25,
-                tpe_trials=max(50, n_trials - 50),
-                enable_hardware_optimization=hasattr(self, 'm1_optimizers_available') and self.m1_optimizers_available,
-                enable_adaptive_optimization=True,
-                early_stopping_patience=15,
-                seed=42
-            )
-
-            # Define objective function for optimization
-            def objective(params: Dict[str, Any]) -> float:
-                """Objective function for hyperparameter optimization."""
-                try:
-                    # Create model with these parameters
-                    model = self._create_model_instance(model_type)
-
-                    # Set parameters
-                    if hasattr(model, 'set_params'):
-                        model.set_params(**params)
-
-                    # Perform cross-validation
-                    from sklearn.model_selection import cross_val_score
-                    scores = cross_val_score(
-                        model, X, y,
-                        cv=5,
-                        scoring='neg_mean_squared_error',
-                        n_jobs=-1
-                    )
-
-                    # Return negative MSE (higher is better)
-                    return -np.mean(scores)
-
-                except Exception as e:
-                    tprint_warning(f"⚠️ Objective evaluation failed: {e}")
-                    return -np.inf
-
-            # Create and run optimizer
-            optimizer = BayesianTPEOptimizer(search_space, opt_config)
-            result = optimizer.optimize(objective)
-
-            if result.success:
-                tprint_success(f"✅ Bayesian TPE optimization completed successfully")
-                tprint_info(f"📊 Best score: {result.best_value:.6f}")
-                tprint_info(f"📊 Total trials: {result.n_trials}")
-                tprint_info(f"📊 Optimization time: {result.optimization_time:.2f}s")
-
-                return {
-                    'best_params': result.best_params,
-                    'best_score': result.best_value,
-                    'n_trials': result.n_trials,
-                    'optimization_time': result.optimization_time,
-                    'optimization_history': result.optimization_history,
-                    'success': True
-                }
-            else:
-                tprint_warning(f"⚠️ Bayesian TPE optimization failed: {result.error_message}")
-                return {'best_params': {}, 'success': False, 'error': result.error_message}
-
-        except Exception as e:
-            tprint_error(f"❌ Bayesian TPE optimization error: {e}")
-            return {'best_params': {}, 'success': False, 'error': str(e)}
 
     def _start_phase(self, phase: TrainingPhase, context: Optional[Dict[str, Any]] = None) -> None:
         """Start tracking a training phase with structured logging."""

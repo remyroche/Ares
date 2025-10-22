@@ -96,6 +96,45 @@ except ImportError:
         SUCCESS = "SUCCESS"
         PERFORMANCE = "PERFORMANCE"
 
+# === Helpers: purged+embargoed CV & metrics ===
+class PurgedEmbargoedSplit:
+    def __init__(self, n_splits=5, embargo_frac=0.01):
+        self.n_splits = n_splits
+        self.embargo_frac = embargo_frac
+
+    def split(self, X_len: int):
+        N = X_len
+        fold = max(1, N // self.n_splits)
+        emb = int(np.ceil(self.embargo_frac * N))
+        for i in range(self.n_splits):
+            lo = i * fold
+            hi = N if i == self.n_splits - 1 else (i + 1) * fold
+            test_idx = np.arange(lo, hi)
+            left = np.arange(0, max(0, lo - emb))
+            right = np.arange(min(N, hi + emb), N)
+            train_idx = np.concatenate([left, right])
+            yield train_idx, test_idx
+
+def _bars_per_year(timeframe: str) -> int:
+    unit, val = timeframe[-1].lower(), int(timeframe[:-1])
+    minutes = {'m':1,'h':60,'d':1440}[unit] * val
+    return int(round((365*24*60)/minutes))
+
+def _oos_metric(y_true: np.ndarray, y_pred: np.ndarray, metric: str, timeframe: str, cost_bps: float=0.0) -> float:
+    if metric == "ic":
+        from scipy.stats import spearmanr
+        ic = spearmanr(y_true, y_pred, nan_policy="omit").correlation
+        return 0.0 if ic is None or np.isnan(ic) else float(ic)
+    # net Sharpe via sign(pred) as position
+    ann = _bars_per_year(timeframe)
+    pos = np.sign(y_pred).astype(float)
+    gross = pos * y_true
+    turnover = np.abs(np.diff(np.r_[0.0, pos]))
+    costs = (cost_bps / 1e4) * turnover
+    net = gross - costs
+    mu, sd = np.nanmean(net), np.nanstd(net, ddof=1)
+    return 0.0 if sd <= 0 or np.isnan(sd) else float((mu/sd) * np.sqrt(ann))
+
 # Import artifact management functions
 from src.utils.artifact_manager import ArtifactManager
 
@@ -260,6 +299,13 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
         # SHAP configuration
         self.shap_sample_size = 1000
         self.shap_batch_size = 100
+        
+        # OOS validation configuration
+        self.config.setdefault("metric", "ic")              # or "net_sharpe"
+        self.config.setdefault("cost_bps", 0.0)             # e.g., 5 = 0.05%
+        self.config.setdefault("timeframe", "15m")
+        self.config.setdefault("final_k_grid", [40,50,60,70,80,100])
+        self.config.setdefault("pca_loading_threshold", 0.10)
         
         # Performance tracking
         self.performance_stats = {
@@ -540,6 +586,10 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
                     'final_features_60': len(result_dict['features_60']),
                     'final_features_50': len(result_dict['features_50']),
                     'final_features_40': len(result_dict['features_40']),
+                    'oos_grid_scores': result_dict.get('oos_grid_scores', {}),
+                    'cv_scheme': result_dict.get('cv_scheme', {}),
+                    'best_k': result_dict.get('best_k', 60),
+                    'se_candidates': result_dict.get('se_candidates', []),
                     'performance_stats': self.performance_stats,
                     'created_at': datetime.now().isoformat()
                 },
@@ -809,11 +859,20 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             pca = PCA(n_components=0.98, random_state=42)
             pca.fit(X_numeric)
             
-            # For each component, find feature with highest loading
+            # For each component, find feature with highest loading (with threshold)
             pca_selected = set()
-            for component in pca.components_:
-                top_feature_idx = np.abs(component).argmax()
-                pca_selected.add(X_numeric.columns[top_feature_idx])
+            loading_thr = float(self.config.get("pca_loading_threshold", 0.10))
+            for comp in pca.components_:
+                j = np.argmax(np.abs(comp))
+                if abs(comp[j]) >= loading_thr:
+                    pca_selected.add(X_numeric.columns[j])
+            # if too few, backfill by highest absolute loadings overall
+            if len(pca_selected) < 30:
+                flat = np.abs(pca.components_).max(axis=0)
+                backfill_order = np.argsort(-flat)
+                for j in backfill_order:
+                    pca_selected.add(X_numeric.columns[j])
+                    if len(pca_selected) >= 30: break
             
             pca_features = list(pca_selected)
             pca_duration = time.time() - pca_start
@@ -841,13 +900,18 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
                 X_pca = X_pca[keep_cols]
                 tprint_info(f"📦 Pre-pruned to {len(keep_cols)} features")
             
+            # Align and dropna once at the top to avoid target drifting
+            valid_idx = X_pca.notna().all(axis=1) & y.notna()
+            X_pca = X_pca[valid_idx]
+            y_aligned = y[valid_idx]
+            
             # Row subsampling for large datasets
             if len(X_pca) > self.mi_max_rows:
                 tprint_info(f"📦 Row subsampling: {self.mi_max_rows}/{len(X_pca)}")
                 X_pca = X_pca.tail(self.mi_max_rows)
-                y_sampled = y.tail(self.mi_max_rows)
+                y_sampled = y_aligned.tail(self.mi_max_rows)
             else:
-                y_sampled = y
+                y_sampled = y_aligned
             
             # Sampling-based MI for large datasets
             if len(X_pca) > 50000:
@@ -923,160 +987,65 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
     @performance_tracked(log_performance=True, track_memory=True)
     async def _stage2_mrmr_selection(self, X: pd.DataFrame, y: pd.Series) -> List[str]:
         """
-        Stage 2: Ultra-Optimized mRMR Selection
+        Stage 2: Ultra-Optimized mRMR Selection with proper redundancy measurement
         
-        Reduces from 200 to 150 features using batch selection, MI caching,
-        approximate redundancy, and parallel processing.
+        Reduces from 200 to 150 features using batch selection with Spearman correlation
+        for redundancy measurement instead of mutual information.
         """
         with memory_managed_operation("Stage 2: mRMR Selection"):
             tprint_info(f"📊 Input: {X.shape[1]} features")
-            
-            # Enhanced troubleshooting: Input data analysis
-            tprint_data_format(X, "stage2_input_features", level=LogLevel.DEBUG)
-            tprint_data_format(y, "stage2_input_targets", level=LogLevel.DEBUG)
-            
-            # Ensure float32 with enhanced optimization
             X = optimize_dataframe(X.astype('float32', copy=False))
             y = y.astype('float32', copy=False)
-            
-            # Enhanced troubleshooting: Data format analysis after optimization
-            tprint_data_format(X, "X_for_mrmr", level=LogLevel.DEBUG)
-            
-            # Data preview after float32 conversion for mRMR
-            tprint_data_preview(X, "X_for_mrmr", max_rows=3, max_cols=10)
-            
-            # Step 1: Compute MI matrix upfront (cache)
-            tprint_info("🔍 Step 2.1: Computing MI matrix (caching)")
-            mi_cache_start = time.time()
-            
-            n_features = len(X.columns)
-            mi_matrix = np.zeros((n_features, n_features), dtype='float32')
-            
-            # Compute MI(feature, target) - relevance scores
+
+            # Relevance: MI(feature; y)
             tprint_info("📊 Computing relevance scores (MI with target)")
-            relevance_scores = {}
-            for i, col in enumerate(X.columns):
+            relevance = {}
+            for col in X.columns:
                 try:
-                    # Optimize data before MI calculation
-                    col_data = optimize_dataframe(X[[col]])
-                    mi_score = mutual_info_regression(
-                        col_data, y, random_state=42, n_neighbors=self.mi_neighbors
-                    )[0]
-                    relevance_scores[col] = float(mi_score)
-                except:
-                    relevance_scores[col] = 0.0
-            
-            # Compute pairwise MI (redundancy) - only for top features
-            tprint_info("📊 Computing pairwise MI (redundancy matrix)")
-            for i in range(n_features):
-                for j in range(i + 1, n_features):
-                    try:
-                        # Optimize data before MI calculation
-                        feat_i = optimize_dataframe(X.iloc[:, [i]])
-                        feat_j = optimize_dataframe(X.iloc[:, [j]])
-                        mi_score = mutual_info_regression(
-                            feat_i, feat_j, random_state=42, n_neighbors=self.mi_neighbors
-                        )[0]
-                        mi_matrix[i, j] = mi_matrix[j, i] = float(mi_score)
-                    except:
-                        mi_matrix[i, j] = mi_matrix[j, i] = 0.0
-                
-                if i % 20 == 0:
-                    tprint_debug(f"📊 MI matrix progress: {i}/{n_features}")
-                    if self.aggressive_gc:
-                        gc.collect()
-            
-            mi_cache_duration = time.time() - mi_cache_start
-            tprint_performance("MI matrix computation", mi_cache_duration)
-            tprint_success(f"✅ MI matrix computed in {mi_cache_duration:.2f}s")
-            
-            # Enhanced troubleshooting: Data format analysis of MI matrix
-            tprint_data_format(pd.DataFrame(mi_matrix), "mi_matrix", level=LogLevel.DEBUG)
-            
-            # Data preview of MI matrix
-            tprint_data_preview(pd.DataFrame(mi_matrix), "mi_matrix", max_rows=5, max_cols=10)
-            
-            # Step 2: Batch mRMR selection
-            tprint_info("🔍 Step 2.2: Batch mRMR selection")
-            selected_features = []
-            selected_indices = []
-            candidate_features = list(X.columns)
-            candidate_indices = list(range(n_features))
-            
-            # Initialize with top feature by relevance
-            top_feature = max(relevance_scores.items(), key=lambda x: x[1])[0]
-            selected_features.append(top_feature)
-            selected_indices.append(X.columns.get_loc(top_feature))
-            candidate_features.remove(top_feature)
-            candidate_indices.remove(X.columns.get_loc(top_feature))
-            
-            target_features = 150
-            iterations = 0
-            prev_score = float('inf')
-            no_improvement_count = 0
-            
-            while len(selected_features) < target_features and candidate_features:
-                iterations += 1
-                
-                # Compute scores for all candidates
+                    mi = mutual_info_regression(X[[col]].fillna(0.0), y, random_state=42, n_neighbors=self.mi_neighbors)[0]
+                except Exception:
+                    mi = 0.0
+                relevance[col] = float(mi)
+
+            # Redundancy: |Spearman| matrix (fast & stable)
+            tprint_info("📊 Computing redundancy (|Spearman|)")
+            # downsample rows for large N
+            max_rows = 50000
+            X_used = X if len(X) <= max_rows else X.iloc[np.linspace(0, len(X)-1, max_rows, dtype=int)]
+            rho = X_used.rank(pct=True).corr(method='pearson').abs().astype('float32')  # Spearman via rank->Pearson
+
+            # mRMR greedy with small batch additions
+            target_k = 150
+            selected = []
+            remaining = list(X.columns)
+
+            # seed with most relevant
+            seed = max(relevance.items(), key=lambda kv: kv[1])[0]
+            selected.append(seed); remaining.remove(seed)
+
+            batch = self.mrmr_batch_size
+            patience, no_improve = self.mrmr_early_stop_patience, 0
+            prev_mean = np.inf
+
+            while len(selected) < target_k and remaining:
                 scores = {}
-                for cand_feat, cand_idx in zip(candidate_features, candidate_indices):
-                    # Relevance
-                    relevance = relevance_scores[cand_feat]
-                    
-                    # Approximate redundancy (sample 20 from selected)
-                    if len(selected_indices) <= self.mrmr_sample_size:
-                        sample_indices = selected_indices
-                    else:
-                        sample_indices = np.random.choice(
-                            selected_indices, self.mrmr_sample_size, replace=False
-                        )
-                    
-                    redundancy = np.mean([mi_matrix[cand_idx, sel_idx] for sel_idx in sample_indices])
-                    
-                    # mRMR score
-                    scores[cand_feat] = relevance - redundancy
-                
-                # Select top batch_size features
-                batch_size = min(self.mrmr_batch_size, len(scores))
-                top_batch = sorted(scores.items(), key=lambda x: x[1], reverse=True)[:batch_size]
-                
-                # Add to selected
-                for feat, score in top_batch:
-                    selected_features.append(feat)
-                    selected_indices.append(X.columns.get_loc(feat))
-                    candidate_features.remove(feat)
-                    candidate_indices.remove(X.columns.get_loc(feat))
-                
-                # Early stopping
-                avg_score = np.mean([score for _, score in top_batch])
-                improvement = (prev_score - avg_score) / max(abs(prev_score), 1e-10)
-                
-                if improvement < self.mrmr_early_stop_threshold:
-                    no_improvement_count += 1
-                else:
-                    no_improvement_count = 0
-                
-                if no_improvement_count >= self.mrmr_early_stop_patience:
-                    tprint_info(f"⏹️ Early stopping at iteration {iterations} (no improvement)")
+                # sample a subset of selected for redundancy speed
+                sel_idx = selected if len(selected) <= self.mrmr_sample_size else list(np.random.choice(selected, self.mrmr_sample_size, replace=False))
+                for f in remaining:
+                    red = float(rho.loc[f, sel_idx].mean()) if sel_idx else 0.0
+                    scores[f] = relevance.get(f, 0.0) - red
+                top = sorted(scores.items(), key=lambda kv: kv[1], reverse=True)[:min(batch, len(scores))]
+                selected.extend([f for f,_ in top])
+                remaining = [f for f in remaining if f not in dict(top)]
+                cur_mean = np.mean([s for _, s in top]) if top else prev_mean
+                improve = (prev_mean - cur_mean) / (abs(prev_mean) + 1e-9)
+                no_improve = no_improve + 1 if improve < self.mrmr_early_stop_threshold else 0
+                prev_mean = cur_mean
+                if no_improve >= patience:
+                    tprint_info("⏹️ mRMR early stop (1-SE style)")
                     break
-                
-                prev_score = avg_score
-                
-                if iterations % 3 == 0:
-                    tprint_debug(f"📊 mRMR iteration {iterations}: {len(selected_features)} features selected")
-                    if self.aggressive_gc:
-                        gc.collect()
-            
-            tprint_success(f"✅ mRMR selected {len(selected_features)} features in {iterations} iterations")
-            
-            # Enhanced troubleshooting: Data format analysis after mRMR
-            tprint_data_format(pd.DataFrame(X[selected_features[:target_features]]), "mrmr_selected_features", level=LogLevel.DEBUG)
-            
-            # Data preview after mRMR selection
-            tprint_data_preview(pd.DataFrame(X[selected_features[:target_features]]), "mrmr_selected_features", max_rows=3, max_cols=10)
-            
-            return selected_features[:target_features]
+
+            return selected[:target_k]
     
     @memory_optimized(optimization_level=MemoryOptimizationLevel.AGGRESSIVE)
     @performance_tracked(log_performance=True, track_memory=True)
@@ -1270,119 +1239,84 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             tprint_info("📦 Creating LightGBM Dataset")
             lgb_train = lgb.Dataset(X.values, y.values, feature_name=list(X.columns), free_raw_data=False)
             
-            # RFE: 100 → 90 → 80 → 70 → 60
-            tprint_info("🔍 Step 4.1: LGBM + RFE (100 → 60)")
-            rfe_start = time.time()
+            # OOS validation for K selection
+            tprint_info("🔍 Step 4.1: OOS validation for K selection")
+            oos_start = time.time()
             
-            current_features = list(X.columns)
-            target_60 = 60
+            # Get K grid from config
+            k_grid = self.config.get("final_k_grid", [40,50,60,70,80,100])
+            metric = self.config.get("metric", "ic")
+            timeframe = self.config.get("timeframe", "15m")
+            cost_bps = self.config.get("cost_bps", 0.0)
             
-            while len(current_features) > target_60:
-                # Train LightGBM
-                X_current = X[current_features].values
-                lgb_train_current = lgb.Dataset(X_current, y.values, feature_name=current_features, free_raw_data=False)
+            # Create purged, embargoed CV splits
+            cv_splits = PurgedEmbargoedSplit(n_splits=5, embargo_frac=0.01)
+            
+            # Score each K using OOS validation
+            oos_scores = {}
+            for k in k_grid:
+                if k > len(X.columns):
+                    continue
+                    
+                tprint_info(f"📊 Validating K={k}")
+                k_scores = []
                 
-                model = lgb.train(
-                    self.lgbm_params,
-                    lgb_train_current,
-                    num_boost_round=self.lgbm_num_boost_round,
-                    valid_sets=[lgb_train_current],
-                    callbacks=[
-                        lgb.early_stopping(stopping_rounds=self.lgbm_early_stopping_rounds, verbose=False),
-                        lgb.log_evaluation(period=0)
-                    ]
-                )
+                for train_idx, test_idx in cv_splits.split(len(X)):
+                    # Train on train set
+                    X_train, X_test = X.iloc[train_idx], X.iloc[test_idx]
+                    y_train, y_test = y.iloc[train_idx], y.iloc[test_idx]
+                    
+                    # Get top K features by SHAP importance
+                    lgb_train = lgb.Dataset(X_train.values, y_train.values, feature_name=list(X_train.columns), free_raw_data=False)
+                    model = lgb.train(
+                        self.lgbm_params,
+                        lgb_train,
+                        num_boost_round=50,
+                        callbacks=[lgb.log_evaluation(period=0)]
+                    )
+                    
+                    # Get feature importance and select top K
+                    importance = model.feature_importance(importance_type='split')
+                    feature_importance = dict(zip(X_train.columns, importance))
+                    top_k_features = sorted(feature_importance.items(), key=lambda x: x[1], reverse=True)[:k]
+                    top_k_names = [feat for feat, _ in top_k_features]
+                    
+                    # Evaluate on test set
+                    X_test_k = X_test[top_k_names]
+                    y_pred = model.predict(X_test_k.values)
+                    
+                    # Compute OOS metric
+                    score = _oos_metric(y_test.values, y_pred, metric, timeframe, cost_bps)
+                    k_scores.append(score)
                 
-                # Get feature importance
-                importance = model.feature_importance(importance_type='split')
-                feature_importance = dict(zip(current_features, importance))
-                
-                # Remove bottom 10 features
-                sorted_features = sorted(feature_importance.items(), key=lambda x: x[1], reverse=True)
-                n_to_remove = min(10, len(current_features) - target_60)
-                current_features = [feat for feat, _ in sorted_features[:-n_to_remove]]
-                
-                tprint_debug(f"📊 RFE: {len(current_features)} features remaining")
-                
-                if len(current_features) % 20 == 0 and self.aggressive_gc:
-                    gc.collect()
+                oos_scores[k] = {
+                    'mean': np.mean(k_scores),
+                    'std': np.std(k_scores),
+                    'scores': k_scores
+                }
+                tprint_info(f"📊 K={k}: {oos_scores[k]['mean']:.4f} ± {oos_scores[k]['std']:.4f}")
             
-            features_60 = current_features
-            rfe_60_duration = time.time() - rfe_start
-            tprint_performance("RFE to 60 features", rfe_60_duration)
-            tprint_success(f"✅ RFE to 60 features completed in {rfe_60_duration:.2f}s")
+            # Select best K using 1-SE rule
+            best_k = max(oos_scores.keys(), key=lambda k: oos_scores[k]['mean'])
+            best_score = oos_scores[best_k]['mean']
+            best_std = oos_scores[best_k]['std']
             
-            # Enhanced troubleshooting: Data format analysis after RFE to 60
-            tprint_data_format(pd.DataFrame(X[features_60]), "lgbm_features_60", level=LogLevel.DEBUG)
+            # Find 1-SE candidates
+            se_candidates = [k for k in oos_scores.keys() 
+                           if oos_scores[k]['mean'] >= best_score - best_std]
+            final_k = min(se_candidates)  # Choose smallest K within 1-SE
             
-            # Data preview after RFE to 60 features
-            tprint_data_preview(pd.DataFrame(X[features_60]), "lgbm_features_60", max_rows=3, max_cols=10)
+            tprint_success(f"✅ Best K={final_k} (1-SE rule from {best_k})")
             
-            # Continue RFE: 60 → 50
-            tprint_info("🔍 Step 4.2: LGBM + RFE (60 → 50)")
-            current_features = features_60.copy()
-            target_50 = 50
+            # Generate final feature sets: best K, best K-10, best K-20
+            features_final = self._get_top_k_features(X, y, final_k)
+            features_60 = self._get_top_k_features(X, y, min(final_k, 60))
+            features_50 = self._get_top_k_features(X, y, min(final_k, 50))
+            features_40 = self._get_top_k_features(X, y, min(final_k, 40))
             
-            while len(current_features) > target_50:
-                X_current = X[current_features].values
-                lgb_train_current = lgb.Dataset(X_current, y.values, feature_name=current_features, free_raw_data=False)
-                
-                model = lgb.train(
-                    self.lgbm_params,
-                    lgb_train_current,
-                    num_boost_round=self.lgbm_num_boost_round,
-                    valid_sets=[lgb_train_current],
-                    callbacks=[
-                        lgb.early_stopping(stopping_rounds=self.lgbm_early_stopping_rounds, verbose=False),
-                        lgb.log_evaluation(period=0)
-                    ]
-                )
-                
-                importance = model.feature_importance(importance_type='split')
-                feature_importance = dict(zip(current_features, importance))
-                
-                sorted_features = sorted(feature_importance.items(), key=lambda x: x[1], reverse=True)
-                n_to_remove = min(10, len(current_features) - target_50)
-                current_features = [feat for feat, _ in sorted_features[:-n_to_remove]]
-            
-            features_50 = current_features
-            tprint_success(f"✅ RFE to 50 features completed")
-            
-            # Enhanced troubleshooting: Data format analysis after RFE to 50
-            tprint_data_format(pd.DataFrame(X[features_50]), "lgbm_features_50", level=LogLevel.DEBUG)
-            
-            # Data preview after RFE to 50 features
-            tprint_data_preview(pd.DataFrame(X[features_50]), "lgbm_features_50", max_rows=3, max_cols=10)
-            
-            # Continue RFE: 50 → 40
-            tprint_info("🔍 Step 4.3: LGBM + RFE (50 → 40)")
-            current_features = features_50.copy()
-            target_40 = 40
-            
-            while len(current_features) > target_40:
-                X_current = X[current_features].values
-                lgb_train_current = lgb.Dataset(X_current, y.values, feature_name=current_features, free_raw_data=False)
-                
-                model = lgb.train(
-                    self.lgbm_params,
-                    lgb_train_current,
-                    num_boost_round=self.lgbm_num_boost_round,
-                    valid_sets=[lgb_train_current],
-                    callbacks=[
-                        lgb.early_stopping(stopping_rounds=self.lgbm_early_stopping_rounds, verbose=False),
-                        lgb.log_evaluation(period=0)
-                    ]
-                )
-                
-                importance = model.feature_importance(importance_type='split')
-                feature_importance = dict(zip(current_features, importance))
-                
-                sorted_features = sorted(feature_importance.items(), key=lambda x: x[1], reverse=True)
-                n_to_remove = min(10, len(current_features) - target_40)
-                current_features = [feat for feat, _ in sorted_features[:-n_to_remove]]
-            
-            features_40 = current_features
-            tprint_success(f"✅ RFE to 40 features completed")
+            oos_duration = time.time() - oos_start
+            tprint_performance("OOS validation", oos_duration)
+            tprint_success(f"✅ OOS validation completed in {oos_duration:.2f}s")
             
             # Enhanced troubleshooting: Data format analysis after RFE to 40
             tprint_data_format(pd.DataFrame(X[features_40]), "lgbm_features_40", level=LogLevel.DEBUG)
@@ -1461,8 +1395,39 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
                 'feature_scores': feature_scores,
                 'shap_values_60': shap_values_60,
                 'shap_values_50': shap_values_50,
-                'shap_values_40': shap_values_40
+                'shap_values_40': shap_values_40,
+                'oos_grid_scores': oos_scores,
+                'cv_scheme': {
+                    'splits': 5,
+                    'embargo_frac': 0.01,
+                    'metric': metric,
+                    'cost_bps': cost_bps
+                },
+                'best_k': final_k,
+                'se_candidates': se_candidates
             }
+    
+    def _get_top_k_features(self, X: pd.DataFrame, y: pd.Series, k: int) -> List[str]:
+        """Get top K features using SHAP importance."""
+        if k >= len(X.columns):
+            return list(X.columns)
+            
+        # Train model to get feature importance
+        lgb_train = lgb.Dataset(X.values, y.values, feature_name=list(X.columns), free_raw_data=False)
+        model = lgb.train(
+            self.lgbm_params,
+            lgb_train,
+            num_boost_round=50,
+            callbacks=[lgb.log_evaluation(period=0)]
+        )
+        
+        # Get feature importance
+        importance = model.feature_importance(importance_type='split')
+        feature_importance = dict(zip(X.columns, importance))
+        
+        # Select top K
+        top_k_features = sorted(feature_importance.items(), key=lambda x: x[1], reverse=True)[:k]
+        return [feat for feat, _ in top_k_features]
     
     async def _save_artifacts(self, artifact_manager, result: FinalFeatureSelectionResult,
                             model_type: str, direction: str):

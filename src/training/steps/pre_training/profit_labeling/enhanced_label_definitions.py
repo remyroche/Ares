@@ -985,7 +985,7 @@ class EnhancedLabelDefinitions:
                    {'error': str(e), 'random_state': self.random_state})
 
     def _calculate_mfe_mae(self, market_data: pd.DataFrame, horizon_minutes: int) -> Tuple[pd.Series, pd.Series]:
-        """Calculate Max Favorable Excursion (MFE) and Max Adverse Excursion (MAE) - causal."""
+        """Calculate Max Favorable Excursion (MFE) and Max Adverse Excursion (MAE) using local extrema."""
         horizon_bars = max(1, horizon_minutes // 15)  # Assuming 15m bars
         
         mfe = pd.Series(0.0, index=market_data.index)
@@ -999,16 +999,49 @@ class EnhancedLabelDefinitions:
             
             if len(future_data) == 0:
                 continue
-                
-            # Calculate MFE (max favorable excursion)
-            future_highs = future_data['high']
-            mfe_values = (future_highs - current_close) / current_close
-            mfe.iloc[i] = mfe_values.max() if not mfe_values.empty else 0.0
             
-            # Calculate MAE (max adverse excursion) 
-            future_lows = future_data['low']
-            mae_values = (current_close - future_lows) / current_close
-            mae.iloc[i] = mae_values.max() if not mae_values.empty else 0.0
+            # Use local extrema detection for more precise MFE/MAE calculation
+            try:
+                from scipy.signal import argrelextrema
+                
+                # Find local peaks and troughs in the future window
+                future_highs = future_data['high'].values
+                future_lows = future_data['low'].values
+                
+                # Detect local peaks in highs
+                peak_indices = argrelextrema(future_highs, np.greater, order=1)[0]
+                # Detect local troughs in lows
+                trough_indices = argrelextrema(future_lows, np.less, order=1)[0]
+                
+                # Calculate MFE using local peaks
+                if len(peak_indices) > 0:
+                    peak_highs = future_highs[peak_indices]
+                    mfe_values = (peak_highs - current_close) / current_close
+                    mfe.iloc[i] = mfe_values.max() if len(mfe_values) > 0 else 0.0
+                else:
+                    # Fallback to max if no peaks found
+                    mfe_values = (future_highs - current_close) / current_close
+                    mfe.iloc[i] = mfe_values.max() if len(mfe_values) > 0 else 0.0
+                
+                # Calculate MAE using local troughs
+                if len(trough_indices) > 0:
+                    trough_lows = future_lows[trough_indices]
+                    mae_values = (current_close - trough_lows) / current_close
+                    mae.iloc[i] = mae_values.max() if len(mae_values) > 0 else 0.0
+                else:
+                    # Fallback to max if no troughs found
+                    mae_values = (current_close - future_lows) / current_close
+                    mae.iloc[i] = mae_values.max() if len(mae_values) > 0 else 0.0
+                    
+            except ImportError:
+                # Fallback to original method if scipy is not available
+                future_highs = future_data['high']
+                mfe_values = (future_highs - current_close) / current_close
+                mfe.iloc[i] = mfe_values.max() if not mfe_values.empty else 0.0
+                
+                future_lows = future_data['low']
+                mae_values = (current_close - future_lows) / current_close
+                mae.iloc[i] = mae_values.max() if not mae_values.empty else 0.0
         
         return mfe, mae
 

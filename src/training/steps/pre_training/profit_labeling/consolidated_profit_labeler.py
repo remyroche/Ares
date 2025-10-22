@@ -46,6 +46,7 @@ from src.feature_generation.utils.enhanced_matrix_operations import EnhancedMatr
 from sklearn.metrics import roc_auc_score, average_precision_score
 from sklearn.model_selection import TimeSeriesSplit
 from scipy import stats
+from scipy.signal import find_peaks, find_peaks_cwt, argrelextrema
 # import xgboost as xgb  # Removed unused import
 from sklearn.linear_model import LogisticRegression
 
@@ -124,6 +125,7 @@ class ConsolidatedLabelerConfig:
     enable_enhanced_data_cleaning: bool = True
     enable_enhanced_stability_monitoring: bool = True
     enable_trading_aware_labels: bool = True
+    enable_peak_trough_detection: bool = True
     
     # Enhanced label definitions
     analyst_config: Optional[Dict[str, Any]] = None
@@ -134,6 +136,15 @@ class ConsolidatedLabelerConfig:
     
     # Data quality assessment
     data_quality_config: Optional[Dict[str, Any]] = None
+    
+    # Peak/trough detection parameters
+    peak_detection_method: str = "find_peaks"  # "find_peaks", "find_peaks_cwt", "argrelextrema"
+    peak_prominence: float = 0.001  # Minimum prominence for peak detection (as fraction of price)
+    peak_distance: int = 5  # Minimum distance between peaks (in bars)
+    peak_width: Optional[Tuple[int, int]] = None  # (min_width, max_width) for peak width filtering
+    peak_height_threshold: Optional[float] = None  # Minimum height threshold
+    smoothing_window: int = 3  # Window for smoothing before peak detection
+    use_relative_extrema: bool = True  # Use relative extrema instead of absolute peaks
 
 @dataclass
 class LabelQualityMetrics:
@@ -992,6 +1003,51 @@ class ConsolidatedProfitLabeler(BaseStep):
                 hit_idx = np.where(window_data['high'] >= target_price_up)[0][0]
                 raw_target = 1
 
+                # Enhanced labeling with local extrema detection
+                if self.config.enable_peak_trough_detection:
+                    # Find local peak within the hit window for more precise labeling
+                    peak_idx, trough_idx = self._find_local_extrema_in_window(
+                        data, i, i + hit_idx, 'high'
+                    )
+                    
+                    if peak_idx is not None:
+                        # Use the local peak for more precise labeling
+                        actual_hit_idx = peak_idx - i
+                        labels.loc[current_time, 'target'] = raw_target
+                        labels.loc[current_time, 'time_to_hit'] = actual_hit_idx
+                        labels.loc[current_time, 'confidence'] = max(0.0, 1.0 - actual_hit_idx / horizon)
+                        labels.loc[current_time, 'extrema_type'] = 'peak'
+                        labels.loc[current_time, 'extrema_price'] = data.iloc[peak_idx]['high']
+                        
+                        # Register active instance and update next_free_idx
+                        expiry_bar = peak_idx + 1  # End after peak
+                        active_instances[current_time] = (raw_target, expiry_bar)
+                        next_free_idx = max(next_free_idx, expiry_bar)
+                    else:
+                        # Fallback to original barrier hit logic
+                        labels.loc[current_time, 'target'] = raw_target
+                        labels.loc[current_time, 'time_to_hit'] = hit_idx
+                        labels.loc[current_time, 'confidence'] = max(0.0, 1.0 - hit_idx / horizon)
+                        labels.loc[current_time, 'extrema_type'] = 'barrier'
+                        labels.loc[current_time, 'extrema_price'] = target_price_up
+                        
+                        # Register active instance and update next_free_idx
+                        expiry_bar = i + hit_idx + 1  # End after hit
+                        active_instances[current_time] = (raw_target, expiry_bar)
+                        next_free_idx = max(next_free_idx, expiry_bar)
+                else:
+                    # Original barrier hit logic without extrema detection
+                    labels.loc[current_time, 'target'] = raw_target
+                    labels.loc[current_time, 'time_to_hit'] = hit_idx
+                    labels.loc[current_time, 'confidence'] = max(0.0, 1.0 - hit_idx / horizon)
+                    labels.loc[current_time, 'extrema_type'] = 'barrier'
+                    labels.loc[current_time, 'extrema_price'] = target_price_up
+                    
+                    # Register active instance and update next_free_idx
+                    expiry_bar = i + hit_idx + 1  # End after hit
+                    active_instances[current_time] = (raw_target, expiry_bar)
+                    next_free_idx = max(next_free_idx, expiry_bar)
+
                 # Hysteresis check: if recent label flip, require stronger signal
                 if self._check_hysteresis_violation(labels, i, raw_target):
                     # Check if opposite barrier was hit by more than beta threshold
@@ -1002,22 +1058,57 @@ class ConsolidatedProfitLabeler(BaseStep):
                         # Hysteresis violation without strong override - skip
                         continue
 
-                labels.loc[current_time, 'target'] = raw_target
-                labels.loc[current_time, 'time_to_hit'] = hit_idx
-                # Confidence: faster hits = higher confidence (inverted from original)
-                labels.loc[current_time, 'confidence'] = max(0.0, 1.0 - hit_idx / horizon)
-
-                # Register active instance and update next_free_idx
-                expiry_bar = i + hit_idx + 1  # End after hit
-                active_instances[current_time] = (raw_target, expiry_bar)
-                next_free_idx = max(next_free_idx, expiry_bar)  # Reserve the window
-
             else:
                 # Check for lower barrier hit (short target)
                 lower_hit = np.any(window_data['low'] <= target_price_down)
                 if lower_hit:
                     hit_idx = np.where(window_data['low'] <= target_price_down)[0][0]
                     raw_target = -1
+
+                    # Enhanced labeling with local extrema detection
+                    if self.config.enable_peak_trough_detection:
+                        # Find local trough within the hit window for more precise labeling
+                        peak_idx, trough_idx = self._find_local_extrema_in_window(
+                            data, i, i + hit_idx, 'low'
+                        )
+                        
+                        if trough_idx is not None:
+                            # Use the local trough for more precise labeling
+                            actual_hit_idx = trough_idx - i
+                            labels.loc[current_time, 'target'] = raw_target
+                            labels.loc[current_time, 'time_to_hit'] = actual_hit_idx
+                            labels.loc[current_time, 'confidence'] = max(0.0, 1.0 - actual_hit_idx / horizon)
+                            labels.loc[current_time, 'extrema_type'] = 'trough'
+                            labels.loc[current_time, 'extrema_price'] = data.iloc[trough_idx]['low']
+                            
+                            # Register active instance and update next_free_idx
+                            expiry_bar = trough_idx + 1  # End after trough
+                            active_instances[current_time] = (raw_target, expiry_bar)
+                            next_free_idx = max(next_free_idx, expiry_bar)
+                        else:
+                            # Fallback to original barrier hit logic
+                            labels.loc[current_time, 'target'] = raw_target
+                            labels.loc[current_time, 'time_to_hit'] = hit_idx
+                            labels.loc[current_time, 'confidence'] = max(0.0, 1.0 - hit_idx / horizon)
+                            labels.loc[current_time, 'extrema_type'] = 'barrier'
+                            labels.loc[current_time, 'extrema_price'] = target_price_down
+                            
+                            # Register active instance and update next_free_idx
+                            expiry_bar = i + hit_idx + 1  # End after hit
+                            active_instances[current_time] = (raw_target, expiry_bar)
+                            next_free_idx = max(next_free_idx, expiry_bar)
+                    else:
+                        # Original barrier hit logic without extrema detection
+                        labels.loc[current_time, 'target'] = raw_target
+                        labels.loc[current_time, 'time_to_hit'] = hit_idx
+                        labels.loc[current_time, 'confidence'] = max(0.0, 1.0 - hit_idx / horizon)
+                        labels.loc[current_time, 'extrema_type'] = 'barrier'
+                        labels.loc[current_time, 'extrema_price'] = target_price_down
+                        
+                        # Register active instance and update next_free_idx
+                        expiry_bar = i + hit_idx + 1  # End after hit
+                        active_instances[current_time] = (raw_target, expiry_bar)
+                        next_free_idx = max(next_free_idx, expiry_bar)
 
                     # Hysteresis check: if recent label flip, require stronger signal
                     if self._check_hysteresis_violation(labels, i, raw_target):
@@ -1028,16 +1119,6 @@ class ConsolidatedProfitLabeler(BaseStep):
                         else:
                             # Hysteresis violation without strong override - skip
                             continue
-
-                    labels.loc[current_time, 'target'] = raw_target
-                    labels.loc[current_time, 'time_to_hit'] = hit_idx
-                    # Confidence: faster hits = higher confidence (inverted from original)
-                    labels.loc[current_time, 'confidence'] = max(0.0, 1.0 - hit_idx / horizon)
-
-                    # Register active instance and update next_free_idx
-                    expiry_bar = i + hit_idx + 1  # End after hit
-                    active_instances[current_time] = (raw_target, expiry_bar)
-                    next_free_idx = max(next_free_idx, expiry_bar)  # Reserve the window
 
         # Add metadata
         labels['k'] = k
@@ -1147,6 +1228,197 @@ class ConsolidatedProfitLabeler(BaseStep):
         horizons = horizons.ewm(alpha=0.1).mean()  # Light smoothing
 
         return horizons
+
+    def _detect_peaks_troughs(self, data: pd.DataFrame, price_column: str = 'close') -> Tuple[pd.Series, pd.Series]:
+        """
+        Detect peaks and troughs in price data using scipy.signal methods.
+        
+        Args:
+            data: DataFrame with OHLCV data
+            price_column: Column to use for peak detection ('close', 'high', 'low')
+            
+        Returns:
+            Tuple of (peaks_series, troughs_series) where 1 indicates peak/trough
+        """
+        if not self.config.enable_peak_trough_detection:
+            # Return empty series if peak detection is disabled
+            return pd.Series(0, index=data.index), pd.Series(0, index=data.index)
+        
+        try:
+            prices = data[price_column].values
+            if len(prices) < 10:  # Need minimum data for peak detection
+                return pd.Series(0, index=data.index), pd.Series(0, index=data.index)
+            
+            # Smooth the data if specified
+            if self.config.smoothing_window > 1:
+                from scipy.ndimage import uniform_filter1d
+                prices_smooth = uniform_filter1d(prices, size=self.config.smoothing_window)
+            else:
+                prices_smooth = prices
+            
+            # Calculate prominence threshold as fraction of price range
+            price_range = np.max(prices_smooth) - np.min(prices_smooth)
+            prominence_threshold = price_range * self.config.peak_prominence
+            
+            # Detect peaks and troughs based on method
+            if self.config.peak_detection_method == "find_peaks":
+                peaks, _ = find_peaks(
+                    prices_smooth,
+                    prominence=prominence_threshold,
+                    distance=self.config.peak_distance,
+                    width=self.config.peak_width,
+                    height=self.config.peak_height_threshold
+                )
+                
+                # For troughs, detect peaks in inverted signal
+                troughs, _ = find_peaks(
+                    -prices_smooth,
+                    prominence=prominence_threshold,
+                    distance=self.config.peak_distance,
+                    width=self.config.peak_width,
+                    height=-self.config.peak_height_threshold if self.config.peak_height_threshold else None
+                )
+                
+            elif self.config.peak_detection_method == "find_peaks_cwt":
+                # Use continuous wavelet transform for peak detection
+                from scipy.signal import find_peaks_cwt
+                peaks = find_peaks_cwt(prices_smooth, widths=np.arange(1, 10))
+                troughs = find_peaks_cwt(-prices_smooth, widths=np.arange(1, 10))
+                
+            elif self.config.peak_detection_method == "argrelextrema":
+                # Use relative extrema detection
+                peaks = argrelextrema(prices_smooth, np.greater, order=self.config.peak_distance)[0]
+                troughs = argrelextrema(prices_smooth, np.less, order=self.config.peak_distance)[0]
+                
+            else:
+                raise ValueError(f"Unknown peak detection method: {self.config.peak_detection_method}")
+            
+            # Create boolean series for peaks and troughs
+            peaks_series = pd.Series(0, index=data.index)
+            troughs_series = pd.Series(0, index=data.index)
+            
+            # Mark detected peaks and troughs
+            if len(peaks) > 0:
+                peaks_series.iloc[peaks] = 1
+            if len(troughs) > 0:
+                troughs_series.iloc[troughs] = 1
+            
+            self.tprint(f"✅ Peak/trough detection: {peaks_series.sum()} peaks, {troughs_series.sum()} troughs")
+            return peaks_series, troughs_series
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Peak/trough detection failed: {e}")
+            return pd.Series(0, index=data.index), pd.Series(0, index=data.index)
+
+    def _find_local_extrema_in_window(self, data: pd.DataFrame, start_idx: int, end_idx: int, 
+                                    price_column: str = 'close') -> Tuple[Optional[int], Optional[int]]:
+        """
+        Find local peaks and troughs within a specific time window.
+        
+        Args:
+            data: DataFrame with OHLCV data
+            start_idx: Start index of the window
+            end_idx: End index of the window
+            price_column: Column to use for extrema detection
+            
+        Returns:
+            Tuple of (peak_idx, trough_idx) within the window, or (None, None) if not found
+        """
+        if end_idx <= start_idx or start_idx < 0 or end_idx >= len(data):
+            return None, None
+        
+        window_data = data.iloc[start_idx:end_idx+1]
+        if len(window_data) < 3:  # Need at least 3 points for extrema
+            return None, None
+        
+        try:
+            prices = window_data[price_column].values
+            
+            # Use argrelextrema for local extrema within the window
+            peak_indices = argrelextrema(prices, np.greater, order=1)[0]
+            trough_indices = argrelextrema(prices, np.less, order=1)[0]
+            
+            # Convert to absolute indices
+            peak_idx = start_idx + peak_indices[0] if len(peak_indices) > 0 else None
+            trough_idx = start_idx + trough_indices[0] if len(trough_indices) > 0 else None
+            
+            return peak_idx, trough_idx
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Local extrema detection in window failed: {e}")
+            return None, None
+
+    def _detect_opportunity_patterns(self, data: pd.DataFrame, i: int, horizon: int) -> Dict[str, Any]:
+        """
+        Detect opportunity patterns using peak/trough analysis within a time window.
+        
+        Args:
+            data: DataFrame with OHLCV data
+            i: Current index
+            horizon: Look-forward horizon in bars
+            
+        Returns:
+            Dictionary with opportunity pattern information
+        """
+        if not self.config.enable_peak_trough_detection:
+            return {'has_opportunity': False}
+        
+        try:
+            end_idx = min(i + horizon, len(data) - 1)
+            if end_idx <= i + 2:  # Need at least 3 bars for pattern detection
+                return {'has_opportunity': False}
+            
+            window_data = data.iloc[i:end_idx+1]
+            prices = window_data['close'].values
+            highs = window_data['high'].values
+            lows = window_data['low'].values
+            
+            # Detect local extrema in the window
+            peak_indices = argrelextrema(highs, np.greater, order=1)[0]
+            trough_indices = argrelextrema(lows, np.less, order=1)[0]
+            
+            # Look for specific patterns
+            patterns = {
+                'has_opportunity': False,
+                'peak_indices': peak_indices,
+                'trough_indices': trough_indices,
+                'pattern_type': None,
+                'confidence': 0.0
+            }
+            
+            # Pattern 1: Peak followed by decline (short opportunity)
+            if len(peak_indices) > 0 and len(trough_indices) > 0:
+                first_peak = peak_indices[0]
+                first_trough = trough_indices[0]
+                
+                if first_peak < first_trough:
+                    # Peak first, then trough - potential short opportunity
+                    patterns['has_opportunity'] = True
+                    patterns['pattern_type'] = 'peak_trough'
+                    patterns['confidence'] = 0.7
+                elif first_trough < first_peak:
+                    # Trough first, then peak - potential long opportunity
+                    patterns['has_opportunity'] = True
+                    patterns['pattern_type'] = 'trough_peak'
+                    patterns['confidence'] = 0.7
+            
+            # Pattern 2: Strong directional move with local extrema
+            elif len(peak_indices) > 0:
+                # Only peaks detected - potential short opportunity
+                patterns['has_opportunity'] = True
+                patterns['pattern_type'] = 'peak_only'
+                patterns['confidence'] = 0.5
+            elif len(trough_indices) > 0:
+                # Only troughs detected - potential long opportunity
+                patterns['has_opportunity'] = True
+                patterns['pattern_type'] = 'trough_only'
+                patterns['confidence'] = 0.5
+            
+            return patterns
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Opportunity pattern detection failed: {e}")
+            return {'has_opportunity': False}
 
     def _compute_label_quality(
         self,

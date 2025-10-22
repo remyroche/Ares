@@ -114,10 +114,119 @@ from .types import (
 
 from src.utils.artifact_manager import ArtifactManager, ArtifactMetadata, OperationMetrics, CacheEntry, CompressionType, OperationType, RetryStrategy, RetryConfig, MemoryConfig
 from src.utils.hardware.unified_hardware_manager import WorkloadType
+
+# Common utility imports - Direct access to frequently used utilities
+try:
+    # Common operations and utilities
+    from src.utils.common_operations import (
+        safe_json_load, safe_json_dump, safe_fillna, safe_to_parquet, safe_read_parquet,
+        ensure_directory, safe_file_exists, get_current_datetime, format_datetime,
+        create_empty_dataframe, validate_dataframe, optimize_dataframe_dtypes,
+        safe_divide, safe_log, safe_sqrt, safe_percentage_change, safe_weighted_average,
+        get_m1_gpu_manager, get_m1_memory_optimizer, get_m1_cpu_optimizer,
+        cleanup_m1_optimizers, integrate_with_m1_optimizers, validate_positive,
+        create_fallback_logger, create_fallback_decorator, setup_basic_logging
+    )
+    COMMON_OPERATIONS_AVAILABLE: Final[bool] = True
+except ImportError as e:
+    COMMON_OPERATIONS_AVAILABLE: Final[bool] = False
+    tprint_warning(f"⚠️ Common operations not available: {e}")
+
+try:
+    # Common utilities for data operations
+    from src.utils.common_utilities import (
+        safe_dataframe_operation, validate_dataframe_columns, calculate_data_quality_metrics,
+        safe_merge_dataframes, create_summary_statistics, ensure_list, ensure_array, 
+        flatten_dict, safe_convert_to_numeric, safe_drop_na, safe_reset_index
+    )
+    COMMON_UTILITIES_AVAILABLE: Final[bool] = True
+except ImportError as e:
+    COMMON_UTILITIES_AVAILABLE: Final[bool] = False
+    tprint_warning(f"⚠️ Common utilities not available: {e}")
+
+try:
+    # Math validation utilities
+    from src.utils.math_validation import (
+        validate_finite, validate_positive, validate_range, validate_probability,
+        validate_matrix_properties, validate_statistical_properties,
+        safe_divide, safe_log, safe_sqrt, safe_percentage_change, safe_weighted_average,
+        MathValidationError
+    )
+    MATH_VALIDATION_AVAILABLE: Final[bool] = True
+except ImportError as e:
+    MATH_VALIDATION_AVAILABLE: Final[bool] = False
+    tprint_warning(f"⚠️ Math validation utilities not available: {e}")
+
+try:
+    # Core decorators and error handling
+    from src.core.decorators import (
+        handles_errors, error_boundary, converts_errors, traced, log_execution_time,
+        timeout, validate_data_quality, compose
+    )
+    from src.core.errors import (
+        AppError, ValidationError, DataIntegrityError, NotFoundError, 
+        BusinessRuleError, FileOperationError, MathValidationError, TimeoutError
+    )
+    CORE_DECORATORS_AVAILABLE: Final[bool] = True
+except ImportError as e:
+    CORE_DECORATORS_AVAILABLE: Final[bool] = False
+    tprint_warning(f"⚠️ Core decorators not available: {e}")
+
+try:
+    # ML common utilities
+    from src.utils.ml_common.config import BaseTrainingConfig
+    from src.utils.ml_common.training import PerRegimeTrainingStep
+    from src.utils.ml_common.optimization import HyperparameterOptimizer
+    from src.utils.ml_common.cv_utils import TimeSeriesSplitValidator
+    from src.utils.ml_common.oof_generator import OOFGenerator
+    from src.utils.ml_common.data_leakage_detector import DataLeakageDetector
+    ML_COMMON_AVAILABLE: Final[bool] = True
+except ImportError as e:
+    ML_COMMON_AVAILABLE: Final[bool] = False
+    tprint_warning(f"⚠️ ML common utilities not available: {e}")
+
+try:
+    # Data quality utilities
+    from src.utils.data.quality.data_cleaning import (
+        DataCleaner, CleaningConfig, MissingValueStrategy, OutlierStrategy
+    )
+    DATA_QUALITY_AVAILABLE: Final[bool] = True
+except ImportError as e:
+    DATA_QUALITY_AVAILABLE: Final[bool] = False
+    tprint_warning(f"⚠️ Data quality utilities not available: {e}")
+
+try:
+    # Model persistence utilities
+    from src.utils.ml_common.post_training.model_persistence import (
+        ModelPersistence, ModelMetadata, PersistenceConfig
+    )
+    from src.utils.ml_common.models.model_cache import (
+        ModelCache, get_model_cache, CachedModelMetadata
+    )
+    MODEL_PERSISTENCE_AVAILABLE: Final[bool] = True
+except ImportError as e:
+    MODEL_PERSISTENCE_AVAILABLE: Final[bool] = False
+    tprint_warning(f"⚠️ Model persistence utilities not available: {e}")
+# Comprehensive tprint imports - Direct access to all tprint utilities
 from src.utils.tprint import (
+    # Core tprint functions
     tprint, tprint_success, tprint_info, tprint_warning, tprint_error,
     tprint_debug, tprint_performance, tprint_progress, tprint_structured,
-    tprint_exception, tprint_with_level, LogLevel, TPrintConfig, tprint_data_preview, tprint_data_format
+    tprint_exception, tprint_with_level, tprint_timer, tprint_data_preview, 
+    tprint_data_format, tprint_metrics, tprint_summary, tprint_table,
+    
+    # Logging levels and configuration
+    LogLevel, TPrintConfig, LogLevelEnum,
+    
+    # Advanced tprint utilities
+    tprint_banner, tprint_separator, tprint_header, tprint_footer,
+    tprint_step_start, tprint_step_end, tprint_operation_start, tprint_operation_end,
+    tprint_data_summary, tprint_config_preview, tprint_validation_result,
+    tprint_performance_summary, tprint_memory_usage, tprint_hardware_stats,
+    
+    # Structured logging
+    tprint_dict, tprint_list, tprint_dataframe_info, tprint_model_info,
+    tprint_artifact_info, tprint_execution_summary
 )
 
 # Type definitions for better type safety
@@ -156,36 +265,107 @@ except ImportError as e:
     KLINES_PARQUET_AVAILABLE: Final[bool] = False
     import logging
     logging.getLogger(__name__).warning(f"KlinesParquetManager not available: {e}")
-# Enhanced hardware optimization imports
+# Comprehensive hardware optimization imports - Direct access to all hardware utilities
 try:
+    # Core hardware management
     from src.utils.hardware import (
         get_integrated_hardware_manager, IntegratedHardwareConfig,
         m1_optimized, memory_optimized, optimize_dataframe, force_cleanup,
-        WorkloadCategory, OptimizationLevel, get_memory_stats
+        WorkloadCategory, OptimizationLevel, get_memory_stats,
+        get_memory_usage, get_cpu_usage, get_gpu_usage, get_disk_usage
     )
+    
+    # Memory optimization decorators and utilities
     from src.utils.hardware.memory_optimized_decorators import (
         MemoryOptimizationLevel, comprehensive_memory_optimization,
-        memory_efficient, OptimizationConfig
+        memory_efficient, OptimizationConfig, memory_checkpoint,
+        gc_optimized, chunked_processing_auto, batch_processing_optimized
     )
+    
+    # General optimization decorators
     from src.utils.hardware.optimization_decorators import (
-        smart_cache, auto_optimize, performance_tracked, memory_efficient, OptimizationConfig
+        smart_cache, auto_optimize, performance_tracked, memory_efficient, 
+        OptimizationConfig, cpu_optimized, gpu_optimized, disk_optimized
     )
+    
+    # M1-specific optimizations
+    from src.utils.hardware.m1_gpu_utils import (
+        get_m1_gpu_manager, M1GPUAccelerator, M1GPUContext
+    )
+    from src.utils.hardware.m1_memory_optimizer import (
+        get_m1_memory_optimizer, M1MemoryOptimizer, M1MemoryContext
+    )
+    from src.utils.hardware.m1_cpu_optimizer import (
+        get_m1_cpu_optimizer, M1CPUOptimizer, M1CPUContext
+    )
+    
+    # Advanced hardware utilities
+    from src.utils.hardware.advanced_memory_manager import (
+        AdvancedMemoryManager, MemoryPressureLevel, MemoryStats
+    )
+    from src.utils.hardware.unified_hardware_manager import (
+        UnifiedHardwareManager, HardwareConfig, WorkloadType
+    )
+    
+    # Matrix operations and batch processing
+    from src.utils.hardware.matrix_operations import (
+        get_unified_matrix_operations, HardwareOptimizedMatrixProcessor,
+        BatchMatrixProcessor, MatrixOptimizationConfig
+    )
+    
     HARDWARE_OPTIMIZATION_AVAILABLE: Final[bool] = True
-except ImportError:
+    tprint_success("✅ Comprehensive hardware optimization utilities loaded")
+    
+except ImportError as e:
     # Fallback to minimal hardware module
-    from src.utils.hardware_minimal import (
-        get_integrated_hardware_manager, IntegratedHardwareConfig,
-        m1_optimized, memory_optimized, optimize_dataframe, force_cleanup,
-        WorkloadCategory, OptimizationLevel, get_memory_stats,
-        MemoryOptimizationLevel, memory_efficient, OptimizationConfig,
-        smart_cache, auto_optimize, performance_tracked
-    )
-    HARDWARE_OPTIMIZATION_AVAILABLE: Final[bool] = False
+    try:
+        from src.utils.hardware_minimal import (
+            get_integrated_hardware_manager, IntegratedHardwareConfig,
+            m1_optimized, memory_optimized, optimize_dataframe, force_cleanup,
+            WorkloadCategory, OptimizationLevel, get_memory_stats,
+            MemoryOptimizationLevel, memory_efficient, OptimizationConfig,
+            smart_cache, auto_optimize, performance_tracked
+        )
+        HARDWARE_OPTIMIZATION_AVAILABLE: Final[bool] = False
+        tprint_warning(f"⚠️ Using minimal hardware utilities: {e}")
+    except ImportError:
+        # Complete fallback - create dummy functions
+        def get_integrated_hardware_manager(*args, **kwargs): return None
+        def m1_optimized(*args, **kwargs): return lambda x: x
+        def memory_optimized(*args, **kwargs): return lambda x: x
+        def optimize_dataframe(*args, **kwargs): return args[0] if args else None
+        def force_cleanup(): pass
+        def get_memory_stats(): return {}
+        def smart_cache(*args, **kwargs): return lambda x: x
+        def auto_optimize(*args, **kwargs): return lambda x: x
+        def performance_tracked(*args, **kwargs): return lambda x: x
+        def memory_efficient(*args, **kwargs): return lambda x: x
+        
+        class WorkloadType:
+            DATA_PROCESSING = "data_processing"
+            ML_TRAINING = "ml_training"
+            INFERENCE = "inference"
+        
+        class OptimizationLevel:
+            MINIMAL = "minimal"
+            BALANCED = "balanced"
+            AGGRESSIVE = "aggressive"
+        
+        class MemoryOptimizationLevel:
+            MINIMAL = "minimal"
+            BALANCED = "balanced"
+            AGGRESSIVE = "aggressive"
+        
+        class OptimizationConfig:
+            def __init__(self, **kwargs): pass
+        
+        HARDWARE_OPTIMIZATION_AVAILABLE: Final[bool] = False
+        tprint_error(f"❌ Hardware utilities not available, using fallbacks: {e}")
 
 
 class BaseStep(ABC):
     """
-    Abstract base class for all autonomous pipeline steps with comprehensive type safety.
+    Abstract base class for all autonomous pipeline steps with comprehensive utilities integration.
     
     Each step must:
     - Inherit from this class
@@ -194,11 +374,71 @@ class BaseStep(ABC):
     - Generate Markdown outcome files
     - Be callable only via launcher (no standalone CLI)
     
+    ENHANCED FEATURES:
+    ==================
+    
+    1. COMPREHENSIVE UTILITY INTEGRATION:
+       - Direct access to tprint utilities (all logging functions)
+       - Complete hardware optimization suite (M1, memory, GPU, CPU)
+       - Common operations utilities (file I/O, data validation)
+       - Math validation utilities (safe operations, validation)
+       - Core decorators (error handling, validation, tracing)
+       - ML common utilities (optimization, CV, data leakage detection)
+       - Data quality utilities (cleaning, validation)
+       - Model persistence utilities (caching, metadata)
+    
+    2. CONVENIENCE METHODS:
+       - _safe_json_save() / _safe_json_load() for JSON operations
+       - _safe_divide() / _validate_finite() / _validate_positive() for math
+       - _ensure_directory() / _safe_file_exists() for file operations
+       - _safe_dataframe_operation() / _validate_dataframe_columns() for data
+       - _get_ml_optimizer() / _get_cv_validator() for ML operations
+       - _get_data_cleaner() / _get_model_cache() for specialized operations
+    
+    3. UTILITY AVAILABILITY TRACKING:
+       - _get_availability_status() - Check which utilities are available
+       - _log_utility_availability() - Log availability status
+       - Graceful fallbacks when utilities are not available
+    
+    4. DIRECT UTILITY ACCESS:
+       - self.common_ops - Common operations utilities
+       - self.common_utils - Common utilities for data operations
+       - self.math_validation - Math validation utilities
+       - self.core_decorators - Core decorators and error handling
+       - self.ml_common - ML common utilities
+       - self.data_quality - Data quality utilities
+       - self.model_persistence - Model persistence utilities
+       - self.hardware_utils - Hardware optimization utilities
+    
     Type Safety Features:
     - Comprehensive type hints for all methods
     - Protocol-based interfaces for better type checking
     - Generic type support for data processing
     - Runtime type validation
+    
+    USAGE EXAMPLE:
+    ==============
+    
+    class MyStep(BaseStep):
+        async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
+            # Use direct utility access
+            data = self._safe_json_load("data.json")
+            result = self._safe_divide(10, 2, default=0)
+            
+            # Use convenience methods
+            if self._validate_dataframe_columns(df, ["col1", "col2"]):
+                cleaned_df = self._safe_dataframe_operation(df, "fillna")
+            
+            # Use hardware optimization
+            if self.hardware_utils:
+                optimized_df = self.hardware_utils['optimize_dataframe'](df)
+            
+            # Use ML utilities
+            if self.ml_common:
+                optimizer = self._get_ml_optimizer("bayesian")
+                cv_validator = self._get_cv_validator("time_series")
+            
+            return {'success': True, 'artifacts': ['processed_data']}
     """
     
     # Class variables for type hints
@@ -311,10 +551,32 @@ class BaseStep(ABC):
         # Ensure all step category directories exist
         self.artifact_manager.ensure_step_category_directories()
         
+        # Initialize utility modules
+        self._initialize_utility_modules()
+        
         if self._is_klines_available():
             tprint_success(f"🎉 BaseStep initialized: {step_name} with enhanced artifact management, klines parquet management, and hardware optimization")
         else:
             tprint_success(f"🎉 BaseStep initialized: {step_name} with enhanced artifact management and hardware optimization (klines parquet management not available)")
+    
+    def _initialize_utility_modules(self) -> None:
+        """Initialize all utility modules and log their availability."""
+        tprint_info("🔧 Initializing utility modules...")
+        
+        # Log availability status
+        self._log_utility_availability()
+        
+        # Initialize common utilities
+        self.common_ops = self._get_common_operations()
+        self.common_utils = self._get_common_utilities()
+        self.math_validation = self._get_math_validation()
+        self.core_decorators = self._get_core_decorators()
+        self.ml_common = self._get_ml_common()
+        self.data_quality = self._get_data_quality()
+        self.model_persistence = self._get_model_persistence()
+        self.hardware_utils = self._get_hardware_utilities()
+        
+        tprint_success("✅ Utility modules initialized")
     
     @memory_efficient(
         memory_threshold_mb=100.0,
@@ -2099,6 +2361,385 @@ class BaseStep(ABC):
             
         except Exception as e:
             tprint_error(f"❌ Failed to ensure directory structure: {e}")
+    
+    # ============================================================================
+    # CONVENIENCE METHODS FOR DIRECT UTILITY ACCESS
+    # ============================================================================
+    
+    def _get_common_operations(self):
+        """Get common operations utilities with availability check."""
+        if not COMMON_OPERATIONS_AVAILABLE:
+            tprint_warning("⚠️ Common operations not available, using fallbacks")
+            return None
+        return {
+            'safe_json_load': safe_json_load,
+            'safe_json_dump': safe_json_dump,
+            'safe_fillna': safe_fillna,
+            'safe_to_parquet': safe_to_parquet,
+            'safe_read_parquet': safe_read_parquet,
+            'ensure_directory': ensure_directory,
+            'safe_file_exists': safe_file_exists,
+            'get_current_datetime': get_current_datetime,
+            'format_datetime': format_datetime,
+            'create_empty_dataframe': create_empty_dataframe,
+            'validate_dataframe': validate_dataframe,
+            'optimize_dataframe_dtypes': optimize_dataframe_dtypes,
+            'safe_divide': safe_divide,
+            'safe_log': safe_log,
+            'safe_sqrt': safe_sqrt,
+            'safe_percentage_change': safe_percentage_change,
+            'safe_weighted_average': safe_weighted_average,
+            'get_m1_gpu_manager': get_m1_gpu_manager,
+            'get_m1_memory_optimizer': get_m1_memory_optimizer,
+            'get_m1_cpu_optimizer': get_m1_cpu_optimizer,
+            'cleanup_m1_optimizers': cleanup_m1_optimizers,
+            'integrate_with_m1_optimizers': integrate_with_m1_optimizers,
+            'validate_positive': validate_positive
+        }
+    
+    def _get_common_utilities(self):
+        """Get common utilities with availability check."""
+        if not COMMON_UTILITIES_AVAILABLE:
+            tprint_warning("⚠️ Common utilities not available, using fallbacks")
+            return None
+        return {
+            'safe_dataframe_operation': safe_dataframe_operation,
+            'validate_dataframe_columns': validate_dataframe_columns,
+            'calculate_data_quality_metrics': calculate_data_quality_metrics,
+            'safe_merge_dataframes': safe_merge_dataframes,
+            'create_summary_statistics': create_summary_statistics,
+            'ensure_list': ensure_list,
+            'ensure_array': ensure_array,
+            'flatten_dict': flatten_dict,
+            'safe_convert_to_numeric': safe_convert_to_numeric,
+            'safe_drop_na': safe_drop_na,
+            'safe_reset_index': safe_reset_index
+        }
+    
+    def _get_math_validation(self):
+        """Get math validation utilities with availability check."""
+        if not MATH_VALIDATION_AVAILABLE:
+            tprint_warning("⚠️ Math validation utilities not available, using fallbacks")
+            return None
+        return {
+            'validate_finite': validate_finite,
+            'validate_positive': validate_positive,
+            'validate_range': validate_range,
+            'validate_probability': validate_probability,
+            'validate_matrix_properties': validate_matrix_properties,
+            'validate_statistical_properties': validate_statistical_properties,
+            'safe_divide': safe_divide,
+            'safe_log': safe_log,
+            'safe_sqrt': safe_sqrt,
+            'safe_percentage_change': safe_percentage_change,
+            'safe_weighted_average': safe_weighted_average,
+            'MathValidationError': MathValidationError
+        }
+    
+    def _get_core_decorators(self):
+        """Get core decorators with availability check."""
+        if not CORE_DECORATORS_AVAILABLE:
+            tprint_warning("⚠️ Core decorators not available, using fallbacks")
+            return None
+        return {
+            'handles_errors': handles_errors,
+            'error_boundary': error_boundary,
+            'converts_errors': converts_errors,
+            'traced': traced,
+            'log_execution_time': log_execution_time,
+            'timeout': timeout,
+            'validate_data_quality': validate_data_quality,
+            'compose': compose,
+            'AppError': AppError,
+            'ValidationError': ValidationError,
+            'DataIntegrityError': DataIntegrityError,
+            'NotFoundError': NotFoundError,
+            'BusinessRuleError': BusinessRuleError,
+            'FileOperationError': FileOperationError,
+            'MathValidationError': MathValidationError,
+            'TimeoutError': TimeoutError
+        }
+    
+    def _get_ml_common(self):
+        """Get ML common utilities with availability check."""
+        if not ML_COMMON_AVAILABLE:
+            tprint_warning("⚠️ ML common utilities not available, using fallbacks")
+            return None
+        return {
+            'BaseTrainingConfig': BaseTrainingConfig,
+            'PerRegimeTrainingStep': PerRegimeTrainingStep,
+            'HyperparameterOptimizer': HyperparameterOptimizer,
+            'TimeSeriesSplitValidator': TimeSeriesSplitValidator,
+            'OOFGenerator': OOFGenerator,
+            'DataLeakageDetector': DataLeakageDetector
+        }
+    
+    def _get_data_quality(self):
+        """Get data quality utilities with availability check."""
+        if not DATA_QUALITY_AVAILABLE:
+            tprint_warning("⚠️ Data quality utilities not available, using fallbacks")
+            return None
+        return {
+            'DataCleaner': DataCleaner,
+            'CleaningConfig': CleaningConfig,
+            'MissingValueStrategy': MissingValueStrategy,
+            'OutlierStrategy': OutlierStrategy
+        }
+    
+    def _get_model_persistence(self):
+        """Get model persistence utilities with availability check."""
+        if not MODEL_PERSISTENCE_AVAILABLE:
+            tprint_warning("⚠️ Model persistence utilities not available, using fallbacks")
+            return None
+        return {
+            'ModelPersistence': ModelPersistence,
+            'ModelMetadata': ModelMetadata,
+            'PersistenceConfig': PersistenceConfig,
+            'ModelCache': ModelCache,
+            'get_model_cache': get_model_cache,
+            'CachedModelMetadata': CachedModelMetadata
+        }
+    
+    def _get_hardware_utilities(self):
+        """Get hardware utilities with availability check."""
+        if not HARDWARE_OPTIMIZATION_AVAILABLE:
+            tprint_warning("⚠️ Hardware utilities not available, using fallbacks")
+            return None
+        return {
+            'get_integrated_hardware_manager': get_integrated_hardware_manager,
+            'IntegratedHardwareConfig': IntegratedHardwareConfig,
+            'm1_optimized': m1_optimized,
+            'memory_optimized': memory_optimized,
+            'optimize_dataframe': optimize_dataframe,
+            'force_cleanup': force_cleanup,
+            'WorkloadCategory': WorkloadCategory,
+            'OptimizationLevel': OptimizationLevel,
+            'get_memory_stats': get_memory_stats,
+            'MemoryOptimizationLevel': MemoryOptimizationLevel,
+            'comprehensive_memory_optimization': comprehensive_memory_optimization,
+            'memory_efficient': memory_efficient,
+            'OptimizationConfig': OptimizationConfig,
+            'smart_cache': smart_cache,
+            'auto_optimize': auto_optimize,
+            'performance_tracked': performance_tracked,
+            'WorkloadType': WorkloadType
+        }
+    
+    def _get_availability_status(self) -> Dict[str, bool]:
+        """Get availability status of all utility modules."""
+        return {
+            'common_operations': COMMON_OPERATIONS_AVAILABLE,
+            'common_utilities': COMMON_UTILITIES_AVAILABLE,
+            'math_validation': MATH_VALIDATION_AVAILABLE,
+            'core_decorators': CORE_DECORATORS_AVAILABLE,
+            'ml_common': ML_COMMON_AVAILABLE,
+            'data_quality': DATA_QUALITY_AVAILABLE,
+            'model_persistence': MODEL_PERSISTENCE_AVAILABLE,
+            'hardware_optimization': HARDWARE_OPTIMIZATION_AVAILABLE,
+            'klines_parquet': KLINES_PARQUET_AVAILABLE
+        }
+    
+    def _log_utility_availability(self) -> None:
+        """Log the availability status of all utility modules."""
+        availability = self._get_availability_status()
+        tprint_info("📋 Utility module availability status:")
+        
+        for module, available in availability.items():
+            status = "✅ Available" if available else "❌ Not Available"
+            tprint_info(f"  {module}: {status}")
+        
+        available_count = sum(availability.values())
+        total_count = len(availability)
+        tprint_info(f"📊 Overall: {available_count}/{total_count} modules available")
+    
+    # ============================================================================
+    # CONVENIENCE WRAPPER METHODS FOR COMMON OPERATIONS
+    # ============================================================================
+    
+    def _safe_json_save(self, data: Dict[str, Any], file_path: str) -> bool:
+        """Save JSON data safely with error handling."""
+        if self.common_ops and 'safe_json_dump' in self.common_ops:
+            return self.common_ops['safe_json_dump'](data, file_path)
+        else:
+            import json
+            try:
+                with open(file_path, 'w') as f:
+                    json.dump(data, f, indent=2)
+                return True
+            except Exception as e:
+                tprint_error(f"❌ Failed to save JSON: {e}")
+                return False
+    
+    def _safe_json_load(self, file_path: str) -> Dict[str, Any]:
+        """Load JSON data safely with error handling."""
+        if self.common_ops and 'safe_json_load' in self.common_ops:
+            return self.common_ops['safe_json_load'](file_path)
+        else:
+            import json
+            try:
+                with open(file_path, 'r') as f:
+                    return json.load(f)
+            except Exception as e:
+                tprint_error(f"❌ Failed to load JSON: {e}")
+                return {}
+    
+    def _safe_divide(self, numerator: float, denominator: float, default: float = 0.0) -> float:
+        """Safely divide two numbers with fallback."""
+        if self.math_validation and 'safe_divide' in self.math_validation:
+            return self.math_validation['safe_divide'](numerator, denominator, default)
+        else:
+            try:
+                return numerator / denominator if denominator != 0 else default
+            except (ZeroDivisionError, TypeError):
+                return default
+    
+    def _validate_finite(self, value: Any, default: Any = None) -> Any:
+        """Validate that a value is finite."""
+        if self.math_validation and 'validate_finite' in self.math_validation:
+            return self.math_validation['validate_finite'](value, default)
+        else:
+            try:
+                import numpy as np
+                if np.isfinite(value):
+                    return value
+                else:
+                    return default
+            except (TypeError, ValueError):
+                return default
+    
+    def _validate_positive(self, value: float, default: float = 0.0) -> float:
+        """Validate that a value is positive."""
+        if self.math_validation and 'validate_positive' in self.math_validation:
+            return self.math_validation['validate_positive'](value, default)
+        else:
+            return value if value > 0 else default
+    
+    def _ensure_directory(self, directory_path: str) -> bool:
+        """Ensure directory exists."""
+        if self.common_ops and 'ensure_directory' in self.common_ops:
+            return self.common_ops['ensure_directory'](directory_path)
+        else:
+            import os
+            try:
+                os.makedirs(directory_path, exist_ok=True)
+                return True
+            except Exception as e:
+                tprint_error(f"❌ Failed to create directory: {e}")
+                return False
+    
+    def _safe_dataframe_operation(self, df: Any, operation: str, **kwargs) -> Any:
+        """Perform safe DataFrame operations."""
+        if self.common_utils and 'safe_dataframe_operation' in self.common_utils:
+            return self.common_utils['safe_dataframe_operation'](df, operation, **kwargs)
+        else:
+            tprint_warning(f"⚠️ DataFrame operation '{operation}' not available")
+            return df
+    
+    def _validate_dataframe_columns(self, df: Any, required_columns: List[str]) -> bool:
+        """Validate DataFrame has required columns."""
+        if self.common_utils and 'validate_dataframe_columns' in self.common_utils:
+            return self.common_utils['validate_dataframe_columns'](df, required_columns)
+        else:
+            try:
+                return all(col in df.columns for col in required_columns)
+            except AttributeError:
+                return False
+    
+    def _get_ml_optimizer(self, optimizer_type: str = "bayesian") -> Any:
+        """Get ML optimizer with fallback."""
+        if self.ml_common and 'HyperparameterOptimizer' in self.ml_common:
+            return self.ml_common['HyperparameterOptimizer']()
+        else:
+            tprint_warning(f"⚠️ ML optimizer not available, using fallback")
+            return None
+    
+    def _get_cv_validator(self, cv_type: str = "time_series") -> Any:
+        """Get cross-validation validator with fallback."""
+        if self.ml_common and 'TimeSeriesSplitValidator' in self.ml_common:
+            return self.ml_common['TimeSeriesSplitValidator']()
+        else:
+            tprint_warning(f"⚠️ CV validator not available, using fallback")
+            return None
+    
+    def _get_data_cleaner(self, config: Dict[str, Any] = None) -> Any:
+        """Get data cleaner with fallback."""
+        if self.data_quality and 'DataCleaner' in self.data_quality:
+            return self.data_quality['DataCleaner'](config)
+        else:
+            tprint_warning(f"⚠️ Data cleaner not available, using fallback")
+            return None
+    
+    def _get_model_cache(self) -> Any:
+        """Get model cache with fallback."""
+        if self.model_persistence and 'get_model_cache' in self.model_persistence:
+            return self.model_persistence['get_model_cache']()
+        else:
+            tprint_warning(f"⚠️ Model cache not available, using fallback")
+            return None
+    
+    def _get_utility_help(self) -> Dict[str, Any]:
+        """Get help information about available utilities."""
+        help_info = {
+            'available_utilities': self._get_availability_status(),
+            'convenience_methods': [
+                '_safe_json_save', '_safe_json_load', '_safe_divide', '_validate_finite',
+                '_validate_positive', '_ensure_directory', '_safe_dataframe_operation',
+                '_validate_dataframe_columns', '_get_ml_optimizer', '_get_cv_validator',
+                '_get_data_cleaner', '_get_model_cache'
+            ],
+            'direct_access_attributes': [
+                'common_ops', 'common_utils', 'math_validation', 'core_decorators',
+                'ml_common', 'data_quality', 'model_persistence', 'hardware_utils'
+            ],
+            'tprint_functions': [
+                'tprint', 'tprint_success', 'tprint_info', 'tprint_warning', 'tprint_error',
+                'tprint_debug', 'tprint_performance', 'tprint_progress', 'tprint_structured',
+                'tprint_exception', 'tprint_with_level', 'tprint_timer', 'tprint_data_preview',
+                'tprint_data_format', 'tprint_metrics', 'tprint_summary', 'tprint_table',
+                'tprint_banner', 'tprint_separator', 'tprint_header', 'tprint_footer',
+                'tprint_step_start', 'tprint_step_end', 'tprint_operation_start', 'tprint_operation_end',
+                'tprint_data_summary', 'tprint_config_preview', 'tprint_validation_result',
+                'tprint_performance_summary', 'tprint_memory_usage', 'tprint_hardware_stats',
+                'tprint_dict', 'tprint_list', 'tprint_dataframe_info', 'tprint_model_info',
+                'tprint_artifact_info', 'tprint_execution_summary'
+            ],
+            'hardware_functions': [
+                'get_integrated_hardware_manager', 'm1_optimized', 'memory_optimized',
+                'optimize_dataframe', 'force_cleanup', 'smart_cache', 'auto_optimize',
+                'performance_tracked', 'memory_efficient', 'comprehensive_memory_optimization'
+            ]
+        }
+        return help_info
+    
+    def _print_utility_help(self) -> None:
+        """Print help information about available utilities."""
+        help_info = self._get_utility_help()
+        
+        tprint_banner("BaseStep Utility Help")
+        tprint_info("📋 Available Utilities:")
+        for utility, available in help_info['available_utilities'].items():
+            status = "✅" if available else "❌"
+            tprint_info(f"  {status} {utility}")
+        
+        tprint_info("\n🔧 Convenience Methods:")
+        for method in help_info['convenience_methods']:
+            tprint_info(f"  - {method}")
+        
+        tprint_info("\n📦 Direct Access Attributes:")
+        for attr in help_info['direct_access_attributes']:
+            tprint_info(f"  - self.{attr}")
+        
+        tprint_info("\n📝 TPrint Functions:")
+        for func in help_info['tprint_functions'][:10]:  # Show first 10
+            tprint_info(f"  - {func}")
+        if len(help_info['tprint_functions']) > 10:
+            tprint_info(f"  ... and {len(help_info['tprint_functions']) - 10} more")
+        
+        tprint_info("\n⚡ Hardware Functions:")
+        for func in help_info['hardware_functions']:
+            tprint_info(f"  - {func}")
+        
+        tprint_footer("End of Utility Help")
 
 
 class StepRegistry:

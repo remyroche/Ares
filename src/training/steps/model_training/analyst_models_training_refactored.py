@@ -38,33 +38,8 @@ except ImportError as e:
     print(f"❌ CRITICAL: Failed to import core ML utilities: {e}")
     raise
 
-# Import enhanced logging and utilities - CRITICAL: Fast fail if not available
-try:
-    from src.utils.tprint import (
-        tprint, tprint_info, tprint_warning, tprint_error, tprint_success,
-        tprint_debug, tprint_progress, tprint_performance, tprint_structured,
-        tprint_timer, tprint_data_preview, tprint_data_format, LogLevel
-    )
-    TPRINT_AVAILABLE = True
-except ImportError as e:
-    print(f"❌ CRITICAL ERROR: tprint is required but not available: {e}")
-    print("❌ This is a critical dependency for enhanced logging. Please install tprint.")
-    raise ImportError(f"CRITICAL: tprint is required but not available: {e}") from e
-
-# Import common utilities - CRITICAL: Fast fail if not available
-try:
-    from src.utils.common_operations import (
-        get_m1_gpu_manager, get_m1_memory_optimizer, get_m1_cpu_optimizer,
-        cleanup_m1_optimizers, integrate_with_m1_optimizers, safe_divide,
-        ensure_directory, safe_file_exists, get_current_datetime, validate_positive
-    )
-    COMMON_OPERATIONS_AVAILABLE = True
-    tprint_info("✅ Common operations utilities loaded")
-except ImportError as e:
-    print(f"❌ CRITICAL ERROR: Common operations utilities are required but not available: {e}")
-    print("❌ Hardware optimizers are essential for performance. Please install common_operations.")
-    COMMON_OPERATIONS_AVAILABLE = False
-    raise ImportError(f"CRITICAL: Common operations utilities are required but not available: {e}") from e
+# Note: tprint and common operations utilities are now available through BaseStep
+# No need for separate imports - they're accessible via self.common_ops and direct tprint calls
 
 # Import model persistence and caching
 try:
@@ -87,27 +62,8 @@ try:
 except ImportError:
     DATA_CLEANING_AVAILABLE = False
 
-try:
-    from src.utils.common_utilities import (
-        safe_dataframe_operation, validate_dataframe_columns, calculate_data_quality_metrics,
-        safe_merge_dataframes, create_summary_statistics
-    )
-    COMMON_UTILITIES_AVAILABLE = True
-    tprint_info("✅ Common utilities loaded")
-except ImportError as e:
-    print(f"❌ CRITICAL ERROR: Common utilities are required but not available: {e}")
-    print("❌ Enhanced data operations are essential. Please install common_utilities.")
-    COMMON_UTILITIES_AVAILABLE = False
-    raise ImportError(f"CRITICAL: Common utilities are required but not available: {e}") from e
-
-try:
-    from src.utils.math_validation import (
-        validate_finite, validate_positive, validate_range,
-        validate_matrix_properties, validate_statistical_properties
-    )
-    MATH_VALIDATION_AVAILABLE = True
-except ImportError:
-    MATH_VALIDATION_AVAILABLE = False
+# Note: common utilities and math validation are now available through BaseStep
+# No need for separate imports - they're accessible via self.common_utils and self.math_validation
 
 # Required psutil import - fail fast if not available for production use
 try:

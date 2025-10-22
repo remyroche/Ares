@@ -75,7 +75,7 @@ import random
 
 # Import existing utilities
 try:
-    from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success
+    from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success, tprint_data_preview, tprint_data_format
     from src.utils.common_operations import safe_divide, safe_mean, safe_std, validate_dataframe
     from src.utils.math_validation import MathValidation
     TPRINT_AVAILABLE = True

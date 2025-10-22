@@ -44,8 +44,8 @@ from abc import ABC
 # Import BaseStep
 from src.training.steps.base_step import BaseStep
 
-# Note: tprint and hardware utilities are available through BaseStep
-# No need for direct imports as they're inherited from BaseStep
+# Import tprint utilities
+from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success, tprint_data_preview, tprint_data_format
 
 # Import existing components
 from .enhanced_label_definitions import (

@@ -10,6 +10,7 @@ import pandas as pd
 import unittest
 from datetime import datetime, timedelta
 import warnings
+from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success, tprint_data_preview, tprint_data_format
 
 # Suppress warnings for cleaner test output
 warnings.filterwarnings('ignore')
@@ -95,13 +96,15 @@ class TestEnhancedLabelDefinitions(unittest.TestCase):
 
     def test_foundational_contracts_validation(self):
         """Test foundational contracts validation."""
-        print("\n=== Testing Foundational Contracts Validation ===")
+        tprint("\n=== Testing Foundational Contracts Validation ===")
         
         # Test valid data
+        tprint_data_preview(self.market_data, "test_market_data")
         validation_results = self.labeler.validate_foundational_contracts(self.market_data)
+        tprint_data_format(validation_results, "validation_results")
         self.assertTrue(validation_results['is_valid'])
         self.assertEqual(len(validation_results['issues']), 0)
-        print("✅ Valid data passed foundational contracts validation")
+        tprint("✅ Valid data passed foundational contracts validation")
         
         # Test invalid data (non-monotonic index)
         invalid_data = self.market_data.copy()
@@ -109,11 +112,11 @@ class TestEnhancedLabelDefinitions(unittest.TestCase):
         validation_results = self.labeler.validate_foundational_contracts(invalid_data)
         self.assertFalse(validation_results['is_valid'])
         self.assertGreater(len(validation_results['issues']), 0)
-        print("✅ Invalid data correctly rejected by foundational contracts validation")
+        tprint("✅ Invalid data correctly rejected by foundational contracts validation")
 
     def test_data_cleaning_masking(self):
         """Test data cleaning with masking approach."""
-        print("\n=== Testing Data Cleaning (Masking-Based) ===")
+        tprint("\n=== Testing Data Cleaning (Masking-Based) ===")
         
         # Add some outliers to test detection
         test_data = self.market_data.copy()
@@ -131,11 +134,11 @@ class TestEnhancedLabelDefinitions(unittest.TestCase):
         self.assertTrue(masks.outlier_mask.iloc[10])  # Extreme price outlier
         self.assertTrue(masks.untradable_mask.iloc[20])  # Zero volume
         
-        print("✅ Data cleaning correctly flags issues without deleting data")
+        tprint("✅ Data cleaning correctly flags issues without deleting data")
 
     def test_analyst_labels_causality(self):
         """Test analyst labels for causality (no leakage)."""
-        print("\n=== Testing Analyst Labels (Causality) ===")
+        tprint("\n=== Testing Analyst Labels (Causality) ===")
         
         labels, confidence, meta = self.labeler.generate_analyst_labels(
             self.market_data, self.volatility_series, self.regime_data
@@ -154,11 +157,11 @@ class TestEnhancedLabelDefinitions(unittest.TestCase):
         self.assertIn('volatility_estimate', meta)
         self.assertIn('random_state', meta)
         
-        print("✅ Analyst labels generated with proper causality and meta data")
+        tprint("✅ Analyst labels generated with proper causality and meta data")
 
     def test_tactician_labels_mfe_mae(self):
         """Test tactician labels with MFE/MAE logic."""
-        print("\n=== Testing Tactician Labels (MFE/MAE) ===")
+        tprint("\n=== Testing Tactician Labels (MFE/MAE) ===")
         
         labels, magnitude, meta = self.labeler.generate_tactician_labels(
             self.market_data, self.volatility_series, self.regime_data
@@ -174,11 +177,11 @@ class TestEnhancedLabelDefinitions(unittest.TestCase):
         self.assertIn('threshold_values', meta)
         self.assertIn('mfe_mae', meta)
         
-        print("✅ Tactician labels generated with MFE/MAE logic")
+        tprint("✅ Tactician labels generated with MFE/MAE logic")
 
     def test_risk_aware_labels_first_hit(self):
         """Test risk-aware labels with first-hit logic."""
-        print("\n=== Testing Risk-Aware Labels (First-Hit Logic) ===")
+        tprint("\n=== Testing Risk-Aware Labels (First-Hit Logic) ===")
         
         # Create base labels
         base_labels = pd.Series(1, index=self.market_data.index)
@@ -194,11 +197,11 @@ class TestEnhancedLabelDefinitions(unittest.TestCase):
         self.assertIn('stop_hit_count', meta)
         self.assertIn('target_hit_count', meta)
         
-        print("✅ Risk-aware labels applied with first-hit logic")
+        tprint("✅ Risk-aware labels applied with first-hit logic")
 
     def test_stability_checks_statistical(self):
         """Test stability checks using statistical tests."""
-        print("\n=== Testing Stability Checks (Statistical Tests) ===")
+        tprint("\n=== Testing Stability Checks (Statistical Tests) ===")
         
         # Create some labels
         labels = pd.Series(np.random.choice([0, 1], 50), index=self.market_data.index[:50])
@@ -212,11 +215,11 @@ class TestEnhancedLabelDefinitions(unittest.TestCase):
         self.assertIn('metrics', stability_results)
         self.assertIn('p_values', stability_results)
         
-        print("✅ Stability checks completed with statistical tests")
+        tprint("✅ Stability checks completed with statistical tests")
 
     def test_trading_costs_data_driven(self):
         """Test data-driven trading costs."""
-        print("\n=== Testing Trading Costs (Data-Driven) ===")
+        tprint("\n=== Testing Trading Costs (Data-Driven) ===")
         
         costs = TradingCosts(
             spread_model_enabled=True,
@@ -232,11 +235,11 @@ class TestEnhancedLabelDefinitions(unittest.TestCase):
         # Check that costs are non-negative
         self.assertTrue((cost_series >= 0).all())
         
-        print("✅ Trading costs calculated using data-driven models")
+        tprint("✅ Trading costs calculated using data-driven models")
 
     def test_threshold_policies_causal(self):
         """Test causal threshold calculation."""
-        print("\n=== Testing Threshold Policies (Causal) ===")
+        tprint("\n=== Testing Threshold Policies (Causal) ===")
         
         from enhanced_label_definitions import CausalThresholdCalculator
         
@@ -256,11 +259,11 @@ class TestEnhancedLabelDefinitions(unittest.TestCase):
         self.assertIsInstance(threshold, float)
         self.assertIsInstance(source, str)
         
-        print("✅ Threshold policies work with causal calculations")
+        tprint("✅ Threshold policies work with causal calculations")
 
     def test_data_quality_masks(self):
         """Test data quality mask functionality."""
-        print("\n=== Testing Data Quality Masks ===")
+        tprint("\n=== Testing Data Quality Masks ===")
         
         masks = DataQualityMasks()
         
@@ -276,11 +279,11 @@ class TestEnhancedLabelDefinitions(unittest.TestCase):
         self.assertTrue(combined_mask.iloc[1])   # Outlier
         self.assertTrue(combined_mask.iloc[2])   # Untradable
         
-        print("✅ Data quality masks work correctly")
+        tprint("✅ Data quality masks work correctly")
 
     def test_no_future_leakage(self):
         """Test that no future information is leaked."""
-        print("\n=== Testing No Future Leakage ===")
+        tprint("\n=== Testing No Future Leakage ===")
         
         # This is a conceptual test - in practice, you would check that
         # calculations at time t only use data from times ≤ t
@@ -299,11 +302,11 @@ class TestEnhancedLabelDefinitions(unittest.TestCase):
         )
         self.assertGreater(confidence.nunique(), 1)
         
-        print("✅ No obvious future leakage detected")
+        tprint("✅ No obvious future leakage detected")
 
     def test_meta_data_completeness(self):
         """Test that meta data is complete and useful."""
-        print("\n=== Testing Meta Data Completeness ===")
+        tprint("\n=== Testing Meta Data Completeness ===")
         
         labels, confidence, meta = self.labeler.generate_analyst_labels(
             self.market_data, self.volatility_series, self.regime_data
@@ -324,13 +327,13 @@ class TestEnhancedLabelDefinitions(unittest.TestCase):
         # Check that random state is preserved
         self.assertEqual(meta['random_state'], 42)
         
-        print("✅ Meta data is complete and useful")
+        tprint("✅ Meta data is complete and useful")
 
 
 def run_comprehensive_tests():
     """Run all tests and provide a summary."""
-    print("🚀 Running Comprehensive Tests for Enhanced Label Definitions")
-    print("=" * 70)
+    tprint("🚀 Running Comprehensive Tests for Enhanced Label Definitions")
+    tprint("=" * 70)
     
     # Create test suite
     suite = unittest.TestLoader().loadTestsFromTestCase(TestEnhancedLabelDefinitions)
@@ -340,27 +343,27 @@ def run_comprehensive_tests():
     result = runner.run(suite)
     
     # Print summary
-    print("\n" + "=" * 70)
-    print("📊 TEST SUMMARY")
-    print(f"Tests run: {result.testsRun}")
-    print(f"Failures: {len(result.failures)}")
-    print(f"Errors: {len(result.errors)}")
+    tprint("\n" + "=" * 70)
+    tprint("📊 TEST SUMMARY")
+    tprint(f"Tests run: {result.testsRun}")
+    tprint(f"Failures: {len(result.failures)}")
+    tprint(f"Errors: {len(result.errors)}")
     
     if result.failures:
-        print("\n❌ FAILURES:")
+        tprint("\n❌ FAILURES:")
         for test, traceback in result.failures:
-            print(f"  - {test}: {traceback}")
+            tprint(f"  - {test}: {traceback}")
     
     if result.errors:
-        print("\n💥 ERRORS:")
+        tprint("\n💥 ERRORS:")
         for test, traceback in result.errors:
-            print(f"  - {test}: {traceback}")
+            tprint(f"  - {test}: {traceback}")
     
     if result.wasSuccessful():
-        print("\n✅ ALL TESTS PASSED!")
-        print("🎉 Enhanced Label Definitions are working correctly!")
+        tprint("\n✅ ALL TESTS PASSED!")
+        tprint("🎉 Enhanced Label Definitions are working correctly!")
     else:
-        print(f"\n⚠️ {len(result.failures + result.errors)} test(s) failed")
+        tprint(f"\n⚠️ {len(result.failures + result.errors)} test(s) failed")
     
     return result.wasSuccessful()
 

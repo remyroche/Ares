@@ -34,7 +34,7 @@ except ImportError:
     MATRIX_OPS_AVAILABLE = False
 
 # Import existing utilities
-from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success
+from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success, tprint_data_preview, tprint_data_format
 from src.utils.common_operations import (
     safe_divide, safe_log, safe_sqrt, safe_mean, safe_std,
     validate_finite, validate_positive, validate_range, safe_correlation

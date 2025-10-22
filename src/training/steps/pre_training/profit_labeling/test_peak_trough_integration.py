@@ -11,6 +11,7 @@ import matplotlib.pyplot as plt
 from datetime import datetime, timedelta
 import sys
 import os
+from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success, tprint_data_preview, tprint_data_format
 
 # Add the src directory to the path
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
@@ -62,10 +63,11 @@ def create_test_data_with_peaks_troughs(n_bars=1000, base_price=100.0, seed=42):
 
 def test_peak_trough_detection():
     """Test the peak/trough detection functionality."""
-    print("🧪 Testing peak/trough detection...")
+    tprint("🧪 Testing peak/trough detection...")
     
     # Create test data
     data = create_test_data_with_peaks_troughs(n_bars=500)
+    tprint_data_preview(data, "test_data_with_peaks_troughs")
     
     # Create labeler with peak/trough detection enabled
     config = ConsolidatedLabelerConfig(
@@ -85,25 +87,26 @@ def test_peak_trough_detection():
     # Test peak/trough detection
     peaks, troughs = labeler._detect_peaks_troughs(data, 'close')
     
-    print(f"✅ Peak detection: {peaks.sum()} peaks found")
-    print(f"✅ Trough detection: {troughs.sum()} troughs found")
+    tprint(f"✅ Peak detection: {peaks.sum()} peaks found")
+    tprint(f"✅ Trough detection: {troughs.sum()} troughs found")
     
     # Test local extrema in window
     peak_idx, trough_idx = labeler._find_local_extrema_in_window(data, 100, 150, 'close')
-    print(f"✅ Local extrema in window [100:150]: peak={peak_idx}, trough={trough_idx}")
+    tprint(f"✅ Local extrema in window [100:150]: peak={peak_idx}, trough={trough_idx}")
     
     # Test opportunity pattern detection
     patterns = labeler._detect_opportunity_patterns(data, 100, 20)
-    print(f"✅ Opportunity patterns: {patterns}")
+    tprint(f"✅ Opportunity patterns: {patterns}")
     
     return peaks, troughs, data
 
 def test_enhanced_labeling():
     """Test the enhanced labeling with peak/trough detection."""
-    print("\n🎯 Testing enhanced labeling with peak/trough detection...")
+    tprint("\n🎯 Testing enhanced labeling with peak/trough detection...")
     
     # Create test data
     data = create_test_data_with_peaks_troughs(n_bars=300)
+    tprint_data_preview(data, "enhanced_labeling_test_data")
     
     # Create labeler with peak/trough detection enabled
     config = ConsolidatedLabelerConfig(
@@ -122,21 +125,22 @@ def test_enhanced_labeling():
     
     # Generate labels
     result = labeler.generate_labels(data)
+    tprint_data_format(result, "enhanced_labeling_result")
     
-    print(f"✅ Enhanced labeling completed:")
-    print(f"   → Input samples: {len(data)}")
-    print(f"   → Labeled samples: {len(result.labels)}")
-    print(f"   → Quality score: {result.overall_quality_score:.3f}")
+    tprint(f"✅ Enhanced labeling completed:")
+    tprint(f"   → Input samples: {len(data)}")
+    tprint(f"   → Labeled samples: {len(result.labels)}")
+    tprint(f"   → Quality score: {result.overall_quality_score:.3f}")
     
     # Check for extrema-related columns
     extrema_columns = [col for col in result.labels.columns if 'extrema' in col.lower()]
-    print(f"   → Extrema columns: {extrema_columns}")
+    tprint(f"   → Extrema columns: {extrema_columns}")
     
     # Show sample of labels with extrema information
     if 'extrema_type' in result.labels.columns:
         extrema_labels = result.labels[result.labels['target'] != 0]
         if len(extrema_labels) > 0:
-            print(f"   → Sample extrema types: {extrema_labels['extrema_type'].value_counts().to_dict()}")
+            tprint(f"   → Sample extrema types: {extrema_labels['extrema_type'].value_counts().to_dict()}")
     
     return result
 
@@ -184,16 +188,16 @@ def visualize_peak_trough_detection(data, peaks, troughs, sample_range=(100, 200
         
         plt.tight_layout()
         plt.savefig('/workspace/peak_trough_detection_test.png', dpi=150, bbox_inches='tight')
-        print("📊 Visualization saved to peak_trough_detection_test.png")
+        tprint("📊 Visualization saved to peak_trough_detection_test.png")
         
     except ImportError:
-        print("⚠️ Matplotlib not available for visualization")
+        tprint("⚠️ Matplotlib not available for visualization")
     except Exception as e:
-        print(f"⚠️ Visualization failed: {e}")
+        tprint(f"⚠️ Visualization failed: {e}")
 
 def main():
     """Main test function."""
-    print("🚀 Starting peak/trough detection integration tests...")
+    tprint("🚀 Starting peak/trough detection integration tests...")
     
     try:
         # Test 1: Peak/trough detection
@@ -205,17 +209,17 @@ def main():
         # Test 3: Visualization
         visualize_peak_trough_detection(data, peaks, troughs)
         
-        print("\n✅ All tests completed successfully!")
-        print("\n📋 Summary:")
-        print("   → Peak/trough detection: ✅ Working")
-        print("   → Enhanced labeling: ✅ Working")
-        print("   → Local extrema integration: ✅ Working")
-        print("   → Opportunity pattern detection: ✅ Working")
+        tprint("\n✅ All tests completed successfully!")
+        tprint("\n📋 Summary:")
+        tprint("   → Peak/trough detection: ✅ Working")
+        tprint("   → Enhanced labeling: ✅ Working")
+        tprint("   → Local extrema integration: ✅ Working")
+        tprint("   → Opportunity pattern detection: ✅ Working")
         
         return True
         
     except Exception as e:
-        print(f"\n❌ Test failed: {e}")
+        tprint(f"\n❌ Test failed: {e}")
         import traceback
         traceback.print_exc()
         return False

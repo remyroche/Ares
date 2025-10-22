@@ -31,7 +31,7 @@ from .enhanced_data_labels_system import EnhancedDataLabelsSystem, EnhancedDataL
 from .infrastructure_integration import get_integration_manager, process_market_data_enhanced
 
 # Import existing utilities
-from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success
+from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success, tprint_data_preview, tprint_data_format
 
 
 class EnhancedLabelsValidator:
@@ -806,7 +806,7 @@ class EnhancedLabelsValidator:
             return np.array(ratios) if ratios else None
             
         except Exception as e:
-            self.logger.warning(f"Failed to load historical prevalence ratios for {label_column}: {e}")
+            tprint_warning(f"Failed to load historical prevalence ratios for {label_column}: {e}")
             return None
     
     def _load_historical_validation_results(self) -> List[Dict[str, Any]]:
@@ -833,6 +833,7 @@ class EnhancedLabelsValidator:
                 if file_path.exists():
                     with open(file_path, 'r') as f:
                         data = json.load(f)
+                        tprint_data_preview(data, f"historical_validation_data_{filename}")
                         if isinstance(data, list):
                             return data
                         elif isinstance(data, dict) and 'validation_results' in data:
@@ -841,7 +842,7 @@ class EnhancedLabelsValidator:
             return []
             
         except Exception as e:
-            self.logger.warning(f"Failed to load historical validation results: {e}")
+            tprint_warning(f"Failed to load historical validation results: {e}")
             return []
     
     def _load_historical_trading_metrics(self) -> Optional[Dict[str, List[float]]]:
@@ -892,6 +893,7 @@ class EnhancedLabelsValidator:
                 if file_path.exists():
                     with open(file_path, 'r') as f:
                         data = json.load(f)
+                        tprint_data_preview(data, f"historical_trading_metrics_{filename}")
                         if isinstance(data, dict):
                             return data
                         elif isinstance(data, list) and len(data) > 0:
@@ -919,7 +921,7 @@ class EnhancedLabelsValidator:
             return None
             
         except Exception as e:
-            self.logger.warning(f"Failed to load historical trading metrics: {e}")
+            tprint_warning(f"Failed to load historical trading metrics: {e}")
             return None
     
     def _check_version_consistency(self, version_info: Dict[str, Any]) -> bool:
@@ -968,7 +970,7 @@ class EnhancedLabelsValidator:
                 return False
             
         except Exception as e:
-            self.logger.warning(f"Version consistency check failed: {e}")
+            tprint_warning(f"Version consistency check failed: {e}")
             return False
     
     def _compute_additional_quality_metrics(self, labels: pd.DataFrame, result: Dict[str, Any]) -> Dict[str, Any]:
@@ -1216,7 +1218,7 @@ class EnhancedLabelsValidator:
                         min_pvalue = min(min_pvalue, pvalue)
                         
                     except Exception as e:
-                        self.logger.warning(f"Failed to calculate IC for {col}: {e}")
+                        tprint_warning(f"Failed to calculate IC for {col}: {e}")
                         continue
             
             if not ic_results:
@@ -1238,7 +1240,7 @@ class EnhancedLabelsValidator:
             }
             
         except Exception as e:
-            self.logger.error(f"Purged CV leakage test failed: {e}")
+            tprint_error(f"Purged CV leakage test failed: {e}")
             return {'passed': False, 'score': 0.0, 'error': str(e), 'notes': [f"Leakage test failed: {e}"]}
     
     def _test_drift(self, labels: pd.DataFrame, processed_data: pd.DataFrame) -> Dict[str, Any]:
@@ -1608,6 +1610,7 @@ class EnhancedLabelsValidator:
                 if file_path.exists():
                     with open(file_path, 'r') as f:
                         data = json.load(f)
+                        tprint_data_preview(data, f"performance_history_{filename}")
                         if isinstance(data, list):
                             throughput = [item.get('throughput') for item in data if 'throughput' in item]
                             memory = [item.get('memory_per_row') for item in data if 'memory_per_row' in item]
@@ -1622,7 +1625,7 @@ class EnhancedLabelsValidator:
             return None, None
             
         except Exception as e:
-            self.logger.warning(f"Failed to load recent performance history: {e}")
+            tprint_warning(f"Failed to load recent performance history: {e}")
             return None, None
     
     def _load_real_historical_baselines(self) -> Optional[Dict[str, Any]]:
@@ -1696,13 +1699,14 @@ class EnhancedLabelsValidator:
                 if file_path.exists():
                     with open(file_path, 'r') as f:
                         data = json.load(f)
+                        tprint_data_preview(data, f"historical_baselines_{filename}")
                         if isinstance(data, dict):
                             return data
             
             return None
             
         except Exception as e:
-            self.logger.warning(f"Failed to load real historical baselines: {e}")
+            tprint_warning(f"Failed to load real historical baselines: {e}")
             return None
     
     def _calculate_quantiles(self, data: List[float], quantiles: List[float] = [0.1, 0.3, 0.5, 0.7, 0.9]) -> Dict[str, float]:
@@ -1717,7 +1721,7 @@ class EnhancedLabelsValidator:
                 result[f'q{int(q*100)}'] = np.percentile(data_array, q * 100)
             return result
         except Exception as e:
-            self.logger.warning(f"Failed to calculate quantiles: {e}")
+            tprint_warning(f"Failed to calculate quantiles: {e}")
             return {}
     
     def _validate_data_quality(self, result: Dict[str, Any], baselines: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:

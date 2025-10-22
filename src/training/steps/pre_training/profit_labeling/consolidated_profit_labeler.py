@@ -52,6 +52,16 @@ from src.utils.hardware.hardware_optimizer import HardwareOptimizer
 from src.utils.ml_common.feature_selection import FeatureSelector
 from src.utils.data.processing.transformers import DataTransformer
 
+# Phase 1 optimization tools
+try:
+    from src.feature_generation.utils.vectorbt_rolling_optimizer import VectorBTRollingOptimizer, get_vectorbt_rolling_optimizer
+    from src.utils.hardware.m1_memory_optimizer import M1MemoryOptimizer
+    from src.utils.hardware.m1_cpu_optimizer import M1CPUOptimizer
+    from src.utils.memory_management import MemoryManager, MemoryManagerConfig, MemoryStrategy
+    PHASE1_OPTIMIZATIONS_AVAILABLE = True
+except ImportError:
+    PHASE1_OPTIMIZATIONS_AVAILABLE = False
+
 # Statistical and ML utilities
 from sklearn.metrics import roc_auc_score, average_precision_score
 from sklearn.model_selection import TimeSeriesSplit
@@ -136,6 +146,14 @@ class ConsolidatedLabelerConfig:
     enable_enhanced_stability_monitoring: bool = True
     enable_trading_aware_labels: bool = True
     enable_peak_trough_detection: bool = True
+    
+    # Phase 1 optimization settings
+    enable_vectorbt_optimization: bool = True
+    enable_memory_optimization: bool = True
+    enable_caching: bool = True
+    vectorbt_chunk_size: int = 1000
+    memory_limit_gb: float = 2.0
+    cache_size_mb: int = 100
     
     # Enhanced label definitions
     analyst_config: Optional[Dict[str, Any]] = None
@@ -272,6 +290,52 @@ class ConsolidatedProfitLabeler(BaseStep):
         
         # Initialize data transformer
         self.data_transformer = DataTransformer()
+        
+        # Initialize Phase 1 optimization tools
+        if PHASE1_OPTIMIZATIONS_AVAILABLE and self.config.enable_vectorbt_optimization:
+            self.vectorbt_optimizer = get_vectorbt_rolling_optimizer(
+                enable_parallel=True,
+                memory_efficient=True,
+                chunk_size=self.config.vectorbt_chunk_size,
+                fast_fail=True
+            )
+            tprint_info("   → VectorBTRollingOptimizer: Available")
+        else:
+            self.vectorbt_optimizer = None
+            tprint_warning("   → VectorBTRollingOptimizer: Not available")
+        
+        if PHASE1_OPTIMIZATIONS_AVAILABLE and self.config.enable_memory_optimization:
+            self.memory_optimizer = M1MemoryOptimizer(
+                memory_limit_gb=self.config.memory_limit_gb
+            )
+            self.cpu_optimizer = M1CPUOptimizer()
+            memory_config = MemoryManagerConfig(
+                strategy=MemoryStrategy.MODERATE,
+                enable_monitoring=True,
+                memory_threshold_mb=self.config.memory_limit_gb * 1024 * 0.8,
+                max_memory_mb=self.config.memory_limit_gb * 1024
+            )
+            self.memory_manager = MemoryManager(memory_config)
+            tprint_info("   → Hardware optimizations: Available")
+        else:
+            self.memory_optimizer = None
+            self.cpu_optimizer = None
+            self.memory_manager = None
+            tprint_warning("   → Hardware optimizations: Not available")
+        
+        # Initialize caching for repeated calculations
+        self._calculation_cache = {}
+        self._cache_hits = 0
+        self._cache_misses = 0
+        
+        # Performance tracking
+        self._performance_metrics = {
+            'vectorbt_operations': 0,
+            'cached_operations': 0,
+            'memory_optimizations': 0,
+            'labels_generated': 0,
+            'total_time': 0.0
+        }
 
         # Initialize enhanced data and labels system if enabled
         self.enhanced_system = None
@@ -615,6 +679,15 @@ class ConsolidatedProfitLabeler(BaseStep):
         tprint_data_preview(data, "input_data")
         self.tprint("🚀 Starting consolidated profit labeling...")
 
+        # Check cache first if caching is enabled
+        if self.config.enable_caching:
+            cache_key = f"labels_{hash(data.values.tobytes())}_{self.config.base_timeframe_minutes}"
+            if cache_key in self._calculation_cache:
+                self._cache_hits += 1
+                self._performance_metrics['cached_operations'] += 1
+                self.tprint("💾 Using cached labeling result")
+                return self._calculation_cache[cache_key]
+
         if len(data) < self.config.min_bars_for_labeling:
             self.tprint(f"⚠️ Insufficient data: {len(data)} < {self.config.min_bars_for_labeling}")
             return LabelingResult(
@@ -631,6 +704,12 @@ class ConsolidatedProfitLabeler(BaseStep):
 
         # Step 0: Data preparation and cleaning
         data_clean = self._prepare_and_clean_data(data)
+        
+        # Apply memory optimization if available
+        if self.memory_optimizer and self.config.enable_memory_optimization:
+            data_clean = self.memory_optimizer.optimize_dataframe(data_clean)
+            self._performance_metrics['memory_optimizations'] += 1
+            self.tprint("🧠 Applied memory optimization to data")
 
         # Step 1: Enhanced data cleaning if enabled
         if self.config.enable_enhanced_data_cleaning and self.enhanced_system:
@@ -709,6 +788,12 @@ class ConsolidatedProfitLabeler(BaseStep):
         tprint_info(f"📊 Overall quality score: {overall_quality_score:.3f}")
         tprint_data_preview(result.labels, "final_labeled_data")
         tprint_data_format(result, "final_labeling_result")
+
+        # Store result in cache if caching is enabled
+        if self.config.enable_caching:
+            cache_key = f"labels_{hash(data.values.tobytes())}_{self.config.base_timeframe_minutes}"
+            self._calculation_cache[cache_key] = result
+            self._cache_misses += 1
 
         return result
 
@@ -2011,6 +2096,31 @@ class ConsolidatedProfitLabeler(BaseStep):
         return np.mean(lqs_scores) if lqs_scores else 0.0
 
 # Factory functions for backward compatibility
+    def get_performance_metrics(self) -> Dict[str, Any]:
+        """Get comprehensive performance metrics."""
+        cache_hit_rate = (
+            self._cache_hits / (self._cache_hits + self._cache_misses) 
+            if (self._cache_hits + self._cache_misses) > 0 else 0.0
+        )
+        
+        return {
+            **self._performance_metrics,
+            'cache_hit_rate': cache_hit_rate,
+            'cache_hits': self._cache_hits,
+            'cache_misses': self._cache_misses,
+            'phase1_optimizations_available': PHASE1_OPTIMIZATIONS_AVAILABLE,
+            'vectorbt_available': self.vectorbt_optimizer is not None,
+            'memory_optimization_enabled': self.memory_optimizer is not None
+        }
+    
+    def clear_cache(self):
+        """Clear calculation cache to free memory."""
+        self._calculation_cache.clear()
+        self._cache_hits = 0
+        self._cache_misses = 0
+        self.tprint("🧹 Labeling cache cleared")
+
+
 def create_consolidated_labeler(config: Optional[ConsolidatedLabelerConfig] = None) -> ConsolidatedProfitLabeler:
     """Factory function to create consolidated labeler."""
     return ConsolidatedProfitLabeler(config)

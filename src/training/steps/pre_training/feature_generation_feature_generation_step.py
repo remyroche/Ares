@@ -24,32 +24,9 @@ from dataclasses import dataclass, field
 from src.training.steps.base_step import BaseStep
 from src.training.common.component_result import ComponentResult
 
-# Enhanced M1 hardware optimization imports
-from src.utils.hardware import (
-    # Core M1 optimizers
-    get_comprehensive_optimizer, M1ComprehensiveOptimizer, ComprehensiveConfig,
-    get_unified_memory_manager, M1UnifiedMemoryManager,
-    get_advanced_cpu_optimizer, M1AdvancedCPUOptimizer,
-    get_enhanced_gpu_manager, EnhancedM1GPUManager,
-    get_neural_engine_manager, M1NeuralEngineManager,
-    get_advanced_memory_manager, AdvancedMemoryManager,
-    get_integrated_hardware_manager, IntegratedHardwareConfig,
-    
-    # Optimization decorators
-    memory_optimized, gc_optimized, chunked_processing_auto,
-    comprehensive_memory_optimization, MemoryOptimizationLevel,
-    auto_optimize, performance_tracked, smart_cache,
-    optimize_dataframe_default, optimize_numpy_array_default,
-    
-    # Workload types and optimization levels
-    WorkloadType, OptimizationLevel, WorkloadCategory,
-    get_memory_optimization_stats, force_cleanup
-)
-
-# Import OptimizationStrategy specifically from m1_comprehensive_optimizer
+# Hardware optimization imports - using BaseStep utilities
+# Note: Most hardware utilities are now available through BaseStep
 from src.utils.hardware.m1_comprehensive_optimizer import OptimizationStrategy
-
-# Import additional missing classes
 from src.utils.hardware.advanced_memory_manager import MemoryPressureLevel
 
 # Set availability flag
@@ -232,59 +209,30 @@ class FeatureGenerationStep(BaseStep):
         else:
             self.feature_bank = None
         
-        # Initialize comprehensive M1 hardware optimization components
-        if HARDWARE_OPTIMIZATION_AVAILABLE:
+        # Initialize comprehensive M1 hardware optimization components using BaseStep utilities
+        if HARDWARE_OPTIMIZATION_AVAILABLE and self.hardware_utils:
             tprint_info("🚀 Initializing comprehensive M1 hardware optimization components for feature generation")
             
-            # Initialize M1 Comprehensive Optimizer
-            comprehensive_config = ComprehensiveConfig(
-                optimization_strategy=OptimizationStrategy.MAXIMUM_PERFORMANCE,
-                workload_category=WorkloadCategory.FINANCIAL_MODELING,
-                enable_adaptive_optimization=True,
-                enable_cross_component_optimization=True,
-                enable_thermal_management=True,
-                enable_power_management=True,
-                enable_comprehensive_monitoring=True,
-                enable_auto_tuning=True
-            )
-            self.comprehensive_optimizer = get_comprehensive_optimizer(comprehensive_config)
-            
-            # Initialize M1 Unified Memory Manager
-            self.unified_memory_manager = get_unified_memory_manager()
-            tprint_info("✅ M1 Unified Memory Manager initialized")
-            
-            # Initialize M1 Advanced CPU Optimizer
-            self.cpu_optimizer = get_advanced_cpu_optimizer()
-            self.cpu_optimizer.optimize_for_workload(WorkloadType.FEATURE_ENGINEERING)
-            tprint_info("✅ M1 Advanced CPU Optimizer initialized")
-            
-            # Initialize M1 Enhanced GPU Manager
-            self.gpu_manager = get_enhanced_gpu_manager()
-            if self.gpu_manager.is_available():
-                tprint_info("✅ M1 Enhanced GPU Manager initialized")
-            else:
-                tprint_warning("⚠️ M1 GPU not available")
-            
-            # Initialize M1 Neural Engine Manager
-            self.neural_engine_manager = get_neural_engine_manager()
-            if self.neural_engine_manager.is_available():
-                tprint_info("✅ M1 Neural Engine Manager initialized")
-            else:
-                tprint_warning("⚠️ M1 Neural Engine not available")
-            
-            # Initialize Advanced Memory Manager
-            self.memory_manager = get_advanced_memory_manager()
-            
-            # Initialize Integrated Hardware Manager
-            hardware_config = IntegratedHardwareConfig(
+            # Initialize Integrated Hardware Manager using BaseStep utilities
+            hardware_config = self.hardware_utils['IntegratedHardwareConfig'](
                 memory_limit_gb=16.0,  # Increased for M1
                 enable_automatic_optimization=True,
                 enable_caching=True,
                 enable_memory_monitoring=True,
                 enable_performance_tracking=True,
-                default_optimization_level=OptimizationLevel.AGGRESSIVE
+                default_optimization_level=self.hardware_utils['OptimizationLevel'].AGGRESSIVE
             )
-            self.hardware_manager = get_integrated_hardware_manager(hardware_config)
+            self.hardware_manager = self.hardware_utils['get_integrated_hardware_manager'](hardware_config)
+            
+            # Initialize other optimizers (fallback to None if not available in BaseStep)
+            self.comprehensive_optimizer = None  # Not available in BaseStep
+            self.unified_memory_manager = None   # Not available in BaseStep
+            self.cpu_optimizer = None            # Not available in BaseStep
+            self.gpu_manager = None              # Not available in BaseStep
+            self.neural_engine_manager = None    # Not available in BaseStep
+            self.memory_manager = None           # Not available in BaseStep
+            
+            tprint_info("✅ Hardware optimization initialized using BaseStep utilities")
             
             # M1-optimized configuration
             self.parallel_workers = 8  # Optimized for M1 performance cores

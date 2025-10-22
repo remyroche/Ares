@@ -23,27 +23,8 @@ import gc
 # Core imports
 from src.training.steps.base_step import BaseStep
 
-from src.utils.logger import system_logger
-from src.utils.tprint import tprint_data_preview
-
-# Initialize logger early to avoid usage before definition
-logger = system_logger.getChild('SRDetection')
-
-# Required utility modules - Simplified imports
-from src.utils.common_operations import (
-    safe_json_load, safe_json_dump,
-    ensure_directory, create_fallback_logger, create_fallback_decorator,
-    get_current_datetime, format_datetime, create_empty_dataframe,
-    safe_fillna, get_logger, setup_basic_logging,
-    validate_dataframe, optimize_dataframe_dtypes
-)
-
-# Core decorators and errors
-from src.core.decorators import handles_errors, error_boundary, converts_errors
-from src.core.errors import (
-    AppError, ValidationError, DataIntegrityError,
-    NotFoundError, BusinessRuleError
-)
+# Note: Most utilities are now available through BaseStep
+# tprint, common operations, core decorators, and errors are accessible via BaseStep
 
 # Pipeline standards and utilities
 from src.utils.pipeline_standards import PipelineStandards
@@ -162,8 +143,7 @@ def optimize_dataframe_dtypes(df):
 def validate_dataframe(df):
     return True
 
-# Import standardized math validation utilities
-from src.utils.math_validation import validate_finite, safe_divide
+# Note: Math validation utilities are now available through BaseStep
 
 class SRDetectionStep(BaseStep):
     """SR Detection Stage: Detect Support/Resistance levels using Enhanced SR Detection."""
@@ -577,7 +557,7 @@ class SRDetectionStep(BaseStep):
             'memory_manager_active': hasattr(self, 'memory_manager'),
             'proximity_threshold': self.proximity_threshold,
             'sr_ratio_range': f"{self.min_sr_ratio:.2f} - {self.max_sr_ratio:.2f}",
-            'timestamp': get_current_datetime().isoformat()
+            'timestamp': self._get_current_datetime().isoformat()
         }
 
     def validate_config(self) -> None:
@@ -617,7 +597,7 @@ class SRDetectionStep(BaseStep):
             'proximity_threshold': self.proximity_threshold,
             'min_sr_ratio': self.min_sr_ratio,
             'max_sr_ratio': self.max_sr_ratio,
-            'timestamp': get_current_datetime().isoformat()
+            'timestamp': self._get_current_datetime().isoformat()
         }
 
 

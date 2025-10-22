@@ -2,7 +2,7 @@
 Unified Error Handler - Enhanced Error Management System
 
 This module provides comprehensive error handling, validation, and error prevention
-functionality consolidated from multiple error handling utilities.
+functionality consolidated from multiple error handling utilities with memory management.
 """
 
 import logging
@@ -11,6 +11,18 @@ import functools
 from typing import Any, Callable, Dict, List, Optional, Union, Type
 from contextlib import contextmanager
 import warnings
+
+# Import memory management
+try:
+    from .memory_management import memory_managed, MemoryStrategy, force_cleanup
+except ImportError:
+    # Create dummy decorator if memory management not available
+    def memory_managed(strategy=None):
+        def decorator(func):
+            return func
+        return decorator
+    def force_cleanup():
+        pass
 
 # =============================================================================
 # ERROR CLASSES
@@ -47,7 +59,9 @@ class UnifiedErrorHandler:
         self.logger = logger or logging.getLogger(__name__)
         self.error_counts = {}
         self.error_history = []
+        self._max_history = 1000  # Limit error history to prevent memory leaks
 
+    @memory_managed(MemoryStrategy.CONSERVATIVE)
     def handle_error(self, error: Exception, context: str = "",
                     reraise: bool = True, log_level: int = logging.ERROR) -> Any:
         """Handle an error with comprehensive logging and tracking."""
@@ -57,13 +71,18 @@ class UnifiedErrorHandler:
         # Update error counts
         self.error_counts[error_type] = self.error_counts.get(error_type, 0) + 1
 
-        # Add to error history
-        self.error_history.append({
+        # Add to error history (with memory management)
+        error_record = {
             'type': error_type,
             'message': error_message,
             'context': context,
             'traceback': traceback.format_exc()
-        })
+        }
+        self.error_history.append(error_record)
+        
+        # Limit error history to prevent memory leaks
+        if len(self.error_history) > self._max_history:
+            self.error_history = self.error_history[-self._max_history:]
 
         # Log the error
         log_message = f"❌ Error in {context}: {error_type} - {error_message}"
@@ -137,9 +156,12 @@ class UnifiedErrorHandler:
         }
 
     def clear_error_history(self):
-        """Clear error history and counts."""
+        """Clear error history and counts with memory cleanup."""
         self.error_counts.clear()
         self.error_history.clear()
+        
+        # Force cleanup to free memory
+        force_cleanup()
 
 # =============================================================================
 # DECORATORS

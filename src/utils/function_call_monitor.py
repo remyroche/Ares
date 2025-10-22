@@ -8,6 +8,7 @@ This module provides detailed function call monitoring including:
 - Performance monitoring with timing and resource usage
 - Comprehensive error handling and recovery
 - Structured logging with detailed reports
+- Memory management and cleanup
 """
 import asyncio
 import functools
@@ -30,6 +31,18 @@ import json
 import threading
 from contextlib import contextmanager
 import collections
+
+# Import memory management
+try:
+    from .memory_management import memory_managed, MemoryStrategy, force_cleanup
+except ImportError:
+    # Create dummy decorator if memory management not available
+    def memory_managed(strategy=None):
+        def decorator(func):
+            return func
+        return decorator
+    def force_cleanup():
+        pass
 
 class FunctionCallStatus(Enum):
     """Status of function call monitoring."""
@@ -80,7 +93,7 @@ class FunctionCallReport:
     recommendations: List[str] = field(default_factory = list)
 
 class FunctionCallMonitor:
-    """Main function call monitoring system."""
+    """Main function call monitoring system with memory management."""
 
     def __init__(self, logger: Optional[logging.Logger]=None) -> None:
         self.logger = logger or logging.getLogger(__name__)
@@ -89,6 +102,8 @@ class FunctionCallMonitor:
         self.call_stack: List[str] = []
         self._lock = threading.Lock()
         self._call_counter = 0
+        self._max_history = 10000  # Limit history to prevent memory leaks
+        self._cleanup_interval = 1000  # Cleanup every 1000 calls
 
     def _generate_call_id(self) -> str:
         """Generate unique call ID."""
@@ -271,6 +286,10 @@ class FunctionCallMonitor:
                 if call_id in self.call_stack:
                     self.call_stack.remove(call_id)
                 self.call_history.append(report)
+                
+                # Periodic cleanup to prevent memory leaks
+                if len(self.call_history) > self._max_history:
+                    self._cleanup_old_history()
 
     def get_call_summary(self) -> Dict[str, Any]:
         """Get summary of all function calls."""
@@ -284,8 +303,9 @@ class FunctionCallMonitor:
                 avg_duration = sum(durations) / len(durations) if durations else 0.0
             return {'total_calls': total_calls, 'successful_calls': successful_calls, 'failed_calls': failed_calls, 'success_rate': successful_calls / total_calls * 100 if total_calls > 0 else 0.0, 'average_duration': avg_duration, 'active_calls': len(self.active_calls), 'call_stack_depth': len(self.call_stack)}
 
+    @memory_managed(MemoryStrategy.MODERATE)
     def export_detailed_report(self, filepath: str) -> None:
-        """Export detailed function call report to file."""
+        """Export detailed function call report to file with memory management."""
         try:
             report_data = {'summary': self.get_call_summary(), 'call_history': [{'function_name': call.function_name, 'module_name': call.module_name, 'call_id': call.call_id, 'timestamp': call.timestamp.isoformat(), 'metrics': {'duration': call.metrics.duration, 'memory_before': call.metrics.memory_before, 'memory_after': call.metrics.memory_after, 'memory_peak': call.metrics.memory_peak, 'cpu_percent': call.metrics.cpu_percent, 'call_depth': call.metrics.call_depth, 'child_calls': call.metrics.child_calls, 'status': call.metrics.status.value, 'error_message': call.metrics.error_message}, 'validation_results': call.validation_results, 'dependencies': call.dependencies, 'side_effects': call.side_effects, 'warnings': call.warnings, 'recommendations': call.recommendations} for call in self.call_history]}
             with open(filepath, 'w') as f:
@@ -293,6 +313,17 @@ class FunctionCallMonitor:
             self.logger.info(f'📊 Detailed function call report exported to: {filepath}')
         except Exception as e:
             self.logger.error(f'❌ Failed to export detailed report: {e}')
+    
+    def _cleanup_old_history(self) -> None:
+        """Cleanup old call history to prevent memory leaks."""
+        # Keep only the most recent 80% of history
+        keep_count = int(self._max_history * 0.8)
+        if len(self.call_history) > keep_count:
+            self.call_history = self.call_history[-keep_count:]
+            self.logger.info(f"Cleaned up call history, keeping {keep_count} most recent calls")
+        
+        # Force cleanup to free memory
+        force_cleanup()
 _global_monitor = FunctionCallMonitor()
 
 def monitor_function_calls(validation_level: ValidationLevel = ValidationLevel.STANDARD) -> None:

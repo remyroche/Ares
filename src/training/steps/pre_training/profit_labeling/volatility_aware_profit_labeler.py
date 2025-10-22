@@ -372,7 +372,7 @@ class VolatilityAwareProfitLabeler(BaseStep):
         quality_report = {}
 
         for target_name, config in optimal_configs.items():
-            tprint(f"🎯 Generating {target_name} target labels...")
+            self.tprint(f"🎯 Generating {target_name} target labels...")
 
             target_labels = self._generate_single_target_labels(
                 data_clean, volatility_data, noise_gates, config, target_name
@@ -392,23 +392,27 @@ class VolatilityAwareProfitLabeler(BaseStep):
         # Step 5: Final quality validation and reporting
         final_report = self._generate_comprehensive_report(quality_report, optimal_configs)
 
-        tprint("✅ Volatility-aware labeling completed")
+        self.tprint("✅ Volatility-aware labeling completed")
         self.logger.info(f"📊 Generated labels for {len(optimal_configs)} targets")
 
         return labeled_data, final_report
 
     def _prepare_and_clean_data(self, data: pd.DataFrame) -> pd.DataFrame:
         """Step 0: Clean and prepare data for labeling."""
-        tprint("🔍 Preparing and cleaning data...")
+        self.tprint("🔍 Preparing and cleaning data...")
 
         # Create copy for modification
         data_clean = data.copy()
 
         # Ensure required columns exist
-        required_cols = ['open', 'high', 'low', 'close', 'volume']
+        required_cols = ['open', 'high', 'low', 'close']
         for col in required_cols:
             if col not in data_clean.columns:
                 raise ValueError(f"Required column '{col}' not found in data")
+        
+        # Add volume column if missing (for compatibility)
+        if 'volume' not in data_clean.columns:
+            data_clean['volume'] = 1000.0  # Default volume for compatibility
 
         # Compute returns and outlier handling
         data_clean['returns'] = data_clean['close'].pct_change()
@@ -429,12 +433,12 @@ class VolatilityAwareProfitLabeler(BaseStep):
         # Forward fill any missing values
         data_clean = data_clean.fillna(method='ffill').dropna()
 
-        tprint(f"✅ Data prepared: {len(data_clean)} bars, {data_clean.shape[1]} columns")
+        self.tprint(f"✅ Data prepared: {len(data_clean)} bars, {data_clean.shape[1]} columns")
         return data_clean
 
     def _compute_volatility_series(self, data: pd.DataFrame) -> pd.Series:
         """Step 1: Compute volatility series using EWMA of realized volatility and ATR."""
-        tprint("📊 Computing volatility series...")
+        self.tprint("📊 Computing volatility series...")
 
         # Ensure returns are computed
         if 'returns' not in data.columns:
@@ -473,14 +477,14 @@ class VolatilityAwareProfitLabeler(BaseStep):
         # Floor at small epsilon to avoid division blowups
         vol_ewma = vol_ewma.clip(lower=1e-6)
 
-        tprint(f"✅ Volatility computed: mean={vol_ewma.mean():.6f}, "
+        self.tprint(f"✅ Volatility computed: mean={vol_ewma.mean():.6f}, "
                f"std={vol_ewma.std():.6f}, range=[{vol_ewma.min():.6f}, {vol_ewma.max():.6f}]")
 
         return vol_ewma
 
     def _compute_noise_gates(self, data: pd.DataFrame, volatility: pd.Series) -> Dict[str, pd.Series]:
         """Step 2: Compute noise gates to filter microstructure effects."""
-        tprint("🔇 Computing noise gates...")
+        self.tprint("🔇 Computing noise gates...")
 
         # Ensure required columns exist
         if 'returns' not in data.columns:
@@ -557,7 +561,7 @@ class VolatilityAwareProfitLabeler(BaseStep):
             (gates['variance_ratio'] >= 0.8)  # Not dominated by microstructure
         )
 
-        tprint(f"✅ Noise gates computed: {gates['eligibility'].mean():.1%} eligible bars")
+        self.tprint(f"✅ Noise gates computed: {gates['eligibility'].mean():.1%} eligible bars")
         return gates
 
     def _optimize_target_configurations(
@@ -572,13 +576,13 @@ class VolatilityAwareProfitLabeler(BaseStep):
         This searches over k values within each band to maximize label quality,
         then filters for cross-target correlation constraints.
         """
-        tprint("🔍 Optimizing target configurations...")
+        self.tprint("🔍 Optimizing target configurations...")
 
         # Step 1: Find best config for each target independently
         per_target_configs = {}
 
         for target_name, (k_min, k_max) in self.config.target_bands.items():
-            tprint(f"🎯 Optimizing {target_name} target (k ∈ [{k_min}, {k_max}])...")
+            self.tprint(f"🎯 Optimizing {target_name} target (k ∈ [{k_min}, {k_max}])...")
 
             # Search over k values in this band
             best_config = None
@@ -618,7 +622,7 @@ class VolatilityAwareProfitLabeler(BaseStep):
 
             if best_config:
                 per_target_configs[target_name] = best_config
-                tprint(f"✅ Best {target_name}: k={best_config['k']:.2f}, "
+                self.tprint(f"✅ Best {target_name}: k={best_config['k']:.2f}, "
                        f"q={best_config['fpt_quantile']:.2f}, "
                        f"LQS={best_lqs:.3f}")
             else:
@@ -629,7 +633,7 @@ class VolatilityAwareProfitLabeler(BaseStep):
                     'micro_range_alpha': self.config.micro_range_alpha,
                     'quality_metrics': LabelQualityMetrics()
                 }
-                tprint(f"⚠️ Using fallback config for {target_name}")
+                self.tprint(f"⚠️ Using fallback config for {target_name}")
 
         # Step 2: Filter configurations based on cross-target correlations
         optimal_configs = self._filter_by_correlation(per_target_configs, data, volatility, noise_gates)
@@ -645,7 +649,7 @@ class VolatilityAwareProfitLabeler(BaseStep):
     ) -> Dict[str, Dict[str, Any]]:
         """Filter configurations to ensure targets are not too correlated."""
 
-        tprint("🔗 Filtering configurations by cross-target correlation...")
+        self.tprint("🔗 Filtering configurations by cross-target correlation...")
 
         if len(per_target_configs) <= 1:
             return per_target_configs
@@ -664,7 +668,7 @@ class VolatilityAwareProfitLabeler(BaseStep):
         # Only consider valid labels (non-zero)
         valid_mask = (label_series != 0).any(axis=1)
         if valid_mask.sum() < 50:
-            tprint("⚠️ Insufficient overlapping labels for correlation filtering")
+            self.tprint("⚠️ Insufficient overlapping labels for correlation filtering")
             return per_target_configs
 
         valid_labels = label_series[valid_mask]
@@ -690,21 +694,21 @@ class VolatilityAwareProfitLabeler(BaseStep):
                 corr = abs(correlation_matrix.loc[target_name, selected_target])
                 if corr > self.config.max_target_correlation:
                     should_include = False
-                    tprint(f"🚫 Excluding {target_name} due to high correlation "
+                    self.tprint(f"🚫 Excluding {target_name} due to high correlation "
                            f"({corr:.3f}) with {selected_target}")
                     break
 
             if should_include:
                 selected_configs[target_name] = config
-                tprint(f"✅ Selected {target_name} (LQS={config['quality_metrics'].label_quality_score:.3f})")
+                self.tprint(f"✅ Selected {target_name} (LQS={config['quality_metrics'].label_quality_score:.3f})")
 
         # Ensure we have at least one target (fallback to best if all filtered out)
         if not selected_configs:
             best_target = sorted_targets[0][0]
             selected_configs[best_target] = per_target_configs[best_target]
-            tprint(f"⚠️ All targets filtered by correlation, keeping best: {best_target}")
+            self.tprint(f"⚠️ All targets filtered by correlation, keeping best: {best_target}")
 
-        tprint(f"✅ Correlation filtering complete: {len(selected_configs)}/{len(per_target_configs)} targets selected")
+        self.tprint(f"✅ Correlation filtering complete: {len(selected_configs)}/{len(per_target_configs)} targets selected")
         return selected_configs
 
     def _evaluate_config_quality(
@@ -1173,7 +1177,7 @@ class VolatilityAwareProfitLabeler(BaseStep):
         - Rolling windows for temporal stability
         """
 
-        tprint("🔬 Validating label robustness...")
+        self.tprint("🔬 Validating label robustness...")
 
         validation_results = {
             'volatility_slices': {},
@@ -1243,7 +1247,7 @@ class VolatilityAwareProfitLabeler(BaseStep):
             # Robustness is the worst performance across slices (lower bound)
             validation_results['overall_robustness_score'] = min(all_slice_scores)
 
-        tprint(f"✅ Robustness validation complete: score={validation_results['overall_robustness_score']:.3f}")
+        self.tprint(f"✅ Robustness validation complete: score={validation_results['overall_robustness_score']:.3f}")
         return validation_results
 
     def _compute_slice_quality(self, labels: pd.DataFrame, data: pd.DataFrame,
@@ -1408,7 +1412,7 @@ def apply_volatility_aware_labeling(
 # Test function
 if __name__ == '__main__':
     # Simple test
-    tprint('🧪 Testing Volatility-Aware Profit Labeler')
+    print('🧪 Testing Volatility-Aware Profit Labeler')
 
     # Create test data
     dates = pd.date_range('2024-01-01', periods=1000, freq='5min')
@@ -1434,22 +1438,22 @@ if __name__ == '__main__':
     }, index=dates)
 
     # Test labeling
-    tprint('\n🔍 Testing volatility-aware labeling...')
+    print('\n🔍 Testing volatility-aware labeling...')
     config = VolatilityAwareConfig()
     labeled_data, report = apply_volatility_aware_labeling(data, config)
 
-    tprint(f'✅ Labeling completed:')
-    tprint(f'   → Input shape: {data.shape}')
-    tprint(f'   → Output shape: {labeled_data.shape}')
+    print(f'✅ Labeling completed:')
+    print(f'   → Input shape: {data.shape}')
+    print(f'   → Output shape: {labeled_data.shape}')
 
     # Show sample quality metrics
     if report and 'target_reports' in report:
-        tprint(f'\n📊 Quality Report Summary:')
+        print(f'\n📊 Quality Report Summary:')
         for target, metrics in report['target_reports'].items():
-            tprint(f'   → {target}: LQS={metrics.get("label_quality_score", 0):.3f}, '
+            print(f'   → {target}: LQS={metrics.get("label_quality_score", 0):.3f}, '
                    f'AUC={metrics.get("auc_mean", 0):.3f}±{metrics.get("auc_std", 0):.3f}')
 
-    tprint('✅ Volatility-Aware Profit Labeler test completed!')
+    print('✅ Volatility-Aware Profit Labeler test completed!')
 
 # Additional factory function for feature generation integration compatibility
 class EnhancedAnalystLabelerWrapper:

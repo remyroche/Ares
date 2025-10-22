@@ -106,7 +106,7 @@ except ImportError:
         """Fallback implementation when scipy is not available."""
         return 0.0, 1.0
 
-from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success
+from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success, tprint_data_preview, tprint_data_format
 from src.utils.common_operations import (
     safe_divide, safe_log, safe_sqrt, safe_power, safe_mean, safe_std,
     validate_finite, validate_positive, validate_range, safe_correlation
@@ -789,6 +789,9 @@ class EnhancedLabelDefinitions:
             tprint_success(f"✅ Analyst labels generated: {analyst_labels.sum()}/{len(analyst_labels)} positive trades")
             tprint_info(f"   → Confidence threshold: {confidence_threshold:.3f} ({threshold_source})")
             tprint_info(f"   → Data quality issues: {quality_mask.sum()}")
+            tprint_data_format(analyst_labels, "analyst_labels")
+            tprint_data_format(confidence_scores, "analyst_confidence_scores")
+            tprint_data_format(meta_data, "analyst_meta_data")
 
             return analyst_labels, confidence_scores, meta_data
 
@@ -974,6 +977,9 @@ class EnhancedLabelDefinitions:
             tprint_success(f"✅ Tactician labels generated: {tactician_labels.sum()}/{len(tactician_labels)} valid directions")
             tprint_info(f"   → Favorable threshold: {fav_threshold:.3f} ({fav_source})")
             tprint_info(f"   → Adverse threshold: {adv_threshold:.3f} ({adv_source})")
+            tprint_data_format(tactician_labels, "tactician_labels")
+            tprint_data_format(magnitude_scores, "tactician_magnitude_scores")
+            tprint_data_format(meta_data, "tactician_meta_data")
 
             return tactician_labels, magnitude_scores, meta_data
 
@@ -1088,6 +1094,8 @@ class EnhancedLabelDefinitions:
         try:
             # Load historical PnL data
             historical_data = self._load_historical_pnl_data()
+            if historical_data is not None:
+                tprint_data_preview(historical_data, "historical_pnl_data")
             
             if historical_data is None or len(historical_data) < 100:
                 # Fallback to default coefficients
@@ -1281,6 +1289,8 @@ class EnhancedLabelDefinitions:
             tprint_info(f"   → Stop hits: {meta_data['stop_hit_count']}")
             tprint_info(f"   → Target hits: {meta_data['target_hit_count']}")
             tprint_info(f"   → Portfolio limited: {meta_data['portfolio_limited_count']}")
+            tprint_data_format(risk_aware_labels, "risk_aware_labels")
+            tprint_data_format(meta_data, "risk_aware_meta_data")
 
             return risk_aware_labels, meta_data
 
@@ -1475,6 +1485,8 @@ class EnhancedLabelDefinitions:
         try:
             # Load historical performance data
             historical_data = self._load_historical_signal_performance()
+            if historical_data is not None:
+                tprint_data_preview(historical_data, "historical_signal_performance")
             
             if historical_data is None or len(historical_data) < 100:
                 # Fallback to default weights

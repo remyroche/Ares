@@ -31,7 +31,7 @@ from .enhanced_data_labels_system import EnhancedDataLabelsSystem, EnhancedDataL
 from .infrastructure_integration import get_integration_manager, process_market_data_enhanced
 
 # Import existing utilities
-from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success
+from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success, tprint_data_preview, tprint_data_format
 
 
 class EnhancedLabelsValidator:

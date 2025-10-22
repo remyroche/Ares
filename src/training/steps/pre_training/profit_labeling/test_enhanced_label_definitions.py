@@ -99,7 +99,9 @@ class TestEnhancedLabelDefinitions(unittest.TestCase):
         tprint("\n=== Testing Foundational Contracts Validation ===")
         
         # Test valid data
+        tprint_data_preview(self.market_data, "test_market_data")
         validation_results = self.labeler.validate_foundational_contracts(self.market_data)
+        tprint_data_format(validation_results, "validation_results")
         self.assertTrue(validation_results['is_valid'])
         self.assertEqual(len(validation_results['issues']), 0)
         tprint("✅ Valid data passed foundational contracts validation")
@@ -277,11 +279,11 @@ class TestEnhancedLabelDefinitions(unittest.TestCase):
         self.assertTrue(combined_mask.iloc[1])   # Outlier
         self.assertTrue(combined_mask.iloc[2])   # Untradable
         
-        print("✅ Data quality masks work correctly")
+        tprint("✅ Data quality masks work correctly")
 
     def test_no_future_leakage(self):
         """Test that no future information is leaked."""
-        print("\n=== Testing No Future Leakage ===")
+        tprint("\n=== Testing No Future Leakage ===")
         
         # This is a conceptual test - in practice, you would check that
         # calculations at time t only use data from times ≤ t
@@ -300,11 +302,11 @@ class TestEnhancedLabelDefinitions(unittest.TestCase):
         )
         self.assertGreater(confidence.nunique(), 1)
         
-        print("✅ No obvious future leakage detected")
+        tprint("✅ No obvious future leakage detected")
 
     def test_meta_data_completeness(self):
         """Test that meta data is complete and useful."""
-        print("\n=== Testing Meta Data Completeness ===")
+        tprint("\n=== Testing Meta Data Completeness ===")
         
         labels, confidence, meta = self.labeler.generate_analyst_labels(
             self.market_data, self.volatility_series, self.regime_data
@@ -325,13 +327,13 @@ class TestEnhancedLabelDefinitions(unittest.TestCase):
         # Check that random state is preserved
         self.assertEqual(meta['random_state'], 42)
         
-        print("✅ Meta data is complete and useful")
+        tprint("✅ Meta data is complete and useful")
 
 
 def run_comprehensive_tests():
     """Run all tests and provide a summary."""
-    print("🚀 Running Comprehensive Tests for Enhanced Label Definitions")
-    print("=" * 70)
+    tprint("🚀 Running Comprehensive Tests for Enhanced Label Definitions")
+    tprint("=" * 70)
     
     # Create test suite
     suite = unittest.TestLoader().loadTestsFromTestCase(TestEnhancedLabelDefinitions)
@@ -341,27 +343,27 @@ def run_comprehensive_tests():
     result = runner.run(suite)
     
     # Print summary
-    print("\n" + "=" * 70)
-    print("📊 TEST SUMMARY")
-    print(f"Tests run: {result.testsRun}")
-    print(f"Failures: {len(result.failures)}")
-    print(f"Errors: {len(result.errors)}")
+    tprint("\n" + "=" * 70)
+    tprint("📊 TEST SUMMARY")
+    tprint(f"Tests run: {result.testsRun}")
+    tprint(f"Failures: {len(result.failures)}")
+    tprint(f"Errors: {len(result.errors)}")
     
     if result.failures:
-        print("\n❌ FAILURES:")
+        tprint("\n❌ FAILURES:")
         for test, traceback in result.failures:
-            print(f"  - {test}: {traceback}")
+            tprint(f"  - {test}: {traceback}")
     
     if result.errors:
-        print("\n💥 ERRORS:")
+        tprint("\n💥 ERRORS:")
         for test, traceback in result.errors:
-            print(f"  - {test}: {traceback}")
+            tprint(f"  - {test}: {traceback}")
     
     if result.wasSuccessful():
-        print("\n✅ ALL TESTS PASSED!")
-        print("🎉 Enhanced Label Definitions are working correctly!")
+        tprint("\n✅ ALL TESTS PASSED!")
+        tprint("🎉 Enhanced Label Definitions are working correctly!")
     else:
-        print(f"\n⚠️ {len(result.failures + result.errors)} test(s) failed")
+        tprint(f"\n⚠️ {len(result.failures + result.errors)} test(s) failed")
     
     return result.wasSuccessful()
 

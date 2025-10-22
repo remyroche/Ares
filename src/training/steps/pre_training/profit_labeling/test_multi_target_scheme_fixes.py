@@ -14,6 +14,7 @@ import pandas as pd
 import pytest
 from unittest.mock import Mock
 import warnings
+from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success, tprint_data_preview, tprint_data_format
 
 # Import the fixed module
 from multi_target_scheme import MultiTargetScheme, MultiTargetConfig, TargetBand
@@ -338,13 +339,13 @@ def run_all_tests():
     for test in tests:
         try:
             test()
-            print(f"✅ {test.__name__} - PASSED")
+            tprint(f"✅ {test.__name__} - PASSED")
             passed += 1
         except Exception as e:
-            print(f"❌ {test.__name__} - FAILED: {e}")
+            tprint(f"❌ {test.__name__} - FAILED: {e}")
             failed += 1
     
-    print(f"\n📊 Test Results: {passed} passed, {failed} failed")
+    tprint(f"\n📊 Test Results: {passed} passed, {failed} failed")
     return passed, failed
 
 

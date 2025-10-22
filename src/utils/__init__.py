@@ -120,8 +120,8 @@ def _lazy_import(name: str) -> Any:
 def _get_core_utilities():
     """Lazy loader for core utilities."""
     try:
-        from .core import *
-        return locals()
+        from . import core
+        return core.__dict__
     except ImportError as e:
         logger.warning(f"Core utilities not available: {e}")
         return {}
@@ -129,8 +129,8 @@ def _get_core_utilities():
 def _get_data_utilities():
     """Lazy loader for data utilities."""
     try:
-        from .data import *
-        return locals()
+        from . import data
+        return data.__dict__
     except ImportError as e:
         logger.warning(f"Data utilities not available: {e}")
         return {}
@@ -138,8 +138,8 @@ def _get_data_utilities():
 def _get_config_utilities():
     """Lazy loader for config utilities."""
     try:
-        from .config import *
-        return locals()
+        from . import config
+        return config.__dict__
     except ImportError as e:
         logger.warning(f"Config utilities not available: {e}")
         return {}
@@ -147,8 +147,8 @@ def _get_config_utilities():
 def _get_hardware_utilities():
     """Lazy loader for hardware utilities."""
     try:
-        from .hardware import *
-        return locals()
+        from . import hardware
+        return hardware.__dict__
     except ImportError as e:
         logger.warning(f"Hardware utilities not available: {e}")
         return {}
@@ -297,6 +297,61 @@ if CORE_AVAILABLE:
 # Note: Data, config, and hardware utilities need to be imported explicitly
 # from their specific modules due to file consolidation
 
+# Check availability of various utilities
+try:
+    from .monitoring.function_call_monitor import FunctionCallMonitor
+    FUNCTION_CALL_MONITOR_AVAILABLE = True
+except ImportError:
+    FUNCTION_CALL_MONITOR_AVAILABLE = False
+
+try:
+    from .validation.function_validator import FunctionValidator
+    FUNCTION_VALIDATION_AVAILABLE = True
+except ImportError:
+    FUNCTION_VALIDATION_AVAILABLE = False
+
+try:
+    from .error_handler import ErrorHandler
+    ERROR_HANDLER_AVAILABLE = True
+except ImportError:
+    ERROR_HANDLER_AVAILABLE = False
+
+try:
+    from .serialization import Serializer
+    SERIALIZATION_AVAILABLE = True
+except ImportError:
+    SERIALIZATION_AVAILABLE = False
+
+try:
+    from .config import ConfigManager
+    CONFIG_AVAILABLE = True
+except ImportError:
+    CONFIG_AVAILABLE = False
+
+try:
+    from .performance import PerformanceMonitor
+    PERFORMANCE_AVAILABLE = True
+except ImportError:
+    PERFORMANCE_AVAILABLE = False
+
+try:
+    from .data import DataProcessor
+    DATA_PROCESSING_AVAILABLE = True
+except ImportError:
+    DATA_PROCESSING_AVAILABLE = False
+
+try:
+    from .monitoring import MonitoringManager
+    MONITORING_AVAILABLE = True
+except ImportError:
+    MONITORING_AVAILABLE = False
+
+try:
+    from .parameter_loader import ParameterLoader
+    PARAMETER_LOADER_AVAILABLE = True
+except ImportError:
+    PARAMETER_LOADER_AVAILABLE = False
+
 # Add function call monitoring if available
 if FUNCTION_CALL_MONITOR_AVAILABLE:
     __all__.extend([
@@ -310,6 +365,13 @@ if FUNCTION_CALL_MONITOR_AVAILABLE:
         'get_function_call_monitor',
         'log_function_call_summary'
     ])
+
+# Check if function validation is available
+try:
+    from .validation.function_validator import FunctionValidator
+    FUNCTION_VALIDATION_AVAILABLE = True
+except ImportError:
+    FUNCTION_VALIDATION_AVAILABLE = False
 
 # Add function validation if available
 if FUNCTION_VALIDATION_AVAILABLE:

@@ -1,8 +1,17 @@
 """
-Analyst Ensemble Training - Simplified Working Version
+Analyst Ensemble Training - Enhanced with Comprehensive BaseStep Utilities
 
-This module provides a simplified Analyst ensemble training component that works
-without complex dependencies and indentation issues.
+This module provides the Analyst ensemble training component with comprehensive
+BaseStep utility integration for advanced ensemble model training.
+
+Key Features:
+- Ensemble model training with multiple algorithms
+- Comprehensive BaseStep utility integration
+- Advanced logging and data visualization
+- Hardware optimization and memory management
+- Data quality validation and cleaning
+- Model persistence and caching
+- Performance monitoring and analytics
 """
 
 import logging
@@ -15,8 +24,7 @@ import pandas as pd
 import numpy as np
 
 from src.training.steps.base_step import BaseStep
-from src.utils.logger import system_logger
-from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success, tprint_data_format
+from src.core.decorators import handles_errors, traced, log_execution_time
 
 # Simple enum for ensemble methods
 class EnsembleMethod(Enum):
@@ -76,10 +84,10 @@ class AnalystEnsembleTrainingConfig:
 
 class AnalystEnsembleTraining(BaseStep):
     """
-    Simplified Analyst ensemble training component.
+    Analyst ensemble training component with comprehensive BaseStep utility integration.
     
     This component handles training of ensemble models that combine multiple
-    Analyst base models for enhanced performance.
+    Analyst base models for enhanced performance using comprehensive utilities.
     """
     
     def __init__(
@@ -89,7 +97,7 @@ class AnalystEnsembleTraining(BaseStep):
         logger: Optional[logging.Logger] = None
     ):
         """
-        Initialize the analyst ensemble training component.
+        Initialize the analyst ensemble training component with comprehensive utilities.
         
         Args:
             name: Component name
@@ -98,12 +106,61 @@ class AnalystEnsembleTraining(BaseStep):
         """
         super().__init__(name, config)
         
-        # Set default configuration
-        self.config = AnalystEnsembleTrainingConfig()
+        # Set default configuration using BaseStep utilities
+        default_config = {
+            'model_name': 'analyst_ensemble',
+            'timeframe': '15m',
+            'base_models': [AnalystModelType.XGBOOST, AnalystModelType.CATBOOST, AnalystModelType.LIGHTGBM],
+            'ensemble_method': EnsembleMethod.VOTING,
+            'validation_split': 0.2,
+            'test_split': 0.1,
+            'enable_cross_validation': True,
+            'cv_folds': 5,
+            'save_models': True,
+            'model_save_path': './models',
+            'enable_evaluation': True,
+            'evaluation_metrics': ['accuracy', 'f1_score', 'precision', 'recall']
+        }
+        
+        # Merge with provided configuration using safe operations
         if config:
-            for key, value in config.items():
-                if hasattr(self.config, key):
-                    setattr(self.config, key, value)
+            default_config = self._safe_merge_configs(default_config, config)
+        
+        # Create config object
+        self.config = AnalystEnsembleTrainingConfig()
+        for key, value in default_config.items():
+            if hasattr(self.config, key):
+                setattr(self.config, key, value)
+        
+        # Initialize performance tracking
+        self._performance_metrics = {}
+        
+        # Log initialization with comprehensive utilities
+        self.tprint_banner("Analyst Ensemble Training Component")
+        self.tprint_info(f"🔧 Initialized AnalystEnsembleTraining: {name}")
+        self.tprint_config_preview(self.config.__dict__, "Analyst Ensemble Training Config")
+        
+        # Log utility availability status
+        self._log_utility_availability()
+    
+    def _safe_merge_configs(self, default: Dict[str, Any], provided: Dict[str, Any]) -> Dict[str, Any]:
+        """Safely merge configuration dictionaries using BaseStep utilities."""
+        try:
+            # Use safe operations for deep merge
+            if self.common_ops and 'safe_dict_merge' in self.common_ops:
+                return self.common_ops['safe_dict_merge'](default, provided)
+            else:
+                # Fallback implementation
+                result = default.copy()
+                for key, value in provided.items():
+                    if key in result and isinstance(result[key], dict) and isinstance(value, dict):
+                        result[key] = self._safe_merge_configs(result[key], value)
+                    else:
+                        result[key] = value
+                return result
+        except Exception as e:
+            self.tprint_warning(f"⚠️ Config merge failed, using defaults: {e}")
+            return default
         
         self.logger.info(f"✅ Analyst Ensemble Training initialized")
         self.logger.info(f"📊 Configuration: {self.config.model_name}, {self.config.timeframe}")
@@ -115,7 +172,7 @@ class AnalystEnsembleTraining(BaseStep):
     
     async def execute(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Execute the analyst ensemble training step.
+        Execute the analyst ensemble training step with comprehensive utility integration.
         
         Args:
             data: Input data containing features and targets
@@ -124,30 +181,21 @@ class AnalystEnsembleTraining(BaseStep):
             Training results
         """
         try:
-            tprint_info("🎯 Starting Analyst Ensemble Training...")
+            self.tprint_step_start("Analyst Ensemble Training")
+            self.tprint_info("🎯 Starting Analyst Ensemble Training...")
             start_time = time.time()
             
-            # Extract features and targets from data
-            features = data.get('features')
-            targets = data.get('targets')
-            
+            # Extract and validate data using BaseStep utilities
+            features, targets = self._extract_and_validate_training_data(data)
             if features is None or targets is None:
-                error_msg = "Missing required data: features or targets"
-                tprint_error(f"❌ {error_msg}")
-                return {'success': False, 'error': error_msg}
+                return {'success': False, 'error': 'Data extraction/validation failed'}
             
-            # Convert to DataFrame if needed
-            if not isinstance(features, pd.DataFrame):
-                features = pd.DataFrame(features)
-            if not isinstance(targets, pd.Series):
-                targets = pd.Series(targets)
+            # Data quality analysis using BaseStep utilities
+            self._analyze_data_quality(features, targets)
             
-            # Debug data format for troubleshooting
-            tprint_data_format(features, "features", level=tprint.LogLevel.INFO)
-            tprint_data_format(targets, "targets", level=tprint.LogLevel.INFO)
-            
-            tprint_info(f"📊 Training data shape: {features.shape}")
-            tprint_info(f"🎯 Target distribution: {targets.value_counts().to_dict()}")
+            # Hardware optimization if available
+            if self.hardware_utils:
+                features, targets = self._optimize_training_data(features, targets)
             
             # Train ensemble models
             ensemble_result = await self._train_ensemble_models(features, targets)
@@ -264,6 +312,67 @@ class AnalystEnsembleTraining(BaseStep):
         """
         required_keys = ['step_name', 'config', 'status']
         return all(key in artifacts for key in required_keys)
+
+    def _extract_and_validate_training_data(self, data: Dict[str, Any]) -> Tuple[Optional[pd.DataFrame], Optional[pd.Series]]:
+        """Extract and validate training data using BaseStep utilities."""
+        try:
+            # Extract data
+            features = data.get('features')
+            targets = data.get('targets')
+            
+            if features is None or targets is None:
+                self.tprint_error("❌ Missing required data: features or targets")
+                return None, None
+            
+            # Convert to pandas if needed using safe operations
+            if not isinstance(features, pd.DataFrame):
+                features = pd.DataFrame(features)
+            if not isinstance(targets, pd.Series):
+                targets = pd.Series(targets)
+            
+            # Validate data using BaseStep utilities
+            if not self._validate_dataframe_columns(features, []):
+                self.tprint_error("❌ Invalid training features")
+                return None, None
+            
+            # Data preview using BaseStep utilities
+            self.tprint_data_summary(features, "Training Features", max_rows=5)
+            self.tprint_data_summary(targets, "Training Targets", max_rows=5)
+            
+            return features, targets
+            
+        except Exception as e:
+            self.tprint_error(f"❌ Data extraction failed: {e}")
+            return None, None
+    
+    def _analyze_data_quality(self, features: pd.DataFrame, targets: pd.Series) -> None:
+        """Analyze data quality using BaseStep utilities."""
+        try:
+            if self.data_quality:
+                # Use data quality utilities
+                quality_metrics = self.data_quality['calculate_quality_metrics'](features, targets)
+                self.tprint_validation_result(quality_metrics, "Data Quality Analysis")
+            else:
+                # Fallback analysis
+                self.tprint_info(f"📊 Training data shape: {features.shape}")
+                self.tprint_info(f"📊 Target data shape: {targets.shape}")
+                self.tprint_info(f"📊 Missing values in features: {features.isnull().sum().sum()}")
+                self.tprint_info(f"📊 Missing values in targets: {targets.isnull().sum()}")
+                self.tprint_info(f"🎯 Target distribution: {targets.value_counts().to_dict()}")
+        except Exception as e:
+            self.tprint_warning(f"⚠️ Data quality analysis failed: {e}")
+    
+    def _optimize_training_data(self, features: pd.DataFrame, targets: pd.Series) -> Tuple[pd.DataFrame, pd.Series]:
+        """Optimize training data using hardware utilities."""
+        try:
+            if self.hardware_utils and 'optimize_dataframe' in self.hardware_utils:
+                features = self.hardware_utils['optimize_dataframe'](features)
+                self.tprint_success("✅ Training data optimized for hardware")
+            return features, targets
+        except Exception as e:
+            self.tprint_warning(f"⚠️ Data optimization failed: {e}")
+            return features, targets
+
 
 # Factory functions for compatibility
 def create_analyst_ensemble_training(config: Optional[Dict[str, Any]] = None) -> AnalystEnsembleTraining:

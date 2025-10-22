@@ -1,8 +1,9 @@
 """
-Tactician Base Training - Unified Training Architecture
+Tactician Base Training - Enhanced with Comprehensive BaseStep Utilities
 
 This module provides the Tactician base training component that handles training
-of individual Tactician base models using the unified BaseTrainer architecture.
+of individual Tactician base models using the unified BaseTrainer architecture
+with comprehensive BaseStep utility integration.
 
 Key Features:
 - Unified training interface for all Tactician model types
@@ -10,6 +11,11 @@ Key Features:
 - Standardized configuration and validation
 - Performance monitoring and checkpointing
 - Error handling and recovery mechanisms
+- Comprehensive BaseStep utility integration
+- Advanced logging and data visualization
+- Hardware optimization and memory management
+- Data quality validation and cleaning
+- Model persistence and caching
 """
 
 import logging
@@ -25,18 +31,7 @@ from ..core.tactician_base_trainer import (
     TacticianBaseTrainer, TacticianTrainingConfig, TacticianModelType
 )
 from src.training.steps.base_step import BaseStep
-from src.utils.logger import system_logger
-from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success, tprint_debug, tprint_performance, tprint_data_format
 from src.core.decorators import handles_errors, traced, log_execution_time
-from src.utils.hardware.integrated_hardware_manager import (
-    get_integrated_hardware_manager, WorkloadType, process_ml_training_data
-)
-from src.utils.hardware.optimization_decorators import (
-    smart_cache, auto_optimize, memory_efficient, performance_tracked
-)
-from src.utils.hardware.memory_optimized_decorators import (
-    memory_optimized, comprehensive_memory_optimization, MemoryOptimizationLevel
-)
 
 
 @dataclass
@@ -126,8 +121,37 @@ class TacticianBaseTraining(BaseStep):
         # Initialize trainer
         self._trainer = None
         
-        tprint_info(f"🔧 Initialized TacticianBaseTraining: {name}")
+        # Log initialization with comprehensive utilities
+        self.tprint_banner("Tactician Base Training Component")
+        self.tprint_info(f"🔧 Initialized TacticianBaseTraining: {name}")
+        self.tprint_config_preview(self.config.__dict__, "Tactician Base Training Config")
+        
+        # Log utility availability status
+        self._log_utility_availability()
+        
+        # Initialize performance tracking
+        self._performance_metrics = {}
+        
         self.logger.info(f"Initialized TacticianBaseTraining: {name}")
+    
+    def _safe_merge_configs(self, default: Dict[str, Any], provided: Dict[str, Any]) -> Dict[str, Any]:
+        """Safely merge configuration dictionaries using BaseStep utilities."""
+        try:
+            # Use safe operations for deep merge
+            if self.common_ops and 'safe_dict_merge' in self.common_ops:
+                return self.common_ops['safe_dict_merge'](default, provided)
+            else:
+                # Fallback implementation
+                result = default.copy()
+                for key, value in provided.items():
+                    if key in result and isinstance(result[key], dict) and isinstance(value, dict):
+                        result[key] = self._safe_merge_configs(result[key], value)
+                    else:
+                        result[key] = value
+                return result
+        except Exception as e:
+            self.tprint_warning(f"⚠️ Config merge failed, using defaults: {e}")
+            return default
     
     @handles_errors(
         exceptions=(ValueError, RuntimeError, MemoryError),
@@ -469,15 +493,162 @@ class TacticianBaseTraining(BaseStep):
             # Format analysis of failed save operation
             tprint_data_format(result, "Failed save result", level="ERROR")
     
+    def _extract_and_validate_training_data(self, data: Dict[str, Any]) -> Tuple[Optional[pd.DataFrame], Optional[pd.Series]]:
+        """Extract and validate training data using BaseStep utilities."""
+        try:
+            # Extract data
+            X_train = data.get('X_train')
+            y_train = data.get('y_train')
+            
+            if X_train is None or y_train is None:
+                self.tprint_error("❌ Missing required data: X_train and y_train")
+                return None, None
+            
+            # Convert to pandas if needed using safe operations
+            if not isinstance(X_train, pd.DataFrame):
+                X_train = pd.DataFrame(X_train)
+            if not isinstance(y_train, pd.Series):
+                y_train = pd.Series(y_train)
+            
+            # Validate data using BaseStep utilities
+            if not self._validate_dataframe_columns(X_train, []):
+                self.tprint_error("❌ Invalid training features")
+                return None, None
+            
+            # Data preview using BaseStep utilities
+            self.tprint_data_summary(X_train, "Training Features", max_rows=5)
+            self.tprint_data_summary(y_train, "Training Targets", max_rows=5)
+            
+            return X_train, y_train
+            
+        except Exception as e:
+            self.tprint_error(f"❌ Data extraction failed: {e}")
+            return None, None
+    
+    def _analyze_data_quality(self, X_train: pd.DataFrame, y_train: pd.Series) -> None:
+        """Analyze data quality using BaseStep utilities."""
+        try:
+            if self.data_quality:
+                # Use data quality utilities
+                quality_metrics = self.data_quality['calculate_quality_metrics'](X_train, y_train)
+                self.tprint_validation_result(quality_metrics, "Data Quality Analysis")
+            else:
+                # Fallback analysis
+                self.tprint_info(f"📊 Training data shape: {X_train.shape}")
+                self.tprint_info(f"📊 Target data shape: {y_train.shape}")
+                self.tprint_info(f"📊 Missing values in features: {X_train.isnull().sum().sum()}")
+                self.tprint_info(f"📊 Missing values in targets: {y_train.isnull().sum()}")
+        except Exception as e:
+            self.tprint_warning(f"⚠️ Data quality analysis failed: {e}")
+    
+    def _optimize_training_data(self, X_train: pd.DataFrame, y_train: pd.Series) -> Tuple[pd.DataFrame, pd.Series]:
+        """Optimize training data using hardware utilities."""
+        try:
+            if self.hardware_utils and 'optimize_dataframe' in self.hardware_utils:
+                X_train = self.hardware_utils['optimize_dataframe'](X_train)
+                self.tprint_success("✅ Training data optimized for hardware")
+            return X_train, y_train
+        except Exception as e:
+            self.tprint_warning(f"⚠️ Data optimization failed: {e}")
+            return X_train, y_train
+    
+    def _create_training_result(self, training_result: Any, training_time: float) -> Dict[str, Any]:
+        """Create comprehensive training result."""
+        try:
+            result = {
+                'success': True,
+                'models': training_result.model if isinstance(training_result.model, dict) else {},
+                'metrics': training_result.metrics if hasattr(training_result, 'metrics') else {},
+                'training_time': training_time,
+                'errors': training_result.errors if hasattr(training_result, 'errors') else [],
+                'warnings': training_result.warnings if hasattr(training_result, 'warnings') else [],
+                'feature_importance': self._extract_feature_importance(training_result)
+            }
+            
+            # Add performance metrics
+            result['performance_metrics'] = getattr(self, '_performance_metrics', {})
+            
+            return result
+            
+        except Exception as e:
+            self.tprint_error(f"❌ Result creation failed: {e}")
+            return {
+                'success': False,
+                'error_message': f'Result creation failed: {e}',
+                'training_time': training_time
+            }
+    
+    def _extract_feature_importance(self, training_result: Any) -> Optional[Dict[str, Dict[str, float]]]:
+        """Extract feature importance using BaseStep utilities."""
+        try:
+            if hasattr(training_result, 'feature_importance') and training_result.feature_importance:
+                return training_result.feature_importance
+            return None
+        except Exception as e:
+            self.tprint_warning(f"⚠️ Feature importance extraction failed: {e}")
+            return None
+    
+    def _analyze_training_performance(self, result: Dict[str, Any]) -> None:
+        """Analyze training performance using BaseStep utilities."""
+        try:
+            # Performance summary
+            self.tprint_performance_summary({
+                'training_time': result['training_time'],
+                'success': result['success'],
+                'models_trained': len(result.get('models', {})),
+                'metrics_count': len(result.get('metrics', {}))
+            })
+            
+            # Memory usage analysis
+            if self.hardware_utils and 'get_memory_usage' in self.hardware_utils:
+                memory_usage = self.hardware_utils['get_memory_usage']()
+                self.tprint_memory_usage(memory_usage)
+            
+        except Exception as e:
+            self.tprint_warning(f"⚠️ Performance analysis failed: {e}")
+    
+    async def _save_training_artifacts(self, result: Dict[str, Any]) -> None:
+        """Save training artifacts using BaseStep utilities."""
+        try:
+            # Save models using BaseStep utilities
+            if result.get('models'):
+                self._save_model(result['models'], 'tactician_base_models')
+            
+            # Save metrics using BaseStep utilities
+            if result.get('metrics'):
+                self._save_metadata(result['metrics'], 'training_metrics')
+            
+            # Save feature importance
+            if result.get('feature_importance'):
+                self._save_metadata(result['feature_importance'], 'feature_importance')
+            
+            self.tprint_success("✅ Training artifacts saved successfully")
+            
+        except Exception as e:
+            self.tprint_error(f"❌ Artifact saving failed: {e}")
+    
     def get_training_summary(self) -> Dict[str, Any]:
-        """Get comprehensive training summary."""
-        if self._trainer:
-            return self._trainer.get_tactician_summary()
-        return {
-            'component_name': self.name,
-            'config': self.config.__dict__,
-            'trainer_initialized': self._trainer is not None
-        }
+        """Get comprehensive training summary using BaseStep utilities."""
+        try:
+            summary = {
+                'component_name': self.name,
+                'config': self.config.__dict__,
+                'trainer_initialized': self._trainer is not None,
+                'utility_availability': self._get_availability_status(),
+                'performance_metrics': getattr(self, '_performance_metrics', {})
+            }
+            
+            if self._trainer:
+                summary.update(self._trainer.get_tactician_summary())
+            
+            return summary
+            
+        except Exception as e:
+            self.tprint_error(f"❌ Summary generation failed: {e}")
+            return {
+                'component_name': self.name,
+                'error': str(e)
+            }
     
     def get_required_dependencies(self) -> List[str]:
         """Get list of required dependencies."""

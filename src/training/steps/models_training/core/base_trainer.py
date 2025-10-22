@@ -1,8 +1,9 @@
 """
-Base Trainer - Unified Training Architecture
+Base Trainer - Enhanced with Comprehensive BaseStep Utilities
 
 This module provides the abstract base trainer class that consolidates
-common training functionality across all training components.
+common training functionality across all training components with comprehensive
+BaseStep utility integration.
 
 Key Features:
 - Unified training interface for all model types
@@ -10,6 +11,11 @@ Key Features:
 - Standardized configuration and validation
 - Performance monitoring and checkpointing
 - Error handling and recovery mechanisms
+- Comprehensive BaseStep utility integration
+- Advanced logging and data visualization
+- Hardware optimization and memory management
+- Data quality validation and cleaning
+- Model persistence and caching
 """
 
 import logging
@@ -23,29 +29,7 @@ from pathlib import Path
 import pandas as pd
 import numpy as np
 
-from src.utils.logger import system_logger
-from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success, tprint_debug, tprint_performance, tprint_data_format, LogLevel
-from src.utils.common_operations import (
-    safe_divide, safe_correlation, safe_mean, safe_std, safe_float, safe_int
-)
-from src.utils.common_utilities import calculate_data_quality_metrics, get_dataframe_info
-from src.utils.math_validation import validate_finite, validate_positive, validate_range
-from src.utils.hardware.integrated_hardware_manager import (
-    get_integrated_hardware_manager, IntegratedHardwareConfig,
-    process_market_data, process_ml_training_data, process_backtesting_data
-)
-from src.utils.hardware.unified_hardware_manager import (
-    get_unified_hardware_manager, WorkloadType, OptimizationLevel
-)
-from src.utils.hardware.optimization_decorators import (
-    smart_cache, auto_optimize, memory_efficient, performance_tracked
-)
-from src.utils.hardware.memory_optimized_decorators import (
-    memory_optimized, gc_optimized, comprehensive_memory_optimization,
-    MemoryOptimizationLevel
-)
-from src.utils.ml_common.optimization.bayesian_tpe_optimizer import BayesianTPEOptimizer
-from src.utils.kline_parquet import KlinesParquetManager
+from src.training.steps.base_step import BaseStep
 from src.core.decorators import handles_errors, traced, log_execution_time
 
 
@@ -132,25 +116,28 @@ class PredictionResult:
     metadata: Dict[str, Any] = field(default_factory=dict)
 
 
-class BaseTrainer(ABC):
+class BaseTrainer(BaseStep, ABC):
     """
-    Abstract base trainer for all training components.
+    Abstract base trainer for all training components with comprehensive BaseStep utility integration.
     
     This class provides a unified interface for training different types of models
     across different roles (Analyst, Tactician, Ensemble) while maintaining
-    consistent patterns for configuration, validation, and error handling.
+    consistent patterns for configuration, validation, error handling, and utility integration.
     """
     
     def __init__(self, config: TrainingConfig, logger: Optional[logging.Logger] = None):
         """
-        Initialize the base trainer.
+        Initialize the base trainer with comprehensive utilities.
         
         Args:
             config: Training configuration
             logger: Logger instance (optional)
         """
+        # Initialize BaseStep with trainer-specific name
+        super().__init__(f"{self.__class__.__name__.lower()}", config.__dict__ if hasattr(config, '__dict__') else config)
+        
         self.config = config
-        self.logger = logger or system_logger.getChild(f"{self.__class__.__name__}")
+        self.logger = logger or self.logger
         
         # Training state
         self._training_state = {
@@ -551,17 +538,117 @@ class BaseTrainer(ABC):
         if memory_usage > 0:
             self._performance_metrics['memory_usage_mb'] = memory_usage
     
-    def get_training_summary(self) -> Dict[str, Any]:
-        """Get comprehensive training summary."""
-        return {
-            'trainer_type': self.__class__.__name__,
-            'config': self.config.__dict__,
-            'training_state': self._training_state.copy(),
-            'performance_metrics': self._performance_metrics.copy(),
-            'model_state': {
+    def _extract_and_validate_training_data(self, data: Dict[str, Any]) -> Tuple[Optional[pd.DataFrame], Optional[pd.Series]]:
+        """Extract and validate training data using BaseStep utilities."""
+        try:
+            # Extract data
+            X_train = data.get('X_train')
+            y_train = data.get('y_train')
+            
+            if X_train is None or y_train is None:
+                self.tprint_error("❌ Missing required data: X_train and y_train")
+                return None, None
+            
+            # Convert to pandas if needed using safe operations
+            if not isinstance(X_train, pd.DataFrame):
+                X_train = pd.DataFrame(X_train)
+            if not isinstance(y_train, pd.Series):
+                y_train = pd.Series(y_train)
+            
+            # Validate data using BaseStep utilities
+            if not self._validate_dataframe_columns(X_train, []):
+                self.tprint_error("❌ Invalid training features")
+                return None, None
+            
+            # Data preview using BaseStep utilities
+            self.tprint_data_summary(X_train, "Training Features", max_rows=5)
+            self.tprint_data_summary(y_train, "Training Targets", max_rows=5)
+            
+            return X_train, y_train
+            
+        except Exception as e:
+            self.tprint_error(f"❌ Data extraction failed: {e}")
+            return None, None
+    
+    def _analyze_data_quality(self, X_train: pd.DataFrame, y_train: pd.Series) -> None:
+        """Analyze data quality using BaseStep utilities."""
+        try:
+            if self.data_quality:
+                # Use data quality utilities
+                quality_metrics = self.data_quality['calculate_quality_metrics'](X_train, y_train)
+                self.tprint_validation_result(quality_metrics, "Data Quality Analysis")
+            else:
+                # Fallback analysis
+                self.tprint_info(f"📊 Training data shape: {X_train.shape}")
+                self.tprint_info(f"📊 Target data shape: {y_train.shape}")
+                self.tprint_info(f"📊 Missing values in features: {X_train.isnull().sum().sum()}")
+                self.tprint_info(f"📊 Missing values in targets: {y_train.isnull().sum()}")
+        except Exception as e:
+            self.tprint_warning(f"⚠️ Data quality analysis failed: {e}")
+    
+    def _optimize_training_data(self, X_train: pd.DataFrame, y_train: pd.Series) -> Tuple[pd.DataFrame, pd.Series]:
+        """Optimize training data using hardware utilities."""
+        try:
+            if self.hardware_utils and 'optimize_dataframe' in self.hardware_utils:
+                X_train = self.hardware_utils['optimize_dataframe'](X_train)
+                self.tprint_success("✅ Training data optimized for hardware")
+            return X_train, y_train
+        except Exception as e:
+            self.tprint_warning(f"⚠️ Data optimization failed: {e}")
+            return X_train, y_train
+    
+    def _analyze_training_performance(self, result: Dict[str, Any]) -> None:
+        """Analyze training performance using BaseStep utilities."""
+        try:
+            # Performance summary
+            self.tprint_performance_summary({
+                'training_time': result.get('training_time', 0.0),
+                'success': result.get('success', False),
                 'model_created': self._training_state['model_created'],
-                'training_completed': self._training_state['training_completed'],
-                'best_model_saved': self._training_state['best_model_saved']
+                'training_completed': self._training_state['training_completed']
+            })
+            
+            # Memory usage analysis
+            if self.hardware_utils and 'get_memory_usage' in self.hardware_utils:
+                memory_usage = self.hardware_utils['get_memory_usage']()
+                self.tprint_memory_usage(memory_usage)
+            
+        except Exception as e:
+            self.tprint_warning(f"⚠️ Performance analysis failed: {e}")
+    
+    async def _save_training_artifacts(self, result: Dict[str, Any]) -> None:
+        """Save training artifacts using BaseStep utilities."""
+        try:
+            # Save model using BaseStep utilities
+            if result.get('model'):
+                self._save_model(result['model'], f'{self.__class__.__name__.lower()}_model')
+            
+            # Save metrics using BaseStep utilities
+            if result.get('metrics'):
+                self._save_metadata(result['metrics'], 'training_metrics')
+            
+            # Save feature importance
+            if result.get('feature_importance'):
+                self._save_metadata(result['feature_importance'], 'feature_importance')
+            
+            self.tprint_success("✅ Training artifacts saved successfully")
+            
+        except Exception as e:
+            self.tprint_error(f"❌ Artifact saving failed: {e}")
+    
+    def get_training_summary(self) -> Dict[str, Any]:
+        """Get comprehensive training summary using BaseStep utilities."""
+        try:
+            summary = {
+                'trainer_type': self.__class__.__name__,
+                'config': self.config.__dict__ if hasattr(self.config, '__dict__') else self.config,
+                'training_state': self._training_state.copy(),
+                'performance_metrics': self._performance_metrics.copy(),
+                'utility_availability': self._get_availability_status(),
+                'model_state': {
+                    'model_created': self._training_state['model_created'],
+                    'training_completed': self._training_state['training_completed'],
+                    'best_model_saved': self._training_state['best_model_saved']
             }
         }
     

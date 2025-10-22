@@ -33,14 +33,7 @@ os.environ['DATA_PREVIEW_MAX_COLS'] = '20'  # Show more columns for feature anal
 from src.training.steps.base_step import BaseStep
 
 # Import enhanced hardware optimization tools
-from src.utils.hardware import (
-    get_integrated_hardware_manager, IntegratedHardwareConfig,
-    get_comprehensive_optimizer, ComprehensiveConfig, WorkloadCategory,
-    m1_optimized, memory_optimized, comprehensive_memory_optimization,
-    optimize_dataframe, optimize_array, memory_efficient_function,
-    chunked_function, gc_optimized_function, force_cleanup,
-    get_memory_stats, get_optimization_status
-)
+# Note: Hardware utilities are now available through BaseStep's comprehensive tools
 
 # Import missing dependencies
 from src.utils.artifact_manager import get_analyst_context, setup_enhanced_artifact_manager, get_pretraining_artifact_manager
@@ -365,16 +358,19 @@ class FeatureGenerationInteractionGenerationStepAnalyst(BaseStep):
         # Initialize enhanced hardware optimization system
         self.tprint_info("🧠 Initializing enhanced hardware optimization system...")
         
-        # Get integrated hardware manager with optimized configuration
-        hardware_config = IntegratedHardwareConfig(
-            memory_limit_gb=8.0,
-            cache_memory_limit_mb=1024.0,
-            enable_automatic_optimization=True,
-            enable_caching=True,
-            enable_memory_monitoring=True,
-            enable_performance_tracking=True
-        )
-        self.hardware_manager = get_integrated_hardware_manager(hardware_config)
+        # Use BaseStep's hardware utilities
+        if self.hardware_utils:
+            hardware_config = self.hardware_utils['IntegratedHardwareConfig'](
+                memory_limit_gb=8.0,
+                cache_memory_limit_mb=1024.0,
+                enable_automatic_optimization=True,
+                enable_caching=True,
+                enable_memory_monitoring=True,
+                enable_performance_tracking=True
+            )
+            self.hardware_manager = self.hardware_utils['get_integrated_hardware_manager'](hardware_config)
+        else:
+            self.hardware_manager = None
         
         # Log hardware configuration for troubleshooting
         self.tprint_structured({

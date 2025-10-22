@@ -26,25 +26,7 @@ import gc
 import os
 import re
 
-# Enhanced hardware optimization imports
-from src.utils.hardware.unified_hardware_manager import (
-    UnifiedHardwareManager, WorkloadType, OptimizationLevel, get_unified_hardware_manager
-)
-from src.utils.hardware.m1_comprehensive_optimizer import (
-    M1ComprehensiveOptimizer, OptimizationStrategy, WorkloadCategory, get_comprehensive_optimizer
-)
-from src.utils.hardware.optimization_decorators import (
-    smart_cache, auto_optimize, memory_efficient, OptimizationConfig, OptimizationLevel
-)
-from src.utils.hardware.m1_unified_memory_manager import (
-    M1UnifiedMemoryManager, get_unified_memory_manager, MemoryTier
-)
-from src.utils.hardware.m1_advanced_cpu_optimizer import (
-    M1AdvancedCPUOptimizer, get_advanced_cpu_optimizer
-)
-from src.utils.hardware.m1_enhanced_gpu_manager import (
-    M1EnhancedGPUManager, get_enhanced_gpu_manager, GPUOperationType
-)
+# Note: Hardware utilities are now available through BaseStep's comprehensive tools
 from src.training.steps.base_step import BaseStep
 # ComponentResult moved to local definition
 from dataclasses import dataclass
@@ -121,14 +103,12 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
         # Initialize enhanced hardware optimization components
         self.tprint_info("🚀 Initializing enhanced hardware optimization components")
         
-        # Initialize unified hardware manager
-        self.hardware_manager = get_unified_hardware_manager()
-        
-        # Initialize comprehensive M1 optimizer
-        self.comprehensive_optimizer = get_comprehensive_optimizer(
-            strategy=OptimizationStrategy.MAXIMUM_PERFORMANCE,
-            workload_category=WorkloadCategory.FEATURE_ENGINEERING
-        )
+        # Use BaseStep's hardware utilities
+        if self.hardware_utils:
+            self.hardware_manager = self.hardware_utils['get_integrated_hardware_manager']()
+            # Note: comprehensive_optimizer functionality is available through hardware_utils
+        else:
+            self.hardware_manager = None
         
         # Initialize specialized components
         self.memory_manager = get_unified_memory_manager()
@@ -1076,7 +1056,8 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             
             # Final comprehensive optimization
             if isinstance(data, pd.DataFrame):
-                data = self.comprehensive_optimizer.optimize_dataframe(
+                if self.hardware_utils:
+                    data = self.hardware_utils['optimize_dataframe'](
                     data,
                     workload_type=WorkloadType.FEATURE_ENGINEERING,
                     enable_compression=True,
@@ -2789,7 +2770,8 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
         
         # Initialize comprehensive optimization for this workload
         tprint_info("🚀 Initializing comprehensive optimization for feature engineering workload")
-        self.comprehensive_optimizer.optimize_for_workload(
+        if self.hardware_utils and self.hardware_manager:
+            self.hardware_manager.optimize_for_workload(
             workload_category=WorkloadCategory.FEATURE_ENGINEERING,
             strategy=OptimizationStrategy.MAXIMUM_PERFORMANCE
         )

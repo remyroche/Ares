@@ -168,14 +168,18 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
         
         # Initialize enhanced hardware optimization system
         self.tprint_info("🚀 Initializing enhanced hardware optimization system")
-        self.hardware_manager = get_integrated_hardware_manager()
-        self.comprehensive_optimizer = get_comprehensive_optimizer()
+        if self.hardware_utils:
+            self.hardware_manager = self.hardware_utils['get_integrated_hardware_manager']()
+            # Note: comprehensive_optimizer functionality is available through hardware_utils
+        else:
+            self.hardware_manager = None
         
         # Configure for feature selection workload
-        self.hardware_manager.optimize_for_workload(
-            WorkloadType.FEATURE_ENGINEERING, 
-            OptimizationLevel.AGGRESSIVE
-        )
+        if self.hardware_manager:
+            self.hardware_manager.optimize_for_workload(
+                WorkloadType.FEATURE_ENGINEERING, 
+                OptimizationLevel.AGGRESSIVE
+            )
         
         self.tprint_success("✅ Enhanced hardware optimization system initialized")
         

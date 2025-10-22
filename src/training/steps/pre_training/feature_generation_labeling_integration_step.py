@@ -13,38 +13,7 @@ import numpy as np
 from src.training.steps.base_step import BaseStep
 
 # Try to import hardware optimization tools for better performance
-try:
-    from src.utils.hardware import (
-        memory_optimized, m1_optimized, memory_efficient_function,
-        gc_optimized_function, force_cleanup, get_memory_stats
-    )
-    HARDWARE_OPTIMIZATION_AVAILABLE = True
-except ImportError:
-    HARDWARE_OPTIMIZATION_AVAILABLE = False
-    def memory_optimized(*args, **kwargs): 
-        def decorator(f):
-            return f
-        return decorator
-    def m1_optimized(*args, **kwargs): 
-        def decorator(f):
-            return f
-        return decorator
-    def memory_efficient_function(func=None, *args, **kwargs): 
-        def decorator(f):
-            return f
-        if func is None:
-            return decorator
-        return decorator(func)
-    def gc_optimized_function(func=None, *args, **kwargs): 
-        def decorator(f):
-            return f
-        if func is None:
-            return decorator
-        return decorator(func)
-    def force_cleanup():
-        import gc
-        gc.collect()
-    def get_memory_stats(): return {}
+# Note: Hardware utilities are now available through BaseStep's comprehensive tools
 
 
 # Note: tprint utilities are now available through BaseStep's comprehensive tools
@@ -76,13 +45,12 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
         self.tprint_info("🔧 Feature generation labeling integration step initialized")
 
 
-    @memory_efficient_function
-    @gc_optimized_function
+    # Note: Hardware optimization decorators are now available through BaseStep's comprehensive tools
     async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """Execute the labeling integration step using BaseStep pattern."""
         # Log memory stats at start for troubleshooting
-        if HARDWARE_OPTIMIZATION_AVAILABLE:
-            initial_memory = get_memory_stats()
+        if self.hardware_utils:
+            initial_memory = self.hardware_utils['get_memory_stats']() if self.hardware_utils else {}
             self.tprint_structured({
                 "initial_memory_stats": initial_memory
             }, level=LogLevel.DEBUG)
@@ -423,7 +391,7 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
         
         # Log final memory stats for troubleshooting
         if HARDWARE_OPTIMIZATION_AVAILABLE:
-            final_memory = get_memory_stats()
+            final_memory = self.hardware_utils['get_memory_stats']() if self.hardware_utils else {}
             self.tprint_structured({
                 "final_memory_stats": final_memory
             }, level=LogLevel.DEBUG)
@@ -431,8 +399,11 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
             # Force cleanup if memory usage is high
             if final_memory.get('memory_usage_mb', 0) > 1000:  # 1GB threshold
                 tprint_info("🧹 High memory usage detected, forcing cleanup...")
-                force_cleanup()
-                post_cleanup_memory = get_memory_stats()
+                if self.hardware_utils:
+                    self.hardware_utils['force_cleanup']()
+                    post_cleanup_memory = self.hardware_utils['get_memory_stats']()
+                else:
+                    post_cleanup_memory = {}
                 self.tprint_structured({
                     "post_cleanup_memory_stats": post_cleanup_memory
                 }, level=LogLevel.DEBUG)

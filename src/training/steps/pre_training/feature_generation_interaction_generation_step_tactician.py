@@ -21,20 +21,7 @@ import pandas as pd
 from src.training.steps.base_step import BaseStep
 
 # Enhanced hardware optimization imports
-from src.utils.hardware import (
-    get_integrated_hardware_manager, IntegratedHardwareConfig,
-    get_comprehensive_optimizer, ComprehensiveConfig, OptimizationStrategy,
-    WorkloadCategory, m1_optimized, memory_optimized, chunked_processing_auto,
-    optimize_dataframe, optimize_array, force_cleanup, get_memory_stats,
-    get_unified_hardware_manager, WorkloadType as HardwareWorkloadType,
-    OptimizationLevel as HardwareOptimizationLevel
-)
-from src.utils.hardware.memory_optimized_decorators import (
-    MemoryOptimizationLevel, ChunkingMode, comprehensive_memory_optimization
-)
-from src.utils.hardware.optimization_decorators import (
-    smart_cache, auto_optimize, performance_tracked, cache_dataframe_result
-)
+# Note: Hardware utilities are now available through BaseStep's comprehensive tools
 
 
 
@@ -169,17 +156,20 @@ class FeatureGenerationInteractionGenerationStepTactician(BaseStep):
         # Initialize comprehensive hardware optimization system
         self.tprint_info("🧠 Initializing comprehensive hardware optimization system...")
         
-        # Get integrated hardware manager with optimized configuration
-        hardware_config = IntegratedHardwareConfig(
-            enable_automatic_optimization=True,
-            enable_caching=True,
-            enable_memory_monitoring=True,
-            enable_performance_tracking=True,
-            memory_limit_gb=8.0,
-            cache_memory_limit_mb=1024.0,  # 1GB cache
-            default_optimization_level=HardwareOptimizationLevel.AGGRESSIVE
-        )
-        self.hardware_manager = get_integrated_hardware_manager(hardware_config)
+        # Use BaseStep's hardware utilities
+        if self.hardware_utils:
+            hardware_config = self.hardware_utils['IntegratedHardwareConfig'](
+                enable_automatic_optimization=True,
+                enable_caching=True,
+                enable_memory_monitoring=True,
+                enable_performance_tracking=True,
+                memory_limit_gb=8.0,
+                cache_memory_limit_mb=1024.0,  # 1GB cache
+                default_optimization_level=HardwareOptimizationLevel.AGGRESSIVE
+            )
+            self.hardware_manager = self.hardware_utils['get_integrated_hardware_manager'](hardware_config)
+        else:
+            self.hardware_manager = None
         
         # Log hardware configuration for troubleshooting
         self.tprint_structured({

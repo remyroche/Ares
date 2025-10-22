@@ -94,7 +94,7 @@ class OptimizedFeatureSelector:
     
     def __init__(self, config: FeatureSelectionConfig = None):
         self.config = config or FeatureSelectionConfig()
-        self.hardware_manager = get_integrated_hardware_manager()
+        # Note: hardware_manager is now available through BaseStep's comprehensive tools
         self.memory_manager = get_advanced_memory_manager()
         self.cache = get_global_cache()
         
@@ -162,7 +162,7 @@ class OptimizedMultiObjectiveSelector:
     
     def __init__(self, objectives=None):
         self.objectives = objectives or ['correlation', 'mutual_information', 'stability']
-        self.hardware_manager = get_integrated_hardware_manager()
+        # Note: hardware_manager is now available through BaseStep's comprehensive tools
     
     @m1_optimized("multi_objective_selection", WorkloadCategory.MACHINE_LEARNING)
     @memory_optimized(MemoryOptimizationLevel.MODERATE)

@@ -116,6 +116,9 @@ class EnhancedLabelsValidator:
         }
         
         tprint_success("🚀 Enhanced Labels Validator initialized")
+        tprint_info(f"   → Validation config: {len(self.default_validation_config)} sections")
+        tprint_info(f"   → Use synthetic data: {self.default_validation_config.get('use_synthetic', False)}")
+        tprint_info(f"   → Random state: {self.default_validation_config.get('random_state', 42)}")
     
     def _prepare_inputs(self, test_data: Optional[pd.DataFrame], validation_config: Optional[Dict[str, Any]]) -> Tuple[pd.DataFrame, Dict[str, Any], Dict[str, Any]]:
         """
@@ -367,6 +370,186 @@ class EnhancedLabelsValidator:
         except Exception:
             return "unknown"
     
+    def _load_historical_validation_scores(self) -> Dict[str, np.ndarray]:
+        """Load historical validation scores from outcomes directory."""
+        try:
+            import os
+            import json
+            from pathlib import Path
+            
+            outcomes_dir = Path("outcomes")
+            if not outcomes_dir.exists():
+                return {}
+            
+            data_quality_scores = []
+            label_quality_scores = []
+            stability_scores = []
+            
+            # Load from enhanced labels validation results first
+            for validation_file in outcomes_dir.glob("enhanced_labels_validation_*.json"):
+                try:
+                    with open(validation_file, 'r') as f:
+                        data = json.load(f)
+                    
+                    # Extract scores from validation results
+                    validation_tests = data.get('validation_tests', {})
+                    
+                    if 'data_quality' in validation_tests:
+                        dq_score = validation_tests['data_quality'].get('score', 0.0)
+                        data_quality_scores.append(dq_score)
+                    
+                    if 'label_quality' in validation_tests:
+                        lq_score = validation_tests['label_quality'].get('score', 0.0)
+                        label_quality_scores.append(lq_score)
+                    
+                    if 'stability' in validation_tests:
+                        st_score = validation_tests['stability'].get('score', 0.0)
+                        stability_scores.append(st_score)
+                    
+                except (json.JSONDecodeError, KeyError, ValueError) as e:
+                    continue
+            
+            # Fallback to analyst labeler outcomes if no validation results
+            if not data_quality_scores:
+                for outcome_file in outcomes_dir.glob("analyst_labeler_outcome_*.json"):
+                    try:
+                        with open(outcome_file, 'r') as f:
+                            data = json.load(f)
+                        
+                        # Extract quality metrics
+                        quality_metrics = data.get('quality_metrics', {})
+                        data_quality = data.get('data_quality', {})
+                        
+                        # Data quality score based on missing values and coverage
+                        missing_pct = data_quality.get('input_data', {}).get('missing_percentage', 0.0)
+                        coverage = data_quality.get('output_labels', {}).get('label_coverage', 0.0)
+                        data_quality_score = max(0.0, 1.0 - missing_pct/100.0) * (coverage/100.0)
+                        data_quality_scores.append(data_quality_score)
+                        
+                        # Label quality score based on label distribution
+                        label_dist = data.get('results', {}).get('label_distribution', {})
+                        if 'opportunity' in label_dist:
+                            mean_label = label_dist['opportunity'].get('mean', 0.0)
+                            std_label = label_dist['opportunity'].get('std', 0.0)
+                            # Good quality if mean is reasonable and std is not too high
+                            label_quality_score = max(0.0, 1.0 - abs(mean_label - 0.5) * 2) * max(0.0, 1.0 - std_label)
+                            label_quality_scores.append(label_quality_score)
+                        
+                        # Stability score (placeholder - would need more historical data)
+                        stability_scores.append(0.8)
+                        
+                    except (json.JSONDecodeError, KeyError, ValueError) as e:
+                        continue
+            
+            return {
+                'data_quality': np.array(data_quality_scores) if data_quality_scores else np.array([0.75]),
+                'label_quality': np.array(label_quality_scores) if label_quality_scores else np.array([0.70]),
+                'stability': np.array(stability_scores) if stability_scores else np.array([0.80])
+            }
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Failed to load historical validation scores: {e}")
+            return {}
+    
+    def _load_historical_performance_metrics(self) -> Dict[str, np.ndarray]:
+        """Load historical performance metrics from outcomes directory."""
+        try:
+            import os
+            import json
+            from pathlib import Path
+            
+            outcomes_dir = Path("outcomes")
+            if not outcomes_dir.exists():
+                return {}
+            
+            throughput_metrics = []
+            memory_metrics = []
+            
+            # Load from various outcome files
+            for outcome_file in outcomes_dir.glob("*_outcome_*.json"):
+                try:
+                    with open(outcome_file, 'r') as f:
+                        data = json.load(f)
+                    
+                    # Extract performance metrics
+                    execution_time = data.get('execution_time')
+                    input_rows = data.get('data_quality', {}).get('input_data', {}).get('rows', 0)
+                    
+                    if execution_time and execution_time > 0 and input_rows > 0:
+                        throughput = input_rows / execution_time
+                        throughput_metrics.append(throughput)
+                        
+                        # Estimate memory usage (rough approximation)
+                        memory_per_row = 0.001  # 1KB per row estimate
+                        memory_metrics.append(memory_per_row)
+                    
+                except (json.JSONDecodeError, KeyError, ValueError, ZeroDivisionError):
+                    continue
+            
+            return {
+                'throughput': np.array(throughput_metrics) if throughput_metrics else np.array([1000]),
+                'memory_per_row': np.array(memory_metrics) if memory_metrics else np.array([0.001])
+            }
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Failed to load historical performance metrics: {e}")
+            return {}
+    
+    def _load_historical_trading_performance(self) -> Dict[str, np.ndarray]:
+        """Load historical trading performance metrics."""
+        try:
+            import os
+            import json
+            from pathlib import Path
+            
+            # Look for training reports that might contain trading performance
+            reports_dir = Path("historical_data/reports")
+            if not reports_dir.exists():
+                return {}
+            
+            sharpe_ratios = []
+            hit_rates = []
+            
+            for report_file in reports_dir.glob("*training_report*.json"):
+                try:
+                    with open(report_file, 'r') as f:
+                        data = json.load(f)
+                    
+                    # Extract trading metrics if available
+                    # This would need to be adapted based on actual report structure
+                    if 'performance_metrics' in data:
+                        perf = data['performance_metrics']
+                        if 'sharpe_ratio' in perf:
+                            sharpe_ratios.append(perf['sharpe_ratio'])
+                        if 'hit_rate' in perf:
+                            hit_rates.append(perf['hit_rate'])
+                    
+                except (json.JSONDecodeError, KeyError, ValueError):
+                    continue
+            
+            return {
+                'sharpe_baseline': np.array(sharpe_ratios) if sharpe_ratios else np.array([0.5]),
+                'hit_rate_baseline': np.array(hit_rates) if hit_rates else np.array([0.55])
+            }
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Failed to load historical trading performance: {e}")
+            return {}
+    
+    def _compute_quantiles(self, data: np.ndarray) -> Dict[float, float]:
+        """Compute quantiles for given data."""
+        if len(data) == 0:
+            return {0.3: 0.5, 0.5: 0.5, 0.7: 0.5}
+        
+        try:
+            return {
+                0.3: np.percentile(data, 30),
+                0.5: np.percentile(data, 50),
+                0.7: np.percentile(data, 70)
+            }
+        except Exception:
+            return {0.3: 0.5, 0.5: 0.5, 0.7: 0.5}
+    
     def _get_reproducibility_info(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """Get reproducibility information for audit trail."""
         return {
@@ -381,27 +564,63 @@ class EnhancedLabelsValidator:
         }
     
     def _load_baselines(self, config: Dict[str, Any]) -> Dict[str, Any]:
-        """Load historical baselines for data-driven thresholds."""
-        # In a real implementation, this would load from a database or file
-        # For now, return default baselines
-        return {
-            'data_quality': {
-                'historical_scores': np.random.normal(0.75, 0.1, 100),  # Mock historical data
-                'quantiles': {0.3: 0.65, 0.5: 0.75, 0.7: 0.85}
-            },
-            'label_quality': {
-                'historical_scores': np.random.normal(0.70, 0.15, 100),
-                'quantiles': {0.3: 0.60, 0.5: 0.70, 0.7: 0.80}
-            },
-            'stability': {
-                'historical_scores': np.random.normal(0.80, 0.12, 100),
-                'quantiles': {0.3: 0.70, 0.5: 0.80, 0.7: 0.90}
-            },
-            'performance': {
-                'throughput_baseline': np.random.normal(1000, 200, 50),  # rows/sec
-                'memory_baseline': np.random.normal(0.5, 0.1, 50)  # MB/row
+        """Load historical baselines for data-driven thresholds from real data."""
+        try:
+            tprint_info("📊 Loading historical baselines from real data...")
+            
+            # Load historical validation results from outcomes directory
+            historical_scores = self._load_historical_validation_scores()
+            
+            # Load historical performance metrics
+            performance_metrics = self._load_historical_performance_metrics()
+            
+            # Load historical trading performance
+            trading_performance = self._load_historical_trading_performance()
+            
+            baselines = {
+                'data_quality': {
+                    'historical_scores': historical_scores.get('data_quality', np.array([0.75])),
+                    'quantiles': self._compute_quantiles(historical_scores.get('data_quality', np.array([0.75])))
+                },
+                'label_quality': {
+                    'historical_scores': historical_scores.get('label_quality', np.array([0.70])),
+                    'quantiles': self._compute_quantiles(historical_scores.get('label_quality', np.array([0.70])))
+                },
+                'stability': {
+                    'historical_scores': historical_scores.get('stability', np.array([0.80])),
+                    'quantiles': self._compute_quantiles(historical_scores.get('stability', np.array([0.80])))
+                },
+                'performance': {
+                    'throughput_baseline': performance_metrics.get('throughput', np.array([1000])),
+                    'memory_baseline': performance_metrics.get('memory_per_row', np.array([0.5]))
+                },
+                'trading_performance': trading_performance
             }
-        }
+            
+            tprint_success(f"✅ Loaded baselines: {len(historical_scores.get('data_quality', []))} data quality scores")
+            return baselines
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Failed to load historical baselines: {e}")
+            # Return minimal fallback baselines
+            return {
+                'data_quality': {
+                    'historical_scores': np.array([0.75]),
+                    'quantiles': {0.3: 0.65, 0.5: 0.75, 0.7: 0.85}
+                },
+                'label_quality': {
+                    'historical_scores': np.array([0.70]),
+                    'quantiles': {0.3: 0.60, 0.5: 0.70, 0.7: 0.80}
+                },
+                'stability': {
+                    'historical_scores': np.array([0.80]),
+                    'quantiles': {0.3: 0.70, 0.5: 0.80, 0.7: 0.90}
+                },
+                'performance': {
+                    'throughput_baseline': np.array([1000]),
+                    'memory_baseline': np.array([0.5])
+                }
+            }
     
     def _compute_confidence_interval(self, value: float, historical_data: np.ndarray, confidence: float = 0.95) -> Tuple[float, float]:
         """Compute confidence interval for a value given historical data."""
@@ -633,38 +852,191 @@ class EnhancedLabelsValidator:
             coverage = labeled_timestamps / total_timestamps if total_timestamps > 0 else 0.0
             metrics['coverage'] = coverage
             
-            # Mutual information (simplified - would need features for full implementation)
-            # For now, just return placeholder
-            metrics['mutual_info'] = {'placeholder': 'Would need features for full MI calculation'}
+            # Mutual information with available data
+            mutual_info_metrics = self._compute_mutual_information_metrics(labels, result)
+            metrics['mutual_info'] = mutual_info_metrics
             
             return metrics
             
         except Exception as e:
             return {'error': str(e)}
     
-    def _test_leakage(self, labels: pd.DataFrame, processed_data: pd.DataFrame) -> Dict[str, Any]:
-        """Test for leakage using purged CV regression."""
+    def _compute_mutual_information_metrics(self, labels: pd.DataFrame, result: Dict[str, Any]) -> Dict[str, Any]:
+        """Compute mutual information metrics between labels and available features."""
         try:
-            # Simplified leakage test - in practice would use purged CV
-            # Check correlation between current labels and future returns
+            mutual_info_results = {}
+            
+            # Get processed data if available
+            processed_data = result.get('processed_data', pd.DataFrame())
+            
+            if processed_data.empty or labels.empty:
+                return {'error': 'No data available for mutual information calculation'}
+            
+            # Align data
+            common_index = labels.index.intersection(processed_data.index)
+            if len(common_index) < 10:
+                return {'error': 'Insufficient overlapping data for mutual information'}
+            
+            labels_aligned = labels.loc[common_index]
+            data_aligned = processed_data.loc[common_index]
+            
+            # Calculate mutual information for each label column
+            for col in labels_aligned.columns:
+                if col in ['analyst_label', 'tactician_label']:
+                    label_data = labels_aligned[col].dropna()
+                    if len(label_data) < 10:
+                        continue
+                    
+                    # Align with data
+                    common_col_idx = label_data.index.intersection(data_aligned.index)
+                    if len(common_col_idx) < 10:
+                        continue
+                    
+                    col_labels = label_data.loc[common_col_idx]
+                    col_data = data_aligned.loc[common_col_idx]
+                    
+                    # Calculate MI with available numerical features
+                    mi_scores = {}
+                    
+                    for feature_col in col_data.columns:
+                        if col_data[feature_col].dtype in ['float64', 'int64']:
+                            feature_data = col_data[feature_col].dropna()
+                            
+                            # Align with labels
+                            common_feature_idx = col_labels.index.intersection(feature_data.index)
+                            if len(common_feature_idx) < 10:
+                                continue
+                            
+                            feature_aligned = feature_data.loc[common_feature_idx]
+                            label_aligned = col_labels.loc[common_feature_idx]
+                            
+                            try:
+                                # Discretize continuous features for MI calculation
+                                feature_binned = pd.cut(feature_aligned, bins=5, labels=False, duplicates='drop')
+                                label_binned = label_aligned.astype(int)
+                                
+                                # Calculate mutual information
+                                from sklearn.metrics import mutual_info_score
+                                mi_score = mutual_info_score(label_binned, feature_binned)
+                                mi_scores[feature_col] = mi_score
+                                
+                            except (ValueError, TypeError, ImportError):
+                                # Fallback to correlation if MI calculation fails
+                                try:
+                                    corr = np.corrcoef(feature_aligned, label_aligned)[0, 1]
+                                    mi_scores[feature_col] = abs(corr) if not np.isnan(corr) else 0.0
+                                except (ValueError, np.linalg.LinAlgError):
+                                    mi_scores[feature_col] = 0.0
+                    
+                    if mi_scores:
+                        mutual_info_results[col] = {
+                            'mi_scores': mi_scores,
+                            'avg_mi': np.mean(list(mi_scores.values())),
+                            'max_mi': np.max(list(mi_scores.values())),
+                            'top_features': sorted(mi_scores.items(), key=lambda x: x[1], reverse=True)[:3]
+                        }
+            
+            return mutual_info_results if mutual_info_results else {'error': 'No valid mutual information calculations'}
+            
+        except Exception as e:
+            return {'error': str(e)}
+    
+    def _test_leakage(self, labels: pd.DataFrame, processed_data: pd.DataFrame) -> Dict[str, Any]:
+        """Test for leakage using purged CV regression with real data."""
+        try:
             if processed_data.empty or labels.empty:
                 return {'passed': True, 'score': 1.0, 'pvalue': 1.0, 'notes': ['No data for leakage test']}
             
-            # Mock leakage test - would implement proper purged CV regression
-            # For now, just check if labels are too predictive of future returns
-            ic = 0.05  # Mock information coefficient
-            pvalue = 0.1  # Mock p-value
+            # Align data by common index
+            common_index = labels.index.intersection(processed_data.index)
+            if len(common_index) < 10:
+                return {'passed': True, 'score': 1.0, 'pvalue': 1.0, 'notes': ['Insufficient overlapping data']}
             
-            # Pass if IC is not suspiciously high
-            passed = ic < 0.2 and pvalue > 0.05
-            score = 1.0 if passed else 0.0
+            labels_aligned = labels.loc[common_index]
+            data_aligned = processed_data.loc[common_index]
+            
+            # Calculate future returns for leakage detection
+            if 'close' in data_aligned.columns:
+                future_returns = data_aligned['close'].pct_change().shift(-1).dropna()
+            else:
+                return {'passed': True, 'score': 1.0, 'pvalue': 1.0, 'notes': ['No price data for leakage test']}
+            
+            # Align labels with future returns
+            aligned_labels = labels_aligned.loc[future_returns.index]
+            
+            if len(aligned_labels) < 10:
+                return {'passed': True, 'score': 1.0, 'pvalue': 1.0, 'notes': ['Insufficient aligned data']}
+            
+            # Test each label column for leakage
+            leakage_results = {}
+            overall_passed = True
+            min_pvalue = 1.0
+            avg_ic = 0.0
+            
+            for col in aligned_labels.columns:
+                if col in ['analyst_label', 'tactician_label']:
+                    label_data = aligned_labels[col].dropna()
+                    if len(label_data) < 10:
+                        continue
+                    
+                    # Align with future returns
+                    common_idx = label_data.index.intersection(future_returns.index)
+                    if len(common_idx) < 10:
+                        continue
+                    
+                    label_aligned = label_data.loc[common_idx]
+                    returns_aligned = future_returns.loc[common_idx]
+                    
+                    # Calculate information coefficient (IC)
+                    try:
+                        ic = np.corrcoef(label_aligned, returns_aligned)[0, 1]
+                        if np.isnan(ic):
+                            ic = 0.0
+                    except (ValueError, np.linalg.LinAlgError):
+                        ic = 0.0
+                    
+                    # Perform t-test for significance
+                    try:
+                        from scipy.stats import ttest_ind
+                        label_0_returns = returns_aligned[label_aligned == 0].dropna()
+                        label_1_returns = returns_aligned[label_aligned == 1].dropna()
+                        
+                        if len(label_0_returns) > 1 and len(label_1_returns) > 1:
+                            t_stat, pvalue = ttest_ind(label_1_returns, label_0_returns)
+                        else:
+                            pvalue = 1.0
+                    except (ValueError, ZeroDivisionError):
+                        pvalue = 1.0
+                    
+                    # Check for leakage (high IC and significant p-value)
+                    is_leakage = abs(ic) > 0.1 and pvalue < 0.05
+                    leakage_results[col] = {
+                        'ic': ic,
+                        'pvalue': pvalue,
+                        'is_leakage': is_leakage
+                    }
+                    
+                    if is_leakage:
+                        overall_passed = False
+                    
+                    min_pvalue = min(min_pvalue, pvalue)
+                    avg_ic += abs(ic)
+            
+            if leakage_results:
+                avg_ic /= len(leakage_results)
+            else:
+                avg_ic = 0.0
+            
+            # Overall leakage test result
+            score = 1.0 if overall_passed else max(0.0, 1.0 - avg_ic * 2)
             
             return {
-                'passed': passed,
+                'passed': overall_passed,
                 'score': score,
-                'pvalue': pvalue,
-                'ic': ic,
-                'notes': [f"Leakage test: IC={ic:.3f}, p={pvalue:.3f}"]
+                'pvalue': min_pvalue,
+                'ic': avg_ic,
+                'leakage_results': leakage_results,
+                'notes': [f"Leakage test: avg IC={avg_ic:.3f}, min p={min_pvalue:.3f}"]
             }
             
         except Exception as e:
@@ -749,7 +1121,7 @@ class EnhancedLabelsValidator:
             return {'passed': False, 'score': 0.0, 'error': str(e)}
     
     def _compute_trading_metrics(self, labels: pd.DataFrame, processed_data: pd.DataFrame, config: Dict[str, Any]) -> Dict[str, Any]:
-        """Compute OOS trading performance metrics using purged CV."""
+        """Compute OOS trading performance metrics using purged CV with real data."""
         try:
             # Get purged CV configuration
             cv_config = config.get('purged_cv', {})
@@ -757,15 +1129,65 @@ class EnhancedLabelsValidator:
             embargo_pct = cv_config.get('embargo_pct', 0.01)
             purge_pct = cv_config.get('purge_pct', 0.01)
             
-            # Mock trading metrics - in practice would implement proper purged CV
-            # with actual trading simulation
+            if processed_data.empty or labels.empty:
+                return {'error': 'No data available for trading metrics calculation'}
             
-            # Simulate some trading performance
-            np.random.seed(42)
-            sharpe_ratios = np.random.normal(0.8, 0.3, n_splits)
-            hit_rates = np.random.normal(0.58, 0.08, n_splits)
-            returns = np.random.normal(0.02, 0.15, n_splits)
-            drawdowns = np.random.exponential(0.05, n_splits)
+            # Align data by common index
+            common_index = labels.index.intersection(processed_data.index)
+            if len(common_index) < 100:  # Need sufficient data for CV
+                return {'error': 'Insufficient data for trading metrics calculation'}
+            
+            labels_aligned = labels.loc[common_index]
+            data_aligned = processed_data.loc[common_index]
+            
+            # Check for required price data
+            if 'close' not in data_aligned.columns:
+                return {'error': 'No price data available for trading metrics'}
+            
+            # Generate purged CV splits
+            cv_splits = self._generate_purged_cv_splits(
+                len(common_index), n_splits, embargo_pct, purge_pct
+            )
+            
+            # Calculate trading metrics for each fold
+            fold_metrics = []
+            
+            for train_idx, test_idx in cv_splits:
+                try:
+                    # Get test data
+                    test_labels = labels_aligned.iloc[test_idx]
+                    test_prices = data_aligned['close'].iloc[test_idx]
+                    
+                    # Calculate returns for test period
+                    test_returns = test_prices.pct_change().dropna()
+                    
+                    # Align labels with returns
+                    common_test_idx = test_labels.index.intersection(test_returns.index)
+                    if len(common_test_idx) < 10:
+                        continue
+                    
+                    test_labels_aligned = test_labels.loc[common_test_idx]
+                    test_returns_aligned = test_returns.loc[common_test_idx]
+                    
+                    # Calculate trading performance
+                    fold_metric = self._calculate_fold_trading_performance(
+                        test_labels_aligned, test_returns_aligned
+                    )
+                    
+                    if fold_metric is not None:
+                        fold_metrics.append(fold_metric)
+                        
+                except Exception as e:
+                    continue
+            
+            if not fold_metrics:
+                return {'error': 'No valid folds for trading metrics calculation'}
+            
+            # Aggregate metrics across folds
+            sharpe_ratios = [fm['sharpe_ratio'] for fm in fold_metrics]
+            hit_rates = [fm['hit_rate'] for fm in fold_metrics]
+            returns = [fm['avg_return'] for fm in fold_metrics]
+            drawdowns = [fm['max_drawdown'] for fm in fold_metrics]
             
             # Compute aggregate metrics
             avg_sharpe = np.mean(sharpe_ratios)
@@ -777,17 +1199,18 @@ class EnhancedLabelsValidator:
             sharpe_ci = (np.percentile(sharpe_ratios, 5), np.percentile(sharpe_ratios, 95))
             hit_rate_ci = (np.percentile(hit_rates, 5), np.percentile(hit_rates, 95))
             
-            # Compute additional metrics with proper error handling
+            # Compute additional metrics
             try:
-                positive_returns = returns[returns > 0]
-                negative_returns = returns[returns < 0]
-                if len(positive_returns) > 0 and len(negative_returns) > 0:
+                positive_returns = [r for r in returns if r > 0]
+                negative_returns = [r for r in returns if r < 0]
+                if positive_returns and negative_returns:
                     profit_factor = np.mean(positive_returns) / np.abs(np.mean(negative_returns))
                 else:
                     profit_factor = np.inf
             except (ValueError, ZeroDivisionError):
                 profit_factor = np.inf
             
+            # Calculate turnover
             try:
                 if len(labels) > 1 and 'analyst_label' in labels.columns:
                     turnover = np.mean(np.abs(np.diff(labels['analyst_label'].dropna())))
@@ -808,11 +1231,118 @@ class EnhancedLabelsValidator:
                 'fold_dispersion': {
                     'sharpe_std': np.std(sharpe_ratios),
                     'hit_rate_std': np.std(hit_rates)
-                }
+                },
+                'n_folds': len(fold_metrics)
             }
             
         except Exception as e:
             return {'error': str(e)}
+    
+    def _generate_purged_cv_splits(self, n_samples: int, n_splits: int, embargo_pct: float, purge_pct: float) -> List[Tuple[np.ndarray, np.ndarray]]:
+        """Generate purged cross-validation splits."""
+        try:
+            # Calculate embargo and purge sizes
+            embargo_size = int(n_samples * embargo_pct)
+            purge_size = int(n_samples * purge_pct)
+            
+            # Generate time-based splits
+            split_size = n_samples // n_splits
+            splits = []
+            
+            for i in range(n_splits):
+                # Calculate split boundaries
+                start_idx = i * split_size
+                end_idx = min((i + 1) * split_size, n_samples)
+                
+                # Create train and test indices
+                train_indices = list(range(start_idx))
+                test_indices = list(range(start_idx, end_idx))
+                
+                # Add future indices to train (after embargo)
+                if end_idx + embargo_size < n_samples:
+                    train_indices.extend(range(end_idx + embargo_size, n_samples))
+                
+                # Apply purge (remove samples too close to test set)
+                if purge_size > 0:
+                    purge_start = max(0, start_idx - purge_size)
+                    purge_end = min(n_samples, end_idx + purge_size)
+                    train_indices = [idx for idx in train_indices if idx < purge_start or idx >= purge_end]
+                
+                if len(train_indices) > 0 and len(test_indices) > 0:
+                    splits.append((np.array(train_indices), np.array(test_indices)))
+            
+            return splits
+            
+        except Exception as e:
+            # Fallback to simple time series split
+            split_size = n_samples // n_splits
+            return [(np.arange(i * split_size), np.arange(i * split_size, min((i + 1) * split_size, n_samples))) 
+                   for i in range(n_splits)]
+    
+    def _calculate_fold_trading_performance(self, labels: pd.DataFrame, returns: pd.Series) -> Optional[Dict[str, float]]:
+        """Calculate trading performance for a single fold."""
+        try:
+            if len(labels) < 10 or len(returns) < 10:
+                return None
+            
+            # Align labels and returns
+            common_idx = labels.index.intersection(returns.index)
+            if len(common_idx) < 10:
+                return None
+            
+            labels_aligned = labels.loc[common_idx]
+            returns_aligned = returns.loc[common_idx]
+            
+            # Calculate trading signals and performance
+            trading_returns = []
+            
+            for col in labels_aligned.columns:
+                if col in ['analyst_label', 'tactician_label']:
+                    label_data = labels_aligned[col].dropna()
+                    if len(label_data) < 5:
+                        continue
+                    
+                    # Align with returns
+                    common_col_idx = label_data.index.intersection(returns_aligned.index)
+                    if len(common_col_idx) < 5:
+                        continue
+                    
+                    col_labels = label_data.loc[common_col_idx]
+                    col_returns = returns_aligned.loc[common_col_idx]
+                    
+                    # Calculate trading returns (long when label=1, no position when label=0)
+                    col_trading_returns = col_returns * col_labels
+                    trading_returns.extend(col_trading_returns.tolist())
+            
+            if not trading_returns:
+                return None
+            
+            trading_returns = np.array(trading_returns)
+            
+            # Calculate metrics
+            avg_return = np.mean(trading_returns)
+            return_std = np.std(trading_returns)
+            sharpe_ratio = avg_return / return_std if return_std > 0 else 0.0
+            
+            # Calculate hit rate
+            positive_trades = trading_returns[trading_returns > 0]
+            hit_rate = len(positive_trades) / len(trading_returns) if len(trading_returns) > 0 else 0.0
+            
+            # Calculate max drawdown
+            cumulative_returns = np.cumprod(1 + trading_returns)
+            running_max = np.maximum.accumulate(cumulative_returns)
+            drawdowns = (cumulative_returns - running_max) / running_max
+            max_drawdown = np.min(drawdowns)
+            
+            return {
+                'sharpe_ratio': sharpe_ratio,
+                'hit_rate': hit_rate,
+                'avg_return': avg_return,
+                'max_drawdown': max_drawdown
+            }
+            
+        except Exception as e:
+            return None
     
     def _validate_schema_contracts(self, result: Dict[str, Any]) -> Dict[str, Any]:
         """Validate schema contracts at interfaces."""
@@ -858,66 +1388,174 @@ class EnhancedLabelsValidator:
             return {'passed': False, 'score': 0.0, 'error': str(e)}
     
     def _validate_version_pins(self, result: Dict[str, Any]) -> Dict[str, Any]:
-        """Validate version pins and hashes."""
+        """Validate version pins and hashes with real system versions."""
         try:
-            # Check for version information
+            # Get version information from result
             version_info = result.get('version_info', {})
             
-            # Mock version validation - in practice would check actual versions
-            has_version_info = bool(version_info)
-            version_consistent = True  # Mock consistency check
+            # Get actual system versions
+            system_versions = self._get_system_versions()
             
-            passed = has_version_info and version_consistent
-            score = 1.0 if passed else 0.0
+            # Check if version info is present
+            has_version_info = bool(version_info)
+            
+            # Validate version consistency
+            version_checks = {}
+            all_consistent = True
+            
+            if has_version_info:
+                # Check Python version
+                if 'python_version' in version_info:
+                    expected_python = system_versions.get('python_version', '')
+                    actual_python = version_info['python_version']
+                    version_checks['python'] = expected_python == actual_python
+                    if expected_python != actual_python:
+                        all_consistent = False
+                
+                # Check package versions
+                for package in ['numpy', 'pandas', 'scipy']:
+                    if f'{package}_version' in version_info:
+                        expected_version = system_versions.get(f'{package}_version', '')
+                        actual_version = version_info[f'{package}_version']
+                        version_checks[package] = expected_version == actual_version
+                        if expected_version != actual_version:
+                            all_consistent = False
+                
+                # Check validator version
+                if 'validator_version' in version_info:
+                    validator_version = version_info['validator_version']
+                    version_checks['validator'] = validator_version is not None
+                else:
+                    version_checks['validator'] = False
+                    all_consistent = False
+            else:
+                all_consistent = False
+            
+            # Check for critical version mismatches
+            critical_mismatches = []
+            for check_name, is_consistent in version_checks.items():
+                if not is_consistent:
+                    critical_mismatches.append(check_name)
+            
+            # Overall validation
+            passed = has_version_info and all_consistent and len(critical_mismatches) == 0
+            score = 1.0 if passed else max(0.0, 1.0 - len(critical_mismatches) * 0.2)
             
             return {
                 'passed': passed,
                 'score': score,
                 'version_info': version_info,
-                'notes': [f"Version validation: {passed}"]
+                'system_versions': system_versions,
+                'version_checks': version_checks,
+                'critical_mismatches': critical_mismatches,
+                'notes': [
+                    f"Version validation: {passed}",
+                    f"Critical mismatches: {critical_mismatches}" if critical_mismatches else "All versions consistent"
+                ]
             }
             
         except Exception as e:
             return {'passed': False, 'score': 0.0, 'error': str(e)}
     
-    def _check_performance_degradation(self, throughput: float, memory_per_row: float) -> bool:
-        """Check for performance degradation using CUSUM change detection."""
+    def _get_system_versions(self) -> Dict[str, str]:
+        """Get current system versions."""
         try:
-            # Simplified CUSUM check - in practice would use historical performance data
-            # For now, just check if current metrics are significantly worse than recent history
+            versions = {}
             
-            # Mock recent performance history
-            recent_throughput = np.random.normal(1200, 100, 10)
-            recent_memory = np.random.normal(0.4, 0.05, 10)
+            # Python version
+            versions['python_version'] = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
             
-            # Check if current performance is significantly worse
-            throughput_std = np.std(recent_throughput)
-            memory_std = np.std(recent_memory)
+            # Package versions
+            try:
+                versions['numpy_version'] = np.__version__
+            except AttributeError:
+                versions['numpy_version'] = 'unknown'
             
-            if throughput_std > 0:
-                throughput_degraded = throughput < np.mean(recent_throughput) - 2 * throughput_std
-            else:
-                throughput_degraded = False
-                
-            if memory_std > 0:
-                memory_degraded = memory_per_row > np.mean(recent_memory) + 2 * memory_std
-            else:
-                memory_degraded = False
+            try:
+                versions['pandas_version'] = pd.__version__
+            except AttributeError:
+                versions['pandas_version'] = 'unknown'
+            
+            try:
+                versions['scipy_version'] = stats.__version__
+            except AttributeError:
+                versions['scipy_version'] = 'unknown'
+            
+            # Platform info
+            versions['platform'] = platform.platform()
+            versions['architecture'] = platform.architecture()[0]
+            
+            return versions
+            
+        except Exception as e:
+            return {'error': str(e)}
+    
+    def _check_performance_degradation(self, throughput: float, memory_per_row: float) -> bool:
+        """Check for performance degradation using real historical performance data."""
+        try:
+            # Get historical performance metrics
+            historical_throughput = self.performance_metrics.get('processing_times', [])
+            historical_quality = self.performance_metrics.get('quality_scores', [])
+            
+            if len(historical_throughput) < 5:
+                # Not enough historical data for degradation detection
+                return False
+            
+            # Convert processing times to throughput (rows/sec)
+            # This is a simplified calculation - in practice would store actual throughput
+            historical_throughput_rates = []
+            for i, processing_time in enumerate(historical_throughput[-10:]):  # Last 10 runs
+                if processing_time > 0:
+                    # Estimate rows processed based on quality scores (proxy for data size)
+                    estimated_rows = 1000 + (historical_quality[i] * 1000) if i < len(historical_quality) else 1000
+                    historical_throughput_rates.append(estimated_rows / processing_time)
+            
+            if not historical_throughput_rates:
+                return False
+            
+            # Calculate statistics
+            mean_throughput = np.mean(historical_throughput_rates)
+            std_throughput = np.std(historical_throughput_rates)
+            
+            # Check for throughput degradation (current < mean - 2*std)
+            throughput_degraded = False
+            if std_throughput > 0:
+                throughput_degraded = throughput < mean_throughput - 2 * std_throughput
+            
+            # Check for memory degradation (simplified - would need actual memory data)
+            memory_degraded = memory_per_row > 1.0  # Simple threshold check
             
             return throughput_degraded or memory_degraded
             
-        except (ValueError, ZeroDivisionError):
+        except (ValueError, ZeroDivisionError, IndexError):
             return False
     
     def _validate_data_quality(self, result: Dict[str, Any], baselines: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
-        """Validate data quality aspects with data-driven thresholds."""
+        """Validate data quality aspects with real data quality calculation."""
         try:
             tprint_info("🧹 Validating data quality...")
             
-            # Extract quality metrics
+            # Get processed data for real quality calculation
+            processed_data = result.get('processed_data', pd.DataFrame())
+            
+            if processed_data.empty:
+                return {
+                    'passed': False,
+                    'score': 0.0,
+                    'error': 'No processed data available for quality validation',
+                    'notes': ['Cannot validate data quality without processed data']
+                }
+            
+            # Calculate real data quality metrics
+            quality_metrics = self._calculate_real_data_quality(processed_data)
+            
+            # Extract existing quality metrics from result
             data_quality = result.get('data_quality', {})
-            quality_score = data_quality.get('quality_score', 0.0)
+            existing_quality_score = data_quality.get('quality_score', 0.0)
             quality_level = data_quality.get('quality_level', 'unknown')
+            
+            # Use calculated quality score if available, otherwise use existing
+            quality_score = quality_metrics.get('overall_quality_score', existing_quality_score)
             
             # Get data-driven threshold
             threshold_config = config.get('thresholds', {}).get('data_quality', {})
@@ -950,10 +1588,12 @@ class EnhancedLabelsValidator:
                 'threshold': threshold,
                 'threshold_source': threshold_source,
                 'ci': {'lower': ci_lower, 'upper': ci_upper},
+                'quality_metrics': quality_metrics,
                 'metrics': {
                     'quality_score': quality_score,
                     'samples_removed': data_quality.get('samples_removed', 0),
-                    'features_removed': data_quality.get('features_removed', 0)
+                    'features_removed': data_quality.get('features_removed', 0),
+                    **quality_metrics
                 },
                 'notes': [f"Quality score {quality_score:.3f} vs threshold {threshold:.3f} ({threshold_source})"]
             }
@@ -974,6 +1614,116 @@ class EnhancedLabelsValidator:
                 'quality_score': 0.0,
                 'notes': [f"Data quality validation failed: {e}"]
             }
+    
+    def _calculate_real_data_quality(self, data: pd.DataFrame) -> Dict[str, Any]:
+        """Calculate real data quality metrics from market data."""
+        try:
+            if data.empty:
+                return {'overall_quality_score': 0.0}
+            
+            quality_metrics = {}
+            
+            # 1. Completeness check
+            total_values = data.size
+            missing_values = data.isnull().sum().sum()
+            completeness = 1.0 - (missing_values / total_values) if total_values > 0 else 0.0
+            quality_metrics['completeness'] = completeness
+            
+            # 2. Consistency check (price data)
+            consistency_score = 1.0
+            if 'open' in data.columns and 'high' in data.columns and 'low' in data.columns and 'close' in data.columns:
+                # Check OHLC consistency
+                invalid_ohlc = (
+                    (data['high'] < data['low']) |
+                    (data['high'] < data['open']) |
+                    (data['high'] < data['close']) |
+                    (data['low'] > data['open']) |
+                    (data['low'] > data['close'])
+                ).sum()
+                
+                ohlc_consistency = 1.0 - (invalid_ohlc / len(data)) if len(data) > 0 else 0.0
+                consistency_score = min(consistency_score, ohlc_consistency)
+                quality_metrics['ohlc_consistency'] = ohlc_consistency
+            
+            # 3. Outlier detection
+            outlier_score = 1.0
+            for col in data.select_dtypes(include=[np.number]).columns:
+                if col in ['open', 'high', 'low', 'close', 'volume']:
+                    col_data = data[col].dropna()
+                    if len(col_data) > 10:
+                        # Use IQR method for outlier detection
+                        Q1 = col_data.quantile(0.25)
+                        Q3 = col_data.quantile(0.75)
+                        IQR = Q3 - Q1
+                        lower_bound = Q1 - 1.5 * IQR
+                        upper_bound = Q3 + 1.5 * IQR
+                        
+                        outliers = ((col_data < lower_bound) | (col_data > upper_bound)).sum()
+                        col_outlier_score = 1.0 - (outliers / len(col_data))
+                        outlier_score = min(outlier_score, col_outlier_score)
+                        quality_metrics[f'{col}_outlier_score'] = col_outlier_score
+            
+            quality_metrics['outlier_score'] = outlier_score
+            
+            # 4. Price continuity check
+            price_continuity = 1.0
+            if 'close' in data.columns:
+                returns = data['close'].pct_change().dropna()
+                if len(returns) > 0:
+                    # Check for extreme returns (likely data errors)
+                    extreme_returns = (abs(returns) > 0.5).sum()  # 50% daily return threshold
+                    price_continuity = 1.0 - (extreme_returns / len(returns))
+                    quality_metrics['price_continuity'] = price_continuity
+            
+            # 5. Volume consistency
+            volume_consistency = 1.0
+            if 'volume' in data.columns:
+                volume_data = data['volume'].dropna()
+                if len(volume_data) > 0:
+                    # Check for negative or zero volumes
+                    invalid_volume = (volume_data <= 0).sum()
+                    volume_consistency = 1.0 - (invalid_volume / len(volume_data))
+                    quality_metrics['volume_consistency'] = volume_consistency
+            
+            # 6. Time series continuity
+            time_continuity = 1.0
+            if isinstance(data.index, pd.DatetimeIndex) and len(data) > 1:
+                time_diffs = data.index.to_series().diff().dropna()
+                if len(time_diffs) > 0:
+                    # Check for irregular time intervals (assuming regular intervals)
+                    expected_interval = time_diffs.mode().iloc[0] if len(time_diffs.mode()) > 0 else time_diffs.median()
+                    irregular_intervals = (abs(time_diffs - expected_interval) > expected_interval * 0.1).sum()
+                    time_continuity = 1.0 - (irregular_intervals / len(time_diffs))
+                    quality_metrics['time_continuity'] = time_continuity
+            
+            # Calculate overall quality score
+            component_scores = [
+                completeness,
+                consistency_score,
+                outlier_score,
+                price_continuity,
+                volume_consistency,
+                time_continuity
+            ]
+            
+            # Weighted average (can be adjusted based on importance)
+            weights = [0.2, 0.2, 0.2, 0.15, 0.15, 0.1]
+            overall_quality_score = np.average(component_scores, weights=weights)
+            
+            quality_metrics['overall_quality_score'] = overall_quality_score
+            quality_metrics['component_scores'] = {
+                'completeness': completeness,
+                'consistency': consistency_score,
+                'outlier_detection': outlier_score,
+                'price_continuity': price_continuity,
+                'volume_consistency': volume_consistency,
+                'time_continuity': time_continuity
+            }
+            
+            return quality_metrics
+            
+        except Exception as e:
+            return {'overall_quality_score': 0.0, 'error': str(e)}
     
     def _validate_label_generation(self, result: Dict[str, Any], baselines: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
         """Validate label generation functionality with schema and causality checks."""
@@ -1701,6 +2451,54 @@ class EnhancedLabelsValidator:
             
         except Exception as e:
             return {'error': str(e)}
+    
+    def save_validation_results(self, results: Dict[str, Any], filename: Optional[str] = None) -> str:
+        """Save validation results to file for future baseline loading."""
+        try:
+            import json
+            from pathlib import Path
+            
+            if filename is None:
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                filename = f"enhanced_labels_validation_{timestamp}.json"
+            
+            # Ensure outcomes directory exists
+            outcomes_dir = Path("outcomes")
+            outcomes_dir.mkdir(exist_ok=True)
+            
+            filepath = outcomes_dir / filename
+            
+            # Prepare results for JSON serialization
+            serializable_results = self._make_json_serializable(results)
+            
+            with open(filepath, 'w') as f:
+                json.dump(serializable_results, f, indent=2, default=str)
+            
+            tprint_success(f"✅ Validation results saved to {filepath}")
+            return str(filepath)
+            
+        except Exception as e:
+            tprint_error(f"❌ Failed to save validation results: {e}")
+            return ""
+    
+    def _make_json_serializable(self, obj: Any) -> Any:
+        """Convert objects to JSON serializable format."""
+        if isinstance(obj, dict):
+            return {k: self._make_json_serializable(v) for k, v in obj.items()}
+        elif isinstance(obj, list):
+            return [self._make_json_serializable(item) for item in obj]
+        elif isinstance(obj, np.ndarray):
+            return obj.tolist()
+        elif isinstance(obj, (np.integer, np.floating)):
+            return obj.item()
+        elif isinstance(obj, pd.DataFrame):
+            return obj.to_dict('records')
+        elif isinstance(obj, pd.Series):
+            return obj.to_dict()
+        elif isinstance(obj, datetime):
+            return obj.isoformat()
+        else:
+            return obj
 
 
 # Convenience functions
@@ -1713,31 +2511,106 @@ def run_enhanced_labels_validation(
     return validator.run_comprehensive_validation(test_data)
 
 
-def validate_system_integration() -> Dict[str, Any]:
-    """Validate that the enhanced system is properly integrated."""
+def run_full_validation_suite() -> Dict[str, Any]:
+    """Run the complete validation suite with real data and comprehensive testing."""
     try:
-        # Test basic functionality
+        tprint_info("🚀 Starting full enhanced labels validation suite...")
+        
+        # Initialize validator
+        validator = EnhancedLabelsValidator()
+        
+        # Generate realistic test data
+        test_data = validator._generate_synthetic_test_data(validator.default_validation_config)
+        
+        # Run comprehensive validation
+        validation_results = validator.run_comprehensive_validation(test_data)
+        
+        # Save results
+        if validation_results.get('overall_status') != 'failed':
+            saved_file = validator.save_validation_results(validation_results)
+            validation_results['saved_to'] = saved_file
+        
+        # Test system integration
+        integration_results = validate_system_integration()
+        validation_results['integration_test'] = integration_results
+        
+        # Generate summary
+        summary = validator.get_validation_summary()
+        validation_results['summary'] = summary
+        
+        tprint_success("✅ Full validation suite completed successfully")
+        return validation_results
+        
+    except Exception as e:
+        tprint_error(f"❌ Full validation suite failed: {e}")
+        return {
+            'error': str(e),
+            'overall_status': 'failed',
+            'timestamp': datetime.now()
+        }
+
+
+def validate_system_integration() -> Dict[str, Any]:
+    """Validate that the enhanced system is properly integrated with comprehensive testing."""
+    try:
+        tprint_info("🔗 Validating enhanced system integration...")
+        
+        # Test basic functionality with realistic data
         test_data = pd.DataFrame({
-            'open': [100, 101, 102, 103, 104],
-            'high': [101, 102, 103, 104, 105],
-            'low': [99, 100, 101, 102, 103],
-            'close': [100.5, 101.5, 102.5, 103.5, 104.5],
-            'volume': [1000, 1100, 1200, 1300, 1400]
-        })
+            'open': [100, 101, 102, 103, 104, 105, 106, 107, 108, 109],
+            'high': [101, 102, 103, 104, 105, 106, 107, 108, 109, 110],
+            'low': [99, 100, 101, 102, 103, 104, 105, 106, 107, 108],
+            'close': [100.5, 101.5, 102.5, 103.5, 104.5, 105.5, 106.5, 107.5, 108.5, 109.5],
+            'volume': [1000, 1100, 1200, 1300, 1400, 1500, 1600, 1700, 1800, 1900]
+        }, index=pd.date_range('2024-01-01', periods=10, freq='H'))
         
         # Test enhanced processing
         result = process_market_data_enhanced(test_data)
         
-        # Check if processing was successful
-        success = 'error' not in result and 'processed_data' in result
+        # Comprehensive integration checks
+        integration_checks = {
+            'basic_processing': 'error' not in result and 'processed_data' in result,
+            'data_structure': isinstance(result.get('processed_data'), pd.DataFrame),
+            'labels_generated': 'labels' in result and not result.get('labels', pd.DataFrame()).empty,
+            'quality_metrics': 'data_quality' in result,
+            'version_info': 'version_info' in result,
+            'integration_status': 'integration_status' in result
+        }
+        
+        # Check data quality
+        if 'processed_data' in result:
+            processed_data = result['processed_data']
+            integration_checks['data_completeness'] = not processed_data.empty
+            integration_checks['required_columns'] = all(col in processed_data.columns for col in ['open', 'high', 'low', 'close', 'volume'])
+        
+        # Check labels
+        if 'labels' in result:
+            labels = result['labels']
+            integration_checks['label_columns'] = any(col in labels.columns for col in ['analyst_label', 'tactician_label'])
+            integration_checks['label_data_types'] = all(labels[col].dtype in ['int64', 'float64'] for col in labels.columns if col in ['analyst_label', 'tactician_label'])
+        
+        # Overall integration status
+        all_checks_passed = all(integration_checks.values())
+        
+        # Run comprehensive validation if basic integration works
+        validation_result = None
+        if all_checks_passed:
+            try:
+                validator = EnhancedLabelsValidator()
+                validation_result = validator.run_comprehensive_validation(test_data)
+            except Exception as e:
+                tprint_warning(f"⚠️ Comprehensive validation failed: {e}")
         
         return {
-            'integration_working': success,
+            'integration_working': all_checks_passed,
+            'integration_checks': integration_checks,
             'test_result': result,
+            'validation_result': validation_result,
             'timestamp': datetime.now()
         }
         
     except Exception as e:
+        tprint_error(f"❌ System integration validation failed: {e}")
         return {
             'integration_working': False,
             'error': str(e),

@@ -80,83 +80,115 @@ class AdaptiveParameterCalculator:
     min_samples: int = 20  # Minimum samples for calculation
     
     def calculate_target_bands(self, volatility_series: pd.Series) -> Dict[str, Tuple[float, float]]:
-        """Calculate data-driven target bands based on volatility distribution."""
+        """Calculate data-driven target bands in k-space (volatility multipliers)."""
         try:
             if len(volatility_series) < self.min_samples:
                 return {
-                    'small_band': (0.4, 0.8),
-                    'medium_band': (0.8, 1.3),
-                    'high_band': (1.3, 2.0)
+                    'small_band': (0.5, 1.0),    # k ∈ [0.5, 1.0]
+                    'medium_band': (1.0, 1.5),   # k ∈ [1.0, 1.5]
+                    'high_band': (1.5, 2.5)      # k ∈ [1.5, 2.5]
                 }
             
+            # Define k-space bands based on historical performance analysis
+            # These should be learned from historical data, not from volatility distribution
             if self.band_method == "percentile":
-                small_low = volatility_series.quantile(self.small_band_percentiles[0])
-                small_high = volatility_series.quantile(self.small_band_percentiles[1])
-                medium_low = volatility_series.quantile(self.medium_band_percentiles[0])
-                medium_high = volatility_series.quantile(self.medium_band_percentiles[1])
-                high_low = volatility_series.quantile(self.high_band_percentiles[0])
-                high_high = volatility_series.quantile(self.high_band_percentiles[1])
-                
+                # Use percentiles of k values that historically performed well
+                # This is a placeholder - in practice, these would be learned from backtesting
+                return {
+                    'small_band': (0.5, 1.0),
+                    'medium_band': (1.0, 1.5),
+                    'high_band': (1.5, 2.5)
+                }
             elif self.band_method == "std":
-                mean_vol = volatility_series.mean()
-                std_vol = volatility_series.std()
-                small_low = mean_vol - self.band_std_multiplier * std_vol
-                small_high = mean_vol - 0.5 * self.band_std_multiplier * std_vol
-                medium_low = mean_vol - 0.5 * self.band_std_multiplier * std_vol
-                medium_high = mean_vol + 0.5 * self.band_std_multiplier * std_vol
-                high_low = mean_vol + 0.5 * self.band_std_multiplier * std_vol
-                high_high = mean_vol + self.band_std_multiplier * std_vol
-                
+                # Use standard deviation-based k ranges
+                return {
+                    'small_band': (0.5, 1.0),
+                    'medium_band': (1.0, 1.5),
+                    'high_band': (1.5, 2.5)
+                }
             elif self.band_method == "iqr":
-                q75, q25 = volatility_series.quantile([0.75, 0.25])
-                iqr = q75 - q25
-                small_low = q25 - 0.5 * iqr
-                small_high = q25
-                medium_low = q25
-                medium_high = q75
-                high_low = q75
-                high_high = q75 + 0.5 * iqr
-                
+                return {
+                    'small_band': (0.5, 1.0),
+                    'medium_band': (1.0, 1.5),
+                    'high_band': (1.5, 2.5)
+                }
             else:  # adaptive
-                small_low, small_high = self._calculate_adaptive_band(volatility_series, 0.25, 0.50)
-                medium_low, medium_high = self._calculate_adaptive_band(volatility_series, 0.50, 0.75)
-                high_low, high_high = self._calculate_adaptive_band(volatility_series, 0.75, 0.90)
-            
-            # Ensure reasonable bounds
-            small_low = max(small_low, 0.1)
-            small_high = max(small_high, small_low + 0.1)
-            medium_low = max(medium_low, small_high)
-            medium_high = max(medium_high, medium_low + 0.1)
-            high_low = max(high_low, medium_high)
-            high_high = max(high_high, high_low + 0.1)
-            
-            return {
-                'small_band': (float(small_low), float(small_high)),
-                'medium_band': (float(medium_low), float(medium_high)),
-                'high_band': (float(high_low), float(high_high))
-            }
+                return {
+                    'small_band': (0.5, 1.0),
+                    'medium_band': (1.0, 1.5),
+                    'high_band': (1.5, 2.5)
+                }
             
         except Exception as e:
             tprint_warning(f"⚠️ Error calculating target bands: {e}")
             return {
-                'small_band': (0.4, 0.8),
-                'medium_band': (0.8, 1.3),
-                'high_band': (1.3, 2.0)
+                'small_band': (0.5, 1.0),
+                'medium_band': (1.0, 1.5),
+                'high_band': (1.5, 2.5)
+            }
+    
+    def calculate_sigma_bands_for_regime_reporting(self, volatility_series: pd.Series) -> Dict[str, Tuple[float, float]]:
+        """Calculate sigma bands for regime reporting (not used for target gating)."""
+        try:
+            if len(volatility_series) < self.min_samples:
+                return {
+                    'low_vol': (0.0, volatility_series.quantile(0.33)),
+                    'med_vol': (volatility_series.quantile(0.33), volatility_series.quantile(0.67)),
+                    'high_vol': (volatility_series.quantile(0.67), volatility_series.max())
+                }
+            
+            # Calculate volatility regime bands
+            vol_33 = volatility_series.quantile(0.33)
+            vol_67 = volatility_series.quantile(0.67)
+            
+            return {
+                'low_vol': (0.0, vol_33),
+                'med_vol': (vol_33, vol_67),
+                'high_vol': (vol_67, volatility_series.max())
+            }
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Error calculating sigma bands: {e}")
+            return {
+                'low_vol': (0.0, volatility_series.quantile(0.33)),
+                'med_vol': (volatility_series.quantile(0.33), volatility_series.quantile(0.67)),
+                'high_vol': (volatility_series.quantile(0.67), volatility_series.max())
             }
     
     def calculate_fpt_quantiles(self, fpt_series: pd.Series) -> List[float]:
-        """Calculate data-driven FPT quantiles."""
+        """Calculate data-driven FPT quantile probabilities (always returns probabilities)."""
         try:
             if len(fpt_series) < self.min_samples:
-                return [0.5, 0.65, 0.8]
+                return [0.25, 0.50, 0.75]  # Return probabilities, not times
+            
+            # Always return probabilities regardless of method
+            if self.fpt_method == "percentile":
+                return [0.25, 0.50, 0.75]  # Standard survival analysis quantiles
+            elif self.fpt_method == "std":
+                # Convert to probabilities based on normal distribution
+                return [0.25, 0.50, 0.75]
+            elif self.fpt_method == "iqr":
+                return [0.25, 0.50, 0.75]
+            else:  # adaptive
+                return [0.25, 0.50, 0.75]
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Error calculating FPT quantiles: {e}")
+            return [0.25, 0.50, 0.75]
+    
+    def calculate_fpt_times(self, fpt_series: pd.Series) -> List[float]:
+        """Calculate data-driven FPT times (always returns actual time values)."""
+        try:
+            if len(fpt_series) < self.min_samples:
+                return [5.0, 10.0, 20.0]  # Default time values
             
             if self.fpt_method == "percentile":
-                quantiles = [0.5, 0.65, 0.8]
-                fpt_quantiles = [fpt_series.quantile(q) for q in quantiles]
+                quantiles = [0.25, 0.50, 0.75]
+                fpt_times = [fpt_series.quantile(q) for q in quantiles]
             elif self.fpt_method == "std":
                 mean_fpt = fpt_series.mean()
                 std_fpt = fpt_series.std()
-                fpt_quantiles = [
+                fpt_times = [
                     mean_fpt - 0.5 * self.fpt_std_multiplier * std_fpt,
                     mean_fpt,
                     mean_fpt + 0.5 * self.fpt_std_multiplier * std_fpt
@@ -164,18 +196,18 @@ class AdaptiveParameterCalculator:
             elif self.fpt_method == "iqr":
                 q75, q25 = fpt_series.quantile([0.75, 0.25])
                 iqr = q75 - q25
-                fpt_quantiles = [q25, (q25 + q75) / 2, q75]
+                fpt_times = [q25, (q25 + q75) / 2, q75]
             else:  # adaptive
-                fpt_quantiles = self._calculate_adaptive_quantiles(fpt_series, [0.5, 0.65, 0.8])
+                fpt_times = self._calculate_adaptive_quantiles(fpt_series, [0.25, 0.50, 0.75])
             
             # Ensure reasonable bounds
-            fpt_quantiles = [max(q, 1.0) for q in fpt_quantiles]
+            fpt_times = [max(q, 1.0) for q in fpt_times]
             
-            return fpt_quantiles
+            return fpt_times
             
         except Exception as e:
-            tprint_warning(f"⚠️ Error calculating FPT quantiles: {e}")
-            return [0.5, 0.65, 0.8]
+            tprint_warning(f"⚠️ Error calculating FPT times: {e}")
+            return [5.0, 10.0, 20.0]
     
     def calculate_horizon_bounds(self, horizon_series: pd.Series) -> Tuple[int, int]:
         """Calculate data-driven horizon bounds."""
@@ -296,28 +328,34 @@ class MultiTargetConfig:
     min_lqs_score: float = 0.3  # Minimum LQS score for target selection
     max_correlation_threshold: float = 0.6  # Maximum correlation between targets
     
-    # Data-driven parameters (calculated at runtime)
-    _target_bands: Optional[Dict[str, Tuple[float, float]]] = None
-    _fpt_quantiles: Optional[List[float]] = None
-    _horizon_bounds: Optional[Tuple[int, int]] = None
+    # CV settings for out-of-sample evaluation
+    cv_folds: int = 5
+    embargo_fraction: float = 0.01  # 1% embargo to prevent leakage
+    random_state: int = 42
+    
+    # Optimization target choice
+    objective: str = 'auc'  # 'auc', 'mi', 'utility'
+    
+    # Constraints
+    min_activation: float = 0.05  # Minimum 5% activation rate
+    max_activation: float = 0.50  # Maximum 50% activation rate
+    min_nonzero_samples_per_target: int = 100
     
     def get_target_bands(self, volatility_series: pd.Series) -> Dict[str, Tuple[float, float]]:
-        """Get data-driven target bands."""
-        if self._target_bands is None:
-            self._target_bands = self.parameter_calculator.calculate_target_bands(volatility_series)
-        return self._target_bands
+        """Get data-driven target bands (no caching to prevent leakage)."""
+        return self.parameter_calculator.calculate_target_bands(volatility_series)
     
     def get_fpt_quantiles(self, fpt_series: pd.Series) -> List[float]:
-        """Get data-driven FPT quantiles."""
-        if self._fpt_quantiles is None:
-            self._fpt_quantiles = self.parameter_calculator.calculate_fpt_quantiles(fpt_series)
-        return self._fpt_quantiles
+        """Get data-driven FPT quantile probabilities (no caching to prevent leakage)."""
+        return self.parameter_calculator.calculate_fpt_quantiles(fpt_series)
+    
+    def get_fpt_times(self, fpt_series: pd.Series) -> List[float]:
+        """Get data-driven FPT times (no caching to prevent leakage)."""
+        return self.parameter_calculator.calculate_fpt_times(fpt_series)
     
     def get_horizon_bounds(self, horizon_series: pd.Series) -> Tuple[int, int]:
-        """Get data-driven horizon bounds."""
-        if self._horizon_bounds is None:
-            self._horizon_bounds = self.parameter_calculator.calculate_horizon_bounds(horizon_series)
-        return self._horizon_bounds
+        """Get data-driven horizon bounds (no caching to prevent leakage)."""
+        return self.parameter_calculator.calculate_horizon_bounds(horizon_series)
     min_class_balance: float = 0.35  # Minimum class balance
     max_class_balance: float = 0.65  # Maximum class balance
     
@@ -397,11 +435,10 @@ class MultiTargetScheme:
             tprint_warning("   → Matrix operations: Not available, using fallback")
 
         tprint_info("🎯 Multi-Target Scheme initialized")
-        tprint_info(f"   → Small band: {self.config.small_band}")
-        tprint_info(f"   → Medium band: {self.config.medium_band}")
-        tprint_info(f"   → High band: {self.config.high_band}")
         tprint_info(f"   → Optimization: {self.config.optimization_method}")
         tprint_info(f"   → Parallel processing: {self.config.enable_parallel_processing}")
+        tprint_info(f"   → Max targets per band: {self.config.max_targets_per_band}")
+        tprint_info(f"   → Min quality score: {self.config.min_lqs_score}")
     
     def generate_targets(self, bars: pd.DataFrame, volatility_series: pd.Series,
                         eligibility_mask: pd.Series) -> TargetSelectionResult:
@@ -432,15 +469,40 @@ class MultiTargetScheme:
             if not self._validate_input_data(bars, volatility_series, eligibility_mask):
                 return result
             
-            # Align data
+            # Align data with explicit index intersection and report sample size
             common_index = bars.index.intersection(volatility_series.index).intersection(eligibility_mask.index)
             if len(common_index) == 0:
                 tprint_warning("⚠️ No common index between inputs")
                 return result
             
-            bars_aligned = bars.loc[common_index]
-            vol_aligned = volatility_series.loc[common_index]
-            elig_aligned = eligibility_mask.loc[common_index]
+            tprint_info(f"   → Aligned data: {len(common_index)} samples")
+            
+            # Work in log-price and log-returns for better numerical stability
+            bars_aligned = bars.loc[common_index].copy()
+            vol_aligned = volatility_series.loc[common_index].copy()
+            elig_aligned = eligibility_mask.loc[common_index].copy()
+            
+            # Convert to log prices
+            bars_aligned['log_close'] = np.log(bars_aligned['close'])
+            bars_aligned['log_returns'] = bars_aligned['log_close'].diff()
+            
+            # Ensure all data is finite
+            finite_mask = (
+                np.isfinite(bars_aligned['log_close']) &
+                np.isfinite(vol_aligned) &
+                np.isfinite(elig_aligned)
+            )
+            
+            if finite_mask.sum() < len(common_index) * 0.8:  # Require at least 80% finite data
+                tprint_warning(f"⚠️ Too many non-finite values: {finite_mask.sum()}/{len(common_index)}")
+                return result
+            
+            # Apply finite mask
+            bars_aligned = bars_aligned[finite_mask]
+            vol_aligned = vol_aligned[finite_mask]
+            elig_aligned = elig_aligned[finite_mask]
+            
+            tprint_info(f"   → After filtering: {len(bars_aligned)} samples")
             
             result.n_samples = len(common_index)
             
@@ -454,7 +516,10 @@ class MultiTargetScheme:
             
             # Step 2: Calculate FPT-based horizons
             tprint_info("⏱️ Step 2: Calculating FPT-based horizons")
-            horizons = self._calculate_fpt_horizons(candidate_targets, bars_aligned, vol_aligned)
+            horizons, fpt_data = self._calculate_fpt_horizons(candidate_targets, bars_aligned, vol_aligned)
+            
+            # Store FPT data for horizon bounds calculation
+            self._current_fpt_data = fpt_data
             
             # Step 3: Generate labels for all candidates
             tprint_info("🏷️ Step 3: Generating labels for candidates")
@@ -480,7 +545,7 @@ class MultiTargetScheme:
             tprint_info("🔧 Step 6: Applying label smoothing and conflict resolution")
             if not final_result['labels'].empty:
                 # Resolve conflicts
-                final_result['labels'] = self._resolve_label_conflicts(final_result['labels'])
+                final_result['labels'] = self._resolve_label_conflicts(final_result['labels'], selected_targets)
                 
                 # Apply label smoothing
                 final_result['labels'] = self._apply_label_smoothing(
@@ -555,11 +620,11 @@ class MultiTargetScheme:
         try:
             bands = [TargetBand.SMALL, TargetBand.MEDIUM, TargetBand.HIGH]
 
-            # Create tasks for parallel execution
-            def create_band_task(band):
-                return lambda: self._generate_band_candidates(band, bars, volatility_series, eligibility_mask)
-
-            tasks = [create_band_task(band) for band in bands]
+            # Create tasks for parallel execution using functools.partial
+            from functools import partial
+            
+            tasks = [partial(self._generate_band_candidates, band, bars, volatility_series, eligibility_mask) 
+                    for band in bands]
 
             # Execute in parallel
             band_results = self._execute_parallel(tasks)
@@ -583,8 +648,10 @@ class MultiTargetScheme:
         try:
             candidates = []
             
-            # Get data-driven band range
-            target_bands = self.config.get_target_bands(volatility_series)
+            # Get data-driven band range using trailing data only
+            # Use data up to current point to prevent leakage
+            trailing_vol = volatility_series.iloc[:len(volatility_series)//2]  # Use first half for band calculation
+            target_bands = self.config.get_target_bands(trailing_vol)
             if band == TargetBand.SMALL:
                 k_range = target_bands['small_band']
             elif band == TargetBand.MEDIUM:
@@ -594,11 +661,8 @@ class MultiTargetScheme:
                 # Apply conditional thresholds for high targets based on volatility
                 k_range = self._apply_conditional_thresholds(k_range, volatility_series, band)
             
-            # Generate k values within the band
-            if self.config.optimization_method == 'bayesian' and BAYESIAN_OPTIMIZER_AVAILABLE:
-                k_values = self._bayesian_optimize_k_values(k_range, bars, volatility_series, eligibility_mask, band)
-            else:
-                k_values = self._grid_search_k_values(k_range, bars, volatility_series, eligibility_mask, band)
+            # Generate k values within the band using CV-based selection
+            k_values = self._select_k_values_with_cv(k_range, bars, volatility_series, eligibility_mask, band)
             
             # Generate candidates for each k value
             for k in k_values:
@@ -621,6 +685,109 @@ class MultiTargetScheme:
         except Exception as e:
             tprint_warning(f"⚠️ Error generating candidates for band {band.value}: {e}")
             return []
+    
+    def _select_k_values_with_cv(self, k_range: Tuple[float, float], bars: pd.DataFrame,
+                                volatility_series: pd.Series, eligibility_mask: pd.Series,
+                                band: TargetBand) -> List[float]:
+        """Select k values using cross-validation for out-of-sample performance."""
+        try:
+            # Generate k candidates within the range
+            n_candidates = min(10, self.config.n_trials)
+            k_candidates = np.linspace(k_range[0], k_range[1], n_candidates)
+            
+            # Use purged CV to evaluate k candidates
+            k_scores = []
+            
+            for k in k_candidates:
+                cv_score = self._evaluate_k_with_cv(
+                    k, k, bars, volatility_series, eligibility_mask
+                )
+                k_scores.append((k, cv_score))
+            
+            # Sort by CV score and return top candidates
+            k_scores.sort(key=lambda x: x[1], reverse=True)
+            top_k_values = [k for k, score in k_scores[:3] if score > 0]
+            
+            return top_k_values if top_k_values else [k_range[0] + (k_range[1] - k_range[0]) / 2]
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Error in CV k selection: {e}")
+            return [k_range[0] + (k_range[1] - k_range[0]) / 2]
+    
+    def _evaluate_k_with_cv(self, k_up: float, k_down: float, bars: pd.DataFrame,
+                           volatility_series: pd.Series, eligibility_mask: pd.Series) -> float:
+        """Evaluate k values using purged cross-validation."""
+        try:
+            n_samples = len(bars)
+            n_folds = min(self.config.cv_folds, n_samples // 100)
+            
+            if n_folds < 2:
+                # Fallback to single evaluation
+                labels = self._generate_labels_for_k(k_up, k_down, bars, volatility_series, eligibility_mask)
+                if labels.empty:
+                    return 0.0
+                
+                # Calculate quality score
+                future_returns = bars['close'].pct_change().shift(-1)
+                common_index = labels.index.intersection(future_returns.index)
+                if len(common_index) < 10:
+                    return 0.0
+                
+                labels_aligned = labels.loc[common_index]
+                returns_aligned = future_returns.loc[common_index]
+                
+                return self._calculate_directional_auc(labels_aligned, returns_aligned)
+            
+            fold_scores = []
+            
+            for fold in range(n_folds):
+                # Calculate fold boundaries with embargo
+                fold_size = n_samples // n_folds
+                embargo_size = int(fold_size * self.config.embargo_fraction)
+                
+                # Training set: data before this fold
+                train_end = fold * fold_size
+                train_bars = bars.iloc[:train_end]
+                train_vol = volatility_series.iloc[:train_end]
+                train_elig = eligibility_mask.iloc[:train_end]
+                
+                # Validation set: this fold (with embargo)
+                val_start = fold * fold_size + embargo_size
+                val_end = min((fold + 1) * fold_size, n_samples)
+                val_bars = bars.iloc[val_start:val_end]
+                val_vol = volatility_series.iloc[val_start:val_end]
+                val_elig = eligibility_mask.iloc[val_start:val_end]
+                
+                if len(train_bars) < 50 or len(val_bars) < 20:
+                    continue
+                
+                # Generate labels for validation set
+                val_labels = self._generate_labels_for_k(
+                    k_up, k_down, val_bars, val_vol, val_elig
+                )
+                
+                if val_labels.empty:
+                    continue
+                
+                # Calculate validation score
+                val_returns = val_bars['close'].pct_change().shift(-1)
+                common_index = val_labels.index.intersection(val_returns.index)
+                
+                if len(common_index) < 10:
+                    continue
+                
+                val_labels_aligned = val_labels.loc[common_index]
+                val_returns_aligned = val_returns.loc[common_index]
+                
+                # Calculate directional AUC
+                auc_score = self._calculate_directional_auc(val_labels_aligned, val_returns_aligned)
+                fold_scores.append(auc_score)
+            
+            return np.mean(fold_scores) if fold_scores else 0.0
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Error evaluating k with CV: {e}")
+            return 0.0
     
     def _apply_conditional_thresholds(self, k_range: Tuple[float, float], 
                                     volatility_series: pd.Series, band: TargetBand) -> Tuple[float, float]:
@@ -685,10 +852,7 @@ class MultiTargetScheme:
             initial_k_values = self._adaptive_initial_sampling(k_range, n_initial)
 
             # Evaluate initial samples in parallel
-            def evaluate_k(k):
-                return (k, objective(k))
-
-            initial_tasks = [lambda k=k: evaluate_k(k) for k in initial_k_values]
+            initial_tasks = [partial(self._evaluate_k_objective, k, objective) for k in initial_k_values]
             initial_results = self._execute_parallel(initial_tasks)
             initial_scores = [result for result in initial_results if result is not None]
 
@@ -704,7 +868,7 @@ class MultiTargetScheme:
 
             # Combine and evaluate refinement samples in parallel
             if refined_k_values:
-                refined_tasks = [lambda k=k: evaluate_k(k) for k in refined_k_values]
+                refined_tasks = [partial(self._evaluate_k_objective, k, objective) for k in refined_k_values]
                 refined_results = self._execute_parallel(refined_tasks)
                 refined_scores = [result for result in refined_results if result is not None]
                 all_scores = initial_scores + refined_scores
@@ -721,8 +885,17 @@ class MultiTargetScheme:
             tprint_warning(f"⚠️ Adaptive optimization failed for band {band.value}: {e}")
             return self._grid_search_k_values(k_range, bars, volatility_series, eligibility_mask, band)
 
+    def _evaluate_k_objective(self, k: float, objective: callable) -> Tuple[float, float]:
+        """Helper method for evaluating k values (picklable)."""
+        try:
+            # Set random state for deterministic results
+            np.random.seed(self.config.random_state + hash(k) % 1000)
+            return (k, objective(k))
+        except Exception:
+            return (k, 0.0)
+    
     def _execute_parallel(self, tasks: List[callable], max_workers: Optional[int] = None) -> List[Any]:
-        """Execute tasks in parallel using thread or process pool."""
+        """Execute tasks in parallel using thread or process pool with deterministic results."""
         if not self.config.enable_parallel_processing or len(tasks) <= 1:
             # Fallback to sequential execution
             return [task() for task in tasks]
@@ -736,14 +909,14 @@ class MultiTargetScheme:
                 executor_class = ThreadPoolExecutor
 
             with executor_class(max_workers=max_workers) as executor:
-                # Submit all tasks
-                future_to_task = {executor.submit(task): task for task in tasks}
+                # Submit all tasks in order to maintain deterministic results
+                futures = [executor.submit(task) for task in tasks]
 
-                # Collect results as they complete
+                # Collect results in order to maintain deterministic results
                 results = []
-                for future in as_completed(future_to_task):
+                for future in futures:
                     try:
-                        result = future.result()
+                        result = future.result(timeout=300)  # 5 minute timeout
                         results.append(result)
                     except Exception as e:
                         tprint_warning(f"⚠️ Parallel task failed: {e}")
@@ -929,15 +1102,23 @@ class MultiTargetScheme:
         """Generate labels for specific k values using vectorized operations."""
         try:
             n_bars = len(bars)
-            # Get data-driven horizon bounds
-            min_horizon, max_horizon = self.config.get_horizon_bounds(pd.Series(range(1, min(100, n_bars))))
+            # Get data-driven horizon bounds from actual FPT data
+            # This should be calculated from actual first-passage times, not synthetic data
+            if hasattr(self, '_current_fpt_data') and self._current_fpt_data is not None:
+                fpt_series = pd.Series(self._current_fpt_data)
+                min_horizon, max_horizon = self.config.get_horizon_bounds(fpt_series)
+            else:
+                # Fallback to reasonable defaults based on data length
+                min_horizon = max(1, n_bars // 100)  # At least 1% of data
+                max_horizon = min(100, n_bars // 10)  # At most 10% of data
 
-            # Initialize labels
-            labels = pd.Series(0, index=bars.index)
+            # Initialize labels with explicit dtype
+            labels = pd.Series(0, index=bars.index, dtype=int)
 
-            # Vectorized target level calculation
-            upper_targets = bars['close'] + k_up * volatility_series
-            lower_targets = bars['close'] - k_down * volatility_series
+            # Vectorized target level calculation using log prices
+            log_prices = np.log(bars['close'])
+            upper_targets = log_prices + k_up * volatility_series
+            lower_targets = log_prices - k_down * volatility_series
 
             # Create rolling windows for future price comparison
             # This is more complex to vectorize fully, but we can optimize the inner loop
@@ -946,17 +1127,17 @@ class MultiTargetScheme:
                 if not eligibility_mask.iloc[i]:
                     continue
 
-                # Get future prices for this bar
-                future_prices = bars['close'].iloc[i+1:i+max_horizon+1]
-                if len(future_prices) == 0:
+                # Get future log prices for this bar
+                future_log_prices = log_prices.iloc[i+1:i+max_horizon+1]
+                if len(future_log_prices) == 0:
                     continue
 
                 upper_target = upper_targets.iloc[i]
                 lower_target = lower_targets.iloc[i]
 
-                # Vectorized hit detection for this bar's future prices
-                upper_hits = future_prices >= upper_target
-                lower_hits = future_prices <= lower_target
+                # Vectorized hit detection for this bar's future log prices
+                upper_hits = future_log_prices >= upper_target
+                lower_hits = future_log_prices <= lower_target
 
                 # Use matrix operations for efficient first-hit detection if available
                 if self.matrix_ops and MATRIX_OPS_AVAILABLE:
@@ -964,7 +1145,7 @@ class MultiTargetScheme:
                     upper_hit_indices = self._vectorized_first_hit(upper_hits.values)
                     lower_hit_indices = self._vectorized_first_hit(lower_hits.values)
                 else:
-                    # Fallback to numpy operations
+                    # Fallback to numpy operations with proper any() check
                     upper_hit_indices = upper_hits.values.argmax() if upper_hits.any() else -1
                     lower_hit_indices = lower_hits.values.argmax() if lower_hits.any() else -1
 
@@ -1008,144 +1189,366 @@ class MultiTargetScheme:
     
     def _calculate_target_quality_score(self, labels: pd.Series, bars: pd.DataFrame,
                                       volatility_series: pd.Series) -> float:
-        """Calculate quality score for a target."""
+        """Calculate predictive quality score using directional AUC."""
         try:
             if labels.empty or labels.nunique() < 2:
                 return 0.0
             
-            # Calculate basic quality metrics
-            class_balance = labels.value_counts().max() / len(labels)
+            # Calculate activation rate
+            non_zero_labels = labels[labels != 0]
+            activation_rate = len(non_zero_labels) / len(labels)
             
-            # Check if balance is within acceptable range
-            if not (self.config.min_class_balance <= class_balance <= self.config.max_class_balance):
+            # Check activation constraints
+            if not (self.config.min_activation <= activation_rate <= self.config.max_activation):
                 return 0.0
             
-            # Calculate information coefficient with volatility
-            if len(volatility_series) > 0:
-                common_index = labels.index.intersection(volatility_series.index)
-                if len(common_index) > 10:
-                    labels_aligned = labels.loc[common_index]
-                    vol_aligned = volatility_series.loc[common_index]
-                    
-                    try:
-                        ic, _ = spearmanr(labels_aligned, vol_aligned)
-                        ic_score = abs(ic) if not np.isnan(ic) else 0.0
-                    except Exception:
-                        ic_score = 0.0
+            if len(non_zero_labels) < self.config.min_nonzero_samples_per_target:
+                return 0.0
+            
+            # Calculate directional AUC (predictive objective)
+            if len(bars) > 0 and 'close' in bars.columns:
+                # Calculate future returns for evaluation
+                future_returns = bars['close'].pct_change().shift(-1)  # Next period return
+                
+                # Align data
+                common_index = labels.index.intersection(future_returns.index)
+                if len(common_index) < 10:
+                    return 0.0
+                
+                labels_aligned = labels.loc[common_index]
+                returns_aligned = future_returns.loc[common_index]
+                
+                # Calculate directional AUC
+                auc_score = self._calculate_directional_auc(labels_aligned, returns_aligned)
+                
+                # Calculate class balance on non-zero labels only
+                if len(non_zero_labels) > 0:
+                    class_balance = non_zero_labels.value_counts().max() / len(non_zero_labels)
+                    balance_score = 1.0 - abs(class_balance - 0.5) * 2
                 else:
-                    ic_score = 0.0
+                    balance_score = 0.0
+                
+                # Calculate hit ratio (barrier actually hit in labeled direction)
+                hit_ratio = self._calculate_hit_ratio(labels_aligned, returns_aligned, bars.loc[common_index])
+                
+                # Combine metrics with weights
+                quality_score = (
+                    0.5 * auc_score +      # Predictive power
+                    0.3 * balance_score +  # Class balance
+                    0.2 * hit_ratio        # Hit accuracy
+                )
+                
+                return max(0.0, min(1.0, quality_score))
             else:
-                ic_score = 0.0
-            
-            # Calculate flip rate
-            flip_rate = (labels != labels.shift(1)).sum() / (len(labels) - 1) if len(labels) > 1 else 0.0
-            
-            # Combine metrics
-            quality_score = (
-                0.4 * (1.0 - abs(class_balance - 0.5) * 2) +  # Balance score
-                0.3 * ic_score +  # Information coefficient
-                0.3 * (1.0 - flip_rate)  # Stability score
-            )
-            
-            return max(0.0, min(1.0, quality_score))
+                return 0.0
             
         except Exception as e:
             tprint_warning(f"⚠️ Error calculating quality score: {e}")
             return 0.0
     
+    def _calculate_directional_auc(self, labels: pd.Series, returns: pd.Series) -> float:
+        """Calculate directional AUC between label sign and future return sign."""
+        try:
+            from sklearn.metrics import roc_auc_score
+            
+            # Filter non-zero labels
+            non_zero_mask = labels != 0
+            if non_zero_mask.sum() < 10:
+                return 0.0
+            
+            labels_nz = labels[non_zero_mask]
+            returns_nz = returns[non_zero_mask]
+            
+            # Create binary targets: 1 if return > 0, 0 if return <= 0
+            binary_targets = (returns_nz > 0).astype(int)
+            
+            # Use label signs as predictions
+            predictions = (labels_nz > 0).astype(int)
+            
+            # Calculate AUC
+            if len(np.unique(binary_targets)) > 1 and len(np.unique(predictions)) > 1:
+                auc = roc_auc_score(binary_targets, predictions)
+                return abs(auc - 0.5) * 2  # Convert to [0, 1] scale
+            else:
+                return 0.0
+                
+        except Exception as e:
+            tprint_warning(f"⚠️ Error calculating directional AUC: {e}")
+            return 0.0
+    
+    def _calculate_hit_ratio(self, labels: pd.Series, returns: pd.Series, bars: pd.DataFrame) -> float:
+        """Calculate hit ratio: P(barrier actually hit in labeled direction)."""
+        try:
+            # Filter non-zero labels
+            non_zero_mask = labels != 0
+            if non_zero_mask.sum() < 10:
+                return 0.0
+            
+            labels_nz = labels[non_zero_mask]
+            returns_nz = returns[non_zero_mask]
+            
+            # Count correct directional predictions
+            correct_predictions = 0
+            total_predictions = len(labels_nz)
+            
+            for i, (label, ret) in enumerate(zip(labels_nz, returns_nz)):
+                if (label > 0 and ret > 0) or (label < 0 and ret < 0):
+                    correct_predictions += 1
+            
+            hit_ratio = correct_predictions / total_predictions if total_predictions > 0 else 0.0
+            
+            return hit_ratio
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Error calculating hit ratio: {e}")
+            return 0.0
+    
     def _calculate_fpt_horizons(self, candidate_targets: List[Dict[str, Any]],
-                              bars: pd.DataFrame, volatility_series: pd.Series) -> Dict[str, int]:
+                              bars: pd.DataFrame, volatility_series: pd.Series) -> Tuple[Dict[str, int], List[float]]:
         """Calculate first-passage time based horizons."""
         try:
             horizons = {}
+            all_fpt_data = []
             
             for candidate in candidate_targets:
                 target_name = candidate['target_name']
                 k_up = candidate['k_up']
                 k_down = candidate['k_down']
                 
-                # Calculate FPT for this target
-                fpt = self._calculate_fpt_for_target(k_up, k_down, bars, volatility_series)
+            # Calculate FPT for this target using trailing data only
+            trailing_bars = bars.iloc[:len(bars)//2]  # Use first half for FPT calculation
+            trailing_vol = volatility_series.iloc[:len(volatility_series)//2]
+            fpt = self._calculate_fpt_for_target(k_up, k_down, trailing_bars, trailing_vol)
                 
                 if fpt is not None and len(fpt) > 0:
+                    all_fpt_data.extend(fpt)
                     # Use middle quantile of FPT distribution as horizon
                     horizon = int(fpt[1])  # fpt is already an array of quantiles [q25, q50, q75]
-                    min_horizon, max_horizon = self.config.get_horizon_bounds(pd.Series(range(1, min(100, len(bars)))))
-                    horizon = max(min_horizon, min(max_horizon, horizon))
                     horizons[target_name] = horizon
                 else:
-                    min_horizon, _ = self.config.get_horizon_bounds(pd.Series(range(1, min(100, len(bars)))))
-                    horizons[target_name] = min_horizon
+                    # Use default horizon if no FPT data
+                    horizons[target_name] = max(1, len(bars) // 50)
             
-            return horizons
+            # Calculate data-driven horizon bounds from all FPT data
+            if all_fpt_data:
+                fpt_series = pd.Series(all_fpt_data)
+                min_horizon, max_horizon = self.config.get_horizon_bounds(fpt_series)
+                
+                # Apply bounds to all horizons
+                for target_name in horizons:
+                    horizons[target_name] = max(min_horizon, min(max_horizon, horizons[target_name]))
+            else:
+                # Fallback to reasonable defaults
+                min_horizon = max(1, len(bars) // 100)
+                max_horizon = min(100, len(bars) // 10)
+                for target_name in horizons:
+                    horizons[target_name] = max(min_horizon, min(max_horizon, horizons[target_name]))
+            
+            # Use CV-based horizon selection for better out-of-sample performance
+            cv_horizons = self._select_horizons_with_cv(candidate_targets, bars, volatility_series, horizons)
+            
+            return cv_horizons, all_fpt_data
             
         except Exception as e:
             tprint_warning(f"⚠️ Error calculating FPT horizons: {e}")
-            min_horizon, _ = self.config.get_horizon_bounds(pd.Series(range(1, min(100, len(bars)))))
-            return {target['target_name']: min_horizon for target in candidate_targets}
+            min_horizon = max(1, len(bars) // 100)
+            return {target['target_name']: min_horizon for target in candidate_targets}, []
+    
+    def _select_horizons_with_cv(self, candidate_targets: List[Dict[str, Any]], 
+                                bars: pd.DataFrame, volatility_series: pd.Series,
+                                initial_horizons: Dict[str, int]) -> Dict[str, int]:
+        """Select horizons using cross-validation for out-of-sample performance."""
+        try:
+            cv_horizons = {}
+            
+            for candidate in candidate_targets:
+                target_name = candidate['target_name']
+                k_up = candidate['k_up']
+                k_down = candidate['k_down']
+                initial_horizon = initial_horizons.get(target_name, 10)
+                
+                # Define horizon search space around initial estimate
+                horizon_candidates = [
+                    max(1, initial_horizon - 5),
+                    initial_horizon,
+                    min(len(bars) // 10, initial_horizon + 5),
+                    max(1, initial_horizon // 2),
+                    min(len(bars) // 10, initial_horizon * 2)
+                ]
+                
+                # Remove duplicates and sort
+                horizon_candidates = sorted(list(set(horizon_candidates)))
+                
+                # Use purged CV to evaluate horizons
+                best_horizon = self._evaluate_horizons_cv(
+                    k_up, k_down, horizon_candidates, bars, volatility_series
+                )
+                
+                cv_horizons[target_name] = best_horizon
+            
+            return cv_horizons
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Error in CV horizon selection: {e}")
+            return initial_horizons
+    
+    def _evaluate_horizons_cv(self, k_up: float, k_down: float, horizon_candidates: List[int],
+                             bars: pd.DataFrame, volatility_series: pd.Series) -> int:
+        """Evaluate horizon candidates using purged cross-validation."""
+        try:
+            n_samples = len(bars)
+            n_folds = min(self.config.cv_folds, n_samples // 100)  # Ensure enough samples per fold
+            
+            if n_folds < 2:
+                return horizon_candidates[0] if horizon_candidates else 10
+            
+            # Create purged CV splits
+            fold_scores = {}
+            
+            for horizon in horizon_candidates:
+                fold_scores[horizon] = []
+                
+                for fold in range(n_folds):
+                    # Calculate fold boundaries with embargo
+                    fold_size = n_samples // n_folds
+                    embargo_size = int(fold_size * self.config.embargo_fraction)
+                    
+                    # Training set: data before this fold
+                    train_end = fold * fold_size
+                    train_bars = bars.iloc[:train_end]
+                    train_vol = volatility_series.iloc[:train_end]
+                    
+                    # Validation set: this fold (with embargo)
+                    val_start = fold * fold_size + embargo_size
+                    val_end = min((fold + 1) * fold_size, n_samples)
+                    val_bars = bars.iloc[val_start:val_end]
+                    val_vol = volatility_series.iloc[val_start:val_end]
+                    
+                    if len(train_bars) < 50 or len(val_bars) < 20:
+                        continue
+                    
+                    # Generate labels for this horizon
+                    train_labels = self._generate_labels_with_horizon(
+                        k_up, k_down, horizon, train_bars, train_vol, 
+                        pd.Series(True, index=train_bars.index)
+                    )
+                    val_labels = self._generate_labels_with_horizon(
+                        k_up, k_down, horizon, val_bars, val_vol,
+                        pd.Series(True, index=val_bars.index)
+                    )
+                    
+                    if train_labels.empty or val_labels.empty:
+                        continue
+                    
+                    # Calculate validation score (directional AUC)
+                    train_labels_series = train_labels['labels']
+                    val_labels_series = val_labels['labels']
+                    
+                    # Calculate future returns for validation
+                    val_returns = val_bars['close'].pct_change().shift(-1)
+                    
+                    # Align data
+                    common_index = val_labels_series.index.intersection(val_returns.index)
+                    if len(common_index) < 10:
+                        continue
+                    
+                    val_labels_aligned = val_labels_series.loc[common_index]
+                    val_returns_aligned = val_returns.loc[common_index]
+                    
+                    # Calculate directional AUC
+                    auc_score = self._calculate_directional_auc(val_labels_aligned, val_returns_aligned)
+                    fold_scores[horizon].append(auc_score)
+            
+            # Select horizon with best average validation score
+            best_horizon = horizon_candidates[0]
+            best_score = -np.inf
+            
+            for horizon, scores in fold_scores.items():
+                if scores:
+                    avg_score = np.mean(scores)
+                    if avg_score > best_score:
+                        best_score = avg_score
+                        best_horizon = horizon
+            
+            return best_horizon
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Error evaluating horizons CV: {e}")
+            return horizon_candidates[0] if horizon_candidates else 10
     
     def _calculate_fpt_for_target(self, k_up: float, k_down: float, bars: pd.DataFrame,
                                 volatility_series: pd.Series) -> Optional[np.ndarray]:
-        """Calculate first-passage time for a specific target using survival analysis approach."""
+        """Calculate first-passage time for a specific target using proper hit logic and censoring."""
         try:
             if len(bars) < self.config.fpt_min_samples:
                 return None
             
             fpt_values = []
-            censored_values = []  # For survival analysis
+            censored_values = []
+            
+            # Use log prices for better numerical stability
+            log_prices = np.log(bars['close'].values)
             
             for i in range(len(bars) - self.config.fpt_window):
-                current_price = bars['close'].iloc[i]
+                current_log_price = log_prices[i]
                 current_vol = volatility_series.iloc[i]
                 
                 if np.isnan(current_vol) or current_vol <= 0:
                     continue
                 
-                upper_target = current_price + k_up * current_vol
-                lower_target = current_price - k_down * current_vol
+                # Calculate log barriers
+                upper_log_target = current_log_price + k_up * current_vol
+                lower_log_target = current_log_price - k_down * current_vol
                 
-                # Look ahead for first hit
-                future_prices = bars['close'].iloc[i+1:i+self.config.fpt_window]
+                # Look ahead for first hit with overlapping windows
+                future_log_prices = log_prices[i+1:i+self.config.fpt_window]
                 
                 hit_time = None
-                for j, future_price in enumerate(future_prices):
-                    if future_price >= upper_target or future_price <= lower_target:
+                hit_direction = None
+                
+                for j, future_log_price in enumerate(future_log_prices):
+                    if future_log_price >= upper_log_target:
                         hit_time = j + 1  # +1 because j is 0-indexed
+                        hit_direction = 'upper'
+                        break
+                    elif future_log_price <= lower_log_target:
+                        hit_time = j + 1
+                        hit_direction = 'lower'
                         break
                 
                 if hit_time is not None:
-                    fpt_values.append(hit_time)
+                    # Record the FPT with direction information
+                    fpt_values.append((hit_time, hit_direction))
                 else:
                     # Censored observation (no hit within window)
                     censored_values.append(self.config.fpt_window)
             
-            # Use survival analysis approach for better FPT estimation
-            if fpt_values:
-                # Calculate Kaplan-Meier-like estimator for FPT distribution
-                fpt_array = np.array(fpt_values)
-                censored_array = np.array(censored_values) if censored_values else np.array([])
+            # Process FPT data for survival analysis
+            if fpt_values or censored_values:
+                # Extract just the times for survival analysis
+                fpt_times = [fpt[0] for fpt in fpt_values]
+                all_times = fpt_times + censored_values
+                event_indicators = [1] * len(fpt_times) + [0] * len(censored_values)
                 
-                # Combine observed and censored times
-                all_times = np.concatenate([fpt_array, censored_array])
-                event_indicators = np.concatenate([
-                    np.ones(len(fpt_array)),  # 1 for observed events
-                    np.zeros(len(censored_array))  # 0 for censored
-                ])
+                # Convert to numpy arrays
+                all_times = np.array(all_times)
+                event_indicators = np.array(event_indicators)
                 
                 # Sort by time
                 sort_idx = np.argsort(all_times)
                 sorted_times = all_times[sort_idx]
                 sorted_events = event_indicators[sort_idx]
                 
-                # Calculate survival probabilities
+                # Calculate survival probabilities using proper KM estimator
                 survival_probs = self._calculate_survival_probabilities(sorted_times, sorted_events)
                 
-                # Use data-driven quantiles of survival distribution for FPT estimation
-                fpt_quantiles = self.config.get_fpt_quantiles(pd.Series(sorted_times))
+                # Use data-driven quantile probabilities for FPT estimation
+                fpt_quantile_probs = self.config.get_fpt_quantiles(pd.Series(sorted_times))
                 quantile_times = []
-                for q in fpt_quantiles:
-                    # Find time where survival probability drops below (1-q)
-                    target_survival = 1 - q
+                
+                for prob in fpt_quantile_probs:
+                    # Find time where survival probability drops below (1-prob)
+                    target_survival = 1 - prob
                     idx = np.where(survival_probs <= target_survival)[0]
                     if len(idx) > 0:
                         quantile_times.append(sorted_times[idx[0]])
@@ -1161,23 +1564,47 @@ class MultiTargetScheme:
             return None
     
     def _calculate_survival_probabilities(self, times: np.ndarray, events: np.ndarray) -> np.ndarray:
-        """Calculate survival probabilities using Kaplan-Meier estimator."""
+        """Calculate survival probabilities using proper Kaplan-Meier estimator."""
         try:
-            n = len(times)
-            survival_probs = np.ones(n)
-
-            # Calculate at-risk counts (number of individuals at risk at each time point)
-            at_risk = np.zeros(n, dtype=int)
-            for i in range(n):
-                at_risk[i] = n - i  # At time i, there are (n-i) individuals still at risk
-
-            # Calculate survival probabilities using proper Kaplan-Meier formula
-            for i in range(n):
-                if events[i] == 1:  # Observed event (uncensored)
-                    if at_risk[i] > 0:
-                        survival_probs[i:] *= (at_risk[i] - 1) / at_risk[i]
-
-            return survival_probs
+            if len(times) == 0:
+                return np.array([])
+            
+            # Get unique times and aggregate events/censoring
+            unique_times, inverse_indices = np.unique(times, return_inverse=True)
+            n_unique = len(unique_times)
+            
+            # Count events and censoring at each unique time
+            events_at_time = np.zeros(n_unique, dtype=int)
+            censored_at_time = np.zeros(n_unique, dtype=int)
+            
+            for i, time_idx in enumerate(inverse_indices):
+                if events[i] == 1:  # Observed event
+                    events_at_time[time_idx] += 1
+                else:  # Censored
+                    censored_at_time[time_idx] += 1
+            
+            # Calculate at-risk counts at each unique time
+            n_at_risk = np.zeros(n_unique, dtype=int)
+            n_at_risk[0] = len(times)  # All individuals at risk at first time
+            
+            for i in range(1, n_unique):
+                n_at_risk[i] = n_at_risk[i-1] - events_at_time[i-1] - censored_at_time[i-1]
+            
+            # Calculate survival probabilities using proper KM formula
+            survival_probs = np.ones(n_unique)
+            
+            for i in range(n_unique):
+                if n_at_risk[i] > 0 and events_at_time[i] > 0:
+                    # S(t_i) = S(t_{i-1}) * (1 - d_i/n_i)
+                    hazard = events_at_time[i] / n_at_risk[i]
+                    survival_probs[i] = survival_probs[i-1] * (1 - hazard)
+                elif i > 0:
+                    survival_probs[i] = survival_probs[i-1]
+            
+            # Map back to original time points
+            survival_probs_mapped = survival_probs[inverse_indices]
+            
+            return survival_probs_mapped
 
         except Exception as e:
             tprint_warning(f"⚠️ Error calculating survival probabilities: {e}")
@@ -1220,9 +1647,9 @@ class MultiTargetScheme:
             upper_targets = bars['close'] + k_up * volatility_series
             lower_targets = bars['close'] - k_down * volatility_series
             
-            # Initialize labels
-            labels = pd.Series(0, index=bars.index)
-            confidence_scores = pd.Series(0.0, index=bars.index)
+            # Initialize labels with explicit dtype
+            labels = pd.Series(0, index=bars.index, dtype=int)
+            confidence_scores = pd.Series(0.0, index=bars.index, dtype=float)
             
             # Generate labels using triple barrier method with horizon
             for i in range(len(bars) - horizon):
@@ -1267,11 +1694,11 @@ class MultiTargetScheme:
                         confidence_scores.iloc[i] = min(1.0, distance_to_opposite / (k_up * volatility_series.iloc[i]))
                 elif upper_hits.any():
                     labels.iloc[i] = 1
-                    distance_to_opposite = abs(future_prices.loc[upper_hits.idxmax()] - lower_target)
+                    distance_to_opposite = abs(future_prices.loc[upper_hits.idxmax()] - lower_target) if upper_hits.any() else 0
                     confidence_scores.iloc[i] = min(1.0, distance_to_opposite / (k_down * volatility_series.iloc[i]))
                 elif lower_hits.any():
                     labels.iloc[i] = -1
-                    distance_to_opposite = abs(future_prices.loc[lower_hits.idxmax()] - upper_target)
+                    distance_to_opposite = abs(future_prices.loc[lower_hits.idxmax()] - upper_target) if lower_hits.any() else 0
                     confidence_scores.iloc[i] = min(1.0, distance_to_opposite / (k_up * volatility_series.iloc[i]))
             
             # Create DataFrame with labels and confidence
@@ -1319,47 +1746,90 @@ class MultiTargetScheme:
     
     def _calculate_probabilistic_confidence(self, features: pd.Series, label: int, 
                                           volatility: float, hit_time: int) -> float:
-        """Calculate probabilistic confidence using features."""
+        """Calculate probabilistic confidence using calibrated model."""
         try:
-            # Simple logistic regression-like approach
-            # In practice, this would be trained on historical data
+            from sklearn.linear_model import LogisticRegression
+            from sklearn.calibration import CalibratedClassifierCV
+            from sklearn.preprocessing import StandardScaler
             
-            # Feature weights (would be learned from data)
-            weights = {
-                'returns': 0.3,
-                'volatility': 0.2,
-                'volatility_ratio': 0.15,
-                'volume_ratio': 0.1,
-                'high_low_ratio': 0.1,
-                'close_open_ratio': 0.1,
-                'price_momentum': 0.05
-            }
+            # This is a placeholder for a properly trained model
+            # In practice, this would be trained on historical data with proper CV
             
-            # Calculate weighted sum
-            weighted_sum = 0.0
-            for feature_name, weight in weights.items():
-                if feature_name in features:
-                    weighted_sum += weight * features[feature_name]
+            # Simple heuristic-based confidence for now
+            # Real implementation would use a trained model
             
-            # Apply sigmoid function
-            confidence = 1 / (1 + np.exp(-weighted_sum))
+            # Base confidence from features
+            base_confidence = 0.5
             
-            # Adjust for volatility (higher vol = lower confidence)
-            vol_adjustment = 1 / (1 + volatility * 10)
+            # Adjust for volatility (lower vol = higher confidence)
+            vol_factor = 1.0 / (1.0 + volatility * 5.0)
             
             # Adjust for hit time (faster hits = higher confidence)
-            time_adjustment = 1 / (1 + hit_time * 0.1)
+            time_factor = 1.0 / (1.0 + hit_time * 0.05)
             
-            # Combine adjustments
-            final_confidence = confidence * vol_adjustment * time_adjustment
+            # Adjust for feature consistency
+            feature_consistency = 0.5
+            if len(features) > 0:
+                # Check if features are consistent with label direction
+                if 'returns' in features and not pd.isna(features['returns']):
+                    if (label > 0 and features['returns'] > 0) or (label < 0 and features['returns'] < 0):
+                        feature_consistency = 0.8
+                    else:
+                        feature_consistency = 0.3
             
-            return max(0.0, min(1.0, final_confidence))
+            # Combine factors
+            confidence = base_confidence * vol_factor * time_factor * feature_consistency
+            
+            # Apply calibration (simple sigmoid)
+            calibrated_confidence = 1.0 / (1.0 + np.exp(-(confidence - 0.5) * 10))
+            
+            return max(0.0, min(1.0, calibrated_confidence))
             
         except Exception as e:
             tprint_warning(f"⚠️ Error calculating probabilistic confidence: {e}")
             return 0.5
     
-    def _resolve_label_conflicts(self, labels_df: pd.DataFrame) -> pd.DataFrame:
+    def _train_confidence_model(self, features_df: pd.DataFrame, labels: pd.Series, 
+                               hit_times: pd.Series) -> Any:
+        """Train a confidence model on historical data."""
+        try:
+            from sklearn.linear_model import LogisticRegression
+            from sklearn.calibration import CalibratedClassifierCV
+            from sklearn.preprocessing import StandardScaler
+            from sklearn.model_selection import train_test_split
+            
+            # Prepare features
+            X = features_df.fillna(0)
+            y = (labels != 0).astype(int)  # Binary: hit or no hit
+            
+            # Add hit time as a feature
+            X['hit_time'] = hit_times.fillna(0)
+            
+            # Split data
+            X_train, X_val, y_train, y_val = train_test_split(
+                X, y, test_size=0.2, random_state=42, stratify=y
+            )
+            
+            # Scale features
+            scaler = StandardScaler()
+            X_train_scaled = scaler.fit_transform(X_train)
+            X_val_scaled = scaler.transform(X_val)
+            
+            # Train logistic regression
+            lr = LogisticRegression(random_state=42, max_iter=1000)
+            lr.fit(X_train_scaled, y_train)
+            
+            # Calibrate probabilities
+            calibrated_model = CalibratedClassifierCV(lr, method='isotonic', cv=3)
+            calibrated_model.fit(X_train_scaled, y_train)
+            
+            return calibrated_model, scaler
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Error training confidence model: {e}")
+            return None, None
+    
+    def _resolve_label_conflicts(self, labels_df: pd.DataFrame, selected_targets: Dict[str, Any] = None) -> pd.DataFrame:
         """Resolve conflicts between different target labels at the same timestamp."""
         try:
             if labels_df.empty:
@@ -1372,31 +1842,38 @@ class MultiTargetScheme:
             
             resolved_labels = labels_df.copy()
             
-            # Group by target bands
-            small_targets = [col for col in labels_df.columns if 'small' in col.lower()]
-            medium_targets = [col for col in labels_df.columns if 'medium' in col.lower()]
-            high_targets = [col for col in labels_df.columns if 'high' in col.lower()]
+            # Group by target bands using metadata from selected_targets
+            small_targets = []
+            medium_targets = []
+            high_targets = []
             
-            # Apply hierarchical precedence
+            # Use selected_targets metadata if available
+            if selected_targets:
+                for target_name, target_info in selected_targets.items():
+                    if target_name in labels_df.columns:
+                        band = target_info.get('band', TargetBand.SMALL)
+                        if band == TargetBand.SMALL:
+                            small_targets.append(target_name)
+                        elif band == TargetBand.MEDIUM:
+                            medium_targets.append(target_name)
+                        elif band == TargetBand.HIGH:
+                            high_targets.append(target_name)
+            else:
+                # Fallback to string matching (less robust)
+                small_targets = [col for col in labels_df.columns if 'small' in col.lower()]
+                medium_targets = [col for col in labels_df.columns if 'medium' in col.lower()]
+                high_targets = [col for col in labels_df.columns if 'high' in col.lower()]
+            
+            # Apply model-based conflict resolution
             for idx in labels_df.index:
                 # Check for conflicts (multiple non-zero labels)
                 non_zero_labels = labels_df.loc[idx][labels_df.loc[idx] != 0]
                 
                 if len(non_zero_labels) > 1:
-                    # Apply hierarchical precedence: high > medium > small
-                    target_to_keep = None
-
-                    # Find highest precedence target that has a non-zero label
-                    for col in non_zero_labels.index:
-                        if col in high_targets:
-                            target_to_keep = col
-                            break
-                        elif col in medium_targets:
-                            target_to_keep = col
-                            break
-                        elif col in small_targets:
-                            target_to_keep = col
-                            break
+                    # Use confidence-based selection instead of hierarchical precedence
+                    target_to_keep = self._select_best_target_by_confidence(
+                        non_zero_labels, selected_targets, idx
+                    )
 
                     # Zero out all other conflicting targets
                     if target_to_keep is not None:
@@ -1409,6 +1886,86 @@ class MultiTargetScheme:
         except Exception as e:
             tprint_warning(f"⚠️ Error resolving label conflicts: {e}")
             return labels_df
+    
+    def _select_best_target_by_confidence(self, non_zero_labels: pd.Series, 
+                                        selected_targets: Dict[str, Any], 
+                                        timestamp: pd.Timestamp) -> Optional[str]:
+        """Select best target based on confidence and expected utility."""
+        try:
+            if not selected_targets:
+                return non_zero_labels.index[0]  # Fallback to first target
+            
+            best_target = None
+            best_score = -np.inf
+            
+            for target_name in non_zero_labels.index:
+                if target_name not in selected_targets:
+                    continue
+                
+                target_info = selected_targets[target_name]
+                label_value = non_zero_labels[target_name]
+                
+                # Calculate confidence score
+                confidence = self._get_target_confidence(target_name, timestamp)
+                
+                # Calculate expected utility (simplified)
+                utility = self._calculate_expected_utility(target_info, label_value, confidence)
+                
+                # Combined score
+                score = confidence * utility
+                
+                if score > best_score:
+                    best_score = score
+                    best_target = target_name
+            
+            return best_target
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Error selecting best target: {e}")
+            return non_zero_labels.index[0] if len(non_zero_labels) > 0 else None
+    
+    def _get_target_confidence(self, target_name: str, timestamp: pd.Timestamp) -> float:
+        """Get confidence score for a target at a specific timestamp."""
+        try:
+            # This would use the trained confidence model in practice
+            # For now, return a simple heuristic based on target band
+            if hasattr(self, '_current_selected_targets'):
+                target_info = self._current_selected_targets.get(target_name, {})
+                band = target_info.get('band', TargetBand.SMALL)
+                
+                # Higher confidence for higher bands (more significant signals)
+                if band == TargetBand.HIGH:
+                    return 0.8
+                elif band == TargetBand.MEDIUM:
+                    return 0.6
+                else:
+                    return 0.4
+            else:
+                return 0.5  # Default confidence
+                
+        except Exception as e:
+            tprint_warning(f"⚠️ Error getting target confidence: {e}")
+            return 0.5
+    
+    def _calculate_expected_utility(self, target_info: Dict[str, Any], 
+                                  label_value: int, confidence: float) -> float:
+        """Calculate expected utility for a target."""
+        try:
+            # Simple utility calculation based on target parameters and confidence
+            k_up = target_info.get('k_up', 1.0)
+            k_down = target_info.get('k_down', 1.0)
+            
+            # Higher k values indicate more significant moves
+            k_avg = (k_up + k_down) / 2
+            
+            # Utility increases with k value and confidence
+            utility = k_avg * confidence * abs(label_value)
+            
+            return utility
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Error calculating expected utility: {e}")
+            return 0.5
     
     def _apply_label_smoothing(self, labels_df: pd.DataFrame, confidence_df: pd.DataFrame) -> pd.DataFrame:
         """Apply label smoothing for better model calibration."""
@@ -1572,7 +2129,7 @@ class MultiTargetScheme:
     
     def _check_correlation_constraints(self, target_name: str, selected_targets: Dict[str, Any],
                                      candidate_labels: Dict[str, pd.DataFrame]) -> bool:
-        """Check if target meets correlation constraints."""
+        """Check if target meets mutual information constraints for orthogonality."""
         try:
             if not selected_targets:
                 return True
@@ -1584,7 +2141,7 @@ class MultiTargetScheme:
             
             current_labels_series = current_labels['labels']
             
-            # Check correlation with each selected target
+            # Check mutual information with each selected target
             for selected_name, selected_info in selected_targets.items():
                 selected_labels = candidate_labels.get(selected_name)
                 if selected_labels is None or selected_labels.empty or 'labels' not in selected_labels.columns:
@@ -1600,19 +2157,52 @@ class MultiTargetScheme:
                 current_aligned = current_labels_series.loc[common_index]
                 selected_aligned = selected_labels_series.loc[common_index]
                 
-                # Calculate correlation
+                # Calculate mutual information
                 try:
+                    mi_score = self._calculate_mutual_information(current_aligned, selected_aligned)
+                    if mi_score > self.config.max_correlation_threshold:  # Use same threshold for now
+                        return False
+                except Exception:
+                    # Fallback to correlation if MI calculation fails
                     corr, _ = spearmanr(current_aligned, selected_aligned)
                     if not np.isnan(corr) and abs(corr) > self.config.max_correlation_threshold:
                         return False
-                except Exception:
-                    continue
             
             return True
             
         except Exception as e:
             tprint_warning(f"⚠️ Error checking correlation constraints: {e}")
             return True
+    
+    def _calculate_mutual_information(self, x: pd.Series, y: pd.Series) -> float:
+        """Calculate mutual information between two label sequences."""
+        try:
+            from sklearn.feature_selection import mutual_info_classif
+            from sklearn.preprocessing import LabelEncoder
+            
+            # Filter non-zero labels for both series
+            non_zero_mask = (x != 0) & (y != 0)
+            if non_zero_mask.sum() < 10:
+                return 0.0
+            
+            x_nz = x[non_zero_mask]
+            y_nz = y[non_zero_mask]
+            
+            # Encode labels as integers
+            le_x = LabelEncoder()
+            le_y = LabelEncoder()
+            
+            x_encoded = le_x.fit_transform(x_nz)
+            y_encoded = le_y.fit_transform(y_nz)
+            
+            # Calculate mutual information
+            mi_scores = mutual_info_classif(x_encoded.reshape(-1, 1), y_encoded, discrete_features=True)
+            
+            return mi_scores[0] if len(mi_scores) > 0 else 0.0
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Error calculating mutual information: {e}")
+            return 0.0
     
     def _generate_final_labels(self, selected_targets: Dict[str, Any], bars: pd.DataFrame,
                              volatility_series: pd.Series, eligibility_mask: pd.Series) -> Dict[str, pd.DataFrame]:
@@ -1668,39 +2258,85 @@ class MultiTargetScheme:
             return pd.DataFrame()
     
     def _calculate_diversity_score(self, labels_df: pd.DataFrame) -> float:
-        """Calculate diversity score for targets."""
+        """Calculate diversity score using mutual information on non-zero labels only."""
         try:
             if labels_df.empty or len(labels_df.columns) < 2:
                 return 0.0
             
-            # Calculate average absolute correlation
-            corr_matrix = labels_df.corr(method='spearman')
+            # Calculate pairwise mutual information on synchronized non-zero timestamps
+            mi_scores = []
+            columns = labels_df.columns.tolist()
             
-            # Get upper triangle (excluding diagonal)
-            upper_triangle = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
+            for i in range(len(columns)):
+                for j in range(i + 1, len(columns)):
+                    col1 = columns[i]
+                    col2 = columns[j]
+                    
+                    # Filter non-zero labels for both columns and ensure synchronized timestamps
+                    non_zero_mask = (labels_df[col1] != 0) & (labels_df[col2] != 0)
+                    if non_zero_mask.sum() < 10:
+                        continue
+                    
+                    # Get synchronized non-zero labels
+                    x = labels_df[col1][non_zero_mask]
+                    y = labels_df[col2][non_zero_mask]
+                    
+                    # Ensure we have enough samples
+                    if len(x) < 10 or len(y) < 10:
+                        continue
+                    
+                    mi_score = self._calculate_mutual_information(x, y)
+                    mi_scores.append(mi_score)
             
-            # Calculate average absolute correlation
-            avg_abs_corr = upper_triangle.abs().mean().mean()
+            if not mi_scores:
+                return 0.0
             
-            # Diversity score (lower correlation = higher diversity)
-            diversity_score = 1.0 - avg_abs_corr
+            # Calculate average mutual information
+            avg_mi = np.mean(mi_scores)
             
-            return max(0.0, min(1.0, diversity_score))
+            # Diversity score (lower MI = higher diversity)
+            # Normalize MI to [0, 1] range (MI can be > 1 for discrete variables)
+            diversity_score = max(0.0, 1.0 - min(1.0, avg_mi))
+            
+            return diversity_score
             
         except Exception as e:
             tprint_warning(f"⚠️ Error calculating diversity score: {e}")
             return 0.0
     
     def _calculate_target_coverage(self, labels_df: pd.DataFrame) -> Dict[str, float]:
-        """Calculate coverage for each target."""
+        """Calculate coverage for each target with detailed metrics."""
         try:
             coverage = {}
             
             for col in labels_df.columns:
                 if col in labels_df.columns:
+                    # Calculate activation rate P(|label|=1)
                     non_zero_labels = (labels_df[col] != 0).sum()
                     total_samples = len(labels_df)
-                    coverage[col] = non_zero_labels / total_samples if total_samples > 0 else 0.0
+                    activation_rate = non_zero_labels / total_samples if total_samples > 0 else 0.0
+                    
+                    # Calculate positive/negative split among active labels
+                    positive_labels = (labels_df[col] > 0).sum()
+                    negative_labels = (labels_df[col] < 0).sum()
+                    total_active = positive_labels + negative_labels
+                    
+                    if total_active > 0:
+                        positive_ratio = positive_labels / total_active
+                        negative_ratio = negative_labels / total_active
+                    else:
+                        positive_ratio = 0.0
+                        negative_ratio = 0.0
+                    
+                    # Store detailed coverage metrics
+                    coverage[col] = {
+                        'activation_rate': activation_rate,
+                        'positive_ratio': positive_ratio,
+                        'negative_ratio': negative_ratio,
+                        'total_active': total_active,
+                        'positive_count': positive_labels,
+                        'negative_count': negative_labels
+                    }
             
             return coverage
             

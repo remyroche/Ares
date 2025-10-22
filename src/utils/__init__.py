@@ -4,28 +4,77 @@
 
 # Import core utilities
 try:
-    from .core import *
+    from .core import (
+        CommonOperations,
+        get_common_operations,
+        safe_json_load,
+        safe_json_dump,
+        safe_read_parquet,
+        ensure_directory,
+        safe_dataframe_operation,
+        safe_get,
+        safe_set,
+        safe_list_get,
+        safe_list_append,
+        merge_dicts,
+        flatten_list,
+        validate_type,
+        safe_convert,
+        create_fallback_logger
+    )
     CORE_AVAILABLE = True
 except ImportError:
     CORE_AVAILABLE = False
 
 # Import data utilities
 try:
-    from .data import *  # noqa: F401,F403 - re-export convenience
+    from .data import (
+        DataProcessor,
+        DataValidator,
+        DataTransformer,
+        DataFrameValidator,
+        DataFrameCleaner,
+        DataFrameTransformer,
+        validate_dataframe,
+        clean_dataframe,
+        transform_dataframe,
+        get_dataframe_info
+    )
     DATA_AVAILABLE = True
 except Exception:  # pragma: no cover - fallback when optional deps fail
     DATA_AVAILABLE = False
 
 # Import config utilities
 try:
-    from .config import *
+    from .config import (
+        EnvironmentConfig,
+        FileConfig,
+        ConfigManager,
+        get_env_var,
+        get_env_bool,
+        get_env_int,
+        get_env_float,
+        get_env_list,
+        load_config_file,
+        global_config
+    )
     CONFIG_AVAILABLE = True
 except ImportError:
     CONFIG_AVAILABLE = False
 
 # Import hardware utilities
 try:
-    from .hardware import *
+    from .hardware import (
+        HardwareManager,
+        optimize_memory,
+        get_system_info,
+        memory_optimized,
+        m1_optimized,
+        memory_efficient_function,
+        gc_optimized_function,
+        force_cleanup,
+        get_memory_stats
+    )
     HARDWARE_AVAILABLE = True
 except ImportError:
     HARDWARE_AVAILABLE = False

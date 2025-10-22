@@ -23,17 +23,129 @@ New Features:
 - Trading Orchestrator: Unified coordination of all trading components
 """
 
-from .config import *
-from .regime import *
-from .execution import *
-from .monitoring import *
-from .data import *
-from .utils import *
-from .sizing import *
-from .signal_generation import *
-# from .backtesting import *  # Module not found - commented out
-from .reporting import *
-from .integration import *
+# Core trading components
+from .execution import (
+    TradingExecutor,
+    OrderManager,
+    LiveTradingScheduler,
+    TradingOrchestrator,
+    ModelType,
+    ExecutionStatus,
+    TradingMode,
+    OrchestratorStatus,
+    create_live_trading_scheduler,
+    start_live_trading_scheduler,
+    create_trading_orchestrator,
+    start_trading_orchestrator
+)
+from .monitoring import (
+    TradeMonitor,
+    PerformanceTracker,
+    ComprehensiveTradeMonitor,
+    UnifiedTrailingManager,
+    DetailedTradeMetrics,
+    TradingSessionMetrics,
+    TrailingAction,
+    TrailingDecision,
+    comprehensive_trade_monitor,
+    initialize_comprehensive_monitoring,
+    record_detailed_trade,
+    update_trade_outcome
+)
+from .data import (
+    MarketDataProvider,
+    DataValidator,
+    LiveDataCollector,
+    LiveDataConfig,
+    LiveDataPoint,
+    CollectionMode,
+    DataQuality,
+    CollectionInterval,
+    create_live_data_collector,
+    start_live_collection
+)
+
+# Configuration and utilities
+from .config import (
+    TradingConfig,
+    ExecutionConfig,
+    RegimeConfig
+)
+from .utils import (
+    TradingUtils,
+    RiskCalculator,
+    TradingError,
+    RegimeDetectionError,
+    SignalGenerationError,
+    PositionSizingError,
+    ExecutionError,
+    DataCollectionError,
+    validate_trading_config,
+    validate_market_data,
+    calculate_returns,
+    normalize_price_data,
+    format_trading_metrics,
+    calculate_atr14,
+    calculate_realized_volatility,
+    calculate_three_bar_momentum,
+    calculate_three_bar_rsi,
+    calculate_volatility_slope,
+    ensure_ohlcv_dataframe
+)
+
+# Analysis and reporting
+from .regime import (
+    RegimeAnalyzer,
+    RegimeClassifier,
+    RegimeDetector,
+    RegimeWeights
+)
+from .sizing import (
+    PositionSizer,
+    RiskManager,
+    RiskCalculator as SizingRiskCalculator,
+    LeverageManager
+)
+from .signal_generation import (
+    SignalGenerator,
+    SignalCombiner,
+    AnalystSignalGenerator,
+    TacticianSignalGenerator,
+    AnalystSignal,
+    TacticianSignal,
+    SignalType,
+    SignalStrength,
+    TimingSignal,
+    TimingConfidence,
+    create_analyst_signal_generator,
+    generate_analyst_signal,
+    create_tactician_signal_generator,
+    generate_tactician_signal
+)
+from .reporting import (
+    PerformanceReporter,
+    TradeAnalyzer,
+    DashboardGenerator,
+    DailyRecorder,
+    generate_trading_report,
+    analyze_trade_performance,
+    create_trading_dashboard,
+    record_daily_trading_summary,
+    get_daily_trading_summary,
+    get_trading_history
+)
+from .integration import (
+    ModelIntegrationManager,
+    DataIntegrationManager,
+    TrainingModelLoader,
+    TrainingDataProvider,
+    load_trained_models,
+    validate_model_compatibility,
+    get_training_features,
+    sync_with_training_pipeline,
+    export_trading_data,
+    prepare_training_data
+)
 
 # Import new live trading components
 from .execution.live_trading_scheduler import (

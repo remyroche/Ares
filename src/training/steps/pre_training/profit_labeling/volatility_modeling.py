@@ -1,130 +1,121 @@
 """
-Volatility Modeling for Volatility-Aware Labeling
+Volatility Modeling for Volatility-Aware Labeling (data-driven)
 
-This module implements volatility modeling to normalize all thresholds and horizons
-using volatility units instead of fixed percentages.
+This module estimates volatility using multiple estimators on a *per-period* scale
+and combines them with non-negative, sum-to-one data-driven weights that minimize
+one-step-ahead absolute return prediction error, avoiding heuristics.
 
 Key Features:
-- Realized volatility estimation using high-frequency returns
-- ATR (Average True Range) calculation
-- EWMA volatility for responsiveness without whipsaw
-- Volatility unit definition with floor to avoid division blowups
-- Integration with existing ML optimization utilities
+- Realized volatility (rolling std of returns)
+- ATR-based volatility (True Range / close)
+- EWMA volatility (EWMA of return variance)
+- Strictly trailing windows (no look-ahead)
+- Data-driven weight learning via projected gradient descent on the simplex
+- Percentile-based flooring/capping to avoid blow-ups without arbitrary constants
 """
+
+from __future__ import annotations
 
 import numpy as np
 import pandas as pd
-from typing import Dict, List, Optional, Any, Tuple, Union
+from typing import Dict, Optional, Any
 from dataclasses import dataclass, field
 from enum import Enum
 import logging
 from datetime import datetime
 
-# Import matrix operations for vectorized computations
+# Optional imports
 try:
     from src.utils.matrix_operations import UnifiedMatrixOperations
     MATRIX_OPS_AVAILABLE = True
 except ImportError:
     MATRIX_OPS_AVAILABLE = False
 
-# Import existing utilities
-from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success
-from src.utils.common_operations import (
-    safe_divide, safe_log, safe_sqrt, safe_mean, safe_std,
-    validate_finite, validate_positive, validate_range
+from src.utils.tprint import (
+    tprint, tprint_info, tprint_warning, tprint_error, tprint_success
 )
-from src.utils.math_validation import MathValidation
-
-# Import ML optimization utilities
-try:
-    from src.utils.ml_common.optimization.bayesian_tpe_optimizer import BayesianTPEOptimizer
-    BAYESIAN_OPTIMIZER_AVAILABLE = True
-except ImportError:
-    BAYESIAN_OPTIMIZER_AVAILABLE = False
-    tprint_warning("⚠️ Bayesian TPE optimizer not available, using grid search")
 
 
 class VolatilityMethod(Enum):
-    """Enumeration of volatility estimation methods."""
-    REALIZED = "realized"  # High-frequency realized volatility
-    ATR = "atr"  # Average True Range
-    EWMA = "ewma"  # Exponentially Weighted Moving Average
-    GARCH = "garch"  # GARCH model (if available)
-    COMBINED = "combined"  # Combined approach
+    REALIZED = "realized"
+    ATR = "atr"
+    EWMA = "ewma"
+    COMBINED = "combined"  # data-driven combination
 
 
 @dataclass
 class VolatilityConfig:
-    """Configuration for volatility modeling."""
-    
-    # Volatility method
+    """
+    Configuration for volatility modeling (all horizons in *bars*, not annualized).
+    """
+
+    # Method
     method: VolatilityMethod = VolatilityMethod.COMBINED
-    
-    # Realized volatility settings
-    rv_window: int = 20  # Window for realized volatility calculation
-    rv_min_periods: int = 10  # Minimum periods for RV calculation
-    
-    # ATR settings
-    atr_window: int = 14  # Window for ATR calculation
-    atr_min_periods: int = 7  # Minimum periods for ATR calculation
-    
-    # EWMA settings
-    ewma_alpha: float = 0.06  # EWMA decay factor (λ ≈ 0.94-0.97)
-    ewma_min_periods: int = 10  # Minimum periods for EWMA calculation
-    
-    # Volatility unit settings
-    volatility_floor: float = 1e-6  # Floor to avoid division blowups
-    volatility_cap: float = 1.0  # Cap to avoid extreme volatility values
-    
-    # Smoothing settings
+
+    # Realized volatility
+    rv_window: int = 20
+    rv_min_periods: int = 10
+
+    # ATR
+    atr_window: int = 14
+    atr_min_periods: int = 7
+
+    # EWMA (variance smoothing factor alpha in (0,1])
+    ewma_alpha: float = 0.06
+    ewma_min_periods: int = 10
+
+    # Smoothing (trailing)
     enable_smoothing: bool = True
-    smoothing_window: int = 5  # Window for additional smoothing
-    
-    # Quality checks
+    smoothing_window: int = 5
+
+    # Input checks
     min_volatility_samples: int = 50
-    max_volatility_ratio: float = 10.0  # Max ratio between consecutive volatility values
+
+    # Normalization (data-driven)
+    use_percentile_floor_cap: bool = True
+    floor_percentile: float = 0.5  # p0.5 to prevent zeros
+    cap_percentile: float = 99.5   # p99.5 to cut extreme spikes
+    absolute_floor: float = 1e-8   # hard lower bound if percentiles are degenerate
+
+    # Combination training window (how far back to learn weights)
+    combo_lookback: int = 252      # bars for weight estimation
+    combo_max_iters: int = 800     # iterations for projected gradient
+    combo_tol: float = 1e-8        # gradient stopping tolerance
 
     def _validate_config(self) -> None:
-        """Basic validation for volatility configuration parameters."""
         if self.rv_window < 1:
-            raise ValueError("rv_window must be at least 1")
+            raise ValueError("rv_window must be >= 1")
         if self.atr_window < 1:
-            raise ValueError("atr_window must be at least 1")
+            raise ValueError("atr_window must be >= 1")
         if not (0 < self.ewma_alpha <= 1):
-            raise ValueError("ewma_alpha must be between 0 and 1")
-        if self.volatility_floor <= 0:
-            raise ValueError("volatility_floor must be positive")
-        if self.volatility_cap <= 0:
-            raise ValueError("volatility_cap must be positive")
+            raise ValueError("ewma_alpha must be in (0, 1]")
         if self.min_volatility_samples < 1:
-            raise ValueError("min_volatility_samples must be at least 1")
-        if self.max_volatility_ratio <= 0:
-            raise ValueError("max_volatility_ratio must be positive")
+            raise ValueError("min_volatility_samples must be >= 1")
+        if self.smoothing_window < 1:
+            raise ValueError("smoothing_window must be >= 1")
+        if not (0 < self.floor_percentile < 100):
+            raise ValueError("floor_percentile must be in (0,100)")
+        if not (0 < self.cap_percentile <= 100):
+            raise ValueError("cap_percentile must be in (0,100]")
+        if self.cap_percentile <= self.floor_percentile:
+            raise ValueError("cap_percentile must be > floor_percentile")
+        if self.combo_lookback < 20:
+            raise ValueError("combo_lookback should be at least 20")
 
 
 @dataclass
 class VolatilityResult:
-    """Result container for volatility modeling."""
-    
-    # Core results
     volatility_series: pd.Series
     volatility_method: VolatilityMethod
-    
-    # Component results
     realized_volatility: Optional[pd.Series] = None
     atr_volatility: Optional[pd.Series] = None
     ewma_volatility: Optional[pd.Series] = None
-    
-    # Statistics
     mean_volatility: float = 0.0
     volatility_std: float = 0.0
     volatility_percentiles: Dict[str, float] = field(default_factory=dict)
-    
-    # Quality metrics
     volatility_consistency: float = 0.0
     volatility_stability: float = 0.0
-    
-    # Metadata
+    combo_weights: Optional[Dict[str, float]] = None
     config_used: VolatilityConfig = None
     processing_time: float = 0.0
     timestamp: datetime = field(default_factory=datetime.now)
@@ -132,503 +123,346 @@ class VolatilityResult:
 
 class VolatilityModeler:
     """
-    Volatility Modeler for Volatility-Aware Labeling
-    
-    This class implements comprehensive volatility modeling to normalize all thresholds
-    and horizons using volatility units instead of fixed percentages.
-    
-    Key Features:
-    1. **Realized Volatility**: High-frequency return-based volatility estimation
-    2. **ATR Volatility**: Average True Range for price movement volatility
-    3. **EWMA Volatility**: Exponentially weighted moving average for responsiveness
-    4. **Combined Approach**: Intelligent combination of multiple methods
-    5. **Quality Validation**: Comprehensive volatility quality assessment
+    Volatility Modeler (data-driven)
+    - Produces per-period volatility estimates (no annualization).
+    - If method=COMBINED, learns non-negative, sum-to-one weights w
+      that minimize MSE for predicting |r_{t+1}| from [rv_t, atr_t, ewma_t].
     """
-    
-    def __init__(self, config: Optional[VolatilityConfig] = None):
-        """Initialize volatility modeler."""
-        self.config = config or VolatilityConfig()
-        self.logger = logging.getLogger('VolatilityModeler')
 
-        # Initialize matrix operations for vectorized computations
+    def __init__(self, config: Optional[VolatilityConfig] = None):
+        self.config = config or VolatilityConfig()
+        self.config._validate_config()
+        self.logger = logging.getLogger("VolatilityModeler")
+
         if MATRIX_OPS_AVAILABLE:
             self.matrix_ops = UnifiedMatrixOperations()
             tprint_info("   → Matrix operations: Available")
         else:
             self.matrix_ops = None
-            tprint_warning("   → Matrix operations: Not available, using fallback")
+            tprint_warning("   → Matrix operations: Not available, using pandas/numpy")
 
         tprint_info("📈 Volatility Modeler initialized")
         tprint_info(f"   → Method: {self.config.method.value}")
-        tprint_info(f"   → RV window: {self.config.rv_window}")
-        tprint_info(f"   → ATR window: {self.config.atr_window}")
-        tprint_info(f"   → EWMA alpha: {self.config.ewma_alpha}")
     
     def model_volatility(self, bars: pd.DataFrame) -> VolatilityResult:
-        """
-        Model volatility from cleaned bars.
-        
-        Args:
-            bars: Cleaned OHLCV bars with datetime index
-            
-        Returns:
-            VolatilityResult with volatility estimates and statistics
-        """
         start_time = datetime.now()
         tprint_info("📊 Modeling volatility")
-        
-        # Initialize result container
+
+        empty_series = pd.Series(dtype=float, index=bars.index if isinstance(bars, pd.DataFrame) else None)
         result = VolatilityResult(
-            volatility_series=pd.Series(),
+            volatility_series=empty_series,
             volatility_method=self.config.method,
             config_used=self.config
         )
-        
+
         try:
-            # Validate input data
             if not self._validate_input_data(bars):
                 return result
-            
-            # Calculate individual volatility components
+
+            # Compute close-to-close returns (per period)
+            close = bars["close"].astype(float)
+            rets = close.pct_change().rename("returns")
+
+            # 1) Component estimators (all on per-period scale, trailing)
             tprint_info("📈 Step 1: Calculating volatility components")
-            rv_series = self._calculate_realized_volatility(bars)
-            atr_series = self._calculate_atr_volatility(bars)
-            ewma_series = self._calculate_ewma_volatility(bars)
-            
-            result.realized_volatility = rv_series
-            result.atr_volatility = atr_series
-            result.ewma_volatility = ewma_series
-            
-            # Combine volatility estimates based on method
+            rv = self._calculate_realized_volatility(rets)
+            atr = self._calculate_atr_volatility(bars)
+            ew = self._calculate_ewma_volatility(rets)
+
+            # Align components and keep common index
+            comps = pd.concat({"rv": rv, "atr": atr, "ewma": ew}, axis=1).dropna(how="all")
+            result.realized_volatility = comps["rv"]
+            result.atr_volatility = comps["atr"]
+            result.ewma_volatility = comps["ewma"]
+
+            # 2) Choose / combine
             tprint_info("🔗 Step 2: Combining volatility estimates")
             if self.config.method == VolatilityMethod.REALIZED:
-                combined_volatility = rv_series
+                combined = comps["rv"]
+                weights = {"rv": 1.0, "atr": 0.0, "ewma": 0.0}
             elif self.config.method == VolatilityMethod.ATR:
-                combined_volatility = atr_series
+                combined = comps["atr"]
+                weights = {"rv": 0.0, "atr": 1.0, "ewma": 0.0}
             elif self.config.method == VolatilityMethod.EWMA:
-                combined_volatility = ewma_series
-            else:  # COMBINED
-                combined_volatility = self._combine_volatility_estimates(rv_series, atr_series, ewma_series)
-            
-            # Apply volatility unit normalization
-            tprint_info("⚖️ Step 3: Applying volatility unit normalization")
-            normalized_volatility = self._normalize_volatility_units(combined_volatility)
-            
-            # Apply smoothing if enabled
-            if self.config.enable_smoothing:
-                tprint_info("🔧 Step 4: Applying smoothing")
-                normalized_volatility = self._apply_smoothing(normalized_volatility)
-            
-            result.volatility_series = normalized_volatility
-            
-            # Calculate statistics and quality metrics
+                combined = comps["ewma"]
+                weights = {"rv": 0.0, "atr": 0.0, "ewma": 1.0}
+            else:
+                combined, weights = self._combine_data_driven(comps, rets)
+
+            # 3) Normalize (floor/cap) and optional smoothing (trailing)
+            tprint_info("⚖️ Step 3: Normalizing scale (percentile floor/cap)")
+            combined = self._normalize_volatility_units(combined)
+
+            if self.config.enable_smoothing and len(combined) >= self.config.smoothing_window:
+                tprint_info("🔧 Step 4: Trailing smoothing")
+                combined = combined.rolling(self.config.smoothing_window, min_periods=1).mean()
+
+            # 4) Stats & quality
             tprint_info("📊 Step 5: Calculating statistics and quality metrics")
-            stats = self._calculate_volatility_statistics(normalized_volatility)
-            result.mean_volatility = stats['mean_volatility']
-            result.volatility_std = stats['volatility_std']
-            result.volatility_percentiles = stats['volatility_percentiles']
-            
-            quality_metrics = self._calculate_volatility_quality(normalized_volatility)
-            result.volatility_consistency = quality_metrics['consistency']
-            result.volatility_stability = quality_metrics['stability']
-            
+            stats = self._calculate_volatility_statistics(combined)
+            quality = self._calculate_volatility_quality(combined)
+
+            result.volatility_series = combined.astype(float)
+            result.mean_volatility = float(stats["mean_volatility"])
+            result.volatility_std = float(stats["volatility_std"])
+            result.volatility_percentiles = stats["volatility_percentiles"]
+            result.volatility_consistency = float(quality["consistency"])
+            result.volatility_stability = float(quality["stability"])
+            result.combo_weights = weights
+
         except Exception as e:
             tprint_error(f"❌ Volatility modeling failed: {e}")
             return result
-        
-        # Calculate processing time
-        result.processing_time = (datetime.now() - start_time).total_seconds()
-        
-        tprint_success("✅ Volatility modeling completed")
-        tprint_info(f"   → Volatility samples: {len(result.volatility_series)}")
-        tprint_info(f"   → Mean volatility: {result.mean_volatility:.6f}")
-        tprint_info(f"   → Volatility std: {result.volatility_std:.6f}")
-        tprint_info(f"   → Consistency: {result.volatility_consistency:.3f}")
-        
+        finally:
+            result.processing_time = (datetime.now() - start_time).total_seconds()
+            tprint_success("✅ Volatility modeling completed")
+            tprint_info(f"   → Samples: {len(result.volatility_series)}")
+            tprint_info(f"   → Mean: {result.mean_volatility:.6f}")
+            tprint_info(f"   → Std: {result.volatility_std:.6f}")
+            if result.combo_weights:
+                tprint_info(f"   → Weights: {result.combo_weights}")
+
         return result
     
     def _validate_input_data(self, bars: pd.DataFrame) -> bool:
-        """Validate input bar data."""
         try:
-            # Check if DataFrame is empty
-            if bars.empty:
-                tprint_warning("⚠️ Input bars are empty")
+            if not isinstance(bars, pd.DataFrame) or bars.empty:
+                tprint_warning("⚠️ Input bars are empty or not a DataFrame")
                 return False
-            
-            # Check required columns
-            required_columns = ['open', 'high', 'low', 'close']
-            missing_columns = set(required_columns) - set(bars.columns)
-            if missing_columns:
-                tprint_warning(f"⚠️ Missing required columns: {missing_columns}")
+
+            required = {"open", "high", "low", "close"}
+            missing = required - set(bars.columns)
+            if missing:
+                tprint_warning(f"⚠️ Missing required columns: {missing}")
                 return False
-            
-            # Check minimum samples
+
             if len(bars) < self.config.min_volatility_samples:
-                tprint_warning(f"⚠️ Insufficient samples: {len(bars)} < {self.config.min_volatility_samples}")
+                tprint_warning(
+                    f"⚠️ Insufficient samples: {len(bars)} < {self.config.min_volatility_samples}"
+                )
                 return False
-            
-            # Check for non-finite values
-            if bars[required_columns].isnull().any().any():
-                tprint_warning("⚠️ Data contains null values")
+
+            if bars[list(required)].isnull().any().any():
+                tprint_warning("⚠️ Data contains null values in OHLC")
                 return False
-            
-            if not np.isfinite(bars[required_columns].values).all():
+
+            vals = bars[list(required)].to_numpy(dtype=float, copy=False)
+            if not np.isfinite(vals).all():
                 tprint_warning("⚠️ Data contains non-finite values")
                 return False
-            
+
             return True
-            
         except Exception as e:
             tprint_error(f"❌ Data validation failed: {e}")
             return False
     
-    def _calculate_realized_volatility(self, bars: pd.DataFrame) -> pd.Series:
-        """Calculate realized volatility from high-frequency returns."""
-        try:
-            # Calculate returns
-            returns = bars['close'].pct_change().dropna()
-            
-            if len(returns) < self.config.rv_min_periods:
-                return pd.Series(dtype=float, index=bars.index)
-            
-            # Calculate rolling realized volatility
-            rv = returns.rolling(
-                window=self.config.rv_window,
-                min_periods=self.config.rv_min_periods
-            ).std()
-            
-            # Annualize if needed (assuming daily data)
-            rv = rv * np.sqrt(252)
-            
-            return rv
-            
-        except Exception as e:
-            tprint_warning(f"⚠️ Error calculating realized volatility: {e}")
-            return pd.Series(dtype=float, index=bars.index)
+    @staticmethod
+    def _rolling_std(x: pd.Series, window: int, min_periods: int) -> pd.Series:
+        return x.rolling(window=window, min_periods=min_periods).std()
+
+    def _calculate_realized_volatility(self, returns: pd.Series) -> pd.Series:
+        """Per-period realized volatility: rolling std of close-to-close returns."""
+        returns = returns.astype(float)
+        if returns.dropna().shape[0] < self.config.rv_min_periods:
+            return pd.Series(index=returns.index, dtype=float)
+        rv = self._rolling_std(returns, self.config.rv_window, self.config.rv_min_periods)
+        return rv.rename("rv")
     
     def _calculate_atr_volatility(self, bars: pd.DataFrame) -> pd.Series:
-        """Calculate ATR-based volatility using vectorized operations."""
-        try:
-            # Vectorized True Range calculation
-            high = bars['high'].values
-            low = bars['low'].values
-            close = bars['close'].values
+        """
+        ATR-based per-period volatility: True Range divided by close (trailing mean).
+        No np.roll to avoid wraparound bugs; uses pandas shift (no look-ahead).
+        """
+        high = bars["high"].astype(float)
+        low = bars["low"].astype(float)
+        close = bars["close"].astype(float)
+        prev_close = close.shift(1)
 
-            # True Range components
-            high_low = high - low
-            high_close = np.abs(high - np.roll(close, 1))
-            low_close = np.abs(low - np.roll(close, 1))
+        # True range components
+        c1 = high - low
+        c2 = (high - prev_close).abs()
+        c3 = (low - prev_close).abs()
+        tr = pd.concat([c1, c2, c3], axis=1).max(axis=1)
 
-            # Fix first element for high_close and low_close
-            high_close[0] = high_low[0]  # Use high-low for first element
-            low_close[0] = high_low[0]
+        if tr.dropna().shape[0] < self.config.atr_min_periods:
+            return pd.Series(index=bars.index, dtype=float)
 
-            # Vectorized true range calculation
-            true_range = np.maximum(high_low, np.maximum(high_close, low_close))
-
-            if len(true_range) < self.config.atr_min_periods:
-                return pd.Series(dtype=float, index=bars.index)
-
-            # Use matrix operations for rolling mean if available
-            if self.matrix_ops and MATRIX_OPS_AVAILABLE:
-                # Convert to pandas Series for rolling operation (still efficient)
-                tr_series = pd.Series(true_range, index=bars.index)
-
-                # Vectorized rolling mean calculation
-                atr_values = np.zeros_like(true_range, dtype=float)
-                window = self.config.atr_window
-
-                for i in range(len(true_range)):
-                    if i < window - 1:
-                        # Use available data for initial values
-                        atr_values[i] = np.mean(true_range[max(0, i - window + 1):i+1])
-                    else:
-                        atr_values[i] = np.mean(true_range[i - window + 1:i+1])
-
-                atr = pd.Series(atr_values, index=bars.index)
-            else:
-                # Fallback to pandas rolling
-                tr_series = pd.Series(true_range, index=bars.index)
-                atr = tr_series.rolling(
-                    window=self.config.atr_window,
-                    min_periods=self.config.atr_min_periods
-                ).mean()
-
-            # Normalize by price level (vectorized)
-            atr_volatility = atr / bars['close']
-
-            return atr_volatility
-
-        except Exception as e:
-            tprint_warning(f"⚠️ Error calculating ATR volatility: {e}")
-            return pd.Series(dtype=float, index=bars.index)
+        atr = tr.rolling(self.config.atr_window, min_periods=self.config.atr_min_periods).mean()
+        atr_vol = (atr / close).rename("atr")  # per-period magnitude in return units
+        return atr_vol
     
-    def _calculate_ewma_volatility(self, bars: pd.DataFrame) -> pd.Series:
-        """Calculate EWMA volatility using vectorized operations."""
-        try:
-            # Vectorized returns calculation
-            close_prices = bars['close'].values
-            returns = np.diff(close_prices) / close_prices[:-1]
-            returns = np.concatenate([[0], returns])  # Pad first value
+    def _calculate_ewma_volatility(self, returns: pd.Series) -> pd.Series:
+        """
+        EWMA variance -> volatility on per-period scale.
+        Uses pandas ewm (no manual padding that injects zeros).
+        """
+        r = returns.astype(float)
+        if r.dropna().shape[0] < self.config.ewma_min_periods:
+            return pd.Series(index=r.index, dtype=float)
 
-            if len(returns) < self.config.ewma_min_periods:
-                return pd.Series(dtype=float, index=bars.index)
-
-            # Vectorized EWMA calculation for variance
-            alpha = self.config.ewma_alpha
-            min_periods = self.config.ewma_min_periods
-
-            # Use matrix operations for EWMA if available
-            if self.matrix_ops and MATRIX_OPS_AVAILABLE:
-                # Convert to pandas for ewm operation (still efficient)
-                returns_series = pd.Series(returns, index=bars.index)
-
-                # Calculate EWMA variance
-                ewma_var = returns_series.ewm(
-                    alpha=alpha,
-                    min_periods=min_periods
-                ).var()
-
-                # Convert to volatility
-                ewma_volatility = np.sqrt(ewma_var)
-            else:
-                # Fallback implementation using vectorized operations
-                returns_series = pd.Series(returns, index=bars.index)
-                ewma_var = returns_series.ewm(alpha=alpha, min_periods=min_periods).var()
-                ewma_volatility = np.sqrt(ewma_var)
-
-            # Annualize if needed (vectorized)
-            ewma_volatility = ewma_volatility * np.sqrt(252)
-
-            return ewma_volatility
-
-        except Exception as e:
-            tprint_warning(f"⚠️ Error calculating EWMA volatility: {e}")
-            return pd.Series(dtype=float, index=bars.index)
+        ew_var = r.ewm(alpha=self.config.ewma_alpha, min_periods=self.config.ewma_min_periods).var(bias=False)
+        ew_vol = np.sqrt(ew_var).rename("ewma")
+        return ew_vol
     
-    def _combine_volatility_estimates(self, rv_series: pd.Series, atr_series: pd.Series, 
-                                    ewma_series: pd.Series) -> pd.Series:
-        """Intelligently combine multiple volatility estimates using data-driven weights."""
-        try:
-            # Align all series to the same index
-            common_index = rv_series.index.intersection(atr_series.index).intersection(ewma_series.index)
-            
-            if len(common_index) == 0:
-                return pd.Series(dtype=float, index=rv_series.index)
-            
-            # Get aligned series
-            rv_aligned = rv_series.loc[common_index]
-            atr_aligned = atr_series.loc[common_index]
-            ewma_aligned = ewma_series.loc[common_index]
-            
-            # Calculate data-driven weights based on reliability metrics
-            rv_weight = self._calculate_volatility_weight(rv_aligned, 'rv')
-            atr_weight = self._calculate_volatility_weight(atr_aligned, 'atr')
-            ewma_weight = self._calculate_volatility_weight(ewma_aligned, 'ewma')
-            
-            # Normalize weights to sum to 1
-            total_weight = rv_weight + atr_weight + ewma_weight
-            if total_weight > 0:
-                rv_weight /= total_weight
-                atr_weight /= total_weight
-                ewma_weight /= total_weight
-            else:
-                # Fallback to equal weights
-                rv_weight = atr_weight = ewma_weight = 1.0 / 3.0
-            
-            # Calculate hybrid RV+ATR weight
-            hybrid_weight = rv_weight + atr_weight
-            hybrid_volatility = (rv_weight * rv_aligned + atr_weight * atr_aligned) / hybrid_weight if hybrid_weight > 0 else rv_aligned
-            
-            # Final combination with data-driven weights
-            combined = hybrid_weight * hybrid_volatility + ewma_weight * ewma_aligned
-            
-            return combined
-            
-        except Exception as e:
-            tprint_warning(f"⚠️ Error combining volatility estimates: {e}")
-            return rv_series  # Fallback to RV
+    def _combine_data_driven(self, comps: pd.DataFrame, returns: pd.Series) -> tuple[pd.Series, Dict[str, float]]:
+        """
+        Learn weights w >= 0, sum(w)=1 to predict |r_{t+1}| from comps_t.
+        Training uses trailing window (combo_lookback). No look-ahead.
+        """
+        # Regressors at t, target at t+1
+        X_all = comps.dropna(how="any")
+        if X_all.empty or X_all.shape[1] == 0:
+            return pd.Series(index=comps.index, dtype=float), {"rv": 1/3, "atr": 1/3, "ewma": 1/3}
+
+        y_all = returns.abs().reindex(X_all.index).shift(-1)  # |r_{t+1}|
+        # Keep rows where y exists (drop tail to avoid look-ahead)
+        mask = y_all.notna()
+        X_all, y_all = X_all[mask], y_all[mask]
+
+        if len(X_all) < max(30, self.config.combo_lookback // 4):
+            # Not enough data to learn reliably
+            w = np.ones(X_all.shape[1]) / X_all.shape[1]
+        else:
+            # Use last combo_lookback samples to train
+            X = X_all.iloc[-self.config.combo_lookback:, :]
+            y = y_all.iloc[-self.config.combo_lookback:]
+            w = self._fit_simplex_pg(X.to_numpy(), y.to_numpy())
+
+        w = self._project_to_simplex(w)  # safety
+
+        # Build combined estimator on full timeline (no shift here; per-period vol estimate)
+        combined = (X_all @ pd.Series(w, index=X_all.columns)).reindex(comps.index)
+
+        weights = {col: float(w[i]) for i, col in enumerate(X_all.columns)}
+        # If some component columns were fully NA earlier, pad their weights with 0
+        for col in ["rv", "atr", "ewma"]:
+            weights.setdefault(col, 0.0)
+
+        return combined.astype(float), weights
+
+    @staticmethod
+    def _project_to_simplex(v: np.ndarray) -> np.ndarray:
+        """
+        Project vector v onto the probability simplex {w: w>=0, sum w=1}.
+        Duchi, Shalev-Shwartz, Singer, Chandra (2008).
+        """
+        v = np.asarray(v, dtype=float)
+        if v.ndim != 1:
+            raise ValueError("v must be 1-D")
+        n = v.size
+        u = np.sort(v)[::-1]
+        cssv = np.cumsum(u)
+        rho = np.nonzero(u * np.arange(1, n + 1) > (cssv - 1))[0]
+        if len(rho) == 0:
+            # If all zeros, return uniform
+            return np.ones(n) / n
+        rho = rho[-1]
+        theta = (cssv[rho] - 1.0) / (rho + 1)
+        w = np.maximum(v - theta, 0.0)
+        s = w.sum()
+        return w if s > 0 else np.ones(n) / n
+
+    def _fit_simplex_pg(self, X: np.ndarray, y: np.ndarray) -> np.ndarray:
+        """
+        Projected gradient descent to minimize (1/n)||Xw - y||^2,
+        subject to w >= 0, sum(w) = 1.
+        Step size uses Lipschitz constant estimate L = 2*||X||_2^2 / n.
+        """
+        n, d = X.shape
+        if n == 0 or d == 0:
+            return np.ones(d) / d
+
+        # Standardize columns to comparable scale (avoid dominance)
+        Xs = X.copy()
+        col_scale = Xs.std(axis=0, ddof=1)
+        col_scale[col_scale == 0] = 1.0
+        Xs /= col_scale
+
+        # Initialize uniform
+        w = np.ones(d) / d
+
+        # Lipschitz estimate (safe upper bound)
+        # Use spectral norm via power iteration (few steps)
+        def power_iter(A, iters=10):
+            v = np.random.default_rng(123).standard_normal(A.shape[1])
+            v /= np.linalg.norm(v) + 1e-12
+            for _ in range(iters):
+                v = A.T @ (A @ v)
+                nv = np.linalg.norm(v) + 1e-12
+                v /= nv
+            return float(np.linalg.norm(A @ v))
+        L2 = power_iter(Xs) ** 2  # ||Xs||_2^2
+        L = 2.0 * L2 / max(n, 1)
+        eta = 1.0 / (L + 1e-12)
+
+        yv = y.astype(float)
+        for _ in range(self.config.combo_max_iters):
+            # Gradient: 2/n X^T (Xw - y)
+            r = Xs @ w - yv
+            grad = (2.0 / n) * (Xs.T @ r)
+            w_new = self._project_to_simplex(w - eta * grad)
+            if np.linalg.norm(w_new - w, ord=2) < self.config.combo_tol:
+                w = w_new
+                break
+            w = w_new
+
+        # Undo standardization effect in interpretation: not needed for w itself
+        return w
     
-    def _calculate_volatility_weight(self, vol_series: pd.Series, method: str) -> float:
-        """Calculate data-driven weight for volatility method based on multiple reliability metrics."""
-        try:
-            if vol_series.empty or vol_series.isnull().all():
-                return 0.0
-            
-            # Calculate comprehensive reliability metrics
-            non_null_ratio = vol_series.notna().sum() / len(vol_series)
-            
-            # Stability: inverse of coefficient of variation
-            stability = 1.0 - (vol_series.std() / vol_series.mean()) if vol_series.mean() > 0 else 0.0
-            
-            # Consistency: inverse of relative change volatility
-            consistency = 1.0 - (vol_series.diff().abs().mean() / vol_series.mean()) if vol_series.mean() > 0 else 0.0
-            
-            # Smoothness: inverse of second derivative volatility
-            second_diff = vol_series.diff().diff().abs()
-            smoothness = 1.0 - (second_diff.mean() / vol_series.mean()) if vol_series.mean() > 0 else 0.0
-            
-            # Predictability: correlation with lagged values
-            predictability = 0.0
-            if len(vol_series) > 1:
-                lagged_corr = vol_series.corr(vol_series.shift(1))
-                predictability = max(0.0, lagged_corr) if not pd.isna(lagged_corr) else 0.0
-            
-            # Method-specific reliability factors based on historical performance
-            method_factors = {
-                'rv': {
-                    'base_reliability': 0.8,  # Generally reliable for high-frequency data
-                    'stability_bonus': 0.1,   # Good stability
-                    'consistency_bonus': 0.1, # Good consistency
-                    'smoothness_penalty': -0.05,  # Can be noisy
-                    'predictability_bonus': 0.05  # Good predictability
-                },
-                'atr': {
-                    'base_reliability': 0.9,  # Very reliable for price-level volatility
-                    'stability_bonus': 0.15,  # Excellent stability
-                    'consistency_bonus': 0.1, # Good consistency
-                    'smoothness_bonus': 0.1,  # Very smooth
-                    'predictability_bonus': 0.1  # Excellent predictability
-                },
-                'ewma': {
-                    'base_reliability': 0.7,  # Good for responsiveness
-                    'stability_bonus': 0.05,  # Moderate stability
-                    'consistency_bonus': 0.15, # Excellent consistency
-                    'smoothness_bonus': 0.2,  # Very smooth
-                    'predictability_bonus': 0.05  # Good predictability
-                }
-            }
-            
-            factors = method_factors.get(method, method_factors['atr'])
-            
-            # Calculate weighted reliability score
-            reliability_score = (
-                factors['base_reliability'] +
-                factors['stability_bonus'] * stability +
-                factors['consistency_bonus'] * consistency +
-                factors['smoothness_bonus'] * smoothness +
-                factors['predictability_bonus'] * predictability
-            )
-            
-            # Apply data quality penalty
-            quality_penalty = 1.0 - non_null_ratio
-            reliability_score *= (1.0 - quality_penalty)
-            
-            # Calculate final weight
-            weight = reliability_score * non_null_ratio
-            
-            return max(0.0, min(1.0, weight))
-            
-        except Exception as e:
-            tprint_warning(f"⚠️ Error calculating volatility weight for {method}: {e}")
-            return 0.0
     
-    def _normalize_volatility_units(self, volatility_series: pd.Series) -> pd.Series:
-        """Normalize volatility to units with floor and cap."""
-        try:
-            if volatility_series.empty:
-                return volatility_series
-            
-            # Apply floor to avoid division blowups
-            normalized = np.maximum(volatility_series, self.config.volatility_floor)
-            
-            # Apply cap to avoid extreme values
-            normalized = np.minimum(normalized, self.config.volatility_cap)
-            
-            # Ensure non-finite values are handled
-            normalized = np.where(np.isfinite(normalized), normalized, self.config.volatility_floor)
-            
-            return pd.Series(normalized, index=volatility_series.index)
-            
-        except Exception as e:
-            tprint_warning(f"⚠️ Error normalizing volatility units: {e}")
-            return volatility_series
+    def _normalize_volatility_units(self, vol: pd.Series) -> pd.Series:
+        """Apply data-driven floor/cap via percentiles (per series)."""
+        vol = vol.astype(float)
+        if vol.empty:
+            return vol
+
+        # Ensure finite positives
+        vol = vol.replace([np.inf, -np.inf], np.nan).dropna()
+        if vol.empty:
+            return pd.Series(index=vol.index, dtype=float)
+
+        if self.config.use_percentile_floor_cap:
+            lo = np.nanpercentile(vol, self.config.floor_percentile)
+            hi = np.nanpercentile(vol, self.config.cap_percentile)
+            lo = max(float(lo), self.config.absolute_floor)
+            hi = max(float(hi), lo)
+            vol = vol.clip(lower=lo, upper=hi)
+        else:
+            vol = vol.clip(lower=self.config.absolute_floor)
+
+        return vol
     
-    def _apply_smoothing(self, volatility_series: pd.Series) -> pd.Series:
-        """Apply additional smoothing to volatility series."""
-        try:
-            if volatility_series.empty or len(volatility_series) < self.config.smoothing_window:
-                return volatility_series
-            
-            # Apply rolling mean smoothing
-            smoothed = volatility_series.rolling(
-                window=self.config.smoothing_window,
-                min_periods=1
-            ).mean()
-            
-            return smoothed
-            
-        except Exception as e:
-            tprint_warning(f"⚠️ Error applying smoothing: {e}")
-            return volatility_series
     
-    def _calculate_volatility_statistics(self, volatility_series: pd.Series) -> Dict[str, Any]:
-        """Calculate volatility statistics."""
-        try:
-            if volatility_series.empty:
-                return {
-                    'mean_volatility': 0.0,
-                    'volatility_std': 0.0,
-                    'volatility_percentiles': {}
-                }
-            
-            # Basic statistics
-            mean_vol = volatility_series.mean()
-            std_vol = volatility_series.std()
-            
-            # Percentiles
-            percentiles = [5, 10, 25, 50, 75, 90, 95]
-            vol_percentiles = {}
-            for p in percentiles:
-                vol_percentiles[f'p{p}'] = volatility_series.quantile(p / 100)
-            
-            return {
-                'mean_volatility': mean_vol,
-                'volatility_std': std_vol,
-                'volatility_percentiles': vol_percentiles
-            }
-            
-        except Exception as e:
-            tprint_warning(f"⚠️ Error calculating volatility statistics: {e}")
-            return {
-                'mean_volatility': 0.0,
-                'volatility_std': 0.0,
-                'volatility_percentiles': {}
-            }
+    def _calculate_volatility_statistics(self, vol: pd.Series) -> Dict[str, Any]:
+        if vol.empty:
+            return {"mean_volatility": 0.0, "volatility_std": 0.0, "volatility_percentiles": {}}
+
+        mean_vol = float(vol.mean())
+        std_vol = float(vol.std())
+        ps = [5, 10, 25, 50, 75, 90, 95]
+        pct = {f"p{p}": float(np.nanpercentile(vol, p)) for p in ps}
+        return {"mean_volatility": mean_vol, "volatility_std": std_vol, "volatility_percentiles": pct}
     
-    def _calculate_volatility_quality(self, volatility_series: pd.Series) -> Dict[str, float]:
-        """Calculate volatility quality metrics."""
-        try:
-            if volatility_series.empty:
-                return {'consistency': 0.0, 'stability': 0.0}
-            
-            # Consistency: how stable the volatility is over time
-            vol_changes = volatility_series.diff().abs()
-            consistency = 1.0 - (vol_changes.mean() / volatility_series.mean()) if volatility_series.mean() > 0 else 0.0
-            
-            # Stability: how consistent the volatility distribution is
-            vol_std = volatility_series.std()
-            vol_mean = volatility_series.mean()
-            stability = 1.0 - (vol_std / vol_mean) if vol_mean > 0 else 0.0
-            
-            return {
-                'consistency': max(0.0, min(1.0, consistency)),
-                'stability': max(0.0, min(1.0, stability))
-            }
-            
-        except Exception as e:
-            tprint_warning(f"⚠️ Error calculating volatility quality: {e}")
-            return {'consistency': 0.0, 'stability': 0.0}
+    def _calculate_volatility_quality(self, vol: pd.Series) -> Dict[str, float]:
+        if vol.empty:
+            return {"consistency": 0.0, "stability": 0.0}
+        m = float(vol.mean())
+        if m <= 0:
+            return {"consistency": 0.0, "stability": 0.0}
+        diff1 = vol.diff().abs()
+        consistency = float(np.clip(1.0 - diff1.mean() / m, 0.0, 1.0))
+        stability = float(np.clip(1.0 - vol.std() / m, 0.0, 1.0))
+        return {"consistency": consistency, "stability": stability}
 
 
+# --------------------------------------------------------------------------------------
 # Convenience functions
+# --------------------------------------------------------------------------------------
+
 def create_volatility_modeler(config: Optional[VolatilityConfig] = None) -> VolatilityModeler:
-    """Create volatility modeler with specified configuration."""
     return VolatilityModeler(config)
 
 
-def model_volatility(bars: pd.DataFrame,
-                    config: Optional[VolatilityConfig] = None) -> VolatilityResult:
-    """Model volatility with default configuration."""
+def model_volatility(bars: pd.DataFrame, config: Optional[VolatilityConfig] = None) -> VolatilityResult:
     modeler = VolatilityModeler(config)
     return modeler.model_volatility(bars)

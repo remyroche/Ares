@@ -58,26 +58,232 @@ class TargetBand(Enum):
 
 
 @dataclass
+class AdaptiveParameterCalculator:
+    """Data-driven parameter calculation for multi-target scheme."""
+    
+    # Calculation methods
+    band_method: str = "percentile"  # "percentile", "std", "iqr", "adaptive"
+    fpt_method: str = "percentile"  # "percentile", "std", "iqr", "adaptive"
+    horizon_method: str = "adaptive"  # "percentile", "std", "iqr", "adaptive"
+    
+    # Percentile-based parameters
+    small_band_percentiles: Tuple[float, float] = (0.25, 0.50)  # 25th-50th percentiles
+    medium_band_percentiles: Tuple[float, float] = (0.50, 0.75)  # 50th-75th percentiles
+    high_band_percentiles: Tuple[float, float] = (0.75, 0.90)  # 75th-90th percentiles
+    
+    # Standard deviation multipliers
+    band_std_multiplier: float = 1.0  # 1.0σ for band boundaries
+    fpt_std_multiplier: float = 1.0  # 1.0σ for FPT quantiles
+    
+    # Adaptive parameters
+    adaptive_window: int = 50  # Window for adaptive calculation
+    min_samples: int = 20  # Minimum samples for calculation
+    
+    def calculate_target_bands(self, volatility_series: pd.Series) -> Dict[str, Tuple[float, float]]:
+        """Calculate data-driven target bands based on volatility distribution."""
+        try:
+            if len(volatility_series) < self.min_samples:
+                return {
+                    'small_band': (0.4, 0.8),
+                    'medium_band': (0.8, 1.3),
+                    'high_band': (1.3, 2.0)
+                }
+            
+            if self.band_method == "percentile":
+                small_low = volatility_series.quantile(self.small_band_percentiles[0])
+                small_high = volatility_series.quantile(self.small_band_percentiles[1])
+                medium_low = volatility_series.quantile(self.medium_band_percentiles[0])
+                medium_high = volatility_series.quantile(self.medium_band_percentiles[1])
+                high_low = volatility_series.quantile(self.high_band_percentiles[0])
+                high_high = volatility_series.quantile(self.high_band_percentiles[1])
+                
+            elif self.band_method == "std":
+                mean_vol = volatility_series.mean()
+                std_vol = volatility_series.std()
+                small_low = mean_vol - self.band_std_multiplier * std_vol
+                small_high = mean_vol - 0.5 * self.band_std_multiplier * std_vol
+                medium_low = mean_vol - 0.5 * self.band_std_multiplier * std_vol
+                medium_high = mean_vol + 0.5 * self.band_std_multiplier * std_vol
+                high_low = mean_vol + 0.5 * self.band_std_multiplier * std_vol
+                high_high = mean_vol + self.band_std_multiplier * std_vol
+                
+            elif self.band_method == "iqr":
+                q75, q25 = volatility_series.quantile([0.75, 0.25])
+                iqr = q75 - q25
+                small_low = q25 - 0.5 * iqr
+                small_high = q25
+                medium_low = q25
+                medium_high = q75
+                high_low = q75
+                high_high = q75 + 0.5 * iqr
+                
+            else:  # adaptive
+                small_low, small_high = self._calculate_adaptive_band(volatility_series, 0.25, 0.50)
+                medium_low, medium_high = self._calculate_adaptive_band(volatility_series, 0.50, 0.75)
+                high_low, high_high = self._calculate_adaptive_band(volatility_series, 0.75, 0.90)
+            
+            # Ensure reasonable bounds
+            small_low = max(small_low, 0.1)
+            small_high = max(small_high, small_low + 0.1)
+            medium_low = max(medium_low, small_high)
+            medium_high = max(medium_high, medium_low + 0.1)
+            high_low = max(high_low, medium_high)
+            high_high = max(high_high, high_low + 0.1)
+            
+            return {
+                'small_band': (float(small_low), float(small_high)),
+                'medium_band': (float(medium_low), float(medium_high)),
+                'high_band': (float(high_low), float(high_high))
+            }
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Error calculating target bands: {e}")
+            return {
+                'small_band': (0.4, 0.8),
+                'medium_band': (0.8, 1.3),
+                'high_band': (1.3, 2.0)
+            }
+    
+    def calculate_fpt_quantiles(self, fpt_series: pd.Series) -> List[float]:
+        """Calculate data-driven FPT quantiles."""
+        try:
+            if len(fpt_series) < self.min_samples:
+                return [0.5, 0.65, 0.8]
+            
+            if self.fpt_method == "percentile":
+                quantiles = [0.5, 0.65, 0.8]
+                fpt_quantiles = [fpt_series.quantile(q) for q in quantiles]
+            elif self.fpt_method == "std":
+                mean_fpt = fpt_series.mean()
+                std_fpt = fpt_series.std()
+                fpt_quantiles = [
+                    mean_fpt - 0.5 * self.fpt_std_multiplier * std_fpt,
+                    mean_fpt,
+                    mean_fpt + 0.5 * self.fpt_std_multiplier * std_fpt
+                ]
+            elif self.fpt_method == "iqr":
+                q75, q25 = fpt_series.quantile([0.75, 0.25])
+                iqr = q75 - q25
+                fpt_quantiles = [q25, (q25 + q75) / 2, q75]
+            else:  # adaptive
+                fpt_quantiles = self._calculate_adaptive_quantiles(fpt_series, [0.5, 0.65, 0.8])
+            
+            # Ensure reasonable bounds
+            fpt_quantiles = [max(q, 1.0) for q in fpt_quantiles]
+            
+            return fpt_quantiles
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Error calculating FPT quantiles: {e}")
+            return [0.5, 0.65, 0.8]
+    
+    def calculate_horizon_bounds(self, horizon_series: pd.Series) -> Tuple[int, int]:
+        """Calculate data-driven horizon bounds."""
+        try:
+            if len(horizon_series) < self.min_samples:
+                return (1, 100)
+            
+            if self.horizon_method == "percentile":
+                min_horizon = int(horizon_series.quantile(0.10))
+                max_horizon = int(horizon_series.quantile(0.90))
+            elif self.horizon_method == "std":
+                mean_horizon = horizon_series.mean()
+                std_horizon = horizon_series.std()
+                min_horizon = int(max(1, mean_horizon - 2 * std_horizon))
+                max_horizon = int(mean_horizon + 2 * std_horizon)
+            elif self.horizon_method == "iqr":
+                q75, q25 = horizon_series.quantile([0.75, 0.25])
+                iqr = q75 - q25
+                min_horizon = int(max(1, q25 - 1.5 * iqr))
+                max_horizon = int(q75 + 1.5 * iqr)
+            else:  # adaptive
+                min_horizon, max_horizon = self._calculate_adaptive_horizon_bounds(horizon_series)
+            
+            # Ensure reasonable bounds
+            min_horizon = max(1, min_horizon)
+            max_horizon = max(max_horizon, min_horizon + 10)
+            
+            return (int(min_horizon), int(max_horizon))
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Error calculating horizon bounds: {e}")
+            return (1, 100)
+    
+    def _calculate_adaptive_band(self, data: pd.Series, low_percentile: float, high_percentile: float) -> Tuple[float, float]:
+        """Calculate adaptive band using rolling statistics."""
+        try:
+            if len(data) < self.adaptive_window:
+                return data.quantile(low_percentile), data.quantile(high_percentile)
+            
+            # Calculate rolling percentiles
+            rolling_low = data.rolling(window=self.adaptive_window).quantile(low_percentile)
+            rolling_high = data.rolling(window=self.adaptive_window).quantile(high_percentile)
+            
+            # Use most recent values
+            low_val = rolling_low.iloc[-1]
+            high_val = rolling_high.iloc[-1]
+            
+            return float(low_val), float(high_val)
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Error calculating adaptive band: {e}")
+            return data.quantile(low_percentile), data.quantile(high_percentile)
+    
+    def _calculate_adaptive_quantiles(self, data: pd.Series, quantiles: List[float]) -> List[float]:
+        """Calculate adaptive quantiles using rolling statistics."""
+        try:
+            if len(data) < self.adaptive_window:
+                return [data.quantile(q) for q in quantiles]
+            
+            # Calculate rolling quantiles
+            rolling_quantiles = []
+            for q in quantiles:
+                rolling_q = data.rolling(window=self.adaptive_window).quantile(q)
+                rolling_quantiles.append(rolling_q.iloc[-1])
+            
+            return [float(q) for q in rolling_quantiles]
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Error calculating adaptive quantiles: {e}")
+            return [data.quantile(q) for q in quantiles]
+    
+    def _calculate_adaptive_horizon_bounds(self, data: pd.Series) -> Tuple[int, int]:
+        """Calculate adaptive horizon bounds using rolling statistics."""
+        try:
+            if len(data) < self.adaptive_window:
+                return int(data.quantile(0.10)), int(data.quantile(0.90))
+            
+            # Calculate rolling percentiles
+            rolling_low = data.rolling(window=self.adaptive_window).quantile(0.10)
+            rolling_high = data.rolling(window=self.adaptive_window).quantile(0.90)
+            
+            # Use most recent values
+            min_horizon = int(rolling_low.iloc[-1])
+            max_horizon = int(rolling_high.iloc[-1])
+            
+            return min_horizon, max_horizon
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Error calculating adaptive horizon bounds: {e}")
+            return int(data.quantile(0.10)), int(data.quantile(0.90))
+
+
+@dataclass
 class MultiTargetConfig:
     """Configuration for multi-target scheme."""
     
-    # Target band definitions
-    small_band: Tuple[float, float] = (0.4, 0.8)  # k_s range
-    medium_band: Tuple[float, float] = (0.8, 1.3)  # k_m range
-    high_band: Tuple[float, float] = (1.3, 2.0)  # k_h range
+    # Data-driven parameter calculator
+    parameter_calculator: AdaptiveParameterCalculator = field(default_factory=AdaptiveParameterCalculator)
     
     # Asymmetry options
     enable_asymmetry: bool = True
     asymmetry_ratios: List[float] = field(default_factory=lambda: [1.0, 1.25])
     
     # FPT (First-Passage Time) settings
-    fpt_quantiles: List[float] = field(default_factory=lambda: [0.5, 0.65, 0.8])
     fpt_window: int = 100  # Window for FPT calculation
     fpt_min_samples: int = 50  # Minimum samples for FPT calculation
     
     # Horizon settings
-    min_horizon: int = 1  # Minimum horizon in bars
-    max_horizon: int = 100  # Maximum horizon in bars
     horizon_smoothing: bool = True
     horizon_ema_alpha: float = 0.1  # EMA alpha for horizon smoothing
     
@@ -89,6 +295,29 @@ class MultiTargetConfig:
     # Quality thresholds
     min_lqs_score: float = 0.3  # Minimum LQS score for target selection
     max_correlation_threshold: float = 0.6  # Maximum correlation between targets
+    
+    # Data-driven parameters (calculated at runtime)
+    _target_bands: Optional[Dict[str, Tuple[float, float]]] = None
+    _fpt_quantiles: Optional[List[float]] = None
+    _horizon_bounds: Optional[Tuple[int, int]] = None
+    
+    def get_target_bands(self, volatility_series: pd.Series) -> Dict[str, Tuple[float, float]]:
+        """Get data-driven target bands."""
+        if self._target_bands is None:
+            self._target_bands = self.parameter_calculator.calculate_target_bands(volatility_series)
+        return self._target_bands
+    
+    def get_fpt_quantiles(self, fpt_series: pd.Series) -> List[float]:
+        """Get data-driven FPT quantiles."""
+        if self._fpt_quantiles is None:
+            self._fpt_quantiles = self.parameter_calculator.calculate_fpt_quantiles(fpt_series)
+        return self._fpt_quantiles
+    
+    def get_horizon_bounds(self, horizon_series: pd.Series) -> Tuple[int, int]:
+        """Get data-driven horizon bounds."""
+        if self._horizon_bounds is None:
+            self._horizon_bounds = self.parameter_calculator.calculate_horizon_bounds(horizon_series)
+        return self._horizon_bounds
     min_class_balance: float = 0.35  # Minimum class balance
     max_class_balance: float = 0.65  # Maximum class balance
     
@@ -354,13 +583,14 @@ class MultiTargetScheme:
         try:
             candidates = []
             
-            # Get band range
+            # Get data-driven band range
+            target_bands = self.config.get_target_bands(volatility_series)
             if band == TargetBand.SMALL:
-                k_range = self.config.small_band
+                k_range = target_bands['small_band']
             elif band == TargetBand.MEDIUM:
-                k_range = self.config.medium_band
+                k_range = target_bands['medium_band']
             else:  # HIGH
-                k_range = self.config.high_band
+                k_range = target_bands['high_band']
                 # Apply conditional thresholds for high targets based on volatility
                 k_range = self._apply_conditional_thresholds(k_range, volatility_series, band)
             
@@ -699,7 +929,8 @@ class MultiTargetScheme:
         """Generate labels for specific k values using vectorized operations."""
         try:
             n_bars = len(bars)
-            max_horizon = self.config.max_horizon
+            # Get data-driven horizon bounds
+            min_horizon, max_horizon = self.config.get_horizon_bounds(pd.Series(range(1, min(100, n_bars))))
 
             # Initialize labels
             labels = pd.Series(0, index=bars.index)
@@ -839,16 +1070,19 @@ class MultiTargetScheme:
                 if fpt is not None and len(fpt) > 0:
                     # Use middle quantile of FPT distribution as horizon
                     horizon = int(fpt[1])  # fpt is already an array of quantiles [q25, q50, q75]
-                    horizon = max(self.config.min_horizon, min(self.config.max_horizon, horizon))
+                    min_horizon, max_horizon = self.config.get_horizon_bounds(pd.Series(range(1, min(100, len(bars)))))
+                    horizon = max(min_horizon, min(max_horizon, horizon))
                     horizons[target_name] = horizon
                 else:
-                    horizons[target_name] = self.config.min_horizon
+                    min_horizon, _ = self.config.get_horizon_bounds(pd.Series(range(1, min(100, len(bars)))))
+                    horizons[target_name] = min_horizon
             
             return horizons
             
         except Exception as e:
             tprint_warning(f"⚠️ Error calculating FPT horizons: {e}")
-            return {target['target_name']: self.config.min_horizon for target in candidate_targets}
+            min_horizon, _ = self.config.get_horizon_bounds(pd.Series(range(1, min(100, len(bars)))))
+            return {target['target_name']: min_horizon for target in candidate_targets}
     
     def _calculate_fpt_for_target(self, k_up: float, k_down: float, bars: pd.DataFrame,
                                 volatility_series: pd.Series) -> Optional[np.ndarray]:
@@ -906,9 +1140,10 @@ class MultiTargetScheme:
                 # Calculate survival probabilities
                 survival_probs = self._calculate_survival_probabilities(sorted_times, sorted_events)
                 
-                # Use quantiles of survival distribution for FPT estimation
+                # Use data-driven quantiles of survival distribution for FPT estimation
+                fpt_quantiles = self.config.get_fpt_quantiles(pd.Series(sorted_times))
                 quantile_times = []
-                for q in self.config.fpt_quantiles:
+                for q in fpt_quantiles:
                     # Find time where survival probability drops below (1-q)
                     target_survival = 1 - q
                     idx = np.where(survival_probs <= target_survival)[0]
@@ -959,7 +1194,8 @@ class MultiTargetScheme:
                 target_name = candidate['target_name']
                 k_up = candidate['k_up']
                 k_down = candidate['k_down']
-                horizon = horizons.get(target_name, self.config.min_horizon)
+                min_horizon, _ = self.config.get_horizon_bounds(pd.Series(range(1, min(100, len(bars)))))
+                horizon = horizons.get(target_name, min_horizon)
                 
                 # Generate labels with specific horizon
                 labels = self._generate_labels_with_horizon(
@@ -1389,7 +1625,8 @@ class MultiTargetScheme:
             for target_name, target_info in selected_targets.items():
                 k_up = target_info['k_up']
                 k_down = target_info['k_down']
-                horizon = target_info.get('horizon', self.config.min_horizon)
+                min_horizon, _ = self.config.get_horizon_bounds(pd.Series(range(1, min(100, len(bars)))))
+                horizon = target_info.get('horizon', min_horizon)
                 
                 # Generate labels
                 target_result = self._generate_labels_with_horizon(

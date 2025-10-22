@@ -38,25 +38,154 @@ class NoiseGateType(Enum):
 
 
 @dataclass
+class AdaptiveNoiseThresholds:
+    """Data-driven threshold calculation for noise gating."""
+    
+    # Calculation methods
+    move_ratio_method: str = "percentile"  # "percentile", "std", "iqr", "adaptive"
+    variance_ratio_method: str = "percentile"  # "percentile", "std", "iqr", "adaptive"
+    snr_method: str = "percentile"  # "percentile", "std", "iqr", "adaptive"
+    
+    # Percentile-based thresholds
+    move_ratio_percentile: float = 0.75  # 75th percentile for move ratio
+    vr_low_percentile: float = 0.25  # 25th percentile for VR low threshold
+    vr_high_percentile: float = 0.75  # 75th percentile for VR high threshold
+    snr_percentile: float = 0.60  # 60th percentile for SNR threshold
+    
+    # Standard deviation multipliers
+    move_ratio_std_multiplier: float = 1.5  # 1.5σ for move ratio
+    vr_std_multiplier: float = 1.0  # 1.0σ for VR thresholds
+    snr_std_multiplier: float = 1.0  # 1.0σ for SNR threshold
+    
+    # Adaptive parameters
+    adaptive_window: int = 50  # Window for adaptive threshold calculation
+    min_samples: int = 20  # Minimum samples for threshold calculation
+    
+    def calculate_move_ratio_threshold(self, move_ratios: pd.Series) -> float:
+        """Calculate data-driven move ratio threshold."""
+        try:
+            if len(move_ratios) < self.min_samples:
+                return 1.5  # Fallback value
+            
+            if self.move_ratio_method == "percentile":
+                threshold = move_ratios.quantile(self.move_ratio_percentile)
+            elif self.move_ratio_method == "std":
+                threshold = move_ratios.mean() + self.move_ratio_std_multiplier * move_ratios.std()
+            elif self.move_ratio_method == "iqr":
+                q75, q25 = move_ratios.quantile([0.75, 0.25])
+                threshold = q75 + 1.5 * (q75 - q25)
+            else:  # adaptive
+                threshold = self._calculate_adaptive_threshold(move_ratios)
+            
+            # Ensure reasonable minimum
+            threshold = max(threshold, 1.0)
+            
+            return float(threshold)
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Error calculating move ratio threshold: {e}")
+            return 1.5
+    
+    def calculate_variance_ratio_thresholds(self, variance_ratios: pd.Series) -> Tuple[float, float]:
+        """Calculate data-driven variance ratio thresholds."""
+        try:
+            if len(variance_ratios) < self.min_samples:
+                return 0.5, 1.5  # Fallback values
+            
+            if self.variance_ratio_method == "percentile":
+                low_threshold = variance_ratios.quantile(self.vr_low_percentile)
+                high_threshold = variance_ratios.quantile(self.vr_high_percentile)
+            elif self.variance_ratio_method == "std":
+                mean_vr = variance_ratios.mean()
+                std_vr = variance_ratios.std()
+                low_threshold = mean_vr - self.vr_std_multiplier * std_vr
+                high_threshold = mean_vr + self.vr_std_multiplier * std_vr
+            elif self.variance_ratio_method == "iqr":
+                q75, q25 = variance_ratios.quantile([0.75, 0.25])
+                iqr = q75 - q25
+                low_threshold = q25 - 1.5 * iqr
+                high_threshold = q75 + 1.5 * iqr
+            else:  # adaptive
+                low_threshold = self._calculate_adaptive_threshold(variance_ratios, percentile=0.25)
+                high_threshold = self._calculate_adaptive_threshold(variance_ratios, percentile=0.75)
+            
+            # Ensure reasonable bounds
+            low_threshold = max(low_threshold, 0.1)
+            high_threshold = min(high_threshold, 3.0)
+            
+            return float(low_threshold), float(high_threshold)
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Error calculating variance ratio thresholds: {e}")
+            return 0.5, 1.5
+    
+    def calculate_snr_threshold(self, snr_ratios: pd.Series) -> float:
+        """Calculate data-driven SNR threshold."""
+        try:
+            if len(snr_ratios) < self.min_samples:
+                return 1.2  # Fallback value
+            
+            if self.snr_method == "percentile":
+                threshold = snr_ratios.quantile(self.snr_percentile)
+            elif self.snr_method == "std":
+                threshold = snr_ratios.mean() + self.snr_std_multiplier * snr_ratios.std()
+            elif self.snr_method == "iqr":
+                q75, q25 = snr_ratios.quantile([0.75, 0.25])
+                threshold = q75 + 1.5 * (q75 - q25)
+            else:  # adaptive
+                threshold = self._calculate_adaptive_threshold(snr_ratios)
+            
+            # Ensure reasonable minimum
+            threshold = max(threshold, 0.5)
+            
+            return float(threshold)
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Error calculating SNR threshold: {e}")
+            return 1.2
+    
+    def _calculate_adaptive_threshold(self, data: pd.Series, percentile: float = 0.75) -> float:
+        """Calculate adaptive threshold using rolling statistics."""
+        try:
+            if len(data) < self.adaptive_window:
+                return data.quantile(percentile)
+            
+            # Calculate rolling statistics
+            rolling_mean = data.rolling(window=self.adaptive_window).mean()
+            rolling_std = data.rolling(window=self.adaptive_window).std()
+            
+            # Use most recent values
+            recent_mean = rolling_mean.iloc[-1]
+            recent_std = rolling_std.iloc[-1]
+            
+            # Adaptive threshold: mean + 1.5 * std
+            threshold = recent_mean + 1.5 * recent_std
+            
+            return float(threshold)
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Error calculating adaptive threshold: {e}")
+            return data.quantile(percentile)
+
+
+@dataclass
 class NoiseGatingConfig:
     """Configuration for noise gating."""
     
+    # Adaptive threshold calculator
+    threshold_calculator: AdaptiveNoiseThresholds = field(default_factory=AdaptiveNoiseThresholds)
+    
     # Micro-range gating
     enable_micro_range_gating: bool = True
-    min_move_ratio: float = 1.5  # Minimum k·σ_t / (α·mTR_t) ratio
     micro_range_window: int = 20  # Window for median true range calculation
     
     # Variance ratio gating
     enable_variance_ratio_gating: bool = True
-    vr_threshold_low: float = 0.5  # Lower threshold for microstructure detection
-    vr_threshold_high: float = 1.5  # Upper threshold for random walk
     vr_window: int = 30  # Window for variance ratio calculation
     vr_subperiods: int = 5  # Number of subperiods for VR calculation
     
-    
     # Signal-to-noise gating
     enable_signal_noise_gating: bool = True
-    min_snr_ratio: float = 1.2  # Minimum signal-to-noise ratio
     snr_window: int = 25  # Window for SNR calculation
     
     # Combined gating
@@ -268,8 +397,11 @@ class NoiseGatingFilter:
                 min_periods=self.config.micro_range_window // 2
             ).median()
             
-            # Calculate minimum move threshold
-            min_move_threshold = self.config.min_move_ratio * median_true_range
+            # Calculate data-driven move ratio threshold
+            move_ratios = volatility_series / median_true_range
+            move_ratios = move_ratios.dropna()
+            min_move_ratio = self.config.threshold_calculator.calculate_move_ratio_threshold(move_ratios)
+            min_move_threshold = min_move_ratio * median_true_range
             
             # Apply gating: require k·σ_t >= α·mTR_t
             eligibility_mask = volatility_series >= min_move_threshold
@@ -321,8 +453,11 @@ class NoiseGatingFilter:
             # Create variance ratio series
             vr_series = pd.Series(variance_ratios, index=returns.index[self.config.vr_window - 1:])
             
+            # Calculate data-driven variance ratio thresholds
+            vr_low_threshold, vr_high_threshold = self.config.threshold_calculator.calculate_variance_ratio_thresholds(vr_series)
+            
             # Apply gating: filter out microstructure-driven mean reversion
-            eligibility_mask = (vr_series >= self.config.vr_threshold_low) & (vr_series <= self.config.vr_threshold_high)
+            eligibility_mask = (vr_series >= vr_low_threshold) & (vr_series <= vr_high_threshold)
             
             # Align with original index
             full_mask = pd.Series(True, index=bars.index)
@@ -357,8 +492,11 @@ class NoiseGatingFilter:
             snr_ratio = signal_power / noise_power
             snr_ratio = snr_ratio.fillna(0)
             
+            # Calculate data-driven SNR threshold
+            snr_threshold = self.config.threshold_calculator.calculate_snr_threshold(snr_ratio)
+            
             # Apply gating
-            eligibility_mask = snr_ratio >= self.config.min_snr_ratio
+            eligibility_mask = snr_ratio >= snr_threshold
             
             # Align with original index
             full_mask = pd.Series(True, index=bars.index)

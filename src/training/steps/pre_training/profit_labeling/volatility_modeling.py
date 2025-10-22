@@ -408,7 +408,7 @@ class VolatilityModeler:
     
     def _combine_volatility_estimates(self, rv_series: pd.Series, atr_series: pd.Series, 
                                     ewma_series: pd.Series) -> pd.Series:
-        """Intelligently combine multiple volatility estimates using hybrid approach."""
+        """Intelligently combine multiple volatility estimates using data-driven weights."""
         try:
             # Align all series to the same index
             common_index = rv_series.index.intersection(atr_series.index).intersection(ewma_series.index)
@@ -421,15 +421,26 @@ class VolatilityModeler:
             atr_aligned = atr_series.loc[common_index]
             ewma_aligned = ewma_series.loc[common_index]
             
-            # Use hybrid RV+ATR approach as suggested
-            # σ_t = 0.5·RV_t + 0.5·ATR_t for better balance of responsiveness and smoothness
-            hybrid_volatility = 0.5 * rv_aligned + 0.5 * atr_aligned
+            # Calculate data-driven weights based on reliability metrics
+            rv_weight = self._calculate_volatility_weight(rv_aligned, 'rv')
+            atr_weight = self._calculate_volatility_weight(atr_aligned, 'atr')
+            ewma_weight = self._calculate_volatility_weight(ewma_aligned, 'ewma')
             
-            # Add EWMA as a smoothing component (smaller weight)
-            ewma_weight = 0.2
-            hybrid_weight = 0.8
+            # Normalize weights to sum to 1
+            total_weight = rv_weight + atr_weight + ewma_weight
+            if total_weight > 0:
+                rv_weight /= total_weight
+                atr_weight /= total_weight
+                ewma_weight /= total_weight
+            else:
+                # Fallback to equal weights
+                rv_weight = atr_weight = ewma_weight = 1.0 / 3.0
             
-            # Final combination: 80% hybrid (RV+ATR) + 20% EWMA
+            # Calculate hybrid RV+ATR weight
+            hybrid_weight = rv_weight + atr_weight
+            hybrid_volatility = (rv_weight * rv_aligned + atr_weight * atr_aligned) / hybrid_weight if hybrid_weight > 0 else rv_aligned
+            
+            # Final combination with data-driven weights
             combined = hybrid_weight * hybrid_volatility + ewma_weight * ewma_aligned
             
             return combined
@@ -439,31 +450,72 @@ class VolatilityModeler:
             return rv_series  # Fallback to RV
     
     def _calculate_volatility_weight(self, vol_series: pd.Series, method: str) -> float:
-        """Calculate weight for volatility method based on reliability."""
+        """Calculate data-driven weight for volatility method based on multiple reliability metrics."""
         try:
             if vol_series.empty or vol_series.isnull().all():
                 return 0.0
             
-            # Calculate reliability metrics
+            # Calculate comprehensive reliability metrics
             non_null_ratio = vol_series.notna().sum() / len(vol_series)
+            
+            # Stability: inverse of coefficient of variation
             stability = 1.0 - (vol_series.std() / vol_series.mean()) if vol_series.mean() > 0 else 0.0
+            
+            # Consistency: inverse of relative change volatility
             consistency = 1.0 - (vol_series.diff().abs().mean() / vol_series.mean()) if vol_series.mean() > 0 else 0.0
             
-            # Method-specific adjustments
-            if method == 'rv':
-                # RV is generally more reliable for high-frequency data
-                method_bonus = 1.2
-            elif method == 'atr':
-                # ATR is good for price-level volatility
-                method_bonus = 1.0
-            elif method == 'ewma':
-                # EWMA is good for responsiveness
-                method_bonus = 0.8
-            else:
-                method_bonus = 1.0
+            # Smoothness: inverse of second derivative volatility
+            second_diff = vol_series.diff().diff().abs()
+            smoothness = 1.0 - (second_diff.mean() / vol_series.mean()) if vol_series.mean() > 0 else 0.0
+            
+            # Predictability: correlation with lagged values
+            predictability = 0.0
+            if len(vol_series) > 1:
+                lagged_corr = vol_series.corr(vol_series.shift(1))
+                predictability = max(0.0, lagged_corr) if not pd.isna(lagged_corr) else 0.0
+            
+            # Method-specific reliability factors based on historical performance
+            method_factors = {
+                'rv': {
+                    'base_reliability': 0.8,  # Generally reliable for high-frequency data
+                    'stability_bonus': 0.1,   # Good stability
+                    'consistency_bonus': 0.1, # Good consistency
+                    'smoothness_penalty': -0.05,  # Can be noisy
+                    'predictability_bonus': 0.05  # Good predictability
+                },
+                'atr': {
+                    'base_reliability': 0.9,  # Very reliable for price-level volatility
+                    'stability_bonus': 0.15,  # Excellent stability
+                    'consistency_bonus': 0.1, # Good consistency
+                    'smoothness_bonus': 0.1,  # Very smooth
+                    'predictability_bonus': 0.1  # Excellent predictability
+                },
+                'ewma': {
+                    'base_reliability': 0.7,  # Good for responsiveness
+                    'stability_bonus': 0.05,  # Moderate stability
+                    'consistency_bonus': 0.15, # Excellent consistency
+                    'smoothness_bonus': 0.2,  # Very smooth
+                    'predictability_bonus': 0.05  # Good predictability
+                }
+            }
+            
+            factors = method_factors.get(method, method_factors['atr'])
+            
+            # Calculate weighted reliability score
+            reliability_score = (
+                factors['base_reliability'] +
+                factors['stability_bonus'] * stability +
+                factors['consistency_bonus'] * consistency +
+                factors['smoothness_bonus'] * smoothness +
+                factors['predictability_bonus'] * predictability
+            )
+            
+            # Apply data quality penalty
+            quality_penalty = 1.0 - non_null_ratio
+            reliability_score *= (1.0 - quality_penalty)
             
             # Calculate final weight
-            weight = non_null_ratio * stability * consistency * method_bonus
+            weight = reliability_score * non_null_ratio
             
             return max(0.0, min(1.0, weight))
             

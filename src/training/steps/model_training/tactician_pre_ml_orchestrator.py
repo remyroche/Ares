@@ -137,7 +137,7 @@ FEATURE_OPTIMIZATION_AVAILABLE = False
 INTERACTIVE_GENERATION_AVAILABLE = False
 
 try:
-    from src.training.steps.pre_training.multi_horizon_profit_labeler import (
+    from src.training.steps.pre_training.profit_labeling.consolidated_profit_labeler import (
         MultiHorizonProfitLabeler, MultiHorizonConfig
     )
     HORIZON_LABELING_AVAILABLE = True

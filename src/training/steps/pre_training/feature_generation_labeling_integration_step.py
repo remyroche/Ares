@@ -238,7 +238,7 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
         
         try:
             with tprint_timer("enhanced_analyst_labeler_initialization", LogLevel.DEBUG):
-                from src.training.steps.pre_training.profit_labeling.volatility_aware_labeler import create_enhanced_analyst_labeler
+                from src.training.steps.pre_training.profit_labeling.volatility_aware_profit_labeler import create_enhanced_analyst_labeler
                 labeler = create_enhanced_analyst_labeler()
                 tprint_success("✅ Enhanced analyst labeler initialized")
             

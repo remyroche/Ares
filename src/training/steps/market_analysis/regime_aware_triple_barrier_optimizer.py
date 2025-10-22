@@ -28,11 +28,11 @@ from datetime import datetime
 import contextlib
 from sklearn.metrics import accuracy_score, precision_recall_fscore_support
 from scipy.optimize import minimize
-from src.training.steps.pre_training.multi_horizon_profit_labeler import MultiHorizonConfig, MultiHorizonProfitLabeler
+from src.training.steps.pre_training.profit_labeling.consolidated_profit_labeler import MultiHorizonConfig, MultiHorizonProfitLabeler
 import warnings
 
 # Import the triple barrier labeling module
-from ..pre_training.multi_horizon_profit_labeler import (
+from ..pre_training.profit_labeling.consolidated_profit_labeler import (
     MultiHorizonProfitLabeler,
     MultiHorizonConfig
 )

@@ -26,7 +26,7 @@ from datetime import datetime
 import warnings
 
 from src.utils.logger import get_logger
-from src.training.steps.pre_training.multi_horizon_profit_labeler import (
+from src.training.steps.pre_training.profit_labeling.consolidated_profit_labeler import (
     MultiHorizonProfitLabeler,
     MultiHorizonConfig
 )

@@ -85,7 +85,7 @@ class RegimeAwareLabeling:
     def create_regime_labeler(self):
         """Create and configure the regime labeler."""
         try:
-            from ..pre_training.multi_horizon_profit_labeler import MultiHorizonProfitLabeler, MultiHorizonConfig
+            from ..pre_training.profit_labeling.consolidated_profit_labeler import MultiHorizonProfitLabeler, MultiHorizonConfig
             config = MultiHorizonConfig(
                 profit_take_multiplier = 0.002,
                 stop_loss_multiplier = 0.001,

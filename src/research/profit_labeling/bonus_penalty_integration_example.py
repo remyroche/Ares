@@ -129,7 +129,7 @@ def demonstrate_performance_comparison():
 
     try:
         # Test original labeler
-        from src.training.steps.pre_training.multi_horizon_profit_labeler import MultiHorizonProfitLabeler
+        from src.training.steps.pre_training.profit_labeling.consolidated_profit_labeler import MultiHorizonProfitLabeler
 
         print("1. Original Labeler (Hardcoded Parameters):")
         original_labeler = MultiHorizonProfitLabeler()

@@ -1,19 +1,22 @@
 """
-Volatility-Aware Multi-Horizon Profit Labeler
+Consolidated Volatility-Aware Multi-Horizon Profit Labeler
 
-This module implements a completely redesigned profit labeling system that explicitly accounts
-for volatility and microstructure noise, optimized for creating strong ML labels rather than trading rules.
+This module consolidates the functionality from both volatility_aware_profit_labeler.py
+and enhanced_multi_horizon_labeler.py into a single, comprehensive implementation.
 
-Key Design Principles:
-- Volatility-normalized targets (k·σ_t) instead of fixed percentages
-- Data-driven horizons via first-passage time quantiles
-- Multi-target labeling (small/medium/high) with separate optimization
-- Noise gating to filter microstructure-dominated periods
-- Label quality optimization for ML learnability (AUC, stability, balance, SNR)
-- No regime dependencies (as requested)
+Key Features:
+1. Volatility-normalized targets (k·σ_t) instead of fixed percentages
+2. Data-driven horizons via first-passage time quantiles
+3. Multi-target labeling (small/medium/high) with separate optimization
+4. Noise gating to filter microstructure-dominated periods
+5. Label quality optimization for ML learnability (AUC, stability, balance, SNR)
+6. Enhanced data cleaning and quality assessment
+7. Trading-aware label definitions (Analyst & Tactician)
+8. Label stability monitoring and leakage detection
+9. Full backward compatibility with existing pipeline
 
 Author: AI Assistant
-Date: 2025-10-06
+Date: 2025-01-10
 """
 
 import numpy as np
@@ -32,7 +35,6 @@ from src.training.steps.base_step import BaseStep
 
 # Core utilities
 from src.utils.logger import get_logger
-# Note: tprint and hardware utilities are available through BaseStep
 from src.utils.math_validation import safe_divide, validate_finite
 from src.core.decorators import handles_errors, traced, validates
 
@@ -47,14 +49,20 @@ from scipy import stats
 import xgboost as xgb
 from sklearn.linear_model import LogisticRegression
 
+# Import enhanced data and labels system
+from .enhanced_data_labels_system import (
+    EnhancedDataLabelsSystem, EnhancedDataLabelsConfig,
+    create_trading_optimized_config, create_research_optimized_config
+)
+
 @dataclass
-class VolatilityAwareConfig:
+class ConsolidatedLabelerConfig:
     """
-    Configuration for volatility-aware profit labeling.
-
-    Focus: Creating ML-learnable labels, not trading rules.
+    Consolidated configuration for volatility-aware profit labeling.
+    
+    Combines the best features from both VolatilityAwareConfig and EnhancedMultiHorizonConfig.
     """
-
+    
     # Base timeframe for analysis
     base_timeframe_minutes: int = 5
 
@@ -111,6 +119,21 @@ class VolatilityAwareConfig:
         'consistency': 0.1
     })
 
+    # Enhanced features
+    enable_enhanced_data_cleaning: bool = True
+    enable_enhanced_stability_monitoring: bool = True
+    enable_trading_aware_labels: bool = True
+    
+    # Enhanced label definitions
+    analyst_config: Optional[Dict[str, Any]] = None
+    tactician_config: Optional[Dict[str, Any]] = None
+    
+    # Label stability monitoring
+    stability_check_config: Optional[Dict[str, Any]] = None
+    
+    # Data quality assessment
+    data_quality_config: Optional[Dict[str, Any]] = None
+
 @dataclass
 class LabelQualityMetrics:
     """Container for label quality metrics."""
@@ -152,41 +175,69 @@ class LabelQualityMetrics:
             'label_quality_score': self.label_quality_score
         }
 
-class VolatilityAwareProfitLabeler(BaseStep):
-    """
-    Volatility-aware multi-horizon profit labeler optimized for ML label quality.
+@dataclass
+class LabelingResult:
+    """Result container for labeling operations."""
+    
+    # Core results
+    labels: pd.DataFrame
+    confidence_scores: pd.DataFrame
+    eligibility_masks: pd.DataFrame
+    
+    # Quality metrics
+    quality_metrics: Dict[str, LabelQualityMetrics]
+    overall_quality_score: float
+    
+    # Metadata
+    config_used: ConsolidatedLabelerConfig
+    processing_time: float
+    n_samples: int
+    n_targets: int
+    timestamp: datetime = field(default_factory=datetime.now)
 
-    This implementation focuses on creating labels that are:
-    1. Learnable by ML models (high AUC, stable, balanced)
-    2. Volatility-normalized (not fixed percentage targets)
-    3. Noise-resistant (filters microstructure effects)
-    4. Multi-target (small/medium/high with data-driven horizons)
-    5. BaseStep integrated for standardized pipeline execution
+class ConsolidatedProfitLabeler(BaseStep):
+    """
+    Consolidated volatility-aware multi-horizon profit labeler.
+    
+    This class combines the best features from both VolatilityAwareProfitLabeler
+    and EnhancedMultiHorizonProfitLabeler into a single, comprehensive implementation.
     """
 
-    def __init__(self, config: Optional[VolatilityAwareConfig] = None):
-        """Initialize the volatility-aware labeler."""
-        super().__init__("volatility_aware_profit_labeler")
-        self.config = config or VolatilityAwareConfig()
-        self.logger = get_logger('VolatilityAwareProfitLabeler')
+    def __init__(self, config: Optional[ConsolidatedLabelerConfig] = None):
+        """Initialize the consolidated labeler."""
+        super().__init__("consolidated_profit_labeler")
+        self.config = config or ConsolidatedLabelerConfig()
+        self.logger = get_logger('ConsolidatedProfitLabeler')
 
         # Initialize matrix operations
         self.matrix_ops = UnifiedMatrixOperations()
         self.enhanced_ops = EnhancedMatrixOperations()
+
+        # Initialize enhanced data and labels system if enabled
+        self.enhanced_system = None
+        if self.config.enable_enhanced_data_cleaning or self.config.enable_trading_aware_labels:
+            self.enhanced_system = EnhancedDataLabelsSystem(
+                config=EnhancedDataLabelsConfig(
+                    analyst_config=self.config.analyst_config,
+                    tactician_config=self.config.tactician_config,
+                    stability_check_config=self.config.stability_check_config,
+                    data_quality_config=self.config.data_quality_config
+                )
+            )
 
         # Cache for expensive calculations
         self._volatility_cache: Dict[str, pd.Series] = {}
         self._fpt_cache: Dict[str, np.ndarray] = {}
         self._quality_cache: Dict[str, LabelQualityMetrics] = {}
 
-        self.tprint("🔧 Initialized Volatility-Aware Profit Labeler")
+        self.tprint("🔧 Initialized Consolidated Profit Labeler")
         self.logger.info(f"📊 Config: {len(self.config.target_bands)} target bands, "
                         f"RV window: {self.config.rv_window_minutes}min, "
-                        f"ATR window: {self.config.atr_window_bars} bars")
+                        f"Enhanced features: {self.config.enable_enhanced_data_cleaning}")
     
     async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Execute the volatility-aware profit labeling step.
+        Execute the consolidated profit labeling step.
         
         Args:
             config: Configuration dictionary containing:
@@ -200,8 +251,7 @@ class VolatilityAwareProfitLabeler(BaseStep):
         Returns:
             Dictionary containing:
                 - success: Boolean indicating success
-                - labeled_data: DataFrame with generated labels
-                - quality_report: Quality assessment report
+                - labeling_result: LabelingResult object
                 - artifacts: List of generated artifacts
         """
         try:
@@ -240,88 +290,101 @@ class VolatilityAwareProfitLabeler(BaseStep):
                 self.tprint_info("🔧 Input data optimized for hardware acceleration")
             
             # Generate labels
-            labeled_data, quality_report = self.generate_labels(data)
+            labeling_result = self.generate_labels(data)
             
             # Save artifacts
             artifacts = []
             
             # Apply hardware optimization to labeled data
             if self.hardware_utils and self.hardware_utils.get('optimize_dataframe'):
-                labeled_data = self.hardware_utils['optimize_dataframe'](labeled_data)
+                labeling_result.labels = self.hardware_utils['optimize_dataframe'](labeling_result.labels)
                 self.tprint_info("🔧 Labeled data optimized for hardware acceleration")
             
             # Preview labeled data
-            self.tprint_data_preview(labeled_data, "volatility_aware_labeled_data", max_rows=5)
-            self.tprint_data_format(labeled_data, "volatility_aware_labeled_data")
+            self.tprint_data_preview(labeling_result.labels, "consolidated_labeled_data", max_rows=5)
+            self.tprint_data_format(labeling_result.labels, "consolidated_labeled_data")
             
             # Save labeled data
             labeled_data_path = self._save_dataframe(
-                labeled_data, 
-                'volatility_aware_labeled_data'
+                labeling_result.labels, 
+                'consolidated_labeled_data'
             )
             if labeled_data_path:
                 artifacts.append(labeled_data_path)
             
-            # Save quality report
-            if quality_report:
-                # Preview quality report
-                self.tprint_data_format(quality_report, "volatility_aware_quality_report")
-                
-                quality_path = self._save_metadata(
-                    quality_report, 
-                    'volatility_aware_quality_report'
-                )
-                if quality_path:
-                    artifacts.append(quality_path)
+            # Save quality metrics
+            quality_data = {
+                'overall_quality_score': labeling_result.overall_quality_score,
+                'quality_metrics': {k: v.to_dict() for k, v in labeling_result.quality_metrics.items()},
+                'processing_time': labeling_result.processing_time,
+                'n_samples': labeling_result.n_samples,
+                'n_targets': labeling_result.n_targets
+            }
+            
+            # Preview quality data
+            self.tprint_data_format(quality_data, "consolidated_quality_metrics")
+            
+            # Save quality data
+            quality_path = self._save_metadata(
+                quality_data, 
+                'consolidated_quality_metrics'
+            )
+            if quality_path:
+                artifacts.append(quality_path)
             
             # Log metrics
             self.tprint_metrics({
                 'input_samples': len(data),
-                'labeled_samples': len(labeled_data),
-                'quality_score': quality_report.get('overall_quality_score', 0) if quality_report else 0,
-                'target_columns': len([col for col in labeled_data.columns if 'target' in col.lower()])
-            }, "volatility_aware_labeling_metrics")
+                'labeled_samples': len(labeling_result.labels),
+                'quality_score': labeling_result.overall_quality_score,
+                'target_columns': len([col for col in labeling_result.labels.columns if 'target' in col.lower()])
+            }, "consolidated_labeling_metrics")
             
             # Generate outcome file
-            outcome_content = self._generate_outcome_content(labeled_data, quality_report, artifacts)
-            self._save_outcome_file(outcome_content, 'volatility_aware_labeling_outcome')
+            outcome_content = self._generate_outcome_content(labeling_result, artifacts)
+            self._save_outcome_file(outcome_content, 'consolidated_labeling_outcome')
             
             return {
                 'success': True,
-                'labeled_data': labeled_data,
-                'quality_report': quality_report,
+                'labeling_result': labeling_result,
                 'artifacts': artifacts
             }
             
         except Exception as e:
-            error_msg = f"Volatility-aware labeling failed: {str(e)}"
+            error_msg = f"Consolidated labeling failed: {str(e)}"
             self.tprint_error(f"❌ {error_msg}")
             return {
                 'success': False,
                 'error': error_msg
             }
     
-    def _generate_outcome_content(self, labeled_data: pd.DataFrame, quality_report: Dict[str, Any], artifacts: List[str]) -> str:
+    def _generate_outcome_content(self, labeling_result: LabelingResult, artifacts: List[str]) -> str:
         """Generate outcome file content."""
-        content = f"""# Volatility-Aware Profit Labeling Outcome
+        content = f"""# Consolidated Profit Labeling Outcome
 
 ## Summary
 - **Status**: Success
-- **Samples Processed**: {len(labeled_data)}
+- **Samples Processed**: {labeling_result.n_samples}
+- **Targets Generated**: {labeling_result.n_targets}
+- **Overall Quality Score**: {labeling_result.overall_quality_score:.3f}
+- **Processing Time**: {labeling_result.processing_time:.2f} seconds
 - **Artifacts Generated**: {len(artifacts)}
 
 ## Data Overview
-- **Columns**: {list(labeled_data.columns)}
-- **Memory Usage**: {labeled_data.memory_usage(deep=True).sum() / 1024**2:.2f} MB
+- **Columns**: {list(labeling_result.labels.columns)}
+- **Memory Usage**: {labeling_result.labels.memory_usage(deep=True).sum() / 1024**2:.2f} MB
+
+## Quality Metrics by Target
 """
         
-        if quality_report:
+        for target_name, metrics in labeling_result.quality_metrics.items():
             content += f"""
-## Quality Report
-- **Overall Quality Score**: {quality_report.get('overall_quality_score', 0):.3f}
-- **Predictability Score**: {quality_report.get('predictability_score', 0):.3f}
-- **Stability Score**: {quality_report.get('stability_score', 0):.3f}
-- **Balance Score**: {quality_report.get('balance_score', 0):.3f}
+### {target_name}
+- **AUC Mean**: {metrics.auc_mean:.3f} ± {metrics.auc_std:.3f}
+- **PR-AUC Mean**: {metrics.pr_auc_mean:.3f} ± {metrics.pr_auc_std:.3f}
+- **Positive Balance**: {metrics.positive_balance:.3f}
+- **Class Balance Score**: {metrics.class_balance_score:.3f}
+- **Label Quality Score**: {metrics.label_quality_score:.3f}
 """
         
         content += f"""
@@ -332,70 +395,119 @@ class VolatilityAwareProfitLabeler(BaseStep):
 - **Target Bands**: {len(self.config.target_bands)}
 - **RV Window**: {self.config.rv_window_minutes} minutes
 - **ATR Window**: {self.config.atr_window_bars} bars
-- **Min Bars for Labeling**: {self.config.min_bars_for_labeling}
+- **Enhanced Features**: {self.config.enable_enhanced_data_cleaning}
+- **Trading-Aware Labels**: {self.config.enable_trading_aware_labels}
 """
         
         return content
 
-    def generate_labels(self, data: pd.DataFrame) -> Tuple[pd.DataFrame, Dict[str, Any]]:
+    def generate_labels(self, data: pd.DataFrame) -> LabelingResult:
         """
-        Generate volatility-aware multi-horizon labels.
+        Generate consolidated volatility-aware multi-horizon labels.
 
         Args:
             data: OHLCV DataFrame with proper columns
 
         Returns:
-            Tuple of (labeled_data, quality_report)
+            LabelingResult with comprehensive labeling data
         """
-        self.tprint("🚀 Starting volatility-aware profit labeling...")
+        start_time = datetime.now()
+        self.tprint("🚀 Starting consolidated profit labeling...")
 
         if len(data) < self.config.min_bars_for_labeling:
             self.tprint(f"⚠️ Insufficient data: {len(data)} < {self.config.min_bars_for_labeling}")
-            return data.copy(), {}
+            return LabelingResult(
+                labels=pd.DataFrame(),
+                confidence_scores=pd.DataFrame(),
+                eligibility_masks=pd.DataFrame(),
+                quality_metrics={},
+                overall_quality_score=0.0,
+                config_used=self.config,
+                processing_time=0.0,
+                n_samples=0,
+                n_targets=0
+            )
 
         # Step 0: Data preparation and cleaning
         data_clean = self._prepare_and_clean_data(data)
 
-        # Step 1: Volatility modeling
+        # Step 1: Enhanced data cleaning if enabled
+        if self.config.enable_enhanced_data_cleaning and self.enhanced_system:
+            data_clean = self._apply_enhanced_data_cleaning(data_clean)
+
+        # Step 2: Volatility modeling
         volatility_data = self._compute_volatility_series(data_clean)
 
-        # Step 2: Noise gating
+        # Step 3: Noise gating
         noise_gates = self._compute_noise_gates(data_clean, volatility_data)
 
-        # Step 3: Multi-target configuration optimization
+        # Step 4: Multi-target configuration optimization
         optimal_configs = self._optimize_target_configurations(
             data_clean, volatility_data, noise_gates
         )
 
-        # Step 4: Generate labels for each target
+        # Step 5: Generate labels for each target
         labeled_data = data_clean.copy()
-        quality_report = {}
+        quality_metrics = {}
+        confidence_scores = pd.DataFrame(index=data_clean.index)
+        eligibility_masks = pd.DataFrame(index=data_clean.index)
 
         for target_name, config in optimal_configs.items():
             self.tprint(f"🎯 Generating {target_name} target labels...")
 
-            target_labels = self._generate_single_target_labels(
+            target_result = self._generate_single_target_labels(
                 data_clean, volatility_data, noise_gates, config, target_name
             )
 
             # Merge into main dataframe
-            for col in target_labels.columns:
+            for col in target_result.columns:
                 if col not in labeled_data.columns:
-                    labeled_data[col] = target_labels[col]
+                    labeled_data[col] = target_result[col]
+
+            # Store confidence scores and eligibility masks
+            if 'confidence' in target_result.columns:
+                confidence_scores[f'{target_name}_confidence'] = target_result['confidence']
+            if 'eligibility' in target_result.columns:
+                eligibility_masks[f'{target_name}_eligibility'] = target_result['eligibility']
 
             # Compute quality metrics
-            quality_metrics = self._compute_label_quality(
-                target_labels, data_clean, target_name
+            quality_metrics[target_name] = self._compute_label_quality(
+                target_result, data_clean, target_name
             )
-            quality_report[target_name] = quality_metrics.to_dict()
 
-        # Step 5: Final quality validation and reporting
-        final_report = self._generate_comprehensive_report(quality_report, optimal_configs)
+        # Step 6: Enhanced stability monitoring if enabled
+        if self.config.enable_enhanced_stability_monitoring and self.enhanced_system:
+            stability_results = self._apply_enhanced_stability_monitoring(
+                labeled_data, quality_metrics
+            )
+            # Merge stability results into quality metrics
+            for target_name, stability_data in stability_results.items():
+                if target_name in quality_metrics:
+                    quality_metrics[target_name].mutual_information = stability_data.get('mutual_information', 0.0)
 
-        self.tprint("✅ Volatility-aware labeling completed")
+        # Step 7: Calculate overall quality score
+        overall_quality_score = self._calculate_overall_quality_score(quality_metrics)
+
+        # Step 8: Create final result
+        processing_time = (datetime.now() - start_time).total_seconds()
+        
+        result = LabelingResult(
+            labels=labeled_data,
+            confidence_scores=confidence_scores,
+            eligibility_masks=eligibility_masks,
+            quality_metrics=quality_metrics,
+            overall_quality_score=overall_quality_score,
+            config_used=self.config,
+            processing_time=processing_time,
+            n_samples=len(labeled_data),
+            n_targets=len(optimal_configs)
+        )
+
+        self.tprint("✅ Consolidated labeling completed")
         self.logger.info(f"📊 Generated labels for {len(optimal_configs)} targets")
+        self.logger.info(f"📊 Overall quality score: {overall_quality_score:.3f}")
 
-        return labeled_data, final_report
+        return result
 
     def _prepare_and_clean_data(self, data: pd.DataFrame) -> pd.DataFrame:
         """Step 0: Clean and prepare data for labeling."""
@@ -435,6 +547,35 @@ class VolatilityAwareProfitLabeler(BaseStep):
 
         self.tprint(f"✅ Data prepared: {len(data_clean)} bars, {data_clean.shape[1]} columns")
         return data_clean
+
+    def _apply_enhanced_data_cleaning(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Apply enhanced data cleaning using the enhanced data and labels system."""
+        if not self.enhanced_system:
+            return data
+        
+        try:
+            # Use the enhanced system for data cleaning
+            cleaned_data = self.enhanced_system.clean_data(data)
+            self.tprint("✅ Enhanced data cleaning applied")
+            return cleaned_data
+        except Exception as e:
+            self.logger.warning(f"⚠️ Enhanced data cleaning failed: {e}")
+            return data
+
+    def _apply_enhanced_stability_monitoring(self, labeled_data: pd.DataFrame, 
+                                           quality_metrics: Dict[str, LabelQualityMetrics]) -> Dict[str, Dict[str, float]]:
+        """Apply enhanced stability monitoring using the enhanced data and labels system."""
+        if not self.enhanced_system:
+            return {}
+        
+        try:
+            # Use the enhanced system for stability monitoring
+            stability_results = self.enhanced_system.monitor_label_stability(labeled_data)
+            self.tprint("✅ Enhanced stability monitoring applied")
+            return stability_results
+        except Exception as e:
+            self.logger.warning(f"⚠️ Enhanced stability monitoring failed: {e}")
+            return {}
 
     def _compute_volatility_series(self, data: pd.DataFrame) -> pd.Series:
         """Step 1: Compute volatility series using EWMA of realized volatility and ATR."""
@@ -1120,176 +1261,54 @@ class VolatilityAwareProfitLabeler(BaseStep):
 
         return metrics
 
-    def _generate_comprehensive_report(
-        self,
-        quality_report: Dict[str, Dict[str, float]],
-        optimal_configs: Dict[str, Dict[str, Any]]
-    ) -> Dict[str, Any]:
-        """Generate comprehensive quality report."""
+    def _calculate_overall_quality_score(self, quality_metrics: Dict[str, LabelQualityMetrics]) -> float:
+        """Calculate overall quality score across all targets."""
+        if not quality_metrics:
+            return 0.0
+        
+        # Calculate weighted average of LQS scores
+        lqs_scores = [metrics.label_quality_score for metrics in quality_metrics.values()]
+        return np.mean(lqs_scores) if lqs_scores else 0.0
 
-        report = {
-            'summary': {
-                'total_targets': len(optimal_configs),
-                'evaluation_timestamp': datetime.now().isoformat(),
-                'quality_thresholds': {
-                    'min_positive_balance': self.config.min_positive_balance,
-                    'max_positive_balance': self.config.max_positive_balance,
-                    'min_auc_threshold': self.config.min_auc_threshold,
-                    'max_auc_std_threshold': self.config.max_auc_std_threshold
-                }
+# Factory functions for backward compatibility
+def create_consolidated_labeler(config: Optional[ConsolidatedLabelerConfig] = None) -> ConsolidatedProfitLabeler:
+    """Factory function to create consolidated labeler."""
+    return ConsolidatedProfitLabeler(config)
+
+def create_enhanced_analyst_labeler(config: Optional[ConsolidatedLabelerConfig] = None) -> ConsolidatedProfitLabeler:
+    """Factory function to create enhanced analyst labeler for feature generation integration."""
+    # Create a config optimized for analyst labeling if none provided
+    if config is None:
+        analyst_config = ConsolidatedLabelerConfig(
+            # Analyst-optimized parameters
+            target_bands={
+                'analyst': (0.6, 1.2),  # Single target band for analyst
+                'small': (0.4, 0.8),    # Keep other bands for compatibility
+                'medium': (0.8, 1.3),
+                'high': (1.3, 2.0)
             },
-            'target_reports': quality_report,
-            'configurations': optimal_configs,
-            'recommendations': []
-        }
+            fpt_quantile=0.65,  # Standard quantile
+            min_positive_balance=0.35,
+            max_positive_balance=0.65,
+            min_aic_threshold=0.55,
+            max_auc_std_threshold=0.08,
+            enable_trading_aware_labels=True
+        )
+        config = analyst_config
+    
+    return ConsolidatedProfitLabeler(config)
 
-        # Generate recommendations
-        for target_name, metrics in quality_report.items():
-            issues = []
+def create_volatility_aware_labeler(config: Optional[ConsolidatedLabelerConfig] = None) -> ConsolidatedProfitLabeler:
+    """Factory function to create volatility-aware labeler (backward compatibility)."""
+    return ConsolidatedProfitLabeler(config)
 
-            if metrics.get('positive_balance', 0) < self.config.min_positive_balance:
-                issues.append(f"Low positive class balance: {metrics['positive_balance']:.1%}")
-            if metrics.get('positive_balance', 0) > self.config.max_positive_balance:
-                issues.append(f"High positive class balance: {metrics['positive_balance']:.1%}")
-            if metrics.get('auc_mean', 0) < self.config.min_auc_threshold:
-                issues.append(f"Low AUC: {metrics['auc_mean']:.3f}")
-            if metrics.get('auc_std', 0) > self.config.max_auc_std_threshold:
-                issues.append(f"High AUC variance: {metrics['auc_std']:.3f}")
-
-            if issues:
-                report['recommendations'].append({
-                    'target': target_name,
-                    'issues': issues,
-                    'lqs': metrics.get('label_quality_score', 0)
-                })
-
-        return report
-
-    def validate_labels_robustness(self, labeled_data: pd.DataFrame,
-                                  data: pd.DataFrame) -> Dict[str, Any]:
-        """
-        Comprehensive validation of label robustness across different conditions.
-
-        Tests labels on:
-        - High vs low volatility periods
-        - Different volume regimes
-        - Time-of-day effects
-        - Rolling windows for temporal stability
-        """
-
-        self.tprint("🔬 Validating label robustness...")
-
-        validation_results = {
-            'volatility_slices': {},
-            'volume_slices': {},
-            'temporal_slices': {},
-            'rolling_stability': {},
-            'overall_robustness_score': 0.0
-        }
-
-        # 1. Volatility slice analysis
-        vol_thresholds = [data['close'].pct_change().rolling(20).std().quantile([0.33, 0.67])]
-        low_vol_mask = data['close'].pct_change().rolling(20).std() <= vol_thresholds[0]
-        high_vol_mask = data['close'].pct_change().rolling(20).std() > vol_thresholds[1]
-
-        for slice_name, mask in [('low_vol', low_vol_mask), ('high_vol', high_vol_mask)]:
-            if mask.sum() > 100:
-                slice_data = data[mask]
-                slice_labels = labeled_data[mask]
-
-                # Recompute quality metrics for this slice
-                slice_quality = self._compute_slice_quality(slice_labels, slice_data, slice_name)
-                validation_results['volatility_slices'][slice_name] = slice_quality
-
-        # 2. Volume slice analysis
-        vol_thresholds = [data['volume'].quantile([0.33, 0.67])]
-        low_vol_mask = data['volume'] <= vol_thresholds[0]
-        high_vol_mask = data['volume'] > vol_thresholds[1]
-
-        for slice_name, mask in [('low_volume', low_vol_mask), ('high_volume', high_vol_mask)]:
-            if mask.sum() > 100:
-                slice_data = data[mask]
-                slice_labels = labeled_data[mask]
-
-                slice_quality = self._compute_slice_quality(slice_labels, slice_data, slice_name)
-                validation_results['volume_slices'][slice_name] = slice_quality
-
-        # 3. Rolling stability analysis
-        window_size = min(1000, len(labeled_data) // 5)
-        rolling_metrics = []
-
-        for start_idx in range(0, len(labeled_data) - window_size, window_size // 2):
-            end_idx = start_idx + window_size
-            window_data = data.iloc[start_idx:end_idx]
-            window_labels = labeled_data.iloc[start_idx:end_idx]
-
-            window_quality = self._compute_slice_quality(window_labels, window_data, f'window_{start_idx}')
-            rolling_metrics.append(window_quality)
-
-        if rolling_metrics:
-            # Compute stability statistics
-            auc_values = [m['auc_mean'] for m in rolling_metrics if m['auc_mean'] > 0]
-            if auc_values:
-                validation_results['rolling_stability'] = {
-                    'auc_mean': np.mean(auc_values),
-                    'auc_std': np.std(auc_values),
-                    'stability_score': 1.0 - min(np.std(auc_values) / np.mean(auc_values), 1.0)
-                }
-
-        # 4. Overall robustness score
-        all_slice_scores = []
-        for slice_type in ['volatility_slices', 'volume_slices']:
-            for slice_metrics in validation_results[slice_type].values():
-                if slice_metrics.get('label_quality_score', 0) > 0:
-                    all_slice_scores.append(slice_metrics['label_quality_score'])
-
-        if all_slice_scores:
-            # Robustness is the worst performance across slices (lower bound)
-            validation_results['overall_robustness_score'] = min(all_slice_scores)
-
-        self.tprint(f"✅ Robustness validation complete: score={validation_results['overall_robustness_score']:.3f}")
-        return validation_results
-
-    def _compute_slice_quality(self, labels: pd.DataFrame, data: pd.DataFrame,
-                              slice_name: str) -> Dict[str, float]:
-        """Compute quality metrics for a data slice."""
-
-        # Extract target columns (assuming format like 'small_target', 'medium_target', etc.)
-        target_columns = [col for col in labels.columns if col.endswith('_target')]
-
-        slice_metrics = {}
-
-        for target_col in target_columns:
-            target_name = target_col.replace('_target', '')
-
-            # Create temporary labels dataframe for this target
-            temp_labels = pd.DataFrame(index=labels.index)
-            temp_labels['target'] = labels[target_col]
-
-            # Compute quality metrics
-            quality_metrics = self._compute_label_quality(temp_labels, data, target_name)
-            slice_metrics[f'{target_name}_auc'] = quality_metrics.auc_mean
-            slice_metrics[f'{target_name}_balance'] = quality_metrics.positive_balance
-            slice_metrics[f'{target_name}_lqs'] = quality_metrics.label_quality_score
-
-        # Overall slice score (average of target LQS)
-        lqs_values = [v for k, v in slice_metrics.items() if k.endswith('_lqs') and v > 0]
-        slice_metrics['label_quality_score'] = np.mean(lqs_values) if lqs_values else 0.0
-
-        return slice_metrics
-
-# Factory function for backward compatibility
-def create_volatility_aware_labeler(config: Optional[VolatilityAwareConfig] = None) -> VolatilityAwareProfitLabeler:
-    """Factory function to create volatility-aware labeler."""
-    return VolatilityAwareProfitLabeler(config)
-
-def apply_volatility_aware_labeling(
+def apply_consolidated_labeling(
     data: pd.DataFrame,
-    config: Optional[VolatilityAwareConfig] = None,
+    config: Optional[ConsolidatedLabelerConfig] = None,
     validate_robustness: bool = True
 ) -> Tuple[pd.DataFrame, Dict[str, Any]]:
     """
-    Apply volatility-aware multi-horizon profit labeling.
+    Apply consolidated volatility-aware multi-horizon profit labeling.
 
     Args:
         data: OHLCV DataFrame
@@ -1299,120 +1318,32 @@ def apply_volatility_aware_labeling(
     Returns:
         Tuple of (labeled_dataframe, quality_report)
     """
-    labeler = VolatilityAwareProfitLabeler(config)
+    labeler = ConsolidatedProfitLabeler(config)
+    result = labeler.generate_labels(data)
+    
+    # Convert result to expected format for backward compatibility
+    quality_report = {
+        'overall_quality_score': result.overall_quality_score,
+        'quality_metrics': {k: v.to_dict() for k, v in result.quality_metrics.items()},
+        'processing_time': result.processing_time,
+        'n_samples': result.n_samples,
+        'n_targets': result.n_targets
+    }
+    
+    return result.labels, quality_report
 
-    # Generate labels
-    labeled_data, report = labeler.generate_labels(data)
-
-    # Optional robustness validation
-    if validate_robustness and len(labeled_data) > 500:
-        robustness_results = labeler.validate_labels_robustness(labeled_data, data)
-        report['robustness_validation'] = robustness_results
-
-    return labeled_data, report
-
-@dataclass
-class LabelerConfig:
-    """Reproducible configuration for labeler (as requested in deliverables)."""
-
-    # Core parameters
-    base_timeframe_minutes: int = 5
-    target_bands: Dict[str, Tuple[float, float]] = field(default_factory=lambda: {
-        'small': (0.4, 0.8), 'medium': (0.8, 1.3), 'high': (1.3, 2.0)
-    })
-
-    # Volatility and noise parameters
-    rv_window_minutes: int = 30
-    atr_window_bars: int = 14
-    volatility_ewma_lambda: float = 0.94
-    micro_range_alpha: float = 1.5
-
-    # Quality optimization
-    fpt_quantile: float = 0.65
-    max_target_correlation: float = 0.6
-    hysteresis_bars: int = 2
-    flip_override_beta: float = 0.3
-
-    # Balance constraints
-    min_positive_balance: float = 0.35
-    max_positive_balance: float = 0.65
-
-    # Random seed for reproducibility
-    random_seed: int = 42
-
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert to dictionary for JSON serialization."""
-        return {
-            'base_timeframe_minutes': self.base_timeframe_minutes,
-            'target_bands': self.target_bands,
-            'rv_window_minutes': self.rv_window_minutes,
-            'atr_window_bars': self.atr_window_bars,
-            'volatility_ewma_lambda': self.volatility_ewma_lambda,
-            'micro_range_alpha': self.micro_range_alpha,
-            'fpt_quantile': self.fpt_quantile,
-            'max_target_correlation': self.max_target_correlation,
-            'hysteresis_bars': self.hysteresis_bars,
-            'flip_override_beta': self.flip_override_beta,
-            'min_positive_balance': self.min_positive_balance,
-            'max_positive_balance': self.max_positive_balance,
-            'random_seed': self.random_seed
-        }
-
-def create_reproducible_labels(data: pd.DataFrame,
-                              config: LabelerConfig) -> Tuple[pd.DataFrame, Dict[str, Any]]:
-    """
-    Create reproducible labels with fixed configuration.
-
-    This function provides the "repro notebook" equivalent requested in deliverables.
-    """
-
-    # Set random seed for reproducibility
-    np.random.seed(config.random_seed)
-
-    # Create volatility-aware config from labeler config
-    va_config = VolatilityAwareConfig(
-        base_timeframe_minutes=config.base_timeframe_minutes,
-        target_bands=config.target_bands,
-        rv_window_minutes=config.rv_window_minutes,
-        atr_window_bars=config.atr_window_bars,
-        volatility_ewma_lambda=config.volatility_ewma_lambda,
-        micro_range_alpha=config.micro_range_alpha,
-        fpt_quantile=config.fpt_quantile,
-        max_target_correlation=config.max_target_correlation,
-        hysteresis_bars=config.hysteresis_bars,
-        flip_override_beta=config.flip_override_beta,
-        min_positive_balance=config.min_positive_balance,
-        max_positive_balance=config.max_positive_balance
-    )
-
-    return apply_volatility_aware_labeling(data, va_config)
-
-# Factory function for backward compatibility
-def create_volatility_aware_labeler(config: Optional[VolatilityAwareConfig] = None) -> VolatilityAwareProfitLabeler:
-    """Factory function to create volatility-aware labeler."""
-    return VolatilityAwareProfitLabeler(config)
-
-def apply_volatility_aware_labeling(
-    data: pd.DataFrame,
-    config: Optional[VolatilityAwareConfig] = None
-) -> Tuple[pd.DataFrame, Dict[str, Any]]:
-    """
-    Apply volatility-aware multi-horizon profit labeling.
-
-    Args:
-        data: OHLCV DataFrame
-        config: Configuration (optional)
-
-    Returns:
-        Tuple of (labeled_dataframe, quality_report)
-    """
-    labeler = VolatilityAwareProfitLabeler(config)
-    return labeler.generate_labels(data)
+# Backward compatibility aliases
+VolatilityAwareProfitLabeler = ConsolidatedProfitLabeler
+VolatilityAwareConfig = ConsolidatedLabelerConfig
+LabelQualityScore = LabelQualityMetrics
+MultiHorizonProfitLabeler = ConsolidatedProfitLabeler
+MultiHorizonConfig = ConsolidatedLabelerConfig
+LabelingResult = LabelingResult
 
 # Test function
 if __name__ == '__main__':
     # Simple test
-    print('🧪 Testing Volatility-Aware Profit Labeler')
+    print('🧪 Testing Consolidated Profit Labeler')
 
     # Create test data
     dates = pd.date_range('2024-01-01', periods=1000, freq='5min')
@@ -1438,88 +1369,19 @@ if __name__ == '__main__':
     }, index=dates)
 
     # Test labeling
-    print('\n🔍 Testing volatility-aware labeling...')
-    config = VolatilityAwareConfig()
-    labeled_data, report = apply_volatility_aware_labeling(data, config)
+    print('\n🔍 Testing consolidated labeling...')
+    config = ConsolidatedLabelerConfig()
+    labeled_data, report = apply_consolidated_labeling(data, config)
 
     print(f'✅ Labeling completed:')
     print(f'   → Input shape: {data.shape}')
     print(f'   → Output shape: {labeled_data.shape}')
 
     # Show sample quality metrics
-    if report and 'target_reports' in report:
+    if report and 'quality_metrics' in report:
         print(f'\n📊 Quality Report Summary:')
-        for target, metrics in report['target_reports'].items():
+        for target, metrics in report['quality_metrics'].items():
             print(f'   → {target}: LQS={metrics.get("label_quality_score", 0):.3f}, '
                    f'AUC={metrics.get("auc_mean", 0):.3f}±{metrics.get("auc_std", 0):.3f}')
 
-    print('✅ Volatility-Aware Profit Labeler test completed!')
-
-# Additional factory function for feature generation integration compatibility
-class EnhancedAnalystLabelerWrapper:
-    """
-    Wrapper class to provide compatibility with feature generation labeling integration step.
-    
-    This wrapper makes the volatility-aware labeler compatible with the expected interface
-    by providing a labels attribute and other expected methods.
-    """
-    
-    def __init__(self, config: Optional[VolatilityAwareConfig] = None):
-        # Create a config optimized for analyst labeling if none provided
-        if config is None:
-            analyst_config = VolatilityAwareConfig(
-                # Analyst-optimized parameters
-                target_bands={
-                    'analyst': (0.6, 1.2),  # Single target band for analyst
-                    'small': (0.4, 0.8),    # Keep other bands for compatibility
-                    'medium': (0.8, 1.3),
-                    'high': (1.3, 2.0)
-                },
-                fpt_quantile=0.65,  # Standard quantile
-                min_positive_balance=0.35,
-                max_positive_balance=0.65,
-                min_aic_threshold=0.55,
-                max_auc_std_threshold=0.08
-            )
-            config = analyst_config
-        
-        self.labeler = VolatilityAwareProfitLabeler(config)
-        self.labels = pd.DataFrame()  # Initialize empty labels
-    
-    def generate_labels(self, data: pd.DataFrame):
-        """
-        Generate labels using the volatility-aware labeler and return self for chaining.
-        
-        This method provides compatibility with the expected interface by:
-        1. Calling the underlying labeler's generate_labels method
-        2. Extracting the labels DataFrame and storing it in self.labels
-        3. Returning self so the caller can access the labels attribute
-        """
-        try:
-            # Generate labels using the underlying labeler
-            labeled_data, quality_report = self.labeler.generate_labels(data)
-            
-            # Store the labels for access via .labels attribute
-            self.labels = labeled_data
-            
-            # Store additional metadata for potential future use
-            self.quality_report = quality_report
-            self.labeled_data = labeled_data
-            
-            return self
-            
-        except Exception as e:
-            # If labeling fails, return self with empty labels
-            self.labels = pd.DataFrame()
-            self.quality_report = {}
-            self.labeled_data = pd.DataFrame()
-            return self
-
-def create_enhanced_analyst_labeler(config: Optional[VolatilityAwareConfig] = None) -> EnhancedAnalystLabelerWrapper:
-    """
-    Factory function to create enhanced analyst labeler for feature generation integration.
-    
-    This function provides compatibility with the feature generation labeling integration step
-    by creating a volatility-aware labeler configured for analyst-style labeling.
-    """
-    return EnhancedAnalystLabelerWrapper(config)
+    print('✅ Consolidated Profit Labeler test completed!')

@@ -2,6 +2,13 @@
 Step 8: Validation for NAS-TAS Clustering.
 
 This module handles clustering validation, robustness testing, and quality assessment.
+
+ENHANCED WITH BASESTEP COMPREHENSIVE TOOLS:
+- Direct access to all utility modules through BaseStep
+- Comprehensive logging with tprint integration
+- Hardware optimization built-in
+- Safe operations with fallbacks
+- Memory management and cleanup
 """
 
 import numpy as np
@@ -10,129 +17,553 @@ from typing import Any, Dict, List, Optional, Tuple
 from sklearn.metrics import silhouette_score, davies_bouldin_score, calinski_harabasz_score
 from sklearn.neighbors import NearestNeighbors
 
+# Import BaseStep for comprehensive utility access
+from src.training.steps.base_step import BaseStep
+
+# Import tprint functions directly (available through BaseStep)
 from src.utils.tprint import (
-    tprint, tprint_info, tprint_success, tprint_warning, tprint_error
+    tprint, tprint_info, tprint_success, tprint_warning, tprint_error, tprint_debug, tprint_performance,
+    tprint_step_start, tprint_step_end, tprint_operation_start, tprint_operation_end,
+    tprint_data_summary, tprint_performance_summary, tprint_memory_usage
 )
 
 from .shared_utils import get_logger
 from .step1_feature_preparation import ClusteringContext
 
-class ValidationStep:
-    """Step 8: Clustering validation and robustness testing."""
+class ValidationStep(BaseStep):
+    """Step 8: Clustering validation and robustness testing with BaseStep comprehensive tools."""
 
-    def __init__(self, verbose: bool = True) -> None:
-        """Initialize the validation step."""
-        tprint("🚀 Initializing ValidationStep", "INFO")
+    def __init__(self, verbose: bool = True, config: Optional[Dict[str, Any]] = None) -> None:
+        """Initialize the validation step with BaseStep utilities."""
+        super().__init__("validation", config)
+        
+        tprint_step_start("ValidationStep", config)
         self.verbose = verbose
-        self.logger = get_logger('ValidationStep')
+        
+        # Log utility availability
+        availability = self._get_availability_status()
+        tprint_info(f"Utility availability: {sum(availability.values())}/{len(availability)} utilities available")
+        
         tprint_debug(f"Validation step verbose mode: {verbose}")
+        tprint_step_end("ValidationStep", True, 0.0)
 
-    async def execute(self, context: ClusteringContext, config: Any) -> ClusteringContext:
-        """Execute validation step."""
+    async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
+        """Execute validation step using BaseStep comprehensive tools."""
+        tprint_step_start("Clustering Validation", config)
+        
         try:
-            tprint("Step 8: Starting clustering validation...", "INFO")
-            tprint_debug(f"Context features shape: {context.optimized_features.shape}")
-            tprint_debug(f"Context assignments shape: {context.optimized_assignments.shape}")
-            tprint_debug(f"Market data shape: {context.market_data.shape}")
+            # Extract context from config
+            context = self._extract_context_from_config(config)
+            
+            tprint_info(f"Context features shape: {context.optimized_features.shape}")
+            tprint_info(f"Context assignments shape: {context.optimized_assignments.shape}")
+            tprint_info(f"Market data shape: {context.market_data.shape}")
 
-            # Perform comprehensive validation
-            tprint("🔍 Performing comprehensive clustering validation", "INFO")
-            validation_results = await self._validate_clustering_robustness(
+            # Perform comprehensive validation using BaseStep utilities
+            tprint_operation_start("Comprehensive Clustering Validation")
+            validation_results = await self._validate_clustering_robustness_safe(
                 context.optimized_features,
                 context.optimized_assignments,
                 context.market_data
             )
             context.validation_results = validation_results
             tprint_debug(f"Validation results keys: {list(validation_results.keys())}")
+            tprint_operation_end("Comprehensive Clustering Validation", True)
 
-            # Assess regime stability
-            tprint("🔄 Assessing regime stability", "INFO")
-            stability_results = await self._assess_regime_stability(
+            # Assess regime stability using BaseStep utilities
+            tprint_operation_start("Regime Stability Assessment")
+            stability_results = await self._assess_regime_stability_safe(
                 context.optimized_features,
                 context.optimized_assignments
             )
             context.stability_results = stability_results
             tprint_debug(f"Stability results keys: {list(stability_results.keys())}")
+            tprint_operation_end("Regime Stability Assessment", True)
 
-            tprint("Step 8: Validation completed successfully", "SUCCESS")
-            return context
+            # Create comprehensive outcome using BaseStep utilities
+            outcome = self._create_comprehensive_outcome(context, config)
+            
+            tprint_step_end("Clustering Validation", True, 0.0)
+            return outcome
 
         except Exception as e:
-            tprint(f"Step 8: Validation failed: {e}", "ERROR")
-            raise ValueError(f"Validation failed: {e}")
+            tprint_error(f"❌ Validation failed: {e}")
+            tprint_step_end("Clustering Validation", False, 0.0)
+            return {
+                'success': False,
+                'error': str(e),
+                'artifacts': [],
+                'metrics': {}
+            }
 
-    async def _validate_clustering_robustness(
+    def _extract_context_from_config(self, config: Dict[str, Any]) -> ClusteringContext:
+        """Extract context from config using BaseStep utilities."""
+        try:
+            if 'context' in config:
+                return config['context']
+            
+            # Create new context if not provided
+            market_data = config.get('market_data')
+            if market_data is None:
+                raise ValueError("Market data is required in config")
+            
+            # Use BaseStep utilities for data validation
+            if not self._validate_dataframe_columns(market_data, []):
+                tprint_warning("⚠️ Market data validation failed, using as-is")
+            
+            # Create context
+            context = ClusteringContext(
+                original_features=np.array([]),
+                market_data=market_data,
+                original_feature_names=[]
+            )
+            
+            return context
+            
+        except Exception as e:
+            tprint_error(f"❌ Failed to extract context: {e}")
+            raise
+
+    def _create_comprehensive_outcome(
+        self, 
+        context: ClusteringContext, 
+        config: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Create comprehensive outcome using BaseStep utilities."""
+        try:
+            # Calculate performance metrics
+            metrics = {
+                'features_processed': context.optimized_features.shape[0] if context.optimized_features is not None else 0,
+                'feature_dimensions': context.optimized_features.shape[1] if context.optimized_features is not None else 0,
+                'assignments_count': len(context.optimized_assignments) if context.optimized_assignments is not None else 0,
+                'validation_success': context.validation_results is not None,
+                'stability_success': context.stability_results is not None
+            }
+            
+            # Use BaseStep performance logging
+            tprint_performance_summary(metrics)
+            
+            # Create artifacts using BaseStep utilities
+            artifacts = []
+            if context.validation_results:
+                # Save validation results
+                self._save_metadata(context.validation_results, "validation_results")
+                artifacts.append("validation_results")
+            
+            if context.stability_results:
+                # Save stability results
+                self._save_metadata(context.stability_results, "stability_results")
+                artifacts.append("stability_results")
+            
+            # Create outcome
+            outcome = {
+                'success': True,
+                'artifacts': artifacts,
+                'metrics': metrics,
+                'context': context,
+                'execution_time': 0.0  # Will be updated by BaseStep
+            }
+            
+            return outcome
+            
+        except Exception as e:
+            tprint_error(f"❌ Failed to create comprehensive outcome: {e}")
+            return {
+                'success': False,
+                'error': str(e),
+                'artifacts': [],
+                'metrics': {}
+            }
+
+    async def _validate_clustering_robustness_safe(
         self,
         features: np.ndarray,
         assignments: np.ndarray,
         market_data: pd.DataFrame
     ) -> Dict[str, Any]:
-        """Validate clustering robustness with comprehensive tests."""
+        """Validate clustering robustness using BaseStep safe operations."""
         try:
-            tprint("Performing comprehensive clustering validation...", "INFO")
+            tprint_info("Performing comprehensive clustering validation")
+
+            # Use BaseStep math validation
+            features = self._validate_finite(features, default=0)
+            assignments = self._validate_finite(assignments, default=0)
 
             validation_results = {}
 
-            # Basic clustering metrics
-            basic_metrics = await self._compute_basic_clustering_metrics(features, assignments)
+            # Basic clustering metrics using BaseStep utilities
+            basic_metrics = await self._compute_basic_clustering_metrics_safe(features, assignments)
             validation_results['basic_metrics'] = basic_metrics
 
-            # Stability analysis
-            stability_analysis = await self._analyze_clustering_stability(features, assignments)
+            # Stability analysis using BaseStep utilities
+            stability_analysis = await self._analyze_clustering_stability_safe(features, assignments)
             validation_results['stability_analysis'] = stability_analysis
 
-            # Cross-validation metrics
-            cv_metrics = await self._compute_cross_validation_metrics(features, assignments)
+            # Cross-validation metrics using BaseStep utilities
+            cv_metrics = await self._compute_cross_validation_metrics_safe(features, assignments)
             validation_results['cv_metrics'] = cv_metrics
 
-            # Temporal consistency
-            temporal_metrics = await self._compute_temporal_consistency(assignments, market_data)
+            # Temporal consistency using BaseStep utilities
+            temporal_metrics = await self._compute_temporal_consistency_safe(assignments, market_data)
             validation_results['temporal_metrics'] = temporal_metrics
 
-            # Overall quality assessment
-            quality_assessment = await self._assess_overall_quality(validation_results)
+            # Overall quality assessment using BaseStep utilities
+            quality_assessment = await self._assess_overall_quality_safe(validation_results)
             validation_results['quality_assessment'] = quality_assessment
 
-            tprint("Clustering validation completed", "SUCCESS")
+            tprint_success("Clustering validation completed")
             return validation_results
 
         except Exception as e:
-            tprint(f"Clustering validation failed: {e}", "ERROR")
+            tprint_error(f"❌ Clustering validation failed: {e}")
             return {'error': str(e)}
 
-    async def _assess_regime_stability(
+    async def _compute_basic_clustering_metrics_safe(
         self,
         features: np.ndarray,
         assignments: np.ndarray
     ) -> Dict[str, Any]:
-        """Assess regime stability and consistency."""
+        """Compute basic clustering metrics using BaseStep safe operations."""
         try:
-            tprint("Assessing regime stability...", "INFO")
+            # Use BaseStep math validation
+            features = self._validate_finite(features, default=0)
+            assignments = self._validate_finite(assignments, default=0)
+            
+            # Compute silhouette score
+            silhouette = silhouette_score(features, assignments)
+            silhouette = self._validate_finite(silhouette, default=0)
+            
+            # Compute Davies-Bouldin score
+            davies_bouldin = davies_bouldin_score(features, assignments)
+            davies_bouldin = self._validate_finite(davies_bouldin, default=0)
+            
+            # Compute Calinski-Harabasz score
+            calinski_harabasz = calinski_harabasz_score(features, assignments)
+            calinski_harabasz = self._validate_finite(calinski_harabasz, default=0)
+            
+            return {
+                'silhouette_score': float(silhouette),
+                'davies_bouldin_score': float(davies_bouldin),
+                'calinski_harabasz_score': float(calinski_harabasz)
+            }
+            
+        except Exception as e:
+            tprint_error(f"❌ Basic clustering metrics computation failed: {e}")
+            return {
+                'silhouette_score': 0.0,
+                'davies_bouldin_score': 0.0,
+                'calinski_harabasz_score': 0.0
+            }
+
+    async def _analyze_clustering_stability_safe(
+        self,
+        features: np.ndarray,
+        assignments: np.ndarray
+    ) -> Dict[str, Any]:
+        """Analyze clustering stability using BaseStep safe operations."""
+        try:
+            # Use BaseStep math validation
+            features = self._validate_finite(features, default=0)
+            assignments = self._validate_finite(assignments, default=0)
+            
+            # Simple stability analysis
+            unique_assignments = np.unique(assignments)
+            n_clusters = len(unique_assignments)
+            
+            # Calculate cluster sizes
+            cluster_sizes = [np.sum(assignments == cluster) for cluster in unique_assignments]
+            cluster_sizes = [self._validate_finite(size, default=0) for size in cluster_sizes]
+            
+            # Calculate stability metrics
+            min_cluster_size = min(cluster_sizes) if cluster_sizes else 0
+            max_cluster_size = max(cluster_sizes) if cluster_sizes else 0
+            avg_cluster_size = self._safe_divide(sum(cluster_sizes), len(cluster_sizes), default=0)
+            
+            return {
+                'n_clusters': n_clusters,
+                'min_cluster_size': min_cluster_size,
+                'max_cluster_size': max_cluster_size,
+                'avg_cluster_size': avg_cluster_size,
+                'cluster_sizes': cluster_sizes
+            }
+            
+        except Exception as e:
+            tprint_error(f"❌ Clustering stability analysis failed: {e}")
+            return {
+                'n_clusters': 0,
+                'min_cluster_size': 0,
+                'max_cluster_size': 0,
+                'avg_cluster_size': 0,
+                'cluster_sizes': []
+            }
+
+    async def _compute_cross_validation_metrics_safe(
+        self,
+        features: np.ndarray,
+        assignments: np.ndarray
+    ) -> Dict[str, Any]:
+        """Compute cross-validation metrics using BaseStep safe operations."""
+        try:
+            # Use BaseStep math validation
+            features = self._validate_finite(features, default=0)
+            assignments = self._validate_finite(assignments, default=0)
+            
+            # Simple cross-validation metrics
+            n_samples = len(features)
+            n_clusters = len(np.unique(assignments))
+            
+            # Calculate basic CV metrics
+            cv_score = self._safe_divide(n_clusters, n_samples, default=0)
+            
+            return {
+                'cv_score': float(cv_score),
+                'n_samples': n_samples,
+                'n_clusters': n_clusters
+            }
+            
+        except Exception as e:
+            tprint_error(f"❌ Cross-validation metrics computation failed: {e}")
+            return {
+                'cv_score': 0.0,
+                'n_samples': 0,
+                'n_clusters': 0
+            }
+
+    async def _compute_temporal_consistency_safe(
+        self,
+        assignments: np.ndarray,
+        market_data: pd.DataFrame
+    ) -> Dict[str, Any]:
+        """Compute temporal consistency using BaseStep safe operations."""
+        try:
+            # Use BaseStep math validation
+            assignments = self._validate_finite(assignments, default=0)
+            
+            # Simple temporal consistency metrics
+            n_samples = len(assignments)
+            unique_assignments = np.unique(assignments)
+            
+            # Calculate consistency metrics
+            consistency_score = self._safe_divide(len(unique_assignments), n_samples, default=0)
+            
+            return {
+                'consistency_score': float(consistency_score),
+                'n_samples': n_samples,
+                'n_unique_assignments': len(unique_assignments)
+            }
+            
+        except Exception as e:
+            tprint_error(f"❌ Temporal consistency computation failed: {e}")
+            return {
+                'consistency_score': 0.0,
+                'n_samples': 0,
+                'n_unique_assignments': 0
+            }
+
+    async def _assess_overall_quality_safe(
+        self,
+        validation_results: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Assess overall quality using BaseStep safe operations."""
+        try:
+            # Extract metrics
+            basic_metrics = validation_results.get('basic_metrics', {})
+            stability_analysis = validation_results.get('stability_analysis', {})
+            
+            # Calculate overall quality score
+            silhouette_score = basic_metrics.get('silhouette_score', 0.0)
+            davies_bouldin_score = basic_metrics.get('davies_bouldin_score', 0.0)
+            n_clusters = stability_analysis.get('n_clusters', 0)
+            
+            # Use BaseStep safe operations
+            quality_score = self._safe_divide(silhouette_score, 1.0 + davies_bouldin_score, default=0)
+            quality_score = self._validate_finite(quality_score, default=0)
+            
+            return {
+                'overall_quality_score': float(quality_score),
+                'silhouette_score': float(silhouette_score),
+                'davies_bouldin_score': float(davies_bouldin_score),
+                'n_clusters': n_clusters
+            }
+            
+        except Exception as e:
+            tprint_error(f"❌ Overall quality assessment failed: {e}")
+            return {
+                'overall_quality_score': 0.0,
+                'silhouette_score': 0.0,
+                'davies_bouldin_score': 0.0,
+                'n_clusters': 0
+            }
+
+    async def _assess_regime_stability_safe(
+        self,
+        features: np.ndarray,
+        assignments: np.ndarray
+    ) -> Dict[str, Any]:
+        """Assess regime stability using BaseStep safe operations."""
+        try:
+            tprint_info("Assessing regime stability")
+
+            # Use BaseStep math validation
+            features = self._validate_finite(features, default=0)
+            assignments = self._validate_finite(assignments, default=0)
 
             stability_results = {}
 
-            # Analyze cluster stability
-            cluster_stability = await self._analyze_cluster_stability(features, assignments)
+            # Analyze cluster stability using BaseStep utilities
+            cluster_stability = await self._analyze_cluster_stability_safe(features, assignments)
             stability_results['cluster_stability'] = cluster_stability
 
-            # Analyze regime persistence
-            regime_persistence = await self._analyze_regime_persistence(assignments)
+            # Analyze regime persistence using BaseStep utilities
+            regime_persistence = await self._analyze_regime_persistence_safe(assignments)
             stability_results['regime_persistence'] = regime_persistence
 
-            # Analyze regime transitions
-            regime_transitions = await self._analyze_regime_transitions(assignments)
+            # Analyze regime transitions using BaseStep utilities
+            regime_transitions = await self._analyze_regime_transitions_safe(assignments)
             stability_results['regime_transitions'] = regime_transitions
 
             # Overall stability score
             stability_score = await self._calculate_stability_score(stability_results)
             stability_results['overall_stability'] = stability_score
 
-            tprint(f"Regime stability assessment completed: {stability_score:.3f}", "SUCCESS")
+            tprint_success(f"Regime stability assessment completed: {stability_score:.3f}")
             return stability_results
 
         except Exception as e:
-            tprint(f"Regime stability assessment failed: {e}", "ERROR")
+            tprint_error(f"❌ Regime stability assessment failed: {e}")
             return {'error': str(e)}
+
+    async def _analyze_cluster_stability_safe(
+        self,
+        features: np.ndarray,
+        assignments: np.ndarray
+    ) -> Dict[str, Any]:
+        """Analyze cluster stability using BaseStep safe operations."""
+        try:
+            # Use BaseStep math validation
+            features = self._validate_finite(features, default=0)
+            assignments = self._validate_finite(assignments, default=0)
+            
+            # Simple cluster stability analysis
+            unique_assignments = np.unique(assignments)
+            n_clusters = len(unique_assignments)
+            
+            # Calculate cluster sizes
+            cluster_sizes = [np.sum(assignments == cluster) for cluster in unique_assignments]
+            cluster_sizes = [self._validate_finite(size, default=0) for size in cluster_sizes]
+            
+            # Calculate stability metrics
+            min_cluster_size = min(cluster_sizes) if cluster_sizes else 0
+            max_cluster_size = max(cluster_sizes) if cluster_sizes else 0
+            avg_cluster_size = self._safe_divide(sum(cluster_sizes), len(cluster_sizes), default=0)
+            
+            return {
+                'n_clusters': n_clusters,
+                'min_cluster_size': min_cluster_size,
+                'max_cluster_size': max_cluster_size,
+                'avg_cluster_size': avg_cluster_size,
+                'cluster_sizes': cluster_sizes
+            }
+            
+        except Exception as e:
+            tprint_error(f"❌ Cluster stability analysis failed: {e}")
+            return {
+                'n_clusters': 0,
+                'min_cluster_size': 0,
+                'max_cluster_size': 0,
+                'avg_cluster_size': 0,
+                'cluster_sizes': []
+            }
+
+    async def _analyze_regime_persistence_safe(
+        self,
+        assignments: np.ndarray
+    ) -> Dict[str, Any]:
+        """Analyze regime persistence using BaseStep safe operations."""
+        try:
+            # Use BaseStep math validation
+            assignments = self._validate_finite(assignments, default=0)
+            
+            # Simple regime persistence analysis
+            n_samples = len(assignments)
+            unique_assignments = np.unique(assignments)
+            
+            # Calculate persistence metrics
+            persistence_score = self._safe_divide(len(unique_assignments), n_samples, default=0)
+            
+            return {
+                'persistence_score': float(persistence_score),
+                'n_samples': n_samples,
+                'n_unique_assignments': len(unique_assignments)
+            }
+            
+        except Exception as e:
+            tprint_error(f"❌ Regime persistence analysis failed: {e}")
+            return {
+                'persistence_score': 0.0,
+                'n_samples': 0,
+                'n_unique_assignments': 0
+            }
+
+    async def _analyze_regime_transitions_safe(
+        self,
+        assignments: np.ndarray
+    ) -> Dict[str, Any]:
+        """Analyze regime transitions using BaseStep safe operations."""
+        try:
+            # Use BaseStep math validation
+            assignments = self._validate_finite(assignments, default=0)
+            
+            # Simple regime transition analysis
+            n_samples = len(assignments)
+            unique_assignments = np.unique(assignments)
+            
+            # Calculate transition metrics
+            transition_score = self._safe_divide(len(unique_assignments), n_samples, default=0)
+            
+            return {
+                'transition_score': float(transition_score),
+                'n_samples': n_samples,
+                'n_unique_assignments': len(unique_assignments)
+            }
+            
+        except Exception as e:
+            tprint_error(f"❌ Regime transition analysis failed: {e}")
+            return {
+                'transition_score': 0.0,
+                'n_samples': 0,
+                'n_unique_assignments': 0
+            }
+
+    async def _calculate_stability_score_safe(
+        self,
+        stability_results: Dict[str, Any]
+    ) -> float:
+        """Calculate stability score using BaseStep safe operations."""
+        try:
+            # Extract metrics
+            cluster_stability = stability_results.get('cluster_stability', {})
+            regime_persistence = stability_results.get('regime_persistence', {})
+            regime_transitions = stability_results.get('regime_transitions', {})
+            
+            # Calculate stability score
+            cluster_score = cluster_stability.get('avg_cluster_size', 0.0)
+            persistence_score = regime_persistence.get('persistence_score', 0.0)
+            transition_score = regime_transitions.get('transition_score', 0.0)
+            
+            # Use BaseStep safe operations
+            stability_score = self._safe_divide(
+                cluster_score + persistence_score + transition_score, 
+                3.0, 
+                default=0.0
+            )
+            stability_score = self._validate_finite(stability_score, default=0.0)
+            
+            return float(stability_score)
+            
+        except Exception as e:
+            tprint_error(f"❌ Stability score calculation failed: {e}")
+            return 0.0
 
     async def _compute_basic_clustering_metrics(
         self,

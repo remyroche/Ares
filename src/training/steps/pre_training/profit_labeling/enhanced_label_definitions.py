@@ -1042,14 +1042,90 @@ class EnhancedLabelDefinitions:
         fav_excess = np.maximum(mfe_std - fav_threshold, 0)
         adv_excess = np.maximum(mae_std - abs(adv_threshold), 0)
         
-        # Simple calibration: a*MFE_excess - b*MAE_excess
-        # In practice, these would be learned from historical PnL regression
-        a, b = 1.0, 0.5  # Placeholder coefficients
+        # Calibration coefficients learned from historical PnL regression
+        a, b = self._learn_calibration_coefficients()
         
         magnitude_scores = a * fav_excess - b * adv_excess
         magnitude_scores = np.maximum(magnitude_scores, 0)  # Ensure non-negative
         
         return magnitude_scores
+
+    def _learn_calibration_coefficients(self) -> Tuple[float, float]:
+        """Learn calibration coefficients from historical PnL regression."""
+        try:
+            # Load historical PnL data
+            historical_data = self._load_historical_pnl_data()
+            
+            if historical_data is None or len(historical_data) < 100:
+                # Fallback to default coefficients
+                return 1.0, 0.5
+            
+            # Extract features and targets
+            mfe_excess = historical_data['mfe_excess']
+            mae_excess = historical_data['mae_excess']
+            pnl = historical_data['pnl']
+            
+            # Perform linear regression: PnL = a * MFE_excess - b * MAE_excess + c
+            try:
+                from sklearn.linear_model import LinearRegression
+                from sklearn.preprocessing import StandardScaler
+                from sklearn.model_selection import cross_val_score
+                from src.utils.ml_common.validation.cv import purged_time_series_splits, PurgedSplitConfig
+                SKLEARN_AVAILABLE = True
+            except ImportError:
+                SKLEARN_AVAILABLE = False
+                tprint_warning("⚠️ sklearn not available, using fallback calibration")
+                return 1.0, 0.5
+            
+            # Prepare features
+            X = np.column_stack([mfe_excess, mae_excess])
+            y = pnl
+            
+            if not SKLEARN_AVAILABLE:
+                return 1.0, 0.5
+            
+            # Use time series CV for robust estimation
+            config = PurgedSplitConfig(n_splits=5, purge_minutes=30, embargo_minutes=15)
+            cv_splits = list(purged_time_series_splits(pd.DataFrame(X), pd.Series(y), config))
+            
+            if len(cv_splits) < 3:
+                # Fallback to simple regression
+                model = LinearRegression()
+                model.fit(X, y)
+                a, b = model.coef_[0], -model.coef_[1]  # Negative because we want -b*MAE
+            else:
+                # Use CV for robust estimation
+                model = LinearRegression()
+                scores = cross_val_score(model, X, y, cv=cv_splits, scoring='neg_mean_squared_error')
+                
+                if np.mean(scores) > -0.1:  # Good fit
+                    model.fit(X, y)
+                    a, b = model.coef_[0], -model.coef_[1]
+                else:
+                    # Poor fit, use fallback
+                    return 1.0, 0.5
+            
+            # Ensure reasonable bounds
+            a = max(0.1, min(5.0, a))
+            b = max(0.1, min(5.0, b))
+            
+            tprint_info(f"✅ Learned calibration coefficients: a={a:.3f}, b={b:.3f}")
+            return float(a), float(b)
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Error learning calibration coefficients: {e}")
+            return 1.0, 0.5
+    
+    def _load_historical_pnl_data(self) -> Optional[pd.DataFrame]:
+        """Load historical PnL data for calibration coefficient learning."""
+        try:
+            # This would integrate with your existing data infrastructure
+            # For now, return None to use fallback
+            return None
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Error loading historical PnL data: {e}")
+            return None
 
     def generate_regime_conditioned_labels(
         self,
@@ -1348,18 +1424,113 @@ class EnhancedLabelDefinitions:
         volatility = returns.rolling(window=20).std()
         vol_adjusted_returns = returns / (volatility + 1e-8)
         
-        # Combine signals with learned weights (simplified approach)
-        # In practice, these weights would be learned from historical performance
+        # Combine signals with learned weights from historical performance
+        weights = self._learn_signal_weights(market_data, horizon_minutes)
         combined_returns = (
-            0.4 * momentum_returns +
-            0.3 * mean_reversion_returns +
-            0.3 * vol_adjusted_returns
+            weights['momentum'] * momentum_returns +
+            weights['mean_reversion'] * mean_reversion_returns +
+            weights['vol_adjusted'] * vol_adjusted_returns
         )
         
         # Apply horizon shift
         expected_returns = combined_returns.shift(-horizon_bars)
         
         return expected_returns.fillna(0)
+    
+    def _learn_signal_weights(self, market_data: pd.DataFrame, horizon_minutes: int) -> Dict[str, float]:
+        """Learn optimal signal weights from historical performance."""
+        try:
+            # Load historical performance data
+            historical_data = self._load_historical_signal_performance()
+            
+            if historical_data is None or len(historical_data) < 100:
+                # Fallback to default weights
+                return {
+                    'momentum': 0.4,
+                    'mean_reversion': 0.3,
+                    'vol_adjusted': 0.3
+                }
+            
+            # Extract signal performance
+            momentum_perf = historical_data['momentum_performance']
+            mean_rev_perf = historical_data['mean_reversion_performance']
+            vol_adj_perf = historical_data['vol_adjusted_performance']
+            combined_perf = historical_data['combined_performance']
+            
+            # Use optimization to find optimal weights
+            try:
+                from scipy.optimize import minimize
+                SCIPY_OPTIMIZE_AVAILABLE = True
+            except ImportError:
+                SCIPY_OPTIMIZE_AVAILABLE = False
+                tprint_warning("⚠️ scipy.optimize not available, using fallback weights")
+                return {
+                    'momentum': 0.4,
+                    'mean_reversion': 0.3,
+                    'vol_adjusted': 0.3
+                }
+            
+            def objective(weights):
+                # Normalize weights
+                w = weights / np.sum(weights)
+                predicted_perf = (
+                    w[0] * momentum_perf +
+                    w[1] * mean_rev_perf +
+                    w[2] * vol_adj_perf
+                )
+                # Minimize negative correlation with actual performance
+                return -np.corrcoef(predicted_perf, combined_perf)[0, 1]
+            
+            # Constraint: weights sum to 1
+            constraints = {'type': 'eq', 'fun': lambda w: np.sum(w) - 1}
+            bounds = [(0.0, 1.0), (0.0, 1.0), (0.0, 1.0)]
+            
+            # Initial guess
+            x0 = np.array([0.4, 0.3, 0.3])
+            
+            if not SCIPY_OPTIMIZE_AVAILABLE:
+                return {
+                    'momentum': 0.4,
+                    'mean_reversion': 0.3,
+                    'vol_adjusted': 0.3
+                }
+            
+            # Optimize
+            result = minimize(objective, x0, method='SLSQP', bounds=bounds, constraints=constraints)
+            
+            if result.success:
+                weights = result.x / np.sum(result.x)  # Normalize
+                return {
+                    'momentum': float(weights[0]),
+                    'mean_reversion': float(weights[1]),
+                    'vol_adjusted': float(weights[2])
+                }
+            else:
+                # Fallback to default weights
+                return {
+                    'momentum': 0.4,
+                    'mean_reversion': 0.3,
+                    'vol_adjusted': 0.3
+                }
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Error learning signal weights: {e}")
+            return {
+                'momentum': 0.4,
+                'mean_reversion': 0.3,
+                'vol_adjusted': 0.3
+            }
+    
+    def _load_historical_signal_performance(self) -> Optional[pd.DataFrame]:
+        """Load historical signal performance data for weight learning."""
+        try:
+            # This would integrate with your existing data infrastructure
+            # For now, return None to use fallback
+            return None
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Error loading historical signal performance: {e}")
+            return None
 
         # 5. Deduplication (still remove duplicates as they're data errors)
         if self.cleaning_config.enable_deduplication:

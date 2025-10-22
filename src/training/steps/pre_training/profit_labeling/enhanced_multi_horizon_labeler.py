@@ -176,8 +176,13 @@ class EnhancedMultiHorizonProfitLabeler(MultiHorizonProfitLabeler, BaseStep):
             if hasattr(result, 'artifacts') and result.artifacts:
                 for artifact_name, artifact_data in result.artifacts.items():
                     if isinstance(artifact_data, pd.DataFrame):
+                        # Preview DataFrame artifacts
+                        self.tprint_data_preview(artifact_data, artifact_name, max_rows=5)
+                        self.tprint_data_format(artifact_data, artifact_name)
                         artifact_path = self._save_dataframe(artifact_data, artifact_name)
                     else:
+                        # Preview metadata artifacts
+                        self.tprint_data_format(artifact_data, artifact_name)
                         artifact_path = self._save_metadata(artifact_data, artifact_name)
                     
                     if artifact_path:

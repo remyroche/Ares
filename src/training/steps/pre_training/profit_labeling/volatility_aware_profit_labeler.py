@@ -230,11 +230,19 @@ class VolatilityAwareProfitLabeler(BaseStep):
                     'error': 'data must be a pandas DataFrame'
                 }
             
+            # Preview input data
+            self.tprint_data_preview(data, "input_data", max_rows=5)
+            self.tprint_data_format(data, "input_data")
+            
             # Generate labels
             labeled_data, quality_report = self.generate_labels(data)
             
             # Save artifacts
             artifacts = []
+            
+            # Preview labeled data
+            self.tprint_data_preview(labeled_data, "volatility_aware_labeled_data", max_rows=5)
+            self.tprint_data_format(labeled_data, "volatility_aware_labeled_data")
             
             # Save labeled data
             labeled_data_path = self._save_dataframe(
@@ -246,12 +254,23 @@ class VolatilityAwareProfitLabeler(BaseStep):
             
             # Save quality report
             if quality_report:
+                # Preview quality report
+                self.tprint_data_format(quality_report, "volatility_aware_quality_report")
+                
                 quality_path = self._save_metadata(
                     quality_report, 
                     'volatility_aware_quality_report'
                 )
                 if quality_path:
                     artifacts.append(quality_path)
+            
+            # Log metrics
+            self.tprint_metrics({
+                'input_samples': len(data),
+                'labeled_samples': len(labeled_data),
+                'quality_score': quality_report.get('overall_quality_score', 0) if quality_report else 0,
+                'target_columns': len([col for col in labeled_data.columns if 'target' in col.lower()])
+            }, "volatility_aware_labeling_metrics")
             
             # Generate outcome file
             outcome_content = self._generate_outcome_content(labeled_data, quality_report, artifacts)

@@ -116,6 +116,10 @@ class InfrastructureIntegrationManager(BaseStep):
             # Save artifacts
             artifacts = []
             if 'integrated_data' in result:
+                # Preview integrated data
+                self.tprint_data_preview(result['integrated_data'], "integrated_market_data", max_rows=5)
+                self.tprint_data_format(result['integrated_data'], "integrated_market_data")
+                
                 data_path = self._save_dataframe(
                     result['integrated_data'], 
                     'integrated_market_data'
@@ -124,6 +128,9 @@ class InfrastructureIntegrationManager(BaseStep):
                     artifacts.append(data_path)
             
             if 'integration_metrics' in result:
+                # Preview integration metrics
+                self.tprint_data_format(result['integration_metrics'], "integration_metrics")
+                
                 metrics_path = self._save_metadata(
                     result['integration_metrics'], 
                     'integration_metrics'

@@ -141,6 +141,15 @@ class BalancingIntegrationManager(BaseStep):
                     'error': 'market_data and labels must have the same length'
                 }
             
+            # Preview input data
+            self.tprint_data_preview(market_data, "input_market_data", max_rows=5)
+            self.tprint_data_format(market_data, "input_market_data")
+            
+            if isinstance(labels, pd.Series):
+                labels_df = labels.to_frame('labels')
+                self.tprint_data_preview(labels_df, "input_labels", max_rows=5)
+                self.tprint_data_format(labels_df, "input_labels")
+            
             # Create balancing system
             balancing_system = self.create_balancing_system(
                 dataset_characteristics=dataset_characteristics,
@@ -160,6 +169,10 @@ class BalancingIntegrationManager(BaseStep):
             # Save artifacts
             artifacts = []
             if self.config.save_artifacts:
+                # Preview balanced data
+                self.tprint_data_preview(result['balanced_data'], "balanced_market_data", max_rows=5)
+                self.tprint_data_format(result['balanced_data'], "balanced_market_data")
+                
                 # Save balanced data
                 balanced_data_path = self._save_dataframe(
                     result['balanced_data'], 
@@ -168,9 +181,14 @@ class BalancingIntegrationManager(BaseStep):
                 if balanced_data_path:
                     artifacts.append(balanced_data_path)
                 
+                # Preview balanced labels
+                labels_df = result['balanced_labels'].to_frame('labels')
+                self.tprint_data_preview(labels_df, "balanced_labels", max_rows=5)
+                self.tprint_data_format(labels_df, "balanced_labels")
+                
                 # Save balanced labels
                 balanced_labels_path = self._save_dataframe(
-                    result['balanced_labels'].to_frame('labels'), 
+                    labels_df, 
                     'balanced_labels'
                 )
                 if balanced_labels_path:
@@ -178,20 +196,33 @@ class BalancingIntegrationManager(BaseStep):
                 
                 # Save sample weights
                 if 'sample_weights' in result:
+                    weights_df = result['sample_weights'].to_frame('weights')
+                    self.tprint_data_preview(weights_df, "sample_weights", max_rows=5)
+                    self.tprint_data_format(weights_df, "sample_weights")
+                    
                     weights_path = self._save_dataframe(
-                        result['sample_weights'].to_frame('weights'), 
+                        weights_df, 
                         'sample_weights'
                     )
                     if weights_path:
                         artifacts.append(weights_path)
                 
-                # Save balancing metrics
+                # Preview and save balancing metrics
+                self.tprint_data_format(result['balancing_metrics'], "balancing_metrics")
                 metrics_path = self._save_metadata(
                     result['balancing_metrics'], 
                     'balancing_metrics'
                 )
                 if metrics_path:
                     artifacts.append(metrics_path)
+            
+            # Log metrics
+            self.tprint_metrics({
+                'original_samples': len(market_data),
+                'balanced_samples': len(result['balanced_data']),
+                'quality_score': result['balancing_metrics'].get('quality_score', 0),
+                'processing_time': result.get('processing_time', 0)
+            }, "balancing_integration_metrics")
             
             # Generate outcome file
             outcome_content = self._generate_outcome_content(result, artifacts)

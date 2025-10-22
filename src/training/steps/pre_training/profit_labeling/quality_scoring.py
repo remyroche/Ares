@@ -302,23 +302,32 @@ class LabelQualityScorer(BaseStep):
             # Save artifacts
             artifacts = []
             
+            # Prepare quality results data
+            quality_data = {target: {
+                'n_samples': metrics.n_samples,
+                'n_features': metrics.n_features,
+                'predictability_score': metrics.predictability_score,
+                'stability_score': metrics.stability_score,
+                'consistency_score': metrics.consistency_score,
+                'balance_score': metrics.balance_score,
+                'snr_proxy': metrics.snr_proxy,
+                'composite_score': metrics.composite_score,
+                'class_balance': metrics.class_balance
+            } for target, metrics in quality_results.items()}
+            
+            # Preview quality results
+            self.tprint_data_format(quality_data, "label_quality_results")
+            
             # Save quality results
             quality_path = self._save_metadata(
-                {target: {
-                    'n_samples': metrics.n_samples,
-                    'n_features': metrics.n_features,
-                    'predictability_score': metrics.predictability_score,
-                    'stability_score': metrics.stability_score,
-                    'consistency_score': metrics.consistency_score,
-                    'balance_score': metrics.balance_score,
-                    'snr_proxy': metrics.snr_proxy,
-                    'composite_score': metrics.composite_score,
-                    'class_balance': metrics.class_balance
-                } for target, metrics in quality_results.items()},
+                quality_data,
                 'label_quality_results'
             )
             if quality_path:
                 artifacts.append(quality_path)
+            
+            # Preview overall quality
+            self.tprint_data_format(overall_quality, "overall_quality_assessment")
             
             # Save overall quality
             overall_path = self._save_metadata(

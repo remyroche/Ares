@@ -260,6 +260,10 @@ class EnhancedDataLabelsSystem(BaseStep):
                     'error': 'market_data must be a pandas DataFrame'
                 }
             
+            # Preview input data
+            self.tprint_data_preview(market_data, "input_market_data", max_rows=5)
+            self.tprint_data_format(market_data, "input_market_data")
+            
             # Process market data through the enhanced pipeline
             result = self.process_market_data(
                 market_data=market_data,
@@ -277,6 +281,10 @@ class EnhancedDataLabelsSystem(BaseStep):
             # Save artifacts
             artifacts = []
             if self.config.save_artifacts:
+                # Preview processed data
+                self.tprint_data_preview(result['processed_data'], "processed_market_data", max_rows=5)
+                self.tprint_data_format(result['processed_data'], "processed_market_data")
+                
                 # Save processed data
                 processed_data_path = self._save_dataframe(
                     result['processed_data'], 
@@ -287,8 +295,12 @@ class EnhancedDataLabelsSystem(BaseStep):
                 
                 # Save labels
                 if 'labels' in result:
+                    labels_df = result['labels'].to_frame('labels')
+                    self.tprint_data_preview(labels_df, "generated_labels", max_rows=5)
+                    self.tprint_data_format(labels_df, "generated_labels")
+                    
                     labels_path = self._save_dataframe(
-                        result['labels'].to_frame('labels'), 
+                        labels_df, 
                         'generated_labels'
                     )
                     if labels_path:
@@ -296,6 +308,7 @@ class EnhancedDataLabelsSystem(BaseStep):
                 
                 # Save quality metrics
                 if 'quality_metrics' in result:
+                    self.tprint_data_format(result['quality_metrics'], "data_quality_metrics")
                     quality_path = self._save_metadata(
                         result['quality_metrics'], 
                         'data_quality_metrics'
@@ -305,12 +318,21 @@ class EnhancedDataLabelsSystem(BaseStep):
                 
                 # Save stability metrics
                 if 'stability_metrics' in result:
+                    self.tprint_data_format(result['stability_metrics'], "label_stability_metrics")
                     stability_path = self._save_metadata(
                         result['stability_metrics'], 
                         'label_stability_metrics'
                     )
                     if stability_path:
                         artifacts.append(stability_path)
+            
+            # Log metrics
+            self.tprint_metrics({
+                'original_samples': len(market_data),
+                'processed_samples': len(result['processed_data']),
+                'quality_score': result.get('quality_metrics', {}).get('overall_score', 0),
+                'stability_score': result.get('stability_metrics', {}).get('stability_score', 0)
+            }, "enhanced_data_labels_metrics")
             
             # Generate outcome file
             outcome_content = self._generate_outcome_content(result, artifacts)

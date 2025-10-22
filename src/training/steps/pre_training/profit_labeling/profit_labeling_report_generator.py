@@ -124,23 +124,29 @@ class ProfitLabelingReportGenerator(BaseStep):
             # Save artifacts
             artifacts = []
             
+            # Prepare report data for preview
+            report_data = {
+                'symbol': report.symbol,
+                'exchange': report.exchange,
+                'timeframe': report.timeframe,
+                'timestamp': report.timestamp.isoformat(),
+                'processing_time': report.processing_time,
+                'n_samples': report.n_samples,
+                'n_targets': report.n_targets,
+                'n_horizons': report.n_horizons,
+                'quality_scores': report.quality_scores,
+                'regime_statistics': report.regime_statistics,
+                'label_distribution': report.label_distribution,
+                'feature_lookback_compatibility': report.feature_lookback_compatibility,
+                'recommendations': report.recommendations
+            }
+            
+            # Preview report data
+            self.tprint_data_format(report_data, "profit_labeling_report")
+            
             # Save report as metadata
             report_path = self._save_metadata(
-                {
-                    'symbol': report.symbol,
-                    'exchange': report.exchange,
-                    'timeframe': report.timeframe,
-                    'timestamp': report.timestamp.isoformat(),
-                    'processing_time': report.processing_time,
-                    'n_samples': report.n_samples,
-                    'n_targets': report.n_targets,
-                    'n_horizons': report.n_horizons,
-                    'quality_scores': report.quality_scores,
-                    'regime_statistics': report.regime_statistics,
-                    'label_distribution': report.label_distribution,
-                    'feature_lookback_compatibility': report.feature_lookback_compatibility,
-                    'recommendations': report.recommendations
-                },
+                report_data,
                 'profit_labeling_report'
             )
             if report_path:

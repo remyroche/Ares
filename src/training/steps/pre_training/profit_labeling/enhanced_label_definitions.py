@@ -54,25 +54,202 @@ class TradingCosts:
 
 
 @dataclass
+class AdaptiveThresholdCalculator:
+    """Data-driven threshold calculation for trading labels."""
+    
+    # Calculation methods
+    profit_method: str = "percentile"  # "percentile", "std", "iqr", "adaptive"
+    confidence_method: str = "percentile"  # "percentile", "std", "iqr", "adaptive"
+    excursion_method: str = "volatility_scaled"  # "volatility_scaled", "percentile", "std"
+    
+    # Percentile-based thresholds
+    profit_percentile: float = 0.75  # 75th percentile for profit threshold
+    confidence_percentile: float = 0.60  # 60th percentile for confidence threshold
+    excursion_percentile: float = 0.80  # 80th percentile for excursion threshold
+    
+    # Standard deviation multipliers
+    profit_std_multiplier: float = 1.5  # 1.5σ for profit threshold
+    confidence_std_multiplier: float = 1.0  # 1.0σ for confidence threshold
+    excursion_std_multiplier: float = 1.0  # 1.0σ for excursion threshold
+    
+    # Volatility scaling
+    volatility_scaling_enabled: bool = True
+    volatility_window: int = 20  # Window for volatility calculation
+    min_volatility: float = 0.001  # Minimum volatility floor
+    
+    # Adaptive parameters
+    adaptive_window: int = 50  # Window for adaptive threshold calculation
+    min_samples: int = 20  # Minimum samples for threshold calculation
+    
+    def calculate_profit_threshold(self, returns: pd.Series, prices: pd.Series) -> Tuple[float, float]:
+        """Calculate data-driven profit thresholds (USD and percentage)."""
+        try:
+            if len(returns) < self.min_samples:
+                return 5.0, 0.001  # Fallback values
+            
+            # Calculate USD returns
+            usd_returns = returns * prices.shift(1)
+            usd_returns = usd_returns.dropna()
+            
+            if usd_returns.empty:
+                return 5.0, 0.001
+            
+            if self.profit_method == "percentile":
+                usd_threshold = usd_returns.quantile(self.profit_percentile)
+                pct_threshold = returns.quantile(self.profit_percentile)
+            elif self.profit_method == "std":
+                usd_threshold = usd_returns.mean() + self.profit_std_multiplier * usd_returns.std()
+                pct_threshold = returns.mean() + self.profit_std_multiplier * returns.std()
+            elif self.profit_method == "iqr":
+                usd_q75, usd_q25 = usd_returns.quantile([0.75, 0.25])
+                usd_threshold = usd_q75 + 1.5 * (usd_q75 - usd_q25)
+                pct_q75, pct_q25 = returns.quantile([0.75, 0.25])
+                pct_threshold = pct_q75 + 1.5 * (pct_q75 - pct_q25)
+            else:  # adaptive
+                usd_threshold = self._calculate_adaptive_threshold(usd_returns)
+                pct_threshold = self._calculate_adaptive_threshold(returns)
+            
+            # Ensure positive thresholds
+            usd_threshold = max(usd_threshold, 1.0)
+            pct_threshold = max(pct_threshold, 0.0001)
+            
+            return float(usd_threshold), float(pct_threshold)
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Error calculating profit threshold: {e}")
+            return 5.0, 0.001
+    
+    def calculate_confidence_threshold(self, confidence_scores: pd.Series) -> float:
+        """Calculate data-driven confidence threshold."""
+        try:
+            if len(confidence_scores) < self.min_samples:
+                return 0.6  # Fallback value
+            
+            if self.confidence_method == "percentile":
+                threshold = confidence_scores.quantile(self.confidence_percentile)
+            elif self.confidence_method == "std":
+                threshold = confidence_scores.mean() + self.confidence_std_multiplier * confidence_scores.std()
+            elif self.confidence_method == "iqr":
+                q75, q25 = confidence_scores.quantile([0.75, 0.25])
+                threshold = q75 + 1.5 * (q75 - q25)
+            else:  # adaptive
+                threshold = self._calculate_adaptive_threshold(confidence_scores)
+            
+            # Ensure valid range [0, 1]
+            threshold = max(0.0, min(1.0, threshold))
+            
+            return float(threshold)
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Error calculating confidence threshold: {e}")
+            return 0.6
+    
+    def calculate_excursion_thresholds(self, returns: pd.Series, volatility: pd.Series) -> Tuple[float, float]:
+        """Calculate data-driven excursion thresholds."""
+        try:
+            if len(returns) < self.min_samples:
+                return 1.0, -2.0  # Fallback values
+            
+            if self.excursion_method == "volatility_scaled":
+                # Scale by volatility
+                vol_mean = volatility.mean()
+                vol_std = volatility.std()
+                
+                # Favorable excursion: 1σ above mean volatility
+                favorable_threshold = (vol_mean + vol_std) / vol_mean if vol_mean > 0 else 1.0
+                # Adverse excursion: -2σ below mean volatility
+                adverse_threshold = -(vol_mean + 2 * vol_std) / vol_mean if vol_mean > 0 else -2.0
+                
+            elif self.excursion_method == "percentile":
+                favorable_threshold = returns.quantile(self.excursion_percentile)
+                adverse_threshold = returns.quantile(1 - self.excursion_percentile)
+                
+            elif self.excursion_method == "std":
+                favorable_threshold = returns.mean() + self.excursion_std_multiplier * returns.std()
+                adverse_threshold = returns.mean() - 2 * self.excursion_std_multiplier * returns.std()
+                
+            else:  # adaptive
+                favorable_threshold = self._calculate_adaptive_threshold(returns)
+                adverse_threshold = -self._calculate_adaptive_threshold(-returns)
+            
+            return float(favorable_threshold), float(adverse_threshold)
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Error calculating excursion thresholds: {e}")
+            return 1.0, -2.0
+    
+    def calculate_volume_threshold(self, volume: pd.Series) -> float:
+        """Calculate data-driven volume threshold."""
+        try:
+            if len(volume) < self.min_samples:
+                return 1000.0  # Fallback value
+            
+            # Use 25th percentile as minimum volume threshold
+            threshold = volume.quantile(0.25)
+            
+            # Ensure reasonable minimum
+            threshold = max(threshold, 100.0)
+            
+            return float(threshold)
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Error calculating volume threshold: {e}")
+            return 1000.0
+    
+    def calculate_spread_threshold(self, spreads: pd.Series) -> float:
+        """Calculate data-driven spread threshold."""
+        try:
+            if len(spreads) < self.min_samples:
+                return 0.01  # Fallback value (1%)
+            
+            # Use 90th percentile as maximum spread threshold
+            threshold = spreads.quantile(0.90)
+            
+            # Ensure reasonable maximum
+            threshold = min(threshold, 0.05)  # Cap at 5%
+            
+            return float(threshold)
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Error calculating spread threshold: {e}")
+            return 0.01
+    
+    def _calculate_adaptive_threshold(self, data: pd.Series) -> float:
+        """Calculate adaptive threshold using rolling statistics."""
+        try:
+            if len(data) < self.adaptive_window:
+                return data.quantile(0.75)
+            
+            # Calculate rolling mean and std
+            rolling_mean = data.rolling(window=self.adaptive_window).mean()
+            rolling_std = data.rolling(window=self.adaptive_window).std()
+            
+            # Use most recent values
+            recent_mean = rolling_mean.iloc[-1]
+            recent_std = rolling_std.iloc[-1]
+            
+            # Adaptive threshold: mean + 1.5 * std
+            threshold = recent_mean + 1.5 * recent_std
+            
+            return float(threshold)
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Error calculating adaptive threshold: {e}")
+            return data.quantile(0.75)
+
+
+@dataclass
 class AnalystLabelConfig:
     """Configuration for Analyst labels."""
 
     # Trading horizon in minutes
     horizon_minutes: int = 60
 
-    # Profitability thresholds
-    min_profit_threshold_usd: float = 5.0
-    min_profit_threshold_pct: float = 0.001  # 0.1%
+    # Data-driven threshold calculator
+    threshold_calculator: AdaptiveThresholdCalculator = field(default_factory=AdaptiveThresholdCalculator)
 
     # Trading costs
     trading_costs: TradingCosts = field(default_factory=TradingCosts)
-
-    # Confidence thresholds
-    min_confidence_threshold: float = 0.6
-
-    # Data quality filters
-    min_volume_threshold: float = 1000.0
-    max_spread_pct: float = 0.01  # 1%
 
     # Risk management
     max_position_size_pct: float = 0.05  # 5% of portfolio
@@ -82,20 +259,48 @@ class AnalystLabelConfig:
     enable_regime_conditioning: bool = True
     volatility_scaling_factor: float = 1.0
 
+    # Data-driven thresholds (calculated at runtime)
+    _min_profit_threshold_usd: Optional[float] = None
+    _min_profit_threshold_pct: Optional[float] = None
+    _min_confidence_threshold: Optional[float] = None
+    _min_volume_threshold: Optional[float] = None
+    _max_spread_pct: Optional[float] = None
+
+    def get_profit_thresholds(self, returns: pd.Series, prices: pd.Series) -> Tuple[float, float]:
+        """Get data-driven profit thresholds."""
+        if self._min_profit_threshold_usd is None or self._min_profit_threshold_pct is None:
+            self._min_profit_threshold_usd, self._min_profit_threshold_pct = \
+                self.threshold_calculator.calculate_profit_threshold(returns, prices)
+        return self._min_profit_threshold_usd, self._min_profit_threshold_pct
+
+    def get_confidence_threshold(self, confidence_scores: pd.Series) -> float:
+        """Get data-driven confidence threshold."""
+        if self._min_confidence_threshold is None:
+            self._min_confidence_threshold = self.threshold_calculator.calculate_confidence_threshold(confidence_scores)
+        return self._min_confidence_threshold
+
+    def get_volume_threshold(self, volume: pd.Series) -> float:
+        """Get data-driven volume threshold."""
+        if self._min_volume_threshold is None:
+            self._min_volume_threshold = self.threshold_calculator.calculate_volume_threshold(volume)
+        return self._min_volume_threshold
+
+    def get_spread_threshold(self, spreads: pd.Series) -> float:
+        """Get data-driven spread threshold."""
+        if self._max_spread_pct is None:
+            self._max_spread_pct = self.threshold_calculator.calculate_spread_threshold(spreads)
+        return self._max_spread_pct
+
 
 @dataclass
 class TacticianLabelConfig:
     """Configuration for Tactician labels."""
 
-    # Excursion thresholds
-    favorable_excursion_threshold: float = 1.0  # 1σ
-    adverse_excursion_threshold: float = -2.0   # -2σ
+    # Data-driven threshold calculator
+    threshold_calculator: AdaptiveThresholdCalculator = field(default_factory=AdaptiveThresholdCalculator)
 
     # Horizon settings
     horizon_minutes: int = 30
-
-    # Direction confidence
-    min_direction_confidence: float = 0.7
 
     # Magnitude scaling
     magnitude_scaling: bool = True
@@ -104,6 +309,24 @@ class TacticianLabelConfig:
     # Regime conditioning
     enable_regime_conditioning: bool = True
     volatility_sensitivity: float = 1.0
+
+    # Data-driven thresholds (calculated at runtime)
+    _favorable_excursion_threshold: Optional[float] = None
+    _adverse_excursion_threshold: Optional[float] = None
+    _min_direction_confidence: Optional[float] = None
+
+    def get_excursion_thresholds(self, returns: pd.Series, volatility: pd.Series) -> Tuple[float, float]:
+        """Get data-driven excursion thresholds."""
+        if self._favorable_excursion_threshold is None or self._adverse_excursion_threshold is None:
+            self._favorable_excursion_threshold, self._adverse_excursion_threshold = \
+                self.threshold_calculator.calculate_excursion_thresholds(returns, volatility)
+        return self._favorable_excursion_threshold, self._adverse_excursion_threshold
+
+    def get_direction_confidence_threshold(self, confidence_scores: pd.Series) -> float:
+        """Get data-driven direction confidence threshold."""
+        if self._min_direction_confidence is None:
+            self._min_direction_confidence = self.threshold_calculator.calculate_confidence_threshold(confidence_scores)
+        return self._min_direction_confidence
 
 
 @dataclass
@@ -283,8 +506,9 @@ class EnhancedLabelDefinitions:
                 net_profits, expected_returns, volatility_series
             )
 
-            # Apply minimum confidence threshold
-            confident_mask = confidence_scores >= self.analyst_config.min_confidence_threshold
+            # Apply data-driven confidence threshold
+            confidence_threshold = self.analyst_config.get_confidence_threshold(confidence_scores)
+            confident_mask = confidence_scores >= confidence_threshold
             analyst_labels[~confident_mask] = 0
 
             tprint_success(f"✅ Analyst labels generated: {analyst_labels.sum()}/{len(analyst_labels)} positive trades")
@@ -326,26 +550,26 @@ class EnhancedLabelDefinitions:
                 cleaned_data, self.tactician_config.horizon_minutes
             )
 
+            # Get data-driven excursion thresholds
+            returns = cleaned_data['close'].pct_change().dropna()
+            fav_threshold, adv_threshold = self.tactician_config.get_excursion_thresholds(returns, volatility_series)
+            
             # Apply volatility scaling
             if self.tactician_config.enable_regime_conditioning and regime_data is not None:
                 vol_scaled_fav = favorable_excursion / volatility_series
                 vol_scaled_adv = adverse_excursion / volatility_series
 
-                # Adjust thresholds based on regime
-                regime_adjusted_fav = self.tactician_config.favorable_excursion_threshold
-                regime_adjusted_adv = self.tactician_config.adverse_excursion_threshold
-
                 # Apply regime-specific scaling
                 regime_multipliers = self._calculate_regime_multipliers(
                     volatility_series, regime_data
                 )
-                regime_adjusted_fav *= regime_multipliers
-                regime_adjusted_adv *= regime_multipliers
+                regime_adjusted_fav = fav_threshold * regime_multipliers
+                regime_adjusted_adv = adv_threshold * regime_multipliers
             else:
                 vol_scaled_fav = favorable_excursion / volatility_series
                 vol_scaled_adv = adverse_excursion / volatility_series
-                regime_adjusted_fav = self.tactician_config.favorable_excursion_threshold
-                regime_adjusted_adv = self.tactician_config.adverse_excursion_threshold
+                regime_adjusted_fav = fav_threshold
+                regime_adjusted_adv = adv_threshold
 
             # Generate tactician labels based on excursion criteria
             excursion_criteria = (
@@ -360,8 +584,9 @@ class EnhancedLabelDefinitions:
                 vol_scaled_fav, vol_scaled_adv, regime_adjusted_fav, regime_adjusted_adv
             )
 
-            # Apply minimum confidence threshold
-            confident_mask = magnitude_scores >= self.tactician_config.min_direction_confidence
+            # Apply data-driven confidence threshold
+            confidence_threshold = self.tactician_config.get_direction_confidence_threshold(magnitude_scores)
+            confident_mask = magnitude_scores >= confidence_threshold
             tactician_labels[~confident_mask] = 0
 
             # Scale magnitude if enabled

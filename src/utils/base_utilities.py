@@ -25,17 +25,41 @@ except ImportError:
     np = None
 from datetime import datetime, date
 
+# Import input validation (avoid circular import by using lazy import)
+def _get_input_validator():
+    """Lazy import of input validator to avoid circular dependencies."""
+    try:
+        from .input_validation import validate_path, validate_numeric, validate_string
+        return validate_path, validate_numeric, validate_string
+    except ImportError:
+        # Return dummy functions if validation not available
+        def dummy_validate(*args, **kwargs):
+            from .input_validation import ValidationResult
+            return ValidationResult(True)
+        return dummy_validate, dummy_validate, dummy_validate
+
 
 def validate_file_path(file_path: Union[str, Path]) -> bool:
     """
-    Validate if a file path exists and is a file.
+    Validate if a file path exists and is a file with comprehensive validation.
     
     Args:
         file_path: Path to validate
         
     Returns:
         True if file exists and is a file, False otherwise
+        
+    Raises:
+        ValueError: If validation fails
     """
+    # Get input validator
+    validate_path, _, _ = _get_input_validator()
+    
+    # Validate input
+    result = validate_path(file_path, "file_path", must_exist=True, must_be_file=True)
+    if not result.is_valid:
+        raise ValueError(f"File path validation failed: {', '.join(result.errors)}")
+    
     try:
         path = Path(file_path)
         return path.exists() and path.is_file()
@@ -175,7 +199,7 @@ def safe_get_shape(data: Any) -> tuple:
 
 def safe_divide(numerator: float, denominator: float, default: float = 0.0) -> float:
     """
-    Safely divide two numbers, returning default if denominator is zero.
+    Safely divide two numbers with comprehensive validation.
     
     Args:
         numerator: Numerator
@@ -184,7 +208,22 @@ def safe_divide(numerator: float, denominator: float, default: float = 0.0) -> f
         
     Returns:
         Division result or default
+        
+    Raises:
+        ValueError: If validation fails
     """
+    # Get input validator
+    _, validate_numeric, _ = _get_input_validator()
+    
+    # Validate inputs
+    num_result = validate_numeric(numerator, "numerator", allow_inf=False, allow_nan=False)
+    if not num_result.is_valid:
+        raise ValueError(f"Numerator validation failed: {', '.join(num_result.errors)}")
+    
+    den_result = validate_numeric(denominator, "denominator", allow_inf=False, allow_nan=False)
+    if not den_result.is_valid:
+        raise ValueError(f"Denominator validation failed: {', '.join(den_result.errors)}")
+    
     try:
         if not NUMPY_AVAILABLE:
             return numerator / denominator if denominator != 0 else default

@@ -2,7 +2,8 @@
 Common utility functions for DataFrame operations and data processing.
 
 This module provides shared utility functions for DataFrame operations,
-data validation, and common data processing utilities.
+data validation, and common data processing utilities with comprehensive
+input validation and memory management.
 """
 
 import logging
@@ -11,6 +12,17 @@ import pandas as pd
 import numpy as np
 from typing import Any, Dict, List, Optional, Union, Callable
 from pathlib import Path
+
+# Import input validation
+from .input_validation import (
+    validate_dataframe, validate_array, validate_numeric, validate_string,
+    validate_list, validate_path, validate_function, ValidationResult
+)
+
+# Import memory management
+from .memory_management import (
+    memory_managed, MemoryStrategy, get_memory_manager, force_cleanup
+)
 
 # Enhanced hardware optimization imports
 try:
@@ -30,16 +42,63 @@ except ImportError:
 # Setup logging
 logger = logging.getLogger(__name__)
 
+@memory_managed(MemoryStrategy.MODERATE)
 def safe_dataframe_operation(df: pd.DataFrame, operation: Callable, *args, **kwargs) -> pd.DataFrame:
-    """Safely perform operation on DataFrame."""
+    """
+    Safely perform operation on DataFrame with comprehensive validation.
+    
+    Args:
+        df: DataFrame to operate on
+        operation: Function to apply to DataFrame
+        *args: Positional arguments for operation
+        **kwargs: Keyword arguments for operation
+        
+    Returns:
+        DataFrame after operation or original DataFrame if error occurs
+        
+    Raises:
+        ValueError: If validation fails
+    """
+    # Validate inputs
+    df_result = validate_dataframe(df, "dataframe", allow_empty=False)
+    if not df_result.is_valid:
+        raise ValueError(f"DataFrame validation failed: {', '.join(df_result.errors)}")
+    
+    func_result = validate_function(operation, "operation")
+    if not func_result.is_valid:
+        raise ValueError(f"Function validation failed: {', '.join(func_result.errors)}")
+    
     try:
         return operation(df, *args, **kwargs)
     except Exception as e:
         logger.warning(f"Error in DataFrame operation {operation.__name__}: {e}")
         return df
 
+@memory_managed(MemoryStrategy.CONSERVATIVE)
 def validate_dataframe_columns(df: pd.DataFrame, required_columns: List[str]) -> bool:
-    """Validate that DataFrame has required columns."""
+    """
+    Validate that DataFrame has required columns with comprehensive validation.
+    
+    Args:
+        df: DataFrame to validate
+        required_columns: List of required column names
+        
+    Returns:
+        True if all required columns are present, False otherwise
+        
+    Raises:
+        ValueError: If validation fails
+    """
+    # Validate inputs
+    df_result = validate_dataframe(df, "dataframe", allow_empty=False)
+    if not df_result.is_valid:
+        raise ValueError(f"DataFrame validation failed: {', '.join(df_result.errors)}")
+    
+    cols_result = validate_list(required_columns, "required_columns", 
+                               min_length=1, element_type=str)
+    if not cols_result.is_valid:
+        raise ValueError(f"Required columns validation failed: {', '.join(cols_result.errors)}")
+    
     try:
         missing_columns = set(required_columns) - set(df.columns)
         if missing_columns:
@@ -50,8 +109,29 @@ def validate_dataframe_columns(df: pd.DataFrame, required_columns: List[str]) ->
         logger.error(f"Error validating DataFrame columns: {e}")
         return False
 
+@memory_managed(MemoryStrategy.MODERATE)
 def safe_convert_dtypes(df: pd.DataFrame, dtype_mapping: Dict[str, str]) -> pd.DataFrame:
-    """Safely convert DataFrame column dtypes."""
+    """
+    Safely convert DataFrame column dtypes with comprehensive validation.
+    
+    Args:
+        df: DataFrame to convert
+        dtype_mapping: Dictionary mapping column names to dtypes
+        
+    Returns:
+        DataFrame with converted dtypes or original DataFrame if error occurs
+        
+    Raises:
+        ValueError: If validation fails
+    """
+    # Validate inputs
+    df_result = validate_dataframe(df, "dataframe", allow_empty=False)
+    if not df_result.is_valid:
+        raise ValueError(f"DataFrame validation failed: {', '.join(df_result.errors)}")
+    
+    if not isinstance(dtype_mapping, dict):
+        raise ValueError("dtype_mapping must be a dictionary")
+    
     try:
         for col, dtype in dtype_mapping.items():
             if col in df.columns:
@@ -228,10 +308,30 @@ def format_nan_analysis_report(analysis_results: Dict[str, Any], prefix: str = "
         logger.error(f"Error formatting NaN analysis report: {e}")
         return f"{prefix}❌ Error formatting NaN analysis report: {e}"
 
-@memory_efficient(memory_threshold_mb=100.0, auto_cleanup=True) if HARDWARE_OPTIMIZATION_AVAILABLE else lambda x: x
-@performance_tracked(log_performance=True, track_memory=True) if HARDWARE_OPTIMIZATION_AVAILABLE else lambda x: x
+@memory_managed(MemoryStrategy.AGGRESSIVE)
 def calculate_data_quality_metrics(df: Union[pd.DataFrame, np.ndarray]) -> Dict[str, Any]:
-    """Calculate data quality metrics for DataFrame or numpy array."""
+    """
+    Calculate data quality metrics for DataFrame or numpy array with comprehensive validation.
+    
+    Args:
+        df: DataFrame or numpy array to analyze
+        
+    Returns:
+        Dictionary with data quality metrics
+        
+    Raises:
+        ValueError: If validation fails
+    """
+    # Validate input
+    if isinstance(df, np.ndarray):
+        arr_result = validate_array(df, "data", allow_empty=False)
+        if not arr_result.is_valid:
+            raise ValueError(f"Array validation failed: {', '.join(arr_result.errors)}")
+    else:
+        df_result = validate_dataframe(df, "dataframe", allow_empty=False)
+        if not df_result.is_valid:
+            raise ValueError(f"DataFrame validation failed: {', '.join(df_result.errors)}")
+    
     try:
         # Convert numpy array to DataFrame if needed
         if isinstance(df, np.ndarray):

@@ -2,164 +2,209 @@
 # src/utils/__init__.py
 # This file makes the 'utils' directory a Python package.
 
-# Import core utilities
-try:
-    from .core import *
-    CORE_AVAILABLE = True
-except ImportError:
-    CORE_AVAILABLE = False
+"""
+Utils Package - Lazy Loading Implementation
 
-# Import data utilities
-try:
-    from .data import *  # noqa: F401,F403 - re-export convenience
-    DATA_AVAILABLE = True
-except Exception:  # pragma: no cover - fallback when optional deps fail
-    DATA_AVAILABLE = False
+This module provides lazy loading to avoid circular dependencies and improve
+import performance. All major utilities are loaded on-demand.
+"""
 
-# Import config utilities
-try:
-    from .config import *
-    CONFIG_AVAILABLE = True
-except ImportError:
-    CONFIG_AVAILABLE = False
+import logging
+from typing import Any, Dict, Optional, Callable
+from functools import wraps
 
-# Import hardware utilities
-try:
-    from .hardware import *
-    HARDWARE_AVAILABLE = True
-except ImportError:
-    HARDWARE_AVAILABLE = False
+# Setup basic logging
+logger = logging.getLogger(__name__)
 
-# Import monitoring systems
-try:
-    from .function_call_monitor import (
-        FunctionCallMonitor,
-        FunctionCallStatus,
-        ValidationLevel,
-        monitor_function_calls,
-        monitor_basic,
-        monitor_standard,
-        monitor_comprehensive,
-        get_function_call_monitor,
-        log_function_call_summary
-    )
-    FUNCTION_CALL_MONITOR_AVAILABLE = True
-except ImportError:
-    FUNCTION_CALL_MONITOR_AVAILABLE = False
+# Lazy loading registry
+_LAZY_IMPORTS: Dict[str, Callable] = {}
+_IMPORT_CACHE: Dict[str, Any] = {}
 
-# Make all imports optional to handle missing dependencies gracefully
-try:
-    from .function_validation_framework import (
-        FunctionValidator,
-        ValidationSeverity,
-        ValidationCategory,
-        ValidationIssue,
-        ValidationResult,
-        validate_function_entry,
-        validate_function_output,
-        get_function_validator
-    )
-    FUNCTION_VALIDATION_AVAILABLE = True
-except ImportError:
-    FUNCTION_VALIDATION_AVAILABLE = False
+def _register_lazy_import(name: str, import_func: Callable) -> None:
+    """Register a lazy import function."""
+    _LAZY_IMPORTS[name] = import_func
 
-try:
-    from .enhanced_error_handler import (
-        EnhancedErrorHandler,
-        ErrorSeverity,
-        ErrorCategory,
-        ErrorContext,
-        ErrorRecord,
-        handle_errors_with_tracking,
-        handle_errors_basic,
-        handle_errors_strict,
-        get_error_handler,
-        log_error_summary
-    )
-    ERROR_HANDLER_AVAILABLE = True
-except ImportError:
-    ERROR_HANDLER_AVAILABLE = False
+def _lazy_import(name: str) -> Any:
+    """Lazy import with caching."""
+    if name in _IMPORT_CACHE:
+        return _IMPORT_CACHE[name]
+    
+    if name in _LAZY_IMPORTS:
+        try:
+            result = _LAZY_IMPORTS[name]()
+            _IMPORT_CACHE[name] = result
+            return result
+        except ImportError as e:
+            logger.warning(f"Failed to lazy import {name}: {e}")
+            return None
+    else:
+        raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
 
-# Import new utility modules
-try:
-    from .serialization_utils import (
-        JSONSerializer,
-        PickleSerializer,
-        ParquetSerializer,
-        UniversalSerializer,
-        save_json,
-        load_json,
-        save_pickle,
-        load_pickle,
-        save_parquet,
-        load_parquet,
-        save_data,
-        load_data
-    )
-    SERIALIZATION_AVAILABLE = True
-except ImportError:
-    SERIALIZATION_AVAILABLE = False
+# Register lazy imports
+def _get_core_utilities():
+    """Lazy loader for core utilities."""
+    try:
+        from .core import *
+        return locals()
+    except ImportError as e:
+        logger.warning(f"Core utilities not available: {e}")
+        return {}
 
-CONFIG_AVAILABLE = False
+def _get_data_utilities():
+    """Lazy loader for data utilities."""
+    try:
+        from .data import *
+        return locals()
+    except ImportError as e:
+        logger.warning(f"Data utilities not available: {e}")
+        return {}
 
-try:
-    from .performance_utils import (
-        PerformanceMonitor,
-        MemoryProfiler,
-        SystemMonitor,
-        global_monitor,
-        timer,
-        profile_function,
-        time_function,
-        benchmark_function,
-        get_system_info
-    )
-    PERFORMANCE_AVAILABLE = True
-except ImportError:
-    PERFORMANCE_AVAILABLE = False
+def _get_config_utilities():
+    """Lazy loader for config utilities."""
+    try:
+        from .config import *
+        return locals()
+    except ImportError as e:
+        logger.warning(f"Config utilities not available: {e}")
+        return {}
 
-try:
-    from .data_processing_utils import (
-        DataFrameValidator,
-        DataFrameCleaner,
-        DataFrameTransformer,
-        validate_dataframe,
-        clean_dataframe,
-        transform_dataframe,
-        get_dataframe_info
-    )
-    DATA_PROCESSING_AVAILABLE = True
-except ImportError:
-    DATA_PROCESSING_AVAILABLE = False
+def _get_hardware_utilities():
+    """Lazy loader for hardware utilities."""
+    try:
+        from .hardware import *
+        return locals()
+    except ImportError as e:
+        logger.warning(f"Hardware utilities not available: {e}")
+        return {}
 
-try:
-    from .monitoring_utils import (
-        UnifiedPerformanceMonitor,
-        FunctionTracker,
-        LoggingPatterns,
-        global_monitor as monitoring_global_monitor,
-        global_tracker,
-        track_function,
-        monitor_function_calls,
-        function_tracker,
-        logging_patterns
-    )
-    MONITORING_AVAILABLE = True
-except ImportError:
-    MONITORING_AVAILABLE = False
+def _get_function_call_monitor():
+    """Lazy loader for function call monitor."""
+    try:
+        from .function_call_monitor import (
+            FunctionCallMonitor,
+            FunctionCallStatus,
+            ValidationLevel,
+            monitor_function_calls,
+            monitor_basic,
+            monitor_standard,
+            monitor_comprehensive,
+            get_function_call_monitor,
+            log_function_call_summary
+        )
+        return {
+            'FunctionCallMonitor': FunctionCallMonitor,
+            'FunctionCallStatus': FunctionCallStatus,
+            'ValidationLevel': ValidationLevel,
+            'monitor_function_calls': monitor_function_calls,
+            'monitor_basic': monitor_basic,
+            'monitor_standard': monitor_standard,
+            'monitor_comprehensive': monitor_comprehensive,
+            'get_function_call_monitor': get_function_call_monitor,
+            'log_function_call_summary': log_function_call_summary
+        }
+    except ImportError as e:
+        logger.warning(f"Function call monitor not available: {e}")
+        return {}
 
-try:
-    from .parameter_loader import (
-        ParameterLoader,
-        SRParameterLoader,
-        initialize_sr_parameters,
-        load_sr_parameters,
-        load_parameters,
-        global_parameter_loader
-    )
-    PARAMETER_LOADER_AVAILABLE = True
-except ImportError:
-    PARAMETER_LOADER_AVAILABLE = False
+def _get_error_handler():
+    """Lazy loader for error handler."""
+    try:
+        from .enhanced_error_handler import (
+            EnhancedErrorHandler,
+            ErrorSeverity,
+            ErrorCategory,
+            ErrorContext,
+            ErrorRecord,
+            handle_errors_with_tracking,
+            handle_errors_basic,
+            handle_errors_strict,
+            get_error_handler,
+            log_error_summary
+        )
+        return {
+            'EnhancedErrorHandler': EnhancedErrorHandler,
+            'ErrorSeverity': ErrorSeverity,
+            'ErrorCategory': ErrorCategory,
+            'ErrorContext': ErrorContext,
+            'ErrorRecord': ErrorRecord,
+            'handle_errors_with_tracking': handle_errors_with_tracking,
+            'handle_errors_basic': handle_errors_basic,
+            'handle_errors_strict': handle_errors_strict,
+            'get_error_handler': get_error_handler,
+            'log_error_summary': log_error_summary
+        }
+    except ImportError as e:
+        logger.warning(f"Error handler not available: {e}")
+        return {}
+
+def _get_performance_utils():
+    """Lazy loader for performance utilities."""
+    try:
+        from .performance_utils import (
+            PerformanceMonitor,
+            MemoryProfiler,
+            SystemMonitor,
+            global_monitor,
+            timer,
+            profile_function,
+            time_function,
+            benchmark_function,
+            get_system_info
+        )
+        return {
+            'PerformanceMonitor': PerformanceMonitor,
+            'MemoryProfiler': MemoryProfiler,
+            'SystemMonitor': SystemMonitor,
+            'global_monitor': global_monitor,
+            'timer': timer,
+            'profile_function': profile_function,
+            'time_function': time_function,
+            'benchmark_function': benchmark_function,
+            'get_system_info': get_system_info
+        }
+    except ImportError as e:
+        logger.warning(f"Performance utilities not available: {e}")
+        return {}
+
+def _get_data_processing_utils():
+    """Lazy loader for data processing utilities."""
+    try:
+        from .data_processing_utils import (
+            DataFrameValidator,
+            DataFrameCleaner,
+            DataFrameTransformer,
+            validate_dataframe,
+            clean_dataframe,
+            transform_dataframe,
+            get_dataframe_info
+        )
+        return {
+            'DataFrameValidator': DataFrameValidator,
+            'DataFrameCleaner': DataFrameCleaner,
+            'DataFrameTransformer': DataFrameTransformer,
+            'validate_dataframe': validate_dataframe,
+            'clean_dataframe': clean_dataframe,
+            'transform_dataframe': transform_dataframe,
+            'get_dataframe_info': get_dataframe_info
+        }
+    except ImportError as e:
+        logger.warning(f"Data processing utilities not available: {e}")
+        return {}
+
+# Register all lazy imports
+_register_lazy_import('core', _get_core_utilities)
+_register_lazy_import('data', _get_data_utilities)
+_register_lazy_import('config', _get_config_utilities)
+_register_lazy_import('hardware', _get_hardware_utilities)
+_register_lazy_import('function_call_monitor', _get_function_call_monitor)
+_register_lazy_import('error_handler', _get_error_handler)
+_register_lazy_import('performance_utils', _get_performance_utils)
+_register_lazy_import('data_processing_utils', _get_data_processing_utils)
+
+# Module-level lazy loading
+def __getattr__(name: str) -> Any:
+    """Lazy loading for module attributes."""
+    return _lazy_import(name)
 
 # Build __all__ list dynamically based on available modules
 __all__ = []

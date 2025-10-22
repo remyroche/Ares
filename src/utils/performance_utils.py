@@ -1,7 +1,8 @@
 """
 Performance Utilities
 
-This module provides comprehensive performance monitoring, timing, and profiling utilities.
+This module provides comprehensive performance monitoring, timing, and profiling utilities
+with memory management and hardware optimization.
 """
 
 import time
@@ -14,6 +15,18 @@ from typing import Any, Callable, Dict, List, Optional, Union, Generator
 from dataclasses import dataclass, field
 from collections import defaultdict, deque
 import numpy as np
+
+# Import memory management
+try:
+    from .memory_management import memory_managed, MemoryStrategy, force_cleanup
+except ImportError:
+    # Create dummy decorator if memory management not available
+    def memory_managed(strategy=None):
+        def decorator(func):
+            return func
+        return decorator
+    def force_cleanup():
+        pass
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +44,7 @@ class PerformanceMetrics:
     error_message: Optional[str] = None
 
 class PerformanceMonitor:
-    """Performance monitoring and profiling utility."""
+    """Performance monitoring and profiling utility with memory management."""
 
     def __init__(self, max_history: int = 1000):
         """
@@ -52,11 +65,15 @@ class PerformanceMonitor:
             'success_count': 0
         })
         self._lock = threading.Lock()
+        self._cleanup_interval = 100  # Cleanup every 100 operations
+        self._operation_count = 0
 
+    @memory_managed(MemoryStrategy.MODERATE)
     def record_metrics(self, metrics: PerformanceMetrics) -> None:
-        """Record performance metrics."""
+        """Record performance metrics with memory management."""
         with self._lock:
             self.metrics_history.append(metrics)
+            self._operation_count += 1
 
             # Update function statistics
             stats = self.function_stats[metrics.function_name]
@@ -70,6 +87,10 @@ class PerformanceMonitor:
                 stats['success_count'] += 1
             else:
                 stats['error_count'] += 1
+            
+            # Periodic cleanup to prevent memory leaks
+            if self._operation_count % self._cleanup_interval == 0:
+                self._cleanup_old_data()
 
     def get_function_stats(self, function_name: Optional[str] = None) -> Dict[str, Any]:
         """Get performance statistics for a function or all functions."""
@@ -84,10 +105,36 @@ class PerformanceMonitor:
             return list(self.metrics_history)[-count:]
 
     def clear_history(self) -> None:
-        """Clear performance history."""
+        """Clear performance history with memory cleanup."""
         with self._lock:
             self.metrics_history.clear()
             self.function_stats.clear()
+            self._operation_count = 0
+            
+        # Force cleanup to free memory
+        force_cleanup()
+    
+    def _cleanup_old_data(self) -> None:
+        """Cleanup old data to prevent memory leaks."""
+        # Keep only recent metrics if we're approaching the limit
+        if len(self.metrics_history) > self.max_history * 0.8:
+            # Remove oldest 20% of metrics
+            remove_count = int(self.max_history * 0.2)
+            for _ in range(remove_count):
+                if self.metrics_history:
+                    self.metrics_history.popleft()
+        
+        # Cleanup function stats for functions that haven't been called recently
+        current_time = time.time()
+        cutoff_time = current_time - 3600  # 1 hour ago
+        
+        functions_to_remove = []
+        for func_name, stats in self.function_stats.items():
+            if stats.get('last_call_time', 0) < cutoff_time:
+                functions_to_remove.append(func_name)
+        
+        for func_name in functions_to_remove:
+            del self.function_stats[func_name]
 
     def get_summary(self) -> Dict[str, Any]:
         """Get performance summary."""

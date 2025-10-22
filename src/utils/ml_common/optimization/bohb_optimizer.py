@@ -24,17 +24,20 @@ Notes
 from __future__ import annotations
 
 import time
-import itertools
 import logging
 import gc
-import psutil
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
-from pathlib import Path
-import json
 
 import numpy as np
-import pandas as pd
+
+# Guard psutil import
+try:
+    import psutil
+    PSUTIL_AVAILABLE = True
+except ImportError:
+    PSUTIL_AVAILABLE = False
+    psutil = None
 
 # Enhanced tprint integration
 try:
@@ -260,6 +263,18 @@ class BOHBConfig:
     enable_memory_monitoring: bool = True
     memory_threshold_mb: float = 100.0
     enable_gc_optimization: bool = True
+    
+    # Exception handling
+    convert_failures_to_worst_case: bool = False
+    worst_case_value: Optional[float] = None  # Will be set based on direction
+    
+    # Study persistence
+    study_save_path: Optional[str] = None
+    study_save_interval: int = 10  # Save every N trials
+    
+    # Logging verbosity
+    verbose_trial_logging: bool = True
+    trial_log_interval: int = 10  # Log every N trials
 
     # Logging and debugging
     enable_tprint_logging: bool = True
@@ -332,6 +347,11 @@ class BOHBOptimizer:
         for k, v in kwargs.items():
             if hasattr(self.config, k):
                 setattr(self.config, k, v)
+        
+        # Set worst case value based on direction
+        if self.config.worst_case_value is None:
+            self.config.worst_case_value = -1e10 if self.config.direction == "maximize" else 1e10
+        
         self.config.validate()
 
         # Initialize tprint configuration
@@ -543,10 +563,11 @@ class BOHBOptimizer:
                     'last_log_time': 0
                 }
                 
-                if self.config.enable_memory_monitoring:
+                if self.config.enable_memory_monitoring and PSUTIL_AVAILABLE:
+                    baseline_memory = psutil.Process().memory_info().rss / 1024 / 1024  # MB
                     self.memory_monitor = {
-                        'baseline_memory': psutil.Process().memory_info().rss / 1024 / 1024,  # MB
-                        'peak_memory': 0,
+                        'baseline_memory': baseline_memory,
+                        'peak_memory': baseline_memory,  # Initialize to baseline
                         'memory_threshold': self.config.memory_threshold_mb
                     }
                 
@@ -569,7 +590,6 @@ class BOHBOptimizer:
 
     # -------------------- Public API --------------------
     @performance_tracked(log_performance=True, track_memory=True)
-    @smart_cache(ttl=3600)  # Cache for 1 hour
     @memory_optimized(optimization_level="aggressive")
     def optimize(self, objective: Callable, search_space: Dict[str, Any]) -> Dict[str, Any]:
         """Enhanced BOHB optimization with comprehensive ML utilities and monitoring."""
@@ -585,6 +605,7 @@ class BOHBOptimizer:
         # Initialize performance monitoring
         if self.performance_monitor:
             self.performance_monitor['start_time'] = start_time
+            self.performance_monitor['trial_times'] = {}  # Track per trial, not per rung
             self._log_performance_metrics("Optimization started")
         
         # Validate search space and objective
@@ -609,6 +630,11 @@ class BOHBOptimizer:
             tprint_info(f"VectorBT optimization: {self.config.enable_vectorbt_optimization}")
             tprint_info(f"ML utilities: {self.config.enable_ml_common_utilities}")
 
+        # Create study persistence callback
+        callbacks = []
+        if self.config.enable_study_persistence and self.config.study_save_path:
+            callbacks.append(self._create_study_save_callback())
+        
         # Run optimization with enhanced monitoring
         try:
             self.study.optimize(
@@ -616,6 +642,7 @@ class BOHBOptimizer:
                 n_trials=self.config.n_trials,
                 timeout=self.config.timeout,
                 show_progress_bar=False,
+                callbacks=callbacks,
             )
         except KeyboardInterrupt:
             if TPRINT_AVAILABLE:
@@ -703,10 +730,13 @@ class BOHBOptimizer:
         if current_time - self.performance_monitor['last_log_time'] < self.config.performance_log_interval:
             return
         
-        # Memory usage
-        memory_mb = psutil.Process().memory_info().rss / 1024 / 1024
-        if self.memory_monitor:
-            self.memory_monitor['peak_memory'] = max(self.memory_monitor['peak_memory'], memory_mb)
+        # Memory usage (only if psutil is available)
+        if PSUTIL_AVAILABLE:
+            memory_mb = psutil.Process().memory_info().rss / 1024 / 1024
+            if self.memory_monitor:
+                self.memory_monitor['peak_memory'] = max(self.memory_monitor['peak_memory'], memory_mb)
+        else:
+            memory_mb = 0
         
         # GC stats
         gc_counts = gc.get_count()
@@ -862,7 +892,7 @@ class BOHBOptimizer:
 
         def call_objective(obj: Callable, params: Dict[str, Any], resource: int) -> float:
             """Call objective with enhanced error handling and monitoring."""
-            trial_start = time.time()
+            rung_start = time.time()
             
             try:
                 # Try (params, resource)
@@ -875,20 +905,19 @@ class BOHBOptimizer:
                     # Last resort: assume single-fidelity objective (use resource only to report)
                     value = obj(params)
             except Exception as e:
-                if TPRINT_AVAILABLE:
-                    tprint_error(f"Objective call failed: {e}")
-                raise
+                if self.config.convert_failures_to_worst_case:
+                    if TPRINT_AVAILABLE:
+                        tprint_warning(f"Objective call failed, using worst case value: {e}")
+                    return self.config.worst_case_value
+                else:
+                    if TPRINT_AVAILABLE:
+                        tprint_error(f"Objective call failed: {e}")
+                    raise
             
-            trial_time = time.time() - trial_start
+            rung_time = time.time() - rung_start
             
-            # Log performance metrics
-            if self.performance_monitor:
-                self.performance_monitor['trial_times'].append(trial_time)
-                if len(self.performance_monitor['trial_times']) > 100:  # Keep only last 100
-                    self.performance_monitor['trial_times'] = self.performance_monitor['trial_times'][-100:]
-            
-            if TPRINT_AVAILABLE:
-                tprint_performance(f"Trial completed in {trial_time:.3f}s, value: {value:.6f}")
+            if TPRINT_AVAILABLE and self.config.verbose_trial_logging:
+                tprint_performance(f"Rung {resource} completed in {rung_time:.3f}s, value: {value:.6f}")
             
             return float(value)
 
@@ -896,7 +925,7 @@ class BOHBOptimizer:
             """Enhanced optuna objective with comprehensive monitoring."""
             trial_start = time.time()
             
-            if TPRINT_AVAILABLE:
+            if TPRINT_AVAILABLE and (trial.number % self.config.trial_log_interval == 0):
                 tprint_info(f"Starting trial {trial.number}")
             
             # Log performance metrics
@@ -917,12 +946,12 @@ class BOHBOptimizer:
                 if r == self.config.max_resource:
                     break
 
-            if TPRINT_AVAILABLE:
+            if TPRINT_AVAILABLE and (trial.number % self.config.trial_log_interval == 0):
                 tprint_debug(f"Trial {trial.number} resource levels: {levels}")
 
-            best_seen: Optional[float] = None
+            final_value: Optional[float] = None
             for i, resource in enumerate(levels):
-                if TPRINT_AVAILABLE:
+                if TPRINT_AVAILABLE and (trial.number % self.config.trial_log_interval == 0):
                     tprint_debug(f"Trial {trial.number} - Resource {resource} ({i+1}/{len(levels)})")
                 
                 try:
@@ -931,16 +960,10 @@ class BOHBOptimizer:
                     # Report intermediate metric at current resource (step = resource)
                     trial.report(value, step=resource)
 
-                    # Keep best seen (for return)
-                    if best_seen is None:
-                        best_seen = value
-                    else:
-                        if self.config.direction == "maximize":
-                            best_seen = max(best_seen, value)
-                        else:
-                            best_seen = min(best_seen, value)
+                    # Store the value at this resource level
+                    final_value = value
 
-                    if TPRINT_AVAILABLE:
+                    if TPRINT_AVAILABLE and (trial.number % self.config.trial_log_interval == 0):
                         tprint_performance(f"Trial {trial.number} - Resource {resource}: {value:.6f}")
 
                     # Ask pruner whether to stop this trial early
@@ -952,14 +975,28 @@ class BOHBOptimizer:
                 except optuna.TrialPruned:
                     raise
                 except Exception as e:
-                    if TPRINT_AVAILABLE:
-                        tprint_error(f"Trial {trial.number} failed at resource {resource}: {e}")
-                    raise
+                    if self.config.convert_failures_to_worst_case:
+                        if TPRINT_AVAILABLE:
+                            tprint_warning(f"Trial {trial.number} failed at resource {resource}, using worst case: {e}")
+                        final_value = self.config.worst_case_value
+                        trial.report(final_value, step=resource)
+                        break
+                    else:
+                        if TPRINT_AVAILABLE:
+                            tprint_error(f"Trial {trial.number} failed at resource {resource}: {e}")
+                        raise
 
             trial_time = time.time() - trial_start
             
-            if TPRINT_AVAILABLE:
-                tprint_success(f"Trial {trial.number} completed in {trial_time:.3f}s, best value: {best_seen:.6f}")
+            # Store trial time in user attributes for proper tracking
+            trial.set_user_attr("trial_time", trial_time)
+            
+            # Track trial time in performance monitor
+            if self.performance_monitor:
+                self.performance_monitor['trial_times'][trial.number] = trial_time
+            
+            if TPRINT_AVAILABLE and (trial.number % self.config.trial_log_interval == 0):
+                tprint_success(f"Trial {trial.number} completed in {trial_time:.3f}s, final value: {final_value:.6f}")
             
             # Log final performance metrics
             self._log_performance_metrics(f"Trial {trial.number} completed")
@@ -968,10 +1005,25 @@ class BOHBOptimizer:
             if self.config.enable_gc_optimization and trial.number % 10 == 0:
                 gc.collect()
             
-            assert best_seen is not None
-            return float(best_seen)
+            assert final_value is not None
+            return float(final_value)
 
         return optuna_objective
+
+    def _create_study_save_callback(self) -> Callable:
+        """Create callback to save study periodically."""
+        def save_callback(study: optuna.Study, trial: optuna.trial.FrozenTrial) -> None:
+            if trial.number % self.config.study_save_interval == 0:
+                try:
+                    if TPRINT_AVAILABLE:
+                        tprint_info(f"Saving study at trial {trial.number}")
+                    self.save_study(self.config.study_save_path)
+                except Exception as e:
+                    if TPRINT_AVAILABLE:
+                        tprint_error(f"Failed to save study at trial {trial.number}: {e}")
+                    else:
+                        self.logger.error(f"Failed to save study at trial {trial.number}: {e}")
+        return save_callback
 
     # -------------------- Enhanced Utilities --------------------
     def _compact_trials(self, trials: List[optuna.trial.FrozenTrial]) -> List[Dict[str, Any]]:
@@ -995,8 +1047,10 @@ class BOHBOptimizer:
             }
             
             # Add performance metrics if available
-            if self.performance_monitor and t.number < len(self.performance_monitor['trial_times']):
+            if self.performance_monitor and t.number in self.performance_monitor['trial_times']:
                 trial_data["trial_time"] = self.performance_monitor['trial_times'][t.number]
+            elif hasattr(t, 'user_attrs') and 'trial_time' in t.user_attrs:
+                trial_data["trial_time"] = t.user_attrs['trial_time']
             
             hist.append(trial_data)
         
@@ -1098,10 +1152,14 @@ class BOHBOptimizer:
         if not self.performance_monitor:
             return {}
         
+        trial_times = []
+        if self.performance_monitor and 'trial_times' in self.performance_monitor:
+            trial_times = list(self.performance_monitor['trial_times'].values())
+        
         summary = {
             "optimization_time": time.time() - self.optimization_start_time if self.optimization_start_time else 0,
             "n_trials": len(self.study.trials) if self.study else 0,
-            "average_trial_time": np.mean(self.performance_monitor['trial_times']) if self.performance_monitor['trial_times'] else 0,
+            "average_trial_time": np.mean(trial_times) if trial_times else 0,
         }
         
         if self.memory_monitor:

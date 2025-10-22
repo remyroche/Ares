@@ -26,7 +26,8 @@ from .volatility_aware_profit_labeler import (
     VolatilityAwareProfitLabeler as VolatilityAwareMultiHorizonLabeler,
     VolatilityAwareConfig,
     LabelQualityMetrics as LabelQualityScore,
-    LabelingResult
+    LabelingResult,
+    create_enhanced_analyst_labeler
 )
 
 from .bar_construction import (
@@ -74,6 +75,7 @@ __all__ = [
     "VolatilityAwareConfig", 
     "LabelQualityScore",
     "LabelingResult",
+    "create_enhanced_analyst_labeler",
     
     # Bar construction
     "EventBasedBarConstructor",

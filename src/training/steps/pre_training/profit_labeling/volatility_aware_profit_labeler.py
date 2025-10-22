@@ -166,7 +166,7 @@ class VolatilityAwareProfitLabeler(BaseStep):
 
     def __init__(self, config: Optional[VolatilityAwareConfig] = None):
         """Initialize the volatility-aware labeler."""
-        super().__init__()
+        super().__init__("volatility_aware_profit_labeler")
         self.config = config or VolatilityAwareConfig()
         self.logger = get_logger('VolatilityAwareProfitLabeler')
 
@@ -1450,3 +1450,72 @@ if __name__ == '__main__':
                    f'AUC={metrics.get("auc_mean", 0):.3f}±{metrics.get("auc_std", 0):.3f}')
 
     tprint('✅ Volatility-Aware Profit Labeler test completed!')
+
+# Additional factory function for feature generation integration compatibility
+class EnhancedAnalystLabelerWrapper:
+    """
+    Wrapper class to provide compatibility with feature generation labeling integration step.
+    
+    This wrapper makes the volatility-aware labeler compatible with the expected interface
+    by providing a labels attribute and other expected methods.
+    """
+    
+    def __init__(self, config: Optional[VolatilityAwareConfig] = None):
+        # Create a config optimized for analyst labeling if none provided
+        if config is None:
+            analyst_config = VolatilityAwareConfig(
+                # Analyst-optimized parameters
+                target_bands={
+                    'analyst': (0.6, 1.2),  # Single target band for analyst
+                    'small': (0.4, 0.8),    # Keep other bands for compatibility
+                    'medium': (0.8, 1.3),
+                    'high': (1.3, 2.0)
+                },
+                fpt_quantile=0.65,  # Standard quantile
+                min_positive_balance=0.35,
+                max_positive_balance=0.65,
+                min_aic_threshold=0.55,
+                max_auc_std_threshold=0.08
+            )
+            config = analyst_config
+        
+        self.labeler = VolatilityAwareProfitLabeler(config)
+        self.labels = pd.DataFrame()  # Initialize empty labels
+    
+    def generate_labels(self, data: pd.DataFrame):
+        """
+        Generate labels using the volatility-aware labeler and return self for chaining.
+        
+        This method provides compatibility with the expected interface by:
+        1. Calling the underlying labeler's generate_labels method
+        2. Extracting the labels DataFrame and storing it in self.labels
+        3. Returning self so the caller can access the labels attribute
+        """
+        try:
+            # Generate labels using the underlying labeler
+            labeled_data, quality_report = self.labeler.generate_labels(data)
+            
+            # Store the labels for access via .labels attribute
+            self.labels = labeled_data
+            
+            # Store additional metadata for potential future use
+            self.quality_report = quality_report
+            self.labeled_data = labeled_data
+            
+            return self
+            
+        except Exception as e:
+            # If labeling fails, return self with empty labels
+            self.labels = pd.DataFrame()
+            self.quality_report = {}
+            self.labeled_data = pd.DataFrame()
+            return self
+
+def create_enhanced_analyst_labeler(config: Optional[VolatilityAwareConfig] = None) -> EnhancedAnalystLabelerWrapper:
+    """
+    Factory function to create enhanced analyst labeler for feature generation integration.
+    
+    This function provides compatibility with the feature generation labeling integration step
+    by creating a volatility-aware labeler configured for analyst-style labeling.
+    """
+    return EnhancedAnalystLabelerWrapper(config)

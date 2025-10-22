@@ -139,21 +139,42 @@ class AdaptiveParameterCalculator:
             }
     
     def calculate_fpt_quantiles(self, fpt_series: pd.Series) -> List[float]:
-        """Calculate data-driven FPT quantile probabilities (always returns probabilities)."""
+        """Calculate data-driven FPT quantile probabilities based on FPT distribution."""
         try:
             if len(fpt_series) < self.min_samples:
-                return [0.25, 0.50, 0.75]  # Return probabilities, not times
+                return [0.25, 0.50, 0.75]  # Fallback to standard quantiles
             
-            # Always return probabilities regardless of method
+            # Calculate data-driven quantiles based on FPT distribution characteristics
             if self.fpt_method == "percentile":
-                return [0.25, 0.50, 0.75]  # Standard survival analysis quantiles
+                # Use adaptive quantiles based on distribution shape
+                return self._calculate_adaptive_fpt_quantiles(fpt_series)
             elif self.fpt_method == "std":
-                # Convert to probabilities based on normal distribution
-                return [0.25, 0.50, 0.75]
+                # Use quantiles based on normal distribution approximation
+                mean_fpt = fpt_series.mean()
+                std_fpt = fpt_series.std()
+                # Convert to probabilities using normal CDF
+                quantiles = []
+                for z in [-0.67, 0.0, 0.67]:  # -0.67σ, 0σ, +0.67σ
+                    prob = 0.5 + 0.5 * np.tanh(z)  # Approximate normal CDF
+                    quantiles.append(prob)
+                return quantiles
             elif self.fpt_method == "iqr":
-                return [0.25, 0.50, 0.75]
+                # Use IQR-based quantiles
+                q25, q50, q75 = fpt_series.quantile([0.25, 0.50, 0.75])
+                # Convert to probabilities based on empirical distribution
+                total_range = q75 - q25
+                if total_range > 0:
+                    # Normalize to [0, 1] range
+                    quantiles = [(q25 - fpt_series.min()) / total_range,
+                               (q50 - fpt_series.min()) / total_range,
+                               (q75 - fpt_series.min()) / total_range]
+                    # Ensure valid probabilities
+                    quantiles = [max(0.1, min(0.9, q)) for q in quantiles]
+                    return quantiles
+                else:
+                    return [0.25, 0.50, 0.75]
             else:  # adaptive
-                return [0.25, 0.50, 0.75]
+                return self._calculate_adaptive_fpt_quantiles(fpt_series)
             
         except Exception as e:
             tprint_warning(f"⚠️ Error calculating FPT quantiles: {e}")
@@ -281,6 +302,56 @@ class AdaptiveParameterCalculator:
         except Exception as e:
             tprint_warning(f"⚠️ Error calculating adaptive horizon bounds: {e}")
             return int(data.quantile(0.10)), int(data.quantile(0.90))
+    
+    def _calculate_adaptive_fpt_quantiles(self, fpt_series: pd.Series) -> List[float]:
+        """Calculate adaptive FPT quantiles based on distribution characteristics."""
+        try:
+            if len(fpt_series) < 10:
+                return [0.25, 0.50, 0.75]
+            
+            # Analyze distribution characteristics
+            mean_fpt = fpt_series.mean()
+            std_fpt = fpt_series.std()
+            skewness = fpt_series.skew()
+            kurtosis = fpt_series.kurtosis()
+            
+            # Adjust quantiles based on distribution shape
+            if abs(skewness) < 0.5 and abs(kurtosis) < 1.0:
+                # Near-normal distribution, use standard quantiles
+                return [0.25, 0.50, 0.75]
+            elif skewness > 1.0:
+                # Right-skewed (long tail), use lower quantiles for better coverage
+                return [0.15, 0.35, 0.60]
+            elif skewness < -1.0:
+                # Left-skewed, use higher quantiles
+                return [0.40, 0.65, 0.85]
+            else:
+                # Moderate skewness, use adaptive quantiles
+                # Use percentiles that capture the main distribution
+                q10, q50, q90 = fpt_series.quantile([0.10, 0.50, 0.90])
+                
+                # Convert to probabilities based on empirical CDF
+                min_fpt = fpt_series.min()
+                max_fpt = fpt_series.max()
+                range_fpt = max_fpt - min_fpt
+                
+                if range_fpt > 0:
+                    quantiles = [
+                        (q10 - min_fpt) / range_fpt,
+                        (q50 - min_fpt) / range_fpt,
+                        (q90 - min_fpt) / range_fpt
+                    ]
+                    # Ensure valid probabilities and reasonable spacing
+                    quantiles = [max(0.1, min(0.9, q)) for q in quantiles]
+                    # Ensure ascending order
+                    quantiles.sort()
+                    return quantiles
+                else:
+                    return [0.25, 0.50, 0.75]
+                    
+        except Exception as e:
+            tprint_warning(f"⚠️ Error calculating adaptive FPT quantiles: {e}")
+            return [0.25, 0.50, 0.75]
     
     def _learn_k_bands_from_backtesting(self, volatility_series: pd.Series) -> Dict[str, Tuple[float, float]]:
         """Learn k-band boundaries from historical backtesting performance."""
@@ -538,6 +609,151 @@ class AdaptiveParameterCalculator:
         except Exception as e:
             tprint_warning(f"⚠️ Error loading recent performance data: {e}")
             return None
+    
+    def _learn_k_bands_from_backtesting(self, volatility_series: pd.Series) -> Dict[str, Tuple[float, float]]:
+        """Learn k-band boundaries from historical backtesting performance."""
+        try:
+            # Load historical backtesting results
+            performance_data = self._load_recent_performance_data()
+            
+            if performance_data is None or len(performance_data) < 50:
+                # Fallback to volatility-based bands
+                return self._calculate_volatility_based_bands(volatility_series)
+            
+            # Extract k values and their performance metrics
+            k_values = performance_data['k_values']
+            performance_scores = performance_data['performance_scores']
+            
+            # Sort by performance score
+            sorted_indices = np.argsort(performance_scores)[::-1]  # Descending order
+            top_k_values = k_values[sorted_indices[:len(k_values)//3]]  # Top third
+            
+            if len(top_k_values) < 10:
+                return self._calculate_volatility_based_bands(volatility_series)
+            
+            # Calculate bands based on performance distribution
+            k_percentiles = np.percentile(top_k_values, [25, 50, 75, 90])
+            
+            return {
+                'small_band': (k_percentiles[0], k_percentiles[1]),      # 25th-50th percentiles
+                'medium_band': (k_percentiles[1], k_percentiles[2]),     # 50th-75th percentiles
+                'high_band': (k_percentiles[2], k_percentiles[3])        # 75th-90th percentiles
+            }
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Error learning k bands from backtesting: {e}")
+            return self._calculate_volatility_based_bands(volatility_series)
+    
+    def _learn_k_bands_from_std_analysis(self, volatility_series: pd.Series) -> Dict[str, Tuple[float, float]]:
+        """Learn k-band boundaries using standard deviation analysis."""
+        try:
+            # Calculate volatility percentiles
+            vol_25 = volatility_series.quantile(0.25)
+            vol_50 = volatility_series.quantile(0.50)
+            vol_75 = volatility_series.quantile(0.75)
+            vol_90 = volatility_series.quantile(0.90)
+            
+            # Calculate k values that correspond to different volatility regimes
+            # Use inverse relationship: higher volatility -> lower k for same target move
+            k_small = 0.5 + 0.3 * (vol_50 / vol_25)  # Small moves in low vol periods
+            k_medium = 0.8 + 0.4 * (vol_75 / vol_50)  # Medium moves in medium vol periods
+            k_high = 1.2 + 0.6 * (vol_90 / vol_75)   # Large moves in high vol periods
+            
+            return {
+                'small_band': (max(0.3, k_small - 0.2), min(1.5, k_small + 0.2)),
+                'medium_band': (max(0.5, k_medium - 0.3), min(2.0, k_medium + 0.3)),
+                'high_band': (max(0.8, k_high - 0.4), min(3.0, k_high + 0.4))
+            }
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Error learning k bands from std analysis: {e}")
+            return self._calculate_volatility_based_bands(volatility_series)
+    
+    def _learn_k_bands_from_iqr_analysis(self, volatility_series: pd.Series) -> Dict[str, Tuple[float, float]]:
+        """Learn k-band boundaries using interquartile range analysis."""
+        try:
+            # Calculate IQR-based volatility regimes
+            q25, q50, q75 = volatility_series.quantile([0.25, 0.50, 0.75])
+            iqr = q75 - q25
+            
+            # Define k ranges based on IQR
+            k_small = 0.4 + 0.2 * (q25 / q50)  # Small k for low volatility
+            k_medium = 0.7 + 0.3 * (q50 / q25)  # Medium k for medium volatility
+            k_high = 1.0 + 0.5 * (q75 / q50)   # High k for high volatility
+            
+            # Add IQR-based uncertainty
+            uncertainty = iqr / q50
+            
+            return {
+                'small_band': (max(0.2, k_small - uncertainty), min(1.2, k_small + uncertainty)),
+                'medium_band': (max(0.4, k_medium - uncertainty), min(1.8, k_medium + uncertainty)),
+                'high_band': (max(0.6, k_high - uncertainty), min(2.5, k_high + uncertainty))
+            }
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Error learning k bands from IQR analysis: {e}")
+            return self._calculate_volatility_based_bands(volatility_series)
+    
+    def _learn_k_bands_adaptive(self, volatility_series: pd.Series) -> Dict[str, Tuple[float, float]]:
+        """Learn k-band boundaries using adaptive machine learning approach."""
+        try:
+            # Use rolling window analysis to adapt to changing market conditions
+            window_size = min(100, len(volatility_series) // 4)
+            if window_size < 20:
+                return self._calculate_volatility_based_bands(volatility_series)
+            
+            # Calculate rolling volatility statistics
+            rolling_vol = volatility_series.rolling(window=window_size)
+            vol_mean = rolling_vol.mean()
+            vol_std = rolling_vol.std()
+            
+            # Use most recent values
+            recent_vol_mean = vol_mean.iloc[-1]
+            recent_vol_std = vol_std.iloc[-1]
+            
+            # Calculate adaptive k values based on recent volatility characteristics
+            vol_coefficient = recent_vol_std / recent_vol_mean if recent_vol_mean > 0 else 1.0
+            
+            # Adaptive k ranges that adjust to volatility regime
+            k_small = 0.5 + 0.1 * vol_coefficient
+            k_medium = 0.8 + 0.2 * vol_coefficient
+            k_high = 1.2 + 0.3 * vol_coefficient
+            
+            # Add adaptive uncertainty based on volatility stability
+            uncertainty = min(0.3, vol_coefficient * 0.5)
+            
+            return {
+                'small_band': (max(0.2, k_small - uncertainty), min(1.5, k_small + uncertainty)),
+                'medium_band': (max(0.4, k_medium - uncertainty), min(2.0, k_medium + uncertainty)),
+                'high_band': (max(0.6, k_high - uncertainty), min(2.8, k_high + uncertainty))
+            }
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Error learning k bands adaptively: {e}")
+            return self._calculate_volatility_based_bands(volatility_series)
+    
+    def _calculate_volatility_based_bands(self, volatility_series: pd.Series) -> Dict[str, Tuple[float, float]]:
+        """Calculate bands based on volatility percentiles as fallback."""
+        try:
+            # Use volatility percentiles to define bands
+            vol_25 = volatility_series.quantile(0.25)
+            vol_50 = volatility_series.quantile(0.50)
+            vol_75 = volatility_series.quantile(0.75)
+            
+            # Simple volatility-based k ranges
+            return {
+                'small_band': (0.4, 0.8),
+                'medium_band': (0.8, 1.4),
+                'high_band': (1.4, 2.2)
+            }
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Error calculating volatility-based bands: {e}")
+            return {
+                'small_band': (0.5, 1.0),
+                'medium_band': (1.0, 1.5),
+                'high_band': (1.5, 2.5)
+            }
 
 
 @dataclass
@@ -769,7 +985,7 @@ class MultiTargetScheme:
             
             # Step 4: Assess quality and select targets
             tprint_info("📊 Step 4: Assessing quality and selecting targets")
-            selected_targets = self._select_optimal_targets(candidate_labels, candidate_targets)
+            selected_targets = self._select_optimal_targets(candidate_labels, candidate_targets, bars_aligned, vol_aligned, horizons)
             
             if not selected_targets:
                 tprint_warning("⚠️ No targets passed quality selection")
@@ -904,9 +1120,12 @@ class MultiTargetScheme:
             # Generate k values within the band using CV-based selection
             k_values = self._select_k_values_with_cv(k_range, bars, volatility_series, eligibility_mask, band)
             
-            # Generate candidates for each k value
+            # Calculate learned asymmetry from return skewness
+            learned_asymmetries = self._calculate_learned_asymmetries(bars, volatility_series, band)
+            
+            # Generate candidates for each k value with learned asymmetries
             for k in k_values:
-                for asymmetry in self.config.asymmetry_ratios:
+                for asymmetry in learned_asymmetries:
                     candidate = {
                         'band': band,
                         'k_up': k,
@@ -926,10 +1145,615 @@ class MultiTargetScheme:
             tprint_warning(f"⚠️ Error generating candidates for band {band.value}: {e}")
             return []
     
+    def _calculate_learned_asymmetries(self, bars: pd.DataFrame, volatility_series: pd.Series, band: TargetBand) -> List[float]:
+        """Calculate learned asymmetry ratios from return skewness and market microstructure."""
+        try:
+            # Calculate log returns for skewness analysis
+            log_returns = np.log(bars['close'] / bars['close'].shift(1)).dropna()
+            
+            if len(log_returns) < 50:
+                # Fallback to default asymmetries if insufficient data
+                return self.config.asymmetry_ratios
+            
+            # Calculate return skewness
+            return_skewness = log_returns.skew()
+            
+            # Calculate volatility-adjusted skewness
+            vol_adjusted_skewness = return_skewness / volatility_series.mean()
+            
+            # Calculate microstructure asymmetry (bid-ask bounce effect)
+            # High-frequency returns tend to have negative autocorrelation
+            autocorr_lag1 = log_returns.autocorr(lag=1)
+            microstructure_asymmetry = abs(autocorr_lag1) if not pd.isna(autocorr_lag1) else 0.0
+            
+            # Calculate trend asymmetry (momentum vs mean reversion)
+            # Use rolling correlation between returns and volatility
+            rolling_corr = log_returns.rolling(window=20).corr(volatility_series.loc[log_returns.index])
+            trend_asymmetry = rolling_corr.mean() if not rolling_corr.empty else 0.0
+            
+            # Combine factors to determine asymmetry
+            base_asymmetry = 1.0
+            
+            # Adjust for return skewness
+            if abs(return_skewness) > 0.5:
+                # Strong skewness suggests asymmetric moves
+                skewness_adjustment = 1.0 + 0.3 * np.tanh(return_skewness)
+                base_asymmetry *= skewness_adjustment
+            
+            # Adjust for microstructure effects
+            if microstructure_asymmetry > 0.1:
+                # High microstructure noise suggests more symmetric moves
+                microstructure_adjustment = 1.0 - 0.2 * microstructure_asymmetry
+                base_asymmetry *= microstructure_adjustment
+            
+            # Adjust for trend effects
+            if abs(trend_asymmetry) > 0.2:
+                # Strong trend correlation suggests asymmetric moves
+                trend_adjustment = 1.0 + 0.2 * np.tanh(trend_asymmetry)
+                base_asymmetry *= trend_adjustment
+            
+            # Generate asymmetry ratios around the learned base
+            asymmetries = []
+            
+            # Add the learned asymmetry
+            asymmetries.append(max(0.5, min(2.0, base_asymmetry)))
+            
+            # Add variations around the learned value
+            for variation in [0.8, 1.2, 1.5]:
+                varied_asymmetry = base_asymmetry * variation
+                asymmetries.append(max(0.5, min(2.0, varied_asymmetry)))
+            
+            # Add band-specific adjustments
+            if band == TargetBand.SMALL:
+                # Small targets: more symmetric (closer to 1.0)
+                asymmetries = [max(0.7, min(1.3, a)) for a in asymmetries]
+            elif band == TargetBand.HIGH:
+                # High targets: allow more asymmetry
+                asymmetries = [max(0.5, min(2.5, a)) for a in asymmetries]
+            
+            # Remove duplicates and sort
+            asymmetries = sorted(list(set(asymmetries)))
+            
+            # Ensure we have at least 2 asymmetries
+            if len(asymmetries) < 2:
+                asymmetries.extend([1.0, 1.25])
+            
+            return asymmetries[:5]  # Limit to 5 asymmetries for efficiency
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Error calculating learned asymmetries: {e}")
+            return self.config.asymmetry_ratios
+    
+    def _calculate_calibrated_confidence(self, labels: pd.Series, bars: pd.DataFrame, 
+                                       volatility_series: pd.Series, k_up: float, k_down: float) -> pd.Series:
+        """Calculate calibrated confidence scores using logistic regression."""
+        try:
+            if len(labels) < 50:
+                # Fallback to simple distance-based confidence for small datasets
+                return self._calculate_simple_confidence(labels, bars, volatility_series, k_up, k_down)
+            
+            # Prepare features for confidence calibration
+            features = self._prepare_confidence_features(labels, bars, volatility_series, k_up, k_down)
+            
+            if features.empty or len(features) < 20:
+                return self._calculate_simple_confidence(labels, bars, volatility_series, k_up, k_down)
+            
+            # Create target variable: 1 if label is correct (hit in predicted direction), 0 otherwise
+            target = self._create_confidence_target(labels, bars, volatility_series, k_up, k_down)
+            
+            if target.sum() < 5:
+                return self._calculate_simple_confidence(labels, bars, volatility_series, k_up, k_down)
+            
+            # Train logistic regression model for confidence calibration
+            from sklearn.linear_model import LogisticRegression
+            from sklearn.preprocessing import StandardScaler
+            from sklearn.model_selection import TimeSeriesSplit
+            
+            # Use time series split to avoid look-ahead bias
+            tscv = TimeSeriesSplit(n_splits=min(3, len(features) // 20))
+            
+            calibrated_confidence = pd.Series(index=labels.index, dtype=float)
+            
+            for train_idx, test_idx in tscv.split(features):
+                if len(train_idx) < 10 or len(test_idx) < 5:
+                    continue
+                
+                X_train, X_test = features.iloc[train_idx], features.iloc[test_idx]
+                y_train, y_test = target.iloc[train_idx], target.iloc[test_idx]
+                
+                # Scale features
+                scaler = StandardScaler()
+                X_train_scaled = scaler.fit_transform(X_train)
+                X_test_scaled = scaler.transform(X_test)
+                
+                # Train logistic regression
+                lr = LogisticRegression(random_state=42, max_iter=1000)
+                lr.fit(X_train_scaled, y_train)
+                
+                # Predict probabilities
+                probabilities = lr.predict_proba(X_test_scaled)[:, 1]
+                
+                # Store calibrated confidence
+                calibrated_confidence.iloc[test_idx] = probabilities
+            
+            # Fill any remaining NaN values with simple confidence
+            nan_mask = calibrated_confidence.isna()
+            if nan_mask.any():
+                simple_confidence = self._calculate_simple_confidence(labels, bars, volatility_series, k_up, k_down)
+                calibrated_confidence[nan_mask] = simple_confidence[nan_mask]
+            
+            return calibrated_confidence
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Error calculating calibrated confidence: {e}")
+            return self._calculate_simple_confidence(labels, bars, volatility_series, k_up, k_down)
+    
+    def _prepare_confidence_features(self, labels: pd.Series, bars: pd.DataFrame, 
+                                   volatility_series: pd.Series, k_up: float, k_down: float) -> pd.DataFrame:
+        """Prepare features for confidence calibration."""
+        try:
+            features = []
+            
+            for i, (idx, label) in enumerate(labels.items()):
+                if label == 0:
+                    continue
+                
+                feature_row = []
+                
+                # Price-based features
+                if idx in bars.index:
+                    current_price = bars.loc[idx, 'close']
+                    feature_row.extend([
+                        current_price,
+                        bars.loc[idx, 'high'] - bars.loc[idx, 'low'],  # Range
+                        (bars.loc[idx, 'high'] - current_price) / current_price,  # Upper range
+                        (current_price - bars.loc[idx, 'low']) / current_price,  # Lower range
+                    ])
+                
+                # Volatility features
+                if idx in volatility_series.index:
+                    current_vol = volatility_series.loc[idx]
+                    feature_row.extend([
+                        current_vol,
+                        current_vol * current_price,  # Price volatility
+                    ])
+                    
+                    # Target distances
+                    if label == 1:  # Upper target
+                        upper_target = current_price * (1 + k_up * current_vol)
+                        lower_target = current_price * (1 - k_down * current_vol)
+                        feature_row.extend([
+                            (upper_target - current_price) / current_price,  # Distance to upper target
+                            (current_price - lower_target) / current_price,  # Distance to lower target
+                            (upper_target - lower_target) / current_price,  # Total range
+                        ])
+                    else:  # Lower target
+                        upper_target = current_price * (1 + k_up * current_vol)
+                        lower_target = current_price * (1 - k_down * current_vol)
+                        feature_row.extend([
+                            (upper_target - current_price) / current_price,  # Distance to upper target
+                            (current_price - lower_target) / current_price,  # Distance to lower target
+                            (upper_target - lower_target) / current_price,  # Total range
+                        ])
+                
+                # Time-based features
+                if hasattr(idx, 'hour'):
+                    feature_row.extend([
+                        idx.hour,
+                        idx.dayofweek,
+                    ])
+                
+                # Market microstructure features
+                if i > 0 and idx in bars.index:
+                    prev_price = bars.iloc[i-1]['close'] if i > 0 else bars.loc[idx, 'close']
+                    price_change = (bars.loc[idx, 'close'] - prev_price) / prev_price
+                    feature_row.append(price_change)
+                
+                features.append(feature_row)
+            
+            if features:
+                feature_df = pd.DataFrame(features, index=labels[labels != 0].index)
+                return feature_df
+            else:
+                return pd.DataFrame()
+                
+        except Exception as e:
+            tprint_warning(f"⚠️ Error preparing confidence features: {e}")
+            return pd.DataFrame()
+    
+    def _create_confidence_target(self, labels: pd.Series, bars: pd.DataFrame, 
+                                volatility_series: pd.Series, k_up: float, k_down: float) -> pd.Series:
+        """Create target variable for confidence calibration (1 if label is correct, 0 otherwise)."""
+        try:
+            target = pd.Series(0, index=labels.index, dtype=int)
+            
+            for i, (idx, label) in enumerate(labels.items()):
+                if label == 0:
+                    continue
+                
+                # Check if the label was correct by looking at future price movement
+                if idx not in bars.index:
+                    continue
+                
+                current_price = bars.loc[idx, 'close']
+                current_vol = volatility_series.loc[idx] if idx in volatility_series.index else 0.01
+                
+                # Define targets
+                upper_target = current_price * (1 + k_up * current_vol)
+                lower_target = current_price * (1 - k_down * current_vol)
+                
+                # Look ahead to see if the predicted direction was correct
+                future_window = min(20, len(bars) - i - 1)
+                if future_window > 0:
+                    future_prices = bars.iloc[i+1:i+1+future_window]['close']
+                    
+                    if label == 1:  # Predicted upward movement
+                        # Check if price actually moved up significantly
+                        max_future_price = future_prices.max()
+                        if max_future_price > upper_target * 0.8:  # 80% of target
+                            target.iloc[i] = 1
+                    elif label == -1:  # Predicted downward movement
+                        # Check if price actually moved down significantly
+                        min_future_price = future_prices.min()
+                        if min_future_price < lower_target * 1.2:  # 120% of target (more lenient)
+                            target.iloc[i] = 1
+            
+            return target
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Error creating confidence target: {e}")
+            return pd.Series(0, index=labels.index, dtype=int)
+    
+    def _calculate_simple_confidence(self, labels: pd.Series, bars: pd.DataFrame, 
+                                   volatility_series: pd.Series, k_up: float, k_down: float) -> pd.Series:
+        """Fallback simple confidence calculation based on distance to opposite barrier."""
+        try:
+            confidence = pd.Series(0.5, index=labels.index, dtype=float)
+            
+            for i, (idx, label) in enumerate(labels.items()):
+                if label == 0:
+                    continue
+                
+                if idx not in bars.index or idx not in volatility_series.index:
+                    continue
+                
+                current_price = bars.loc[idx, 'close']
+                current_vol = volatility_series.loc[idx]
+                
+                if label == 1:  # Upper target hit
+                    upper_target = current_price * (1 + k_up * current_vol)
+                    lower_target = current_price * (1 - k_down * current_vol)
+                    distance_to_opposite = abs(current_price - lower_target)
+                    confidence.iloc[i] = min(1.0, distance_to_opposite / (k_down * current_vol))
+                elif label == -1:  # Lower target hit
+                    upper_target = current_price * (1 + k_up * current_vol)
+                    lower_target = current_price * (1 - k_down * current_vol)
+                    distance_to_opposite = abs(upper_target - current_price)
+                    confidence.iloc[i] = min(1.0, distance_to_opposite / (k_up * current_vol))
+            
+            return confidence
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Error calculating simple confidence: {e}")
+            return pd.Series(0.5, index=labels.index, dtype=float)
+    
+    def _generate_labels_vectorized(self, bars: pd.DataFrame, upper_targets: pd.Series, 
+                                  lower_targets: pd.Series, eligibility_mask: pd.Series, 
+                                  horizon: int) -> pd.Series:
+        """Vectorized label generation using triple barrier method."""
+        try:
+            n_bars = len(bars)
+            labels = pd.Series(0, index=bars.index, dtype=int)
+            
+            # Create price matrix for vectorized operations
+            prices = bars['close'].values
+            
+            # Get eligible indices
+            eligible_indices = eligibility_mask[eligibility_mask].index
+            if len(eligible_indices) == 0:
+                return labels
+            
+            # Convert to numpy arrays for vectorized operations
+            eligible_positions = [bars.index.get_loc(idx) for idx in eligible_indices]
+            eligible_positions = np.array(eligible_positions)
+            
+            # Filter out positions too close to the end
+            eligible_positions = eligible_positions[eligible_positions < n_bars - horizon]
+            
+            if len(eligible_positions) == 0:
+                return labels
+            
+            # Vectorized target calculation
+            upper_targets_array = upper_targets.iloc[eligible_positions].values
+            lower_targets_array = lower_targets.iloc[eligible_positions].values
+            
+            # Create future price matrices for vectorized comparison
+            future_prices_matrix = np.zeros((len(eligible_positions), horizon))
+            for i, pos in enumerate(eligible_positions):
+                future_prices_matrix[i, :] = prices[pos+1:pos+1+horizon]
+            
+            # Vectorized hit detection
+            upper_hits_matrix = future_prices_matrix >= upper_targets_array.reshape(-1, 1)
+            lower_hits_matrix = future_prices_matrix <= lower_targets_array.reshape(-1, 1)
+            
+            # Find first hits for each position
+            upper_first_hits = np.argmax(upper_hits_matrix, axis=1)
+            lower_first_hits = np.argmax(lower_hits_matrix, axis=1)
+            
+            # Handle cases where no hit occurs
+            upper_no_hit = ~upper_hits_matrix.any(axis=1)
+            lower_no_hit = ~lower_hits_matrix.any(axis=1)
+            
+            # Set first hits to a large number where no hit occurs
+            upper_first_hits[upper_no_hit] = horizon + 1
+            lower_first_hits[lower_no_hit] = horizon + 1
+            
+            # Determine labels based on which target is hit first
+            upper_first = upper_first_hits < lower_first_hits
+            lower_first = lower_first_hits < upper_first_hits
+            
+            # Set labels
+            labels.iloc[eligible_positions[upper_first]] = 1
+            labels.iloc[eligible_positions[lower_first]] = -1
+            
+            return labels
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Error in vectorized label generation: {e}")
+            # Fallback to simple loop
+            return self._generate_labels_simple_loop(bars, upper_targets, lower_targets, eligibility_mask, horizon)
+    
+    def _generate_labels_simple_loop(self, bars: pd.DataFrame, upper_targets: pd.Series, 
+                                   lower_targets: pd.Series, eligibility_mask: pd.Series, 
+                                   horizon: int) -> pd.Series:
+        """Fallback simple loop for label generation."""
+        try:
+            labels = pd.Series(0, index=bars.index, dtype=int)
+            
+            for i in range(len(bars) - horizon):
+                if not eligibility_mask.iloc[i]:
+                    continue
+                
+                current_price = bars['close'].iloc[i]
+                upper_target = upper_targets.iloc[i]
+                lower_target = lower_targets.iloc[i]
+                
+                # Check if price hits targets within horizon
+                future_prices = bars['close'].iloc[i+1:i+horizon+1]
+                if len(future_prices) == 0:
+                    continue
+                
+                # Find first hit
+                upper_hits = future_prices >= upper_target
+                lower_hits = future_prices <= lower_target
+                
+                if upper_hits.any() and lower_hits.any():
+                    # Both hit - check which comes first
+                    upper_first_hit = upper_hits.idxmax() if upper_hits.any() else None
+                    lower_first_hit = lower_hits.idxmax() if lower_hits.any() else None
+                    
+                    if upper_first_hit is not None and lower_first_hit is not None:
+                        if upper_first_hit <= lower_first_hit:
+                            labels.iloc[i] = 1  # Upper hit first
+                        else:
+                            labels.iloc[i] = -1  # Lower hit first
+                    elif upper_first_hit is not None:
+                        labels.iloc[i] = 1
+                    elif lower_first_hit is not None:
+                        labels.iloc[i] = -1
+                elif upper_hits.any():
+                    labels.iloc[i] = 1
+                elif lower_hits.any():
+                    labels.iloc[i] = -1
+            
+            return labels
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Error in simple loop label generation: {e}")
+            return pd.Series(0, index=bars.index, dtype=int)
+    
+    def _calculate_adaptive_balance_bounds(self, labels: pd.Series, bars: pd.DataFrame, 
+                                         volatility_series: pd.Series) -> Dict[str, float]:
+        """Calculate adaptive balance bounds based on data characteristics."""
+        try:
+            # Analyze market conditions to determine appropriate balance bounds
+            market_conditions = self._analyze_market_conditions(bars, volatility_series)
+            
+            # Base bounds from config
+            base_min = self.config.min_activation
+            base_max = self.config.max_activation
+            
+            # Adjust bounds based on market conditions
+            if market_conditions['volatility_regime'] == 'high':
+                # High volatility: allow more extreme imbalances
+                min_activation = max(0.01, base_min * 0.5)  # Lower minimum
+                max_activation = min(0.8, base_max * 1.5)   # Higher maximum
+            elif market_conditions['volatility_regime'] == 'low':
+                # Low volatility: require more balanced labels
+                min_activation = max(0.05, base_min * 1.2)  # Higher minimum
+                max_activation = min(0.4, base_max * 0.8)   # Lower maximum
+            else:  # medium volatility
+                min_activation = base_min
+                max_activation = base_max
+            
+            # Adjust based on trend strength
+            if market_conditions['trend_strength'] > 0.7:
+                # Strong trend: allow more directional bias
+                min_activation = max(0.01, min_activation * 0.7)
+                max_activation = min(0.9, max_activation * 1.3)
+            elif market_conditions['trend_strength'] < 0.3:
+                # Weak trend: require more balanced labels
+                min_activation = max(0.05, min_activation * 1.3)
+                max_activation = min(0.5, max_activation * 0.8)
+            
+            # Adjust based on market efficiency
+            if market_conditions['efficiency'] < 0.3:
+                # Inefficient market: allow more extreme imbalances
+                min_activation = max(0.01, min_activation * 0.6)
+                max_activation = min(0.9, max_activation * 1.4)
+            elif market_conditions['efficiency'] > 0.7:
+                # Efficient market: require more balanced labels
+                min_activation = max(0.05, min_activation * 1.2)
+                max_activation = min(0.6, max_activation * 0.9)
+            
+            # Ensure reasonable bounds
+            min_activation = max(0.01, min(0.3, min_activation))
+            max_activation = max(0.1, min(0.9, max_activation))
+            
+            return {
+                'min_activation': min_activation,
+                'max_activation': max_activation
+            }
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Error calculating adaptive balance bounds: {e}")
+            return {
+                'min_activation': self.config.min_activation,
+                'max_activation': self.config.max_activation
+            }
+    
+    def _analyze_market_conditions(self, bars: pd.DataFrame, volatility_series: pd.Series) -> Dict[str, float]:
+        """Analyze market conditions to inform adaptive balance bounds."""
+        try:
+            conditions = {}
+            
+            # Volatility regime analysis
+            if len(volatility_series) > 0:
+                vol_percentiles = volatility_series.quantile([0.25, 0.75])
+                current_vol = volatility_series.iloc[-1] if len(volatility_series) > 0 else vol_percentiles[0.5]
+                
+                if current_vol > vol_percentiles[0.75]:
+                    conditions['volatility_regime'] = 'high'
+                elif current_vol < vol_percentiles[0.25]:
+                    conditions['volatility_regime'] = 'low'
+                else:
+                    conditions['volatility_regime'] = 'medium'
+            else:
+                conditions['volatility_regime'] = 'medium'
+            
+            # Trend strength analysis
+            if len(bars) > 20:
+                returns = bars['close'].pct_change().dropna()
+                if len(returns) > 0:
+                    # Calculate trend strength using rolling correlation
+                    rolling_corr = returns.rolling(window=min(20, len(returns))).corr(
+                        pd.Series(range(len(returns)), index=returns.index)
+                    )
+                    trend_strength = abs(rolling_corr.iloc[-1]) if not pd.isna(rolling_corr.iloc[-1]) else 0.5
+                    conditions['trend_strength'] = min(1.0, max(0.0, trend_strength))
+                else:
+                    conditions['trend_strength'] = 0.5
+            else:
+                conditions['trend_strength'] = 0.5
+            
+            # Market efficiency analysis (using autocorrelation)
+            if len(bars) > 50:
+                returns = bars['close'].pct_change().dropna()
+                if len(returns) > 10:
+                    # Calculate first-order autocorrelation
+                    autocorr = returns.autocorr(lag=1)
+                    if not pd.isna(autocorr):
+                        # Lower autocorrelation = higher efficiency
+                        efficiency = max(0.0, min(1.0, 1.0 - abs(autocorr)))
+                        conditions['efficiency'] = efficiency
+                    else:
+                        conditions['efficiency'] = 0.5
+                else:
+                    conditions['efficiency'] = 0.5
+            else:
+                conditions['efficiency'] = 0.5
+            
+            return conditions
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Error analyzing market conditions: {e}")
+            return {
+                'volatility_regime': 'medium',
+                'trend_strength': 0.5,
+                'efficiency': 0.5
+            }
+    
     def _select_k_values_with_cv(self, k_range: Tuple[float, float], bars: pd.DataFrame,
                                 volatility_series: pd.Series, eligibility_mask: pd.Series,
                                 band: TargetBand) -> List[float]:
-        """Select k values using cross-validation for out-of-sample performance."""
+        """Select k values using Bayesian optimization for efficient search."""
+        try:
+            if BAYESIAN_OPTIMIZER_AVAILABLE and self.config.n_trials > 10:
+                # Use Bayesian optimization for efficient search
+                return self._bayesian_optimize_k_values(k_range, bars, volatility_series, eligibility_mask, band)
+            else:
+                # Fallback to grid search for small trials
+                return self._grid_search_k_values(k_range, bars, volatility_series, eligibility_mask, band)
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Error in k selection: {e}")
+            return [k_range[0] + (k_range[1] - k_range[0]) / 2]
+    
+    def _bayesian_optimize_k_values(self, k_range: Tuple[float, float], bars: pd.DataFrame,
+                                   volatility_series: pd.Series, eligibility_mask: pd.Series,
+                                   band: TargetBand) -> List[float]:
+        """Select k values using Bayesian TPE optimization."""
+        try:
+            # Define search space
+            search_space = {
+                'k_up': (k_range[0], k_range[1]),
+                'k_down': (k_range[0], k_range[1])
+            }
+            
+            # Define objective function
+            def objective(trial):
+                k_up = trial.suggest_float('k_up', k_range[0], k_range[1])
+                k_down = trial.suggest_float('k_down', k_range[0], k_range[1])
+                
+                # Evaluate k values using CV
+                cv_score = self._evaluate_k_with_cv(
+                    k_up, k_down, bars, volatility_series, eligibility_mask
+                )
+                return cv_score
+            
+            # Initialize Bayesian optimizer
+            optimizer = BayesianTPEOptimizer(
+                n_trials=self.config.n_trials,
+                n_startup_trials=min(5, self.config.n_trials // 4),
+                n_warmup_steps=min(10, self.config.n_trials // 2)
+            )
+            
+            # Run optimization
+            best_trial = optimizer.optimize(
+                objective=objective,
+                search_space=search_space,
+                n_trials=self.config.n_trials,
+                timeout=300  # 5 minutes timeout
+            )
+            
+            if best_trial and best_trial.value > 0:
+                # Return top k values from optimization
+                k_up = best_trial.params['k_up']
+                k_down = best_trial.params['k_down']
+                
+                # Add some variation around the best values
+                k_values = [k_up, k_down]
+                
+                # Add small variations for diversity
+                for i in range(1, 3):
+                    variation = (k_range[1] - k_range[0]) * 0.1 * i
+                    k_values.append(max(k_range[0], min(k_range[1], k_up + variation)))
+                    k_values.append(max(k_range[0], min(k_range[1], k_down + variation)))
+                
+                # Remove duplicates and return unique values
+                return list(set(k_values))[:3]
+            else:
+                # Fallback to grid search if optimization fails
+                return self._grid_search_k_values(k_range, bars, volatility_series, eligibility_mask, band)
+                
+        except Exception as e:
+            tprint_warning(f"⚠️ Error in Bayesian k optimization: {e}")
+            return self._grid_search_k_values(k_range, bars, volatility_series, eligibility_mask, band)
+    
+    def _grid_search_k_values(self, k_range: Tuple[float, float], bars: pd.DataFrame,
+                             volatility_series: pd.Series, eligibility_mask: pd.Series,
+                             band: TargetBand) -> List[float]:
+        """Fallback grid search for k values."""
         try:
             # Generate k candidates within the range
             n_candidates = min(10, self.config.n_trials)
@@ -951,7 +1775,7 @@ class MultiTargetScheme:
             return top_k_values if top_k_values else [k_range[0] + (k_range[1] - k_range[0]) / 2]
             
         except Exception as e:
-            tprint_warning(f"⚠️ Error in CV k selection: {e}")
+            tprint_warning(f"⚠️ Error in grid search k selection: {e}")
             return [k_range[0] + (k_range[1] - k_range[0]) / 2]
     
     def _evaluate_k_with_cv(self, k_up: float, k_down: float, bars: pd.DataFrame,
@@ -1438,8 +2262,9 @@ class MultiTargetScheme:
             non_zero_labels = labels[labels != 0]
             activation_rate = len(non_zero_labels) / len(labels)
             
-            # Check activation constraints
-            if not (self.config.min_activation <= activation_rate <= self.config.max_activation):
+            # Check adaptive activation constraints
+            adaptive_bounds = self._calculate_adaptive_balance_bounds(labels, bars, volatility_series)
+            if not (adaptive_bounds['min_activation'] <= activation_rate <= adaptive_bounds['max_activation']):
                 return 0.0
             
             if len(non_zero_labels) < self.config.min_nonzero_samples_per_target:
@@ -1891,60 +2716,23 @@ class MultiTargetScheme:
             labels = pd.Series(0, index=bars.index, dtype=int)
             confidence_scores = pd.Series(0.0, index=bars.index, dtype=float)
             
-            # Generate labels using triple barrier method with horizon
-            for i in range(len(bars) - horizon):
-                if not eligibility_mask.iloc[i]:
-                    continue
-                
-                current_price = bars['close'].iloc[i]
-                upper_target = upper_targets.iloc[i]
-                lower_target = lower_targets.iloc[i]
-                
-                # Check if price hits targets within horizon
-                future_prices = bars['close'].iloc[i+1:i+horizon+1]
-                if len(future_prices) == 0:
-                    continue
-                
-                # Find first hit
-                upper_hits = future_prices >= upper_target
-                lower_hits = future_prices <= lower_target
-                
-                if upper_hits.any() and lower_hits.any():
-                    # Both hit - check which comes first
-                    upper_first_hit = upper_hits.idxmax() if upper_hits.any() else None
-                    lower_first_hit = lower_hits.idxmax() if lower_hits.any() else None
-                    
-                    if upper_first_hit is not None and lower_first_hit is not None:
-                        if upper_first_hit <= lower_first_hit:
-                            labels.iloc[i] = 1  # Upper hit first
-                            # Calculate confidence based on distance to opposite barrier
-                            distance_to_opposite = abs(future_prices.loc[upper_first_hit] - lower_target)
-                            confidence_scores.iloc[i] = min(1.0, distance_to_opposite / (k_down * volatility_series.iloc[i]))
-                        else:
-                            labels.iloc[i] = -1  # Lower hit first
-                            distance_to_opposite = abs(future_prices.loc[lower_first_hit] - upper_target)
-                            confidence_scores.iloc[i] = min(1.0, distance_to_opposite / (k_up * volatility_series.iloc[i]))
-                    elif upper_first_hit is not None:
-                        labels.iloc[i] = 1
-                        distance_to_opposite = abs(future_prices.loc[upper_first_hit] - lower_target)
-                        confidence_scores.iloc[i] = min(1.0, distance_to_opposite / (k_down * volatility_series.iloc[i]))
-                    elif lower_first_hit is not None:
-                        labels.iloc[i] = -1
-                        distance_to_opposite = abs(future_prices.loc[lower_first_hit] - upper_target)
-                        confidence_scores.iloc[i] = min(1.0, distance_to_opposite / (k_up * volatility_series.iloc[i]))
-                elif upper_hits.any():
-                    labels.iloc[i] = 1
-                    distance_to_opposite = abs(future_prices.loc[upper_hits.idxmax()] - lower_target) if upper_hits.any() else 0
-                    confidence_scores.iloc[i] = min(1.0, distance_to_opposite / (k_down * volatility_series.iloc[i]))
-                elif lower_hits.any():
-                    labels.iloc[i] = -1
-                    distance_to_opposite = abs(future_prices.loc[lower_hits.idxmax()] - upper_target) if lower_hits.any() else 0
-                    confidence_scores.iloc[i] = min(1.0, distance_to_opposite / (k_up * volatility_series.iloc[i]))
+            # Generate labels using vectorized triple barrier method
+            labels = self._generate_labels_vectorized(
+                bars, upper_targets, lower_targets, eligibility_mask, horizon
+            )
+            
+            # Calculate calibrated confidence scores
+            calibrated_confidence = self._calculate_calibrated_confidence(
+                labels, bars, volatility_series, k_up, k_down
+            )
+            
+            # Use calibrated confidence where available, fallback to simple confidence
+            final_confidence = calibrated_confidence.combine_first(confidence_scores)
             
             # Create DataFrame with labels and confidence
             result_df = pd.DataFrame({
                 'labels': labels,
-                'confidence': confidence_scores
+                'confidence': final_confidence
             }, index=bars.index)
             
             return result_df
@@ -2406,7 +3194,10 @@ class MultiTargetScheme:
             return labels_df
     
     def _select_optimal_targets(self, candidate_labels: Dict[str, pd.DataFrame],
-                              candidate_targets: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+                              candidate_targets: List[Dict[str, Any]], 
+                              bars: pd.DataFrame, 
+                              volatility_series: pd.Series,
+                              horizons: Dict[str, int]) -> Dict[str, Dict[str, Any]]:
         """Select optimal targets based on quality and diversity."""
         try:
             if not candidate_labels:
@@ -2417,7 +3208,7 @@ class MultiTargetScheme:
             for target_name, labels_df in candidate_labels.items():
                 if not labels_df.empty and 'labels' in labels_df.columns:
                     labels = labels_df['labels']
-                    quality_score = self._calculate_target_quality_score(labels, pd.DataFrame(), pd.Series())
+                    quality_score = self._calculate_target_quality_score(labels, bars, volatility_series)
                     quality_scores[target_name] = quality_score
             
             # Filter by minimum quality threshold
@@ -2457,7 +3248,8 @@ class MultiTargetScheme:
                 if self._check_correlation_constraints(target_name, selected_targets, candidate_labels):
                     selected_targets[target_name] = {
                         **candidate_info,
-                        'quality_score': quality_score
+                        'quality_score': quality_score,
+                        'horizon': horizons.get(target_name, max(1, len(bars) // 50))
                     }
                     band_counts[band] += 1
             

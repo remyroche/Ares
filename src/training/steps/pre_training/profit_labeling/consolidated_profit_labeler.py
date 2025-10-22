@@ -1136,20 +1136,98 @@ class ConsolidatedProfitLabeler(BaseStep):
         )
         gates['liquidity_gate'] = rolling_volume_pct >= self.config.liquidity_percentile
 
-        # 4. Spread filter: ultra-tight ranges
-        relative_spread = (data['high'] - data['low']) / data['close'].shift(1)
-        median_spread = relative_spread.rolling(window=20).median()
-        gates['spread_filter'] = relative_spread >= (median_spread * 0.5)  # Not ultra-tight
+        # 4. Spread filter: ultra-tight ranges with data-driven threshold (if enabled)
+        if self.config.spread_filter_enabled:
+            relative_spread = (data['high'] - data['low']) / data['close'].shift(1)
+            median_spread = relative_spread.rolling(window=20).median()
+            
+            # Calculate data-driven spread threshold
+            spread_threshold = self._calculate_data_driven_spread_threshold(relative_spread, median_spread)
+            gates['spread_filter'] = relative_spread >= spread_threshold
+        else:
+            gates['spread_filter'] = pd.Series(True, index=data.index, dtype=bool)
+
+        # Calculate data-driven variance ratio threshold (respecting config)
+        vr_threshold = self._calculate_data_driven_vr_threshold(gates['variance_ratio'], self.config.variance_ratio_threshold)
 
         # Combined eligibility gate (all filters must pass)
         gates['eligibility'] = (
             gates['liquidity_gate'] &
             gates['spread_filter'] &
-            (gates['variance_ratio'] >= 0.8)  # Not dominated by microstructure
+            (gates['variance_ratio'] >= vr_threshold)  # Data-driven microstructure filter
         )
 
         self.tprint(f"✅ Noise gates computed: {gates['eligibility'].mean():.1%} eligible bars")
         return gates
+    
+    def _calculate_data_driven_spread_threshold(self, relative_spread: pd.Series, median_spread: pd.Series) -> pd.Series:
+        """Calculate data-driven spread threshold based on historical performance."""
+        try:
+            # Use trailing quantiles to avoid look-ahead bias
+            window = 50
+            if len(relative_spread) < window:
+                return median_spread * 0.5  # Fallback to original threshold
+            
+            # Calculate trailing spread threshold
+            spread_threshold = pd.Series(index=relative_spread.index, dtype=float)
+            
+            for i in range(window, len(relative_spread)):
+                # Use only past data to calculate threshold
+                past_spreads = relative_spread.iloc[:i]
+                past_medians = median_spread.iloc[:i]
+                
+                # Calculate spread-to-median ratios
+                spread_ratios = past_spreads / past_medians
+                spread_ratios = spread_ratios.dropna()
+                
+                if len(spread_ratios) > 10:
+                    # Use 25th percentile of spread ratios as threshold
+                    threshold_ratio = spread_ratios.quantile(0.25)
+                    spread_threshold.iloc[i] = median_spread.iloc[i] * threshold_ratio
+                else:
+                    spread_threshold.iloc[i] = median_spread.iloc[i] * 0.5
+            
+            # Fill initial values with fallback
+            spread_threshold.iloc[:window] = median_spread.iloc[:window] * 0.5
+            
+            return spread_threshold
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Error calculating data-driven spread threshold: {e}")
+            return median_spread * 0.5
+    
+    def _calculate_data_driven_vr_threshold(self, variance_ratio: pd.Series, config_threshold: float = 0.8) -> pd.Series:
+        """Calculate data-driven variance ratio threshold based on historical performance."""
+        try:
+            # Use trailing quantiles to avoid look-ahead bias
+            window = 50
+            if len(variance_ratio) < window:
+                return pd.Series(config_threshold, index=variance_ratio.index)  # Use config threshold
+            
+            # Calculate trailing VR threshold
+            vr_threshold = pd.Series(index=variance_ratio.index, dtype=float)
+            
+            for i in range(window, len(variance_ratio)):
+                # Use only past data to calculate threshold
+                past_vr = variance_ratio.iloc[:i].dropna()
+                
+                if len(past_vr) > 10:
+                    # Use 25th percentile of VR as threshold (filter out low VR periods)
+                    threshold = past_vr.quantile(0.25)
+                    # Use config threshold as base, adjust with data-driven value
+                    adjusted_threshold = max(config_threshold * 0.5, min(config_threshold * 1.5, threshold))
+                    vr_threshold.iloc[i] = adjusted_threshold
+                else:
+                    vr_threshold.iloc[i] = config_threshold
+            
+            # Fill initial values with config threshold
+            vr_threshold.iloc[:window] = config_threshold
+            
+            return vr_threshold
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Error calculating data-driven VR threshold: {e}")
+            return pd.Series(config_threshold, index=variance_ratio.index)
 
     def _optimize_target_configurations(
         self,

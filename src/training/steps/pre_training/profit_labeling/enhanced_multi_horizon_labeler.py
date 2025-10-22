@@ -19,6 +19,10 @@ from typing import Dict, Any, Optional, List, Tuple
 from datetime import datetime
 import logging
 import asyncio
+from abc import ABC
+
+# Import BaseStep
+from src.training.steps.base_step import BaseStep
 
 # Import existing multi-horizon labeler components
 from src.training.steps.pre_training.multi_horizon_profit_labeler import (
@@ -57,7 +61,7 @@ class EnhancedMultiHorizonConfig(MultiHorizonConfig):
     enhanced_config: Optional[EnhancedDataLabelsConfig] = None
 
 
-class EnhancedMultiHorizonProfitLabeler(MultiHorizonProfitLabeler):
+class EnhancedMultiHorizonProfitLabeler(MultiHorizonProfitLabeler, BaseStep):
     """
     Enhanced Multi-Horizon Profit Labeler with full data and labels system integration.
     
@@ -66,6 +70,7 @@ class EnhancedMultiHorizonProfitLabeler(MultiHorizonProfitLabeler):
     - Comprehensive data cleaning and quality assessment
     - Label stability monitoring and leakage detection
     - Full backward compatibility with existing functionality
+    - BaseStep integration for standardized pipeline execution
     
     Usage:
         # Drop-in replacement
@@ -74,10 +79,16 @@ class EnhancedMultiHorizonProfitLabeler(MultiHorizonProfitLabeler):
         
         # Enhanced processing
         result = await labeler.execute_enhanced_labeling(symbol, exchange, timeframe, data_dir, regime_data)
+        
+        # BaseStep execution
+        result = await labeler.execute(config)
     """
     
     def __init__(self, config: Optional[EnhancedMultiHorizonConfig] = None):
         """Initialize the enhanced multi-horizon profit labeler."""
+        # Initialize BaseStep first
+        BaseStep.__init__(self)
+        
         # Initialize with enhanced config
         self.enhanced_config = config or EnhancedMultiHorizonConfig()
         
@@ -91,13 +102,147 @@ class EnhancedMultiHorizonProfitLabeler(MultiHorizonProfitLabeler):
         self.enhanced_labels_system = EnhancedDataLabelsSystem(self.enhanced_config.enhanced_config)
         
         # Initialize parent class with base config
-        super().__init__(self.enhanced_config)
+        MultiHorizonProfitLabeler.__init__(self, self.enhanced_config)
         
         tprint_success("🚀 Enhanced Multi-Horizon Profit Labeler initialized")
         tprint_info("   → Enhanced data cleaning: Enabled")
         tprint_info("   → Enhanced stability monitoring: Enabled")
         tprint_info("   → Trading-aware labels: Enabled")
         tprint_info("   → Full backward compatibility: Maintained")
+        tprint_info("   → BaseStep integration: Enabled")
+    
+    async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Execute the enhanced multi-horizon profit labeling step.
+        
+        Args:
+            config: Configuration dictionary containing:
+                - symbol: Trading symbol
+                - exchange: Exchange name
+                - timeframe: Data timeframe
+                - data_dir: Directory containing market data
+                - regime_data: Optional regime data
+                - information: Optional information for context
+                - direction: Optional direction for context
+                - model: Optional model type for context
+        
+        Returns:
+            Dictionary containing:
+                - success: Boolean indicating success
+                - labeling_result: LabelingResult object
+                - enhanced_metrics: Enhanced processing metrics
+                - artifacts: List of generated artifacts
+        """
+        try:
+            # Set context for enhanced file naming and operations
+            self._set_context(
+                symbol=config.get('symbol'),
+                exchange=config.get('exchange'),
+                information=config.get('information'),
+                direction=config.get('direction', 'long'),
+                model=config.get('model', 'Analyst')
+            )
+            
+            # Extract required parameters
+            symbol = config.get('symbol')
+            exchange = config.get('exchange')
+            timeframe = config.get('timeframe')
+            data_dir = config.get('data_dir')
+            regime_data = config.get('regime_data')
+            
+            if not all([symbol, exchange, timeframe, data_dir]):
+                return {
+                    'success': False,
+                    'error': 'Missing required parameters: symbol, exchange, timeframe, data_dir'
+                }
+            
+            # Execute enhanced labeling
+            result = await self.execute_enhanced_labeling(
+                symbol=symbol,
+                exchange=exchange,
+                timeframe=timeframe,
+                data_dir=data_dir,
+                regime_data=regime_data
+            )
+            
+            if not result.success:
+                return {
+                    'success': False,
+                    'error': f'Enhanced labeling failed: {result.error_message}'
+                }
+            
+            # Save artifacts
+            artifacts = []
+            if hasattr(result, 'artifacts') and result.artifacts:
+                for artifact_name, artifact_data in result.artifacts.items():
+                    if isinstance(artifact_data, pd.DataFrame):
+                        artifact_path = self._save_dataframe(artifact_data, artifact_name)
+                    else:
+                        artifact_path = self._save_metadata(artifact_data, artifact_name)
+                    
+                    if artifact_path:
+                        artifacts.append(artifact_path)
+            
+            # Generate outcome file
+            outcome_content = self._generate_outcome_content(result, artifacts)
+            self._save_outcome_file(outcome_content, 'enhanced_multi_horizon_labeling_outcome')
+            
+            return {
+                'success': True,
+                'labeling_result': result,
+                'enhanced_metrics': getattr(result, 'enhanced_metrics', {}),
+                'artifacts': artifacts
+            }
+            
+        except Exception as e:
+            error_msg = f"Enhanced multi-horizon labeling failed: {str(e)}"
+            if TPRINT_AVAILABLE:
+                tprint_error(f"❌ {error_msg}")
+            return {
+                'success': False,
+                'error': error_msg
+            }
+    
+    def _generate_outcome_content(self, result: LabelingResult, artifacts: List[str]) -> str:
+        """Generate outcome file content."""
+        content = f"""# Enhanced Multi-Horizon Profit Labeling Outcome
+
+## Summary
+- **Status**: {'Success' if result.success else 'Failed'}
+- **Processing Time**: {getattr(result, 'processing_time', 0):.2f} seconds
+- **Samples Processed**: {getattr(result, 'n_samples', 0)}
+- **Targets Generated**: {getattr(result, 'n_targets', 0)}
+- **Artifacts Generated**: {len(artifacts)}
+
+## Labeling Results
+- **Success**: {result.success}
+- **Error Message**: {getattr(result, 'error_message', 'None')}
+- **Quality Score**: {getattr(result, 'quality_score', 0):.3f}
+"""
+        
+        if hasattr(result, 'enhanced_metrics'):
+            enhanced = result.enhanced_metrics
+            content += f"""
+## Enhanced Metrics
+- **Data Quality Score**: {enhanced.get('data_quality_score', 0):.3f}
+- **Label Stability Score**: {enhanced.get('label_stability_score', 0):.3f}
+- **Trading-Aware Labels**: {enhanced.get('trading_aware_enabled', False)}
+- **Regime Conditioning**: {enhanced.get('regime_conditioning_enabled', False)}
+"""
+        
+        content += f"""
+## Generated Artifacts
+{chr(10).join(f"- {artifact}" for artifact in artifacts)}
+
+## Configuration
+- **Enhanced Data Cleaning**: {self.enhanced_config.enable_enhanced_data_cleaning}
+- **Enhanced Stability Monitoring**: {self.enhanced_config.enable_enhanced_stability_monitoring}
+- **Trading-Aware Labels**: {self.enhanced_config.enable_trading_aware_labels}
+- **Regime Conditioning**: {self.enhanced_config.enable_regime_conditioning}
+- **Risk Awareness**: {self.enhanced_config.enable_risk_awareness}
+"""
+        
+        return content
     
     async def execute_labeling(
         self,

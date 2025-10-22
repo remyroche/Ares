@@ -25,6 +25,10 @@ from typing import Dict, List, Optional, Any, Tuple, Union
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 import warnings
+from abc import ABC
+
+# Import BaseStep
+from src.training.steps.base_step import BaseStep
 
 # Core utilities
 from src.utils.logger import get_logger
@@ -148,7 +152,7 @@ class LabelQualityMetrics:
             'label_quality_score': self.label_quality_score
         }
 
-class VolatilityAwareProfitLabeler:
+class VolatilityAwareProfitLabeler(BaseStep):
     """
     Volatility-aware multi-horizon profit labeler optimized for ML label quality.
 
@@ -157,10 +161,12 @@ class VolatilityAwareProfitLabeler:
     2. Volatility-normalized (not fixed percentage targets)
     3. Noise-resistant (filters microstructure effects)
     4. Multi-target (small/medium/high with data-driven horizons)
+    5. BaseStep integrated for standardized pipeline execution
     """
 
     def __init__(self, config: Optional[VolatilityAwareConfig] = None):
         """Initialize the volatility-aware labeler."""
+        super().__init__()
         self.config = config or VolatilityAwareConfig()
         self.logger = get_logger('VolatilityAwareProfitLabeler')
 
@@ -177,6 +183,131 @@ class VolatilityAwareProfitLabeler:
         self.logger.info(f"📊 Config: {len(self.config.target_bands)} target bands, "
                         f"RV window: {self.config.rv_window_minutes}min, "
                         f"ATR window: {self.config.atr_window_bars} bars")
+    
+    async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Execute the volatility-aware profit labeling step.
+        
+        Args:
+            config: Configuration dictionary containing:
+                - data: DataFrame with OHLCV data
+                - symbol: Optional symbol for context
+                - exchange: Optional exchange for context
+                - information: Optional information for context
+                - direction: Optional direction for context
+                - model: Optional model type for context
+        
+        Returns:
+            Dictionary containing:
+                - success: Boolean indicating success
+                - labeled_data: DataFrame with generated labels
+                - quality_report: Quality assessment report
+                - artifacts: List of generated artifacts
+        """
+        try:
+            # Set context for enhanced file naming and operations
+            self._set_context(
+                symbol=config.get('symbol'),
+                exchange=config.get('exchange'),
+                information=config.get('information'),
+                direction=config.get('direction', 'long'),
+                model=config.get('model', 'Analyst')
+            )
+            
+            # Extract data from config
+            data = config.get('data')
+            
+            if data is None:
+                return {
+                    'success': False,
+                    'error': 'Missing required parameter: data'
+                }
+            
+            # Validate inputs
+            if not isinstance(data, pd.DataFrame):
+                return {
+                    'success': False,
+                    'error': 'data must be a pandas DataFrame'
+                }
+            
+            # Generate labels
+            labeled_data, quality_report = self.generate_labels(data)
+            
+            # Save artifacts
+            artifacts = []
+            
+            # Save labeled data
+            labeled_data_path = self._save_dataframe(
+                labeled_data, 
+                'volatility_aware_labeled_data'
+            )
+            if labeled_data_path:
+                artifacts.append(labeled_data_path)
+            
+            # Save quality report
+            if quality_report:
+                quality_path = self._save_metadata(
+                    quality_report, 
+                    'volatility_aware_quality_report'
+                )
+                if quality_path:
+                    artifacts.append(quality_path)
+            
+            # Generate outcome file
+            outcome_content = self._generate_outcome_content(labeled_data, quality_report, artifacts)
+            self._save_outcome_file(outcome_content, 'volatility_aware_labeling_outcome')
+            
+            return {
+                'success': True,
+                'labeled_data': labeled_data,
+                'quality_report': quality_report,
+                'artifacts': artifacts
+            }
+            
+        except Exception as e:
+            error_msg = f"Volatility-aware labeling failed: {str(e)}"
+            if TPRINT_AVAILABLE:
+                tprint_error(f"❌ {error_msg}")
+            return {
+                'success': False,
+                'error': error_msg
+            }
+    
+    def _generate_outcome_content(self, labeled_data: pd.DataFrame, quality_report: Dict[str, Any], artifacts: List[str]) -> str:
+        """Generate outcome file content."""
+        content = f"""# Volatility-Aware Profit Labeling Outcome
+
+## Summary
+- **Status**: Success
+- **Samples Processed**: {len(labeled_data)}
+- **Artifacts Generated**: {len(artifacts)}
+
+## Data Overview
+- **Columns**: {list(labeled_data.columns)}
+- **Memory Usage**: {labeled_data.memory_usage(deep=True).sum() / 1024**2:.2f} MB
+"""
+        
+        if quality_report:
+            content += f"""
+## Quality Report
+- **Overall Quality Score**: {quality_report.get('overall_quality_score', 0):.3f}
+- **Predictability Score**: {quality_report.get('predictability_score', 0):.3f}
+- **Stability Score**: {quality_report.get('stability_score', 0):.3f}
+- **Balance Score**: {quality_report.get('balance_score', 0):.3f}
+"""
+        
+        content += f"""
+## Generated Artifacts
+{chr(10).join(f"- {artifact}" for artifact in artifacts)}
+
+## Configuration
+- **Target Bands**: {len(self.config.target_bands)}
+- **RV Window**: {self.config.rv_window_minutes} minutes
+- **ATR Window**: {self.config.atr_window_bars} bars
+- **Min Bars for Labeling**: {self.config.min_bars_for_labeling}
+"""
+        
+        return content
 
     def generate_labels(self, data: pd.DataFrame) -> Tuple[pd.DataFrame, Dict[str, Any]]:
         """

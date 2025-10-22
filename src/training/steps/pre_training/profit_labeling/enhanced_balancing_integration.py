@@ -14,6 +14,10 @@ from dataclasses import dataclass
 import logging
 import time
 from datetime import datetime
+from abc import ABC
+
+# Import BaseStep
+from src.training.steps.base_step import BaseStep
 
 # Import the enhanced balancing system
 from .label_balancing import (
@@ -57,16 +61,18 @@ class BalancingIntegrationConfig:
     save_weights: bool = True
 
 
-class BalancingIntegrationManager:
+class BalancingIntegrationManager(BaseStep):
     """
     Manager class for integrating enhanced balancing into training pipelines.
     
     This class provides a high-level interface for using the enhanced balancing
     system in training pipelines, with automatic configuration and monitoring.
+    Inherits from BaseStep for standardized pipeline integration.
     """
     
     def __init__(self, config: Optional[BalancingIntegrationConfig] = None):
         """Initialize the balancing integration manager."""
+        super().__init__()
         self.config = config or BalancingIntegrationConfig()
         self.balancing_system = None
         self.monitoring_data = {}
@@ -74,6 +80,177 @@ class BalancingIntegrationManager:
         
         if TPRINT_AVAILABLE:
             tprint_success("🚀 Enhanced Balancing Integration Manager initialized")
+    
+    async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Execute the balancing integration step.
+        
+        Args:
+            config: Configuration dictionary containing:
+                - market_data: DataFrame with market data
+                - labels: Series or array with labels
+                - dataset_characteristics: Optional dataset characteristics
+                - custom_config: Optional custom configuration overrides
+                - symbol: Optional symbol for context
+                - exchange: Optional exchange for context
+                - information: Optional information for context
+                - direction: Optional direction for context
+                - model: Optional model type for context
+        
+        Returns:
+            Dictionary containing:
+                - success: Boolean indicating success
+                - balanced_data: Balanced dataset
+                - balanced_labels: Balanced labels
+                - sample_weights: Sample weights
+                - balancing_metrics: Balancing performance metrics
+                - artifacts: List of generated artifacts
+        """
+        try:
+            # Set context for enhanced file naming and operations
+            self._set_context(
+                symbol=config.get('symbol'),
+                exchange=config.get('exchange'),
+                information=config.get('information'),
+                direction=config.get('direction', 'long'),
+                model=config.get('model', 'Analyst')
+            )
+            
+            # Extract data from config
+            market_data = config.get('market_data')
+            labels = config.get('labels')
+            dataset_characteristics = config.get('dataset_characteristics')
+            custom_config = config.get('custom_config')
+            
+            if market_data is None or labels is None:
+                return {
+                    'success': False,
+                    'error': 'Missing required data: market_data and labels are required'
+                }
+            
+            # Validate inputs
+            if not isinstance(market_data, pd.DataFrame):
+                return {
+                    'success': False,
+                    'error': 'market_data must be a pandas DataFrame'
+                }
+            
+            if len(market_data) != len(labels):
+                return {
+                    'success': False,
+                    'error': 'market_data and labels must have the same length'
+                }
+            
+            # Create balancing system
+            balancing_system = self.create_balancing_system(
+                dataset_characteristics=dataset_characteristics,
+                custom_config=custom_config
+            )
+            
+            # Perform balancing
+            result = self.apply_balancing(
+                market_data=market_data,
+                labels=labels,
+                balancing_system=balancing_system
+            )
+            
+            if not result['success']:
+                return result
+            
+            # Save artifacts
+            artifacts = []
+            if self.config.save_artifacts:
+                # Save balanced data
+                balanced_data_path = self._save_dataframe(
+                    result['balanced_data'], 
+                    'balanced_market_data'
+                )
+                if balanced_data_path:
+                    artifacts.append(balanced_data_path)
+                
+                # Save balanced labels
+                balanced_labels_path = self._save_dataframe(
+                    result['balanced_labels'].to_frame('labels'), 
+                    'balanced_labels'
+                )
+                if balanced_labels_path:
+                    artifacts.append(balanced_labels_path)
+                
+                # Save sample weights
+                if 'sample_weights' in result:
+                    weights_path = self._save_dataframe(
+                        result['sample_weights'].to_frame('weights'), 
+                        'sample_weights'
+                    )
+                    if weights_path:
+                        artifacts.append(weights_path)
+                
+                # Save balancing metrics
+                metrics_path = self._save_metadata(
+                    result['balancing_metrics'], 
+                    'balancing_metrics'
+                )
+                if metrics_path:
+                    artifacts.append(metrics_path)
+            
+            # Generate outcome file
+            outcome_content = self._generate_outcome_content(result, artifacts)
+            self._save_outcome_file(outcome_content, 'balancing_integration_outcome')
+            
+            return {
+                'success': True,
+                'balanced_data': result['balanced_data'],
+                'balanced_labels': result['balanced_labels'],
+                'sample_weights': result.get('sample_weights'),
+                'balancing_metrics': result['balancing_metrics'],
+                'artifacts': artifacts
+            }
+            
+        except Exception as e:
+            error_msg = f"Balancing integration failed: {str(e)}"
+            if TPRINT_AVAILABLE:
+                tprint_error(f"❌ {error_msg}")
+            return {
+                'success': False,
+                'error': error_msg
+            }
+    
+    def _generate_outcome_content(self, result: Dict[str, Any], artifacts: List[str]) -> str:
+        """Generate outcome file content."""
+        content = f"""# Enhanced Balancing Integration Outcome
+
+## Summary
+- **Status**: {'Success' if result['success'] else 'Failed'}
+- **Processing Time**: {result.get('processing_time', 0):.2f} seconds
+- **Original Samples**: {result.get('original_samples', 0)}
+- **Balanced Samples**: {result.get('balanced_samples', 0)}
+- **Artifacts Generated**: {len(artifacts)}
+
+## Balancing Metrics
+"""
+        
+        if 'balancing_metrics' in result:
+            metrics = result['balancing_metrics']
+            content += f"""
+- **Class Distribution Before**: {metrics.get('class_distribution_before', {})}
+- **Class Distribution After**: {metrics.get('class_distribution_after', {})}
+- **Quality Score**: {metrics.get('quality_score', 0):.3f}
+- **Balancing Technique**: {metrics.get('balancing_technique', 'Unknown')}
+- **Weighting Scheme**: {metrics.get('weighting_scheme', 'Unknown')}
+"""
+        
+        content += f"""
+## Generated Artifacts
+{chr(10).join(f"- {artifact}" for artifact in artifacts)}
+
+## Configuration
+- **Auto Configure**: {self.config.auto_configure}
+- **Enable Monitoring**: {self.config.enable_monitoring}
+- **Memory Limit**: {self.config.memory_limit_gb} GB
+- **Max Samples**: {self.config.max_samples_for_balancing}
+"""
+        
+        return content
     
     def create_balancing_system(self, 
                                dataset_characteristics: Optional[Dict[str, Any]] = None,

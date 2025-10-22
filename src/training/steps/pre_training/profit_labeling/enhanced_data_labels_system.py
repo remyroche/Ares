@@ -39,6 +39,10 @@ import warnings
 from scipy import stats
 from sklearn.metrics import mutual_info_score
 import time
+from abc import ABC
+
+# Import BaseStep
+from src.training.steps.base_step import BaseStep
 
 # Import existing utilities
 from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success
@@ -168,17 +172,19 @@ class EnhancedDataLabelsConfig:
     max_workers: Optional[int] = None
 
 
-class EnhancedDataLabelsSystem:
+class EnhancedDataLabelsSystem(BaseStep):
     """
     Enhanced Data & Labels System - "Define what truth means"
     
     This system implements comprehensive data and labels management that addresses
     the core challenges in trading ML by defining what truth means, cleaning inputs,
     and ensuring stability over time.
+    Inherits from BaseStep for standardized pipeline integration.
     """
     
     def __init__(self, config: Optional[EnhancedDataLabelsConfig] = None):
         """Initialize the enhanced data and labels system."""
+        super().__init__()
         self.config = config or EnhancedDataLabelsConfig()
         self.logger = logging.getLogger('EnhancedDataLabelsSystem')
         
@@ -199,6 +205,181 @@ class EnhancedDataLabelsSystem:
         tprint_info("   → Comprehensive data cleaning")
         tprint_info("   → Label stability monitoring")
         tprint_info("   → Full infrastructure integration")
+    
+    async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Execute the enhanced data and labels processing step.
+        
+        Args:
+            config: Configuration dictionary containing:
+                - market_data: DataFrame with OHLCV market data
+                - regime_data: Optional Series with regime assignments
+                - portfolio_state: Optional portfolio state information
+                - force_recompute: Optional flag to force recomputation
+                - symbol: Optional symbol for context
+                - exchange: Optional exchange for context
+                - information: Optional information for context
+                - direction: Optional direction for context
+                - model: Optional model type for context
+        
+        Returns:
+            Dictionary containing:
+                - success: Boolean indicating success
+                - processed_data: Processed market data
+                - labels: Generated labels
+                - quality_metrics: Data quality metrics
+                - stability_metrics: Label stability metrics
+                - artifacts: List of generated artifacts
+        """
+        try:
+            # Set context for enhanced file naming and operations
+            self._set_context(
+                symbol=config.get('symbol'),
+                exchange=config.get('exchange'),
+                information=config.get('information'),
+                direction=config.get('direction', 'long'),
+                model=config.get('model', 'Analyst')
+            )
+            
+            # Extract data from config
+            market_data = config.get('market_data')
+            regime_data = config.get('regime_data')
+            portfolio_state = config.get('portfolio_state')
+            force_recompute = config.get('force_recompute', False)
+            
+            if market_data is None:
+                return {
+                    'success': False,
+                    'error': 'Missing required data: market_data is required'
+                }
+            
+            # Validate inputs
+            if not isinstance(market_data, pd.DataFrame):
+                return {
+                    'success': False,
+                    'error': 'market_data must be a pandas DataFrame'
+                }
+            
+            # Process market data through the enhanced pipeline
+            result = self.process_market_data(
+                market_data=market_data,
+                regime_data=regime_data,
+                portfolio_state=portfolio_state,
+                force_recompute=force_recompute
+            )
+            
+            if not result.get('success', True):
+                return {
+                    'success': False,
+                    'error': result.get('error', 'Processing failed')
+                }
+            
+            # Save artifacts
+            artifacts = []
+            if self.config.save_artifacts:
+                # Save processed data
+                processed_data_path = self._save_dataframe(
+                    result['processed_data'], 
+                    'processed_market_data'
+                )
+                if processed_data_path:
+                    artifacts.append(processed_data_path)
+                
+                # Save labels
+                if 'labels' in result:
+                    labels_path = self._save_dataframe(
+                        result['labels'].to_frame('labels'), 
+                        'generated_labels'
+                    )
+                    if labels_path:
+                        artifacts.append(labels_path)
+                
+                # Save quality metrics
+                if 'quality_metrics' in result:
+                    quality_path = self._save_metadata(
+                        result['quality_metrics'], 
+                        'data_quality_metrics'
+                    )
+                    if quality_path:
+                        artifacts.append(quality_path)
+                
+                # Save stability metrics
+                if 'stability_metrics' in result:
+                    stability_path = self._save_metadata(
+                        result['stability_metrics'], 
+                        'label_stability_metrics'
+                    )
+                    if stability_path:
+                        artifacts.append(stability_path)
+            
+            # Generate outcome file
+            outcome_content = self._generate_outcome_content(result, artifacts)
+            self._save_outcome_file(outcome_content, 'enhanced_data_labels_outcome')
+            
+            return {
+                'success': True,
+                'processed_data': result['processed_data'],
+                'labels': result.get('labels'),
+                'quality_metrics': result.get('quality_metrics', {}),
+                'stability_metrics': result.get('stability_metrics', {}),
+                'artifacts': artifacts
+            }
+            
+        except Exception as e:
+            error_msg = f"Enhanced data and labels processing failed: {str(e)}"
+            if TPRINT_AVAILABLE:
+                tprint_error(f"❌ {error_msg}")
+            return {
+                'success': False,
+                'error': error_msg
+            }
+    
+    def _generate_outcome_content(self, result: Dict[str, Any], artifacts: List[str]) -> str:
+        """Generate outcome file content."""
+        content = f"""# Enhanced Data & Labels System Outcome
+
+## Summary
+- **Status**: {'Success' if result.get('success', True) else 'Failed'}
+- **Processing Time**: {result.get('processing_time', 0):.2f} seconds
+- **Original Samples**: {result.get('original_samples', 0)}
+- **Processed Samples**: {result.get('processed_samples', 0)}
+- **Artifacts Generated**: {len(artifacts)}
+
+## Data Quality Metrics
+"""
+        
+        if 'quality_metrics' in result:
+            quality = result['quality_metrics']
+            content += f"""
+- **Overall Quality Score**: {quality.get('overall_score', 0):.3f}
+- **Missing Data Rate**: {quality.get('missing_rate', 0):.3f}
+- **Outlier Rate**: {quality.get('outlier_rate', 0):.3f}
+- **Data Completeness**: {quality.get('completeness', 0):.3f}
+"""
+        
+        content += f"""
+## Label Stability Metrics
+"""
+        
+        if 'stability_metrics' in result:
+            stability = result['stability_metrics']
+            content += f"""
+- **Stability Score**: {stability.get('stability_score', 0):.3f}
+- **Label Drift**: {stability.get('label_drift', 0):.3f}
+- **Autocorrelation**: {stability.get('autocorrelation', 0):.3f}
+"""
+        
+        content += f"""
+## Generated Artifacts
+{chr(10).join(f"- {artifact}" for artifact in artifacts)}
+
+## Configuration
+- **Trading-Aware Labels**: {self.config.label_definitions.get('enable_trading_aware', True)}
+- **Data Cleaning**: {self.config.data_cleaning.get('enable_cleaning', True)}
+- **Stability Monitoring**: {self.config.label_stability.get('enable_monitoring', True)}
+"""
+        
+        return content
     
     def _initialize_components(self):
         """Initialize all system components."""

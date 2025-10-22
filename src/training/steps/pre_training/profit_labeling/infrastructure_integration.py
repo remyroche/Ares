@@ -19,6 +19,10 @@ from typing import Dict, List, Optional, Any, Tuple, Union
 import logging
 from datetime import datetime
 import warnings
+from abc import ABC
+
+# Import BaseStep
+from src.training.steps.base_step import BaseStep
 
 # Import existing infrastructure components
 from src.training.steps.pre_training.profit_labeling.volatility_aware_profit_labeler import (
@@ -35,18 +39,148 @@ from src.utils.ml_common.data_processing.data_quality import DataQualityUtilitie
 from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success
 
 
-class InfrastructureIntegrationManager:
+class InfrastructureIntegrationManager(BaseStep):
     """
     Manages integration between enhanced data and labels system and existing infrastructure.
     
     This class ensures that all existing components can seamlessly use the enhanced
     data and labels system while maintaining backward compatibility.
+    Inherits from BaseStep for standardized pipeline integration.
     """
     
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         """Initialize the infrastructure integration manager."""
+        super().__init__()
         self.config = config or {}
         self.logger = logging.getLogger('InfrastructureIntegrationManager')
+    
+    async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Execute the infrastructure integration step.
+        
+        Args:
+            config: Configuration dictionary containing:
+                - market_data: DataFrame with market data
+                - integration_type: Type of integration to perform
+                - symbol: Optional symbol for context
+                - exchange: Optional exchange for context
+                - information: Optional information for context
+                - direction: Optional direction for context
+                - model: Optional model type for context
+        
+        Returns:
+            Dictionary containing:
+                - success: Boolean indicating success
+                - integrated_data: Integrated data
+                - integration_metrics: Integration performance metrics
+                - artifacts: List of generated artifacts
+        """
+        try:
+            # Set context for enhanced file naming and operations
+            self._set_context(
+                symbol=config.get('symbol'),
+                exchange=config.get('exchange'),
+                information=config.get('information'),
+                direction=config.get('direction', 'long'),
+                model=config.get('model', 'Analyst')
+            )
+            
+            # Extract parameters
+            market_data = config.get('market_data')
+            integration_type = config.get('integration_type', 'full')
+            
+            if market_data is None:
+                return {
+                    'success': False,
+                    'error': 'Missing required parameter: market_data'
+                }
+            
+            # Perform integration based on type
+            if integration_type == 'full':
+                result = self.perform_full_integration(market_data)
+            elif integration_type == 'volatility_aware':
+                result = self.integrate_volatility_aware_labeler(market_data)
+            elif integration_type == 'regime_detection':
+                result = self.integrate_regime_detection(market_data)
+            elif integration_type == 'feature_engineering':
+                result = self.integrate_feature_engineering(market_data)
+            else:
+                return {
+                    'success': False,
+                    'error': f'Unknown integration type: {integration_type}'
+                }
+            
+            if not result.get('success', True):
+                return result
+            
+            # Save artifacts
+            artifacts = []
+            if 'integrated_data' in result:
+                data_path = self._save_dataframe(
+                    result['integrated_data'], 
+                    'integrated_market_data'
+                )
+                if data_path:
+                    artifacts.append(data_path)
+            
+            if 'integration_metrics' in result:
+                metrics_path = self._save_metadata(
+                    result['integration_metrics'], 
+                    'integration_metrics'
+                )
+                if metrics_path:
+                    artifacts.append(metrics_path)
+            
+            # Generate outcome file
+            outcome_content = self._generate_outcome_content(result, artifacts)
+            self._save_outcome_file(outcome_content, 'infrastructure_integration_outcome')
+            
+            return {
+                'success': True,
+                'integrated_data': result.get('integrated_data'),
+                'integration_metrics': result.get('integration_metrics', {}),
+                'artifacts': artifacts
+            }
+            
+        except Exception as e:
+            error_msg = f"Infrastructure integration failed: {str(e)}"
+            if TPRINT_AVAILABLE:
+                tprint_error(f"❌ {error_msg}")
+            return {
+                'success': False,
+                'error': error_msg
+            }
+    
+    def _generate_outcome_content(self, result: Dict[str, Any], artifacts: List[str]) -> str:
+        """Generate outcome file content."""
+        content = f"""# Infrastructure Integration Outcome
+
+## Summary
+- **Status**: {'Success' if result.get('success', True) else 'Failed'}
+- **Integration Type**: {result.get('integration_type', 'Unknown')}
+- **Processing Time**: {result.get('processing_time', 0):.2f} seconds
+- **Artifacts Generated**: {len(artifacts)}
+
+## Integration Results
+- **Success**: {result.get('success', True)}
+- **Error Message**: {result.get('error_message', 'None')}
+"""
+        
+        if 'integration_metrics' in result:
+            metrics = result['integration_metrics']
+            content += f"""
+## Integration Metrics
+- **Components Integrated**: {metrics.get('components_integrated', 0)}
+- **Data Quality Score**: {metrics.get('data_quality_score', 0):.3f}
+- **Integration Success Rate**: {metrics.get('success_rate', 0):.3f}
+"""
+        
+        content += f"""
+## Generated Artifacts
+{chr(10).join(f"- {artifact}" for artifact in artifacts)}
+"""
+        
+        return content
         
         # Initialize core systems
         self.enhanced_labels_system = None

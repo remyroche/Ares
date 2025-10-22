@@ -46,12 +46,13 @@ from src.feature_generation.utils.enhanced_matrix_operations import EnhancedMatr
 from sklearn.metrics import roc_auc_score, average_precision_score
 from sklearn.model_selection import TimeSeriesSplit
 from scipy import stats
-import xgboost as xgb
+# import xgboost as xgb  # Removed unused import
 from sklearn.linear_model import LogisticRegression
 
 # Import enhanced data and labels system
 from .enhanced_data_labels_system import (
     EnhancedDataLabelsSystem, EnhancedDataLabelsConfig,
+    TradingObjectiveConfig, LabelStabilityConfig, DataCleaningConfig,
     create_trading_optimized_config, create_research_optimized_config
 )
 
@@ -216,14 +217,25 @@ class ConsolidatedProfitLabeler(BaseStep):
         # Initialize enhanced data and labels system if enabled
         self.enhanced_system = None
         if self.config.enable_enhanced_data_cleaning or self.config.enable_trading_aware_labels:
-            self.enhanced_system = EnhancedDataLabelsSystem(
-                config=EnhancedDataLabelsConfig(
-                    analyst_config=self.config.analyst_config,
-                    tactician_config=self.config.tactician_config,
-                    stability_check_config=self.config.stability_check_config,
-                    data_quality_config=self.config.data_quality_config
+            # Create proper EnhancedDataLabelsConfig with correct fields
+            enhanced_config = EnhancedDataLabelsConfig(
+                trading_objective=TradingObjectiveConfig(
+                    primary_objective="risk_adjusted_returns",
+                    enable_regime_conditioning=True
+                ),
+                label_definitions={
+                    'analyst_config': self.config.analyst_config,
+                    'tactician_config': self.config.tactician_config,
+                    'enable_trading_aware': self.config.enable_trading_aware_labels
+                },
+                data_cleaning=DataCleaningConfig(
+                    enable_cleaning=self.config.enable_enhanced_data_cleaning
+                ),
+                label_stability=LabelStabilityConfig(
+                    enable_monitoring=self.config.enable_enhanced_stability_monitoring
                 )
             )
+            self.enhanced_system = EnhancedDataLabelsSystem(config=enhanced_config)
 
         # Cache for expensive calculations
         self._volatility_cache: Dict[str, pd.Series] = {}
@@ -554,10 +566,18 @@ class ConsolidatedProfitLabeler(BaseStep):
             return data
         
         try:
-            # Use the enhanced system for data cleaning
-            cleaned_data = self.enhanced_system.clean_data(data)
-            self.tprint("✅ Enhanced data cleaning applied")
-            return cleaned_data
+            # Use the enhanced system's process_market_data method
+            result = self.enhanced_system.process_market_data(
+                market_data=data,
+                force_recompute=True
+            )
+            if result.get('success', True) and 'processed_data' in result:
+                cleaned_data = result['processed_data']
+                self.tprint("✅ Enhanced data cleaning applied")
+                return cleaned_data
+            else:
+                self.logger.warning(f"⚠️ Enhanced data cleaning failed: {result.get('error', 'Unknown error')}")
+                return data
         except Exception as e:
             self.logger.warning(f"⚠️ Enhanced data cleaning failed: {e}")
             return data
@@ -569,10 +589,18 @@ class ConsolidatedProfitLabeler(BaseStep):
             return {}
         
         try:
-            # Use the enhanced system for stability monitoring
-            stability_results = self.enhanced_system.monitor_label_stability(labeled_data)
-            self.tprint("✅ Enhanced stability monitoring applied")
-            return stability_results
+            # Use the enhanced system's process_market_data method to get stability metrics
+            result = self.enhanced_system.process_market_data(
+                market_data=labeled_data,
+                force_recompute=True
+            )
+            if result.get('success', True) and 'stability_metrics' in result:
+                stability_results = result['stability_metrics']
+                self.tprint("✅ Enhanced stability monitoring applied")
+                return stability_results
+            else:
+                self.logger.warning(f"⚠️ Enhanced stability monitoring failed: {result.get('error', 'Unknown error')}")
+                return {}
         except Exception as e:
             self.logger.warning(f"⚠️ Enhanced stability monitoring failed: {e}")
             return {}
@@ -594,7 +622,7 @@ class ConsolidatedProfitLabeler(BaseStep):
         else:
             rv_window = self.config.rv_window_minutes
 
-        # Rolling realized volatility
+        # Rolling realized volatility (in return units)
         rolling_rv = returns.rolling(window=rv_window).std() * np.sqrt(rv_window)
 
         # ATR (Average True Range) - ensure it exists
@@ -608,9 +636,12 @@ class ConsolidatedProfitLabeler(BaseStep):
             )
 
         atr = data['true_range'].rolling(window=self.config.atr_window_bars).mean()
+        
+        # Convert ATR to return-scale by normalizing by price
+        atr_returns = atr / data['close']
 
-        # Combine RV and ATR using EWMA
-        combined_vol = (rolling_rv + atr) / 2
+        # Combine RV and ATR using EWMA (both in return units now)
+        combined_vol = (rolling_rv + atr_returns) / 2
 
         # Apply EWMA smoothing
         vol_ewma = combined_vol.ewm(alpha=1-self.config.volatility_ewma_lambda).mean()
@@ -672,17 +703,38 @@ class ConsolidatedProfitLabeler(BaseStep):
 
             return pd.Series(vr, index=aligned_idx)
 
-        # Rolling variance ratio (looking back 50 bars)
-        vr_values = []
-        for i in range(max(50, len(data))):
-            if i < 50:
-                vr_values.append(1.0)
+        # Vectorized variance ratio computation
+        def compute_variance_ratio_vectorized(returns: pd.Series, m: int = 5) -> pd.Series:
+            """Vectorized variance ratio computation."""
+            if len(returns) < 2*m:
+                return pd.Series(1.0, index=returns.index)
+            
+            # Compute returns at different scales
+            r_delta = returns.diff(m).dropna()
+            r_delta_m = returns.diff(1).dropna()
+            
+            # Align indices
+            aligned_idx = r_delta.index.intersection(r_delta_m.index[:len(r_delta)])
+            if len(aligned_idx) == 0:
+                return pd.Series(1.0, index=returns.index)
+            
+            r_delta = r_delta.loc[aligned_idx]
+            r_delta_m = r_delta_m.loc[aligned_idx]
+            
+            # Compute variances
+            var_delta = r_delta.var()
+            var_delta_m = r_delta_m.var()
+            
+            if var_delta_m > 0:
+                vr = var_delta / (m * var_delta_m)
             else:
-                window_returns = data['returns'].iloc[i-50:i]
-                vr = compute_variance_ratio(window_returns).iloc[-1] if len(window_returns) >= 10 else 1.0
-                vr_values.append(vr)
-
-        gates['variance_ratio'] = pd.Series(vr_values, index=data.index)
+                vr = 1.0
+            
+            return pd.Series(vr, index=aligned_idx)
+        
+        # Compute variance ratio for the entire series
+        vr_series = compute_variance_ratio_vectorized(data['returns'])
+        gates['variance_ratio'] = vr_series.reindex(data.index, fill_value=1.0)
 
         # 3. Liquidity gate: volume percentile filter
         rolling_volume_pct = data['volume'].rolling(window=50).apply(
@@ -827,7 +879,14 @@ class ConsolidatedProfitLabeler(BaseStep):
             reverse=True
         )
 
-        for target_name, config in sorted_targets:
+        # Always include the best target unconditionally
+        if sorted_targets:
+            best_target_name, best_config = sorted_targets[0]
+            selected_configs[best_target_name] = best_config
+            self.tprint(f"✅ Selected {best_target_name} (LQS={best_config['quality_metrics'].label_quality_score:.3f}) - best target")
+
+        # Add other targets if correlation is acceptable
+        for target_name, config in sorted_targets[1:]:
             # Check correlation with already selected targets
             should_include = True
 
@@ -843,12 +902,6 @@ class ConsolidatedProfitLabeler(BaseStep):
                 selected_configs[target_name] = config
                 self.tprint(f"✅ Selected {target_name} (LQS={config['quality_metrics'].label_quality_score:.3f})")
 
-        # Ensure we have at least one target (fallback to best if all filtered out)
-        if not selected_configs:
-            best_target = sorted_targets[0][0]
-            selected_configs[best_target] = per_target_configs[best_target]
-            self.tprint(f"⚠️ All targets filtered by correlation, keeping best: {best_target}")
-
         self.tprint(f"✅ Correlation filtering complete: {len(selected_configs)}/{len(per_target_configs)} targets selected")
         return selected_configs
 
@@ -863,7 +916,9 @@ class ConsolidatedProfitLabeler(BaseStep):
         """Evaluate label quality for a specific configuration."""
 
         # Generate labels for this config (subset for speed)
-        sample_size = min(5000, len(data) - self.config.max_horizon_bars)
+        sample_size = max(0, min(5000, len(data) - self.config.max_horizon_bars))
+        if sample_size < 200:  # Minimum samples for quality evaluation
+            return LabelQualityMetrics()
         sample_data = data.iloc[-sample_size:].copy()
 
         # Generate sample labels
@@ -893,15 +948,17 @@ class ConsolidatedProfitLabeler(BaseStep):
         k = config['k']
         horizon_bars = self._compute_adaptive_horizon(data, volatility, k, config['fpt_quantile'])
 
-        # Micro-range gate for this specific k
+        # Micro-range gate for this specific k (both in return units)
         median_tr = data['true_range'].rolling(window=20).median()
-        micro_gate = (k * volatility) >= (config['micro_range_alpha'] * median_tr)
+        median_tr_returns = median_tr / data['close']  # Convert to return scale
+        micro_gate = (k * volatility) >= (config['micro_range_alpha'] * median_tr_returns)
 
         # Combined eligibility
         eligibility = noise_gates['eligibility'] & micro_gate
 
         # Track active instances to prevent overlap
         active_instances = {}  # timestamp -> (target, expiry_bar)
+        next_free_idx = 0  # Track next available index for labeling
 
         # Generate labels bar by bar
         max_idx = min(len(data) - self.config.max_horizon_bars,
@@ -910,13 +967,8 @@ class ConsolidatedProfitLabeler(BaseStep):
         for i in range(self.config.min_bars_for_labeling, max_idx):
             current_time = data.index[i]
 
-            # Check if we're in an active instance period (conflict resolution)
-            in_active_period = any(
-                expiry > i for expiry in [info[1] for info in active_instances.values()]
-            )
-
-            if in_active_period:
-                # Skip labeling if in active period of another instance
+            # Skip if we're before the next free index (overlap prevention)
+            if i < next_free_idx:
                 continue
 
             if not eligibility.iloc[i]:
@@ -952,11 +1004,13 @@ class ConsolidatedProfitLabeler(BaseStep):
 
                 labels.loc[current_time, 'target'] = raw_target
                 labels.loc[current_time, 'time_to_hit'] = hit_idx
-                labels.loc[current_time, 'confidence'] = min(1.0, hit_idx / horizon)
+                # Confidence: faster hits = higher confidence (inverted from original)
+                labels.loc[current_time, 'confidence'] = max(0.0, 1.0 - hit_idx / horizon)
 
-                # Register active instance
+                # Register active instance and update next_free_idx
                 expiry_bar = i + hit_idx + 1  # End after hit
                 active_instances[current_time] = (raw_target, expiry_bar)
+                next_free_idx = max(next_free_idx, expiry_bar)  # Reserve the window
 
             else:
                 # Check for lower barrier hit (short target)
@@ -977,11 +1031,13 @@ class ConsolidatedProfitLabeler(BaseStep):
 
                     labels.loc[current_time, 'target'] = raw_target
                     labels.loc[current_time, 'time_to_hit'] = hit_idx
-                    labels.loc[current_time, 'confidence'] = min(1.0, hit_idx / horizon)
+                    # Confidence: faster hits = higher confidence (inverted from original)
+                    labels.loc[current_time, 'confidence'] = max(0.0, 1.0 - hit_idx / horizon)
 
-                    # Register active instance
+                    # Register active instance and update next_free_idx
                     expiry_bar = i + hit_idx + 1  # End after hit
                     active_instances[current_time] = (raw_target, expiry_bar)
+                    next_free_idx = max(next_free_idx, expiry_bar)  # Reserve the window
 
         # Add metadata
         labels['k'] = k
@@ -1007,6 +1063,9 @@ class ConsolidatedProfitLabeler(BaseStep):
                 break
 
             prev_target = labels.iloc[current_idx - lookback]['target']
+            # Handle uninitialized labels (NaN or 0)
+            if pd.isna(prev_target):
+                prev_target = 0
             if prev_target != 0 and prev_target != new_target:
                 return True  # Would be a flip
 
@@ -1120,8 +1179,8 @@ class ConsolidatedProfitLabeler(BaseStep):
         feature_data = []
         label_values = []
 
-        for idx in valid_labels.index:
-            if idx < 10:  # Need some history
+        for pos, idx in enumerate(valid_labels.index):
+            if pos < 10:  # Need some history (use positional index)
                 continue
 
             # Simple features: lagged returns, volatility, volume
@@ -1338,7 +1397,6 @@ VolatilityAwareConfig = ConsolidatedLabelerConfig
 LabelQualityScore = LabelQualityMetrics
 MultiHorizonProfitLabeler = ConsolidatedProfitLabeler
 MultiHorizonConfig = ConsolidatedLabelerConfig
-LabelingResult = LabelingResult
 
 # Test function
 if __name__ == '__main__':

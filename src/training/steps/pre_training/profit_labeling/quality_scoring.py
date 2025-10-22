@@ -49,15 +49,14 @@ try:
     BAYESIAN_OPTIMIZER_AVAILABLE = True
 except ImportError:
     BAYESIAN_OPTIMIZER_AVAILABLE = False
-    tprint_warning("⚠️ Bayesian TPE optimizer not available, using grid search")
+    logging.warning("Bayesian TPE optimizer not available, will use grid search if needed")
 
 try:
     from src.utils.ml_common.optimization.pareto import ParetoOptimizer, ParetoFront, Solution
     PARETO_OPTIMIZER_AVAILABLE = True
-    tprint_info("   → Pareto optimizer: Available for multi-objective optimization")
 except ImportError:
     PARETO_OPTIMIZER_AVAILABLE = False
-    tprint_warning("⚠️ Pareto optimizer not available, using weighted sum")
+    logging.warning("Pareto optimizer not available, will fallback to simple ranking")
 
 # Import cross-validation utilities
 try:
@@ -65,7 +64,7 @@ try:
     CV_UTILITIES_AVAILABLE = True
 except ImportError:
     CV_UTILITIES_AVAILABLE = False
-    tprint_warning("⚠️ CV utilities not available")
+    logging.warning("CV utilities not available")
 
 # Import OOF stacking utilities
 try:
@@ -73,7 +72,7 @@ try:
     OOF_AVAILABLE = True
 except ImportError:
     OOF_AVAILABLE = False
-    tprint_warning("⚠️ OOF stacking not available")
+    logging.warning("OOF stacking not available")
 
 
 class QualityMetric(Enum):
@@ -101,7 +100,7 @@ class QualityScoringConfig:
     feature_window: int = 20  # Window for feature calculation
     n_features: int = 10  # Number of features to generate
     
-    # Quality thresholds
+    # Quality thresholds (DEPRECATED - not used in scoring, kept for reporting only)
     min_auc_threshold: float = 0.55
     max_auc_std_threshold: float = 0.03
     min_psi_threshold: float = 0.1
@@ -111,6 +110,11 @@ class QualityScoringConfig:
     min_sparsity_threshold: float = 0.05  # Minimum 5% positive class
     
     # LQS calculation
+    lqs_components: List[str] = field(default_factory=lambda: [
+        'predictability', 'stability', 'consistency', 'balance', 'snr_proxy', 'sparsity'
+    ])
+    
+    # Deprecated: lqs_weights kept for backward compatibility but not used
     lqs_weights: Dict[str, float] = field(default_factory=lambda: {
         'predictability': 0.25,
         'stability': 0.2,
@@ -159,7 +163,7 @@ class QualityMetrics:
     pr_auc_std: float = 0.0
     psi_score: float = 0.0
     flip_rate: float = 0.0
-    class_balance: float = 0.0
+    prevalence: float = 0.0
     mutual_information: float = 0.0
     information_coefficient: float = 0.0
     
@@ -301,13 +305,14 @@ class LabelQualityScorer(BaseStep):
             quality_data = {target: {
                 'n_samples': metrics.n_samples,
                 'n_features': metrics.n_features,
-                'predictability_score': metrics.predictability_score,
-                'stability_score': metrics.stability_score,
-                'consistency_score': metrics.consistency_score,
-                'balance_score': metrics.balance_score,
+                'predictability': metrics.predictability,
+                'stability': metrics.stability,
+                'consistency': metrics.consistency,
+                'balance': metrics.balance,
                 'snr_proxy': metrics.snr_proxy,
-                'composite_score': metrics.composite_score,
-                'class_balance': metrics.class_balance
+                'sparsity': metrics.sparsity,
+                'lqs_score': metrics.lqs_score,
+                'class_prevalence': metrics.prevalence
             } for target, metrics in quality_results.items()}
             
             # Preview quality results
@@ -362,8 +367,8 @@ class LabelQualityScorer(BaseStep):
             return {'overall_score': 0.0, 'n_targets': len(quality_results)}
         
         weighted_scores = {}
-        for metric in ['predictability_score', 'stability_score', 'consistency_score', 
-                      'balance_score', 'snr_proxy', 'composite_score']:
+        for metric in ['predictability', 'stability', 'consistency', 
+                      'balance', 'snr_proxy', 'sparsity', 'lqs_score']:
             weighted_sum = sum(
                 getattr(metrics, metric, 0) * metrics.n_samples 
                 for metrics in quality_results.values()
@@ -371,7 +376,7 @@ class LabelQualityScorer(BaseStep):
             weighted_scores[metric] = weighted_sum / total_samples
         
         return {
-            'overall_score': weighted_scores.get('composite_score', 0),
+            'overall_score': weighted_scores.get('lqs_score', 0),
             'n_targets': len(quality_results),
             'total_samples': total_samples,
             **weighted_scores
@@ -397,23 +402,25 @@ class LabelQualityScorer(BaseStep):
 ### {target}
 - **Samples**: {metrics.n_samples}
 - **Features**: {metrics.n_features}
-- **Predictability**: {metrics.predictability_score:.3f}
-- **Stability**: {metrics.stability_score:.3f}
-- **Consistency**: {metrics.consistency_score:.3f}
-- **Balance**: {metrics.balance_score:.3f}
+- **Predictability**: {metrics.predictability:.3f}
+- **Stability**: {metrics.stability:.3f}
+- **Consistency**: {metrics.consistency:.3f}
+- **Balance**: {metrics.balance:.3f}
 - **SNR Proxy**: {metrics.snr_proxy:.3f}
-- **Composite Score**: {metrics.composite_score:.3f}
-- **Class Balance**: {metrics.class_balance:.3f}
+- **Sparsity**: {metrics.sparsity:.3f}
+- **LQS Score**: {metrics.lqs_score:.3f}
+- **Prevalence**: {metrics.prevalence:.3f}
 """
         
         content += f"""
 ## Overall Quality Assessment
 - **Overall Score**: {overall_quality.get('overall_score', 0):.3f}
-- **Predictability**: {overall_quality.get('predictability_score', 0):.3f}
-- **Stability**: {overall_quality.get('stability_score', 0):.3f}
-- **Consistency**: {overall_quality.get('consistency_score', 0):.3f}
-- **Balance**: {overall_quality.get('balance_score', 0):.3f}
+- **Predictability**: {overall_quality.get('predictability', 0):.3f}
+- **Stability**: {overall_quality.get('stability', 0):.3f}
+- **Consistency**: {overall_quality.get('consistency', 0):.3f}
+- **Balance**: {overall_quality.get('balance', 0):.3f}
 - **SNR Proxy**: {overall_quality.get('snr_proxy', 0):.3f}
+- **Sparsity**: {overall_quality.get('sparsity', 0):.3f}
 
 ## Generated Artifacts
 {chr(10).join(f"- {artifact}" for artifact in artifacts)}
@@ -481,6 +488,18 @@ class LabelQualityScorer(BaseStep):
             self.tprint_error(f"❌ Quality assessment failed: {e}")
             return quality_results
         
+        # Second pass: build LQS via EWM
+        if quality_results:
+            components = self.config.lqs_components
+            M, _ = self._normalize_metrics_matrix(quality_results, components)
+            w = self._entropy_weights(M)
+            lqs = (M * w).sum(axis=1)
+            
+            # write back per target
+            for t, score in lqs.items():
+                quality_results[t].lqs_score = float(score)
+            self.tprint_info(f"   → LQS weights (EWM): {w.to_dict()}")
+        
         processing_time = (datetime.now() - start_time).total_seconds()
         self.tprint_success("✅ Quality assessment completed")
         self.tprint_info(f"   → Processing time: {processing_time:.2f}s")
@@ -515,6 +534,7 @@ class LabelQualityScorer(BaseStep):
             metrics.auc_std = predictability_metrics['auc_std']
             metrics.pr_auc_mean = predictability_metrics['pr_auc_mean']
             metrics.pr_auc_std = predictability_metrics['pr_auc_std']
+            metrics.prevalence = float(predictability_metrics.get('prevalence', float((target_labels > 0).mean())))
             metrics.baseline_performance = predictability_metrics['baseline_performance']
             
             # 2. Stability assessment
@@ -534,7 +554,7 @@ class LabelQualityScorer(BaseStep):
             tprint_info(f"   ⚖️ Assessing balance for {target_name}")
             balance_metrics = self._assess_balance(target_labels)
             metrics.balance = balance_metrics['balance']
-            metrics.class_balance = balance_metrics['class_balance']
+            metrics.prevalence = float(balance_metrics.get('prevalence', metrics.prevalence))
             
             # 5. SNR proxy assessment
             tprint_info(f"   📡 Assessing SNR proxy for {target_name}")
@@ -547,7 +567,11 @@ class LabelQualityScorer(BaseStep):
             sparsity_metrics = self._assess_sparsity(target_labels)
             metrics.sparsity = sparsity_metrics['sparsity']
             
-            # 7. Calculate composite LQS score
+            # 7. Refine stability using fold AUC std if present
+            if metrics.auc_std > 0:
+                metrics.stability = float(1.0 / (1.0 + metrics.auc_std + metrics.psi_score))
+            
+            # 8. Calculate composite LQS score (will be overridden by EWM)
             metrics.lqs_score = self._calculate_lqs_score(metrics)
             
             # Calculate processing time
@@ -580,22 +604,22 @@ class LabelQualityScorer(BaseStep):
 
             features_data = {}
 
-            # Price-based features (vectorized)
-            features_data['returns'] = np.diff(close_prices, prepend=close_prices[0]) / close_prices[:-1]
-            features_data['returns'] = np.concatenate([[0], features_data['returns']])  # Pad first value
+            # Price-based features (vectorized) - use trailing operations
+            close = pd.Series(close_prices, index=target_index)
+            ret = close.pct_change().fillna(0.0)
+            features_data['returns'] = ret.values
 
             # Log returns
-            features_data['log_returns'] = np.log(close_prices / np.roll(close_prices, 1))
-            features_data['log_returns'][0] = 0  # Handle first value
+            log_ret = np.log(close / close.shift(1)).replace([np.inf, -np.inf], np.nan).fillna(0.0)
+            features_data['log_returns'] = log_ret.values
 
             # Volatility (rolling std) - use vectorized operations
             returns_series = pd.Series(features_data['returns'], index=target_index)
             features_data['volatility'] = returns_series.rolling(self.config.feature_window).std().fillna(0).values
 
             # Price momentum
-            shifted_close = np.roll(close_prices, self.config.feature_window)
-            shifted_close[:self.config.feature_window] = close_prices[0]  # Pad initial values
-            features_data['price_momentum'] = close_prices / shifted_close - 1
+            shifted_close = close.shift(self.config.feature_window)
+            features_data['price_momentum'] = (close / shifted_close - 1.0).fillna(0.0).values
 
             # Volume-based features (vectorized)
             rolling_volume_mean = pd.Series(volume_values, index=target_index).rolling(self.config.feature_window).mean().fillna(method='bfill').values
@@ -614,7 +638,7 @@ class LabelQualityScorer(BaseStep):
             features_data['sma_ratio'] = close_prices / rolling_close_mean
 
             # RSI calculation
-            features_data['rsi'] = self._calculate_rsi_vectorized(close_prices, self.config.feature_window)
+            features_data['rsi'] = self._rsi_wilder(close, self.config.feature_window).fillna(50.0).values
 
             # Create DataFrame efficiently
             features = pd.DataFrame(features_data, index=target_index)
@@ -679,6 +703,17 @@ class LabelQualityScorer(BaseStep):
             # Fallback to pandas implementation
             prices_series = pd.Series(prices)
             return self._calculate_rsi(prices_series, window).values
+    
+    def _rsi_wilder(self, close: pd.Series, window: int) -> pd.Series:
+        """Calculate RSI using Wilder's EWMA method (no leakage)."""
+        delta = close.diff()
+        gain = delta.clip(lower=0)
+        loss = -delta.clip(upper=0)
+        avg_gain = gain.ewm(alpha=1/window, adjust=False, min_periods=window).mean()
+        avg_loss = loss.ewm(alpha=1/window, adjust=False, min_periods=window).mean()
+        rs = avg_gain / (avg_loss.replace(0, np.nan))
+        rsi = 100 - 100 / (1 + rs)
+        return rsi.fillna(50.0)
     
     def _assess_predictability(self, target_labels: pd.Series, features: pd.DataFrame) -> Dict[str, Any]:
         """Assess predictability using baseline models."""
@@ -755,6 +790,10 @@ class LabelQualityScorer(BaseStep):
                     X_train, X_test = X.iloc[train_idx], X.iloc[test_idx]
                     y_train, y_test = y_binary.iloc[train_idx], y_binary.iloc[test_idx]
                     
+                    # Skip fold if single class
+                    if y_train.nunique() < 2 or y_test.nunique() < 2:
+                        continue
+                    
                     # Scale features
                     scaler = StandardScaler()
                     X_train_scaled = scaler.fit_transform(X_train)
@@ -797,13 +836,22 @@ class LabelQualityScorer(BaseStep):
                     pr_auc_scores.extend(model_pr_auc_scores)
             
             # Calculate overall metrics
-            auc_mean = np.mean(auc_scores) if auc_scores else 0.0
-            auc_std = np.std(auc_scores) if auc_scores else 0.0
-            pr_auc_mean = np.mean(pr_auc_scores) if pr_auc_scores else 0.0
-            pr_auc_std = np.std(pr_auc_scores) if pr_auc_scores else 0.0
+            auc_mean = float(np.mean(auc_scores)) if auc_scores else 0.0
+            auc_std = float(np.std(auc_scores)) if auc_scores else 0.0
+            pr_auc_mean = float(np.mean(pr_auc_scores)) if pr_auc_scores else 0.0
+            pr_auc_std = float(np.std(pr_auc_scores)) if pr_auc_scores else 0.0
+            prevalence = float(y_binary.mean()) if len(y_binary) else 0.0
             
-            # Predictability score (weighted combination of AUC and PR-AUC)
-            predictability = (auc_mean * 0.6 + pr_auc_mean * 0.4) if (auc_mean > 0 or pr_auc_mean > 0) else 0.0
+            # Adjust for trivial baselines
+            auc_adj = max(0.0, 2.0 * (auc_mean - 0.5))
+            denom = max(1e-12, 1.0 - prevalence)
+            prauc_adj = max(0.0, (pr_auc_mean - prevalence) / denom)
+            
+            # Harmonic mean (if both > 0)
+            if auc_adj > 0 and prauc_adj > 0:
+                predictability = 2 * (auc_adj * prauc_adj) / (auc_adj + prauc_adj)
+            else:
+                predictability = max(auc_adj, prauc_adj)
             
             return {
                 'predictability': predictability,
@@ -811,6 +859,7 @@ class LabelQualityScorer(BaseStep):
                 'auc_std': auc_std,
                 'pr_auc_mean': pr_auc_mean,
                 'pr_auc_std': pr_auc_std,
+                'prevalence': prevalence,
                 'baseline_performance': baseline_performance
             }
             
@@ -843,15 +892,12 @@ class LabelQualityScorer(BaseStep):
             rolling_means = target_labels.rolling(window=window_size).mean()
             rolling_stds = target_labels.rolling(window=window_size).std()
             
-            # Stability based on consistency of rolling statistics
-            mean_consistency = 1.0 - (rolling_means.std() / rolling_means.mean()) if rolling_means.mean() != 0 else 0.0
-            std_consistency = 1.0 - (rolling_stds.std() / rolling_stds.mean()) if rolling_stds.mean() != 0 else 0.0
-            
-            stability = (mean_consistency + std_consistency) / 2
+            # Stability based on raw signals without heuristics
+            stability = 1.0 / (1.0 + (rolling_means.std() / (abs(rolling_means.mean()) + 1e-12)) + (rolling_stds.std() / (rolling_stds.mean() + 1e-12)))
             
             return {
-                'stability': max(0.0, min(1.0, stability)),
-                'psi_score': psi_score
+                'stability': float(np.clip(stability, 0.0, 1.0)),
+                'psi_score': float(psi_score)
             }
             
         except Exception as e:
@@ -869,8 +915,11 @@ class LabelQualityScorer(BaseStep):
             expected = series.iloc[:mid_point]
             actual = series.iloc[mid_point:]
             
-            # Create bins
-            bins = np.linspace(series.min(), series.max(), 11)
+            # Create bins - handle binary series
+            if series.nunique() <= 2:
+                bins = np.array([-np.inf, 0.5, np.inf])
+            else:
+                bins = np.linspace(series.min(), series.max(), 11)
             
             # Calculate distributions
             expected_dist = np.histogram(expected, bins=bins)[0] / len(expected)
@@ -909,11 +958,14 @@ class LabelQualityScorer(BaseStep):
             else:
                 mutual_info = 0.0
             
-            # Consistency score (higher mutual info, lower flip rate = better)
-            consistency = (mutual_info * 0.7 + (1.0 - flip_rate) * 0.3)
+            # Normalize MI to [0,1] via theoretical max ≈ log2(bins)
+            bins = 10
+            mi_norm = min(1.0, mutual_info / max(1e-12, np.log2(bins)))
+            # Combine without hand weights (geometric mean)
+            consistency = float(np.sqrt(max(0.0, mi_norm) * max(0.0, 1.0 - flip_rate)))
             
             return {
-                'consistency': max(0.0, min(1.0, consistency)),
+                'consistency': consistency,
                 'mutual_information': mutual_info,
                 'flip_rate': flip_rate
             }
@@ -985,7 +1037,8 @@ class LabelQualityScorer(BaseStep):
             
             return {
                 'balance': max(0.0, min(1.0, balance)),
-                'class_balance': class_balance
+                'class_balance': class_balance,
+                'prevalence': class_balance
             }
             
         except Exception as e:
@@ -1005,6 +1058,11 @@ class LabelQualityScorer(BaseStep):
             
             y = target_labels.loc[common_index]
             X = features.loc[common_index]
+            
+            # Align indices and guard against NaNs
+            mask = y.notna()
+            y = y[mask]
+            X = X.loc[mask]
             
             # Calculate information coefficient for each feature
             ic_scores = []
@@ -1042,13 +1100,9 @@ class LabelQualityScorer(BaseStep):
             # Calculate positive class ratio
             positive_ratio = (target_labels > 0).sum() / len(target_labels)
             
-            # Sparsity score: higher is better, penalize if below threshold
-            if positive_ratio >= self.config.min_sparsity_threshold:
-                sparsity_score = 1.0
-            else:
-                # Penalize based on how far below threshold
-                penalty = (self.config.min_sparsity_threshold - positive_ratio) / self.config.min_sparsity_threshold
-                sparsity_score = max(0.0, 1.0 - penalty)
+            # Sparsity score: monotone function without hard thresholds
+            target_floor = 0.05  # 5% reference
+            sparsity_score = float(np.clip(positive_ratio / target_floor, 0.0, 1.0))
             
             return {
                 'sparsity': sparsity_score
@@ -1079,6 +1133,41 @@ class LabelQualityScorer(BaseStep):
         except Exception as e:
             tprint_warning(f"⚠️ Error calculating LQS score: {e}")
             return 0.0
+    
+    def _normalize_metrics_matrix(self, rows: Dict[str, QualityMetrics], keys: List[str]) -> Tuple[pd.DataFrame, pd.Series]:
+        """Build and normalize metrics matrix for EWM calculation."""
+        # Build matrix T x K
+        data = []
+        idx = []
+        for t, m in rows.items():
+            row = [max(0.0, float(getattr(m, k, 0.0))) for k in keys]
+            data.append(row)
+            idx.append(t)
+        M = pd.DataFrame(data, index=idx, columns=keys)
+        
+        # Min-max per column with epsilon
+        eps = 1e-12
+        for k in keys:
+            col = M[k].astype(float)
+            lo, hi = col.min(), col.max()
+            if not np.isfinite(lo) or not np.isfinite(hi) or hi - lo < eps:
+                M[k] = 0.0  # no dispersion -> no contribution
+            else:
+                M[k] = (col - lo) / (hi - lo)
+        
+        return M, M.sum(axis=0).replace(0, eps)
+    
+    def _entropy_weights(self, M: pd.DataFrame) -> pd.Series:
+        """Calculate entropy weights for EWM."""
+        # EWM: w_j ∝ 1 - entropy_j
+        eps = 1e-12
+        # normalize each column to probabilities per metric
+        P = M.div(M.sum(axis=0) + eps, axis=1).replace(0, eps)
+        k = M.shape[0]
+        H = - (P * np.log(P)).sum(axis=0) / np.log(k + eps)
+        d = 1.0 - H
+        w = d / (d.sum() + eps)
+        return w
     
     def optimize_target_selection_pareto(self, quality_results: Dict[str, QualityMetrics]) -> List[str]:
         """Use Pareto optimization to select optimal targets."""

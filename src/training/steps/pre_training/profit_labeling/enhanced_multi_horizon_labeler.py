@@ -35,8 +35,8 @@ from .enhanced_data_labels_system import (
     create_trading_optimized_config, create_research_optimized_config
 )
 
-# Import existing utilities
-from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success
+# Note: tprint and hardware utilities are available through BaseStep
+# No need for direct imports as they're inherited from BaseStep
 
 
 class EnhancedMultiHorizonConfig(MultiHorizonConfig):
@@ -104,12 +104,12 @@ class EnhancedMultiHorizonProfitLabeler(MultiHorizonProfitLabeler, BaseStep):
         # Initialize parent class with base config
         MultiHorizonProfitLabeler.__init__(self, self.enhanced_config)
         
-        tprint_success("🚀 Enhanced Multi-Horizon Profit Labeler initialized")
-        tprint_info("   → Enhanced data cleaning: Enabled")
-        tprint_info("   → Enhanced stability monitoring: Enabled")
-        tprint_info("   → Trading-aware labels: Enabled")
-        tprint_info("   → Full backward compatibility: Maintained")
-        tprint_info("   → BaseStep integration: Enabled")
+        self.tprint_success("🚀 Enhanced Multi-Horizon Profit Labeler initialized")
+        self.tprint_info("   → Enhanced data cleaning: Enabled")
+        self.tprint_info("   → Enhanced stability monitoring: Enabled")
+        self.tprint_info("   → Trading-aware labels: Enabled")
+        self.tprint_info("   → Full backward compatibility: Maintained")
+        self.tprint_info("   → BaseStep integration: Enabled")
     
     async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -201,8 +201,7 @@ class EnhancedMultiHorizonProfitLabeler(MultiHorizonProfitLabeler, BaseStep):
             
         except Exception as e:
             error_msg = f"Enhanced multi-horizon labeling failed: {str(e)}"
-            if TPRINT_AVAILABLE:
-                tprint_error(f"❌ {error_msg}")
+            self.tprint_error(f"❌ {error_msg}")
             return {
                 'success': False,
                 'error': error_msg

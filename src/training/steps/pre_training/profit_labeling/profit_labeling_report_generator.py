@@ -19,7 +19,8 @@ from abc import ABC
 # Import BaseStep
 from src.training.steps.base_step import BaseStep
 
-from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success
+# Note: tprint and hardware utilities are available through BaseStep
+# No need for direct imports as they're inherited from BaseStep
 from src.utils.serialization_utils import UniversalSerializer
 
 
@@ -66,7 +67,7 @@ class ProfitLabelingReportGenerator(BaseStep):
         """Initialize the report generator."""
         super().__init__()
         self.serializer = UniversalSerializer()
-        tprint_info("📊 Profit Labeling Report Generator initialized")
+        self.tprint_info("📊 Profit Labeling Report Generator initialized")
     
     async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -165,8 +166,7 @@ class ProfitLabelingReportGenerator(BaseStep):
             
         except Exception as e:
             error_msg = f"Profit labeling report generation failed: {str(e)}"
-            if TPRINT_AVAILABLE:
-                tprint_error(f"❌ {error_msg}")
+            self.tprint_error(f"❌ {error_msg}")
             return {
                 'success': False,
                 'error': error_msg

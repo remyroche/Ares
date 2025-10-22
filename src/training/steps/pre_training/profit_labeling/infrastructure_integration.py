@@ -35,8 +35,8 @@ from src.analyst.unified_regime_classifier import UnifiedRegimeClassifier
 from src.analyst.feature_engineering_orchestrator import FeatureEngineeringOrchestrator
 from src.utils.ml_common.data_processing.data_quality import DataQualityUtilities
 
-# Import existing utilities
-from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success
+# Note: tprint and hardware utilities are available through BaseStep
+# No need for direct imports as they're inherited from BaseStep
 
 
 class InfrastructureIntegrationManager(BaseStep):
@@ -151,8 +151,7 @@ class InfrastructureIntegrationManager(BaseStep):
             
         except Exception as e:
             error_msg = f"Infrastructure integration failed: {str(e)}"
-            if TPRINT_AVAILABLE:
-                tprint_error(f"❌ {error_msg}")
+            self.tprint_error(f"❌ {error_msg}")
             return {
                 'success': False,
                 'error': error_msg

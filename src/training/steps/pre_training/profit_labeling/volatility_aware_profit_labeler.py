@@ -32,7 +32,7 @@ from src.training.steps.base_step import BaseStep
 
 # Core utilities
 from src.utils.logger import get_logger
-from src.utils.tprint import tprint
+# Note: tprint and hardware utilities are available through BaseStep
 from src.utils.math_validation import safe_divide, validate_finite
 from src.core.decorators import handles_errors, traced, validates
 
@@ -179,7 +179,7 @@ class VolatilityAwareProfitLabeler(BaseStep):
         self._fpt_cache: Dict[str, np.ndarray] = {}
         self._quality_cache: Dict[str, LabelQualityMetrics] = {}
 
-        tprint("🔧 Initialized Volatility-Aware Profit Labeler")
+        self.tprint("🔧 Initialized Volatility-Aware Profit Labeler")
         self.logger.info(f"📊 Config: {len(self.config.target_bands)} target bands, "
                         f"RV window: {self.config.rv_window_minutes}min, "
                         f"ATR window: {self.config.atr_window_bars} bars")
@@ -234,11 +234,21 @@ class VolatilityAwareProfitLabeler(BaseStep):
             self.tprint_data_preview(data, "input_data", max_rows=5)
             self.tprint_data_format(data, "input_data")
             
+            # Apply hardware optimization to input data
+            if self.hardware_utils and self.hardware_utils.get('optimize_dataframe'):
+                data = self.hardware_utils['optimize_dataframe'](data)
+                self.tprint_info("🔧 Input data optimized for hardware acceleration")
+            
             # Generate labels
             labeled_data, quality_report = self.generate_labels(data)
             
             # Save artifacts
             artifacts = []
+            
+            # Apply hardware optimization to labeled data
+            if self.hardware_utils and self.hardware_utils.get('optimize_dataframe'):
+                labeled_data = self.hardware_utils['optimize_dataframe'](labeled_data)
+                self.tprint_info("🔧 Labeled data optimized for hardware acceleration")
             
             # Preview labeled data
             self.tprint_data_preview(labeled_data, "volatility_aware_labeled_data", max_rows=5)
@@ -285,8 +295,7 @@ class VolatilityAwareProfitLabeler(BaseStep):
             
         except Exception as e:
             error_msg = f"Volatility-aware labeling failed: {str(e)}"
-            if TPRINT_AVAILABLE:
-                tprint_error(f"❌ {error_msg}")
+            self.tprint_error(f"❌ {error_msg}")
             return {
                 'success': False,
                 'error': error_msg
@@ -338,10 +347,10 @@ class VolatilityAwareProfitLabeler(BaseStep):
         Returns:
             Tuple of (labeled_data, quality_report)
         """
-        tprint("🚀 Starting volatility-aware profit labeling...")
+        self.tprint("🚀 Starting volatility-aware profit labeling...")
 
         if len(data) < self.config.min_bars_for_labeling:
-            tprint(f"⚠️ Insufficient data: {len(data)} < {self.config.min_bars_for_labeling}")
+            self.tprint(f"⚠️ Insufficient data: {len(data)} < {self.config.min_bars_for_labeling}")
             return data.copy(), {}
 
         # Step 0: Data preparation and cleaning

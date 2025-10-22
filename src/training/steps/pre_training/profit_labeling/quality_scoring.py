@@ -40,13 +40,8 @@ try:
 except ImportError:
     MATRIX_OPS_AVAILABLE = False
 
-# Import existing utilities
-from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success
-from src.utils.common_operations import (
-    safe_divide, safe_log, safe_sqrt, safe_mean, safe_std,
-    validate_finite, validate_positive, validate_range, safe_correlation
-)
-from src.utils.math_validation import MathValidation
+# Note: tprint and hardware utilities are available through BaseStep
+# No need for direct imports as they're inherited from BaseStep
 
 # Import ML optimization utilities
 try:
@@ -204,37 +199,37 @@ class LabelQualityScorer(BaseStep):
         # Initialize matrix operations for vectorized computations
         if MATRIX_OPS_AVAILABLE:
             self.matrix_ops = UnifiedMatrixOperations()
-            tprint_info("   → Matrix operations: Available")
+            self.tprint_info("   → Matrix operations: Available")
         else:
             self.matrix_ops = None
-            tprint_warning("   → Matrix operations: Not available, using fallback")
+            self.tprint_warning("   → Matrix operations: Not available, using fallback")
 
         # Initialize Pareto optimizer if available
         if PARETO_OPTIMIZER_AVAILABLE and self.config.enable_pareto_optimization:
             self.pareto_optimizer = ParetoFront()
-            tprint_info("   → Pareto optimizer: Available for multi-objective optimization")
+            self.tprint_info("   → Pareto optimizer: Available for multi-objective optimization")
         else:
             self.pareto_optimizer = None
 
         # Initialize CV utilities
         if CV_UTILITIES_AVAILABLE:
             self.cv_validator = CrossValidator()
-            tprint_info("   → CV utilities: Available")
+            self.tprint_info("   → CV utilities: Available")
         else:
             self.cv_validator = None
 
         # Initialize OOF stacking
         if OOF_AVAILABLE:
             self.oof_manager = OOFStackingEnsembleManager()
-            tprint_info("   → OOF stacking: Available")
+            self.tprint_info("   → OOF stacking: Available")
         else:
             self.oof_manager = None
 
-        tprint_info("📊 Label Quality Scorer initialized")
-        tprint_info(f"   → Baseline models: {self.config.baseline_models}")
-        tprint_info(f"   → CV splits: {self.config.n_splits}")
-        tprint_info(f"   → Optimization: {self.config.enable_optimization}")
-        tprint_info(f"   → Pareto optimization: {self.config.enable_pareto_optimization}")
+        self.tprint_info("📊 Label Quality Scorer initialized")
+        self.tprint_info(f"   → Baseline models: {self.config.baseline_models}")
+        self.tprint_info(f"   → CV splits: {self.config.n_splits}")
+        self.tprint_info(f"   → Optimization: {self.config.enable_optimization}")
+        self.tprint_info(f"   → Pareto optimization: {self.config.enable_pareto_optimization}")
     
     async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -350,8 +345,7 @@ class LabelQualityScorer(BaseStep):
             
         except Exception as e:
             error_msg = f"Label quality scoring failed: {str(e)}"
-            if TPRINT_AVAILABLE:
-                tprint_error(f"❌ {error_msg}")
+            self.tprint_error(f"❌ {error_msg}")
             return {
                 'success': False,
                 'error': error_msg
@@ -442,7 +436,7 @@ class LabelQualityScorer(BaseStep):
             Dictionary mapping target names to QualityMetrics
         """
         start_time = datetime.now()
-        tprint_info("📊 Assessing label quality")
+        self.tprint_info("📊 Assessing label quality")
         
         quality_results = {}
         
@@ -451,12 +445,12 @@ class LabelQualityScorer(BaseStep):
             target_columns = [col for col in labels.columns if 'target' in col.lower()]
             
             if not target_columns:
-                tprint_warning("⚠️ No target columns found")
+                self.tprint_warning("⚠️ No target columns found")
                 return quality_results
             
             # Process each target
             for target_col in target_columns:
-                tprint_info(f"📈 Assessing quality for target: {target_col}")
+                self.tprint_info(f"📈 Assessing quality for target: {target_col}")
                 
                 # Extract target data
                 target_labels = labels[target_col].dropna()
@@ -466,14 +460,14 @@ class LabelQualityScorer(BaseStep):
                 # Filter by eligibility
                 eligible_mask = target_eligibility & target_eligibility.notna()
                 if not eligible_mask.any():
-                    tprint_warning(f"⚠️ No eligible samples for target {target_col}")
+                    self.tprint_warning(f"⚠️ No eligible samples for target {target_col}")
                     continue
                 
                 target_labels_eligible = target_labels[eligible_mask]
                 
                 # Check minimum samples
                 if len(target_labels_eligible) < self.config.min_samples_for_evaluation:
-                    tprint_warning(f"⚠️ Insufficient samples for target {target_col}: {len(target_labels_eligible)}")
+                    self.tprint_warning(f"⚠️ Insufficient samples for target {target_col}: {len(target_labels_eligible)}")
                     continue
                 
                 # Assess quality for this target
@@ -484,13 +478,13 @@ class LabelQualityScorer(BaseStep):
                 quality_results[target_col] = quality_metrics
             
         except Exception as e:
-            tprint_error(f"❌ Quality assessment failed: {e}")
+            self.tprint_error(f"❌ Quality assessment failed: {e}")
             return quality_results
         
         processing_time = (datetime.now() - start_time).total_seconds()
-        tprint_success("✅ Quality assessment completed")
-        tprint_info(f"   → Processing time: {processing_time:.2f}s")
-        tprint_info(f"   → Targets assessed: {len(quality_results)}")
+        self.tprint_success("✅ Quality assessment completed")
+        self.tprint_info(f"   → Processing time: {processing_time:.2f}s")
+        self.tprint_info(f"   → Targets assessed: {len(quality_results)}")
         
         return quality_results
     

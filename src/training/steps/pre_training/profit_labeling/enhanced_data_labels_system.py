@@ -44,13 +44,8 @@ from abc import ABC
 # Import BaseStep
 from src.training.steps.base_step import BaseStep
 
-# Import existing utilities
-from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success
-from src.utils.common_operations import (
-    safe_divide, safe_log, safe_sqrt, safe_power, safe_mean, safe_std,
-    validate_finite, validate_positive, validate_range, safe_correlation
-)
-from src.utils.math_validation import MathValidation
+# Note: tprint and hardware utilities are available through BaseStep
+# No need for direct imports as they're inherited from BaseStep
 
 # Import existing components
 from .enhanced_label_definitions import (
@@ -200,11 +195,11 @@ class EnhancedDataLabelsSystem(BaseStep):
         self.cache: Dict[str, Any] = {}
         self.cache_timestamps: Dict[str, datetime] = {}
         
-        tprint_success("🚀 Enhanced Data & Labels System initialized")
-        tprint_info("   → Trading-aware label definitions")
-        tprint_info("   → Comprehensive data cleaning")
-        tprint_info("   → Label stability monitoring")
-        tprint_info("   → Full infrastructure integration")
+        self.tprint_success("🚀 Enhanced Data & Labels System initialized")
+        self.tprint_info("   → Trading-aware label definitions")
+        self.tprint_info("   → Comprehensive data cleaning")
+        self.tprint_info("   → Label stability monitoring")
+        self.tprint_info("   → Full infrastructure integration")
     
     async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -264,6 +259,11 @@ class EnhancedDataLabelsSystem(BaseStep):
             self.tprint_data_preview(market_data, "input_market_data", max_rows=5)
             self.tprint_data_format(market_data, "input_market_data")
             
+            # Apply hardware optimization to input data
+            if self.hardware_utils and self.hardware_utils.get('optimize_dataframe'):
+                market_data = self.hardware_utils['optimize_dataframe'](market_data)
+                self.tprint_info("🔧 Input data optimized for hardware acceleration")
+            
             # Process market data through the enhanced pipeline
             result = self.process_market_data(
                 market_data=market_data,
@@ -281,50 +281,55 @@ class EnhancedDataLabelsSystem(BaseStep):
             # Save artifacts
             artifacts = []
             if self.config.save_artifacts:
-                # Preview processed data
-                self.tprint_data_preview(result['processed_data'], "processed_market_data", max_rows=5)
-                self.tprint_data_format(result['processed_data'], "processed_market_data")
+                # Apply hardware optimization to processed data
+                if self.hardware_utils and self.hardware_utils.get('optimize_dataframe'):
+                    result['processed_data'] = self.hardware_utils['optimize_dataframe'](result['processed_data'])
+                    self.tprint_info("🔧 Processed data optimized for hardware acceleration")
+            
+            # Preview processed data
+            self.tprint_data_preview(result['processed_data'], "processed_market_data", max_rows=5)
+            self.tprint_data_format(result['processed_data'], "processed_market_data")
+            
+            # Save processed data
+            processed_data_path = self._save_dataframe(
+                result['processed_data'], 
+                'processed_market_data'
+            )
+            if processed_data_path:
+                artifacts.append(processed_data_path)
+            
+            # Save labels
+            if 'labels' in result:
+                labels_df = result['labels'].to_frame('labels')
+                self.tprint_data_preview(labels_df, "generated_labels", max_rows=5)
+                self.tprint_data_format(labels_df, "generated_labels")
                 
-                # Save processed data
-                processed_data_path = self._save_dataframe(
-                    result['processed_data'], 
-                    'processed_market_data'
+                labels_path = self._save_dataframe(
+                    labels_df, 
+                    'generated_labels'
                 )
-                if processed_data_path:
-                    artifacts.append(processed_data_path)
-                
-                # Save labels
-                if 'labels' in result:
-                    labels_df = result['labels'].to_frame('labels')
-                    self.tprint_data_preview(labels_df, "generated_labels", max_rows=5)
-                    self.tprint_data_format(labels_df, "generated_labels")
-                    
-                    labels_path = self._save_dataframe(
-                        labels_df, 
-                        'generated_labels'
-                    )
-                    if labels_path:
-                        artifacts.append(labels_path)
-                
-                # Save quality metrics
-                if 'quality_metrics' in result:
-                    self.tprint_data_format(result['quality_metrics'], "data_quality_metrics")
-                    quality_path = self._save_metadata(
-                        result['quality_metrics'], 
-                        'data_quality_metrics'
-                    )
-                    if quality_path:
-                        artifacts.append(quality_path)
-                
-                # Save stability metrics
-                if 'stability_metrics' in result:
-                    self.tprint_data_format(result['stability_metrics'], "label_stability_metrics")
-                    stability_path = self._save_metadata(
-                        result['stability_metrics'], 
-                        'label_stability_metrics'
-                    )
-                    if stability_path:
-                        artifacts.append(stability_path)
+                if labels_path:
+                    artifacts.append(labels_path)
+            
+            # Save quality metrics
+            if 'quality_metrics' in result:
+                self.tprint_data_format(result['quality_metrics'], "data_quality_metrics")
+                quality_path = self._save_metadata(
+                    result['quality_metrics'], 
+                    'data_quality_metrics'
+                )
+                if quality_path:
+                    artifacts.append(quality_path)
+            
+            # Save stability metrics
+            if 'stability_metrics' in result:
+                self.tprint_data_format(result['stability_metrics'], "label_stability_metrics")
+                stability_path = self._save_metadata(
+                    result['stability_metrics'], 
+                    'label_stability_metrics'
+                )
+                if stability_path:
+                    artifacts.append(stability_path)
             
             # Log metrics
             self.tprint_metrics({
@@ -349,8 +354,7 @@ class EnhancedDataLabelsSystem(BaseStep):
             
         except Exception as e:
             error_msg = f"Enhanced data and labels processing failed: {str(e)}"
-            if TPRINT_AVAILABLE:
-                tprint_error(f"❌ {error_msg}")
+            self.tprint_error(f"❌ {error_msg}")
             return {
                 'success': False,
                 'error': error_msg
@@ -433,10 +437,10 @@ class EnhancedDataLabelsSystem(BaseStep):
                 fairness_config=self.config.fairness_config
             )
             
-            tprint_success("✅ All components initialized successfully")
+            self.tprint_success("✅ All components initialized successfully")
             
         except Exception as e:
-            tprint_error(f"❌ Component initialization failed: {e}")
+            self.tprint_error(f"❌ Component initialization failed: {e}")
             raise
     
     def process_market_data(
@@ -459,17 +463,17 @@ class EnhancedDataLabelsSystem(BaseStep):
             Dictionary containing processed data, labels, and quality metrics
         """
         start_time = time.time()
-        tprint_info("🔄 Starting enhanced data and labels processing")
+        self.tprint_info("🔄 Starting enhanced data and labels processing")
         
         try:
             # Check cache first
             cache_key = self._generate_cache_key(market_data, regime_data, portfolio_state)
             if not force_recompute and self._is_cache_valid(cache_key):
-                tprint_info("📋 Using cached results")
+                self.tprint_info("📋 Using cached results")
                 return self.cache[cache_key]
             
             # Step 1: Data Quality Assessment and Cleaning
-            tprint_info("🧹 Step 1: Data quality assessment and cleaning")
+            self.tprint_info("🧹 Step 1: Data quality assessment and cleaning")
             data_quality_result = self._assess_and_clean_data(market_data)
             
             if data_quality_result['quality_level'] == DataQualityLevel.CRITICAL:

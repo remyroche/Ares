@@ -27,13 +27,8 @@ from .label_balancing import (
     DEFAULT_BALANCING_CONFIG, DEFAULT_WEIGHTING_CONFIG, DEFAULT_REGIME_CONFIG, DEFAULT_FAIRNESS_CONFIG
 )
 
-# Import utilities
-try:
-    from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success
-    from src.utils.common_operations import safe_divide, safe_mean, safe_std, validate_dataframe
-    TPRINT_AVAILABLE = True
-except ImportError:
-    TPRINT_AVAILABLE = False
+# Note: tprint and hardware utilities are available through BaseStep
+# No need for direct imports as they're inherited from BaseStep
 
 
 @dataclass
@@ -78,8 +73,7 @@ class BalancingIntegrationManager(BaseStep):
         self.monitoring_data = {}
         self.performance_metrics = {}
         
-        if TPRINT_AVAILABLE:
-            tprint_success("🚀 Enhanced Balancing Integration Manager initialized")
+        self.tprint_success("🚀 Enhanced Balancing Integration Manager initialized")
     
     async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -150,6 +144,11 @@ class BalancingIntegrationManager(BaseStep):
                 self.tprint_data_preview(labels_df, "input_labels", max_rows=5)
                 self.tprint_data_format(labels_df, "input_labels")
             
+            # Apply hardware optimization to input data
+            if self.hardware_utils and self.hardware_utils.get('optimize_dataframe'):
+                market_data = self.hardware_utils['optimize_dataframe'](market_data)
+                self.tprint_info("🔧 Input data optimized for hardware acceleration")
+            
             # Create balancing system
             balancing_system = self.create_balancing_system(
                 dataset_characteristics=dataset_characteristics,
@@ -169,52 +168,57 @@ class BalancingIntegrationManager(BaseStep):
             # Save artifacts
             artifacts = []
             if self.config.save_artifacts:
-                # Preview balanced data
-                self.tprint_data_preview(result['balanced_data'], "balanced_market_data", max_rows=5)
-                self.tprint_data_format(result['balanced_data'], "balanced_market_data")
+                # Apply hardware optimization to balanced data
+                if self.hardware_utils and self.hardware_utils.get('optimize_dataframe'):
+                    result['balanced_data'] = self.hardware_utils['optimize_dataframe'](result['balanced_data'])
+                    self.tprint_info("🔧 Balanced data optimized for hardware acceleration")
+            
+            # Preview balanced data
+            self.tprint_data_preview(result['balanced_data'], "balanced_market_data", max_rows=5)
+            self.tprint_data_format(result['balanced_data'], "balanced_market_data")
+            
+            # Save balanced data
+            balanced_data_path = self._save_dataframe(
+                result['balanced_data'], 
+                'balanced_market_data'
+            )
+            if balanced_data_path:
+                artifacts.append(balanced_data_path)
+            
+            # Preview balanced labels
+            labels_df = result['balanced_labels'].to_frame('labels')
+            self.tprint_data_preview(labels_df, "balanced_labels", max_rows=5)
+            self.tprint_data_format(labels_df, "balanced_labels")
+            
+            # Save balanced labels
+            balanced_labels_path = self._save_dataframe(
+                labels_df, 
+                'balanced_labels'
+            )
+            if balanced_labels_path:
+                artifacts.append(balanced_labels_path)
+            
+            # Save sample weights
+            if 'sample_weights' in result:
+                weights_df = result['sample_weights'].to_frame('weights')
+                self.tprint_data_preview(weights_df, "sample_weights", max_rows=5)
+                self.tprint_data_format(weights_df, "sample_weights")
                 
-                # Save balanced data
-                balanced_data_path = self._save_dataframe(
-                    result['balanced_data'], 
-                    'balanced_market_data'
+                weights_path = self._save_dataframe(
+                    weights_df, 
+                    'sample_weights'
                 )
-                if balanced_data_path:
-                    artifacts.append(balanced_data_path)
-                
-                # Preview balanced labels
-                labels_df = result['balanced_labels'].to_frame('labels')
-                self.tprint_data_preview(labels_df, "balanced_labels", max_rows=5)
-                self.tprint_data_format(labels_df, "balanced_labels")
-                
-                # Save balanced labels
-                balanced_labels_path = self._save_dataframe(
-                    labels_df, 
-                    'balanced_labels'
-                )
-                if balanced_labels_path:
-                    artifacts.append(balanced_labels_path)
-                
-                # Save sample weights
-                if 'sample_weights' in result:
-                    weights_df = result['sample_weights'].to_frame('weights')
-                    self.tprint_data_preview(weights_df, "sample_weights", max_rows=5)
-                    self.tprint_data_format(weights_df, "sample_weights")
-                    
-                    weights_path = self._save_dataframe(
-                        weights_df, 
-                        'sample_weights'
-                    )
-                    if weights_path:
-                        artifacts.append(weights_path)
-                
-                # Preview and save balancing metrics
-                self.tprint_data_format(result['balancing_metrics'], "balancing_metrics")
-                metrics_path = self._save_metadata(
-                    result['balancing_metrics'], 
-                    'balancing_metrics'
-                )
-                if metrics_path:
-                    artifacts.append(metrics_path)
+                if weights_path:
+                    artifacts.append(weights_path)
+            
+            # Preview and save balancing metrics
+            self.tprint_data_format(result['balancing_metrics'], "balancing_metrics")
+            metrics_path = self._save_metadata(
+                result['balancing_metrics'], 
+                'balancing_metrics'
+            )
+            if metrics_path:
+                artifacts.append(metrics_path)
             
             # Log metrics
             self.tprint_metrics({
@@ -239,8 +243,7 @@ class BalancingIntegrationManager(BaseStep):
             
         except Exception as e:
             error_msg = f"Balancing integration failed: {str(e)}"
-            if TPRINT_AVAILABLE:
-                tprint_error(f"❌ {error_msg}")
+            self.tprint_error(f"❌ {error_msg}")
             return {
                 'success': False,
                 'error': error_msg
@@ -296,8 +299,7 @@ class BalancingIntegrationManager(BaseStep):
         Returns:
             Configured ComprehensiveBalancingSystem
         """
-        if TPRINT_AVAILABLE:
-            tprint_info("🔧 Creating enhanced balancing system...")
+        self.tprint_info("🔧 Creating enhanced balancing system...")
         
         # Auto-configure based on dataset characteristics
         if self.config.auto_configure and dataset_characteristics:
@@ -322,17 +324,15 @@ class BalancingIntegrationManager(BaseStep):
             fairness_config=DEFAULT_FAIRNESS_CONFIG
         )
         
-        if TPRINT_AVAILABLE:
-            tprint_success("✅ Enhanced balancing system created")
-            tprint_info(f"   → Balancing technique: {balancing_config.balancing_technique.value}")
-            tprint_info(f"   → Weighting scheme: {weighting_config.weighting_scheme.value}")
+        self.tprint_success("✅ Enhanced balancing system created")
+        self.tprint_info(f"   → Balancing technique: {balancing_config.balancing_technique.value}")
+        self.tprint_info(f"   → Weighting scheme: {weighting_config.weighting_scheme.value}")
         
         return self.balancing_system
     
     def _auto_configure(self, dataset_characteristics: Dict[str, Any]) -> Tuple[BalancingConfig, WeightingConfig]:
         """Auto-configure balancing system based on dataset characteristics."""
-        if TPRINT_AVAILABLE:
-            tprint_info("🧠 Auto-configuring balancing system...")
+        self.tprint_info("🧠 Auto-configuring balancing system...")
         
         # Extract characteristics
         n_samples = dataset_characteristics.get('n_samples', 1000)
@@ -388,9 +388,8 @@ class BalancingIntegrationManager(BaseStep):
             max_weight=10.0
         )
         
-        if TPRINT_AVAILABLE:
-            tprint_info(f"   → Selected balancing: {balancing_technique.value}")
-            tprint_info(f"   → Selected weighting: {weighting_scheme.value}")
+        self.tprint_info(f"   → Selected balancing: {balancing_technique.value}")
+        self.tprint_info(f"   → Selected weighting: {weighting_scheme.value}")
         
         return balancing_config, weighting_config
     

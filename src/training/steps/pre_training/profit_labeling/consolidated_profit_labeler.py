@@ -49,8 +49,13 @@ from src.utils.ml_common.optimization.bayesian_tpe_optimizer import BayesianTPEO
 from src.utils.kline_parquet import KlinesParquetManager, StorageConfig
 from src.utils.serialization_utils import UniversalSerializer, safe_serialize, safe_deserialize
 from src.utils.hardware.hardware_optimizer import HardwareOptimizer
+from src.utils.hardware.enhanced_cpu_optimizer import EnhancedCPUOptimizer
+from src.utils.hardware.advanced_memory_optimizer import AdvancedMemoryOptimizer
+from src.utils.hardware.enhanced_caching_system import EnhancedCachingSystem
+from src.utils.hardware.hardware_optimized_parallel_processor import HardwareOptimizedParallelProcessor
 from src.utils.ml_common.feature_selection import FeatureSelector
 from src.utils.data.processing.transformers import DataTransformer
+from src.utils.ml_common.optimization.vectorbt_rolling_optimizer import VectorBTRollingOptimizer
 
 # Statistical and ML utilities
 from sklearn.metrics import roc_auc_score, average_precision_score
@@ -266,6 +271,11 @@ class ConsolidatedProfitLabeler(BaseStep):
         
         # Initialize hardware optimizer
         self.hardware_optimizer = HardwareOptimizer()
+        self.cpu_optimizer = EnhancedCPUOptimizer()
+        self.memory_optimizer = AdvancedMemoryOptimizer()
+        self.caching_system = EnhancedCachingSystem()
+        self.parallel_processor = HardwareOptimizedParallelProcessor()
+        self.vectorbt_optimizer = VectorBTRollingOptimizer()
         
         # Initialize feature selector
         self.feature_selector = FeatureSelector()
@@ -306,7 +316,11 @@ class ConsolidatedProfitLabeler(BaseStep):
             'vectorization_time': 0.0,
             'optimization_time': 0.0,
             'serialization_time': 0.0,
-            'hardware_optimization_time': 0.0
+            'hardware_optimization_time': 0.0,
+            'parallel_processing_time': 0.0,
+            'caching_time': 0.0,
+            'gpu_acceleration_time': 0.0,
+            'memory_optimization_time': 0.0
         }
 
         self.tprint("🔧 Initialized Consolidated Profit Labeler with Enhanced Utilities")
@@ -647,34 +661,60 @@ class ConsolidatedProfitLabeler(BaseStep):
             data_clean, volatility_data, noise_gates
         )
 
-        # Step 5: Generate labels for each target
+        # Step 5: Generate labels for each target with parallel processing
         labeled_data = data_clean.copy()
         quality_metrics = {}
         confidence_scores = pd.DataFrame(index=data_clean.index)
         eligibility_masks = pd.DataFrame(index=data_clean.index)
 
-        for target_name, config in optimal_configs.items():
-            self.tprint(f"🎯 Generating {target_name} target labels...")
-
-            target_result = self._generate_single_target_labels(
-                data_clean, volatility_data, noise_gates, config, target_name
+        # Use parallel processing for target generation
+        if self.parallel_processor and len(optimal_configs) > 1:
+            self.tprint("🚀 Generating labels with parallel processing...")
+            target_results = self._generate_labels_parallel(
+                data_clean, volatility_data, noise_gates, optimal_configs
             )
+            
+            # Merge results
+            for target_name, target_result in target_results.items():
+                # Merge into main dataframe
+                for col in target_result.columns:
+                    if col not in labeled_data.columns:
+                        labeled_data[col] = target_result[col]
 
-            # Merge into main dataframe
-            for col in target_result.columns:
-                if col not in labeled_data.columns:
-                    labeled_data[col] = target_result[col]
+                # Store confidence scores and eligibility masks
+                if 'confidence' in target_result.columns:
+                    confidence_scores[f'{target_name}_confidence'] = target_result['confidence']
+                if 'eligibility' in target_result.columns:
+                    eligibility_masks[f'{target_name}_eligibility'] = target_result['eligibility']
 
-            # Store confidence scores and eligibility masks
-            if 'confidence' in target_result.columns:
-                confidence_scores[f'{target_name}_confidence'] = target_result['confidence']
-            if 'eligibility' in target_result.columns:
-                eligibility_masks[f'{target_name}_eligibility'] = target_result['eligibility']
+                # Compute quality metrics
+                quality_metrics[target_name] = self._compute_label_quality(
+                    target_result, data_clean, target_name
+                )
+        else:
+            # Sequential processing for single target or when parallel processing is not available
+            for target_name, config in optimal_configs.items():
+                self.tprint(f"🎯 Generating {target_name} target labels...")
 
-            # Compute quality metrics
-            quality_metrics[target_name] = self._compute_label_quality(
-                target_result, data_clean, target_name
-            )
+                target_result = self._generate_single_target_labels(
+                    data_clean, volatility_data, noise_gates, config, target_name
+                )
+
+                # Merge into main dataframe
+                for col in target_result.columns:
+                    if col not in labeled_data.columns:
+                        labeled_data[col] = target_result[col]
+
+                # Store confidence scores and eligibility masks
+                if 'confidence' in target_result.columns:
+                    confidence_scores[f'{target_name}_confidence'] = target_result['confidence']
+                if 'eligibility' in target_result.columns:
+                    eligibility_masks[f'{target_name}_eligibility'] = target_result['eligibility']
+
+                # Compute quality metrics
+                quality_metrics[target_name] = self._compute_label_quality(
+                    target_result, data_clean, target_name
+                )
 
         # Step 6: Enhanced stability monitoring if enabled
         if self.config.enable_enhanced_stability_monitoring and self.enhanced_system:
@@ -711,6 +751,74 @@ class ConsolidatedProfitLabeler(BaseStep):
         tprint_data_format(result, "final_labeling_result")
 
         return result
+
+    def _generate_labels_parallel(self, data_clean: pd.DataFrame, volatility_data: pd.Series, 
+                                 noise_gates: Dict[str, pd.Series], optimal_configs: Dict[str, Dict[str, Any]]) -> Dict[str, pd.DataFrame]:
+        """Generate labels for multiple targets in parallel."""
+        try:
+            # Prepare tasks for parallel processing
+            tasks = []
+            for target_name, config in optimal_configs.items():
+                task = {
+                    'target_name': target_name,
+                    'data_clean': data_clean,
+                    'volatility_data': volatility_data,
+                    'noise_gates': noise_gates,
+                    'config': config
+                }
+                tasks.append(task)
+            
+            # Use parallel processor to execute tasks
+            if self.parallel_processor:
+                results = self.parallel_processor.process_parallel(
+                    self._generate_single_target_labels_wrapper,
+                    tasks,
+                    n_jobs=-1,  # Use all available cores
+                    backend='threading'  # Use threading for I/O bound tasks
+                )
+            else:
+                # Fallback to sequential processing
+                results = []
+                for task in tasks:
+                    result = self._generate_single_target_labels_wrapper(task)
+                    results.append(result)
+            
+            # Convert results to dictionary
+            target_results = {}
+            for result in results:
+                if result and 'target_name' in result:
+                    target_results[result['target_name']] = result['target_result']
+            
+            return target_results
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Parallel label generation failed: {e}")
+            # Fallback to sequential processing
+            target_results = {}
+            for target_name, config in optimal_configs.items():
+                target_result = self._generate_single_target_labels(
+                    data_clean, volatility_data, noise_gates, config, target_name
+                )
+                target_results[target_name] = target_result
+            return target_results
+
+    def _generate_single_target_labels_wrapper(self, task: Dict[str, Any]) -> Dict[str, Any]:
+        """Wrapper function for parallel processing of single target label generation."""
+        try:
+            target_result = self._generate_single_target_labels(
+                task['data_clean'],
+                task['volatility_data'],
+                task['noise_gates'],
+                task['config'],
+                task['target_name']
+            )
+            return {
+                'target_name': task['target_name'],
+                'target_result': target_result
+            }
+        except Exception as e:
+            tprint_warning(f"⚠️ Error generating labels for {task['target_name']}: {e}")
+            return None
 
     def _prepare_and_clean_data(self, data: pd.DataFrame) -> pd.DataFrame:
         """Step 0: Clean and prepare data for labeling with enhanced utilities."""
@@ -820,8 +928,16 @@ class ConsolidatedProfitLabeler(BaseStep):
             return {}
 
     def _compute_volatility_series(self, data: pd.DataFrame) -> pd.Series:
-        """Step 1: Compute volatility series using enhanced methods with optimization."""
+        """Step 1: Compute volatility series using enhanced methods with optimization and caching."""
         self.tprint("📊 Computing volatility series with enhanced optimization...")
+
+        # Check cache first
+        cache_key = f"volatility_{len(data)}_{self.config.rv_window_minutes}_{self.config.atr_window_bars}"
+        if self.caching_system:
+            cached_result = self.caching_system.get(cache_key)
+            if cached_result is not None:
+                self.tprint("📦 Using cached volatility series")
+                return cached_result
 
         # Use vectorized operations for better performance
         data_vectorized = self.vectorization_manager.vectorize_data(data)
@@ -831,7 +947,7 @@ class ConsolidatedProfitLabeler(BaseStep):
             data_vectorized = data_vectorized.copy()
             data_vectorized['returns'] = data_vectorized['close'].pct_change()
 
-        # Use optimized rolling operations
+        # Use optimized rolling operations with VectorBTRollingOptimizer
         returns = data_vectorized['returns'].dropna()
         if len(returns) < self.config.rv_window_minutes:
             # Fallback for short data
@@ -839,9 +955,19 @@ class ConsolidatedProfitLabeler(BaseStep):
         else:
             rv_window = self.config.rv_window_minutes
 
-        # Enhanced realized volatility computation with better numerical stability
-        rolling_rv = returns.rolling(window=rv_window, min_periods=rv_window//2).std()
-        rolling_rv = rolling_rv * np.sqrt(rv_window)  # Scale to return units
+        # Enhanced realized volatility computation with VectorBTRollingOptimizer
+        if self.vectorbt_optimizer:
+            rolling_rv = self.vectorbt_optimizer.rolling_std(
+                returns, 
+                window=rv_window, 
+                min_periods=rv_window//2,
+                use_gpu=True
+            )
+            rolling_rv = rolling_rv * np.sqrt(rv_window)  # Scale to return units
+        else:
+            # Fallback to standard rolling operations
+            rolling_rv = returns.rolling(window=rv_window, min_periods=rv_window//2).std()
+            rolling_rv = rolling_rv * np.sqrt(rv_window)  # Scale to return units
 
         # ATR (Average True Range) - ensure it exists
         if 'true_range' not in data_vectorized.columns:
@@ -853,11 +979,19 @@ class ConsolidatedProfitLabeler(BaseStep):
                 )
             )
 
-        # Use optimized ATR computation
-        atr = data_vectorized['true_range'].rolling(
-            window=self.config.atr_window_bars, 
-            min_periods=self.config.atr_window_bars//2
-        ).mean()
+        # Use optimized ATR computation with VectorBTRollingOptimizer
+        if self.vectorbt_optimizer:
+            atr = self.vectorbt_optimizer.rolling_mean(
+                data_vectorized['true_range'],
+                window=self.config.atr_window_bars, 
+                min_periods=self.config.atr_window_bars//2,
+                use_gpu=True
+            )
+        else:
+            atr = data_vectorized['true_range'].rolling(
+                window=self.config.atr_window_bars, 
+                min_periods=self.config.atr_window_bars//2
+            ).mean()
         
         # Convert ATR to return-scale by normalizing by price
         atr_returns = atr / data_vectorized['close']
@@ -880,11 +1014,19 @@ class ConsolidatedProfitLabeler(BaseStep):
 
         combined_vol = (rv_weight * rolling_rv + atr_weight * atr_returns)
 
-        # Apply EWMA smoothing with optimized parameters
-        vol_ewma = combined_vol.ewm(
-            alpha=1-self.config.volatility_ewma_lambda,
-            min_periods=10
-        ).mean()
+        # Apply EWMA smoothing with optimized parameters using VectorBTRollingOptimizer
+        if self.vectorbt_optimizer:
+            vol_ewma = self.vectorbt_optimizer.ewm_mean(
+                combined_vol,
+                alpha=1-self.config.volatility_ewma_lambda,
+                min_periods=10,
+                use_gpu=True
+            )
+        else:
+            vol_ewma = combined_vol.ewm(
+                alpha=1-self.config.volatility_ewma_lambda,
+                min_periods=10
+            ).mean()
 
         # Enhanced flooring using percentile-based approach
         vol_percentile_5 = vol_ewma.quantile(0.05)
@@ -894,6 +1036,10 @@ class ConsolidatedProfitLabeler(BaseStep):
         # Apply hardware optimization if available
         if self.hardware_optimizer:
             vol_ewma = self.hardware_optimizer.optimize_series(vol_ewma)
+
+        # Cache the result
+        if self.caching_system:
+            self.caching_system.set(cache_key, vol_ewma)
 
         self.tprint(f"✅ Enhanced volatility computed: mean={vol_ewma.mean():.6f}, "
                f"std={vol_ewma.std():.6f}, range=[{vol_ewma.min():.6f}, {vol_ewma.max():.6f}]")

@@ -37,6 +37,16 @@ except ImportError:
     BAYESIAN_OPTIMIZER_AVAILABLE = False
     tprint_warning("⚠️ Bayesian TPE optimizer not available, using grid search")
 
+# Phase 1 optimization tools
+try:
+    from src.feature_generation.utils.vectorbt_rolling_optimizer import VectorBTRollingOptimizer, get_vectorbt_rolling_optimizer
+    from src.utils.hardware.m1_memory_optimizer import M1MemoryOptimizer
+    from src.utils.hardware.m1_cpu_optimizer import M1CPUOptimizer
+    from src.utils.memory_management import MemoryManager, MemoryManagerConfig, MemoryStrategy
+    PHASE1_OPTIMIZATIONS_AVAILABLE = True
+except ImportError:
+    PHASE1_OPTIMIZATIONS_AVAILABLE = False
+
 
 class BarTriggerType(Enum):
     """Enumeration of bar construction trigger types."""
@@ -335,6 +345,13 @@ class BarConstructionConfig:
     enable_optimization: bool = True
     optimization_metric: str = "sharpe_ratio"  # Optimization target metric
     
+    # Phase 1 optimization settings
+    enable_vectorbt_optimization: bool = True
+    enable_memory_optimization: bool = True
+    enable_caching: bool = True
+    vectorbt_chunk_size: int = 1000
+    memory_limit_gb: float = 2.0
+    
     def _validate_config(self) -> None:
         """Validate bar construction configuration parameters."""
         if self.volume_threshold <= 0:
@@ -405,6 +422,52 @@ class EventBasedBarConstructor:
             self.optimizer = None
             tprint_warning("   → Bayesian optimization: Not available, using fixed parameters")
         
+        # Initialize Phase 1 optimization tools
+        if PHASE1_OPTIMIZATIONS_AVAILABLE and self.config.enable_vectorbt_optimization:
+            self.vectorbt_optimizer = get_vectorbt_rolling_optimizer(
+                enable_parallel=True,
+                memory_efficient=True,
+                chunk_size=self.config.vectorbt_chunk_size,
+                fast_fail=True
+            )
+            tprint_info("   → VectorBTRollingOptimizer: Available")
+        else:
+            self.vectorbt_optimizer = None
+            tprint_warning("   → VectorBTRollingOptimizer: Not available")
+        
+        if PHASE1_OPTIMIZATIONS_AVAILABLE and self.config.enable_memory_optimization:
+            self.memory_optimizer = M1MemoryOptimizer(
+                memory_limit_gb=self.config.memory_limit_gb
+            )
+            self.cpu_optimizer = M1CPUOptimizer()
+            memory_config = MemoryManagerConfig(
+                strategy=MemoryStrategy.MODERATE,
+                enable_monitoring=True,
+                memory_threshold_mb=self.config.memory_limit_gb * 1024 * 0.8,
+                max_memory_mb=self.config.memory_limit_gb * 1024
+            )
+            self.memory_manager = MemoryManager(memory_config)
+            tprint_info("   → Hardware optimizations: Available")
+        else:
+            self.memory_optimizer = None
+            self.cpu_optimizer = None
+            self.memory_manager = None
+            tprint_warning("   → Hardware optimizations: Not available")
+        
+        # Initialize caching for repeated calculations
+        self._calculation_cache = {}
+        self._cache_hits = 0
+        self._cache_misses = 0
+        
+        # Performance tracking
+        self._performance_metrics = {
+            'vectorbt_operations': 0,
+            'cached_operations': 0,
+            'memory_optimizations': 0,
+            'bars_constructed': 0,
+            'ticks_processed': 0
+        }
+        
         tprint_info("📊 Event-Based Bar Constructor initialized")
         tprint_info(f"   → Trigger type: {self.config.trigger_type.value}")
         tprint_info(f"   → Volume threshold: {self.config.volume_threshold}")
@@ -423,18 +486,33 @@ class EventBasedBarConstructor:
         """
         start_time = datetime.now()
         tprint_info("📊 Constructing event-based bars")
-        
+
+        # Check cache first if caching is enabled
+        if self.config.enable_caching:
+            cache_key = f"bars_{hash(tick_data.values.tobytes())}_{self.config.trigger_type.value}"
+            if cache_key in self._calculation_cache:
+                self._cache_hits += 1
+                self._performance_metrics['cached_operations'] += 1
+                tprint_info("💾 Using cached bar construction result")
+                return self._calculation_cache[cache_key]
+
         # Initialize result container
         result = BarConstructionResult(
             constructed_bars=pd.DataFrame(),
             construction_metadata={},
             config_used=self.config
         )
-        
+
         try:
             # Validate input data
             if not self._validate_input_data(tick_data):
                 return result
+            
+            # Apply memory optimization if available
+            if self.memory_optimizer and self.config.enable_memory_optimization:
+                tick_data = self.memory_optimizer.optimize_dataframe(tick_data)
+                self._performance_metrics['memory_optimizations'] += 1
+                tprint_info("🧠 Applied memory optimization to input data")
             
             # Optimize parameters if enabled
             if self.config.enable_optimization and self.optimizer:
@@ -495,6 +573,12 @@ class EventBasedBarConstructor:
         tprint_info(f"   → Avg duration: {result.avg_bar_duration:.2f}s")
         tprint_info(f"   → Quality score: {result.bar_quality_score:.3f}")
         
+        # Store result in cache if caching is enabled
+        if self.config.enable_caching:
+            cache_key = f"bars_{hash(tick_data.values.tobytes())}_{self.config.trigger_type.value}"
+            self._calculation_cache[cache_key] = result
+            self._cache_misses += 1
+        
         return result
     
     def _validate_input_data(self, tick_data: pd.DataFrame) -> bool:
@@ -532,6 +616,30 @@ class EventBasedBarConstructor:
         except Exception as e:
             tprint_error(f"❌ Data validation failed: {e}")
             return False
+    
+    def get_performance_metrics(self) -> Dict[str, Any]:
+        """Get comprehensive performance metrics."""
+        cache_hit_rate = (
+            self._cache_hits / (self._cache_hits + self._cache_misses) 
+            if (self._cache_hits + self._cache_misses) > 0 else 0.0
+        )
+        
+        return {
+            **self._performance_metrics,
+            'cache_hit_rate': cache_hit_rate,
+            'cache_hits': self._cache_hits,
+            'cache_misses': self._cache_misses,
+            'phase1_optimizations_available': PHASE1_OPTIMIZATIONS_AVAILABLE,
+            'vectorbt_available': self.vectorbt_optimizer is not None,
+            'memory_optimization_enabled': self.memory_optimizer is not None
+        }
+    
+    def clear_cache(self):
+        """Clear calculation cache to free memory."""
+        self._calculation_cache.clear()
+        self._cache_hits = 0
+        self._cache_misses = 0
+        tprint_info("🧹 Bar construction cache cleared")
     
     def _optimize_parameters(self, tick_data: pd.DataFrame) -> BarConstructionConfig:
         """Optimize bar construction parameters using historical data with temporary configurations."""
@@ -728,8 +836,13 @@ class EventBasedBarConstructor:
         }
     
     def _construct_volume_based_bars(self, tick_data: pd.DataFrame, params: Dict[str, float]) -> pd.DataFrame:
-        """Construct bars based on volume triggers."""
+        """Construct bars based on volume triggers with VectorBT optimization."""
         try:
+            # Use VectorBT optimization for volume calculations if available
+            if self.vectorbt_optimizer and self.config.enable_vectorbt_optimization:
+                return self._construct_volume_based_bars_vectorized(tick_data, params)
+            
+            # Fallback to original implementation
             bars = []
             current_bar = None
             cumulative_volume = 0.0
@@ -769,6 +882,72 @@ class EventBasedBarConstructor:
         except Exception as e:
             tprint_warning(f"⚠️ Error constructing volume-based bars: {e}")
             return pd.DataFrame()
+    
+    def _construct_volume_based_bars_vectorized(self, tick_data: pd.DataFrame, params: Dict[str, float]) -> pd.DataFrame:
+        """Vectorized volume-based bar construction using VectorBT optimization."""
+        try:
+            # Calculate cumulative volume using VectorBT
+            volume_series = tick_data['volume']
+            threshold = params['volume_threshold'] * params['volume_multiplier']
+            
+            # Use VectorBT for efficient rolling calculations
+            if self.vectorbt_optimizer:
+                # Calculate rolling volume statistics
+                rolling_volume = self.vectorbt_optimizer.rolling_sum(volume_series, window=len(volume_series))
+                self._performance_metrics['vectorbt_operations'] += 1
+            
+            # Find volume threshold crossings
+            volume_crossings = rolling_volume >= threshold
+            crossing_indices = volume_crossings[volume_crossings].index.tolist()
+            
+            # Construct bars based on crossings
+            bars = []
+            start_idx = 0
+            
+            for end_idx in crossing_indices:
+                if end_idx > start_idx:
+                    bar_data = tick_data.iloc[start_idx:end_idx+1]
+                    if len(bar_data) > 0:
+                        bar = {
+                            'timestamp': bar_data['timestamp'].iloc[0],
+                            'open': bar_data['open'].iloc[0],
+                            'high': bar_data['high'].max(),
+                            'low': bar_data['low'].min(),
+                            'close': bar_data['close'].iloc[-1],
+                            'volume': bar_data['volume'].sum()
+                        }
+                        bars.append(bar)
+                    start_idx = end_idx + 1
+            
+            # Add final bar if exists
+            if start_idx < len(tick_data):
+                bar_data = tick_data.iloc[start_idx:]
+                if len(bar_data) > 0:
+                    bar = {
+                        'timestamp': bar_data['timestamp'].iloc[0],
+                        'open': bar_data['open'].iloc[0],
+                        'high': bar_data['high'].max(),
+                        'low': bar_data['low'].min(),
+                        'close': bar_data['close'].iloc[-1],
+                        'volume': bar_data['volume'].sum()
+                    }
+                    bars.append(bar)
+            
+            return pd.DataFrame(bars)
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Error in vectorized volume-based bar construction: {e}")
+            # Fallback to original implementation
+            return self._construct_volume_based_bars_original(tick_data, params)
+    
+    def _construct_volume_based_bars_original(self, tick_data: pd.DataFrame, params: Dict[str, float]) -> pd.DataFrame:
+        """Original volume-based bar construction implementation."""
+        try:
+            bars = []
+            current_bar = None
+            cumulative_volume = 0.0
+            
+            for idx, row in tick_data.iterrows():
     
     def _construct_volatility_based_bars(self, tick_data: pd.DataFrame, params: Dict[str, float]) -> pd.DataFrame:
         """Construct bars based on volatility triggers."""

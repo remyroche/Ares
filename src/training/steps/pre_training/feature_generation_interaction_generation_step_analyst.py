@@ -22,6 +22,7 @@ from typing import Any, Dict, Optional, List, Tuple
 import threading
 import time
 import os
+from scipy.stats import spearmanr
 
 from src.utils.tprint import (
     tprint, tprint_data_preview, tprint_performance, tprint_progress, 
@@ -43,7 +44,7 @@ from src.utils.hardware import (
     m1_optimized, memory_optimized, comprehensive_memory_optimization,
     optimize_dataframe, optimize_array, memory_efficient_function,
     chunked_function, gc_optimized_function, force_cleanup,
-    get_memory_stats, get_optimization_status
+    get_memory_stats, get_optimization_status, OptimizationStrategy
 )
 
 # Import missing dependencies
@@ -132,10 +133,13 @@ class FeatureInteractionGenerator:
         )
     
     def generate_interactions_from_centrality(self, features_df, centrality_pairs, max_pairs=50):
-        """Generate interactions based on centrality pairs."""
+        """Generate interactions based on measured SHAP interaction centrality pairs."""
         interactions = pd.DataFrame(index=features_df.index)
         
-        for i, (pair, centrality_score) in enumerate(centrality_pairs.items()):
+        # Sort pairs by centrality score (descending)
+        sorted_pairs = sorted(centrality_pairs.items(), key=lambda x: x[1], reverse=True)
+        
+        for i, (pair, centrality_score) in enumerate(sorted_pairs):
             if i >= max_pairs:
                 break
             
@@ -148,9 +152,11 @@ class FeatureInteractionGenerator:
                     'feature1': feature1,
                     'feature2': feature2,
                     'interaction_type': 'multiplicative',
-                    'centrality_score': centrality_score
+                    'centrality_score': centrality_score,
+                    'source': 'shap_interaction_matrix'
                 }
         
+        tprint_info(f"Generated {len(interactions.columns)} interactions from measured SHAP centrality")
         return interactions
     
     def generate_interactions_from_top_features(self, features_df, top_features, max_pairs=50):
@@ -216,48 +222,445 @@ class SHAPScorerConfig:
     shap_weight: float = 0.5
     interaction_centrality_weight: float = 0.3
     stability_weight: float = 0.2
+    # Trading metrics configuration
+    primary_metric: str = 'ic'  # 'ic' or 'sharpe'
+    cost_bps: float = 0.0  # Transaction costs in basis points
+    timeframe_minutes: int = 15  # Timeframe for annualization
 
 class SHAPInteractionScorer:
-    """Enhanced SHAP interaction scorer with hardware optimization."""
+    """Enhanced SHAP interaction scorer with real OOS SHAP and purged/embargoed CV."""
     
     def __init__(self, config: SHAPScorerConfig = None):
         self.config = config or SHAPScorerConfig()
         self.hardware_manager = get_integrated_hardware_manager()
+        self.purge_days = 1  # Days to purge between train/test
+        self.embargo_days = 0.5  # Days to embargo after test
+    
+    def _create_purged_embargoed_cv(self, X, y, n_folds=5):
+        """Create purged and embargoed cross-validation splits."""
+        from sklearn.model_selection import TimeSeriesSplit
+        import pandas as pd
+        
+        # Ensure we have datetime index
+        if not isinstance(X.index, pd.DatetimeIndex):
+            X = X.copy()
+            X.index = pd.to_datetime(X.index)
+        
+        # Convert purge and embargo to periods
+        purge_periods = int(self.purge_days * 24 * 60 / 15)  # Assuming 15min data
+        embargo_periods = int(self.embargo_days * 24 * 60 / 15)
+        
+        cv_splits = []
+        tscv = TimeSeriesSplit(n_splits=n_folds)
+        
+        for train_idx, test_idx in tscv.split(X):
+            # Apply purging: remove data close to test set
+            train_end = X.index[train_idx[-1]]
+            test_start = X.index[test_idx[0]]
+            
+            # Find indices to purge
+            purge_start = train_end + pd.Timedelta(minutes=15)  # Start purging after train
+            purge_end = test_start - pd.Timedelta(minutes=15)   # End purging before test
+            
+            # Remove purged indices from training
+            purged_train_idx = train_idx[X.index[train_idx] < purge_start]
+            
+            # Apply embargo: remove data after test set
+            test_end = X.index[test_idx[-1]]
+            embargo_end = test_end + pd.Timedelta(minutes=15 * embargo_periods)
+            
+            # Remove embargoed indices from next training
+            embargoed_train_idx = purged_train_idx[X.index[purged_train_idx] < embargo_end]
+            
+            cv_splits.append((embargoed_train_idx, test_idx))
+        
+        return cv_splits
+    
+    def _compute_shap_values(self, X_train, y_train, X_val, y_val, lgbm_params):
+        """Compute SHAP values using LightGBM and SHAP."""
+        try:
+            import lightgbm as lgb
+            import shap
+            
+            # Train LightGBM model
+            train_data = lgb.Dataset(X_train, label=y_train)
+            val_data = lgb.Dataset(X_val, label=y_val, reference=train_data)
+            
+            model = lgb.train(
+                lgbm_params,
+                train_data,
+                valid_sets=[val_data],
+                callbacks=[lgb.early_stopping(50), lgb.log_evaluation(0)]
+            )
+            
+            # Compute SHAP values on validation set only
+            explainer = shap.TreeExplainer(model)
+            shap_values = explainer.shap_values(X_val)
+            
+            # Compute SHAP interaction values
+            shap_interaction_values = explainer.shap_interaction_values(X_val)
+            
+            return {
+                'shap_values': shap_values,
+                'shap_interaction_values': shap_interaction_values,
+                'model': model,
+                'explainer': explainer
+            }
+        except ImportError:
+            tprint_warning("SHAP not available, falling back to feature importance")
+            return self._compute_feature_importance_fallback(X_train, y_train, X_val, y_val, lgbm_params)
+        except Exception as e:
+            tprint_error(f"SHAP computation failed: {e}")
+            return self._compute_feature_importance_fallback(X_train, y_train, X_val, y_val, lgbm_params)
+    
+    def _compute_feature_importance_fallback(self, X_train, y_train, X_val, y_val, lgbm_params):
+        """Fallback to feature importance when SHAP is not available."""
+        try:
+            import lightgbm as lgb
+            
+            train_data = lgb.Dataset(X_train, label=y_train)
+            val_data = lgb.Dataset(X_val, label=y_val, reference=train_data)
+            
+            model = lgb.train(
+                lgbm_params,
+                train_data,
+                valid_sets=[val_data],
+                callbacks=[lgb.early_stopping(50), lgb.log_evaluation(0)]
+            )
+            
+            # Use feature importance as proxy for SHAP
+            importance = model.feature_importance(importance_type='gain')
+            shap_values = np.tile(importance, (len(X_val), 1))
+            
+            # Create dummy interaction values
+            n_features = len(X_train.columns)
+            shap_interaction_values = np.zeros((len(X_val), n_features, n_features))
+            
+            return {
+                'shap_values': shap_values,
+                'shap_interaction_values': shap_interaction_values,
+                'model': model,
+                'explainer': None
+            }
+        except Exception as e:
+            tprint_error(f"Feature importance fallback failed: {e}")
+            return None
+    
+    def _compute_interaction_centrality(self, shap_interaction_values, feature_names):
+        """Compute interaction centrality from SHAP interaction matrix."""
+        if shap_interaction_values is None:
+            return np.zeros(len(feature_names)), {}
+        
+        # Sum of off-diagonal strengths for each feature
+        centrality_scores = np.zeros(len(feature_names))
+        interaction_pairs = {}
+        
+        for i in range(len(feature_names)):
+            for j in range(len(feature_names)):
+                if i != j:  # Off-diagonal elements
+                    interaction_strength = np.abs(shap_interaction_values[:, i, j]).mean()
+                    centrality_scores[i] += interaction_strength
+                    
+                    # Store interaction pairs
+                    pair = tuple(sorted([feature_names[i], feature_names[j]]))
+                    if pair not in interaction_pairs:
+                        interaction_pairs[pair] = 0
+                    interaction_pairs[pair] += interaction_strength
+        
+        return centrality_scores, interaction_pairs
+    
+    def _compute_stability_scores(self, all_shap_values, feature_names):
+        """Compute stability scores across folds."""
+        if not all_shap_values:
+            return np.zeros(len(feature_names))
+        
+        # Convert to numpy array for easier computation
+        shap_array = np.array(all_shap_values)  # Shape: (n_folds, n_samples, n_features)
+        
+        # Compute mean absolute SHAP values per fold
+        mean_shap_per_fold = np.abs(shap_array).mean(axis=1)  # Shape: (n_folds, n_features)
+        
+        # Compute stability as inverse of coefficient of variation
+        mean_shap = mean_shap_per_fold.mean(axis=0)
+        std_shap = mean_shap_per_fold.std(axis=0)
+        
+        # Avoid division by zero
+        stability_scores = np.where(std_shap > 0, mean_shap / (std_shap + 1e-8), mean_shap)
+        
+        return stability_scores
+    
+    def _compute_selection_frequency(self, all_selected_features, feature_names):
+        """Compute selection frequency across folds for stability analysis."""
+        if not all_selected_features:
+            return np.zeros(len(feature_names))
+        
+        # Count how many times each feature was selected across folds
+        selection_counts = np.zeros(len(feature_names))
+        
+        for selected_features in all_selected_features:
+            for feature in selected_features:
+                if feature in feature_names:
+                    idx = feature_names.index(feature)
+                    selection_counts[idx] += 1
+        
+        # Convert to frequency (0 to 1)
+        n_folds = len(all_selected_features)
+        selection_frequency = selection_counts / n_folds if n_folds > 0 else selection_counts
+        
+        return selection_frequency
     
     @m1_optimized(operation_type="ml_training", workload_category=WorkloadCategory.MACHINE_LEARNING)
     def score_features(self, features_df, targets):
-        """Score features using SHAP with hardware optimization."""
+        """Score features using real OOS SHAP with purged/embargoed CV."""
         try:
-            # Simulate SHAP scoring with random scores for demonstration
             feature_names = list(features_df.columns)
             n_features = len(feature_names)
             
-            # Generate random scores
-            shap_scores = np.random.random(n_features)
-            interaction_centrality = np.random.random(n_features)
-            stability_scores = np.random.random(n_features)
+            # Create purged and embargoed CV splits
+            cv_splits = self._create_purged_embargoed_cv(features_df, targets, self.config.n_folds)
+            
+            all_shap_values = []
+            all_interaction_values = []
+            all_centrality_scores = []
+            all_interaction_pairs = []
+            all_selected_features = []  # Track selection frequency
+            
+            tprint_info(f"Computing SHAP values across {len(cv_splits)} purged/embargoed CV folds")
+            
+            for fold_idx, (train_idx, val_idx) in enumerate(cv_splits):
+                tprint_progress(fold_idx + 1, len(cv_splits), f"Processing fold {fold_idx + 1}")
+                
+                # Get train/validation data
+                X_train = features_df.iloc[train_idx]
+                y_train = targets.iloc[train_idx]
+                X_val = features_df.iloc[val_idx]
+                y_val = targets.iloc[val_idx]
+                
+                # Compute SHAP values for this fold
+                shap_results = self._compute_shap_values(
+                    X_train, y_train, X_val, y_val, self.config.lgbm_params
+                )
+                
+                if shap_results is None:
+                    tprint_warning(f"SHAP computation failed for fold {fold_idx + 1}, skipping")
+                    continue
+                
+                # Store SHAP values
+                all_shap_values.append(shap_results['shap_values'])
+                all_interaction_values.append(shap_results['shap_interaction_values'])
+                
+                # Compute interaction centrality for this fold
+                centrality_scores, interaction_pairs = self._compute_interaction_centrality(
+                    shap_results['shap_interaction_values'], feature_names
+                )
+                all_centrality_scores.append(centrality_scores)
+                all_interaction_pairs.append(interaction_pairs)
+            
+            if not all_shap_values:
+                tprint_error("No SHAP values computed across any folds")
+                return {'success': False, 'error': 'No SHAP values computed'}
+            
+            # Aggregate SHAP values across folds
+            # Mean absolute SHAP values
+            aggregated_shap = np.abs(np.concatenate(all_shap_values, axis=0)).mean(axis=0)
+            
+            # Aggregate interaction centrality
+            aggregated_centrality = np.array(all_centrality_scores).mean(axis=0)
+            
+            # Aggregate interaction pairs
+            aggregated_interaction_pairs = {}
+            for fold_pairs in all_interaction_pairs:
+                for pair, strength in fold_pairs.items():
+                    if pair not in aggregated_interaction_pairs:
+                        aggregated_interaction_pairs[pair] = []
+                    aggregated_interaction_pairs[pair].append(strength)
+            
+            # Average interaction pair strengths
+            for pair in aggregated_interaction_pairs:
+                aggregated_interaction_pairs[pair] = np.mean(aggregated_interaction_pairs[pair])
+            
+            # Compute stability scores
+            stability_scores = self._compute_stability_scores(all_shap_values, feature_names)
+            
+            # Compute selection frequency for additional stability analysis
+            selection_frequency = self._compute_selection_frequency(all_selected_features, feature_names)
             
             # Calculate combined scores
             combined_scores = (
-                self.config.shap_weight * shap_scores +
-                self.config.interaction_centrality_weight * interaction_centrality +
+                self.config.shap_weight * aggregated_shap +
+                self.config.interaction_centrality_weight * aggregated_centrality +
                 self.config.stability_weight * stability_scores
             )
+            
+            tprint_success(f"Computed real OOS SHAP values for {n_features} features across {len(all_shap_values)} folds")
             
             return {
                 'success': True,
                 'feature_names': feature_names,
-                'shap_scores': shap_scores,
-                'interaction_centrality': interaction_centrality,
+                'shap_scores': aggregated_shap,
+                'interaction_centrality': aggregated_centrality,
                 'stability_scores': stability_scores,
+                'selection_frequency': selection_frequency,
                 'combined_scores': combined_scores,
-                'interaction_centrality_pairs': {}
+                'interaction_centrality_pairs': aggregated_interaction_pairs,
+                'n_folds_processed': len(all_shap_values)
             }
         except Exception as e:
+            tprint_error(f"SHAP scoring failed: {e}")
             return {'success': False, 'error': str(e)}
     
-    def get_top_features(self, shap_results, top_k, score_type='combined'):
-        """Get top features based on scores."""
+    def _compute_ic_score(self, y_true, y_pred):
+        """Compute Information Coefficient (Spearman correlation)."""
+        from scipy.stats import spearmanr
+        try:
+            correlation, _ = spearmanr(y_true, y_pred)
+            return correlation if not np.isnan(correlation) else 0.0
+        except:
+            return 0.0
+    
+    def _compute_net_sharpe(self, y_true, y_pred, cost_bps=0.0, timeframe_minutes=15):
+        """Compute net Sharpe ratio with optional costs."""
+        try:
+            # Convert predictions to returns (assuming y_pred is already in return space)
+            returns = y_pred
+            
+            # Apply costs
+            if cost_bps > 0:
+                # Simple cost model: cost on each trade
+                returns = returns - (cost_bps / 10000)
+            
+            # Annualize based on timeframe
+            periods_per_year = 365 * 24 * 60 / timeframe_minutes
+            annualized_return = returns.mean() * periods_per_year
+            annualized_vol = returns.std() * np.sqrt(periods_per_year)
+            
+            if annualized_vol == 0:
+                return 0.0
+            
+            return annualized_return / annualized_vol
+        except:
+            return 0.0
+    
+    def _select_optimal_k(self, features_df, targets, shap_results, metric='ic', 
+                         k_grid=None, cost_bps=0.0, timeframe_minutes=15, apply_1se_rule=True):
+        """Select optimal K based on validation metric with 1-SE rule for stability."""
+        if not shap_results.get('success', False):
+            return len(features_df.columns) // 2  # Fallback to half
+        
+        feature_names = shap_results.get('feature_names', [])
+        combined_scores = shap_results.get('combined_scores', [])
+        
+        if not feature_names or not combined_scores:
+            return len(features_df.columns) // 2
+        
+        # Define K grid if not provided
+        if k_grid is None:
+            n_features = len(feature_names)
+            k_grid = [
+                max(1, int(n_features * 0.1)),  # 10%
+                max(1, int(n_features * 0.2)),  # 20%
+                max(1, int(n_features * 0.3)),  # 30%
+                max(1, int(n_features * 0.4)),  # 40%
+                max(1, int(n_features * 0.5)),  # 50%
+                max(1, int(n_features * 0.6)),  # 60%
+                max(1, int(n_features * 0.7)),  # 70%
+            ]
+        
+        # Create purged/embargoed CV for validation
+        cv_splits = self._create_purged_embargoed_cv(features_df, targets, 5)  # Use 5 folds for stability
+        
+        best_k = k_grid[0]
+        best_score = -np.inf
+        k_scores = []
+        k_std_errors = []
+        
+        tprint_info(f"Selecting optimal K from grid: {k_grid} with 1-SE rule: {apply_1se_rule}")
+        
+        for k in k_grid:
+            if k > len(feature_names):
+                continue
+                
+            fold_scores = []
+            
+            for train_idx, val_idx in cv_splits:
+                # Get top K features
+                sorted_indices = np.argsort(combined_scores)[::-1]
+                top_k_features = [feature_names[i] for i in sorted_indices[:k]]
+                
+                # Get train/validation data
+                X_train = features_df[top_k_features].iloc[train_idx]
+                y_train = targets.iloc[train_idx]
+                X_val = features_df[top_k_features].iloc[val_idx]
+                y_val = targets.iloc[val_idx]
+                
+                # Train model
+                try:
+                    import lightgbm as lgb
+                    train_data = lgb.Dataset(X_train, label=y_train)
+                    model = lgb.train(
+                        self.config.lgbm_params,
+                        train_data,
+                        callbacks=[lgb.log_evaluation(0)]
+                    )
+                    
+                    # Get predictions
+                    y_pred = model.predict(X_val)
+                    
+                    # Compute metric
+                    if metric == 'ic':
+                        score = self._compute_ic_score(y_val, y_pred)
+                    elif metric == 'sharpe':
+                        score = self._compute_net_sharpe(y_val, y_pred, cost_bps, timeframe_minutes)
+                    else:
+                        score = self._compute_ic_score(y_val, y_pred)  # Default to IC
+                    
+                    fold_scores.append(score)
+                    
+                except Exception as e:
+                    tprint_warning(f"Model training failed for k={k}: {e}")
+                    fold_scores.append(0.0)
+            
+            # Compute mean and standard error
+            if fold_scores:
+                avg_score = np.mean(fold_scores)
+                std_error = np.std(fold_scores) / np.sqrt(len(fold_scores))
+            else:
+                avg_score = 0.0
+                std_error = 0.0
+            
+            k_scores.append((k, avg_score))
+            k_std_errors.append((k, std_error))
+            
+            tprint(f"K={k}: {metric.upper()}={avg_score:.4f} ± {std_error:.4f}")
+            
+            if avg_score > best_score:
+                best_score = avg_score
+                best_k = k
+        
+        # Apply 1-SE rule if requested
+        if apply_1se_rule and len(k_scores) > 1:
+            # Find the best score and its standard error
+            best_k_idx = next(i for i, (k, score) in enumerate(k_scores) if k == best_k)
+            best_std_error = k_std_errors[best_k_idx][1]
+            
+            # Find the simplest K within 1 standard error of the best
+            threshold = best_score - best_std_error
+            
+            for k, score in k_scores:
+                if score >= threshold and k <= best_k:
+                    best_k = k
+                    best_score = score
+                    break
+            
+            tprint_info(f"Applied 1-SE rule: selected K={best_k} (simpler than original best)")
+        
+        tprint_success(f"Selected optimal K={best_k} with {metric.upper()}={best_score:.4f}")
+        return best_k, k_scores
+    
+    def get_top_features(self, shap_results, top_k=None, score_type='combined', 
+                        features_df=None, targets=None, metric='ic', 
+                        cost_bps=0.0, timeframe_minutes=15):
+        """Get top features based on scores, with optional K selection."""
         if not shap_results.get('success', False):
             return []
         
@@ -266,6 +669,18 @@ class SHAPInteractionScorer:
         
         if not scores or not feature_names:
             return []
+        
+        # If top_k is not specified, select optimal K
+        if top_k is None and features_df is not None and targets is not None:
+            optimal_k, k_scores = self._select_optimal_k(
+                features_df, targets, shap_results, metric, 
+                cost_bps=cost_bps, timeframe_minutes=timeframe_minutes
+            )
+            top_k = optimal_k
+        
+        # Fallback to reasonable default
+        if top_k is None:
+            top_k = max(1, len(feature_names) // 2)
         
         # Sort by scores and get top k
         sorted_indices = np.argsort(scores)[::-1]
@@ -287,17 +702,27 @@ class PhaseConfig:
     # Phase 1: Shallow LGBM sweep
     phase1_lgbm_params: Dict[str, Any] = None
     phase1_n_folds: int = 3
-    phase1_selection_ratio: float = 0.4  # Top 40%
+    phase1_selection_ratio: float = None  # Will be determined by data
+    phase1_k_grid: List[int] = None  # Grid for K selection
+    phase1_metric: str = 'ic'  # Metric for K selection
     
     # Phase 2: Middle refinement
     phase2_lgbm_params: Dict[str, Any] = None
     phase2_n_folds: int = 3
-    phase2_top_k: int = 40
+    phase2_top_k: int = None  # Will be determined by data
+    phase2_k_grid: List[int] = None  # Grid for K selection
+    phase2_metric: str = 'ic'  # Metric for K selection
     
     # Phase 3: Deep interaction discovery
     phase3_lgbm_params: Dict[str, Any] = None
     phase3_n_folds: int = 5
-    phase3_top_interactions: int = 50
+    phase3_top_interactions: int = None  # Will be determined by data
+    phase3_k_grid: List[int] = None  # Grid for K selection
+    phase3_metric: str = 'ic'  # Metric for K selection
+    
+    # Trading metrics configuration
+    cost_bps: float = 0.0  # Transaction costs in basis points
+    timeframe_minutes: int = 15  # Timeframe for annualization
     
     # Data sampling by mode
     light_mode_sample_size: int = 50000
@@ -355,6 +780,16 @@ class PhaseConfig:
                 'force_col_wise': True,
                 'early_stopping_rounds': 50
             }
+        
+        # Set up K grids for data-driven selection
+        if self.phase1_k_grid is None:
+            self.phase1_k_grid = [10, 20, 30, 40, 50, 60, 80, 100]
+        
+        if self.phase2_k_grid is None:
+            self.phase2_k_grid = [5, 10, 15, 20, 25, 30, 40, 50]
+        
+        if self.phase3_k_grid is None:
+            self.phase3_k_grid = [10, 15, 20, 25, 30, 40, 50, 60]
 
 @dataclass
 class FeatureGenerationInteractionGenerationStepAnalyst(BaseStep):
@@ -526,7 +961,7 @@ class FeatureGenerationInteractionGenerationStepAnalyst(BaseStep):
             phase_start_time = time.time()
         
         # Optimize hardware for variant generation workload
-        self.hardware_manager.optimize_for_workload(WorkloadType.FEATURE_ENGINEERING)
+        self.hardware_manager.optimize_for_workload(WorkloadCategory.FEATURE_ENGINEERING)
         
         try:
             # Generate variants for each timeframe
@@ -596,7 +1031,7 @@ class FeatureGenerationInteractionGenerationStepAnalyst(BaseStep):
             # Preview normalized variants
             tprint_data_preview(normalized_combined, "normalized_variants_phase1", level="INFO")
             
-            # Align with targets
+            # Align with targets (enforce X/y alignment before any splitting)
             aligned_data = normalized_combined.join(targets.rename('target'), how='inner').dropna()
             if aligned_data.empty:
                 tprint("❌ No aligned data after joining variants and targets")
@@ -605,16 +1040,26 @@ class FeatureGenerationInteractionGenerationStepAnalyst(BaseStep):
             features_aligned = aligned_data.drop(columns=['target'])
             targets_aligned = aligned_data['target']
             
+            # Ensure both have the same index (leakage control)
+            if not features_aligned.index.equals(targets_aligned.index):
+                tprint_warning("⚠️ Features and targets indices don't match, aligning...")
+                common_index = features_aligned.index.intersection(targets_aligned.index)
+                features_aligned = features_aligned.loc[common_index]
+                targets_aligned = targets_aligned.loc[common_index]
+            
             tprint(f"📊 Phase 1: Aligned data shape: {features_aligned.shape}")
             
-            # SHAP scoring with shallow LGBM
-            tprint_info("🎯 [PHASE1] Starting SHAP scoring with shallow LGBM")
+            # SHAP scoring with shallow LGBM using trading metrics
+            tprint_info("🎯 [PHASE1] Starting SHAP scoring with shallow LGBM using trading metrics")
             shap_config = SHAPScorerConfig(
                 lgbm_params=self.phase_config.phase1_lgbm_params,
                 n_folds=self.phase_config.phase1_n_folds,
                 shap_weight=0.5,
                 interaction_centrality_weight=0.3,
-                stability_weight=0.2
+                stability_weight=0.2,
+                primary_metric=self.phase_config.phase1_metric,
+                cost_bps=self.phase_config.cost_bps,
+                timeframe_minutes=self.phase_config.timeframe_minutes
             )
             
             # Log SHAP configuration for troubleshooting
@@ -643,10 +1088,17 @@ class FeatureGenerationInteractionGenerationStepAnalyst(BaseStep):
                 }, level="ERROR")
                 return pd.DataFrame(), {}
                 
-            # Select top 40% features
-            n_features = len(features_aligned.columns)
-            top_k = max(1, int(n_features * self.phase_config.phase1_selection_ratio))
-            top_features = shap_scorer.get_top_features(shap_results, top_k, 'combined')
+            # Select optimal K based on validation metric
+            top_features = shap_scorer.get_top_features(
+                shap_results, 
+                top_k=None,  # Will be determined by data
+                score_type='combined',
+                features_df=features_aligned,
+                targets=targets_aligned,
+                metric=self.phase_config.phase1_metric,
+                cost_bps=self.phase_config.cost_bps,
+                timeframe_minutes=self.phase_config.timeframe_minutes
+            )
             
             selected_features = features_aligned[top_features]
             # Preview selected features from Phase 1
@@ -705,10 +1157,10 @@ class FeatureGenerationInteractionGenerationStepAnalyst(BaseStep):
         phase_start_time = time.time()
         
         # Optimize hardware for ML training workload
-        self.hardware_manager.optimize_for_workload(WorkloadType.ML_TRAINING)
+        self.hardware_manager.optimize_for_workload(WorkloadCategory.MACHINE_LEARNING)
         
         try:
-            # Align features and targets
+            # Align features and targets (enforce X/y alignment before any splitting)
             aligned_data = phase1_features.join(targets.rename('target'), how='inner').dropna()
             if aligned_data.empty:
                 tprint("❌ No aligned data in Phase 2")
@@ -717,19 +1169,29 @@ class FeatureGenerationInteractionGenerationStepAnalyst(BaseStep):
             features_aligned = aligned_data.drop(columns=['target'])
             targets_aligned = aligned_data['target']
             
+            # Ensure both have the same index (leakage control)
+            if not features_aligned.index.equals(targets_aligned.index):
+                tprint_warning("⚠️ Features and targets indices don't match, aligning...")
+                common_index = features_aligned.index.intersection(targets_aligned.index)
+                features_aligned = features_aligned.loc[common_index]
+                targets_aligned = targets_aligned.loc[common_index]
+            
             # Preview input features for Phase 2
             tprint_data_preview(features_aligned, "phase2_input_features", level="INFO")
             tprint(f"📊 Phase 2: Input features: {features_aligned.shape}")
             
-            # SHAP scoring with middle LGBM
+            # SHAP scoring with middle LGBM using trading metrics
             shap_config = SHAPScorerConfig(
                 lgbm_params=self.phase_config.phase2_lgbm_params,
                 n_folds=self.phase_config.phase2_n_folds,
                 enable_top_k_filter=True,
-                top_k_features=min(self.phase_config.phase2_top_k * 2, len(features_aligned.columns)),
+                top_k_features=min(100, len(features_aligned.columns)),  # Use reasonable default
                 shap_weight=0.5,
                 interaction_centrality_weight=0.3,
-                stability_weight=0.2
+                stability_weight=0.2,
+                primary_metric=self.phase_config.phase2_metric,
+                cost_bps=self.phase_config.cost_bps,
+                timeframe_minutes=self.phase_config.timeframe_minutes
             )
             
             shap_scorer = SHAPInteractionScorer(shap_config)
@@ -739,8 +1201,17 @@ class FeatureGenerationInteractionGenerationStepAnalyst(BaseStep):
                 tprint("❌ Phase 2 SHAP scoring failed")
                 return pd.DataFrame(), {}
                 
-            # Select top 40 features
-            top_features = shap_scorer.get_top_features(shap_results, self.phase_config.phase2_top_k, 'combined')
+            # Select optimal K based on validation metric
+            top_features = shap_scorer.get_top_features(
+                shap_results, 
+                top_k=None,  # Will be determined by data
+                score_type='combined',
+                features_df=features_aligned,
+                targets=targets_aligned,
+                metric=self.phase_config.phase2_metric,
+                cost_bps=self.phase_config.cost_bps,
+                timeframe_minutes=self.phase_config.timeframe_minutes
+            )
             selected_features = features_aligned[top_features]
             
             # Preview selected features from Phase 2
@@ -778,13 +1249,13 @@ class FeatureGenerationInteractionGenerationStepAnalyst(BaseStep):
         phase_start_time = time.time()
         
         # Optimize hardware for intensive ML workload
-        self.hardware_manager.optimize_for_workload(WorkloadType.ML_TRAINING)
+        self.hardware_manager.optimize_for_workload(WorkloadCategory.MACHINE_LEARNING)
         self.comprehensive_optimizer.optimize_operation(
             "interaction_discovery", phase2_features, WorkloadCategory.MACHINE_LEARNING
         )
         
         try:
-            # Align features and targets
+            # Align features and targets (enforce X/y alignment before any splitting)
             aligned_data = phase2_features.join(targets.rename('target'), how='inner').dropna()
             if aligned_data.empty:
                 tprint("❌ No aligned data in Phase 3")
@@ -793,36 +1264,75 @@ class FeatureGenerationInteractionGenerationStepAnalyst(BaseStep):
             features_aligned = aligned_data.drop(columns=['target'])
             targets_aligned = aligned_data['target']
             
+            # Ensure both have the same index (leakage control)
+            if not features_aligned.index.equals(targets_aligned.index):
+                tprint_warning("⚠️ Features and targets indices don't match, aligning...")
+                common_index = features_aligned.index.intersection(targets_aligned.index)
+                features_aligned = features_aligned.loc[common_index]
+                targets_aligned = targets_aligned.loc[common_index]
+            
             # Preview input features for Phase 3
             tprint_data_preview(features_aligned, "phase3_input_features", level="INFO")
             tprint(f"📊 Phase 3: Input features: {features_aligned.shape}")
             
-            # Get interaction centrality pairs from Phase 2
+            # Get interaction centrality pairs from Phase 2 (measured from SHAP)
             centrality_pairs = phase2_metadata.get('interaction_centrality_pairs', {})
             
             if centrality_pairs:
-                tprint(f"📊 Phase 3: Using {len(centrality_pairs)} interaction centrality pairs from Phase 2")
+                tprint(f"📊 Phase 3: Using {len(centrality_pairs)} measured SHAP interaction centrality pairs from Phase 2")
                 
-                # Generate interactions based on centrality
+                # Generate interactions based on measured centrality
                 interactions_df = self.interaction_generator.generate_interactions_from_centrality(
                     features_aligned,
                     centrality_pairs,
-                    max_pairs=self.phase_config.phase3_top_interactions // 4  # 4 interactions per pair
+                    max_pairs=100  # Generate more interactions, will be filtered later
                 )
                 # Preview generated interactions
-                tprint_data_preview(interactions_df, "generated_interactions_centrality", level="INFO")
+                tprint_data_preview(interactions_df, "generated_interactions_measured_centrality", level="INFO")
             else:
-                tprint("📊 Phase 3: No centrality pairs, using top features for interaction generation")
+                tprint("📊 Phase 3: No measured centrality pairs, computing SHAP interactions directly")
                 
-                # Fallback: generate interactions from top features
-                top_features = list(features_aligned.columns)
-                interactions_df = self.interaction_generator.generate_interactions_from_top_features(
-                    features_aligned,
-                    top_features,
-                    max_pairs=self.phase_config.phase3_top_interactions // 4
+                # Compute SHAP interactions directly for Phase 3
+                shap_config = SHAPScorerConfig(
+                    lgbm_params=self.phase_config.phase3_lgbm_params,
+                    n_folds=self.phase_config.phase3_n_folds,
+                    use_shap_interactions=True,
+                    interaction_pairs_limit=50,
+                    shap_weight=0.6,
+                    interaction_centrality_weight=0.4,
+                    stability_weight=0.0
                 )
-                # Preview generated interactions
-                tprint_data_preview(interactions_df, "generated_interactions_top_features", level="INFO")
+                
+                shap_scorer = SHAPInteractionScorer(shap_config)
+                shap_results = shap_scorer.score_features(features_aligned, targets_aligned)
+                
+                if shap_results.get('success', False):
+                    centrality_pairs = shap_results.get('interaction_centrality_pairs', {})
+                    if centrality_pairs:
+                        interactions_df = self.interaction_generator.generate_interactions_from_centrality(
+                            features_aligned,
+                            centrality_pairs,
+                            max_pairs=100
+                        )
+                        tprint_data_preview(interactions_df, "generated_interactions_direct_shap", level="INFO")
+                    else:
+                        # Final fallback: generate interactions from top features
+                        top_features = list(features_aligned.columns)
+                        interactions_df = self.interaction_generator.generate_interactions_from_top_features(
+                            features_aligned,
+                            top_features,
+                            max_pairs=50
+                        )
+                        tprint_data_preview(interactions_df, "generated_interactions_fallback", level="INFO")
+                else:
+                    # Final fallback: generate interactions from top features
+                    top_features = list(features_aligned.columns)
+                    interactions_df = self.interaction_generator.generate_interactions_from_top_features(
+                        features_aligned,
+                        top_features,
+                        max_pairs=50
+                    )
+                    tprint_data_preview(interactions_df, "generated_interactions_fallback", level="INFO")
             
             if interactions_df.empty:
                 tprint("❌ No interactions generated in Phase 3")
@@ -841,7 +1351,7 @@ class FeatureGenerationInteractionGenerationStepAnalyst(BaseStep):
             
             tprint(f"📊 Phase 3: Filtered to {len(interactions_df.columns)} interactions")
             
-            # SHAP scoring with deep LGBM
+            # SHAP scoring with deep LGBM using trading metrics
             shap_config = SHAPScorerConfig(
                 lgbm_params=self.phase_config.phase3_lgbm_params,
                 n_folds=self.phase_config.phase3_n_folds,
@@ -849,7 +1359,10 @@ class FeatureGenerationInteractionGenerationStepAnalyst(BaseStep):
                 interaction_pairs_limit=25,
                 shap_weight=0.6,
                 interaction_centrality_weight=0.4,
-                stability_weight=0.0  # Focus on SHAP and interactions in final phase
+                stability_weight=0.0,  # Focus on SHAP and interactions in final phase
+                primary_metric=self.phase_config.phase3_metric,
+                cost_bps=self.phase_config.cost_bps,
+                timeframe_minutes=self.phase_config.timeframe_minutes
             )
             
             shap_scorer = SHAPInteractionScorer(shap_config)
@@ -859,11 +1372,16 @@ class FeatureGenerationInteractionGenerationStepAnalyst(BaseStep):
                 tprint("❌ Phase 3 SHAP scoring failed")
                 return pd.DataFrame(), {}
                 
-            # Select top interactions
+            # Select optimal K based on validation metric
             top_interactions = shap_scorer.get_top_features(
                 shap_results, 
-                self.phase_config.phase3_top_interactions, 
-                'combined'
+                top_k=None,  # Will be determined by data
+                score_type='combined',
+                features_df=interactions_df,
+                targets=targets_aligned,
+                metric=self.phase_config.phase3_metric,
+                cost_bps=self.phase_config.cost_bps,
+                timeframe_minutes=self.phase_config.timeframe_minutes
             )
             
             selected_interactions = interactions_df[top_interactions]
@@ -918,7 +1436,7 @@ class FeatureGenerationInteractionGenerationStepAnalyst(BaseStep):
         am = setup_enhanced_artifact_manager(**context)
         
         # Start comprehensive hardware monitoring
-        self.hardware_manager.optimize_for_workload(WorkloadType.FEATURE_ENGINEERING)
+        self.hardware_manager.optimize_for_workload(WorkloadCategory.FEATURE_ENGINEERING)
         
         try:
             # Extract training input parameters

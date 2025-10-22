@@ -22,12 +22,17 @@ Components:
 - multi_target_scheme: Multi-target labeling with data-driven selection
 """
 
-from .volatility_aware_profit_labeler import (
-    VolatilityAwareProfitLabeler as VolatilityAwareMultiHorizonLabeler,
-    VolatilityAwareConfig,
+from .consolidated_profit_labeler import (
+    ConsolidatedProfitLabeler as VolatilityAwareMultiHorizonLabeler,
+    ConsolidatedLabelerConfig as VolatilityAwareConfig,
     LabelQualityMetrics as LabelQualityScore,
     LabelingResult,
-    create_enhanced_analyst_labeler
+    create_enhanced_analyst_labeler,
+    # Backward compatibility aliases
+    VolatilityAwareProfitLabeler,
+    VolatilityAwareConfig as VolatilityAwareConfigAlias,
+    MultiHorizonProfitLabeler,
+    MultiHorizonConfig
 )
 
 from .bar_construction import (
@@ -76,6 +81,12 @@ __all__ = [
     "LabelQualityScore",
     "LabelingResult",
     "create_enhanced_analyst_labeler",
+    
+    # Backward compatibility
+    "VolatilityAwareProfitLabeler",
+    "VolatilityAwareConfigAlias",
+    "MultiHorizonProfitLabeler",
+    "MultiHorizonConfig",
     
     # Bar construction
     "EventBasedBarConstructor",

@@ -23,7 +23,7 @@ import json
 from pathlib import Path
 
 from src.utils.logger import get_logger
-from src.training.steps.pre_training.multi_horizon_profit_labeler import MultiHorizonConfig
+from src.training.steps.pre_training.profit_labeling.consolidated_profit_labeler import MultiHorizonConfig
 
 # Import optimization components
 try:
@@ -349,7 +349,7 @@ class AutomaticTimeframeOptimizer:
         """Validate optimized configuration using heuristic analysis."""
         try:
             # Generate labels with optimized config
-            from src.training.steps.pre_training.multi_horizon_profit_labeler import MultiHorizonProfitLabeler
+            from src.training.steps.pre_training.profit_labeling.consolidated_profit_labeler import MultiHorizonProfitLabeler
             labeler = MultiHorizonProfitLabeler(config)
             labeled_data = labeler.generate_labels(market_data.copy())
 

@@ -19,7 +19,7 @@ import warnings
 warnings.filterwarnings('ignore')
 
 from src.utils.logger import get_logger
-from src.training.steps.pre_training.multi_horizon_profit_labeler import MultiHorizonConfig
+from src.training.steps.pre_training.profit_labeling.consolidated_profit_labeler import MultiHorizonConfig
 
 # VectorBT imports for native optimization
 try:

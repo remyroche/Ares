@@ -114,7 +114,7 @@ from .backtesting_integrated_validator import (
     validate_labels_through_backtesting,
     generate_backtesting_validation_report
 )
-from .enhanced_multi_horizon_labeler import (
+from src.training.steps.pre_training.profit_labeling.consolidated_profit_labeler import (
     EnhancedMultiHorizonProfitLabeler,
     EnhancedLabelingConfig,
     EnhancementLevel,

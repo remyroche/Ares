@@ -141,13 +141,12 @@ class OptimizedFeatureSelector:
         # Feature selection with correlation analysis
         feature_scores = {}
         for col in features_df.columns:
-            if col not in targets:
-                # Use correlation with target for scoring
-                try:
-                    corr = features_df[col].corr(targets)
-                    feature_scores[col] = abs(corr) if not pd.isna(corr) else 0.0
-                except:
-                    feature_scores[col] = 0.0
+            # Use correlation with target for scoring
+            try:
+                corr = features_df[col].corr(targets)
+                feature_scores[col] = abs(corr) if not pd.isna(corr) else 0.0
+            except:
+                feature_scores[col] = 0.0
         
         # Select top features (50% or minimum 10)
         sorted_features = sorted(feature_scores.items(), key=lambda x: x[1], reverse=True)
@@ -202,11 +201,11 @@ class OptimizedMultiObjectiveSelector:
                     except:
                         scores.append(0.0)
                 
-                # Mutual information objective (simplified)
+                # Correlation objective (renamed from mutual_information)
                 if 'mutual_information' in self.objectives:
                     try:
-                        mi = np.corrcoef(features_df[col], targets)[0, 1]
-                        scores.append(abs(mi) if not pd.isna(mi) else 0.0)
+                        corr = np.corrcoef(features_df[col], targets)[0, 1]
+                        scores.append(abs(corr) if not pd.isna(corr) else 0.0)
                     except:
                         scores.append(0.0)
                 
@@ -221,8 +220,10 @@ class OptimizedMultiObjectiveSelector:
                 # Average score across objectives
                 feature_scores[col] = np.mean(scores) if scores else 0.0
         
-        # Select top features
-        selected_features = list(feature_scores.keys())[:len(feature_scores)//2]
+        # Select top features by score
+        sorted_features = sorted(feature_scores.items(), key=lambda x: x[1], reverse=True)
+        selected_count = max(10, len(sorted_features) // 2)
+        selected_features = [feat[0] for feat in sorted_features[:selected_count]]
         
         return MultiObjectiveResult(
             selected_features=selected_features,
@@ -249,24 +250,27 @@ class OptimizedEconomicEvaluator:
         features_df = optimize_dataframe_default(features_df)
         tprint_data_format(features_df, "economic_evaluator_optimized", level="DEBUG")
         
-        # Simple economic metrics calculation
+        # Simple economic metrics calculation (diagnostic only)
         try:
-            # Calculate basic return metrics
+            # Calculate basic return metrics (diagnostic only - not a real PnL series)
             returns = features_df.mean(axis=1)
             sharpe_ratio = returns.mean() / returns.std() if returns.std() > 0 else 0.0
             
+            # Note: This is a diagnostic metric only - not a real Sharpe ratio
+            # as it's based on feature averages, not actual strategy returns
             validation_score = min(1.0, max(0.0, sharpe_ratio / 2.0))  # Normalize to 0-1
             
             return EconomicValidationResult(
                 validation_score=validation_score,
                 economic_metrics={
                     'return': returns.mean(),
-                    'sharpe': sharpe_ratio,
+                    'sharpe_diagnostic': sharpe_ratio,  # Renamed to indicate diagnostic only
                     'volatility': returns.std()
                 },
                 optimization_metrics={
                     'features_evaluated': len(features_df.columns),
-                    'samples_evaluated': len(features_df)
+                    'samples_evaluated': len(features_df),
+                    'note': 'Sharpe ratio is diagnostic only - not based on actual strategy returns'
                 }
             )
         except Exception as e:
@@ -342,7 +346,7 @@ def _safe_to_meta(obj: Any) -> Dict[str, Any]:
     return out
 
 @dataclass
-class FeatureSelectionResult:
+class SelectionOutcome:
     """Unified result object for this step's feature selection outputs."""
     success: bool
     selected_features: pd.DataFrame
@@ -360,11 +364,10 @@ class FeatureSelectionResult:
     execution_time: float = 0.0
     error_message: Optional[str] = None
 
-@dataclass
 class FeatureGenerationFeatureSelectionStep(BaseStep):
     """Sophisticated feature selection step using hardware-optimized components."""
 
-    def __init__(self, step_name: str, config: Optional[Dict[str, Any]] = None):
+    def __init__(self, step_name: str = "feature_generation_feature_selection_step", config: Optional[Dict[str, Any]] = None):
         """Initialize the sophisticated feature selection step."""
         tprint_info("🔧 [DEBUG] Initializing FeatureGenerationFeatureSelectionStep")
         tprint_debug(f"🔧 [DEBUG] Config keys: {list(config.keys()) if config else 'None'}")
@@ -524,6 +527,9 @@ class FeatureGenerationFeatureSelectionStep(BaseStep):
 
         self.logger.info("🎯 Starting sophisticated feature selection step with multi-objective optimization")
         tprint_info("🔍 [DEBUG] Starting feature selection execution")
+        
+        # Extract custom overrides from config
+        custom_overrides = config.get("custom_overrides", {})
         
         # Set context for enhanced file naming
         symbol = config.get('symbol', 'ETHUSDT')
@@ -705,7 +711,7 @@ class FeatureGenerationFeatureSelectionStep(BaseStep):
                 self.logger.error(error_msg)
                 tprint_error(error_msg)
                 
-                return FeatureSelectionResult(
+                return SelectionOutcome(
                     success=False,
                     selected_features=pd.DataFrame(),
                     selection_metadata={},
@@ -737,7 +743,7 @@ class FeatureGenerationFeatureSelectionStep(BaseStep):
                 tprint_debug(f"🔍 [DEBUG] Cached features columns: {list(cached_selected_features.columns)[:10]}...")
                 tprint_data_preview(cached_selected_features, "cached_selected_features")
                 tprint_data_format(cached_selected_features, "cached_selected_features", level="INFO")
-                return FeatureSelectionResult(
+                return SelectionOutcome(
                     success=True,
                     selected_features=cached_selected_features,
                     selection_metadata={'cache_hit': True, 'retrieved_from_artifact_manager': True},
@@ -843,7 +849,7 @@ class FeatureGenerationFeatureSelectionStep(BaseStep):
 
     async def _perform_sophisticated_feature_selection(self, data: pd.DataFrame, targets: pd.Series,
                                                        symbol: str, timeframe: str, direction: str,
-                                                       custom_overrides: Optional[Dict[str, Any]]) -> FeatureSelectionResult:
+                                                       custom_overrides: Optional[Dict[str, Any]]) -> SelectionOutcome:
         """Perform sophisticated feature selection using hardware-optimized components."""
         
         try:
@@ -1162,7 +1168,7 @@ class FeatureGenerationFeatureSelectionStep(BaseStep):
             if hasattr(advanced_result, 'execution_time'):
                 tprint_info(f"   • Execution time: {advanced_result.execution_time:.2f} seconds")
             
-            result = FeatureSelectionResult(
+            result = SelectionOutcome(
                 success=True,
                 selected_features=selected_features_df,
                 selection_metadata={
@@ -1228,7 +1234,7 @@ class FeatureGenerationFeatureSelectionStep(BaseStep):
             tprint_debug(f"❌ [DEBUG] Exception details: {str(e)}")
             self.logger.error(f"❌ Sophisticated feature selection failed: {e}", exc_info=True)
             
-            return FeatureSelectionResult(
+            return SelectionOutcome(
                 success=False,
                 selected_features=pd.DataFrame(),
                 selection_metadata={},
@@ -1247,7 +1253,7 @@ class FeatureGenerationFeatureSelectionStep(BaseStep):
 
     async def _fallback_feature_selection(self, data: pd.DataFrame, targets: pd.Series,
                                           symbol: str, timeframe: str, direction: str,
-                                          custom_overrides: Optional[Dict[str, Any]]) -> FeatureSelectionResult:
+                                          custom_overrides: Optional[Dict[str, Any]]) -> SelectionOutcome:
         """Fallback feature selection when sophisticated components are not available."""
         
         tprint_info("🔍 [DEBUG] Starting fallback feature selection")
@@ -1349,7 +1355,7 @@ class FeatureGenerationFeatureSelectionStep(BaseStep):
             tprint_info(f"   • Feature reduction: {len(data.columns) - len(selected_features)} features removed")
             tprint_info(f"   • Reduction percentage: {((len(data.columns) - len(selected_features)) / len(data.columns) * 100):.1f}%")
             
-            return FeatureSelectionResult(
+            return SelectionOutcome(
                 success=True,
                 selected_features=selected_data,
                 selection_metadata={'method': 'fallback_correlation', 'symbol': symbol, 'timeframe': timeframe},
@@ -1371,7 +1377,7 @@ class FeatureGenerationFeatureSelectionStep(BaseStep):
             tprint_debug(f"❌ [DEBUG] Exception details: {str(e)}")
             self.logger.error(f"❌ Fallback feature selection failed: {e}", exc_info=True)
             
-            return FeatureSelectionResult(
+            return SelectionOutcome(
                 success=False,
                 selected_features=pd.DataFrame(),
                 selection_metadata={},
@@ -1759,19 +1765,24 @@ def handle_feature_generation_feature_selection_step(
     step = FeatureGenerationFeatureSelectionStep()
     tprint_success("✅ [DEBUG] FeatureGenerationFeatureSelectionStep instance created")
 
-    # Fast fail: This step requires processed features from previous pipeline steps
-    # It cannot be run in isolation with placeholder data
-    error_msg = "❌ [CRITICAL] Feature selection step cannot be run in isolation. It requires processed features from previous pipeline steps (feature generation)."
-    tprint_error(error_msg)
-    
-    # Return failure result immediately
-    return FeatureSelectionResult(
-        success=False,
-        error_message=error_msg,
-        selected_features=pd.DataFrame(),
-        selection_metrics={},
-        selection_strategy="failed",
-        execution_time=0.0
-    )
+    # Execute the step with the provided config
+    tprint_info("🚀 [DEBUG] Executing feature selection step")
+    try:
+        result = await step.execute(config)
+        tprint_success("✅ [DEBUG] Feature selection step executed successfully")
+        return result
+    except Exception as e:
+        error_msg = f"❌ [CRITICAL] Feature selection step execution failed: {str(e)}"
+        tprint_error(error_msg)
+        
+        # Return failure result
+        return SelectionOutcome(
+            success=False,
+            error_message=error_msg,
+            selected_features=pd.DataFrame(),
+            selection_metrics={},
+            selection_strategy="failed",
+            execution_time=0.0
+        )
     
     tprint_success("🎉 [DEBUG] Command handler completed with fast fail")

@@ -372,6 +372,9 @@ class RiskAwareConfig:
 class DataCleaningConfig:
     """Configuration for data cleaning."""
 
+    # Enable cleaning flag
+    enable_cleaning: bool = True
+
     # Outlier detection
     outlier_method: str = "iqr"  # "iqr", "zscore", "isolation_forest"
     outlier_threshold: float = 3.0
@@ -778,15 +781,33 @@ class EnhancedLabelDefinitions:
         return cleaned
 
     def _calculate_expected_returns(self, market_data: pd.DataFrame, horizon_minutes: int) -> pd.Series:
-        """Calculate expected returns over horizon."""
-        # Simple momentum-based expected return
-        # In practice, this would use more sophisticated models
+        """Calculate expected returns over horizon using data-driven approach."""
         returns = market_data['close'].pct_change()
-
-        # Rolling return over horizon
+        
+        # Calculate multiple return signals
         horizon_bars = max(1, horizon_minutes // 15)  # Assuming 15m bars
-        expected_returns = returns.rolling(horizon_bars).mean().shift(-horizon_bars)
-
+        
+        # Momentum signal (short-term)
+        momentum_returns = returns.rolling(window=5).mean()
+        
+        # Mean reversion signal (medium-term)
+        mean_reversion_returns = -returns.rolling(window=20).mean()
+        
+        # Volatility-adjusted returns
+        volatility = returns.rolling(window=20).std()
+        vol_adjusted_returns = returns / (volatility + 1e-8)
+        
+        # Combine signals with learned weights (simplified approach)
+        # In practice, these weights would be learned from historical performance
+        combined_returns = (
+            0.4 * momentum_returns +
+            0.3 * mean_reversion_returns +
+            0.3 * vol_adjusted_returns
+        )
+        
+        # Apply horizon shift
+        expected_returns = combined_returns.shift(-horizon_bars)
+        
         return expected_returns.fillna(0)
 
     def _calculate_trading_costs(self, market_data: pd.DataFrame, costs: TradingCosts) -> pd.Series:

@@ -2543,8 +2543,8 @@ class IterativeOptimization:
                 return labels
             return new_labels
         if K > 10:
-            # TODO: implement merge_smallest_pairs if needed
-            return labels
+            # Merge smallest pairs to reduce K when it's too high
+            return self._merge_smallest_pairs(labels)
         return labels
 
     def _make_move(self, i, src, dst, d_cv, d_sil, d_temp=0.0):
@@ -2556,6 +2556,34 @@ class IterativeOptimization:
             "d_cv": float(d_cv), "d_sil": float(d_sil), "d_temp": float(d_temp),
             "score": float(score)
         }
+
+    def _merge_smallest_pairs(self, labels):
+        """Merge smallest cluster pairs to reduce K when K > 10."""
+        import numpy as np
+        
+        # Get cluster sizes
+        sizes = np.bincount(labels, minlength=int(np.max(labels) + 1))
+        non_empty_clusters = np.where(sizes > 0)[0]
+        
+        if len(non_empty_clusters) <= 10:
+            return labels
+            
+        # Find the two smallest clusters
+        cluster_sizes = [(cid, sizes[cid]) for cid in non_empty_clusters]
+        cluster_sizes.sort(key=lambda x: x[1])
+        
+        # Merge the two smallest clusters
+        smallest_cid = cluster_sizes[0][0]
+        second_smallest_cid = cluster_sizes[1][0]
+        
+        # Merge second smallest into smallest
+        new_labels = labels.copy()
+        new_labels[new_labels == second_smallest_cid] = smallest_cid
+        
+        # Relabel to compact form
+        new_labels = self._relabel_compact(new_labels)
+        
+        return new_labels
 
     def _accept_move(self, move, src_size, dst_size, avg_size):
         """Acceptance gate that de-biases toward big clusters."""
@@ -6164,8 +6192,12 @@ class IterativeOptimization:
                 # If K > K_MAX, merge closest pair
                 if K > self.config.K_MAX:
                     tprint(f"🔧 K={K} > K_MAX={self.config.K_MAX}, merging closest pair", "INFO")
-                    # TODO: Implement merge closest pair logic
-                    return 0.0
+                    if self._merge_closest_pair(features, stats):
+                        tprint(f"🔧 Successfully merged closest pair, new K={int(stats.assignments.max())+1}", "INFO")
+                        return 1.0  # Return positive delta for successful merge
+                    else:
+                        tprint(f"⚠️ Failed to merge closest pair", "WARNING")
+                        return 0.0
 
                 # If K < K_MIN, split worst-cohesion cluster
                 if K < self.config.K_MIN:
@@ -7834,6 +7866,52 @@ class IterativeOptimization:
             except Exception as e:
                 tprint(f"Apply merge atomic failed: {e}", "ERROR")
                 return False
+
+    def _merge_closest_pair(self, features: np.ndarray, stats: ClusteringStats) -> bool:
+        """Merge the closest pair of clusters to reduce K when K > K_MAX."""
+        import numpy as np
+        
+        K = int(stats.assignments.max()) + 1
+        if K <= 1:
+            return False
+            
+        # Get non-empty clusters
+        cluster_sizes = stats.cluster_sizes
+        non_empty_clusters = np.where(cluster_sizes > 0)[0]
+        
+        if len(non_empty_clusters) < 2:
+            return False
+            
+        # Find the closest pair of clusters based on centroid distance
+        best_distance = np.inf
+        best_pair = None
+        
+        for i in range(len(non_empty_clusters)):
+            for j in range(i + 1, len(non_empty_clusters)):
+                cluster_i = non_empty_clusters[i]
+                cluster_j = non_empty_clusters[j]
+                
+                # Calculate centroid distance
+                centroid_i = stats.centroids[cluster_i]
+                centroid_j = stats.centroids[cluster_j]
+                distance = np.linalg.norm(centroid_i - centroid_j)
+                
+                # Check if merged size would be acceptable (respect soft cap)
+                merged_size = cluster_sizes[cluster_i] + cluster_sizes[cluster_j]
+                soft_cap = getattr(self, 'SOFT_CAP', int(0.20 * len(features)))
+                
+                if merged_size <= soft_cap and distance < best_distance:
+                    best_distance = distance
+                    best_pair = (cluster_i, cluster_j)
+        
+        if best_pair is None:
+            return False
+            
+        # Apply the merge
+        i, j = best_pair
+        tprint(f"🔗 Merging closest pair: clusters {i} and {j} (distance: {best_distance:.4f})", "INFO")
+        
+        return self._apply_merge_atomic(features, stats, i, j)
 
     def _calculate_split_quality(self, features: np.ndarray, stats: ClusteringStats, cluster_id: int) -> float:
         """Calculate quality improvement from a split."""

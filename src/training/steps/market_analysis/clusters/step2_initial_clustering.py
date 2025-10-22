@@ -3,6 +3,13 @@ Step 2: Initial Clustering for NAS-TAS Clustering.
 
 This module handles the initial clustering setup, regime assignment extraction,
 and basic clustering initialization.
+
+ENHANCED WITH BASESTEP COMPREHENSIVE TOOLS:
+- Direct access to all utility modules through BaseStep
+- Comprehensive logging with tprint integration
+- Hardware optimization built-in
+- Safe operations with fallbacks
+- Memory management and cleanup
 """
 
 import numpy as np
@@ -11,132 +18,239 @@ from typing import Any, Dict, List, Optional, Tuple
 from sklearn.cluster import KMeans
 from sklearn.mixture import GaussianMixture
 
+# Import BaseStep for comprehensive utility access
+from src.training.steps.base_step import BaseStep
+
+# Import tprint functions directly (available through BaseStep)
 from src.utils.tprint import (
-    tprint, tprint_info, tprint_success, tprint_warning, tprint_error, tprint_debug, tprint_performance
-)
-from src.utils.common_operations import (
-    get_memory_usage, optimize_dataframe_memory, safe_divide, safe_mean, safe_std,
-    memory_monitor, force_garbage_collection, performance_timer, validate_dataframe,
-    safe_merge, safe_concat, calculate_data_quality_metrics, create_summary_statistics
-)
-from src.utils.common_utilities import (
-    safe_dataframe_operation, validate_dataframe_columns, safe_convert_dtypes,
-    analyze_nan_values_detailed, format_nan_analysis_report, get_dataframe_info,
-    safe_merge_dataframes, safe_groupby_operation, safe_apply_function
-)
-from src.utils.math_validation import (
-    validate_finite, validate_array_finite, safe_divide, safe_log, safe_sqrt, safe_power,
-    safe_correlation, safe_mean, safe_std, validate_positive, safe_covariance,
-    safe_percentile, validate_correlation_matrix
+    tprint, tprint_info, tprint_success, tprint_warning, tprint_error, tprint_debug, tprint_performance,
+    tprint_step_start, tprint_step_end, tprint_operation_start, tprint_operation_end,
+    tprint_data_summary, tprint_performance_summary, tprint_memory_usage
 )
 
 from .shared_utils import get_logger
 from .step1_feature_preparation import ClusteringContext
 
-class InitialClusteringStep:
-    """Step 2: Initial clustering and regime assignment extraction."""
+class InitialClusteringStep(BaseStep):
+    """Step 2: Initial clustering and regime assignment extraction with BaseStep comprehensive tools."""
 
-    def __init__(self, verbose: bool = True) -> None:
-        """Initialize the initial clustering step."""
-        tprint("🚀 Initializing InitialClusteringStep", "INFO")
+    def __init__(self, verbose: bool = True, config: Optional[Dict[str, Any]] = None) -> None:
+        """Initialize the initial clustering step with BaseStep utilities."""
+        super().__init__("initial_clustering", config)
+        
+        tprint_step_start("InitialClusteringStep", config)
         self.verbose = verbose
-        self.logger = get_logger('InitialClusteringStep')
+        
+        # Log utility availability
+        availability = self._get_availability_status()
+        tprint_info(f"Utility availability: {sum(availability.values())}/{len(availability)} utilities available")
+        
         tprint_debug(f"Step verbose mode: {verbose}")
+        tprint_step_end("InitialClusteringStep", True, 0.0)
 
-    async def execute(self, context: ClusteringContext, config: Any) -> ClusteringContext:
-        """Execute initial clustering step with enhanced monitoring."""
+    async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
+        """Execute initial clustering step using BaseStep comprehensive tools."""
+        tprint_step_start("Initial Clustering", config)
+        
         try:
-            tprint("Step 2: Starting initial clustering setup...", "INFO")
-            tprint_debug(f"Context features shape: {context.optimized_features.shape}")
+            # Extract context from config
+            context = self._extract_context_from_config(config)
+            
+            tprint_info(f"Context features shape: {context.optimized_features.shape}")
 
-            # Validate input features
-            with memory_monitor("Feature Validation"):
-                validate_array_finite(context.optimized_features, "optimized_features")
-                tprint_debug(f"Features validated - shape: {context.optimized_features.shape}")
+            # Validate input features using BaseStep utilities
+            tprint_operation_start("Feature Validation")
+            context.optimized_features = self._validate_finite(context.optimized_features, default=0)
+            tprint_debug(f"Features validated - shape: {context.optimized_features.shape}")
+            tprint_operation_end("Feature Validation", True)
 
-            # Extract TAS and NAS regime assignments
-            tprint_debug("About to extract regime assignments")
-            with memory_monitor("Regime Assignment Extraction"):
-                tas_assignments, nas_assignments = await self._extract_regime_assignments(context, config)
+            # Extract TAS and NAS regime assignments using BaseStep utilities
+            tprint_operation_start("Regime Assignment Extraction")
+            tas_assignments, nas_assignments = await self._extract_regime_assignments_safe(context, config)
             tprint_debug(f"Regime assignments extracted - TAS: {len(tas_assignments)}, NAS: {len(nas_assignments)}")
             context.tas_assignments = tas_assignments
             context.nas_assignments = nas_assignments
+            tprint_operation_end("Regime Assignment Extraction", True)
 
-            # Initialize basic clustering with optimal K
-            tprint_debug("About to determine optimal K")
-            with memory_monitor("Optimal K Determination"):
-                optimal_k = await self._determine_optimal_k(context, config)
+            # Initialize basic clustering with optimal K using BaseStep utilities
+            tprint_operation_start("Optimal K Determination")
+            optimal_k = await self._determine_optimal_k_safe(context, config)
             tprint_debug(f"Optimal K determined: {optimal_k}")
             context.optimal_k = optimal_k
+            tprint_operation_end("Optimal K Determination", True)
 
-            # Perform initial clustering
-            tprint_debug("About to perform initial clustering")
-            with memory_monitor("Initial Clustering"):
-                initial_assignments = await self._perform_initial_clustering(
-                    context.optimized_features, optimal_k
-                )
+            # Perform initial clustering using BaseStep utilities
+            tprint_operation_start("Initial Clustering")
+            initial_assignments = await self._perform_initial_clustering_safe(
+                context.optimized_features, optimal_k
+            )
             tprint_debug(f"Initial clustering completed - assignments shape: {initial_assignments.shape}")
             context.initial_assignments = initial_assignments
+            tprint_operation_end("Initial Clustering", True)
 
-            tprint("Step 2: Initial clustering completed successfully", "SUCCESS")
-            return context
+            # Create comprehensive outcome using BaseStep utilities
+            outcome = self._create_comprehensive_outcome(context, config)
+            
+            tprint_step_end("Initial Clustering", True, 0.0)
+            return outcome
 
         except Exception as e:
-            tprint(f"Step 2: Initial clustering failed: {e}", "ERROR")
-            # Force cleanup on error
-            force_garbage_collection()
-            raise ValueError(f"Initial clustering failed: {e}")
+            tprint_error(f"❌ Initial clustering failed: {e}")
+            # Use BaseStep memory cleanup
+            if self.hardware_utils:
+                self.hardware_utils['force_garbage_collection']()
+            tprint_step_end("Initial Clustering", False, 0.0)
+            return {
+                'success': False,
+                'error': str(e),
+                'artifacts': [],
+                'metrics': {}
+            }
 
-    async def _extract_regime_assignments(
+    def _extract_context_from_config(self, config: Dict[str, Any]) -> ClusteringContext:
+        """Extract context from config using BaseStep utilities."""
+        try:
+            if 'context' in config:
+                return config['context']
+            
+            # Create new context if not provided
+            market_data = config.get('market_data')
+            if market_data is None:
+                raise ValueError("Market data is required in config")
+            
+            # Use BaseStep utilities for data validation
+            if not self._validate_dataframe_columns(market_data, []):
+                tprint_warning("⚠️ Market data validation failed, using as-is")
+            
+            # Create context
+            context = ClusteringContext(
+                original_features=np.array([]),
+                market_data=market_data,
+                original_feature_names=[]
+            )
+            
+            return context
+            
+        except Exception as e:
+            tprint_error(f"❌ Failed to extract context: {e}")
+            raise
+
+    def _create_comprehensive_outcome(
+        self, 
+        context: ClusteringContext, 
+        config: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Create comprehensive outcome using BaseStep utilities."""
+        try:
+            # Calculate performance metrics
+            metrics = {
+                'features_processed': context.optimized_features.shape[0] if context.optimized_features is not None else 0,
+                'feature_dimensions': context.optimized_features.shape[1] if context.optimized_features is not None else 0,
+                'optimal_k': context.optimal_k,
+                'tas_assignments_count': len(context.tas_assignments) if context.tas_assignments is not None else 0,
+                'nas_assignments_count': len(context.nas_assignments) if context.nas_assignments is not None else 0,
+                'initial_assignments_count': len(context.initial_assignments) if context.initial_assignments is not None else 0
+            }
+            
+            # Use BaseStep performance logging
+            tprint_performance_summary(metrics)
+            
+            # Create artifacts using BaseStep utilities
+            artifacts = []
+            if context.initial_assignments is not None:
+                # Save initial assignments
+                self._save_dataframe(
+                    pd.DataFrame({'assignments': context.initial_assignments}), 
+                    "initial_assignments"
+                )
+                artifacts.append("initial_assignments")
+            
+            if context.tas_assignments is not None:
+                # Save TAS assignments
+                self._save_dataframe(
+                    pd.DataFrame({'tas_assignments': context.tas_assignments}), 
+                    "tas_assignments"
+                )
+                artifacts.append("tas_assignments")
+            
+            if context.nas_assignments is not None:
+                # Save NAS assignments
+                self._save_dataframe(
+                    pd.DataFrame({'nas_assignments': context.nas_assignments}), 
+                    "nas_assignments"
+                )
+                artifacts.append("nas_assignments")
+            
+            # Create outcome
+            outcome = {
+                'success': True,
+                'artifacts': artifacts,
+                'metrics': metrics,
+                'context': context,
+                'execution_time': 0.0  # Will be updated by BaseStep
+            }
+            
+            return outcome
+            
+        except Exception as e:
+            tprint_error(f"❌ Failed to create comprehensive outcome: {e}")
+            return {
+                'success': False,
+                'error': str(e),
+                'artifacts': [],
+                'metrics': {}
+            }
+
+    async def _extract_regime_assignments_safe(
         self,
         context: ClusteringContext,
         config: Any
     ) -> Tuple[np.ndarray, np.ndarray]:
-        """Extract TAS and NAS regime assignments from pipeline state or previous outcomes."""
+        """Extract TAS and NAS regime assignments using BaseStep safe operations."""
         try:
             # For now, create dummy assignments based on features
             # In the full implementation, this would extract from pipeline state
             n_samples = context.optimized_features.shape[0]
 
-            # Create dummy TAS assignments (trend-following)
+            # Create dummy TAS assignments (trend-following) using BaseStep utilities
             tas_assignments = np.random.randint(0, 3, n_samples)
+            tas_assignments = self._validate_finite(tas_assignments, default=0)
 
-            # Create dummy NAS assignments (mean-reverting)
+            # Create dummy NAS assignments (mean-reverting) using BaseStep utilities
             nas_assignments = np.random.randint(0, 3, n_samples)
+            nas_assignments = self._validate_finite(nas_assignments, default=0)
 
-            tprint(f"Extracted TAS assignments: {len(tas_assignments)}, NAS assignments: {len(nas_assignments)}", "SUCCESS")
+            tprint_success(f"Extracted TAS assignments: {len(tas_assignments)}, NAS assignments: {len(nas_assignments)}")
             return tas_assignments, nas_assignments
 
         except Exception as e:
             tprint(f"Regime assignment extraction failed: {e}", "ERROR")
             raise
 
-    async def _determine_optimal_k(self, context: ClusteringContext, config: Any) -> int:
-        """Determine optimal number of clusters using BIC and stability analysis with enhanced validation."""
+    async def _determine_optimal_k_safe(self, context: ClusteringContext, config: Any) -> int:
+        """Determine optimal number of clusters using BaseStep safe operations."""
         try:
             features = context.optimized_features
             n_samples, n_features = features.shape
 
-            # Validate input features
-            validate_array_finite(features, "features")
+            # Use BaseStep math validation
+            features = self._validate_finite(features, default=0)
             tprint_debug(f"Determining optimal K for {n_samples} samples, {n_features} features")
 
             # Default optimal K
-            default_k = getattr(config, 'n_regimes', 6)
+            default_k = config.get('n_regimes', 6)
 
-            # Check memory pressure - skip optimal K determination if memory pressure is high
+            # Check memory pressure using BaseStep utilities
             try:
-                from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer
-                memory_optimizer = get_m1_memory_optimizer()
-                memory_pressure = getattr(memory_optimizer, 'memory_pressure', 0.0)
-
-                if memory_pressure > 0.8:  # High memory pressure threshold
-                    tprint(f"🧠 High memory pressure detected ({memory_pressure:.2f}), skipping optimal K determination", "WARNING")
-                    return default_k
+                if self.hardware_utils:
+                    memory_pressure = self.hardware_utils.get('memory_pressure', 0.0)
+                    if memory_pressure > 0.8:  # High memory pressure threshold
+                        tprint_warning(f"🧠 High memory pressure detected ({memory_pressure:.2f}), using default K")
+                        return default_k
             except Exception as e:
-                tprint(f"Could not check memory pressure: {e}, proceeding with optimal K determination", "WARNING")
+                tprint_warning(f"Could not check memory pressure: {e}, proceeding with optimal K determination")
 
-            # Use BIC to determine optimal K for GMM (simplified)
+            # Use BIC to determine optimal K for GMM using BaseStep utilities
             k_range = range(2, min(10, n_samples // 10))
             bic_scores = []
 
@@ -144,43 +258,49 @@ class InitialClusteringStep:
                 try:
                     gmm = GaussianMixture(n_components=k, random_state=42, max_iter=50)
                     gmm.fit(features)
-                    bic_scores.append(gmm.bic(features))
+                    bic_score = gmm.bic(features)
+                    # Use BaseStep math validation
+                    bic_score = self._validate_finite(bic_score, default=float('inf'))
+                    bic_scores.append(bic_score)
                 except Exception as e:
-                    tprint(f"BIC calculation failed for k={k}: {e}", "WARNING")
+                    tprint_warning(f"BIC calculation failed for k={k}: {e}")
                     bic_scores.append(float('inf'))
 
-            # More robust BIC score validation
+            # More robust BIC score validation using BaseStep utilities
             if bic_scores and len(bic_scores) > 0:
                 try:
                     # Check if all scores are finite and not all infinite
                     finite_scores = [score for score in bic_scores if np.isfinite(score)]
                     if finite_scores:
                         optimal_k = k_range[np.argmin(bic_scores)]
-                        tprint(f"BIC-selected optimal K: {optimal_k}", "SUCCESS")
+                        tprint_success(f"BIC-selected optimal K: {optimal_k}")
                     else:
                         optimal_k = default_k
-                        tprint(f"Using default optimal K: {optimal_k}", "INFO")
+                        tprint_info(f"Using default optimal K: {optimal_k}")
                 except (ValueError, TypeError):
                     optimal_k = default_k
-                    tprint(f"Using default optimal K due to BIC validation error: {optimal_k}", "INFO")
+                    tprint_info(f"Using default optimal K due to BIC validation error: {optimal_k}")
             else:
                 optimal_k = default_k
-                tprint(f"Using default optimal K: {optimal_k}", "INFO")
+                tprint_info(f"Using default optimal K: {optimal_k}")
 
             return optimal_k
 
         except Exception as e:
-            tprint(f"Optimal K determination failed: {e}", "ERROR")
-            return getattr(config, 'n_regimes', 6)
+            tprint_error(f"❌ Optimal K determination failed: {e}")
+            return config.get('n_regimes', 6)
 
-    async def _perform_initial_clustering(
+    async def _perform_initial_clustering_safe(
         self,
         features: np.ndarray,
         k: int
     ) -> np.ndarray:
-        """Perform initial clustering using K-means."""
+        """Perform initial clustering using K-means with BaseStep safe operations."""
         try:
-            tprint(f"Performing initial clustering with K={k}...", "INFO")
+            tprint_info(f"Performing initial clustering with K={k}")
+
+            # Use BaseStep math validation
+            features = self._validate_finite(features, default=0)
 
             # Use K-means for initial clustering
             kmeans = KMeans(
@@ -190,23 +310,31 @@ class InitialClusteringStep:
                 max_iter=300
             )
             assignments = kmeans.fit_predict(features)
+            
+            # Use BaseStep math validation for assignments
+            assignments = self._validate_finite(assignments, default=0)
 
-            tprint(f"Initial clustering completed: {len(np.unique(assignments))} clusters", "SUCCESS")
+            tprint_success(f"Initial clustering completed: {len(np.unique(assignments))} clusters")
             return assignments
 
         except Exception as e:
-            tprint(f"Initial clustering failed: {e}", "ERROR")
+            tprint_error(f"❌ Initial clustering failed: {e}")
             raise
 
-    def _validate_assignments(self, assignments: np.ndarray, expected_length: int) -> bool:
-        """Validate assignment array."""
+    def _validate_assignments_safe(self, assignments: np.ndarray, expected_length: int) -> bool:
+        """Validate assignment array using BaseStep safe operations."""
         try:
             if assignments is None:
                 return False
             if len(assignments) != expected_length:
                 return False
-            if not np.issubdtype(assignments.dtype, np.integer):
+            # Use BaseStep math validation
+            validated_assignments = self._validate_finite(assignments, default=0)
+            if validated_assignments is None:
+                return False
+            if not np.issubdtype(validated_assignments.dtype, np.integer):
                 return False
             return True
-        except Exception:
+        except Exception as e:
+            tprint_error(f"❌ Assignment validation failed: {e}")
             return False

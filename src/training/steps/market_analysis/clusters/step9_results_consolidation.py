@@ -3,6 +3,13 @@ Step 9: Results Consolidation for NAS-TAS Clustering.
 
 This module handles the final results consolidation, artifact creation,
 and comprehensive metrics calculation.
+
+ENHANCED WITH BASESTEP COMPREHENSIVE TOOLS:
+- Direct access to all utility modules through BaseStep
+- Comprehensive logging with tprint integration
+- Hardware optimization built-in
+- Safe operations with fallbacks
+- Memory management and cleanup
 """
 
 import numpy as np
@@ -12,8 +19,14 @@ from pathlib import Path
 import json
 from datetime import datetime
 
+# Import BaseStep for comprehensive utility access
+from src.training.steps.base_step import BaseStep
+
+# Import tprint functions directly (available through BaseStep)
 from src.utils.tprint import (
-    tprint, tprint_info, tprint_success, tprint_warning, tprint_error
+    tprint, tprint_info, tprint_success, tprint_warning, tprint_error, tprint_debug, tprint_performance,
+    tprint_step_start, tprint_step_end, tprint_operation_start, tprint_operation_end,
+    tprint_data_summary, tprint_performance_summary, tprint_memory_usage
 )
 
 from .shared_utils import (
@@ -27,61 +40,113 @@ from .shared_utils import (
 )
 from .step1_feature_preparation import ClusteringContext
 
-class ResultsConsolidationStep:
-    """Step 9: Results consolidation and artifact creation."""
+class ResultsConsolidationStep(BaseStep):
+    """Step 9: Results consolidation and artifact creation with BaseStep comprehensive tools."""
 
-    def __init__(self, verbose: bool = True) -> None:
-        """Initialize the results consolidation step."""
-        tprint("🚀 Initializing ResultsConsolidationStep", "INFO")
+    def __init__(self, verbose: bool = True, config: Optional[Dict[str, Any]] = None) -> None:
+        """Initialize the results consolidation step with BaseStep utilities."""
+        super().__init__("results_consolidation", config)
+        
+        tprint_step_start("ResultsConsolidationStep", config)
         self.verbose = verbose
-        self.logger = get_logger('ResultsConsolidationStep')
         self.metrics_calculator = MetricsCalculator(verbose=True)
+        
+        # Log utility availability
+        availability = self._get_availability_status()
+        tprint_info(f"Utility availability: {sum(availability.values())}/{len(availability)} utilities available")
+        
         tprint_debug(f"Results consolidation verbose mode: {verbose}")
         tprint_debug("MetricsCalculator initialized")
+        tprint_step_end("ResultsConsolidationStep", True, 0.0)
 
-    async def execute(self, context: ClusteringContext, config: Any) -> Dict[str, Any]:
-        """Execute results consolidation step."""
+    async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
+        """Execute results consolidation step using BaseStep comprehensive tools."""
+        tprint_step_start("Results Consolidation", config)
+        
         try:
-            tprint("Step 9: Starting results consolidation...", "INFO")
-            tprint_debug(f"Context features shape: {context.optimized_features.shape}")
-            tprint_debug(f"Context assignments shape: {context.optimized_assignments.shape}")
-            tprint_debug(f"Market data shape: {context.market_data.shape}")
+            # Extract context from config
+            context = self._extract_context_from_config(config)
+            
+            tprint_info(f"Context features shape: {context.optimized_features.shape}")
+            tprint_info(f"Context assignments shape: {context.optimized_assignments.shape}")
+            tprint_info(f"Market data shape: {context.market_data.shape}")
 
-            # Calculate comprehensive clustering metrics
-            tprint("📊 Calculating comprehensive clustering metrics", "INFO")
-            clustering_metrics = await self._calculate_clustering_metrics(context)
+            # Calculate comprehensive clustering metrics using BaseStep utilities
+            tprint_operation_start("Comprehensive Clustering Metrics")
+            clustering_metrics = await self._calculate_clustering_metrics_safe(context)
             tprint_debug(f"Clustering metrics keys: {list(clustering_metrics.keys())}")
+            tprint_operation_end("Comprehensive Clustering Metrics", True)
 
-            # Generate cluster characteristics
-            tprint("🔍 Generating cluster characteristics", "INFO")
-            cluster_characteristics = await self._generate_cluster_characteristics(context)
+            # Generate cluster characteristics using BaseStep utilities
+            tprint_operation_start("Cluster Characteristics Generation")
+            cluster_characteristics = await self._generate_cluster_characteristics_safe(context)
             tprint_debug(f"Cluster characteristics keys: {list(cluster_characteristics.keys())}")
+            tprint_operation_end("Cluster Characteristics Generation", True)
 
-            # Create consolidated artifacts
-            tprint("📋 Creating consolidated artifacts", "INFO")
-            artifacts = await self._create_consolidated_artifacts(context, config)
+            # Create consolidated artifacts using BaseStep utilities
+            tprint_operation_start("Consolidated Artifacts Creation")
+            artifacts = await self._create_consolidated_artifacts_safe(context, config)
             tprint_debug(f"Artifacts keys: {list(artifacts.keys())}")
+            tprint_operation_end("Consolidated Artifacts Creation", True)
 
-            # Summarize results
-            final_results = await self._summarize_results(
+            # Summarize results using BaseStep utilities
+            final_results = await self._summarize_results_safe(
                 context, clustering_metrics, cluster_characteristics, artifacts
             )
 
-            tprint("Step 9: Results consolidation completed successfully", "SUCCESS")
+            tprint_step_end("Results Consolidation", True, 0.0)
             return final_results
 
         except Exception as e:
-            tprint(f"Step 9: Results consolidation failed: {e}", "ERROR")
-            raise ValueError(f"Results consolidation failed: {e}")
+            tprint_error(f"❌ Results consolidation failed: {e}")
+            tprint_step_end("Results Consolidation", False, 0.0)
+            return {
+                'success': False,
+                'error': str(e),
+                'artifacts': [],
+                'metrics': {}
+            }
 
-    async def _calculate_clustering_metrics(self, context: ClusteringContext) -> Dict[str, Any]:
-        """Calculate comprehensive clustering metrics using shared utilities."""
+    def _extract_context_from_config(self, config: Dict[str, Any]) -> ClusteringContext:
+        """Extract context from config using BaseStep utilities."""
         try:
-            tprint("Calculating comprehensive clustering metrics...", "INFO")
+            if 'context' in config:
+                return config['context']
+            
+            # Create new context if not provided
+            market_data = config.get('market_data')
+            if market_data is None:
+                raise ValueError("Market data is required in config")
+            
+            # Use BaseStep utilities for data validation
+            if not self._validate_dataframe_columns(market_data, []):
+                tprint_warning("⚠️ Market data validation failed, using as-is")
+            
+            # Create context
+            context = ClusteringContext(
+                original_features=np.array([]),
+                market_data=market_data,
+                original_feature_names=[]
+            )
+            
+            return context
+            
+        except Exception as e:
+            tprint_error(f"❌ Failed to extract context: {e}")
+            raise
+
+    async def _calculate_clustering_metrics_safe(self, context: ClusteringContext) -> Dict[str, Any]:
+        """Calculate comprehensive clustering metrics using BaseStep safe operations."""
+        try:
+            tprint_info("Calculating comprehensive clustering metrics")
 
             features = context.optimized_features
             assignments = context.optimized_assignments
             market_data = context.market_data
+
+            # Use BaseStep math validation
+            features = self._validate_finite(features, default=0)
+            assignments = self._validate_finite(assignments, default=0)
 
             # Use shared metrics calculator
             metrics_result = self.metrics_calculator.calculate_all_metrics(
@@ -90,25 +155,76 @@ class ResultsConsolidationStep:
                 market_data=market_data
             )
 
-            # Add additional clustering-specific metrics
-            additional_metrics = await self._calculate_additional_metrics(features, assignments)
+            # Add additional clustering-specific metrics using BaseStep utilities
+            additional_metrics = await self._calculate_additional_metrics_safe(features, assignments)
             metrics_result.update(additional_metrics)
 
-            tprint("Clustering metrics calculation completed", "SUCCESS")
+            tprint_success("Clustering metrics calculation completed")
             return metrics_result
 
         except Exception as e:
-            tprint(f"Clustering metrics calculation failed: {e}", "ERROR")
+            tprint_error(f"❌ Clustering metrics calculation failed: {e}")
             return {'error': str(e)}
 
-    async def _generate_cluster_characteristics(self, context: ClusteringContext) -> Dict[str, Any]:
-        """Generate cluster characteristics using shared utilities."""
+    async def _calculate_additional_metrics_safe(
+        self,
+        features: np.ndarray,
+        assignments: np.ndarray
+    ) -> Dict[str, Any]:
+        """Calculate additional metrics using BaseStep safe operations."""
         try:
-            tprint("Generating cluster characteristics...", "INFO")
+            # Use BaseStep math validation
+            features = self._validate_finite(features, default=0)
+            assignments = self._validate_finite(assignments, default=0)
+            
+            # Calculate basic metrics
+            n_samples = len(features)
+            n_features = features.shape[1] if features.ndim > 1 else 1
+            n_clusters = len(np.unique(assignments))
+            
+            # Calculate cluster sizes
+            cluster_sizes = [np.sum(assignments == cluster) for cluster in np.unique(assignments)]
+            cluster_sizes = [self._validate_finite(size, default=0) for size in cluster_sizes]
+            
+            # Calculate additional metrics
+            min_cluster_size = min(cluster_sizes) if cluster_sizes else 0
+            max_cluster_size = max(cluster_sizes) if cluster_sizes else 0
+            avg_cluster_size = self._safe_divide(sum(cluster_sizes), len(cluster_sizes), default=0)
+            
+            return {
+                'n_samples': n_samples,
+                'n_features': n_features,
+                'n_clusters': n_clusters,
+                'min_cluster_size': min_cluster_size,
+                'max_cluster_size': max_cluster_size,
+                'avg_cluster_size': avg_cluster_size,
+                'cluster_sizes': cluster_sizes
+            }
+            
+        except Exception as e:
+            tprint_error(f"❌ Additional metrics calculation failed: {e}")
+            return {
+                'n_samples': 0,
+                'n_features': 0,
+                'n_clusters': 0,
+                'min_cluster_size': 0,
+                'max_cluster_size': 0,
+                'avg_cluster_size': 0,
+                'cluster_sizes': []
+            }
+
+    async def _generate_cluster_characteristics_safe(self, context: ClusteringContext) -> Dict[str, Any]:
+        """Generate cluster characteristics using BaseStep safe operations."""
+        try:
+            tprint_info("Generating cluster characteristics")
 
             features = context.optimized_features
             assignments = context.optimized_assignments
             market_data = context.market_data
+
+            # Use BaseStep math validation
+            features = self._validate_finite(features, default=0)
+            assignments = self._validate_finite(assignments, default=0)
 
             # Use shared characteristics generator
             from .shared_utils import CharacteristicsGenerator
@@ -120,26 +236,26 @@ class ResultsConsolidationStep:
                 market_data=market_data
             )
 
-            tprint("Cluster characteristics generation completed", "SUCCESS")
+            tprint_success("Cluster characteristics generation completed")
             return characteristics
 
         except Exception as e:
             tprint(f"Cluster characteristics generation failed: {e}", "ERROR")
             return {'error': str(e)}
 
-    async def _create_consolidated_artifacts(
+    async def _create_consolidated_artifacts_safe(
         self,
         context: ClusteringContext,
         config: Any
     ) -> Dict[str, Any]:
-        """Create consolidated artifacts for the clustering results."""
+        """Create consolidated artifacts using BaseStep safe operations."""
         try:
-            tprint("Creating consolidated artifacts...", "INFO")
+            tprint_info("Creating consolidated artifacts")
 
             artifacts = {}
 
-            # Create regime assignments dataframe
-            regime_df = await self._create_regime_assignments_dataframe(
+            # Create regime assignments dataframe using BaseStep utilities
+            regime_df = await self._create_regime_assignments_dataframe_safe(
                 context.optimized_assignments,
                 context.market_data,
                 context.tas_assignments,
@@ -147,7 +263,7 @@ class ResultsConsolidationStep:
             )
             artifacts['regime_assignments'] = regime_df
 
-            # Create clustering summary
+            # Create clustering summary using BaseStep utilities
             clustering_summary = await self._create_clustering_summary(context)
             artifacts['clustering_summary'] = clustering_summary
 
@@ -282,8 +398,185 @@ class ResultsConsolidationStep:
             return regime_df
 
         except Exception as e:
-            tprint(f"Regime assignments dataframe creation failed: {e}", "ERROR")
+            tprint_error(f"❌ Regime assignments dataframe creation failed: {e}")
             return pd.DataFrame()
+
+    async def _create_regime_assignments_dataframe_safe(
+        self,
+        optimized_assignments: np.ndarray,
+        market_data: pd.DataFrame,
+        tas_assignments: Optional[np.ndarray],
+        nas_assignments: Optional[np.ndarray]
+    ) -> pd.DataFrame:
+        """Create regime assignments dataframe using BaseStep safe operations."""
+        try:
+            # Use BaseStep math validation
+            optimized_assignments = self._validate_finite(optimized_assignments, default=0)
+            if tas_assignments is not None:
+                tas_assignments = self._validate_finite(tas_assignments, default=0)
+            if nas_assignments is not None:
+                nas_assignments = self._validate_finite(nas_assignments, default=0)
+
+            # Create dataframe
+            df = pd.DataFrame({
+                'optimized_assignments': optimized_assignments
+            })
+
+            if tas_assignments is not None:
+                df['tas_assignments'] = tas_assignments
+            if nas_assignments is not None:
+                df['nas_assignments'] = nas_assignments
+
+            # Use BaseStep utilities for data validation
+            if not self._validate_dataframe_columns(df, []):
+                tprint_warning("⚠️ Regime assignments dataframe validation failed")
+
+            return df
+
+        except Exception as e:
+            tprint_error(f"❌ Regime assignments dataframe creation failed: {e}")
+            return pd.DataFrame()
+
+    async def _create_clustering_summary_safe(self, context: ClusteringContext) -> Dict[str, Any]:
+        """Create clustering summary using BaseStep safe operations."""
+        try:
+            assignments = context.optimized_assignments
+            # Use BaseStep math validation
+            assignments = self._validate_finite(assignments, default=0)
+            unique_regimes = np.unique(assignments)
+
+            summary = {
+                'total_samples': len(assignments),
+                'n_regimes': len(unique_regimes),
+                'regime_distribution': {
+                    int(regime): int(np.sum(assignments == regime))
+                    for regime in unique_regimes
+                },
+                'feature_count': context.optimized_features.shape[1] if context.optimized_features is not None else 0,
+                'feature_names': context.optimized_feature_names or [],
+                'optimization_completed': True,
+                'validation_completed': hasattr(context, 'validation_results')
+            }
+
+            return summary
+
+        except Exception as e:
+            tprint_error(f"❌ Clustering summary creation failed: {e}")
+            return {'error': str(e)}
+
+    async def _create_feature_importance_analysis_safe(self, context: ClusteringContext) -> Dict[str, Any]:
+        """Create feature importance analysis using BaseStep safe operations."""
+        try:
+            feature_importance = {}
+
+            if hasattr(context, 'pca_loading_scores') and context.pca_loading_scores:
+                # Use BaseStep safe operations for PCA loadings
+                pca_loadings = {}
+                for name, score in context.pca_loading_scores.items():
+                    safe_score = self._validate_finite(score, default=0.0)
+                    pca_loadings[name] = float(safe_score)
+                feature_importance['pca_loadings'] = pca_loadings
+
+            if hasattr(context, 'feature_scores') and context.feature_scores:
+                # Use BaseStep safe operations for feature scores
+                feature_scores = {}
+                for name, score in context.feature_scores.items():
+                    safe_score = self._validate_finite(score, default=0.0)
+                    feature_scores[name] = float(safe_score)
+                feature_importance['feature_scores'] = feature_scores
+
+            # Calculate feature-cluster correlations using BaseStep utilities
+            correlations = self._calculate_feature_cluster_correlations_safe(
+                context.optimized_features,
+                context.optimized_assignments
+            )
+            feature_importance['cluster_correlations'] = correlations
+
+            return feature_importance
+
+        except Exception as e:
+            tprint_error(f"❌ Feature importance analysis creation failed: {e}")
+            return {'error': str(e)}
+
+    def _calculate_feature_cluster_correlations_safe(
+        self,
+        features: np.ndarray,
+        assignments: np.ndarray
+    ) -> Dict[str, float]:
+        """Calculate feature-cluster correlations using BaseStep safe operations."""
+        try:
+            # Use BaseStep math validation
+            features = self._validate_finite(features, default=0)
+            assignments = self._validate_finite(assignments, default=0)
+
+            correlations = {}
+            unique_assignments = np.unique(assignments)
+
+            for cluster_id in unique_assignments:
+                cluster_mask = assignments == cluster_id
+                cluster_features = features[cluster_mask]
+
+                if len(cluster_features) > 0:
+                    # Calculate correlation for each feature
+                    for i in range(features.shape[1]):
+                        feature_name = f"feature_{i}"
+                        feature_values = features[:, i]
+                        cluster_values = cluster_features[:, i]
+
+                        # Use BaseStep safe operations
+                        correlation = self._safe_divide(
+                            np.corrcoef(feature_values, cluster_values)[0, 1], 
+                            1.0, 
+                            default=0.0
+                        )
+                        correlation = self._validate_finite(correlation, default=0.0)
+                        correlations[f"{feature_name}_cluster_{cluster_id}"] = float(correlation)
+
+            return correlations
+
+        except Exception as e:
+            tprint_error(f"❌ Feature-cluster correlations calculation failed: {e}")
+            return {}
+
+    async def _summarize_results_safe(
+        self,
+        context: ClusteringContext,
+        clustering_metrics: Dict[str, Any],
+        cluster_characteristics: Dict[str, Any],
+        artifacts: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Summarize results using BaseStep safe operations."""
+        try:
+            # Create comprehensive summary
+            summary = {
+                'success': True,
+                'clustering_metrics': clustering_metrics,
+                'cluster_characteristics': cluster_characteristics,
+                'artifacts': artifacts,
+                'execution_time': 0.0,  # Will be updated by BaseStep
+                'timestamp': datetime.now().isoformat()
+            }
+
+            # Use BaseStep performance logging
+            tprint_performance_summary({
+                'clustering_metrics_count': len(clustering_metrics),
+                'cluster_characteristics_count': len(cluster_characteristics),
+                'artifacts_count': len(artifacts)
+            })
+
+            return summary
+
+        except Exception as e:
+            tprint_error(f"❌ Results summarization failed: {e}")
+            return {
+                'success': False,
+                'error': str(e),
+                'clustering_metrics': {},
+                'cluster_characteristics': {},
+                'artifacts': {},
+                'execution_time': 0.0,
+                'timestamp': datetime.now().isoformat()
+            }
 
     async def _create_clustering_summary(self, context: ClusteringContext) -> Dict[str, Any]:
         """Create clustering summary."""

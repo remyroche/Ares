@@ -102,33 +102,7 @@ except ImportError:
 
 # CMI complementarity components are now handled by external modules
 
-# Import tprint utilities for enhanced logging
-try:
-    from src.utils.tprint import (
-        tprint, tprint_info, tprint_success, tprint_warning, tprint_error, tprint_debug,
-        tprint_performance, tprint_step, tprint_result, tprint_data_preview, tprint_data_format
-    )
-    TPRINT_AVAILABLE = True
-except ImportError:
-    TPRINT_AVAILABLE = False
-    def tprint(*args, **kwargs): print("TPRINT:", *args, **kwargs)
-    def tprint_info(*args, **kwargs): print("INFO:", *args, **kwargs)
-    def tprint_success(*args, **kwargs): print("SUCCESS:", *args, **kwargs)
-    def tprint_warning(*args, **kwargs): print("WARNING:", *args, **kwargs)
-    def tprint_error(*args, **kwargs): print("ERROR:", *args, **kwargs)
-    def tprint_debug(*args, **kwargs): print("DEBUG:", *args, **kwargs)
-    def tprint_performance(*args, **kwargs): print("PERFORMANCE:", *args, **kwargs)
-    def tprint_step(*args, **kwargs): print("STEP:", *args, **kwargs)
-    def tprint_result(*args, **kwargs): print("RESULT:", *args, **kwargs)
-    def tprint_data_preview(data, name="data", max_rows=5, max_cols=10, level="DEBUG", include_metadata=True, force_log=False): 
-        # Simple fallback that works with both string and LogLevel enum
-        level_str = str(level) if hasattr(level, 'value') else str(level)
-        print(f"DATA_PREVIEW [{name}]: {type(data).__name__} - {getattr(data, 'shape', 'unknown shape')} [{level_str}]")
-    def tprint_data_format(data, name="data", level="DEBUG", config=None, return_summary=False):
-        # Simple fallback for tprint_data_format
-        level_str = str(level) if hasattr(level, 'value') else str(level)
-        print(f"DATA_FORMAT [{name}]: {type(data).__name__} - {getattr(data, 'shape', 'unknown shape')} [{level_str}]")
-        return None
+# Note: tprint utilities are now available through BaseStep's comprehensive tools
 
 
 class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
@@ -136,15 +110,16 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
 
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         """Initialize the period + lookback optimization step."""
-        tprint_step("Initializing FeatureGenerationPeriodLookbackOptimizationStep")
-        tprint_info(f"Config type: {type(config)}")
+        # Use BaseStep's comprehensive tprint utilities
+        self.tprint_step("Initializing FeatureGenerationPeriodLookbackOptimizationStep")
+        self.tprint_info(f"Config type: {type(config)}")
         
         super().__init__("feature_generation_period_lookback_optimization_step", config)
         
-        tprint_success("Base component initialization completed")
+        self.tprint_success("Base component initialization completed")
         
         # Initialize enhanced hardware optimization components
-        tprint_info("🚀 Initializing enhanced hardware optimization components")
+        self.tprint_info("🚀 Initializing enhanced hardware optimization components")
         
         # Initialize unified hardware manager
         self.hardware_manager = get_unified_hardware_manager()
@@ -169,7 +144,7 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
         self.aggressive_gc_enabled = True
         self.data_type_optimization = True  # Convert float64 to float32
         
-        tprint_success("🧠 Enhanced hardware optimization components initialized")
+        self.tprint_success("🧠 Enhanced hardware optimization components initialized")
         
         # CMI complementarity components are now handled by external modules
         self.cmi_scorer = None

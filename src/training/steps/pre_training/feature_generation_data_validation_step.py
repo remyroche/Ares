@@ -18,11 +18,6 @@ from pathlib import Path
 from dataclasses import dataclass
 
 from src.training.steps.base_step import BaseStep
-from src.utils.tprint import (
-    tprint_data_preview, tprint, tprint_data_format, tprint_info, tprint_success, 
-    tprint_warning, tprint_error, tprint_debug, tprint_performance, tprint_structured, 
-    tprint_step, tprint_result
-)
 
 # Import advanced quality validation components
 # Quality validation components - self-contained implementation
@@ -218,38 +213,40 @@ class FeatureGenerationDataValidationStep(BaseStep):
 
     def __init__(self, step_name: str, config: Optional[Dict[str, Any]] = None):
         """Initialize the enhanced data validation step."""
-        tprint_step("🔧 Initializing FeatureGenerationDataValidationStep")
-        tprint_debug(f"⚙️ Config provided: {config is not None}")
+        # Use BaseStep's comprehensive tprint utilities
+        self.tprint_step("🔧 Initializing FeatureGenerationDataValidationStep")
+        self.tprint_debug(f"⚙️ Config provided: {config is not None}")
         
         super().__init__(step_name, config)
         
         # Enable data preview via environment variable
         self.enable_data_preview = os.getenv('ENABLE_DATA_PREVIEW', 'true').lower() == 'true'
-        tprint_info(f"📊 Data preview enabled: {self.enable_data_preview}")
+        self.tprint_info(f"📊 Data preview enabled: {self.enable_data_preview}")
         
         # Initialize quality assessment components
-        tprint_debug("🔍 Checking quality components availability")
+        self.tprint_debug("🔍 Checking quality components availability")
         if QUALITY_COMPONENTS_AVAILABLE:
-            tprint_success("✅ Quality components available, initializing advanced components")
+            self.tprint_success("✅ Quality components available, initializing advanced components")
             self.quality_scorer = ComprehensiveQualityScorer()
             self.data_quality_framework = DataQualityFramework()
             self.advanced_metrics = AdvancedQualityMetrics()
             self.alert_system = QualityAlertSystem()
-            tprint_success("✅ Advanced quality components initialized")
+            self.tprint_success("✅ Advanced quality components initialized")
         else:
-            tprint_warning("⚠️ Quality components not available, using fallback validation")
+            self.tprint_warning("⚠️ Quality components not available, using fallback validation")
             self.logger.warning("⚠️ Quality components not available, using fallback validation")
             self.quality_scorer = None
             self.data_quality_framework = None
             self.advanced_metrics = None
             self.alert_system = None
         
-        tprint_success("🎉 FeatureGenerationDataValidationStep initialization complete")
+        self.tprint_success("🎉 FeatureGenerationDataValidationStep initialization complete")
 
     async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """Execute enhanced data validation step using comprehensive quality assessment."""
-        tprint_step("🚀 Starting enhanced data validation execution")
-        tprint_info("🔍 Starting enhanced data validation step with comprehensive quality assessment")
+        # Use BaseStep's comprehensive tprint utilities
+        self.tprint_step("🚀 Starting enhanced data validation execution")
+        self.tprint_info("🔍 Starting enhanced data validation step with comprehensive quality assessment")
 
         # Set context for enhanced file naming
         symbol = config.get('symbol', 'ETHUSDT')
@@ -258,11 +255,11 @@ class FeatureGenerationDataValidationStep(BaseStep):
         direction = config.get('direction', 'long')
         model = config.get('model', 'Analyst')
         
-        tprint_info(f"🎯 Validation parameters - Symbol: {symbol}, Exchange: {exchange}, Timeframe: {timeframe}")
-        tprint_info(f"🎯 Additional parameters - Direction: {direction}, Model: {model}")
+        self.tprint_info(f"🎯 Validation parameters - Symbol: {symbol}, Exchange: {exchange}, Timeframe: {timeframe}")
+        self.tprint_info(f"🎯 Additional parameters - Direction: {direction}, Model: {model}")
         
         self._set_context(symbol=symbol, exchange=exchange, direction=direction, model=model)
-        tprint_success("✅ Context set for enhanced file naming")
+        self.tprint_success("✅ Context set for enhanced file naming")
 
         # Extract parameters from config
         lookback_days = config.get('lookback_days')
@@ -287,7 +284,7 @@ class FeatureGenerationDataValidationStep(BaseStep):
                 self.logger.warning(f"   ⚠️ EMPTY DATASET: {data.shape} - This will cause quality assessment to fail!")
             
             # Enhanced data format analysis for faster troubleshooting
-            tprint_data_format(data, f"validation_input_data_{symbol}_{timeframe}", level="INFO")
+            self.tprint_data_format(data, f"validation_input_data_{symbol}_{timeframe}", level="INFO")
 
             # Use fallback validation for now to avoid complex dependencies
             return await self._fallback_validation(data, config)
@@ -340,7 +337,7 @@ class FeatureGenerationDataValidationStep(BaseStep):
             
             # Preview data in error state for debugging
             if self.enable_data_preview and 'data' in locals():
-                tprint_data_preview(data, "error_state_data", max_rows=3, level="ERROR")
+                self.tprint_data_preview(data, "error_state_data", max_rows=3, level="ERROR")
             
             return {
                 'success': False,
@@ -357,10 +354,10 @@ class FeatureGenerationDataValidationStep(BaseStep):
         try:
             # Preview data before quality assessment
             if self.enable_data_preview:
-                tprint_data_preview(data, f"quality_assessment_input_{symbol}_{timeframe}", max_rows=5, level="DEBUG")
+                self.tprint_data_preview(data, f"quality_assessment_input_{symbol}_{timeframe}", max_rows=5, level="DEBUG")
             
             # Enhanced data format analysis for comprehensive troubleshooting
-            tprint_data_format(data, f"comprehensive_validation_input_{symbol}_{timeframe}", level="DEBUG")
+            self.tprint_data_format(data, f"comprehensive_validation_input_{symbol}_{timeframe}", level="DEBUG")
             
             # Step 1: Basic data quality framework validation
             quality_thresholds = QualityThresholds(
@@ -498,11 +495,11 @@ class FeatureGenerationDataValidationStep(BaseStep):
             
             # Preview data before saving artifacts
             if self.enable_data_preview:
-                tprint_data_preview(data, "saved_validated_dataframe", max_rows=5, level="INFO")
-                tprint_data_preview(data, "saved_raw_dataframe", max_rows=5, level="INFO")
+                self.tprint_data_preview(data, "saved_validated_dataframe", max_rows=5, level="INFO")
+                self.tprint_data_preview(data, "saved_raw_dataframe", max_rows=5, level="INFO")
             
             # Enhanced data format analysis for artifact validation
-            tprint_data_format(data, "validated_dataframe_format", level="INFO")
+            self.tprint_data_format(data, "validated_dataframe_format", level="INFO")
             
             # Save artifacts using BaseStep methods
             self._save_dataframe(data.copy(), 'validated_dataframe')
@@ -584,10 +581,10 @@ class FeatureGenerationDataValidationStep(BaseStep):
             
             # Preview loaded data for debugging
             if self.enable_data_preview:
-                tprint_data_preview(data, f"loaded_klines_data_{symbol}_{timeframe}", max_rows=10, level="DEBUG")
+                self.tprint_data_preview(data, f"loaded_klines_data_{symbol}_{timeframe}", max_rows=10, level="DEBUG")
             
             # Enhanced data format analysis for loaded data troubleshooting
-            tprint_data_format(data, f"loaded_klines_format_{symbol}_{timeframe}", level="DEBUG")
+            self.tprint_data_format(data, f"loaded_klines_format_{symbol}_{timeframe}", level="DEBUG")
             
             # Apply dynamic date filtering based on actual data range
             if 'timestamp' in data.columns and len(data) > 0:
@@ -638,18 +635,18 @@ class FeatureGenerationDataValidationStep(BaseStep):
             
             # Preview filtered data for debugging
             if self.enable_data_preview:
-                tprint_data_preview(data, f"filtered_data_{symbol}_{timeframe}", max_rows=5, level="DEBUG")
+                self.tprint_data_preview(data, f"filtered_data_{symbol}_{timeframe}", max_rows=5, level="DEBUG")
             
             # Enhanced data format analysis for filtered data troubleshooting
-            tprint_data_format(data, f"filtered_data_format_{symbol}_{timeframe}", level="DEBUG")
+            self.tprint_data_format(data, f"filtered_data_format_{symbol}_{timeframe}", level="DEBUG")
             
             self.logger.info(f"✅ Loaded data: {len(data)} rows, {len(data.columns)} columns")
             
             # Preview loaded data for troubleshooting
-            tprint_data_preview(data, "loaded_validation_data", level="INFO")
+            self.tprint_data_preview(data, "loaded_validation_data", level="INFO")
             
             # Enhanced data format analysis for final loaded data
-            tprint_data_format(data, "final_loaded_validation_data", level="INFO")
+            self.tprint_data_format(data, "final_loaded_validation_data", level="INFO")
             return data
             
         except Exception as e:

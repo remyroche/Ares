@@ -20,7 +20,7 @@ from src.training.steps.base_step import BaseStep
 
 from src.utils.common_operations import safe_dataframe_operation
 from src.utils.matrix_operations import safe_matrix_multiply, optimize_dataframe
-from src.utils.tprint import tprint_success, tprint_warning, tprint_data_preview, tprint_data_format
+# Note: tprint utilities are now available through BaseStep's comprehensive tools
 
 
 
@@ -262,8 +262,9 @@ class FeatureGenerationFinalValidationStep(BaseStep):
 
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         """Initialize the enhanced final validation step."""
-        tprint_step("🔧 Initializing FeatureGenerationFinalValidationStep")
-        tprint_info(f"⚙️ Config provided: {config is not None}")
+        # Use BaseStep's comprehensive tprint utilities
+        self.tprint_step("🔧 Initializing FeatureGenerationFinalValidationStep")
+        self.tprint_info(f"⚙️ Config provided: {config is not None}")
         
         super().__init__("feature_generation_final_validation_step", config)
         
@@ -272,22 +273,22 @@ class FeatureGenerationFinalValidationStep(BaseStep):
         self.min_rows = config.get('min_rows', 100) if config else 100
         self.blocking_severities = config.get('blocking_severities', ['critical', 'blocker', 'error']) if config else ['critical', 'blocker', 'error']
         
-        tprint_info(f"🎯 Min validation score: {self.min_validation_score}")
-        tprint_info(f"📊 Min rows required: {self.min_rows}")
-        tprint_info(f"🚨 Blocking severities: {self.blocking_severities}")
+        self.tprint_info(f"🎯 Min validation score: {self.min_validation_score}")
+        self.tprint_info(f"📊 Min rows required: {self.min_rows}")
+        self.tprint_info(f"🚨 Blocking severities: {self.blocking_severities}")
         
         # Initialize validation components
-        tprint_debug("🔍 Checking validation components availability")
+        self.tprint_debug("🔍 Checking validation components availability")
         if VALIDATION_COMPONENTS_AVAILABLE:
-            tprint_success("✅ Advanced validation components available")
+            self.tprint_success("✅ Advanced validation components available")
             try:
                 # Initialize quality alert system
-                tprint_debug("🔧 Initializing QualityAlertSystem")
+                self.tprint_debug("🔧 Initializing QualityAlertSystem")
                 self.quality_alert_system = QualityAlertSystem()
-                tprint_success("✅ QualityAlertSystem initialized")
+                self.tprint_success("✅ QualityAlertSystem initialized")
                 
                 # Initialize comprehensive quality scorer
-                tprint_debug("🔧 Initializing ComprehensiveQualityScorer")
+                self.tprint_debug("🔧 Initializing ComprehensiveQualityScorer")
                 self.quality_scorer = ComprehensiveQualityScorer()
                 tprint_success("✅ ComprehensiveQualityScorer initialized")
                 

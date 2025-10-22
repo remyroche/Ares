@@ -47,32 +47,7 @@ except ImportError:
     def get_memory_stats(): return {}
 
 
-try:  # Logging helpers
-    from src.utils.tprint import (
-        tprint, tprint_info, tprint_success, tprint_warning, tprint_error, tprint_data_preview,
-        tprint_data_format, tprint_performance, tprint_timer, tprint_structured, tprint_exception,
-        tprint_progress, tprint_debug, tprint_with_level, LogLevel
-    )
-except Exception:  # pragma: no cover
-    def tprint(*args, **kwargs): print(*args, **kwargs)
-    def tprint_info(*args, **kwargs): print("INFO:", *args, **kwargs)
-    def tprint_success(*args, **kwargs): print("SUCCESS:", *args, **kwargs)
-    def tprint_warning(*args, **kwargs): print("WARNING:", *args, **kwargs)
-    def tprint_error(*args, **kwargs): print("ERROR:", *args, **kwargs)
-    def tprint_data_preview(*args, **kwargs): pass  # No-op fallback
-    def tprint_data_format(*args, **kwargs): pass  # No-op fallback
-    def tprint_performance(*args, **kwargs): pass  # No-op fallback
-    def tprint_timer(*args, **kwargs): pass  # No-op fallback
-    def tprint_structured(*args, **kwargs): pass  # No-op fallback
-    def tprint_exception(*args, **kwargs): pass  # No-op fallback
-    def tprint_progress(*args, **kwargs): pass  # No-op fallback
-    def tprint_debug(*args, **kwargs): pass  # No-op fallback
-    def tprint_with_level(*args, **kwargs): pass  # No-op fallback
-    class LogLevel:
-        DEBUG = "DEBUG"
-        INFO = "INFO"
-        WARNING = "WARNING"
-        ERROR = "ERROR"
+# Note: tprint utilities are now available through BaseStep's comprehensive tools
 
 
 from dataclasses import dataclass
@@ -90,7 +65,7 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
         super().__init__("feature_generation_labeling_integration_step", config)
         
         # Log step initialization for troubleshooting
-        tprint_structured({
+        self.tprint_structured({
             "step_initialization": {
                 "step_name": "feature_generation_labeling_integration_step",
                 "config_provided": config is not None,
@@ -98,7 +73,7 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
             }
         }, level=LogLevel.DEBUG)
         
-        tprint_info("🔧 Feature generation labeling integration step initialized")
+        self.tprint_info("🔧 Feature generation labeling integration step initialized")
 
 
     @memory_efficient_function
@@ -108,14 +83,14 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
         # Log memory stats at start for troubleshooting
         if HARDWARE_OPTIMIZATION_AVAILABLE:
             initial_memory = get_memory_stats()
-            tprint_structured({
+            self.tprint_structured({
                 "initial_memory_stats": initial_memory
             }, level=LogLevel.DEBUG)
         
         # Start performance timer
-        with tprint_timer("feature_generation_labeling_integration_step", LogLevel.INFO):
+        with self.tprint_timer("feature_generation_labeling_integration_step", LogLevel.INFO):
             self.logger.info("🔍 Starting labeling integration step")
-            tprint_info("🚀 Starting feature generation labeling integration step")
+            self.tprint_info("🚀 Starting feature generation labeling integration step")
             
             # Set context for enhanced file naming
             symbol = config.get('symbol', 'ETHUSDT')
@@ -124,7 +99,7 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
             model = config.get('model', 'Analyst')
             
             # Log configuration details for troubleshooting
-            tprint_structured({
+            self.tprint_structured({
                 "step": "feature_generation_labeling_integration_step",
                 "symbol": symbol,
                 "exchange": exchange,
@@ -138,8 +113,8 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
         # Get data from config
         data = config.get('data')
         if data is None or not isinstance(data, pd.DataFrame) or data.empty:
-            tprint_error("❌ Input data validation failed: data is None, not DataFrame, or empty")
-            tprint_structured({
+            self.tprint_error("❌ Input data validation failed: data is None, not DataFrame, or empty")
+            self.tprint_structured({
                 "data_type": type(data).__name__ if data is not None else "None",
                 "is_dataframe": isinstance(data, pd.DataFrame) if data is not None else False,
                 "is_empty": data.empty if hasattr(data, 'empty') else "N/A"
@@ -147,8 +122,8 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
             raise ValueError("Input data must be a non‑empty DataFrame")
         
         # Comprehensive data format analysis for troubleshooting
-        tprint_data_format(data, "input_data", level=LogLevel.INFO)
-        tprint_data_preview(data, "input_data", level=LogLevel.INFO)
+        self.tprint_data_format(data, "input_data", level=LogLevel.INFO)
+        self.tprint_data_preview(data, "input_data", level=LogLevel.INFO)
         
         # Log data characteristics for troubleshooting
         data_characteristics = {
@@ -171,21 +146,21 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
                     "numeric_stats": data[numeric_cols].describe().to_dict()
                 }
         except Exception as e:
-            tprint_debug(f"Could not compute numeric statistics: {e}")
+            self.tprint_debug(f"Could not compute numeric statistics: {e}")
         
-        tprint_structured(data_characteristics, level=LogLevel.DEBUG)
+        self.tprint_structured(data_characteristics, level=LogLevel.DEBUG)
 
         # Cache hit path using BaseStep artifact methods
-        tprint_debug("🔍 Checking for cached labeling artifacts...")
+        self.tprint_debug("🔍 Checking for cached labeling artifacts...")
         cached_labeled = self._load_dataframe('labeled_dataframe')
         cached_targets = self._load_dataframe('targets')
         
         if isinstance(cached_labeled, pd.DataFrame) and isinstance(cached_targets, pd.Series):
             # Comprehensive cache validation and preview
-            tprint_data_format(cached_labeled, "cached_labeled_data", level=LogLevel.INFO)
-            tprint_data_format(cached_targets, "cached_targets", level=LogLevel.INFO)
-            tprint_data_preview(cached_labeled, "cached_labeled_data", level=LogLevel.INFO)
-            tprint_data_preview(cached_targets, "cached_targets", level=LogLevel.INFO)
+            self.tprint_data_format(cached_labeled, "cached_labeled_data", level=LogLevel.INFO)
+            self.tprint_data_format(cached_targets, "cached_targets", level=LogLevel.INFO)
+            self.tprint_data_preview(cached_labeled, "cached_labeled_data", level=LogLevel.INFO)
+            self.tprint_data_preview(cached_targets, "cached_targets", level=LogLevel.INFO)
             
             # Validate cache quality
             cache_metrics = {
@@ -197,8 +172,8 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
                 'cache_hit': True
             }
             
-            tprint_structured(cache_metrics, level=LogLevel.INFO)
-            tprint_success("📦 Using cached labeling artifacts")
+            self.tprint_structured(cache_metrics, level=LogLevel.INFO)
+            self.tprint_success("📦 Using cached labeling artifacts")
             
             return {
                 'success': True,
@@ -209,7 +184,7 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
                 }
             }
         else:
-            tprint_info("🔄 No valid cache found, proceeding with fresh labeling...")
+            self.tprint_info("🔄 No valid cache found, proceeding with fresh labeling...")
 
         # Validate required columns with detailed troubleshooting
         required_cols = ['open', 'high', 'low', 'close']
@@ -224,7 +199,7 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
         
         if missing:
             tprint_error(f"❌ Missing required columns for labeling: {missing}")
-            tprint_structured({
+            self.tprint_structured({
                 "error_type": "missing_columns",
                 "missing_columns": missing,
                 "available_columns": list(data.columns)
@@ -250,7 +225,7 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
                 
                 if labels_df is None or labels_df.empty:
                     tprint_error("❌ Labeling produced no label columns")
-                    tprint_structured({
+                    self.tprint_structured({
                         "labeler_result_type": type(lr).__name__,
                         "labels_attribute_exists": hasattr(lr, 'labels'),
                         "labels_df_type": type(labels_df).__name__ if labels_df is not None else "None",
@@ -262,7 +237,7 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
                 tprint_data_format(labels_df, "raw_labels_from_labeler", level=LogLevel.DEBUG)
                 tprint_data_preview(labels_df, "raw_labels_from_labeler", level=LogLevel.DEBUG)
                 
-                tprint_structured({
+                self.tprint_structured({
                     "raw_labels_shape": labels_df.shape,
                     "raw_labels_columns": list(labels_df.columns),
                     "raw_labels_dtypes": labels_df.dtypes.to_dict()
@@ -276,7 +251,7 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
                 tprint_debug("📊 Processing single target series")
                 targets = labels_df.dropna().astype(float)
                 target_name = labels_df.name or 'target'
-                tprint_structured({
+                self.tprint_structured({
                     "target_type": "single_series",
                     "target_name": target_name,
                     "original_length": len(labels_df),
@@ -290,7 +265,7 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
                 targets = labels_df[target_col].dropna().astype(float)
                 target_name = target_col
                 
-                tprint_structured({
+                self.tprint_structured({
                     "target_type": "multiple_columns",
                     "available_target_cols": target_cols,
                     "selected_target_col": target_col,
@@ -309,7 +284,7 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
                 # Validate alignment results
                 if len(common_idx) == 0:
                     tprint_error("❌ No common index found between data and targets")
-                    tprint_structured({
+                    self.tprint_structured({
                         "data_index_type": type(data.index).__name__,
                         "data_index_sample": list(data.index[:5]) if len(data.index) > 0 else [],
                         "targets_index_type": type(targets.index).__name__,
@@ -322,7 +297,7 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
                 targets = targets.loc[common_idx]
                 labeled[target_name] = targets
                 
-                tprint_structured({
+                self.tprint_structured({
                     "data_original_length": len(data),
                     "targets_original_length": len(targets) if hasattr(targets, '__len__') else "N/A",
                     "common_index_length": len(common_idx),
@@ -351,7 +326,7 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
             
             if 'close' not in data.columns:
                 tprint_error("❌ Cannot create fallback targets: 'close' column missing")
-                tprint_structured({
+                self.tprint_structured({
                     "available_columns": list(data.columns),
                     "missing_close_column": True
                 }, level=LogLevel.ERROR)
@@ -368,7 +343,7 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
             tprint_data_preview(targets, "fallback_targets", level=LogLevel.WARNING)
             tprint_data_preview(labeled, "fallback_labeled_data", level=LogLevel.WARNING)
             
-            tprint_structured({
+            self.tprint_structured({
                 "fallback_method": "simple_returns",
                 "fallback_targets_length": len(targets),
                 "fallback_targets_variance": float(targets.var()),
@@ -380,7 +355,7 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
         
         try:
             # Comprehensive pre-save validation and preview
-            tprint_structured({
+            self.tprint_structured({
                 "artifacts_to_save": {
                     "labeled_dataframe": {
                         "type": type(labeled).__name__,
@@ -420,7 +395,7 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
             tprint_error(f"❌ Traceback: {traceback.format_exc()}")
             
             # Log detailed error information for troubleshooting
-            tprint_structured({
+            self.tprint_structured({
                 "error_type": "artifact_save_failure",
                 "error_message": str(e),
                 "artifacts_attempted": ['labeled_dataframe', 'targets', 'raw_dataframe'],
@@ -449,7 +424,7 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
         # Log final memory stats for troubleshooting
         if HARDWARE_OPTIMIZATION_AVAILABLE:
             final_memory = get_memory_stats()
-            tprint_structured({
+            self.tprint_structured({
                 "final_memory_stats": final_memory
             }, level=LogLevel.DEBUG)
             
@@ -458,7 +433,7 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
                 tprint_info("🧹 High memory usage detected, forcing cleanup...")
                 force_cleanup()
                 post_cleanup_memory = get_memory_stats()
-                tprint_structured({
+                self.tprint_structured({
                     "post_cleanup_memory_stats": post_cleanup_memory
                 }, level=LogLevel.DEBUG)
         

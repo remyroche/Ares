@@ -67,34 +67,7 @@ try:
 except ImportError:
     PSUTIL_AVAILABLE = False
 
-# Import tprint utilities
-try:
-    from src.utils.tprint import (
-        tprint, tprint_info, tprint_success, tprint_warning, tprint_error, tprint_debug,
-        tprint_data_preview, tprint_data_format, tprint_performance, tprint_progress,
-        tprint_structured, tprint_timer, tprint_exception, LogLevel
-    )
-except ImportError:
-    def tprint(*args, **kwargs): print(*args, **kwargs)
-    def tprint_info(*args, **kwargs): print("INFO:", *args, **kwargs)
-    def tprint_success(*args, **kwargs): print("SUCCESS:", *args, **kwargs)
-    def tprint_warning(*args, **kwargs): print("WARNING:", *args, **kwargs)
-    def tprint_error(*args, **kwargs): print("ERROR:", *args, **kwargs)
-    def tprint_debug(*args, **kwargs): print("DEBUG:", *args, **kwargs)
-    def tprint_data_preview(*args, **kwargs): pass  # No-op fallback
-    def tprint_data_format(*args, **kwargs): return None  # No-op fallback
-    def tprint_performance(*args, **kwargs): pass  # No-op fallback
-    def tprint_progress(*args, **kwargs): pass  # No-op fallback
-    def tprint_structured(*args, **kwargs): pass  # No-op fallback
-    def tprint_timer(*args, **kwargs): return lambda f: f  # No-op fallback
-    def tprint_exception(*args, **kwargs): pass  # No-op fallback
-    class LogLevel:
-        DEBUG = "DEBUG"
-        INFO = "INFO"
-        WARNING = "WARNING"
-        ERROR = "ERROR"
-        SUCCESS = "SUCCESS"
-        PERFORMANCE = "PERFORMANCE"
+# Note: tprint utilities are now available through BaseStep's comprehensive tools
 
 # Import artifact management functions
 from src.utils.artifact_manager import ArtifactManager
@@ -165,12 +138,12 @@ class FinalFeatureSelectionResult:
 def memory_managed_operation(operation_name: str = "operation"):
     """Context manager for memory-managed operations with enhanced hardware optimization."""
     try:
-        tprint_debug(f"🧠 Starting memory-managed operation: {operation_name}")
+        self.tprint_debug(f"🧠 Starting memory-managed operation: {operation_name}")
         yield
     finally:
         # Use enhanced memory cleanup
         force_cleanup()
-        tprint_debug(f"🧠 Completed memory-managed operation: {operation_name}, enhanced cleanup run")
+        self.tprint_debug(f"🧠 Completed memory-managed operation: {operation_name}, enhanced cleanup run")
 
 
 class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
@@ -188,12 +161,13 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
     
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         """Initialize the final feature selection step."""
-        tprint_info("🎯 Initializing FeatureGenerationFinalFeatureSelectionStep")
+        # Use BaseStep's comprehensive tprint utilities
+        self.tprint_info("🎯 Initializing FeatureGenerationFinalFeatureSelectionStep")
         
         super().__init__("feature_generation_final_feature_selection_step", config)
         
         # Initialize enhanced hardware optimization system
-        tprint_info("🚀 Initializing enhanced hardware optimization system")
+        self.tprint_info("🚀 Initializing enhanced hardware optimization system")
         self.hardware_manager = get_integrated_hardware_manager()
         self.comprehensive_optimizer = get_comprehensive_optimizer()
         
@@ -203,7 +177,7 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             OptimizationLevel.AGGRESSIVE
         )
         
-        tprint_success("✅ Enhanced hardware optimization system initialized")
+        self.tprint_success("✅ Enhanced hardware optimization system initialized")
         
         # Configuration
         self.chunk_size = 50000  # Row chunk size
@@ -270,7 +244,7 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             'hardware_optimizations_applied': 0
         }
         
-        tprint_success("✅ FeatureGenerationFinalFeatureSelectionStep initialized")
+        self.tprint_success("✅ FeatureGenerationFinalFeatureSelectionStep initialized")
     
     def _initialize_resources(self) -> bool:
         """Initialize component-specific resources."""
@@ -308,7 +282,7 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             memory_stats = get_memory_stats()
             
             # Enhanced troubleshooting: Log memory statistics
-            tprint_structured({
+            self.tprint_structured({
                 'operation': 'memory_check',
                 'operation_counter': self.operation_counter,
                 'gc_runs': self.performance_stats['gc_runs'],
@@ -318,11 +292,11 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             
             if memory_stats.get('used_memory', 0) > 4096:  # > 4GB
                 force_cleanup()
-                tprint_warning(f"⚠️ High memory usage: {memory_stats.get('used_memory', 0):.0f}MB, forcing full cleanup")
+                self.tprint_warning(f"⚠️ High memory usage: {memory_stats.get('used_memory', 0):.0f}MB, forcing full cleanup")
     
     def _convert_to_float32(self, df: pd.DataFrame) -> pd.DataFrame:
         """Convert DataFrame to float32 for memory efficiency using enhanced hardware tools."""
-        tprint_debug("🔄 Converting data to float32 with enhanced optimization")
+        self.tprint_debug("🔄 Converting data to float32 with enhanced optimization")
         
         # Use enhanced hardware optimization for dataframe conversion
         optimized_df = optimize_dataframe(df)
@@ -372,7 +346,7 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             'timestamp': datetime.now().isoformat()
         }, level=LogLevel.INFO)
         
-        tprint_info(f"🎯 Starting final feature selection for {model_type}_{direction}")
+        self.tprint_info(f"🎯 Starting final feature selection for {model_type}_{direction}")
         
         # Set up enhanced artifact manager with context
         context = get_step_context_from_config(config)
@@ -389,29 +363,29 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             artifact_manager = am
             
             # Load artifacts from previous steps
-            tprint_info("📦 Loading artifacts from previous steps")
-            with tprint_timer("artifact_loading", level=LogLevel.PERFORMANCE):
+            self.tprint_info("📦 Loading artifacts from previous steps")
+            with self.tprint_timer("artifact_loading", level=LogLevel.PERFORMANCE):
                 features_df, targets = await self._load_artifacts(artifact_manager, model_type, direction)
             
             if features_df is None or targets is None:
                 raise ValueError("Failed to load required artifacts from previous steps")
             
             # Enhanced troubleshooting: Data format analysis
-            tprint_data_format(features_df, "loaded_features", level=LogLevel.DEBUG)
-            tprint_data_format(targets, "loaded_targets", level=LogLevel.DEBUG)
+            self.tprint_data_format(features_df, "loaded_features", level=LogLevel.DEBUG)
+            self.tprint_data_format(targets, "loaded_targets", level=LogLevel.DEBUG)
             
             # Data preview after loading
-            tprint_data_preview(features_df, "loaded_features", max_rows=3, max_cols=10)
-            tprint_data_preview(targets, "loaded_targets", max_rows=10)
+            self.tprint_data_preview(features_df, "loaded_features", max_rows=3, max_cols=10)
+            self.tprint_data_preview(targets, "loaded_targets", max_rows=10)
             
             # Convert to float32 end-to-end with enhanced optimization
-            tprint_info("🔄 Converting data to float32 (end-to-end with enhanced optimization)")
-            with tprint_timer("float32_conversion", level=LogLevel.PERFORMANCE):
+            self.tprint_info("🔄 Converting data to float32 (end-to-end with enhanced optimization)")
+            with self.tprint_timer("float32_conversion", level=LogLevel.PERFORMANCE):
                 features_df = self._convert_to_float32(features_df)
                 targets = targets.astype('float32', copy=False)
             
             # Enhanced troubleshooting: Data format analysis after conversion
-            tprint_data_format(features_df, "features_float32_converted", level=LogLevel.DEBUG)
+            self.tprint_data_format(features_df, "features_float32_converted", level=LogLevel.DEBUG)
             tprint_data_format(targets, "targets_float32_converted", level=LogLevel.DEBUG)
             
             # Data preview after float32 conversion
@@ -593,7 +567,7 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             tprint_exception(e, "Final feature selection failed")
             
             # Enhanced troubleshooting: Log performance stats even on failure
-            tprint_structured({
+            self.tprint_structured({
                 'error': str(e),
                 'execution_time': execution_time,
                 'performance_stats': self.performance_stats,
@@ -619,7 +593,7 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
         """Load features and targets from previous steps."""
         try:
             # Enhanced troubleshooting: Log loading parameters
-            tprint_structured({
+            self.tprint_structured({
                 'operation': 'load_artifacts',
                 'model_type': model_type,
                 'direction': direction,
@@ -1471,7 +1445,7 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             step_name = f'feature_generation_final_feature_selection_step_{model_type}_{direction}'
             
             # Enhanced troubleshooting: Log saving parameters
-            tprint_structured({
+            self.tprint_structured({
                 'operation': 'save_artifacts',
                 'step_name': step_name,
                 'model_type': model_type,

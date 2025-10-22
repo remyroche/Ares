@@ -43,22 +43,7 @@ from src.utils.hardware import (
 )
 
 
-# Import tprint utilities
-try:
-    from src.utils.tprint import (
-        tprint, tprint_info, tprint_success, tprint_warning, tprint_error, tprint_debug,
-        tprint_data_preview, tprint_data_format
-    )
-    TPRINT_AVAILABLE = True
-except ImportError:
-    TPRINT_AVAILABLE = False
-    def tprint(*args, **kwargs): print("TPRINT:", *args, **kwargs)
-    def tprint_info(*args, **kwargs): print("INFO:", *args, **kwargs)
-    def tprint_success(*args, **kwargs): print("SUCCESS:", *args, **kwargs)
-    def tprint_warning(*args, **kwargs): print("WARNING:", *args, **kwargs)
-    def tprint_error(*args, **kwargs): print("ERROR:", *args, **kwargs)
-    def tprint_debug(*args, **kwargs): print("DEBUG:", *args, **kwargs)
-    def tprint_data_preview(*args, **kwargs): print("DATA_PREVIEW:", *args, **kwargs)
+# Note: tprint utilities are now available through BaseStep's comprehensive tools
 
 # Enhanced hardware-optimized feature selection components
 @dataclass
@@ -131,9 +116,9 @@ class OptimizedFeatureSelector:
     def select_features(self, features_df, targets, **kwargs):
         """Select features using hardware-optimized methods."""
         # Optimize input data
-        tprint_data_format(features_df, "hardware_selector_input", level="DEBUG")
+        self.tprint_data_format(features_df, "hardware_selector_input", level="DEBUG")
         features_df = optimize_dataframe_default(features_df)
-        tprint_data_format(features_df, "hardware_selector_optimized", level="DEBUG")
+        self.tprint_data_format(features_df, "hardware_selector_optimized", level="DEBUG")
         
         # Track memory usage
         memory_before = track_memory_usage()
@@ -185,9 +170,9 @@ class OptimizedMultiObjectiveSelector:
     def select_features(self, features_df, targets, **kwargs):
         """Select features using multi-objective optimization."""
         # Optimize input data
-        tprint_data_format(features_df, "multi_objective_selector_input", level="DEBUG")
+        self.tprint_data_format(features_df, "multi_objective_selector_input", level="DEBUG")
         features_df = optimize_dataframe_default(features_df)
-        tprint_data_format(features_df, "multi_objective_selector_optimized", level="DEBUG")
+        self.tprint_data_format(features_df, "multi_objective_selector_optimized", level="DEBUG")
         
         # Multi-objective scoring
         feature_scores = {}
@@ -245,9 +230,9 @@ class OptimizedEconomicEvaluator:
     def evaluate(self, features_df, **kwargs):
         """Evaluate economic performance with optimization."""
         # Optimize input data
-        tprint_data_format(features_df, "economic_evaluator_input", level="DEBUG")
+        self.tprint_data_format(features_df, "economic_evaluator_input", level="DEBUG")
         features_df = optimize_dataframe_default(features_df)
-        tprint_data_format(features_df, "economic_evaluator_optimized", level="DEBUG")
+        self.tprint_data_format(features_df, "economic_evaluator_optimized", level="DEBUG")
         
         # Simple economic metrics calculation
         try:
@@ -288,13 +273,13 @@ class OptimizedVectorBTOptimizer:
     def optimize(self, data, **kwargs):
         """Optimize using VectorBT with hardware optimization."""
         # Optimize input data
-        tprint_data_format(data, "vectorbt_optimizer_input", level="DEBUG")
+        self.tprint_data_format(data, "vectorbt_optimizer_input", level="DEBUG")
         data = optimize_dataframe_default(data)
-        tprint_data_format(data, "vectorbt_optimizer_optimized", level="DEBUG")
+        self.tprint_data_format(data, "vectorbt_optimizer_optimized", level="DEBUG")
         
         # Simple optimization - return optimized data
         result = data.copy()
-        tprint_data_format(result, "vectorbt_optimizer_output", level="DEBUG")
+        self.tprint_data_format(result, "vectorbt_optimizer_output", level="DEBUG")
         return result
 
 # Set availability flag
@@ -366,19 +351,20 @@ class FeatureGenerationFeatureSelectionStep(BaseStep):
 
     def __init__(self, step_name: str, config: Optional[Dict[str, Any]] = None):
         """Initialize the sophisticated feature selection step."""
-        tprint_info("🔧 [DEBUG] Initializing FeatureGenerationFeatureSelectionStep")
-        tprint_debug(f"🔧 [DEBUG] Config keys: {list(config.keys()) if config else 'None'}")
+        # Use BaseStep's comprehensive tprint utilities
+        self.tprint_info("🔧 [DEBUG] Initializing FeatureGenerationFeatureSelectionStep")
+        self.tprint_debug(f"🔧 [DEBUG] Config keys: {list(config.keys()) if config else 'None'}")
         
         super().__init__(step_name, config)
         
-        tprint_info("🔧 [DEBUG] Checking hardware-optimized components availability")
-        tprint_debug(f"🔧 [DEBUG] HARDWARE_OPTIMIZED_COMPONENTS_AVAILABLE: {HARDWARE_OPTIMIZED_COMPONENTS_AVAILABLE}")
+        self.tprint_info("🔧 [DEBUG] Checking hardware-optimized components availability")
+        self.tprint_debug(f"🔧 [DEBUG] HARDWARE_OPTIMIZED_COMPONENTS_AVAILABLE: {HARDWARE_OPTIMIZED_COMPONENTS_AVAILABLE}")
         
         # Initialize hardware-optimized feature selection components
         if HARDWARE_OPTIMIZED_COMPONENTS_AVAILABLE:
-            tprint_success("✅ [DEBUG] Hardware-optimized components available, initializing advanced selectors")
+            self.tprint_success("✅ [DEBUG] Hardware-optimized components available, initializing advanced selectors")
             # Initialize hardware-optimized feature selector with enhanced configuration
-            tprint_info("🔧 [DEBUG] Creating FeatureSelectionConfig with hardware optimization")
+            self.tprint_info("🔧 [DEBUG] Creating FeatureSelectionConfig with hardware optimization")
             self.feature_selection_config = FeatureSelectionConfig(
                 enable_multi_stage_selection=True,
                 enable_lightweight_screening=True,
@@ -390,11 +376,11 @@ class FeatureGenerationFeatureSelectionStep(BaseStep):
                 memory_threshold_mb=200.0,
                 cache_ttl=3600.0
             )
-            tprint_success("✅ [DEBUG] FeatureSelectionConfig created successfully")
-            tprint_debug(f"🔧 [DEBUG] Config - M1 optimization: {self.feature_selection_config.enable_m1_optimization}")
-            tprint_debug(f"🔧 [DEBUG] Config - Memory optimization: {self.feature_selection_config.enable_memory_optimization}")
-            tprint_debug(f"🔧 [DEBUG] Config - Caching: {self.feature_selection_config.enable_caching}")
-            tprint_info("⚡ [DEBUG] Hardware optimizations enabled:")
+            self.tprint_success("✅ [DEBUG] FeatureSelectionConfig created successfully")
+            self.tprint_debug(f"🔧 [DEBUG] Config - M1 optimization: {self.feature_selection_config.enable_m1_optimization}")
+            self.tprint_debug(f"🔧 [DEBUG] Config - Memory optimization: {self.feature_selection_config.enable_memory_optimization}")
+            self.tprint_debug(f"🔧 [DEBUG] Config - Caching: {self.feature_selection_config.enable_caching}")
+            self.tprint_info("⚡ [DEBUG] Hardware optimizations enabled:")
             tprint_debug(f"🔧 [DEBUG] - M1 optimization: {self.feature_selection_config.enable_m1_optimization}")
             tprint_debug(f"🔧 [DEBUG] - Memory optimization: {self.feature_selection_config.enable_memory_optimization}")
             tprint_debug(f"🔧 [DEBUG] - Memory threshold: {self.feature_selection_config.memory_threshold_mb}MB")
@@ -523,7 +509,7 @@ class FeatureGenerationFeatureSelectionStep(BaseStep):
         """Execute sophisticated feature selection step using hardware-optimized components with BaseStep integration."""
 
         self.logger.info("🎯 Starting sophisticated feature selection step with multi-objective optimization")
-        tprint_info("🔍 [DEBUG] Starting feature selection execution")
+        self.tprint_info("🔍 [DEBUG] Starting feature selection execution")
         
         # Set context for enhanced file naming
         symbol = config.get('symbol', 'ETHUSDT')
@@ -534,7 +520,7 @@ class FeatureGenerationFeatureSelectionStep(BaseStep):
         
         self._set_context(symbol=symbol, exchange=exchange, direction=direction, model=model)
         
-        tprint_debug(f"🔍 [DEBUG] Input parameters - symbol: {symbol}, timeframe: {timeframe}, direction: {direction}")
+        self.tprint_debug(f"🔍 [DEBUG] Input parameters - symbol: {symbol}, timeframe: {timeframe}, direction: {direction}")
 
         try:
             

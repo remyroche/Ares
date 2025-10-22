@@ -20,6 +20,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 import logging
 from datetime import datetime
+from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success, tprint_data_preview, tprint_data_format
 from sklearn.model_selection import TimeSeriesSplit
 from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier
@@ -49,14 +50,14 @@ try:
     BAYESIAN_OPTIMIZER_AVAILABLE = True
 except ImportError:
     BAYESIAN_OPTIMIZER_AVAILABLE = False
-    logging.warning("Bayesian TPE optimizer not available, will use grid search if needed")
+    tprint_warning("Bayesian TPE optimizer not available, will use grid search if needed")
 
 try:
     from src.utils.ml_common.optimization.pareto import ParetoOptimizer, ParetoFront, Solution
     PARETO_OPTIMIZER_AVAILABLE = True
 except ImportError:
     PARETO_OPTIMIZER_AVAILABLE = False
-    logging.warning("Pareto optimizer not available, will fallback to simple ranking")
+    tprint_warning("Pareto optimizer not available, will fallback to simple ranking")
 
 # Import cross-validation utilities
 try:
@@ -64,7 +65,7 @@ try:
     CV_UTILITIES_AVAILABLE = True
 except ImportError:
     CV_UTILITIES_AVAILABLE = False
-    logging.warning("CV utilities not available")
+    tprint_warning("CV utilities not available")
 
 # Import OOF stacking utilities
 try:
@@ -72,7 +73,7 @@ try:
     OOF_AVAILABLE = True
 except ImportError:
     OOF_AVAILABLE = False
-    logging.warning("OOF stacking not available")
+    tprint_warning("OOF stacking not available")
 
 
 class QualityMetric(Enum):

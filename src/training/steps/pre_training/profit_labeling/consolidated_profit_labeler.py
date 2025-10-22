@@ -35,6 +35,7 @@ from src.training.steps.base_step import BaseStep
 
 # Core utilities
 from src.utils.logger import get_logger
+from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success, tprint_data_preview, tprint_data_format
 from src.utils.math_validation import safe_divide, validate_finite
 from src.core.decorators import handles_errors, traced, validates
 
@@ -309,10 +310,10 @@ class ConsolidatedProfitLabeler(BaseStep):
         }
 
         self.tprint("🔧 Initialized Consolidated Profit Labeler with Enhanced Utilities")
-        self.logger.info(f"📊 Config: {len(self.config.target_bands)} target bands, "
-                        f"RV window: {self.config.rv_window_minutes}min, "
-                        f"Enhanced features: {self.config.enable_enhanced_data_cleaning}")
-        self.logger.info(f"🚀 Enhanced utilities: Vectorization, TPE Optimization, Hardware acceleration")
+        tprint_info(f"📊 Config: {len(self.config.target_bands)} target bands, "
+                   f"RV window: {self.config.rv_window_minutes}min, "
+                   f"Enhanced features: {self.config.enable_enhanced_data_cleaning}")
+        tprint_info(f"🚀 Enhanced utilities: Vectorization, TPE Optimization, Hardware acceleration")
     
     async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -517,9 +518,10 @@ class ConsolidatedProfitLabeler(BaseStep):
                 cached_data = safe_deserialize(cache_path)
                 if cached_data and isinstance(cached_data, dict):
                     # Reconstruct LabelingResult from cached data
+                    tprint_data_preview(cached_data, "cached_labeling_result")
                     return LabelingResult(**cached_data)
         except Exception as e:
-            self.logger.warning(f"⚠️ Failed to load cached result: {e}")
+            tprint_warning(f"⚠️ Failed to load cached result: {e}")
         return None
 
     def _cache_result(self, cache_key: str, result: LabelingResult) -> None:
@@ -542,11 +544,12 @@ class ConsolidatedProfitLabeler(BaseStep):
                 'timestamp': result.timestamp
             }
             
+            tprint_data_format(result_dict, "labeling_result_cache")
             safe_serialize(result_dict, cache_path, format='pickle')
-            self.tprint_info(f"💾 Cached result: {cache_path}")
+            tprint_info(f"💾 Cached result: {cache_path}")
             
         except Exception as e:
-            self.logger.warning(f"⚠️ Failed to cache result: {e}")
+            tprint_warning(f"⚠️ Failed to cache result: {e}")
 
     def _save_dataframe_enhanced(self, df: pd.DataFrame, name: str) -> Optional[str]:
         """Save DataFrame using enhanced serialization."""
@@ -574,7 +577,7 @@ class ConsolidatedProfitLabeler(BaseStep):
             return self._save_dataframe(df, name)
             
         except Exception as e:
-            self.logger.warning(f"⚠️ Enhanced DataFrame save failed: {e}")
+            tprint_warning(f"⚠️ Enhanced DataFrame save failed: {e}")
             return self._save_dataframe(df, name)
 
     def _save_metadata_enhanced(self, metadata: Dict[str, Any], name: str) -> Optional[str]:
@@ -595,7 +598,7 @@ class ConsolidatedProfitLabeler(BaseStep):
                 return self._save_metadata(metadata, name)
                 
         except Exception as e:
-            self.logger.warning(f"⚠️ Enhanced metadata save failed: {e}")
+            tprint_warning(f"⚠️ Enhanced metadata save failed: {e}")
             return self._save_metadata(metadata, name)
 
     def generate_labels(self, data: pd.DataFrame) -> LabelingResult:
@@ -609,6 +612,7 @@ class ConsolidatedProfitLabeler(BaseStep):
             LabelingResult with comprehensive labeling data
         """
         start_time = datetime.now()
+        tprint_data_preview(data, "input_data")
         self.tprint("🚀 Starting consolidated profit labeling...")
 
         if len(data) < self.config.min_bars_for_labeling:
@@ -701,8 +705,10 @@ class ConsolidatedProfitLabeler(BaseStep):
         )
 
         self.tprint("✅ Consolidated labeling completed")
-        self.logger.info(f"📊 Generated labels for {len(optimal_configs)} targets")
-        self.logger.info(f"📊 Overall quality score: {overall_quality_score:.3f}")
+        tprint_info(f"📊 Generated labels for {len(optimal_configs)} targets")
+        tprint_info(f"📊 Overall quality score: {overall_quality_score:.3f}")
+        tprint_data_preview(result.labels, "final_labeled_data")
+        tprint_data_format(result, "final_labeling_result")
 
         return result
 
@@ -784,10 +790,10 @@ class ConsolidatedProfitLabeler(BaseStep):
                 self.tprint("✅ Enhanced data cleaning applied")
                 return cleaned_data
             else:
-                self.logger.warning(f"⚠️ Enhanced data cleaning failed: {result.get('error', 'Unknown error')}")
+                tprint_warning(f"⚠️ Enhanced data cleaning failed: {result.get('error', 'Unknown error')}")
                 return data
         except Exception as e:
-            self.logger.warning(f"⚠️ Enhanced data cleaning failed: {e}")
+            tprint_warning(f"⚠️ Enhanced data cleaning failed: {e}")
             return data
 
     def _apply_enhanced_stability_monitoring(self, labeled_data: pd.DataFrame, 
@@ -807,10 +813,10 @@ class ConsolidatedProfitLabeler(BaseStep):
                 self.tprint("✅ Enhanced stability monitoring applied")
                 return stability_results
             else:
-                self.logger.warning(f"⚠️ Enhanced stability monitoring failed: {result.get('error', 'Unknown error')}")
+                tprint_warning(f"⚠️ Enhanced stability monitoring failed: {result.get('error', 'Unknown error')}")
                 return {}
         except Exception as e:
-            self.logger.warning(f"⚠️ Enhanced stability monitoring failed: {e}")
+            tprint_warning(f"⚠️ Enhanced stability monitoring failed: {e}")
             return {}
 
     def _compute_volatility_series(self, data: pd.DataFrame) -> pd.Series:
@@ -1040,7 +1046,7 @@ class ConsolidatedProfitLabeler(BaseStep):
                     )
                     return quality_metrics.label_quality_score
                 except Exception as e:
-                    self.logger.warning(f"⚠️ TPE trial failed: {e}")
+                    tprint_warning(f"⚠️ TPE trial failed: {e}")
                     return 0.0
 
             # Run TPE optimization
@@ -1073,7 +1079,7 @@ class ConsolidatedProfitLabeler(BaseStep):
                     raise ValueError("TPE optimization failed")
                     
             except Exception as e:
-                self.logger.warning(f"⚠️ TPE optimization failed for {target_name}: {e}")
+                tprint_warning(f"⚠️ TPE optimization failed for {target_name}: {e}")
                 # Fallback to grid search
                 best_config = self._fallback_grid_search(
                     data, volatility, noise_gates, target_name, k_min, k_max
@@ -1599,7 +1605,7 @@ class ConsolidatedProfitLabeler(BaseStep):
             return peaks_series, troughs_series
             
         except Exception as e:
-            self.logger.warning(f"⚠️ Peak/trough detection failed: {e}")
+            tprint_warning(f"⚠️ Peak/trough detection failed: {e}")
             return pd.Series(0, index=data.index), pd.Series(0, index=data.index)
 
     def _find_local_extrema_in_window(self, data: pd.DataFrame, start_idx: int, end_idx: int, 
@@ -1637,7 +1643,7 @@ class ConsolidatedProfitLabeler(BaseStep):
             return peak_idx, trough_idx
             
         except Exception as e:
-            self.logger.warning(f"⚠️ Local extrema detection in window failed: {e}")
+            tprint_warning(f"⚠️ Local extrema detection in window failed: {e}")
             return None, None
 
     def _detect_opportunity_patterns(self, data: pd.DataFrame, i: int, horizon: int) -> Dict[str, Any]:
@@ -1709,7 +1715,7 @@ class ConsolidatedProfitLabeler(BaseStep):
             return patterns
             
         except Exception as e:
-            self.logger.warning(f"⚠️ Opportunity pattern detection failed: {e}")
+            tprint_warning(f"⚠️ Opportunity pattern detection failed: {e}")
             return {'has_opportunity': False}
 
     def _compute_label_quality(
@@ -1726,7 +1732,7 @@ class ConsolidatedProfitLabeler(BaseStep):
         valid_labels = labels[labels['target'] != 0].copy()
 
         if len(valid_labels) < 100:
-            self.logger.warning(f"⚠️ Insufficient labels for quality evaluation: {len(valid_labels)}")
+            tprint_warning(f"⚠️ Insufficient labels for quality evaluation: {len(valid_labels)}")
             return metrics
 
         # 1. Balance metrics
@@ -1806,7 +1812,7 @@ class ConsolidatedProfitLabeler(BaseStep):
                     metrics.pr_auc_std = np.std(pr_scores)
 
         except Exception as e:
-            self.logger.warning(f"⚠️ Failed to compute enhanced predictability metrics: {e}")
+            tprint_warning(f"⚠️ Failed to compute enhanced predictability metrics: {e}")
 
         # 3. Enhanced stability metrics using statistical tests
         if len(valid_labels) > 200:
@@ -1852,7 +1858,7 @@ class ConsolidatedProfitLabeler(BaseStep):
                 metrics.psi_score = min(psi_score, 1.0)  # Cap at 1.0
                 
             except Exception as e:
-                self.logger.warning(f"⚠️ Failed to compute enhanced stability metrics: {e}")
+                tprint_warning(f"⚠️ Failed to compute enhanced stability metrics: {e}")
 
         # 4. Enhanced flip rate with temporal analysis
         try:
@@ -1870,7 +1876,7 @@ class ConsolidatedProfitLabeler(BaseStep):
             metrics.flip_rate = np.mean(flip_rates)
             
         except Exception as e:
-            self.logger.warning(f"⚠️ Failed to compute enhanced flip rate: {e}")
+            tprint_warning(f"⚠️ Failed to compute enhanced flip rate: {e}")
 
         # 5. Enhanced SNR using mutual information
         try:
@@ -1887,7 +1893,7 @@ class ConsolidatedProfitLabeler(BaseStep):
                 metrics.feature_ic_mean = np.mean(mi_scores) if len(mi_scores) > 0 else 0.0
                 
         except Exception as e:
-            self.logger.warning(f"⚠️ Failed to compute enhanced SNR metrics: {e}")
+            tprint_warning(f"⚠️ Failed to compute enhanced SNR metrics: {e}")
 
         # 6. Enhanced composite Label Quality Score (LQS)
         weights = self.config.lqs_weights
@@ -1992,7 +1998,7 @@ class ConsolidatedProfitLabeler(BaseStep):
                 return pd.DataFrame()
                 
         except Exception as e:
-            self.logger.warning(f"⚠️ Failed to create enhanced features: {e}")
+            tprint_warning(f"⚠️ Failed to create enhanced features: {e}")
             return pd.DataFrame()
 
     def _calculate_overall_quality_score(self, quality_metrics: Dict[str, LabelQualityMetrics]) -> float:
@@ -2076,7 +2082,7 @@ MultiHorizonConfig = ConsolidatedLabelerConfig
 # Test function
 if __name__ == '__main__':
     # Simple test
-    print('🧪 Testing Consolidated Profit Labeler')
+    tprint('🧪 Testing Consolidated Profit Labeler')
 
     # Create test data
     dates = pd.date_range('2024-01-01', periods=1000, freq='5min')
@@ -2102,19 +2108,19 @@ if __name__ == '__main__':
     }, index=dates)
 
     # Test labeling
-    print('\n🔍 Testing consolidated labeling...')
+    tprint('\n🔍 Testing consolidated labeling...')
     config = ConsolidatedLabelerConfig()
     labeled_data, report = apply_consolidated_labeling(data, config)
 
-    print(f'✅ Labeling completed:')
-    print(f'   → Input shape: {data.shape}')
-    print(f'   → Output shape: {labeled_data.shape}')
+    tprint(f'✅ Labeling completed:')
+    tprint(f'   → Input shape: {data.shape}')
+    tprint(f'   → Output shape: {labeled_data.shape}')
 
     # Show sample quality metrics
     if report and 'quality_metrics' in report:
-        print(f'\n📊 Quality Report Summary:')
+        tprint(f'\n📊 Quality Report Summary:')
         for target, metrics in report['quality_metrics'].items():
-            print(f'   → {target}: LQS={metrics.get("label_quality_score", 0):.3f}, '
+            tprint(f'   → {target}: LQS={metrics.get("label_quality_score", 0):.3f}, '
                    f'AUC={metrics.get("auc_mean", 0):.3f}±{metrics.get("auc_std", 0):.3f}')
 
-    print('✅ Consolidated Profit Labeler test completed!')
+    tprint('✅ Consolidated Profit Labeler test completed!')

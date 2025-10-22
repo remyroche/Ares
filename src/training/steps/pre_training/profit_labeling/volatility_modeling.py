@@ -554,7 +554,7 @@ class VolatilityModeler:
                         y = y_all.iloc[-self.config.combo_lookback:]
                         w = self._fit_simplex_pg(X.to_numpy(), y.to_numpy())
                 except Exception as e:
-                    self.logger.warning(f"⚠️ TPE optimization failed: {e}")
+                    tprint_warning(f"⚠️ TPE optimization failed: {e}")
                     # Fallback to original method
                     X = X_all.iloc[-self.config.combo_lookback:, :]
                     y = y_all.iloc[-self.config.combo_lookback:]

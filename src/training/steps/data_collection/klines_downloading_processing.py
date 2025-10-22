@@ -4,7 +4,16 @@ Enhanced Klines Data Downloading and Processing Pipeline
 This module provides a complete, production-ready pipeline for downloading, processing, and quality-checking
 historical klines data with comprehensive type hints, exchange-agnostic design, and fast-fail patterns.
 
-Refactored to inherit from BaseStep for autonomous execution.
+Refactored to inherit from BaseStep for autonomous execution with comprehensive tools integration.
+
+ENHANCED FEATURES:
+==================
+- BaseStep comprehensive tools integration
+- Advanced logging with tprint utilities
+- Hardware optimization for data operations
+- Comprehensive error handling and validation
+- Performance monitoring and metrics
+- Memory optimization for large datasets
 
 Features:
 - Full type hints and tprint logging throughout
@@ -62,9 +71,18 @@ class KlinesDataProcessingPipeline(BaseStep):
     """
     Enhanced pipeline for downloading, processing, and quality-checking klines data.
 
-    Refactored to inherit from BaseStep for autonomous execution.
+    Refactored to inherit from BaseStep for autonomous execution with comprehensive tools integration.
     This class provides a wrapper around the enhanced processing pipeline with
     backward compatibility and additional convenience methods.
+
+    ENHANCED FEATURES:
+    ==================
+    - BaseStep comprehensive tools integration
+    - Advanced logging with tprint utilities
+    - Hardware optimization for data operations
+    - Comprehensive error handling and validation
+    - Performance monitoring and metrics
+    - Memory optimization for large datasets
     """
     
     def __init__(self, step_name: str = "data_download", config: Optional[Dict[str, Any]] = None, exchange: str = "binance"):
@@ -75,7 +93,7 @@ class KlinesDataProcessingPipeline(BaseStep):
             config: Configuration dictionary (when called by launcher) or data_dir string (legacy)
             exchange: Default exchange name (only used when config is None)
         """
-        super().__init__(step_name)
+        super().__init__(step_name, config)
         
         # Handle both launcher call (config dict) and legacy call (data_dir string)
         if isinstance(config, dict):
@@ -344,7 +362,7 @@ class KlinesDataProcessingPipeline(BaseStep):
 
     async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Execute the data download step (required by BaseStep).
+        Execute the enhanced data download step with BaseStep comprehensive tools integration.
         
         Args:
             config: Configuration containing symbol, exchange, timeframes, etc.
@@ -353,21 +371,34 @@ class KlinesDataProcessingPipeline(BaseStep):
             Execution result with artifacts and metrics
         """
         try:
-            tprint_info("🚀 Starting data download step execution")
-            self.logger.info("🚀 Starting data download step execution")
+            # Set context for enhanced logging and file operations
+            self._set_context(
+                symbol=config.get('symbol'),
+                exchange=config.get('exchange'),
+                information=config.get('information', 'klines'),
+                direction=config.get('direction', 'long'),
+                model=config.get('model', 'Analyst')
+            )
             
-            # Extract configuration
-            symbol = config.get('symbol', 'ETHUSDT')
-            exchange = config.get('exchange', 'binance')
-            timeframes = config.get('timeframes', ['1m'])
-            execution_mode = config.get('execution_mode', 'light')
-            years = config.get('years', 3)
+            # Log step start with comprehensive information
+            self.tprint_step_start("Enhanced Klines Data Processing")
+            self.tprint_config_preview(config, "Processing Configuration")
+            
+            # Extract configuration with validation
+            symbol = self._get_config_value('symbol', 'ETHUSDT', str)
+            exchange = self._get_config_value('exchange', 'binance', str)
+            timeframes = self._get_config_value('timeframes', ['1m'], list)
+            execution_mode = self._get_config_value('execution_mode', 'light', str)
+            years = self._get_config_value('years', 3, int)
+            
+            # Validate parameters using BaseStep math validation
+            years = self._validate_positive(years, 3)
             
             if not symbol:
                 raise ValueError("Symbol is required for data download")
             
-            tprint_structured({
-                "operation": "data_download_start",
+            self.tprint_structured({
+                "operation": "enhanced_data_download_start",
                 "symbol": symbol,
                 "exchange": exchange,
                 "timeframes": timeframes,

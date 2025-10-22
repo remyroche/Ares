@@ -3,14 +3,25 @@ from src.utils.tprint import tprint
 from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 from src.utils.logger import system_logger
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+from src.training.steps.base_step import BaseStep
 
 """
 Enhanced Data Validation Framework for Data Collection
 
-This module provides comprehensive validation during data collection for:
+This module provides comprehensive validation during data collection with BaseStep 
+comprehensive tools integration for:
 - Klines data (PRIMARY - per new setup)
 - Aggtrades data (DEPRECATED - not used in new klines-only setup)
 - Futures data (DEPRECATED - not used in new klines-only setup)
+
+ENHANCED FEATURES:
+==================
+- BaseStep comprehensive tools integration
+- Advanced logging with tprint utilities
+- Hardware optimization for validation operations
+- Comprehensive error handling and validation
+- Performance monitoring and metrics
+- Memory optimization for large datasets
 
 NOTE: Per new setup, only klines data validation is actively used.
 
@@ -80,6 +91,180 @@ import pandas as pd
 import logging
 
 logger = system_logger.getChild('EnhancedDataValidation')
+
+
+class EnhancedDataValidationFramework(BaseStep):
+    """
+    Enhanced data validation framework with BaseStep comprehensive tools integration.
+    
+    This class provides:
+    - Direct access to all BaseStep comprehensive tools
+    - Advanced logging with tprint utilities
+    - Hardware optimization for validation operations
+    - Comprehensive error handling and validation
+    - Performance monitoring and metrics
+    - Memory optimization for large datasets
+    """
+    
+    def __init__(self, step_name: str = "enhanced_data_validation", config: Optional[Dict[str, Any]] = None):
+        super().__init__(step_name, config)
+        self.validation_stats = {
+            'total_validations': 0,
+            'successful_validations': 0,
+            'failed_validations': 0,
+            'critical_errors': 0,
+            'warnings': 0
+        }
+        self.tprint_success("✅ Enhanced Data Validation Framework initialized with BaseStep tools")
+    
+    async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Execute the enhanced data validation process using BaseStep tools.
+        
+        Args:
+            config: Configuration containing validation parameters
+            
+        Returns:
+            Dictionary with validation status and results
+        """
+        try:
+            # Set context for enhanced logging and file operations
+            self._set_context(
+                symbol=config.get('symbol'),
+                exchange=config.get('exchange'),
+                information=config.get('information', 'klines'),
+                direction=config.get('direction', 'long'),
+                model=config.get('model', 'Analyst')
+            )
+            
+            # Log step start with comprehensive information
+            self.tprint_step_start("Enhanced Data Validation")
+            self.tprint_config_preview(config, "Validation Configuration")
+            
+            # Extract parameters with validation
+            data = self._get_config_value('data', expected_type=(list, dict, pd.DataFrame))
+            data_type = self._get_config_value('data_type', 'klines', str)
+            validation_level = self._get_config_value('validation_level', 'comprehensive', str)
+            
+            self.tprint_info(f"🔍 Starting enhanced validation for {data_type} data")
+            self.tprint_info(f"📊 Validation level: {validation_level}")
+            
+            # Perform comprehensive validation
+            validation_result = await self._enhanced_validate_data(
+                data, data_type, validation_level
+            )
+            
+            if validation_result['valid']:
+                # Use BaseStep data quality tools for additional validation
+                if self.data_quality and hasattr(data, 'shape'):
+                    quality_result = self._get_data_cleaner().assess_quality(data)
+                    self.tprint_validation_result(quality_result, "Additional Quality Assessment")
+                
+                # Use BaseStep hardware optimization if available
+                if self.hardware_utils and 'optimize_dataframe' in self.hardware_utils and hasattr(data, 'shape'):
+                    optimized_data = self.hardware_utils['optimize_dataframe'](data)
+                    self.tprint_info("🔧 Applied hardware optimization to validated data")
+                
+                # Store validation results using BaseStep artifact management
+                artifact_path = self._save_metadata(
+                    validation_result, 
+                    f"validation_results_{data_type}"
+                )
+                
+                # Log performance metrics
+                performance_metrics = self._get_performance_metrics()
+                self.tprint_performance_summary(performance_metrics)
+                
+                # Log step completion
+                self.tprint_step_end("Enhanced Data Validation", True, performance_metrics.get('execution_time', 0))
+                
+                return {
+                    'success': True,
+                    'valid': True,
+                    'validation_result': validation_result,
+                    'artifacts': [artifact_path],
+                    'metrics': performance_metrics
+                }
+            else:
+                error_msg = f"Validation failed: {validation_result.get('error', 'Unknown error')}"
+                self.tprint_error(f"❌ {error_msg}")
+                return {
+                    'success': False,
+                    'valid': False,
+                    'validation_result': validation_result,
+                    'artifacts': [],
+                    'metrics': {}
+                }
+                
+        except Exception as e:
+            self.tprint_error(f"❌ Unexpected error in enhanced validation: {e}")
+            self._log_error_with_context(e, "enhanced_data_validation")
+            return {
+                'success': False,
+                'valid': False,
+                'validation_result': {'error': str(e)},
+                'artifacts': [],
+                'metrics': {}
+            }
+    
+    async def _enhanced_validate_data(
+        self, 
+        data: Any, 
+        data_type: str, 
+        validation_level: str
+    ) -> Dict[str, Any]:
+        """
+        Enhanced data validation with BaseStep comprehensive tools integration.
+        
+        Args:
+            data: Data to validate
+            data_type: Type of data being validated
+            validation_level: Level of validation to perform
+            
+        Returns:
+            Dictionary with validation results
+        """
+        try:
+            self.tprint_operation_start(f"Validating {data_type} data")
+            
+            # Use BaseStep safe operations for data validation
+            if hasattr(data, 'shape'):
+                if not self._validate_dataframe_columns(data, []):  # Basic validation
+                    raise ValueError("Invalid data format")
+            
+            # Perform comprehensive validation using the original framework
+            validation_result = self._original_validate_data(data, data_type, validation_level)
+            
+            # Use BaseStep data quality tools for additional validation
+            if self.data_quality and hasattr(data, 'shape'):
+                quality_result = self._get_data_cleaner().assess_quality(data)
+                validation_result['quality_assessment'] = quality_result
+            
+            self.tprint_validation_result(validation_result, f"Validation results for {data_type}")
+            self.tprint_operation_end(f"Validation completed for {data_type} data")
+            
+            return validation_result
+                
+        except Exception as e:
+            error_msg = f"Validation exception: {e}"
+            self.tprint_error(f"❌ {error_msg}")
+            return {
+                'valid': False,
+                'error': error_msg,
+                'quality_score': 0.0,
+                'issues': [error_msg],
+                'warnings': []
+            }
+    
+    def _original_validate_data(self, data: Any, data_type: str, validation_level: str) -> Dict[str, Any]:
+        """
+        Original validation method for backward compatibility.
+        This method delegates to the existing validation framework.
+        """
+        # Create a legacy validator instance for the actual validation
+        legacy_validator = DataValidationFramework()
+        return legacy_validator.validate_data(data, data_type, validation_level)
+
 
 class DataType(Enum):
     """Supported data types for validation."""

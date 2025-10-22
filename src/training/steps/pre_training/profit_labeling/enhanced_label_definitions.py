@@ -468,6 +468,11 @@ class DataCleaningConfig:
 
     # Outlier detection (winsorization instead of deletion)
     outlier_method: str = "rolling_iqr"  # "rolling_iqr", "robust_zscore", "winsorize"
+      
+    # Enable cleaning flag
+    enable_cleaning: bool = True
+
+    # Outlier detection
     outlier_threshold: float = 3.0
     winsorize_limits: Tuple[float, float] = (0.05, 0.05)  # 5% winsorization
     rolling_window: int = 20  # Rolling window for outlier detection
@@ -1325,6 +1330,36 @@ class EnhancedLabelDefinitions:
         if self.cleaning_config.enforce_timestamp_alignment:
             cleaned, gap_mask = self._align_timestamps_with_gaps(cleaned)
             masks.gap_mask = gap_mask
+            
+    def _calculate_expected_returns(self, market_data: pd.DataFrame, horizon_minutes: int) -> pd.Series:
+        """Calculate expected returns over horizon using data-driven approach."""
+        returns = market_data['close'].pct_change()
+        
+        # Calculate multiple return signals
+        horizon_bars = max(1, horizon_minutes // 15)  # Assuming 15m bars
+        
+        # Momentum signal (short-term)
+        momentum_returns = returns.rolling(window=5).mean()
+        
+        # Mean reversion signal (medium-term)
+        mean_reversion_returns = -returns.rolling(window=20).mean()
+        
+        # Volatility-adjusted returns
+        volatility = returns.rolling(window=20).std()
+        vol_adjusted_returns = returns / (volatility + 1e-8)
+        
+        # Combine signals with learned weights (simplified approach)
+        # In practice, these weights would be learned from historical performance
+        combined_returns = (
+            0.4 * momentum_returns +
+            0.3 * mean_reversion_returns +
+            0.3 * vol_adjusted_returns
+        )
+        
+        # Apply horizon shift
+        expected_returns = combined_returns.shift(-horizon_bars)
+        
+        return expected_returns.fillna(0)
 
         # 5. Deduplication (still remove duplicates as they're data errors)
         if self.cleaning_config.enable_deduplication:

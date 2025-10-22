@@ -99,9 +99,18 @@ The klines manager is automatically configured with:
 import os
 import logging
 from abc import ABC, abstractmethod
-from typing import Dict, Any, Optional, Union, List, TypeVar, Generic, Protocol, runtime_checkable, Literal, Final, ClassVar, cast, overload, Callable, Type, Tuple, Set, FrozenSet, Mapping, MutableMapping, Sequence, MutableSequence, Iterable, Iterator, Generator, Awaitable, Coroutine, AnyStr, Text, BinaryIO, IO, Union, Optional, Any, Dict, List, Tuple, Set, FrozenSet, Mapping, MutableMapping, Sequence, MutableSequence, Iterable, Iterator, Generator, Awaitable, Coroutine, AnyStr, Text, BinaryIO, IO
+from typing import Dict, Any, Optional, Union, List, TypeVar, Generic, Protocol, runtime_checkable, Literal, Final, ClassVar, cast, overload, Callable, Type, Tuple, Set, FrozenSet, Mapping, MutableMapping, Sequence, MutableSequence, Iterable, Iterator, Generator, Awaitable, Coroutine, AnyStr, Text, BinaryIO, IO
 from datetime import datetime
 import traceback
+
+# Import our custom types
+from .types import (
+    StepConfig, ExecutionResult, ValidationResult, MetricsDict, MetadataDict,
+    DataFrameType, SeriesType, PathType, ExecutionMode, SignalType, ModelType, DirectionType,
+    TrainingStepError, ValidationError, DataLoadError, ModelTrainingError, 
+    ConfigurationError, ArtifactError, validate_config, create_error_result, create_success_result,
+    is_dataframe, is_series, is_valid_config, is_execution_result
+)
 
 from src.utils.artifact_manager import ArtifactManager, ArtifactMetadata, OperationMetrics, CacheEntry, CompressionType, OperationType, RetryStrategy, RetryConfig, MemoryConfig
 from src.utils.hardware.unified_hardware_manager import WorkloadType
@@ -440,7 +449,7 @@ class BaseStep(ABC):
     klines_manager: Optional[Any]
     
     @memory_optimized(optimization_level='balanced')
-    def __init__(self, step_name: str, config: Optional[Dict[str, Any]] = None) -> None:
+    def __init__(self, step_name: str, config: Optional[StepConfig] = None) -> None:
         """
         Initialize the base step with enhanced artifact management and hardware optimization.
         
@@ -449,19 +458,27 @@ class BaseStep(ABC):
             config: Optional configuration dictionary for artifact manager
             
         Raises:
-            ValueError: If step_name is empty or invalid
+            ConfigurationError: If step_name is empty or invalid
             TypeError: If parameter types are incorrect
         """
-        # Validate input parameters
-        if not isinstance(step_name, str) or not step_name.strip():
-            raise ValueError(f"step_name must be a non-empty string, got: {step_name}")
-        if config is not None and not isinstance(config, dict):
-            raise TypeError(f"config must be a dictionary or None, got: {type(config).__name__}")
-        
-        tprint_info(f"🚀 Initializing BaseStep: {step_name}")
-        
-        self.step_name = step_name
-        self.logger = logging.getLogger(f"ares.step.{step_name}")
+        try:
+            # Validate input parameters
+            if not isinstance(step_name, str) or not step_name.strip():
+                raise ConfigurationError(f"step_name must be a non-empty string, got: {step_name}")
+            if config is not None and not isinstance(config, dict):
+                raise TypeError(f"config must be a dictionary or None, got: {type(config).__name__}")
+            
+            tprint_info(f"🚀 Initializing BaseStep: {step_name}")
+            
+            self.step_name = step_name
+            self.logger = logging.getLogger(f"ares.step.{step_name}")
+            
+            # Validate and store config
+            self.config = validate_config(config) if config else {}
+            
+        except Exception as e:
+            tprint_error(f"❌ Failed to initialize BaseStep {step_name}: {e}")
+            raise ConfigurationError(f"BaseStep initialization failed: {e}") from e
         
         # Initialize hardware optimization for all steps
         try:
@@ -1161,7 +1178,7 @@ class BaseStep(ABC):
             return {}
     
     @abstractmethod
-    async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
+    async def execute(self, config: StepConfig) -> ExecutionResult:
         """
         Execute the step logic with comprehensive type safety.
         
@@ -1170,26 +1187,39 @@ class BaseStep(ABC):
                    (symbol, exchange, timeframes, execution_mode, etc.)
         
         Returns:
-            Dict containing:
-            - 'success': bool indicating if step completed successfully
-            - 'artifacts': list of artifact paths/metadata created
-            - 'metrics': dict of performance metrics
-            - 'error': error message if step failed (optional)
-            - 'execution_time': float seconds taken to execute
+            ExecutionResult containing:
+            - success: bool indicating if step completed successfully
+            - artifacts: list of artifact paths/metadata created
+            - metrics: dict of performance metrics
+            - error: error message if step failed (optional)
+            - execution_time: float seconds taken to execute
             
         Raises:
-            TypeError: If config is not a dictionary
-            ValueError: If required configuration parameters are missing
+            ConfigurationError: If config is invalid
+            ValidationError: If data validation fails
+            DataLoadError: If data loading fails
+            ModelTrainingError: If model training fails
+            ArtifactError: If artifact operations fail
         """
-        # Validate input parameters
-        if not isinstance(config, dict):
-            raise TypeError(f"config must be a dictionary, got: {type(config).__name__}")
-        
-        tprint_info(f"🚀 Executing step: {self.step_name}")
-        tprint_debug(f"📋 Configuration: {config}")
-        
-        # This method must be implemented by subclasses
-        raise NotImplementedError("Subclasses must implement the execute method")
+        try:
+            # Validate input parameters
+            if not is_valid_config(config):
+                raise ConfigurationError(f"Invalid configuration: {config}")
+            
+            # Validate configuration using our type system
+            validated_config = validate_config(config)
+            
+            tprint_info(f"🚀 Executing step: {self.step_name}")
+            tprint_debug(f"📋 Configuration: {validated_config}")
+            
+            # This method must be implemented by subclasses
+            raise NotImplementedError("Subclasses must implement the execute method")
+            
+        except ConfigurationError:
+            raise
+        except Exception as e:
+            tprint_error(f"❌ Unexpected error in execute method: {e}")
+            raise TrainingStepError(f"Execute method failed: {e}") from e
     
     def _save_artifact(self, data: Any, artifact_name: str, 
                       artifact_type: str = "data", 

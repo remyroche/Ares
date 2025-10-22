@@ -166,6 +166,65 @@ class AdvancedStep(BaseStep):
 
 See `src/training/steps/example_enhanced_step.py` for a complete example demonstrating all the new capabilities.
 
+## Generalized Data Collection Framework
+
+### Overview
+The BaseStep enhancement includes a comprehensive generalized data collection framework that demonstrates how to leverage all BaseStep comprehensive tools for data collection operations.
+
+### Key Components
+
+#### 1. Enhanced Generalized Data Collector
+- **File**: `src/training/steps/data_collection/enhanced_generalized_data_collector.py`
+- **Purpose**: Main data collector that inherits from BaseStep
+- **Features**: Complete BaseStep integration, hardware optimization, advanced logging, data quality validation
+
+#### 2. Generalized Data Collection Utilities
+- **File**: `src/training/steps/data_collection/generalized_data_collection_utils.py`
+- **Purpose**: Common utilities and patterns for data collection
+- **Features**: Configuration management, data validation, gap detection, file operations, performance monitoring
+
+#### 3. Refactored Processing Pipeline
+- **File**: `src/training/steps/data_collection/refactored_klines_processing_pipeline.py`
+- **Purpose**: Example of refactoring existing steps to use generalized tools
+- **Features**: Demonstrates migration patterns and best practices
+
+### Usage Examples
+
+```python
+# Basic data collection
+from src.training.steps.data_collection.enhanced_generalized_data_collector import collect_data_incremental
+
+result = await collect_data_incremental(
+    exchange="BINANCE",
+    symbol="ETHUSDT",
+    timeframe="1m",
+    data_types=["klines"],
+    max_batches=10
+)
+
+# Custom data collection step
+class MyDataCollector(BaseStep):
+    def __init__(self, step_name: str = "my_collector", config: Optional[Dict[str, Any]] = None):
+        super().__init__(step_name, config)
+        # Use generalized utilities
+        self.collection_config = create_standard_collection_config(**config)
+    
+    async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
+        # Leverage all BaseStep comprehensive tools
+        self.tprint_step_start("Data Collection")
+        # Your implementation here
+        self.tprint_step_end("Data Collection")
+        return {'success': True, 'artifacts': ['data']}
+```
+
+### Benefits
+- **Standardized Approach**: Consistent patterns across all data collection steps
+- **Reduced Duplication**: Common utilities eliminate code duplication
+- **Enhanced Functionality**: Full access to BaseStep comprehensive tools
+- **Better Performance**: Hardware optimization and memory management
+- **Comprehensive Logging**: Advanced logging with tprint integration
+- **Quality Assurance**: Built-in data validation and quality assessment
+
 ## Conclusion
 
 The enhanced BaseStep provides a comprehensive foundation for all training steps with:
@@ -174,5 +233,6 @@ The enhanced BaseStep provides a comprehensive foundation for all training steps
 - **Hardware optimization** built-in
 - **Graceful fallbacks** when utilities are unavailable
 - **Consistent patterns** across all steps
+- **Generalized frameworks** for common operations like data collection
 
-This enhancement significantly improves the developer experience while maintaining backward compatibility and providing a solid foundation for all future training steps.
+This enhancement significantly improves the developer experience while maintaining backward compatibility and providing a solid foundation for all future training steps. The generalized data collection framework serves as a template for creating other specialized frameworks that leverage BaseStep comprehensive tools.

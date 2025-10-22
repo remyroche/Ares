@@ -14,8 +14,13 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import seaborn as sns
 from dataclasses import dataclass
+from abc import ABC
 
-from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success
+# Import BaseStep
+from src.training.steps.base_step import BaseStep
+
+# Note: tprint and hardware utilities are available through BaseStep
+# No need for direct imports as they're inherited from BaseStep
 from src.utils.serialization_utils import UniversalSerializer
 
 
@@ -49,18 +54,168 @@ class ProfitLabelingReport:
     recommendations: List[str]
 
 
-class ProfitLabelingReportGenerator:
+class ProfitLabelingReportGenerator(BaseStep):
     """
     Generator for comprehensive profit labeling reports.
 
     This class creates detailed reports that analyze labeling quality,
     regime-specific performance, and compatibility with downstream steps.
+    Inherits from BaseStep for standardized pipeline integration.
     """
 
     def __init__(self):
         """Initialize the report generator."""
+        super().__init__()
         self.serializer = UniversalSerializer()
-        tprint_info("📊 Profit Labeling Report Generator initialized")
+        self.tprint_info("📊 Profit Labeling Report Generator initialized")
+    
+    async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Execute the profit labeling report generation step.
+        
+        Args:
+            config: Configuration dictionary containing:
+                - labeling_result: Results from multi-horizon profit labeling
+                - regime_data: Optional regime data for regime-aware analysis
+                - feature_lookback_data: Optional feature lookback optimization data
+                - output_directory: Optional directory to save reports
+                - symbol: Optional symbol for context
+                - exchange: Optional exchange for context
+                - information: Optional information for context
+                - direction: Optional direction for context
+                - model: Optional model type for context
+        
+        Returns:
+            Dictionary containing:
+                - success: Boolean indicating success
+                - report: ProfitLabelingReport object
+                - report_path: Path to generated report file
+                - artifacts: List of generated artifacts
+        """
+        try:
+            # Set context for enhanced file naming and operations
+            self._set_context(
+                symbol=config.get('symbol'),
+                exchange=config.get('exchange'),
+                information=config.get('information'),
+                direction=config.get('direction', 'long'),
+                model=config.get('model', 'Analyst')
+            )
+            
+            # Extract parameters from config
+            labeling_result = config.get('labeling_result')
+            regime_data = config.get('regime_data')
+            feature_lookback_data = config.get('feature_lookback_data')
+            output_directory = config.get('output_directory', 'profit_labeling_reports')
+            
+            if labeling_result is None:
+                return {
+                    'success': False,
+                    'error': 'Missing required parameter: labeling_result'
+                }
+            
+            # Generate report
+            report = self.generate_report(
+                labeling_result=labeling_result,
+                regime_data=regime_data,
+                feature_lookback_data=feature_lookback_data,
+                output_directory=output_directory
+            )
+            
+            # Save artifacts
+            artifacts = []
+            
+            # Prepare report data for preview
+            report_data = {
+                'symbol': report.symbol,
+                'exchange': report.exchange,
+                'timeframe': report.timeframe,
+                'timestamp': report.timestamp.isoformat(),
+                'processing_time': report.processing_time,
+                'n_samples': report.n_samples,
+                'n_targets': report.n_targets,
+                'n_horizons': report.n_horizons,
+                'quality_scores': report.quality_scores,
+                'regime_statistics': report.regime_statistics,
+                'label_distribution': report.label_distribution,
+                'feature_lookback_compatibility': report.feature_lookback_compatibility,
+                'recommendations': report.recommendations
+            }
+            
+            # Preview report data
+            self.tprint_data_format(report_data, "profit_labeling_report")
+            
+            # Save report as metadata
+            report_path = self._save_metadata(
+                report_data,
+                'profit_labeling_report'
+            )
+            if report_path:
+                artifacts.append(report_path)
+            
+            # Generate outcome file
+            outcome_content = self._generate_outcome_content(report, artifacts)
+            self._save_outcome_file(outcome_content, 'profit_labeling_report_outcome')
+            
+            return {
+                'success': True,
+                'report': report,
+                'report_path': report_path,
+                'artifacts': artifacts
+            }
+            
+        except Exception as e:
+            error_msg = f"Profit labeling report generation failed: {str(e)}"
+            self.tprint_error(f"❌ {error_msg}")
+            return {
+                'success': False,
+                'error': error_msg
+            }
+    
+    def _generate_outcome_content(self, report: ProfitLabelingReport, artifacts: List[str]) -> str:
+        """Generate outcome file content."""
+        content = f"""# Profit Labeling Report Generation Outcome
+
+## Summary
+- **Status**: Success
+- **Symbol**: {report.symbol}
+- **Exchange**: {report.exchange}
+- **Timeframe**: {report.timeframe}
+- **Processing Time**: {report.processing_time:.2f} seconds
+- **Samples**: {report.n_samples}
+- **Targets**: {report.n_targets}
+- **Horizons**: {report.n_horizons}
+- **Artifacts Generated**: {len(artifacts)}
+
+## Quality Scores
+"""
+        
+        for metric, score in report.quality_scores.items():
+            content += f"- **{metric}**: {score:.3f}\n"
+        
+        content += f"""
+## Regime Statistics
+"""
+        
+        for regime, stats in report.regime_statistics.items():
+            content += f"- **{regime}**: {stats}\n"
+        
+        content += f"""
+## Label Distribution
+"""
+        
+        for target, distribution in report.label_distribution.items():
+            content += f"- **{target}**: {distribution}\n"
+        
+        content += f"""
+## Recommendations
+{chr(10).join(f"- {rec}" for rec in report.recommendations)}
+
+## Generated Artifacts
+{chr(10).join(f"- {artifact}" for artifact in artifacts)}
+"""
+        
+        return content
 
     def generate_report(
         self,

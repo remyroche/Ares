@@ -28,6 +28,10 @@ from sklearn.preprocessing import StandardScaler
 from scipy.stats import spearmanr
 from scipy.stats import entropy
 import warnings
+from abc import ABC
+
+# Import BaseStep
+from src.training.steps.base_step import BaseStep
 
 # Import matrix operations for vectorized computations
 try:
@@ -36,13 +40,8 @@ try:
 except ImportError:
     MATRIX_OPS_AVAILABLE = False
 
-# Import existing utilities
-from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success
-from src.utils.common_operations import (
-    safe_divide, safe_log, safe_sqrt, safe_mean, safe_std,
-    validate_finite, validate_positive, validate_range, safe_correlation
-)
-from src.utils.math_validation import MathValidation
+# Note: tprint and hardware utilities are available through BaseStep
+# No need for direct imports as they're inherited from BaseStep
 
 # Import ML optimization utilities
 try:
@@ -174,12 +173,13 @@ class QualityMetrics:
     timestamp: datetime = field(default_factory=datetime.now)
 
 
-class LabelQualityScorer:
+class LabelQualityScorer(BaseStep):
     """
     Label Quality Scorer for Volatility-Aware Labeling
     
     This class implements comprehensive label quality assessment to ensure labels are
     learnable by ML models and generalize well.
+    Inherits from BaseStep for standardized pipeline integration.
     
     Key Features:
     1. **Predictability Assessment**: Uses baseline models to measure learnability
@@ -192,43 +192,234 @@ class LabelQualityScorer:
     
     def __init__(self, config: Optional[QualityScoringConfig] = None):
         """Initialize label quality scorer."""
+        super().__init__()
         self.config = config or QualityScoringConfig()
         self.logger = logging.getLogger('LabelQualityScorer')
 
         # Initialize matrix operations for vectorized computations
         if MATRIX_OPS_AVAILABLE:
             self.matrix_ops = UnifiedMatrixOperations()
-            tprint_info("   → Matrix operations: Available")
+            self.tprint_info("   → Matrix operations: Available")
         else:
             self.matrix_ops = None
-            tprint_warning("   → Matrix operations: Not available, using fallback")
+            self.tprint_warning("   → Matrix operations: Not available, using fallback")
 
         # Initialize Pareto optimizer if available
         if PARETO_OPTIMIZER_AVAILABLE and self.config.enable_pareto_optimization:
             self.pareto_optimizer = ParetoFront()
-            tprint_info("   → Pareto optimizer: Available for multi-objective optimization")
+            self.tprint_info("   → Pareto optimizer: Available for multi-objective optimization")
         else:
             self.pareto_optimizer = None
 
         # Initialize CV utilities
         if CV_UTILITIES_AVAILABLE:
             self.cv_validator = CrossValidator()
-            tprint_info("   → CV utilities: Available")
+            self.tprint_info("   → CV utilities: Available")
         else:
             self.cv_validator = None
 
         # Initialize OOF stacking
         if OOF_AVAILABLE:
             self.oof_manager = OOFStackingEnsembleManager()
-            tprint_info("   → OOF stacking: Available")
+            self.tprint_info("   → OOF stacking: Available")
         else:
             self.oof_manager = None
 
-        tprint_info("📊 Label Quality Scorer initialized")
-        tprint_info(f"   → Baseline models: {self.config.baseline_models}")
-        tprint_info(f"   → CV splits: {self.config.n_splits}")
-        tprint_info(f"   → Optimization: {self.config.enable_optimization}")
-        tprint_info(f"   → Pareto optimization: {self.config.enable_pareto_optimization}")
+        self.tprint_info("📊 Label Quality Scorer initialized")
+        self.tprint_info(f"   → Baseline models: {self.config.baseline_models}")
+        self.tprint_info(f"   → CV splits: {self.config.n_splits}")
+        self.tprint_info(f"   → Optimization: {self.config.enable_optimization}")
+        self.tprint_info(f"   → Pareto optimization: {self.config.enable_pareto_optimization}")
+    
+    async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Execute the label quality scoring step.
+        
+        Args:
+            config: Configuration dictionary containing:
+                - labels: DataFrame with label data
+                - confidence_scores: DataFrame with confidence scores
+                - eligibility_masks: DataFrame with eligibility masks
+                - bars: DataFrame with bar data for feature engineering
+                - symbol: Optional symbol for context
+                - exchange: Optional exchange for context
+                - information: Optional information for context
+                - direction: Optional direction for context
+                - model: Optional model type for context
+        
+        Returns:
+            Dictionary containing:
+                - success: Boolean indicating success
+                - quality_results: Dictionary of quality metrics per target
+                - overall_quality: Overall quality assessment
+                - artifacts: List of generated artifacts
+        """
+        try:
+            # Set context for enhanced file naming and operations
+            self._set_context(
+                symbol=config.get('symbol'),
+                exchange=config.get('exchange'),
+                information=config.get('information'),
+                direction=config.get('direction', 'long'),
+                model=config.get('model', 'Analyst')
+            )
+            
+            # Extract parameters from config
+            labels = config.get('labels')
+            confidence_scores = config.get('confidence_scores', pd.DataFrame())
+            eligibility_masks = config.get('eligibility_masks', pd.DataFrame())
+            bars = config.get('bars', pd.DataFrame())
+            
+            if labels is None:
+                return {
+                    'success': False,
+                    'error': 'Missing required parameter: labels'
+                }
+            
+            # Validate inputs
+            if not isinstance(labels, pd.DataFrame):
+                return {
+                    'success': False,
+                    'error': 'labels must be a pandas DataFrame'
+                }
+            
+            # Assess quality
+            quality_results = self.assess_quality(
+                labels=labels,
+                confidence_scores=confidence_scores,
+                eligibility_masks=eligibility_masks,
+                bars=bars
+            )
+            
+            # Calculate overall quality
+            overall_quality = self._calculate_overall_quality(quality_results)
+            
+            # Save artifacts
+            artifacts = []
+            
+            # Prepare quality results data
+            quality_data = {target: {
+                'n_samples': metrics.n_samples,
+                'n_features': metrics.n_features,
+                'predictability_score': metrics.predictability_score,
+                'stability_score': metrics.stability_score,
+                'consistency_score': metrics.consistency_score,
+                'balance_score': metrics.balance_score,
+                'snr_proxy': metrics.snr_proxy,
+                'composite_score': metrics.composite_score,
+                'class_balance': metrics.class_balance
+            } for target, metrics in quality_results.items()}
+            
+            # Preview quality results
+            self.tprint_data_format(quality_data, "label_quality_results")
+            
+            # Save quality results
+            quality_path = self._save_metadata(
+                quality_data,
+                'label_quality_results'
+            )
+            if quality_path:
+                artifacts.append(quality_path)
+            
+            # Preview overall quality
+            self.tprint_data_format(overall_quality, "overall_quality_assessment")
+            
+            # Save overall quality
+            overall_path = self._save_metadata(
+                overall_quality,
+                'overall_quality_assessment'
+            )
+            if overall_path:
+                artifacts.append(overall_path)
+            
+            # Generate outcome file
+            outcome_content = self._generate_outcome_content(quality_results, overall_quality, artifacts)
+            self._save_outcome_file(outcome_content, 'label_quality_scoring_outcome')
+            
+            return {
+                'success': True,
+                'quality_results': quality_results,
+                'overall_quality': overall_quality,
+                'artifacts': artifacts
+            }
+            
+        except Exception as e:
+            error_msg = f"Label quality scoring failed: {str(e)}"
+            self.tprint_error(f"❌ {error_msg}")
+            return {
+                'success': False,
+                'error': error_msg
+            }
+    
+    def _calculate_overall_quality(self, quality_results: Dict[str, QualityMetrics]) -> Dict[str, Any]:
+        """Calculate overall quality metrics across all targets."""
+        if not quality_results:
+            return {'overall_score': 0.0, 'n_targets': 0}
+        
+        # Calculate weighted average scores
+        total_samples = sum(metrics.n_samples for metrics in quality_results.values())
+        if total_samples == 0:
+            return {'overall_score': 0.0, 'n_targets': len(quality_results)}
+        
+        weighted_scores = {}
+        for metric in ['predictability_score', 'stability_score', 'consistency_score', 
+                      'balance_score', 'snr_proxy', 'composite_score']:
+            weighted_sum = sum(
+                getattr(metrics, metric, 0) * metrics.n_samples 
+                for metrics in quality_results.values()
+            )
+            weighted_scores[metric] = weighted_sum / total_samples
+        
+        return {
+            'overall_score': weighted_scores.get('composite_score', 0),
+            'n_targets': len(quality_results),
+            'total_samples': total_samples,
+            **weighted_scores
+        }
+    
+    def _generate_outcome_content(self, quality_results: Dict[str, QualityMetrics], 
+                                overall_quality: Dict[str, Any], artifacts: List[str]) -> str:
+        """Generate outcome file content."""
+        content = f"""# Label Quality Scoring Outcome
+
+## Summary
+- **Status**: Success
+- **Targets Assessed**: {len(quality_results)}
+- **Total Samples**: {overall_quality.get('total_samples', 0)}
+- **Overall Quality Score**: {overall_quality.get('overall_score', 0):.3f}
+- **Artifacts Generated**: {len(artifacts)}
+
+## Quality Metrics by Target
+"""
+        
+        for target, metrics in quality_results.items():
+            content += f"""
+### {target}
+- **Samples**: {metrics.n_samples}
+- **Features**: {metrics.n_features}
+- **Predictability**: {metrics.predictability_score:.3f}
+- **Stability**: {metrics.stability_score:.3f}
+- **Consistency**: {metrics.consistency_score:.3f}
+- **Balance**: {metrics.balance_score:.3f}
+- **SNR Proxy**: {metrics.snr_proxy:.3f}
+- **Composite Score**: {metrics.composite_score:.3f}
+- **Class Balance**: {metrics.class_balance:.3f}
+"""
+        
+        content += f"""
+## Overall Quality Assessment
+- **Overall Score**: {overall_quality.get('overall_score', 0):.3f}
+- **Predictability**: {overall_quality.get('predictability_score', 0):.3f}
+- **Stability**: {overall_quality.get('stability_score', 0):.3f}
+- **Consistency**: {overall_quality.get('consistency_score', 0):.3f}
+- **Balance**: {overall_quality.get('balance_score', 0):.3f}
+- **SNR Proxy**: {overall_quality.get('snr_proxy', 0):.3f}
+
+## Generated Artifacts
+{chr(10).join(f"- {artifact}" for artifact in artifacts)}
+"""
+        
+        return content
     
     def assess_quality(self, labels: pd.DataFrame, confidence_scores: pd.DataFrame,
                       eligibility_masks: pd.DataFrame, bars: pd.DataFrame) -> Dict[str, QualityMetrics]:
@@ -245,7 +436,7 @@ class LabelQualityScorer:
             Dictionary mapping target names to QualityMetrics
         """
         start_time = datetime.now()
-        tprint_info("📊 Assessing label quality")
+        self.tprint_info("📊 Assessing label quality")
         
         quality_results = {}
         
@@ -254,12 +445,12 @@ class LabelQualityScorer:
             target_columns = [col for col in labels.columns if 'target' in col.lower()]
             
             if not target_columns:
-                tprint_warning("⚠️ No target columns found")
+                self.tprint_warning("⚠️ No target columns found")
                 return quality_results
             
             # Process each target
             for target_col in target_columns:
-                tprint_info(f"📈 Assessing quality for target: {target_col}")
+                self.tprint_info(f"📈 Assessing quality for target: {target_col}")
                 
                 # Extract target data
                 target_labels = labels[target_col].dropna()
@@ -269,14 +460,14 @@ class LabelQualityScorer:
                 # Filter by eligibility
                 eligible_mask = target_eligibility & target_eligibility.notna()
                 if not eligible_mask.any():
-                    tprint_warning(f"⚠️ No eligible samples for target {target_col}")
+                    self.tprint_warning(f"⚠️ No eligible samples for target {target_col}")
                     continue
                 
                 target_labels_eligible = target_labels[eligible_mask]
                 
                 # Check minimum samples
                 if len(target_labels_eligible) < self.config.min_samples_for_evaluation:
-                    tprint_warning(f"⚠️ Insufficient samples for target {target_col}: {len(target_labels_eligible)}")
+                    self.tprint_warning(f"⚠️ Insufficient samples for target {target_col}: {len(target_labels_eligible)}")
                     continue
                 
                 # Assess quality for this target
@@ -287,13 +478,13 @@ class LabelQualityScorer:
                 quality_results[target_col] = quality_metrics
             
         except Exception as e:
-            tprint_error(f"❌ Quality assessment failed: {e}")
+            self.tprint_error(f"❌ Quality assessment failed: {e}")
             return quality_results
         
         processing_time = (datetime.now() - start_time).total_seconds()
-        tprint_success("✅ Quality assessment completed")
-        tprint_info(f"   → Processing time: {processing_time:.2f}s")
-        tprint_info(f"   → Targets assessed: {len(quality_results)}")
+        self.tprint_success("✅ Quality assessment completed")
+        self.tprint_info(f"   → Processing time: {processing_time:.2f}s")
+        self.tprint_info(f"   → Targets assessed: {len(quality_results)}")
         
         return quality_results
     

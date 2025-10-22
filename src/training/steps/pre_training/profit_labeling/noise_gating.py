@@ -677,7 +677,92 @@ class NoiseGatingFilter:
                 )
                 gate_thresholds['micro_range'] = trailing_thresholds
             
-            # Add other gate scores as needed...
+            # Variance ratio gate scores
+            if self.config.enable_variance_ratio_gating:
+                log_returns = np.log(bars['close'] / bars['close'].shift(1)).dropna()
+                if len(log_returns) >= self.config.vr_window:
+                    # Calculate canonical Lo-MacKinlay variance ratio for different horizons
+                    q_values = [2, 4, 8, 16]
+                    vr_results = {}
+                    
+                    for q in q_values:
+                        if len(log_returns) >= q + self.config.vr_window:
+                            q_period_returns = log_returns.rolling(window=q).sum().dropna()
+                            var_q_period = q_period_returns.var(ddof=1)
+                            var_1_period = log_returns.var(ddof=1)
+                            
+                            if var_1_period > 0:
+                                variance_ratio = var_q_period / (q * var_1_period)
+                            else:
+                                variance_ratio = 1.0
+                            
+                            vr_results[f'vr_{q}'] = variance_ratio
+                    
+                    if vr_results:
+                        # Use the most significant VR (closest to 1.0 indicates random walk)
+                        min_vr = min(vr_results.values())
+                        vr_series = pd.Series([min_vr] * len(log_returns), index=log_returns.index)
+                        gate_scores['variance_ratio'] = vr_series
+                        
+                        # Calculate trailing VR thresholds
+                        vr_low_thresholds, vr_high_thresholds = self.config.threshold_calculator.calculate_trailing_variance_ratio_thresholds(
+                            vr_series, window=self.config.vr_window
+                        )
+                        gate_thresholds['variance_ratio'] = vr_low_thresholds
+            
+            # Signal-to-noise gate scores
+            if self.config.enable_signal_noise_gating:
+                log_returns = np.log(bars['close'] / bars['close'].shift(1)).dropna()
+                if len(log_returns) >= self.config.snr_window:
+                    # Calculate Kalman trend SNR
+                    snr_ratios = self._calculate_kalman_trend_snr(log_returns, window=self.config.snr_window)
+                    if not snr_ratios.empty:
+                        gate_scores['signal_noise'] = snr_ratios
+                        
+                        # Calculate trailing SNR thresholds
+                        snr_thresholds = self.config.threshold_calculator.calculate_trailing_snr_thresholds(
+                            snr_ratios, window=self.config.snr_window
+                        )
+                        gate_thresholds['signal_noise'] = snr_thresholds
+            
+            # Liquidity gate scores
+            if self.config.enable_liquidity_gating:
+                log_returns = np.log(bars['close'] / bars['close'].shift(1)).dropna()
+                if len(log_returns) >= self.config.liquidity_window:
+                    # Calculate Amihud illiquidity
+                    dollar_volume = bars['volume'] * bars['close']
+                    amihud_illiquidity = np.abs(log_returns) / dollar_volume.loc[log_returns.index]
+                    amihud_illiquidity = amihud_illiquidity.replace([np.inf, -np.inf], np.nan).dropna()
+                    
+                    # Calculate effective spread proxy
+                    high_low_spread = (bars['high'] - bars['low']) / bars['close']
+                    effective_spread = high_low_spread.rolling(
+                        window=self.config.liquidity_window,
+                        min_periods=self.config.liquidity_window // 2
+                    ).mean()
+                    
+                    # Calculate volume participation ratio
+                    volume_median = bars['volume'].rolling(
+                        window=self.config.liquidity_window,
+                        min_periods=self.config.liquidity_window // 2
+                    ).median()
+                    volume_participation = bars['volume'] / volume_median
+                    
+                    # Combine liquidity metrics into a single score (lower is better)
+                    # Normalize each metric and combine
+                    amihud_norm = (amihud_illiquidity - amihud_illiquidity.min()) / (amihud_illiquidity.max() - amihud_illiquidity.min() + 1e-8)
+                    spread_norm = (effective_spread - effective_spread.min()) / (effective_spread.max() - effective_spread.min() + 1e-8)
+                    volume_norm = 1.0 - (volume_participation - volume_participation.min()) / (volume_participation.max() - volume_participation.min() + 1e-8)
+                    
+                    # Combined liquidity score (0 = best liquidity, 1 = worst liquidity)
+                    liquidity_score = (amihud_norm + spread_norm + volume_norm) / 3.0
+                    gate_scores['liquidity'] = liquidity_score
+                    
+                    # Calculate trailing thresholds for liquidity
+                    liquidity_thresholds = self._calculate_trailing_quantile_thresholds(
+                        liquidity_score, quantile=0.75, window=self.config.liquidity_window
+                    )
+                    gate_thresholds['liquidity'] = liquidity_thresholds
             
             return gate_scores, gate_thresholds
             

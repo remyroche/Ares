@@ -19,6 +19,15 @@ from abc import ABC
 # Import BaseStep
 from src.training.steps.base_step import BaseStep
 
+# Import consolidated profit labeler
+from .consolidated_profit_labeler import (
+    ConsolidatedProfitLabeler, ConsolidatedLabelerConfig,
+    LabelQualityMetrics, LabelingResult
+)
+
+# Import volatility modeling
+from .volatility_modeling import VolatilityModeler, VolatilityConfig
+
 # Note: tprint and hardware utilities are available through BaseStep
 # No need for direct imports as they're inherited from BaseStep
 from src.utils.serialization_utils import UniversalSerializer
@@ -228,7 +237,7 @@ class ProfitLabelingReportGenerator(BaseStep):
         Generate comprehensive profit labeling report.
 
         Args:
-            labeling_result: Results from multi-horizon profit labeling
+            labeling_result: Results from consolidated profit labeling or multi-horizon profit labeling
             regime_data: Optional regime data for regime-aware analysis
             feature_lookback_data: Optional feature lookback optimization data
             output_directory: Directory to save reports
@@ -237,11 +246,28 @@ class ProfitLabelingReportGenerator(BaseStep):
             ProfitLabelingReport with comprehensive analysis
         """
         try:
-            tprint_info("📋 Generating comprehensive profit labeling report")
+            self.tprint_info("📋 Generating comprehensive profit labeling report")
 
-            # Extract basic information
-            metadata = labeling_result.get('multi_horizon_labeling_result', {}).get('metadata', {})
-            quality_scores = labeling_result.get('multi_horizon_labeling_result', {}).get('quality_scores', {})
+            # Handle both consolidated and legacy labeling results
+            if isinstance(labeling_result, LabelingResult):
+                # Direct LabelingResult object
+                result = labeling_result
+                metadata = {
+                    'symbol': 'Unknown',
+                    'exchange': 'Unknown', 
+                    'timeframe': 'Unknown',
+                    'processing_time': result.processing_time,
+                    'n_samples': result.n_samples,
+                    'n_targets': result.n_targets,
+                    'n_horizons': 1  # Consolidated labeler doesn't track horizons separately
+                }
+                quality_scores = {k: v.to_dict() for k, v in result.quality_metrics.items()}
+                labels = result.labels
+            else:
+                # Legacy dictionary format
+                metadata = labeling_result.get('multi_horizon_labeling_result', {}).get('metadata', {})
+                quality_scores = labeling_result.get('multi_horizon_labeling_result', {}).get('quality_scores', {})
+                labels = labeling_result.get('multi_horizon_labeling_result', {}).get('labels', pd.DataFrame())
 
             # Create report structure
             report = ProfitLabelingReport(
@@ -255,7 +281,7 @@ class ProfitLabelingReportGenerator(BaseStep):
                 n_horizons=metadata.get('n_horizons', 0),
                 quality_scores=self._analyze_quality_scores(quality_scores),
                 regime_statistics=self._analyze_regime_statistics(regime_data) if regime_data else {},
-                label_distribution=self._analyze_label_distribution(labeling_result),
+                label_distribution=self._analyze_label_distribution_from_labels(labels),
                 feature_lookback_compatibility=self._analyze_feature_compatibility(feature_lookback_data) if feature_lookback_data else {},
                 recommendations=self._generate_recommendations(labeling_result, regime_data, feature_lookback_data)
             )
@@ -263,11 +289,11 @@ class ProfitLabelingReportGenerator(BaseStep):
             # Save report to files
             self._save_report(report, output_directory)
 
-            tprint_success("✅ Comprehensive profit labeling report generated")
+            self.tprint_success("✅ Comprehensive profit labeling report generated")
             return report
 
         except Exception as e:
-            tprint_error(f"❌ Error generating report: {e}")
+            self.tprint_error(f"❌ Error generating report: {e}")
             # Return basic error report
             return ProfitLabelingReport(
                 symbol='Error',
@@ -318,7 +344,7 @@ class ProfitLabelingReportGenerator(BaseStep):
             return analysis
 
         except Exception as e:
-            tprint_warning(f"⚠️ Error analyzing quality scores: {e}")
+            self.tprint_warning(f"⚠️ Error analyzing quality scores: {e}")
             return {'error': str(e)}
 
     def _analyze_regime_statistics(self, regime_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -348,13 +374,25 @@ class ProfitLabelingReportGenerator(BaseStep):
             return analysis
 
         except Exception as e:
-            tprint_warning(f"⚠️ Error analyzing regime statistics: {e}")
+            self.tprint_warning(f"⚠️ Error analyzing regime statistics: {e}")
             return {'error': str(e)}
 
     def _analyze_label_distribution(self, labeling_result: Dict[str, Any]) -> Dict[str, Any]:
-        """Analyze label distribution across targets."""
+        """Analyze label distribution across targets (legacy method)."""
         try:
             labels = labeling_result.get('multi_horizon_labeling_result', {}).get('labels')
+            if labels is None or labels.empty:
+                return {'error': 'No labels available for distribution analysis'}
+
+            return self._analyze_label_distribution_from_labels(labels)
+
+        except Exception as e:
+            self.tprint_warning(f"⚠️ Error analyzing label distribution: {e}")
+            return {'error': str(e)}
+
+    def _analyze_label_distribution_from_labels(self, labels: pd.DataFrame) -> Dict[str, Any]:
+        """Analyze label distribution from labels DataFrame."""
+        try:
             if labels is None or labels.empty:
                 return {'error': 'No labels available for distribution analysis'}
 
@@ -388,7 +426,7 @@ class ProfitLabelingReportGenerator(BaseStep):
             return analysis
 
         except Exception as e:
-            tprint_warning(f"⚠️ Error analyzing label distribution: {e}")
+            self.tprint_warning(f"⚠️ Error analyzing label distribution: {e}")
             return {'error': str(e)}
 
     def _analyze_feature_compatibility(self, feature_lookback_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -415,7 +453,7 @@ class ProfitLabelingReportGenerator(BaseStep):
             return analysis
 
         except Exception as e:
-            tprint_warning(f"⚠️ Error analyzing feature compatibility: {e}")
+            self.tprint_warning(f"⚠️ Error analyzing feature compatibility: {e}")
             return {'error': str(e)}
 
     def _generate_recommendations(
@@ -466,7 +504,7 @@ class ProfitLabelingReportGenerator(BaseStep):
             return recommendations
 
         except Exception as e:
-            tprint_warning(f"⚠️ Error generating recommendations: {e}")
+            self.tprint_warning(f"⚠️ Error generating recommendations: {e}")
             return [f"Recommendation generation failed: {str(e)}"]
 
     def _rate_quality(self, quality_score: Dict[str, Any]) -> str:
@@ -561,18 +599,18 @@ class ProfitLabelingReportGenerator(BaseStep):
             with open(json_path, 'w') as f:
                 json.dump(report_dict, f, indent=2, default=str)
 
-            tprint_info(f"💾 Report saved to {json_path}")
+            self.tprint_info(f"💾 Report saved to {json_path}")
 
             # Generate and save visualizations if matplotlib is available
             try:
                 self._generate_visualizations(report, output_path)
             except ImportError:
-                tprint_warning("⚠️ Matplotlib not available for visualization generation")
+                self.tprint_warning("⚠️ Matplotlib not available for visualization generation")
             except Exception as e:
-                tprint_warning(f"⚠️ Error generating visualizations: {e}")
+                self.tprint_warning(f"⚠️ Error generating visualizations: {e}")
 
         except Exception as e:
-            tprint_error(f"❌ Error saving report: {e}")
+            self.tprint_error(f"❌ Error saving report: {e}")
 
     def _generate_visualizations(self, report: ProfitLabelingReport, output_path: Path):
         """Generate visualization plots for the report."""
@@ -611,10 +649,10 @@ class ProfitLabelingReportGenerator(BaseStep):
             plt.savefig(output_path / 'profit_labeling_visualization.png', dpi=300, bbox_inches='tight')
             plt.close()
 
-            tprint_info("📊 Visualizations saved")
+            self.tprint_info("📊 Visualizations saved")
 
         except Exception as e:
-            tprint_warning(f"⚠️ Error generating visualizations: {e}")
+            self.tprint_warning(f"⚠️ Error generating visualizations: {e}")
 
 
 def generate_profit_labeling_report(

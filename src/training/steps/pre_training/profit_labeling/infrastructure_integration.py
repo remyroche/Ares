@@ -24,13 +24,15 @@ from abc import ABC
 # Import BaseStep
 from src.training.steps.base_step import BaseStep
 
-# Import existing infrastructure components
-from src.training.steps.pre_training.profit_labeling.volatility_aware_profit_labeler import (
-    VolatilityAwareProfitLabeler as VolatilityAwareMultiHorizonLabeler, VolatilityAwareConfig
+# Import consolidated profit labeler and enhanced data labels system
+from .consolidated_profit_labeler import (
+    ConsolidatedProfitLabeler, ConsolidatedLabelerConfig,
+    create_consolidated_labeler, create_enhanced_analyst_labeler
 )
-from src.training.steps.pre_training.profit_labeling.enhanced_data_labels_system import (
+from .enhanced_data_labels_system import (
     EnhancedDataLabelsSystem, EnhancedDataLabelsConfig, create_trading_optimized_config
 )
+from .volatility_modeling import VolatilityModeler, VolatilityConfig, VolatilityMethod
 from src.analyst.unified_regime_classifier import UnifiedRegimeClassifier
 from src.analyst.feature_engineering_orchestrator import FeatureEngineeringOrchestrator
 from src.utils.ml_common.data_processing.data_quality import DataQualityUtilities
@@ -190,7 +192,8 @@ class InfrastructureIntegrationManager(BaseStep):
         
         # Initialize core systems
         self.enhanced_labels_system = None
-        self.volatility_aware_labeler = None
+        self.consolidated_labeler = None
+        self.volatility_modeler = None
         self.regime_classifier = None
         self.feature_engineering_orchestrator = None
         self.data_quality_utilities = None
@@ -198,7 +201,8 @@ class InfrastructureIntegrationManager(BaseStep):
         # Integration state
         self.integration_status = {
             'enhanced_labels': False,
-            'volatility_aware': False,
+            'consolidated_labeler': False,
+            'volatility_modeling': False,
             'regime_detection': False,
             'feature_engineering': False,
             'data_quality': False
@@ -207,62 +211,74 @@ class InfrastructureIntegrationManager(BaseStep):
         # Initialize all components
         self._initialize_components()
         
-        tprint_success("🚀 Infrastructure Integration Manager initialized")
-        tprint_info("   → Enhanced data and labels system")
-        tprint_info("   → Volatility-aware labeler integration")
-        tprint_info("   → Regime detection integration")
-        tprint_info("   → Feature engineering integration")
+        self.tprint_success("🚀 Infrastructure Integration Manager initialized")
+        self.tprint_info("   → Enhanced data and labels system")
+        self.tprint_info("   → Consolidated profit labeler")
+        self.tprint_info("   → Volatility modeling")
+        self.tprint_info("   → Regime detection integration")
+        self.tprint_info("   → Feature engineering integration")
     
     def _initialize_components(self):
         """Initialize all integrated components."""
         try:
             # Initialize enhanced data and labels system
-            tprint_info("🔧 Initializing enhanced data and labels system...")
+            self.tprint_info("🔧 Initializing enhanced data and labels system...")
             enhanced_config = create_trading_optimized_config()
             self.enhanced_labels_system = EnhancedDataLabelsSystem(enhanced_config)
             self.integration_status['enhanced_labels'] = True
-            tprint_success("✅ Enhanced data and labels system initialized")
+            self.tprint_success("✅ Enhanced data and labels system initialized")
             
-            # Initialize volatility-aware labeler with enhanced integration
-            tprint_info("🔧 Initializing volatility-aware labeler...")
-            volatility_config = VolatilityAwareConfig(
-                enable_enhanced_labels=True,
-                label_definition_type='analyst'  # Use analyst labels by default
+            # Initialize consolidated profit labeler
+            self.tprint_info("🔧 Initializing consolidated profit labeler...")
+            consolidated_config = ConsolidatedLabelerConfig(
+                enable_enhanced_data_cleaning=True,
+                enable_trading_aware_labels=True,
+                enable_peak_trough_detection=True
             )
-            self.volatility_aware_labeler = VolatilityAwareMultiHorizonLabeler(volatility_config)
-            self.integration_status['volatility_aware'] = True
-            tprint_success("✅ Volatility-aware labeler initialized")
+            self.consolidated_labeler = ConsolidatedProfitLabeler(consolidated_config)
+            self.integration_status['consolidated_labeler'] = True
+            self.tprint_success("✅ Consolidated profit labeler initialized")
+            
+            # Initialize volatility modeler
+            self.tprint_info("🔧 Initializing volatility modeler...")
+            volatility_config = VolatilityConfig(
+                method=VolatilityMethod.COMBINED,  # Use data-driven combination
+                enable_smoothing=True
+            )
+            self.volatility_modeler = VolatilityModeler(volatility_config)
+            self.integration_status['volatility_modeling'] = True
+            self.tprint_success("✅ Volatility modeler initialized")
             
             # Initialize regime classifier
-            tprint_info("🔧 Initializing regime classifier...")
+            self.tprint_info("🔧 Initializing regime classifier...")
             try:
                 self.regime_classifier = UnifiedRegimeClassifier()
                 self.integration_status['regime_detection'] = True
-                tprint_success("✅ Regime classifier initialized")
+                self.tprint_success("✅ Regime classifier initialized")
             except Exception as e:
-                tprint_warning(f"⚠️ Regime classifier initialization failed: {e}")
+                self.tprint_warning(f"⚠️ Regime classifier initialization failed: {e}")
                 self.regime_classifier = None
             
             # Initialize feature engineering orchestrator
-            tprint_info("🔧 Initializing feature engineering orchestrator...")
+            self.tprint_info("🔧 Initializing feature engineering orchestrator...")
             try:
                 self.feature_engineering_orchestrator = FeatureEngineeringOrchestrator()
                 self.integration_status['feature_engineering'] = True
-                tprint_success("✅ Feature engineering orchestrator initialized")
+                self.tprint_success("✅ Feature engineering orchestrator initialized")
             except Exception as e:
-                tprint_warning(f"⚠️ Feature engineering orchestrator initialization failed: {e}")
+                self.tprint_warning(f"⚠️ Feature engineering orchestrator initialization failed: {e}")
                 self.feature_engineering_orchestrator = None
             
             # Initialize data quality utilities
-            tprint_info("🔧 Initializing data quality utilities...")
+            self.tprint_info("🔧 Initializing data quality utilities...")
             self.data_quality_utilities = DataQualityUtilities()
             self.integration_status['data_quality'] = True
-            tprint_success("✅ Data quality utilities initialized")
+            self.tprint_success("✅ Data quality utilities initialized")
             
-            tprint_success("🎉 All components initialized successfully")
+            self.tprint_success("🎉 All components initialized successfully")
             
         except Exception as e:
-            tprint_error(f"❌ Component initialization failed: {e}")
+            self.tprint_error(f"❌ Component initialization failed: {e}")
             raise
     
     def process_market_data_with_enhanced_labels(
@@ -285,55 +301,61 @@ class InfrastructureIntegrationManager(BaseStep):
             Dictionary containing all processed data and labels
         """
         start_time = datetime.now()
-        tprint_info("🔄 Starting enhanced market data processing")
+        self.tprint_info("🔄 Starting enhanced market data processing")
         
         try:
             # Step 1: Regime Detection
             regime_data = None
             if self.regime_classifier and force_regime_detection:
-                tprint_info("🎭 Step 1: Detecting market regimes")
+                self.tprint_info("🎭 Step 1: Detecting market regimes")
                 regime_data = self._detect_market_regimes(market_data)
             
             # Step 2: Feature Engineering
             engineered_features = None
             if self.feature_engineering_orchestrator and force_feature_engineering:
-                tprint_info("⚙️ Step 2: Engineering features")
+                self.tprint_info("⚙️ Step 2: Engineering features")
                 engineered_features = self._engineer_features(market_data, regime_data)
             
             # Step 3: Enhanced Data and Labels Processing
-            tprint_info("🎯 Step 3: Processing with enhanced data and labels system")
+            self.tprint_info("🎯 Step 3: Processing with enhanced data and labels system")
             enhanced_result = self.enhanced_labels_system.process_market_data(
                 market_data=market_data,
                 regime_data=regime_data,
                 force_recompute=force_recompute
             )
             
-            # Step 4: Integrate with Volatility-Aware Labeler
-            tprint_info("📊 Step 4: Integrating with volatility-aware labeler")
-            volatility_result = self._integrate_volatility_aware_labeling(
-                market_data, enhanced_result, regime_data
-            )
+            # Step 4: Volatility Modeling
+            volatility_result = None
+            if self.volatility_modeler:
+                self.tprint_info("📊 Step 4: Modeling volatility")
+                volatility_result = self.volatility_modeler.model_volatility(market_data)
             
-            # Step 5: Compile Final Results
-            tprint_info("📋 Step 5: Compiling final results")
+            # Step 5: Consolidated Profit Labeling
+            consolidated_result = None
+            if self.consolidated_labeler:
+                self.tprint_info("🎯 Step 5: Applying consolidated profit labeling")
+                consolidated_result = self.consolidated_labeler.generate_labels(market_data)
+            
+            # Step 6: Compile Final Results
+            self.tprint_info("📋 Step 6: Compiling final results")
             final_result = self._compile_final_results(
-                market_data, enhanced_result, volatility_result, 
-                regime_data, engineered_features
+                market_data, enhanced_result, consolidated_result, 
+                regime_data, engineered_features, volatility_result
             )
             
             processing_time = (datetime.now() - start_time).total_seconds()
             final_result['processing_time'] = processing_time
             final_result['timestamp'] = datetime.now()
             
-            tprint_success(f"✅ Enhanced market data processing completed in {processing_time:.2f}s")
-            tprint_info(f"   → Data quality: {final_result.get('data_quality_level', 'unknown')}")
-            tprint_info(f"   → Label stability: {final_result.get('label_stability_level', 'unknown')}")
-            tprint_info(f"   → Total samples: {len(final_result.get('processed_data', []))}")
+            self.tprint_success(f"✅ Enhanced market data processing completed in {processing_time:.2f}s")
+            self.tprint_info(f"   → Data quality: {final_result.get('data_quality_level', 'unknown')}")
+            self.tprint_info(f"   → Label stability: {final_result.get('label_stability_level', 'unknown')}")
+            self.tprint_info(f"   → Total samples: {len(final_result.get('processed_data', []))}")
             
             return final_result
             
         except Exception as e:
-            tprint_error(f"❌ Enhanced market data processing failed: {e}")
+            self.tprint_error(f"❌ Enhanced market data processing failed: {e}")
             return self._create_error_result(str(e))
     
     def _detect_market_regimes(self, market_data: pd.DataFrame) -> Optional[pd.Series]:
@@ -351,11 +373,11 @@ class InfrastructureIntegrationManager(BaseStep):
             # Convert to Series with proper index
             regime_series = pd.Series(regime_predictions, index=market_data.index)
             
-            tprint_success(f"✅ Market regimes detected: {len(regime_series.unique())} unique regimes")
+            self.tprint_success(f"✅ Market regimes detected: {len(regime_series.unique())} unique regimes")
             return regime_series
             
         except Exception as e:
-            tprint_warning(f"⚠️ Regime detection failed: {e}")
+            self.tprint_warning(f"⚠️ Regime detection failed: {e}")
             return None
     
     def _engineer_features(
@@ -376,11 +398,11 @@ class InfrastructureIntegrationManager(BaseStep):
             # Engineer features
             engineered_features = self.feature_engineering_orchestrator.generate_features(feature_input)
             
-            tprint_success(f"✅ Features engineered: {engineed_features.shape[1]} features")
+            self.tprint_success(f"✅ Features engineered: {engineered_features.shape[1]} features")
             return engineered_features
             
         except Exception as e:
-            tprint_warning(f"⚠️ Feature engineering failed: {e}")
+            self.tprint_warning(f"⚠️ Feature engineering failed: {e}")
             return None
     
     def _integrate_volatility_aware_labeling(
@@ -389,40 +411,42 @@ class InfrastructureIntegrationManager(BaseStep):
         enhanced_result: Dict[str, Any],
         regime_data: Optional[pd.Series] = None
     ) -> Dict[str, Any]:
-        """Integrate with volatility-aware labeler for additional labeling."""
+        """Integrate with consolidated labeler for additional labeling."""
         try:
-            if not self.volatility_aware_labeler:
+            if not self.consolidated_labeler:
                 return {}
             
             # Use the cleaned data from enhanced result
             cleaned_data = enhanced_result.get('processed_data', market_data)
             
-            # Generate volatility-aware labels
-            volatility_result = self.volatility_aware_labeler.generate_labels(cleaned_data)
+            # Generate consolidated labels
+            consolidated_result = self.consolidated_labeler.generate_labels(cleaned_data)
             
             # Extract additional insights
-            volatility_insights = {
-                'volatility_labels': volatility_result.labels,
-                'volatility_confidence': volatility_result.confidence_scores,
-                'volatility_quality': volatility_result.quality_scores,
-                'n_samples': volatility_result.n_samples,
-                'n_targets': volatility_result.n_targets
+            consolidated_insights = {
+                'consolidated_labels': consolidated_result.labels,
+                'confidence_scores': consolidated_result.confidence_scores,
+                'quality_metrics': {k: v.to_dict() for k, v in consolidated_result.quality_metrics.items()},
+                'overall_quality_score': consolidated_result.overall_quality_score,
+                'n_samples': consolidated_result.n_samples,
+                'n_targets': consolidated_result.n_targets
             }
             
-            tprint_success("✅ Volatility-aware labeling integrated")
-            return volatility_insights
+            self.tprint_success("✅ Consolidated labeling integrated")
+            return consolidated_insights
             
         except Exception as e:
-            tprint_warning(f"⚠️ Volatility-aware labeling integration failed: {e}")
+            self.tprint_warning(f"⚠️ Consolidated labeling integration failed: {e}")
             return {}
     
     def _compile_final_results(
         self,
         market_data: pd.DataFrame,
         enhanced_result: Dict[str, Any],
-        volatility_result: Dict[str, Any],
+        consolidated_result: Optional[Any] = None,
         regime_data: Optional[pd.Series] = None,
-        engineered_features: Optional[pd.DataFrame] = None
+        engineered_features: Optional[pd.DataFrame] = None,
+        volatility_result: Optional[Any] = None
     ) -> Dict[str, Any]:
         """Compile all results into a comprehensive output."""
         try:
@@ -454,9 +478,23 @@ class InfrastructureIntegrationManager(BaseStep):
                     'feature_names': list(engineered_features.columns)
                 }
             
-            # Add volatility-aware insights
-            if volatility_result:
-                final_result['volatility_insights'] = volatility_result
+            # Add consolidated labeling results
+            if consolidated_result is not None:
+                final_result['consolidated_labels'] = consolidated_result.labels
+                final_result['consolidated_quality_metrics'] = {k: v.to_dict() for k, v in consolidated_result.quality_metrics.items()}
+                final_result['consolidated_overall_quality'] = consolidated_result.overall_quality_score
+                final_result['consolidated_confidence_scores'] = consolidated_result.confidence_scores
+                final_result['consolidated_eligibility_masks'] = consolidated_result.eligibility_masks
+            
+            # Add volatility modeling results
+            if volatility_result is not None:
+                final_result['volatility_series'] = volatility_result.volatility_series
+                final_result['volatility_weights'] = volatility_result.combo_weights
+                final_result['volatility_statistics'] = {
+                    'mean_volatility': volatility_result.mean_volatility,
+                    'volatility_std': volatility_result.volatility_std,
+                    'volatility_percentiles': volatility_result.volatility_percentiles
+                }
             
             # Add integration status
             final_result['integration_status'] = self.integration_status.copy()
@@ -468,7 +506,7 @@ class InfrastructureIntegrationManager(BaseStep):
             return final_result
             
         except Exception as e:
-            tprint_error(f"❌ Final result compilation failed: {e}")
+            self.tprint_error(f"❌ Final result compilation failed: {e}")
             return self._create_error_result(str(e))
     
     def _create_error_result(self, error_message: str) -> Dict[str, Any]:
@@ -491,7 +529,8 @@ class InfrastructureIntegrationManager(BaseStep):
             'integration_status': self.integration_status.copy(),
             'components_available': {
                 'enhanced_labels_system': self.enhanced_labels_system is not None,
-                'volatility_aware_labeler': self.volatility_aware_labeler is not None,
+                'consolidated_labeler': self.consolidated_labeler is not None,
+                'volatility_modeler': self.volatility_modeler is not None,
                 'regime_classifier': self.regime_classifier is not None,
                 'feature_engineering_orchestrator': self.feature_engineering_orchestrator is not None,
                 'data_quality_utilities': self.data_quality_utilities is not None
@@ -529,16 +568,28 @@ class InfrastructureIntegrationManager(BaseStep):
                     'details': 'Enhanced labels system not initialized'
                 }
             
-            # Test volatility-aware labeler
-            if self.volatility_aware_labeler:
-                validation_results['component_tests']['volatility_aware'] = {
+            # Test consolidated labeler
+            if self.consolidated_labeler:
+                validation_results['component_tests']['consolidated_labeler'] = {
                     'status': 'available',
-                    'details': 'Volatility-aware labeler initialized'
+                    'details': 'Consolidated labeler initialized'
                 }
             else:
-                validation_results['component_tests']['volatility_aware'] = {
+                validation_results['component_tests']['consolidated_labeler'] = {
                     'status': 'not_available',
-                    'details': 'Volatility-aware labeler not initialized'
+                    'details': 'Consolidated labeler not initialized'
+                }
+            
+            # Test volatility modeler
+            if self.volatility_modeler:
+                validation_results['component_tests']['volatility_modeler'] = {
+                    'status': 'available',
+                    'details': 'Volatility modeler initialized'
+                }
+            else:
+                validation_results['component_tests']['volatility_modeler'] = {
+                    'status': 'not_available',
+                    'details': 'Volatility modeler not initialized'
                 }
             
             # Determine overall status
@@ -613,5 +664,13 @@ def get_system_status() -> Dict[str, Any]:
     manager = get_integration_manager()
     return {
         'integration_status': manager.get_integration_status(),
-        'enhanced_labels_status': manager.enhanced_labels_system.get_system_status() if manager.enhanced_labels_system else None
+        'enhanced_labels_status': manager.enhanced_labels_system.get_system_status() if manager.enhanced_labels_system else None,
+        'consolidated_labeler_status': {
+            'available': manager.consolidated_labeler is not None,
+            'config': manager.consolidated_labeler.config.__dict__ if manager.consolidated_labeler else None
+        } if hasattr(manager, 'consolidated_labeler') else None,
+        'volatility_modeler_status': {
+            'available': manager.volatility_modeler is not None,
+            'config': manager.volatility_modeler.config.__dict__ if manager.volatility_modeler else None
+        } if hasattr(manager, 'volatility_modeler') else None
     }

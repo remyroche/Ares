@@ -1,0 +1,236 @@
+# Enhanced Profit Labeling System Configurations
+# This file contains various configuration presets for different use cases
+
+# Basic Configuration - Simple setup for testing
+basic:
+  data_path: "data/klines"
+  symbols: ["BTCUSDT"]
+  timeframes: ["1h"]
+  start_date: "2023-01-01"
+  end_date: "2023-12-31"
+  feature_categories: ["volatility", "momentum", "volume"]
+  max_features: 100
+  feature_selection_method: "mrmr"
+  volatility_threshold: 0.02
+  horizon_quantiles: [0.25, 0.5, 0.75]
+  target_thresholds:
+    small: 0.01
+    medium: 0.02
+    high: 0.05
+  enable_bayesian_optimization: false
+  n_trials: 50
+  n_jobs: -1
+  enable_gpu: false
+  enable_parallel: true
+  memory_efficient: true
+  min_quality_score: 0.7
+  enable_noise_gating: true
+  enable_leakage_detection: true
+
+# Advanced Configuration - Full features for production
+advanced:
+  data_path: "data/klines"
+  symbols: ["BTCUSDT", "ETHUSDT", "ADAUSDT", "SOLUSDT"]
+  timeframes: ["1h", "4h", "1d"]
+  start_date: "2020-01-01"
+  end_date: "2024-12-31"
+  feature_categories: ["volatility", "momentum", "volume", "trend", "oscillator", "regime"]
+  max_features: 1000
+  feature_selection_method: "ensemble"
+  volatility_threshold: 0.025
+  horizon_quantiles: [0.2, 0.4, 0.6, 0.8]
+  target_thresholds:
+    small: 0.01
+    medium: 0.025
+    high: 0.05
+  enable_bayesian_optimization: true
+  n_trials: 200
+  n_jobs: 8
+  enable_gpu: false
+  enable_parallel: true
+  memory_efficient: true
+  min_quality_score: 0.75
+  enable_noise_gating: true
+  enable_leakage_detection: true
+
+# High-Frequency Configuration - For intraday trading
+high_frequency:
+  data_path: "data/klines"
+  symbols: ["BTCUSDT", "ETHUSDT"]
+  timeframes: ["1m", "5m", "15m", "1h"]
+  start_date: "2024-01-01"
+  end_date: "2024-12-31"
+  feature_categories: ["volatility", "momentum", "volume", "microstructure", "order_flow"]
+  max_features: 500
+  feature_selection_method: "mrmr"
+  volatility_threshold: 0.005
+  horizon_quantiles: [0.1, 0.3, 0.5, 0.7, 0.9]
+  target_thresholds:
+    small: 0.002
+    medium: 0.005
+    high: 0.01
+  enable_bayesian_optimization: true
+  n_trials: 100
+  n_jobs: 4
+  enable_gpu: false
+  enable_parallel: true
+  memory_efficient: true
+  min_quality_score: 0.8
+  enable_noise_gating: true
+  enable_leakage_detection: true
+
+# Research Configuration - For academic research
+research:
+  data_path: "data/klines"
+  symbols: ["BTCUSDT", "ETHUSDT", "ADAUSDT", "SOLUSDT", "DOTUSDT", "LINKUSDT"]
+  timeframes: ["1h", "4h", "1d", "1w"]
+  start_date: "2018-01-01"
+  end_date: "2024-12-31"
+  feature_categories: ["volatility", "momentum", "volume", "trend", "oscillator", "regime", "spectral", "entropy"]
+  max_features: 2000
+  feature_selection_method: "ensemble"
+  volatility_threshold: 0.02
+  horizon_quantiles: [0.1, 0.25, 0.5, 0.75, 0.9]
+  target_thresholds:
+    small: 0.01
+    medium: 0.02
+    high: 0.04
+  enable_bayesian_optimization: true
+  n_trials: 500
+  n_jobs: 16
+  enable_gpu: true
+  enable_parallel: true
+  memory_efficient: true
+  min_quality_score: 0.8
+  enable_noise_gating: true
+  enable_leakage_detection: true
+
+# Conservative Configuration - Low risk, stable labels
+conservative:
+  data_path: "data/klines"
+  symbols: ["BTCUSDT", "ETHUSDT"]
+  timeframes: ["4h", "1d"]
+  start_date: "2022-01-01"
+  end_date: "2024-12-31"
+  feature_categories: ["volatility", "trend", "momentum"]
+  max_features: 200
+  feature_selection_method: "lasso"
+  volatility_threshold: 0.01
+  horizon_quantiles: [0.3, 0.5, 0.7]
+  target_thresholds:
+    small: 0.005
+    medium: 0.01
+    high: 0.02
+  enable_bayesian_optimization: true
+  n_trials: 50
+  n_jobs: 2
+  enable_gpu: false
+  enable_parallel: true
+  memory_efficient: true
+  min_quality_score: 0.9
+  enable_noise_gating: true
+  enable_leakage_detection: true
+
+# Aggressive Configuration - High risk, high reward
+aggressive:
+  data_path: "data/klines"
+  symbols: ["BTCUSDT", "ETHUSDT", "ADAUSDT", "SOLUSDT", "DOTUSDT"]
+  timeframes: ["1h", "4h"]
+  start_date: "2023-01-01"
+  end_date: "2024-12-31"
+  feature_categories: ["volatility", "momentum", "volume", "trend", "oscillator", "regime", "interaction"]
+  max_features: 1500
+  feature_selection_method: "ensemble"
+  volatility_threshold: 0.04
+  horizon_quantiles: [0.2, 0.4, 0.6, 0.8]
+  target_thresholds:
+    small: 0.02
+    medium: 0.04
+    high: 0.08
+  enable_bayesian_optimization: true
+  n_trials: 300
+  n_jobs: 8
+  enable_gpu: false
+  enable_parallel: true
+  memory_efficient: true
+  min_quality_score: 0.6
+  enable_noise_gating: false
+  enable_leakage_detection: true
+
+# GPU-Optimized Configuration - For systems with GPU acceleration
+gpu_optimized:
+  data_path: "data/klines"
+  symbols: ["BTCUSDT", "ETHUSDT", "ADAUSDT"]
+  timeframes: ["1h", "4h", "1d"]
+  start_date: "2023-01-01"
+  end_date: "2024-12-31"
+  feature_categories: ["volatility", "momentum", "volume", "trend", "oscillator"]
+  max_features: 800
+  feature_selection_method: "mrmr"
+  volatility_threshold: 0.025
+  horizon_quantiles: [0.25, 0.5, 0.75]
+  target_thresholds:
+    small: 0.01
+    medium: 0.025
+    high: 0.05
+  enable_bayesian_optimization: true
+  n_trials: 150
+  n_jobs: 4
+  enable_gpu: true
+  enable_parallel: true
+  memory_efficient: true
+  min_quality_score: 0.75
+  enable_noise_gating: true
+  enable_leakage_detection: true
+
+# Memory-Efficient Configuration - For systems with limited memory
+memory_efficient:
+  data_path: "data/klines"
+  symbols: ["BTCUSDT"]
+  timeframes: ["1h"]
+  start_date: "2024-01-01"
+  end_date: "2024-12-31"
+  feature_categories: ["volatility", "momentum", "volume"]
+  max_features: 100
+  feature_selection_method: "lasso"
+  volatility_threshold: 0.02
+  horizon_quantiles: [0.25, 0.5, 0.75]
+  target_thresholds:
+    small: 0.01
+    medium: 0.02
+    high: 0.04
+  enable_bayesian_optimization: false
+  n_trials: 25
+  n_jobs: 1
+  enable_gpu: false
+  enable_parallel: false
+  memory_efficient: true
+  min_quality_score: 0.7
+  enable_noise_gating: true
+  enable_leakage_detection: true
+
+# Multi-Asset Configuration - For portfolio-level analysis
+multi_asset:
+  data_path: "data/klines"
+  symbols: ["BTCUSDT", "ETHUSDT", "ADAUSDT", "SOLUSDT", "DOTUSDT", "LINKUSDT", "MATICUSDT", "AVAXUSDT"]
+  timeframes: ["1h", "4h", "1d"]
+  start_date: "2022-01-01"
+  end_date: "2024-12-31"
+  feature_categories: ["volatility", "momentum", "volume", "trend", "cross_timeframe"]
+  max_features: 1200
+  feature_selection_method: "ensemble"
+  volatility_threshold: 0.025
+  horizon_quantiles: [0.25, 0.5, 0.75]
+  target_thresholds:
+    small: 0.01
+    medium: 0.025
+    high: 0.05
+  enable_bayesian_optimization: true
+  n_trials: 200
+  n_jobs: 8
+  enable_gpu: false
+  enable_parallel: true
+  memory_efficient: true
+  min_quality_score: 0.75
+  enable_noise_gating: true
+  enable_leakage_detection: true

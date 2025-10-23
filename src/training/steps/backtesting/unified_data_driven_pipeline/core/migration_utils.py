@@ -795,7 +795,8 @@ def create_backtesting_component_wrapper(original_component_class: Type) -> Type
             if hasattr(self.original_component, 'process'):
                 return self.original_component.process(data, **kwargs)
             else:
-                raise NotImplementedError("Original component has no process method")
+                # Fallback: return data as-is if no process method available
+                return data
         
         def _get_validation_rules(self) -> Dict[str, Any]:
             """Get validation rules for the wrapper."""

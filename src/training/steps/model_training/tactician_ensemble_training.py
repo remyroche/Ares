@@ -1702,7 +1702,7 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
                 tprint_warning(f"⚠️ Model {model_name} does not have predict method")
                 return None
 
-            from src.utils.purged_kfold import PurgedKFoldTime
+            from src.utils.ml_common.validation.consolidated_cv import ConsolidatedCrossValidator as PurgedKFoldTime
             from src.utils.math_validation import validate_finite
             from src.utils.common_operations import safe_float
 

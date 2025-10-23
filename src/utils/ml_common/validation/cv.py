@@ -13,7 +13,7 @@ import numpy as np
 import pandas as pd
 
 try:
-    from ..purged_kfold import PurgedKFoldTime
+    from .consolidated_cv import ConsolidatedCrossValidator as PurgedKFoldTime
 except Exception:
     PurgedKFoldTime = None  # fallback handled below
 

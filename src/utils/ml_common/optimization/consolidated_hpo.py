@@ -328,16 +328,73 @@ class ConsolidatedHPO:
             if TPRINT_AVAILABLE:
                 tprint_info("🔧 Initializing hardware optimization components")
             
-            # Hardware optimization would be initialized here
-            # This is a placeholder for the actual implementation
+            # Initialize hardware optimization components
+            self.hardware_optimizer = None
+            self.memory_manager = None
+            self.gpu_manager = None
             
-            if TPRINT_AVAILABLE:
-                tprint_success("✅ Hardware optimization components initialized")
+            # Try to import and initialize hardware optimization modules
+            try:
+                from src.utils.hardware.m1_comprehensive_optimizer import M1ComprehensiveOptimizer
+                from src.utils.hardware.advanced_memory_manager import AdvancedMemoryManager
+                from src.utils.hardware.enhanced_gpu_manager import EnhancedGPUManager
+                
+                # Initialize M1 comprehensive optimizer
+                self.hardware_optimizer = M1ComprehensiveOptimizer()
+                self.hardware_optimizer.initialize()
+                
+                # Initialize memory manager
+                self.memory_manager = AdvancedMemoryManager()
+                self.memory_manager.initialize()
+                
+                # Initialize GPU manager
+                self.gpu_manager = EnhancedGPUManager()
+                self.gpu_manager.initialize()
+                
+                if TPRINT_AVAILABLE:
+                    tprint_success("✅ Hardware optimization components initialized")
+                    tprint_info(f"   - Hardware optimizer: {type(self.hardware_optimizer).__name__}")
+                    tprint_info(f"   - Memory manager: {type(self.memory_manager).__name__}")
+                    tprint_info(f"   - GPU manager: {type(self.gpu_manager).__name__}")
+                
+            except ImportError as e:
+                if TPRINT_AVAILABLE:
+                    tprint_warning(f"⚠️ Hardware optimization modules not available: {e}")
+                else:
+                    self.logger.warning(f"Hardware optimization modules not available: {e}")
+                
+                # Fallback to basic hardware detection
+                self._initialize_basic_hardware_detection()
+            
         except Exception as e:
             if TPRINT_AVAILABLE:
                 tprint_warning(f"⚠️ Hardware optimization initialization failed: {e}")
             else:
                 self.logger.warning(f"Hardware optimization initialization failed: {e}")
+    
+    def _initialize_basic_hardware_detection(self):
+        """Initialize basic hardware detection as fallback."""
+        try:
+            import psutil
+            import platform
+            
+            # Basic system information
+            self.system_info = {
+                'cpu_count': psutil.cpu_count(),
+                'memory_total': psutil.virtual_memory().total,
+                'platform': platform.platform(),
+                'architecture': platform.architecture()[0]
+            }
+            
+            if TPRINT_AVAILABLE:
+                tprint_info("🔧 Basic hardware detection initialized")
+                tprint_info(f"   - CPU cores: {self.system_info['cpu_count']}")
+                tprint_info(f"   - Memory: {self.system_info['memory_total'] / (1024**3):.1f} GB")
+                
+        except ImportError:
+            if TPRINT_AVAILABLE:
+                tprint_warning("⚠️ psutil not available for hardware detection")
+            self.system_info = {'cpu_count': 1, 'memory_total': 0}
     
     def _initialize_vectorbt_components(self):
         """Initialize VectorBT optimization components."""
@@ -345,16 +402,70 @@ class ConsolidatedHPO:
             if TPRINT_AVAILABLE:
                 tprint_info("🔧 Initializing VectorBT optimization components")
             
-            # VectorBT components would be initialized here
-            # This is a placeholder for the actual implementation
+            # Initialize VectorBT optimization components
+            self.vectorbt_optimizer = None
+            self.vectorbt_gpu_accelerator = None
+            self.vectorbt_memory_manager = None
             
-            if TPRINT_AVAILABLE:
-                tprint_success("✅ VectorBT optimization components initialized")
+            # Try to import and initialize VectorBT components
+            try:
+                import vectorbt as vbt
+                from src.utils.hardware.vectorbt_gpu_accelerator import VectorBTGPUAccelerator
+                from src.utils.ml_common.vectorbt_memory_manager import VectorBTMemoryManager
+                
+                # Initialize VectorBT GPU accelerator
+                self.vectorbt_gpu_accelerator = VectorBTGPUAccelerator()
+                self.vectorbt_gpu_accelerator.initialize()
+                
+                # Initialize VectorBT memory manager
+                self.vectorbt_memory_manager = VectorBTMemoryManager()
+                self.vectorbt_memory_manager.initialize()
+                
+                # Configure VectorBT settings for optimization
+                vbt.settings.set_theme("dark")
+                vbt.settings.returns['year_freq'] = '252D'
+                vbt.settings.returns['week_freq'] = '5D'
+                vbt.settings.returns['day_freq'] = '1D'
+                
+                if TPRINT_AVAILABLE:
+                    tprint_success("✅ VectorBT optimization components initialized")
+                    tprint_info(f"   - VectorBT version: {vbt.__version__}")
+                    tprint_info(f"   - GPU accelerator: {type(self.vectorbt_gpu_accelerator).__name__}")
+                    tprint_info(f"   - Memory manager: {type(self.vectorbt_memory_manager).__name__}")
+                
+            except ImportError as e:
+                if TPRINT_AVAILABLE:
+                    tprint_warning(f"⚠️ VectorBT components not available: {e}")
+                else:
+                    self.logger.warning(f"VectorBT components not available: {e}")
+                
+                # Fallback to basic VectorBT configuration
+                self._initialize_basic_vectorbt_config()
+            
         except Exception as e:
             if TPRINT_AVAILABLE:
                 tprint_warning(f"⚠️ VectorBT optimization initialization failed: {e}")
             else:
                 self.logger.warning(f"VectorBT optimization initialization failed: {e}")
+    
+    def _initialize_basic_vectorbt_config(self):
+        """Initialize basic VectorBT configuration as fallback."""
+        try:
+            import vectorbt as vbt
+            
+            # Basic VectorBT configuration
+            vbt.settings.set_theme("dark")
+            vbt.settings.returns['year_freq'] = '252D'
+            vbt.settings.returns['week_freq'] = '5D'
+            vbt.settings.returns['day_freq'] = '1D'
+            
+            if TPRINT_AVAILABLE:
+                tprint_info("🔧 Basic VectorBT configuration initialized")
+                tprint_info(f"   - VectorBT version: {vbt.__version__}")
+                
+        except ImportError:
+            if TPRINT_AVAILABLE:
+                tprint_warning("⚠️ VectorBT not available for configuration")
     
     def _initialize_monitoring(self):
         """Initialize monitoring and diagnostics."""
@@ -362,16 +473,72 @@ class ConsolidatedHPO:
             if TPRINT_AVAILABLE:
                 tprint_info("🔧 Initializing monitoring and diagnostics")
             
-            # Monitoring would be initialized here
-            # This is a placeholder for the actual implementation
+            # Initialize monitoring components
+            self.monitoring_system = None
+            self.performance_tracker = None
+            self.metrics_collector = None
             
-            if TPRINT_AVAILABLE:
-                tprint_success("✅ Monitoring and diagnostics initialized")
+            # Try to import and initialize monitoring modules
+            try:
+                from src.utils.prometheus_metrics import PrometheusMetrics
+                from src.utils.performance_utils import PerformanceTracker
+                from src.utils.monitoring_utils import MetricsCollector
+                
+                # Initialize Prometheus metrics
+                self.monitoring_system = PrometheusMetrics()
+                self.monitoring_system.initialize()
+                
+                # Initialize performance tracker
+                self.performance_tracker = PerformanceTracker()
+                self.performance_tracker.initialize()
+                
+                # Initialize metrics collector
+                self.metrics_collector = MetricsCollector()
+                self.metrics_collector.initialize()
+                
+                if TPRINT_AVAILABLE:
+                    tprint_success("✅ Monitoring and diagnostics initialized")
+                    tprint_info(f"   - Monitoring system: {type(self.monitoring_system).__name__}")
+                    tprint_info(f"   - Performance tracker: {type(self.performance_tracker).__name__}")
+                    tprint_info(f"   - Metrics collector: {type(self.metrics_collector).__name__}")
+                
+            except ImportError as e:
+                if TPRINT_AVAILABLE:
+                    tprint_warning(f"⚠️ Monitoring modules not available: {e}")
+                else:
+                    self.logger.warning(f"Monitoring modules not available: {e}")
+                
+                # Fallback to basic monitoring
+                self._initialize_basic_monitoring()
+            
         except Exception as e:
             if TPRINT_AVAILABLE:
                 tprint_warning(f"⚠️ Monitoring initialization failed: {e}")
             else:
                 self.logger.warning(f"Monitoring initialization failed: {e}")
+    
+    def _initialize_basic_monitoring(self):
+        """Initialize basic monitoring as fallback."""
+        try:
+            import time
+            import psutil
+            
+            # Basic monitoring setup
+            self.basic_metrics = {
+                'start_time': time.time(),
+                'cpu_usage': [],
+                'memory_usage': [],
+                'optimization_count': 0
+            }
+            
+            if TPRINT_AVAILABLE:
+                tprint_info("🔧 Basic monitoring initialized")
+                tprint_info(f"   - Start time: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(self.basic_metrics['start_time']))}")
+                
+        except ImportError:
+            if TPRINT_AVAILABLE:
+                tprint_warning("⚠️ psutil not available for basic monitoring")
+            self.basic_metrics = {'start_time': time.time(), 'optimization_count': 0}
     
     def optimize(self, 
                  model_factory: Callable,

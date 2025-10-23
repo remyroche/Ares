@@ -671,6 +671,87 @@ class EnhancedConsolidatedOOFGenerator:
         
         return confidence_intervals
     
+    def _calculate_stacking_confidence(
+        self,
+        meta_predictions: np.ndarray,
+        oof_predictions: Dict[str, np.ndarray],
+        y: np.ndarray
+    ) -> np.ndarray:
+        """Calculate stacking confidence based on meta-model prediction variance and base model agreement."""
+        try:
+            n_samples = len(y)
+            stacking_confidence = np.zeros(n_samples)
+            
+            # Method 1: Meta-model prediction variance
+            if len(meta_predictions.shape) > 1 and meta_predictions.shape[1] > 1:
+                # Multiple meta-model predictions - use variance
+                meta_variance = np.var(meta_predictions, axis=1)
+                meta_confidence = 1.0 / (1.0 + meta_variance)  # Higher variance = lower confidence
+            else:
+                # Single meta-model prediction - use base model agreement
+                meta_confidence = np.ones(n_samples)
+            
+            # Method 2: Base model agreement
+            if len(oof_predictions) > 1:
+                # Calculate agreement between base models
+                base_predictions = np.array(list(oof_predictions.values()))
+                base_agreement = 1.0 - np.std(base_predictions, axis=0) / (np.mean(np.abs(base_predictions), axis=0) + 1e-8)
+                base_agreement = np.clip(base_agreement, 0.0, 1.0)
+            else:
+                base_agreement = np.ones(n_samples)
+            
+            # Method 3: Prediction accuracy (if we have ground truth)
+            if y is not None and len(y) == n_samples:
+                # Calculate how close predictions are to actual values
+                prediction_errors = np.abs(meta_predictions.flatten() - y.flatten())
+                max_error = np.max(prediction_errors) + 1e-8
+                accuracy_confidence = 1.0 - (prediction_errors / max_error)
+                accuracy_confidence = np.clip(accuracy_confidence, 0.0, 1.0)
+            else:
+                accuracy_confidence = np.ones(n_samples)
+            
+            # Combine confidence measures with weights
+            weights = self.config.get('confidence_weights', {
+                'meta_variance': 0.4,
+                'base_agreement': 0.3,
+                'accuracy': 0.3
+            })
+            
+            stacking_confidence = (
+                weights['meta_variance'] * meta_confidence +
+                weights['base_agreement'] * base_agreement +
+                weights['accuracy'] * accuracy_confidence
+            )
+            
+            # Ensure confidence is between 0 and 1
+            stacking_confidence = np.clip(stacking_confidence, 0.0, 1.0)
+            
+            # Apply smoothing to reduce noise
+            if n_samples > 1:
+                from scipy.ndimage import gaussian_filter1d
+                try:
+                    stacking_confidence = gaussian_filter1d(stacking_confidence, sigma=1.0)
+                    stacking_confidence = np.clip(stacking_confidence, 0.0, 1.0)
+                except ImportError:
+                    # Fallback to simple moving average if scipy not available
+                    window_size = min(5, n_samples // 4)
+                    if window_size > 1:
+                        for i in range(n_samples):
+                            start_idx = max(0, i - window_size // 2)
+                            end_idx = min(n_samples, i + window_size // 2 + 1)
+                            stacking_confidence[i] = np.mean(stacking_confidence[start_idx:end_idx])
+            
+            self.logger.debug(f"Stacking confidence calculated: mean={np.mean(stacking_confidence):.3f}, "
+                            f"std={np.std(stacking_confidence):.3f}, "
+                            f"min={np.min(stacking_confidence):.3f}, max={np.max(stacking_confidence):.3f}")
+            
+            return stacking_confidence
+            
+        except Exception as e:
+            self.logger.warning(f"Failed to calculate stacking confidence: {e}")
+            # Fallback to uniform confidence
+            return np.ones(len(y))
+    
     def _perform_leakage_detection(
         self,
         oof_predictions: Dict[str, np.ndarray],
@@ -761,7 +842,7 @@ class EnhancedConsolidatedOOFGenerator:
                 base_weights = {name: 1.0/len(oof_predictions) for name in oof_predictions.keys()}
             
             # Calculate stacking confidence (based on meta-model prediction variance)
-            stacking_confidence = np.ones(len(y))  # Placeholder for now
+            stacking_confidence = self._calculate_stacking_confidence(meta_predictions, oof_predictions, y)
             
             return (
                 {self.config.meta_model_type: meta_performance},

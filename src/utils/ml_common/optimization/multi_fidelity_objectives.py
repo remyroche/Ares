@@ -39,15 +39,255 @@ class MultiFidelityConfig:
 
 
 class MultiFidelityObjective(ABC):
-    """Abstract base class for multi-fidelity objectives."""
+    """
+    Abstract base class for multi-fidelity objectives.
+    
+    This class provides a comprehensive interface for multi-fidelity optimization
+    with production-ready features including error handling, validation, logging,
+    and performance tracking.
+    """
     
     def __init__(self, config: MultiFidelityConfig):
         self.config = config
+        self.logger = logging.getLogger(self.__class__.__name__)
         self.performance_history = []
         self.resource_efficiency_history = []
+        self.evaluation_count = 0
+        self.best_value = float('-inf')
+        self.best_params = None
+        
+        self.logger.info(f"✅ {self.__class__.__name__} initialized")
+        self.logger.info(f"   Resource range: {config.min_resource} - {config.max_resource}")
+        self.logger.info(f"   Resource scaling factor: {config.resource_scaling_factor}")
     
     @abstractmethod
     def evaluate(self, params: Dict[str, Any], resource: int) -> float:
+        """
+        Evaluate objective function at given parameters and resource level.
+        
+        Args:
+            params: Parameter dictionary
+            resource: Resource level (e.g., number of iterations, data size)
+            
+        Returns:
+            Objective function value
+        """
+        pass
+
+    @abstractmethod
+    def get_resource_efficiency(self, params: Dict[str, Any], resource: int) -> float:
+        """
+        Calculate resource efficiency for given parameters and resource level.
+        
+        Args:
+            params: Parameter dictionary
+            resource: Resource level
+            
+        Returns:
+            Resource efficiency score
+        """
+        pass
+
+    @abstractmethod
+    def should_early_stop(self, params: Dict[str, Any], resource: int, 
+                         current_value: float) -> bool:
+        """
+        Determine if evaluation should stop early.
+        
+        Args:
+            params: Parameter dictionary
+            resource: Current resource level
+            current_value: Current objective value
+            
+        Returns:
+            True if should stop early, False otherwise
+        """
+        pass
+
+    @abstractmethod
+    def get_optimal_resource_level(self, params: Dict[str, Any]) -> int:
+        """
+        Get optimal resource level for given parameters.
+        
+        Args:
+            params: Parameter dictionary
+            
+        Returns:
+            Optimal resource level
+        """
+        pass
+
+    @abstractmethod
+    def validate_parameters(self, params: Dict[str, Any]) -> bool:
+        """
+        Validate parameter dictionary.
+        
+        Args:
+            params: Parameter dictionary
+            
+        Returns:
+            True if parameters are valid, False otherwise
+        """
+        pass
+
+    @abstractmethod
+    def get_parameter_bounds(self) -> Dict[str, Tuple[float, float]]:
+        """
+        Get parameter bounds for optimization.
+        
+        Returns:
+            Dictionary mapping parameter names to (min, max) bounds
+        """
+        pass
+
+    def evaluate_with_tracking(self, params: Dict[str, Any], resource: int) -> float:
+        """Evaluate objective with performance tracking."""
+        try:
+            # Validate parameters
+            if not self.validate_parameters(params):
+                raise ValueError("Invalid parameters")
+            
+            # Validate resource level
+            if not (self.config.min_resource <= resource <= self.config.max_resource):
+                raise ValueError(f"Resource level {resource} out of bounds")
+            
+            # Evaluate objective
+            start_time = time.time()
+            value = self.evaluate(params, resource)
+            evaluation_time = time.time() - start_time
+            
+            # Track performance
+            self.evaluation_count += 1
+            self.performance_history.append({
+                'evaluation_id': self.evaluation_count,
+                'params': params.copy(),
+                'resource': resource,
+                'value': value,
+                'evaluation_time': evaluation_time,
+                'timestamp': time.time()
+            })
+            
+            # Update best value
+            if value > self.best_value:
+                self.best_value = value
+                self.best_params = params.copy()
+                self.logger.info(f"🎯 New best value: {value:.6f} at resource {resource}")
+            
+            # Calculate resource efficiency
+            efficiency = self.get_resource_efficiency(params, resource)
+            self.resource_efficiency_history.append({
+                'evaluation_id': self.evaluation_count,
+                'efficiency': efficiency,
+                'resource': resource,
+                'value': value
+            })
+            
+            # Check for early stopping
+            if self.should_early_stop(params, resource, value):
+                self.logger.info(f"⏹️ Early stopping triggered at resource {resource}")
+                return value
+            
+            return value
+            
+        except Exception as e:
+            self.logger.error(f"❌ Evaluation failed: {e}")
+            raise
+
+    def get_performance_summary(self) -> Dict[str, Any]:
+        """Get comprehensive performance summary."""
+        try:
+            if not self.performance_history:
+                return {'error': 'No evaluations performed'}
+            
+            values = [entry['value'] for entry in self.performance_history]
+            times = [entry['evaluation_time'] for entry in self.performance_history]
+            resources = [entry['resource'] for entry in self.performance_history]
+            
+            summary = {
+                'total_evaluations': self.evaluation_count,
+                'best_value': self.best_value,
+                'best_params': self.best_params,
+                'mean_value': np.mean(values),
+                'std_value': np.std(values),
+                'min_value': np.min(values),
+                'max_value': np.max(values),
+                'mean_evaluation_time': np.mean(times),
+                'total_evaluation_time': np.sum(times),
+                'mean_resource': np.mean(resources),
+                'resource_range': (np.min(resources), np.max(resources)),
+                'performance_trend': self._calculate_performance_trend(),
+                'resource_efficiency_trend': self._calculate_efficiency_trend()
+            }
+            
+            return summary
+            
+        except Exception as e:
+            self.logger.error(f"❌ Getting performance summary failed: {e}")
+            return {'error': str(e)}
+
+    def _calculate_performance_trend(self) -> str:
+        """Calculate performance trend over time."""
+        try:
+            if len(self.performance_history) < 10:
+                return "insufficient_data"
+            
+            recent_values = [entry['value'] for entry in self.performance_history[-10:]]
+            early_values = [entry['value'] for entry in self.performance_history[:10]]
+            
+            recent_mean = np.mean(recent_values)
+            early_mean = np.mean(early_values)
+            
+            if recent_mean > early_mean * 1.01:
+                return "improving"
+            elif recent_mean < early_mean * 0.99:
+                return "degrading"
+            else:
+                return "stable"
+                
+        except Exception as e:
+            self.logger.warning(f"⚠️ Could not calculate performance trend: {e}")
+            return "unknown"
+
+    def _calculate_efficiency_trend(self) -> str:
+        """Calculate resource efficiency trend over time."""
+        try:
+            if len(self.resource_efficiency_history) < 10:
+                return "insufficient_data"
+            
+            recent_efficiency = [entry['efficiency'] for entry in self.resource_efficiency_history[-10:]]
+            early_efficiency = [entry['efficiency'] for entry in self.resource_efficiency_history[:10]]
+            
+            recent_mean = np.mean(recent_efficiency)
+            early_mean = np.mean(early_efficiency)
+            
+            if recent_mean > early_mean * 1.01:
+                return "improving"
+            elif recent_mean < early_mean * 0.99:
+                return "degrading"
+            else:
+                return "stable"
+                
+        except Exception as e:
+            self.logger.warning(f"⚠️ Could not calculate efficiency trend: {e}")
+            return "unknown"
+
+    def reset_tracking(self):
+        """Reset performance tracking."""
+        self.performance_history = []
+        self.resource_efficiency_history = []
+        self.evaluation_count = 0
+        self.best_value = float('-inf')
+        self.best_params = None
+        self.logger.info("🔄 Performance tracking reset")
+
+    def __repr__(self) -> str:
+        """String representation of the objective."""
+        return (f"{self.__class__.__name__}(evaluations={self.evaluation_count}, "
+                f"best_value={self.best_value:.6f})")
+
+    def __str__(self) -> str:
+        """String representation of the objective."""
+        return self.__repr__()
         """Evaluate objective at given resource level."""
         pass
     

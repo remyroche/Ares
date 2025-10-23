@@ -40,9 +40,28 @@ class LocationClassifierEnhancements:
             metrics['weighted_resistance_distance'] = 1.0
 
         # 2. Distance Velocity (how fast price is moving toward/away from levels)
-        # Requires price history
-        metrics['support_approach_velocity'] = 0.0  # Placeholder - implement with price history
-        metrics['resistance_approach_velocity'] = 0.0
+        # Calculate velocity based on price movement toward support/resistance levels
+        if len(price_history) >= 2:
+            # Calculate price velocity (rate of change)
+            price_velocity = (current_price - price_history[-2]) / price_history[-2] if price_history[-2] != 0 else 0.0
+            
+            # Calculate approach velocity toward support/resistance levels
+            if support_levels:
+                closest_support = min(support_levels, key=lambda s: abs(current_price - s['price']))
+                support_distance = (current_price - closest_support['price']) / current_price
+                metrics['support_approach_velocity'] = price_velocity if support_distance > 0 else -price_velocity
+            else:
+                metrics['support_approach_velocity'] = 0.0
+                
+            if resistance_levels:
+                closest_resistance = min(resistance_levels, key=lambda r: abs(current_price - r['price']))
+                resistance_distance = (closest_resistance['price'] - current_price) / current_price
+                metrics['resistance_approach_velocity'] = price_velocity if resistance_distance > 0 else -price_velocity
+            else:
+                metrics['resistance_approach_velocity'] = 0.0
+        else:
+            metrics['support_approach_velocity'] = 0.0
+            metrics['resistance_approach_velocity'] = 0.0
 
         # 3. Normalized Distance Score (0-1, considering typical market ranges)
         # Uses sigmoid transformation for smooth scaling

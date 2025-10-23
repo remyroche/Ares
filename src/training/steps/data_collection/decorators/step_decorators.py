@@ -592,13 +592,46 @@ def _validate_statistical_properties(result: dict) -> None:
 
 def _check_authentication() -> None:
     """Check user authentication."""
-    # Placeholder for authentication logic
-    pass
+    # Basic authentication check - can be extended with actual auth logic
+    import os
+    user_id = os.getenv('USER_ID')
+    if not user_id:
+        raise PermissionError("User authentication required - USER_ID environment variable not set")
+    
+    # Additional authentication checks could be added here
+    # For example: JWT token validation, API key verification, etc.
 
 def _check_rate_limit(operation_name: str, rate_limit: int) -> None:
     """Check rate limiting for operations."""
-    # Placeholder for rate limiting logic
-    pass
+    import time
+    from collections import defaultdict
+    
+    # Simple in-memory rate limiting (in production, use Redis or similar)
+    if not hasattr(_check_rate_limit, '_call_counts'):
+        _check_rate_limit._call_counts = defaultdict(list)
+        _check_rate_limit._last_cleanup = time.time()
+    
+    current_time = time.time()
+    call_counts = _check_rate_limit._call_counts
+    
+    # Clean up old entries (older than 1 hour)
+    if current_time - _check_rate_limit._last_cleanup > 3600:
+        cutoff_time = current_time - 3600
+        for key in list(call_counts.keys()):
+            call_counts[key] = [t for t in call_counts[key] if t > cutoff_time]
+            if not call_counts[key]:
+                del call_counts[key]
+        _check_rate_limit._last_cleanup = current_time
+    
+    # Check rate limit for this operation
+    operation_key = f"{operation_name}_{rate_limit}"
+    recent_calls = [t for t in call_counts[operation_key] if t > current_time - 60]  # Last minute
+    
+    if len(recent_calls) >= rate_limit:
+        raise RuntimeError(f"Rate limit exceeded for operation '{operation_name}': {len(recent_calls)} calls in the last minute (limit: {rate_limit})")
+    
+    # Record this call
+    call_counts[operation_key].append(current_time)
 
 async def _retry_operation(
     func: Callable,

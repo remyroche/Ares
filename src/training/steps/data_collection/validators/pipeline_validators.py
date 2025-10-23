@@ -686,9 +686,30 @@ class PipelineStepValidator:
 
     async def _check_prerequisites(self, symbol: str, exchange: str, data_dir: str) -> bool:
         """Check if prerequisites are met for the step."""
-        # This would be implemented based on specific step requirements
-        # For now, return True as a placeholder
-        return True
+        try:
+            # Check if data directory exists and is accessible
+            if not os.path.exists(data_dir):
+                self.logger.warning(f"Data directory does not exist: {data_dir}")
+                return False
+            
+            # Check if we have read permissions
+            if not os.access(data_dir, os.R_OK):
+                self.logger.warning(f"No read access to data directory: {data_dir}")
+                return False
+            
+            # Check if symbol and exchange are valid (non-empty strings)
+            if not symbol or not exchange:
+                self.logger.warning("Symbol or exchange is empty")
+                return False
+            
+            # Additional checks could be added here based on specific requirements
+            # For example: checking for required files, database connections, etc.
+            
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Prerequisite check failed: {e}")
+            return False
 
 # Export main classes
 __all__ = [

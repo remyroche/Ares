@@ -6,7 +6,11 @@ using proper dependency injection patterns.
 """
 from typing import Any
 from .exchange.factory import ExchangeFactory
-from .core.dependency_injection import DependencyContainer
+try:
+    from .core.dependency_injection import DependencyContainer
+except ImportError:
+    # Fallback if dependency injection is not available
+    DependencyContainer = None
 from .database.firestore_manager import FirestoreManager
 from .database.influxdb_manager import InfluxDBManager
 from src.interfaces.base_interfaces import IAnalyst, IExchangeClient, IPerformanceReporter, IStateManager, IStrategist, ISupervisor, ITactician

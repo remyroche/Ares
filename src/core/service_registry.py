@@ -5,7 +5,12 @@ from .analyst.analyst import Analyst
 from .components.modular_analyst import ModularAnalyst
 from .components.modular_strategist import ModularStrategist
 from .components.modular_tactician import ModularTactician
-from .core.dependency_injection import DependencyContainer, ServiceLifetime
+try:
+    from .core.dependency_injection import DependencyContainer, ServiceLifetime
+except ImportError:
+    # Fallback if dependency injection is not available
+    DependencyContainer = None
+    ServiceLifetime = None
 from .interfaces.base_interfaces import IAnalyst, IEventBus, IStrategist, ISupervisor, ITactician
 from .interfaces.event_bus import EventBus
 from .supervisor.supervisor import Supervisor

@@ -152,13 +152,30 @@ class BaseLabelingStrategy(ProductionBaseLabelingStrategy):
 
     @abstractmethod
     def generate_labels(self, market_data: pd.DataFrame) -> StrategyResult:
-        """Generate labels using this strategy."""
-        pass
+        """
+        Generate labels using this strategy.
+        
+        Args:
+            market_data: OHLCV market data
+            
+        Returns:
+            StrategyResult containing labels, confidence scores, and metadata
+        """
+        raise NotImplementedError("Subclasses must implement generate_labels method")
 
     @abstractmethod
     def calculate_confidence(self, labels: pd.DataFrame, market_data: pd.DataFrame) -> pd.Series:
-        """Calculate confidence scores for labels."""
-        pass
+        """
+        Calculate confidence scores for labels.
+        
+        Args:
+            labels: Generated labels DataFrame
+            market_data: Original market data
+            
+        Returns:
+            Series of confidence scores (0-1 range)
+        """
+        raise NotImplementedError("Subclasses must implement calculate_confidence method")
 
 class MultiHorizonStrategy(BaseLabelingStrategy):
     """Multi-horizon profit labeling strategy."""
@@ -464,6 +481,537 @@ class MeanReversionStrategy(BaseLabelingStrategy):
             common_idx = opportunity.index.intersection(returns.index)
             if len(common_idx) > 10:
                 # For mean reversion, we expect negative correlation (high opportunity when price reverts)
+                corr = np.corrcoef(opportunity.loc[common_idx], returns.loc[common_idx])[0, 1]
+                metrics['correlation'] = abs(corr) if not np.isnan(corr) else 0.0
+
+        return metrics
+
+class RegimeAwareStrategy(BaseLabelingStrategy):
+    """Regime-aware labeling strategy that adapts to market conditions."""
+
+    def __init__(self, regime_window: int = 50, volatility_threshold: float = 0.02):
+        """Initialize regime-aware strategy."""
+        self.regime_window = regime_window
+        self.volatility_threshold = volatility_threshold
+
+    def generate_labels(self, market_data: pd.DataFrame) -> StrategyResult:
+        """Generate regime-aware labels."""
+        if 'close' not in market_data.columns:
+            empty_labels = pd.DataFrame(index=market_data.index)
+            empty_labels['regime_opportunity'] = 0.0
+            return StrategyResult(
+                strategy=LabelingStrategy.REGIME_AWARE,
+                labels=empty_labels,
+                confidence_scores=pd.Series(0.0, index=market_data.index),
+                performance_metrics={},
+                metadata={}
+            )
+
+        prices = market_data['close']
+        labels = pd.DataFrame(index=market_data.index)
+
+        # Detect market regimes
+        returns = prices.pct_change()
+        volatility = returns.rolling(self.regime_window).std()
+        trend = prices.rolling(self.regime_window).apply(lambda x: (x.iloc[-1] / x.iloc[0]) - 1)
+
+        # Classify regimes
+        high_vol = volatility > self.volatility_threshold
+        uptrend = trend > 0.05
+        downtrend = trend < -0.05
+
+        # Regime-based opportunity calculation
+        regime_opportunity = pd.Series(0.0, index=market_data.index)
+
+        # High volatility regime - focus on mean reversion
+        high_vol_mask = high_vol.fillna(False)
+        if high_vol_mask.any():
+            z_scores = (prices - prices.rolling(self.regime_window).mean()) / (volatility + 1e-10)
+            regime_opportunity[high_vol_mask] = np.tanh(abs(z_scores[high_vol_mask]) / 2) * 0.8
+
+        # Trending regime - follow momentum
+        trend_mask = (uptrend | downtrend).fillna(False)
+        if trend_mask.any():
+            momentum = trend[trend_mask]
+            regime_opportunity[trend_mask] = np.tanh(abs(momentum) * 5) * 0.6
+
+        # Low volatility regime - breakout potential
+        low_vol_mask = (~high_vol & ~trend_mask).fillna(False)
+        if low_vol_mask.any():
+            # Look for consolidation patterns
+            price_range = prices.rolling(self.regime_window).max() - prices.rolling(self.regime_window).min()
+            normalized_range = price_range / prices.rolling(self.regime_window).mean()
+            regime_opportunity[low_vol_mask] = np.tanh(normalized_range[low_vol_mask] * 10) * 0.4
+
+        labels['regime_opportunity'] = regime_opportunity.fillna(0.0)
+
+        # Add regime-specific probabilities
+        labels['trend_following_prob'] = uptrend.fillna(0.5).clip(0, 1)
+        labels['mean_reversion_prob'] = high_vol.fillna(0.5).clip(0, 1)
+        labels['breakout_prob'] = low_vol_mask.fillna(0.5).clip(0, 1)
+
+        # Regime strength indicator
+        labels['regime_strength'] = (abs(trend) + volatility.fillna(0)).clip(0, 1)
+
+        confidence_scores = self.calculate_confidence(labels, market_data)
+        performance_metrics = self._calculate_performance_metrics(labels, market_data)
+
+        return StrategyResult(
+            strategy=LabelingStrategy.REGIME_AWARE,
+            labels=labels,
+            confidence_scores=confidence_scores,
+            performance_metrics=performance_metrics,
+            metadata={
+                'regime_window': self.regime_window,
+                'volatility_threshold': self.volatility_threshold
+            }
+        )
+
+    def calculate_confidence(self, labels: pd.DataFrame, market_data: pd.DataFrame) -> pd.Series:
+        """Calculate confidence based on regime clarity."""
+        if 'regime_strength' in labels.columns:
+            strength = labels['regime_strength']
+            # Higher confidence when regime is clearly defined
+            return np.clip(strength * 0.8 + 0.2, 0.1, 1.0)
+
+        return pd.Series(0.5, index=labels.index)
+
+    def _calculate_performance_metrics(self, labels: pd.DataFrame, market_data: pd.DataFrame) -> Dict[str, float]:
+        """Calculate performance metrics."""
+        metrics = {}
+
+        if 'regime_opportunity' in labels.columns and 'close' in market_data.columns:
+            opportunity = labels['regime_opportunity']
+            returns = market_data['close'].pct_change().shift(-1).fillna(0)
+
+            common_idx = opportunity.index.intersection(returns.index)
+            if len(common_idx) > 10:
+                corr = np.corrcoef(opportunity.loc[common_idx], returns.loc[common_idx])[0, 1]
+                metrics['correlation'] = abs(corr) if not np.isnan(corr) else 0.0
+
+        return metrics
+
+class MLPredictiveStrategy(BaseLabelingStrategy):
+    """ML-based predictive labeling strategy."""
+
+    def __init__(self, lookback_window: int = 20, prediction_horizon: int = 5):
+        """Initialize ML predictive strategy."""
+        self.lookback_window = lookback_window
+        self.prediction_horizon = prediction_horizon
+        self.model = None
+        self.scaler = StandardScaler()
+
+    def generate_labels(self, market_data: pd.DataFrame) -> StrategyResult:
+        """Generate ML-based predictive labels."""
+        if 'close' not in market_data.columns or len(market_data) < self.lookback_window + self.prediction_horizon:
+            empty_labels = pd.DataFrame(index=market_data.index)
+            empty_labels['ml_opportunity'] = 0.0
+            return StrategyResult(
+                strategy=LabelingStrategy.ML_PREDICTIVE,
+                labels=empty_labels,
+                confidence_scores=pd.Series(0.0, index=market_data.index),
+                performance_metrics={},
+                metadata={}
+            )
+
+        prices = market_data['close']
+        labels = pd.DataFrame(index=market_data.index)
+
+        try:
+            # Create features
+            features = self._create_features(prices)
+            
+            if len(features) < 50:  # Need sufficient data for ML
+                labels['ml_opportunity'] = 0.0
+                labels['ml_confidence'] = 0.0
+            else:
+                # Simple linear regression for prediction
+                X = features[:-self.prediction_horizon]
+                y = (prices.shift(-self.prediction_horizon) / prices - 1).iloc[:-self.prediction_horizon]
+                
+                # Remove NaN values
+                valid_mask = ~(X.isna().any(axis=1) | y.isna())
+                X_clean = X[valid_mask]
+                y_clean = y[valid_mask]
+                
+                if len(X_clean) > 20:
+                    # Scale features
+                    X_scaled = self.scaler.fit_transform(X_clean)
+                    
+                    # Train simple model
+                    from sklearn.linear_model import Ridge
+                    self.model = Ridge(alpha=1.0)
+                    self.model.fit(X_scaled, y_clean)
+                    
+                    # Make predictions
+                    X_pred = features.iloc[-self.prediction_horizon:]
+                    X_pred_scaled = self.scaler.transform(X_pred)
+                    predictions = self.model.predict(X_pred_scaled)
+                    
+                    # Convert predictions to opportunity scores
+                    ml_opportunity = np.tanh(predictions * 10) * 0.8
+                    ml_opportunity = np.clip(ml_opportunity, 0, 1)
+                    
+                    # Pad with zeros for the rest of the data
+                    full_opportunity = pd.Series(0.0, index=market_data.index)
+                    full_opportunity.iloc[-self.prediction_horizon:] = ml_opportunity
+                    
+                    labels['ml_opportunity'] = full_opportunity
+                    labels['ml_confidence'] = np.abs(ml_opportunity)  # Confidence based on prediction strength
+                else:
+                    labels['ml_opportunity'] = 0.0
+                    labels['ml_confidence'] = 0.0
+
+        except Exception as e:
+            labels['ml_opportunity'] = 0.0
+            labels['ml_confidence'] = 0.0
+
+        confidence_scores = self.calculate_confidence(labels, market_data)
+        performance_metrics = self._calculate_performance_metrics(labels, market_data)
+
+        return StrategyResult(
+            strategy=LabelingStrategy.ML_PREDICTIVE,
+            labels=labels,
+            confidence_scores=confidence_scores,
+            performance_metrics=performance_metrics,
+            metadata={
+                'lookback_window': self.lookback_window,
+                'prediction_horizon': self.prediction_horizon
+            }
+        )
+
+    def _create_features(self, prices: pd.Series) -> pd.DataFrame:
+        """Create features for ML model."""
+        features = pd.DataFrame(index=prices.index)
+        
+        # Price-based features
+        features['returns'] = prices.pct_change()
+        features['log_returns'] = np.log(prices / prices.shift(1))
+        features['volatility'] = features['returns'].rolling(5).std()
+        
+        # Technical indicators
+        features['sma_5'] = prices.rolling(5).mean() / prices
+        features['sma_10'] = prices.rolling(10).mean() / prices
+        features['sma_20'] = prices.rolling(20).mean() / prices
+        
+        # Momentum features
+        features['momentum_5'] = prices / prices.shift(5) - 1
+        features['momentum_10'] = prices / prices.shift(10) - 1
+        
+        # Volatility features
+        features['vol_ratio'] = features['volatility'] / features['volatility'].rolling(20).mean()
+        
+        return features.dropna()
+
+    def calculate_confidence(self, labels: pd.DataFrame, market_data: pd.DataFrame) -> pd.Series:
+        """Calculate confidence based on ML model performance."""
+        if 'ml_confidence' in labels.columns:
+            return labels['ml_confidence'].clip(0.1, 1.0)
+
+        return pd.Series(0.5, index=labels.index)
+
+    def _calculate_performance_metrics(self, labels: pd.DataFrame, market_data: pd.DataFrame) -> Dict[str, float]:
+        """Calculate performance metrics."""
+        metrics = {}
+
+        if 'ml_opportunity' in labels.columns and 'close' in market_data.columns:
+            opportunity = labels['ml_opportunity']
+            returns = market_data['close'].pct_change().shift(-1).fillna(0)
+
+            common_idx = opportunity.index.intersection(returns.index)
+            if len(common_idx) > 10:
+                corr = np.corrcoef(opportunity.loc[common_idx], returns.loc[common_idx])[0, 1]
+                metrics['correlation'] = abs(corr) if not np.isnan(corr) else 0.0
+
+        return metrics
+
+class BreakoutFocusedStrategy(BaseLabelingStrategy):
+    """Breakout-focused labeling strategy."""
+
+    def __init__(self, breakout_window: int = 20, breakout_threshold: float = 0.02):
+        """Initialize breakout-focused strategy."""
+        self.breakout_window = breakout_window
+        self.breakout_threshold = breakout_threshold
+
+    def generate_labels(self, market_data: pd.DataFrame) -> StrategyResult:
+        """Generate breakout-focused labels."""
+        if 'close' not in market_data.columns:
+            empty_labels = pd.DataFrame(index=market_data.index)
+            empty_labels['breakout_opportunity'] = 0.0
+            return StrategyResult(
+                strategy=LabelingStrategy.BREAKOUT_FOCUSED,
+                labels=empty_labels,
+                confidence_scores=pd.Series(0.0, index=market_data.index),
+                performance_metrics={},
+                metadata={}
+            )
+
+        prices = market_data['close']
+        labels = pd.DataFrame(index=market_data.index)
+
+        # Calculate support and resistance levels
+        rolling_high = prices.rolling(self.breakout_window).max()
+        rolling_low = prices.rolling(self.breakout_window).min()
+        rolling_range = rolling_high - rolling_low
+
+        # Detect breakouts
+        resistance_breakout = (prices > rolling_high.shift(1)) & (rolling_range > 0)
+        support_breakout = (prices < rolling_low.shift(1)) & (rolling_range > 0)
+
+        # Calculate breakout strength
+        resistance_strength = np.where(
+            resistance_breakout,
+            (prices - rolling_high.shift(1)) / (rolling_range.shift(1) + 1e-10),
+            0
+        )
+        support_strength = np.where(
+            support_breakout,
+            (rolling_low.shift(1) - prices) / (rolling_range.shift(1) + 1e-10),
+            0
+        )
+
+        # Combine breakout signals
+        breakout_strength = np.maximum(resistance_strength, support_strength)
+        breakout_opportunity = np.tanh(breakout_strength * 5) * 0.8
+
+        labels['breakout_opportunity'] = pd.Series(breakout_opportunity, index=market_data.index).fillna(0.0)
+
+        # Add breakout direction probabilities
+        labels['resistance_breakout_prob'] = pd.Series(resistance_strength, index=market_data.index).clip(0, 1).fillna(0.0)
+        labels['support_breakout_prob'] = pd.Series(support_strength, index=market_data.index).clip(0, 1).fillna(0.0)
+
+        # Consolidation detection (low volatility before breakout)
+        volatility = prices.pct_change().rolling(10).std()
+        consolidation = (volatility < volatility.rolling(20).quantile(0.3)).fillna(False)
+        labels['consolidation_signal'] = consolidation.astype(float)
+
+        confidence_scores = self.calculate_confidence(labels, market_data)
+        performance_metrics = self._calculate_performance_metrics(labels, market_data)
+
+        return StrategyResult(
+            strategy=LabelingStrategy.BREAKOUT_FOCUSED,
+            labels=labels,
+            confidence_scores=confidence_scores,
+            performance_metrics=performance_metrics,
+            metadata={
+                'breakout_window': self.breakout_window,
+                'breakout_threshold': self.breakout_threshold
+            }
+        )
+
+    def calculate_confidence(self, labels: pd.DataFrame, market_data: pd.DataFrame) -> pd.Series:
+        """Calculate confidence based on breakout strength and consolidation."""
+        if 'breakout_opportunity' in labels.columns and 'consolidation_signal' in labels.columns:
+            opportunity = labels['breakout_opportunity']
+            consolidation = labels['consolidation_signal']
+            
+            # Higher confidence when breakout is strong and preceded by consolidation
+            confidence = opportunity * (0.5 + 0.5 * consolidation)
+            return confidence.clip(0.1, 1.0)
+
+        return pd.Series(0.5, index=labels.index)
+
+    def _calculate_performance_metrics(self, labels: pd.DataFrame, market_data: pd.DataFrame) -> Dict[str, float]:
+        """Calculate performance metrics."""
+        metrics = {}
+
+        if 'breakout_opportunity' in labels.columns and 'close' in market_data.columns:
+            opportunity = labels['breakout_opportunity']
+            returns = market_data['close'].pct_change().shift(-1).fillna(0)
+
+            common_idx = opportunity.index.intersection(returns.index)
+            if len(common_idx) > 10:
+                corr = np.corrcoef(opportunity.loc[common_idx], returns.loc[common_idx])[0, 1]
+                metrics['correlation'] = abs(corr) if not np.isnan(corr) else 0.0
+
+        return metrics
+
+class ConservativeStrategy(BaseLabelingStrategy):
+    """Conservative labeling strategy with lower risk tolerance."""
+
+    def __init__(self, risk_threshold: float = 0.01, min_confidence: float = 0.7):
+        """Initialize conservative strategy."""
+        self.risk_threshold = risk_threshold
+        self.min_confidence = min_confidence
+
+    def generate_labels(self, market_data: pd.DataFrame) -> StrategyResult:
+        """Generate conservative labels."""
+        if 'close' not in market_data.columns:
+            empty_labels = pd.DataFrame(index=market_data.index)
+            empty_labels['conservative_opportunity'] = 0.0
+            return StrategyResult(
+                strategy=LabelingStrategy.CONSERVATIVE,
+                labels=empty_labels,
+                confidence_scores=pd.Series(0.0, index=market_data.index),
+                performance_metrics={},
+                metadata={}
+            )
+
+        prices = market_data['close']
+        labels = pd.DataFrame(index=market_data.index)
+
+        # Calculate volatility and trend
+        returns = prices.pct_change()
+        volatility = returns.rolling(20).std()
+        trend = prices.rolling(50).apply(lambda x: (x.iloc[-1] / x.iloc[0]) - 1)
+
+        # Conservative opportunity: only when conditions are very favorable
+        low_vol = volatility < self.risk_threshold
+        strong_trend = abs(trend) > 0.05
+        stable_conditions = (volatility / volatility.rolling(50).mean()) < 1.2
+
+        # Conservative opportunity score
+        conservative_opportunity = pd.Series(0.0, index=market_data.index)
+        
+        # Only signal when all conditions are met
+        favorable_conditions = low_vol & strong_trend & stable_conditions
+        conservative_opportunity[favorable_conditions] = 0.6  # Moderate opportunity even in best conditions
+
+        labels['conservative_opportunity'] = conservative_opportunity.fillna(0.0)
+
+        # Add conservative-specific features
+        labels['risk_score'] = (volatility / self.risk_threshold).clip(0, 2)
+        labels['trend_strength'] = abs(trend).clip(0, 1)
+        labels['stability_score'] = (1.0 / (volatility / volatility.rolling(50).mean() + 1e-10)).clip(0, 1)
+
+        confidence_scores = self.calculate_confidence(labels, market_data)
+        performance_metrics = self._calculate_performance_metrics(labels, market_data)
+
+        return StrategyResult(
+            strategy=LabelingStrategy.CONSERVATIVE,
+            labels=labels,
+            confidence_scores=confidence_scores,
+            performance_metrics=performance_metrics,
+            metadata={
+                'risk_threshold': self.risk_threshold,
+                'min_confidence': self.min_confidence
+            }
+        )
+
+    def calculate_confidence(self, labels: pd.DataFrame, market_data: pd.DataFrame) -> pd.Series:
+        """Calculate confidence based on conservative criteria."""
+        if 'conservative_opportunity' in labels.columns and 'stability_score' in labels.columns:
+            opportunity = labels['conservative_opportunity']
+            stability = labels['stability_score']
+            
+            # High confidence only when opportunity exists and conditions are stable
+            confidence = np.where(
+                opportunity > 0,
+                np.minimum(opportunity + stability * 0.3, 1.0),
+                0.1
+            )
+            return pd.Series(confidence, index=labels.index).clip(0.1, 1.0)
+
+        return pd.Series(0.5, index=labels.index)
+
+    def _calculate_performance_metrics(self, labels: pd.DataFrame, market_data: pd.DataFrame) -> Dict[str, float]:
+        """Calculate performance metrics."""
+        metrics = {}
+
+        if 'conservative_opportunity' in labels.columns and 'close' in market_data.columns:
+            opportunity = labels['conservative_opportunity']
+            returns = market_data['close'].pct_change().shift(-1).fillna(0)
+
+            common_idx = opportunity.index.intersection(returns.index)
+            if len(common_idx) > 10:
+                corr = np.corrcoef(opportunity.loc[common_idx], returns.loc[common_idx])[0, 1]
+                metrics['correlation'] = abs(corr) if not np.isnan(corr) else 0.0
+
+        return metrics
+
+class AggressiveStrategy(BaseLabelingStrategy):
+    """Aggressive labeling strategy with higher risk tolerance."""
+
+    def __init__(self, risk_multiplier: float = 2.0, min_opportunity: float = 0.3):
+        """Initialize aggressive strategy."""
+        self.risk_multiplier = risk_multiplier
+        self.min_opportunity = min_opportunity
+
+    def generate_labels(self, market_data: pd.DataFrame) -> StrategyResult:
+        """Generate aggressive labels."""
+        if 'close' not in market_data.columns:
+            empty_labels = pd.DataFrame(index=market_data.index)
+            empty_labels['aggressive_opportunity'] = 0.0
+            return StrategyResult(
+                strategy=LabelingStrategy.AGGRESSIVE,
+                labels=empty_labels,
+                confidence_scores=pd.Series(0.0, index=market_data.index),
+                performance_metrics={},
+                metadata={}
+            )
+
+        prices = market_data['close']
+        labels = pd.DataFrame(index=market_data.index)
+
+        # Calculate various opportunity signals
+        returns = prices.pct_change()
+        volatility = returns.rolling(10).std()
+        momentum = prices / prices.shift(5) - 1
+        trend = prices.rolling(20).apply(lambda x: (x.iloc[-1] / x.iloc[0]) - 1)
+
+        # Aggressive opportunity: amplify signals and take more risks
+        momentum_opportunity = np.tanh(abs(momentum) * self.risk_multiplier * 5) * 0.9
+        volatility_opportunity = np.tanh(volatility * self.risk_multiplier * 20) * 0.8
+        trend_opportunity = np.tanh(abs(trend) * self.risk_multiplier * 3) * 0.7
+
+        # Combine opportunities with aggressive weighting
+        combined_opportunity = (momentum_opportunity * 0.4 + 
+                              volatility_opportunity * 0.3 + 
+                              trend_opportunity * 0.3)
+
+        # Apply minimum threshold
+        aggressive_opportunity = np.where(
+            combined_opportunity >= self.min_opportunity,
+            combined_opportunity,
+            0.0
+        )
+
+        labels['aggressive_opportunity'] = pd.Series(aggressive_opportunity, index=market_data.index).fillna(0.0)
+
+        # Add aggressive-specific features
+        labels['momentum_signal'] = momentum_opportunity
+        labels['volatility_signal'] = volatility_opportunity
+        labels['trend_signal'] = trend_opportunity
+        labels['risk_appetite'] = (volatility * self.risk_multiplier).clip(0, 2)
+
+        confidence_scores = self.calculate_confidence(labels, market_data)
+        performance_metrics = self._calculate_performance_metrics(labels, market_data)
+
+        return StrategyResult(
+            strategy=LabelingStrategy.AGGRESSIVE,
+            labels=labels,
+            confidence_scores=confidence_scores,
+            performance_metrics=performance_metrics,
+            metadata={
+                'risk_multiplier': self.risk_multiplier,
+                'min_opportunity': self.min_opportunity
+            }
+        )
+
+    def calculate_confidence(self, labels: pd.DataFrame, market_data: pd.DataFrame) -> pd.Series:
+        """Calculate confidence based on signal strength."""
+        if 'aggressive_opportunity' in labels.columns:
+            opportunity = labels['aggressive_opportunity']
+            # Higher confidence for stronger signals
+            confidence = np.where(
+                opportunity > 0,
+                np.minimum(opportunity * 1.2, 1.0),  # Boost confidence for aggressive signals
+                0.1
+            )
+            return pd.Series(confidence, index=labels.index).clip(0.1, 1.0)
+
+        return pd.Series(0.5, index=labels.index)
+
+    def _calculate_performance_metrics(self, labels: pd.DataFrame, market_data: pd.DataFrame) -> Dict[str, float]:
+        """Calculate performance metrics."""
+        metrics = {}
+
+        if 'aggressive_opportunity' in labels.columns and 'close' in market_data.columns:
+            opportunity = labels['aggressive_opportunity']
+            returns = market_data['close'].pct_change().shift(-1).fillna(0)
+
+            common_idx = opportunity.index.intersection(returns.index)
+            if len(common_idx) > 10:
                 corr = np.corrcoef(opportunity.loc[common_idx], returns.loc[common_idx])[0, 1]
                 metrics['correlation'] = abs(corr) if not np.isnan(corr) else 0.0
 
@@ -952,7 +1500,16 @@ class EnsembleLabelingSystem:
                     self.strategies[strategy_type] = MomentumBasedStrategy()
                 elif strategy_type == LabelingStrategy.MEAN_REVERSION:
                     self.strategies[strategy_type] = MeanReversionStrategy()
-                # Add more strategies as needed
+                elif strategy_type == LabelingStrategy.REGIME_AWARE:
+                    self.strategies[strategy_type] = RegimeAwareStrategy()
+                elif strategy_type == LabelingStrategy.ML_PREDICTIVE:
+                    self.strategies[strategy_type] = MLPredictiveStrategy()
+                elif strategy_type == LabelingStrategy.BREAKOUT_FOCUSED:
+                    self.strategies[strategy_type] = BreakoutFocusedStrategy()
+                elif strategy_type == LabelingStrategy.CONSERVATIVE:
+                    self.strategies[strategy_type] = ConservativeStrategy()
+                elif strategy_type == LabelingStrategy.AGGRESSIVE:
+                    self.strategies[strategy_type] = AggressiveStrategy()
 
             except Exception as e:
                 self.logger.warning(f'Failed to initialize {strategy_type.value}: {e}')

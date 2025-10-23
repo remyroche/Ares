@@ -1230,17 +1230,28 @@ class DataDrivenSimilarityMerger:
                     
                     # Calculate uncertainty if enabled
                     if self.config.enhanced_similarity.adaptive_thresholds.enable_uncertainty_quantification:
-                        # Generate realistic dummy centers and features for uncertainty calculation
-                        dummy_centers_1 = self._generate_realistic_centers(unique_labels[i], n_features=2)
-                        dummy_centers_2 = self._generate_realistic_centers(unique_labels[j], n_features=2)
-                        dummy_features = self._generate_realistic_features(100, 2)
-                        dummy_labels = self._generate_realistic_cluster_labels(100, [unique_labels[i], unique_labels[j]])
+                        # Use actual cluster data for uncertainty calculation
+                        cluster1_mask = cluster_labels == unique_labels[i]
+                        cluster2_mask = cluster_labels == unique_labels[j]
                         
-                        uncertainty_result = self.calculate_similarity_with_uncertainty(
-                            dummy_centers_1, dummy_centers_2,
-                            dummy_features, dummy_labels,
-                            unique_labels[i], unique_labels[j]
-                        )
+                        if np.sum(cluster1_mask) > 0 and np.sum(cluster2_mask) > 0:
+                            cluster1_features = features[cluster1_mask]
+                            cluster2_features = features[cluster2_mask]
+                            
+                            # Calculate actual cluster centers
+                            center1 = np.mean(cluster1_features, axis=0)
+                            center2 = np.mean(cluster2_features, axis=0)
+                            
+                            uncertainty_result = self.calculate_similarity_with_uncertainty(
+                                center1, center2,
+                                features, cluster_labels,
+                                unique_labels[i], unique_labels[j]
+                            )
+                        else:
+                            uncertainty_result = {
+                                'uncertainty': 0.0,
+                                'confidence_interval': (similarity_matrix[i, j], similarity_matrix[i, j])
+                            }
                         uncertainty = uncertainty_result['uncertainty']
                         confidence_lower = uncertainty_result['confidence_interval'][0]
                         confidence_upper = uncertainty_result['confidence_interval'][1]
@@ -3027,75 +3038,6 @@ class DataDrivenSimilarityMerger:
         except Exception:
             return 0.0
     
-    def _generate_realistic_centers(self, cluster_label: int, n_features: int = 2) -> np.ndarray:
-        """Generate realistic cluster centers for dummy data."""
-        try:
-            # Create centers that reflect realistic trading regime characteristics
-            if cluster_label == -1:  # Noise cluster
-                # Noise centers are more scattered
-                center = np.random.normal(0, 2.0, n_features)
-            else:
-                # Regular cluster centers follow patterns
-                if cluster_label % 3 == 0:  # Bullish regime
-                    center = np.random.normal(1.5, 0.5, n_features)
-                elif cluster_label % 3 == 1:  # Bearish regime
-                    center = np.random.normal(-1.5, 0.5, n_features)
-                else:  # Sideways regime
-                    center = np.random.normal(0, 0.3, n_features)
-            
-            return center
-            
-        except Exception as e:
-            logger.warning(f"Error generating realistic centers: {e}")
-            return np.random.normal(0, 1.0, n_features)
-    
-    def _generate_realistic_features(self, n_samples: int, n_features: int) -> np.ndarray:
-        """Generate realistic feature data for dummy calculations."""
-        try:
-            # Generate features that follow realistic trading data patterns
-            features = np.zeros((n_samples, n_features))
-            
-            for i in range(n_features):
-                if i % 4 == 0:  # Price-based features (more normal distribution)
-                    features[:, i] = np.random.normal(0, 1.0, n_samples)
-                elif i % 4 == 1:  # Volume-based features (more log-normal)
-                    features[:, i] = np.random.lognormal(0, 0.5, n_samples)
-                elif i % 4 == 2:  # Volatility features (more skewed)
-                    features[:, i] = np.random.gamma(2, 0.5, n_samples)
-                else:  # Technical indicator features (more uniform)
-                    features[:, i] = np.random.uniform(-2, 2, n_samples)
-            
-            return features
-            
-        except Exception as e:
-            logger.warning(f"Error generating realistic features: {e}")
-            return np.random.normal(0, 1.0, (n_samples, n_features))
-    
-    def _generate_realistic_cluster_labels(self, n_samples: int, cluster_ids: list) -> np.ndarray:
-        """Generate realistic cluster labels for dummy data."""
-        try:
-            # Generate labels with realistic cluster size distribution
-            labels = np.zeros(n_samples, dtype=int)
-            
-            # Assign samples to clusters with realistic proportions
-            n_clusters = len(cluster_ids)
-            cluster_sizes = np.random.multinomial(n_samples, 
-                                                np.random.dirichlet(np.ones(n_clusters)))
-            
-            start_idx = 0
-            for i, (cluster_id, size) in enumerate(zip(cluster_ids, cluster_sizes)):
-                end_idx = start_idx + size
-                labels[start_idx:end_idx] = cluster_id
-                start_idx = end_idx
-            
-            # Shuffle to avoid ordered assignment
-            np.random.shuffle(labels)
-            
-            return labels
-            
-        except Exception as e:
-            logger.warning(f"Error generating realistic cluster labels: {e}")
-            return np.random.choice(cluster_ids, n_samples)
 
 
 # Alias for backward compatibility

@@ -204,9 +204,9 @@ class HDBSCANRegimeDiscoveryStep(BaseStep):
     def _convert_optimized_result_to_legacy(self, optimized_result: OptimizedRegimeResult, market_data: pd.DataFrame) -> 'RegimeResult':
         """Convert optimized result to legacy format for compatibility."""
         try:
-            # Create a comprehensive MockRegimeResult object with the optimized data
-            class MockRegimeResult:
-                """Mock RegimeResult implementation for testing and compatibility."""
+            # Create a production-ready RegimeResult object
+            class RegimeResult:
+                """Production-ready RegimeResult implementation."""
                 
                 def __init__(self, optimized_result: OptimizedRegimeResult):
                     self.success = True
@@ -218,85 +218,98 @@ class HDBSCANRegimeDiscoveryStep(BaseStep):
                     self.processing_time = optimized_result.processing_time
                     self.memory_usage_mb = optimized_result.memory_usage_mb
                     
-                    # Enhanced validation metrics
-                    self.validation_metrics = self._create_validation_metrics(optimized_result)
-                    self.regime_statistics = self._create_regime_statistics(optimized_result)
-                    self.clustering_metrics = self._create_clustering_metrics(optimized_result)
-                    self.performance_metrics = self._create_performance_metrics(optimized_result)
+                    # Calculate actual validation metrics
+                    self.validation_metrics = self._calculate_validation_metrics(optimized_result)
+                    self.regime_statistics = self._calculate_regime_statistics(optimized_result)
+                    self.clustering_metrics = self._extract_clustering_metrics(optimized_result)
+                    self.performance_metrics = self._extract_performance_metrics(optimized_result)
                     
-                def _create_validation_metrics(self, optimized_result: OptimizedRegimeResult) -> dict:
-                    """Create comprehensive validation metrics."""
-                    return {
-                        'silhouette_score': 0.75,
-                        'calinski_harabasz_score': 1250.5,
-                        'davies_bouldin_score': 0.45,
-                        'inertia': 1500.25,
-                        'completeness_score': 0.82,
-                        'homogeneity_score': 0.78,
-                        'v_measure_score': 0.80,
-                        'adjusted_rand_score': 0.65,
-                        'adjusted_mutual_info_score': 0.70,
-                        'normalized_mutual_info_score': 0.72,
-                        'fowlkes_mallows_score': 0.68,
-                        'regime_stability_score': 0.85,
-                        'temporal_consistency_score': 0.88,
-                        'data_quality_score': 0.92,
-                        'noise_detection_accuracy': 0.90
-                    }
+                def _calculate_validation_metrics(self, optimized_result: OptimizedRegimeResult) -> dict:
+                    """Calculate actual validation metrics from the clustering result."""
+                    try:
+                        from sklearn.metrics import silhouette_score, calinski_harabasz_score, davies_bouldin_score
+                        
+                        # Only calculate if we have valid clusters
+                        if len(np.unique(optimized_result.cluster_labels)) > 1:
+                            # We need the original features to calculate these metrics
+                            # For now, return basic metrics that can be calculated
+                            return {
+                                'n_clusters': optimized_result.n_clusters,
+                                'noise_ratio': optimized_result.noise_ratio,
+                                'cluster_balance': self._calculate_cluster_balance(optimized_result.cluster_labels),
+                                'temporal_consistency': self._calculate_temporal_consistency(optimized_result.cluster_labels),
+                                'data_quality_score': 1.0 - optimized_result.noise_ratio
+                            }
+                        else:
+                            return {
+                                'n_clusters': optimized_result.n_clusters,
+                                'noise_ratio': optimized_result.noise_ratio,
+                                'cluster_balance': 0.0,
+                                'temporal_consistency': 0.0,
+                                'data_quality_score': 1.0 - optimized_result.noise_ratio
+                            }
+                    except Exception as e:
+                        return {
+                            'n_clusters': optimized_result.n_clusters,
+                            'noise_ratio': optimized_result.noise_ratio,
+                            'error': str(e)
+                        }
                     
-                def _create_regime_statistics(self, optimized_result: OptimizedRegimeResult) -> dict:
-                    """Create regime-specific statistics."""
+                def _calculate_cluster_balance(self, labels: np.ndarray) -> float:
+                    """Calculate how balanced the clusters are."""
+                    unique_labels, counts = np.unique(labels, return_counts=True)
+                    if len(unique_labels) <= 1:
+                        return 0.0
+                    
+                    # Calculate coefficient of variation (lower is more balanced)
+                    mean_size = np.mean(counts)
+                    std_size = np.std(counts)
+                    return 1.0 - (std_size / mean_size) if mean_size > 0 else 0.0
+                    
+                def _calculate_temporal_consistency(self, labels: np.ndarray) -> float:
+                    """Calculate temporal consistency of cluster assignments."""
+                    if len(labels) < 2:
+                        return 0.0
+                    
+                    # Count how often consecutive labels are the same
+                    consecutive_same = np.sum(labels[1:] == labels[:-1])
+                    return consecutive_same / (len(labels) - 1)
+                    
+                def _calculate_regime_statistics(self, optimized_result: OptimizedRegimeResult) -> dict:
+                    """Calculate actual regime statistics."""
                     unique_labels = np.unique(optimized_result.cluster_labels)
                     regime_stats = {}
                     
                     for label in unique_labels:
-                        if label == -1:  # Noise label
-                            continue
                         mask = optimized_result.cluster_labels == label
+                        count = np.sum(mask)
+                        percentage = (count / len(optimized_result.cluster_labels)) * 100
+                        
                         regime_stats[f'regime_{label}'] = {
-                            'count': np.sum(mask),
-                            'percentage': (np.sum(mask) / len(optimized_result.cluster_labels)) * 100,
-                            'mean_probability': np.mean(optimized_result.cluster_probabilities[mask]) if len(optimized_result.cluster_probabilities) > 0 else 0.0,
-                            'stability_score': np.random.uniform(0.7, 0.95),
-                            'temporal_consistency': np.random.uniform(0.6, 0.9),
-                            'feature_importance': np.random.uniform(0.1, 0.8, size=5).tolist()
+                            'count': int(count),
+                            'percentage': float(percentage),
+                            'mean_probability': float(np.mean(optimized_result.cluster_probabilities[mask])) if len(optimized_result.cluster_probabilities) > 0 else 0.0,
+                            'is_noise': label == -1
                         }
                     
                     return regime_stats
                     
-                def _create_clustering_metrics(self, optimized_result: OptimizedRegimeResult) -> dict:
-                    """Create clustering-specific metrics."""
+                def _extract_clustering_metrics(self, optimized_result: OptimizedRegimeResult) -> dict:
+                    """Extract clustering configuration metrics."""
                     return {
-                        'optimal_clusters': optimized_result.n_clusters,
-                        'min_cluster_size': 50,
-                        'min_samples': 25,
-                        'cluster_selection_epsilon': 0.1,
-                        'cluster_selection_method': 'eom',
-                        'metric': 'euclidean',
-                        'algorithm': 'auto',
-                        'leaf_size': 40,
-                        'cluster_persistence': 0.85,
-                        'cluster_separation': 0.78,
-                        'cluster_compactness': 0.82,
-                        'hierarchical_stability': 0.88,
-                        'density_estimation_quality': 0.75
+                        'optimal_clusters': int(optimized_result.n_clusters),
+                        'noise_ratio': float(optimized_result.noise_ratio),
+                        'algorithm': 'HDBSCAN',
+                        'data_points': len(optimized_result.cluster_labels)
                     }
                     
-                def _create_performance_metrics(self, optimized_result: OptimizedRegimeResult) -> dict:
-                    """Create performance and resource metrics."""
+                def _extract_performance_metrics(self, optimized_result: OptimizedRegimeResult) -> dict:
+                    """Extract performance metrics."""
                     return {
-                        'total_processing_time': optimized_result.processing_time,
-                        'memory_usage_mb': optimized_result.memory_usage_mb,
-                        'cpu_utilization_percent': 75.5,
-                        'gpu_utilization_percent': 0.0,  # CPU-only implementation
+                        'total_processing_time': float(optimized_result.processing_time),
+                        'memory_usage_mb': float(optimized_result.memory_usage_mb),
                         'data_points_processed': len(optimized_result.cluster_labels),
-                        'features_processed': 50,  # Assuming 50 features
-                        'clustering_iterations': 15,
-                        'convergence_achieved': True,
-                        'scalability_score': 0.85,
-                        'efficiency_score': 0.90,
-                        'throughput_points_per_second': 10000,
-                        'memory_efficiency_score': 0.88
+                        'throughput_points_per_second': len(optimized_result.cluster_labels) / max(optimized_result.processing_time, 0.001)
                     }
                     
                 def get_regime_summary(self) -> dict:
@@ -306,13 +319,8 @@ class HDBSCANRegimeDiscoveryStep(BaseStep):
                         'noise_percentage': self.noise_ratio * 100,
                         'processing_time_seconds': self.processing_time,
                         'memory_usage_mb': self.memory_usage_mb,
-                        'validation_score': self.validation_metrics['silhouette_score'],
-                        'regime_distribution': {k: v['percentage'] for k, v in self.regime_statistics.items()},
-                        'overall_quality_score': np.mean([
-                            self.validation_metrics['silhouette_score'],
-                            self.validation_metrics['completeness_score'],
-                            self.validation_metrics['homogeneity_score']
-                        ])
+                        'data_quality_score': self.validation_metrics.get('data_quality_score', 0.0),
+                        'regime_distribution': {k: v['percentage'] for k, v in self.regime_statistics.items()}
                     }
                     
                 def get_regime_labels_with_confidence(self) -> np.ndarray:
@@ -323,8 +331,12 @@ class HDBSCANRegimeDiscoveryStep(BaseStep):
                             self.regime_probabilities
                         ])
                     else:
-                        # Create dummy confidence scores
-                        confidence_scores = np.random.uniform(0.6, 0.95, len(self.regime_labels))
+                        # Create confidence scores based on cluster size
+                        confidence_scores = np.ones_like(self.regime_labels, dtype=float)
+                        unique_labels, counts = np.unique(self.regime_labels, return_counts=True)
+                        for label, count in zip(unique_labels, counts):
+                            if label != -1:  # Not noise
+                                confidence_scores[self.regime_labels == label] = min(1.0, count / 100.0)
                         return np.column_stack([
                             self.regime_labels,
                             confidence_scores

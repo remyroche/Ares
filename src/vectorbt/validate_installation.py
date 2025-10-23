@@ -10,6 +10,10 @@ import sys
 import logging
 from pathlib import Path
 
+# Add workspace root to Python path
+workspace_root = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(workspace_root))
+
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)

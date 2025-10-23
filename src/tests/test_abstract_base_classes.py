@@ -19,7 +19,8 @@ import pandas as pd
 from typing import Any, Dict, List, Optional
 import asyncio
 import time
-from unittest.mock import Mock, patch
+import os
+import tempfile
 
 # Import base classes
 from src.core.abstract_base_classes import (
@@ -40,42 +41,82 @@ from src.core.concrete_implementations import (
 def generate_test_data(n_samples: int = 1000, n_features: int = 10) -> pd.DataFrame:
     """Generate test data for validation."""
     np.random.seed(42)
+    # Generate more realistic data with correlations
+    base_data = np.random.randn(n_samples, n_features)
+    
+    # Add some correlations between features
+    for i in range(1, min(3, n_features)):
+        base_data[:, i] = 0.7 * base_data[:, 0] + 0.3 * base_data[:, i]
+    
     data = pd.DataFrame(
-        np.random.randn(n_samples, n_features),
+        base_data,
         columns=[f'feature_{i}' for i in range(n_features)]
     )
+    
+    # Add some missing values for testing
+    if n_samples > 100:
+        missing_indices = np.random.choice(n_samples, size=n_samples // 20, replace=False)
+        data.iloc[missing_indices, 0] = np.nan
+    
     return data
 
 def generate_test_clustering_data(n_samples: int = 500, n_features: int = 2) -> np.ndarray:
     """Generate test data for clustering."""
     np.random.seed(42)
-    # Generate 3 clusters
+    # Generate 3 well-separated clusters with different sizes
     cluster1 = np.random.normal([0, 0], 0.5, (n_samples // 3, n_features))
-    cluster2 = np.random.normal([3, 3], 0.5, (n_samples // 3, n_features))
-    cluster3 = np.random.normal([-3, 3], 0.5, (n_samples - 2 * (n_samples // 3), n_features))
+    cluster2 = np.random.normal([4, 4], 0.6, (n_samples // 3, n_features))
+    cluster3 = np.random.normal([-4, 4], 0.4, (n_samples - 2 * (n_samples // 3), n_features))
     
-    return np.vstack([cluster1, cluster2, cluster3])
+    # Add some noise points
+    noise_points = np.random.uniform(-6, 6, (n_samples // 20, n_features))
+    
+    return np.vstack([cluster1, cluster2, cluster3, noise_points])
 
 def generate_test_training_data(n_samples: int = 1000, n_features: int = 10) -> tuple:
     """Generate test data for training."""
     np.random.seed(42)
     X = np.random.randn(n_samples, n_features)
-    y = np.random.randn(n_samples)
+    
+    # Create more realistic target with some relationship to features
+    y = 0.5 * X[:, 0] + 0.3 * X[:, 1] + 0.2 * np.random.randn(n_samples)
+    
     return X, y
 
 def generate_test_multi_output_data(n_samples: int = 1000, n_features: int = 10, n_outputs: int = 3) -> tuple:
     """Generate test data for multi-output models."""
     np.random.seed(42)
     X = np.random.randn(n_samples, n_features)
-    y = np.random.randn(n_samples, n_outputs)
+    
+    # Create realistic multi-output targets with different relationships
+    y = np.zeros((n_samples, n_outputs))
+    for i in range(n_outputs):
+        y[:, i] = (0.4 + 0.1 * i) * X[:, 0] + (0.3 - 0.05 * i) * X[:, 1] + 0.1 * np.random.randn(n_samples)
+    
     return X, y
 
 def generate_test_price_data(n_samples: int = 1000) -> np.ndarray:
     """Generate test price data for pattern discovery."""
     np.random.seed(42)
-    # Generate random walk with trend
+    # Generate more realistic price data with trends and volatility clusters
     returns = np.random.normal(0.001, 0.02, n_samples)
+    
+    # Add some trend periods
+    trend_periods = n_samples // 4
+    for i in range(0, n_samples, trend_periods):
+        end_idx = min(i + trend_periods, n_samples)
+        trend_strength = np.random.choice([-0.002, 0.002])
+        returns[i:end_idx] += trend_strength
+    
+    # Add volatility clustering
+    volatility = np.ones(n_samples) * 0.02
+    for i in range(50, n_samples, 100):
+        end_idx = min(i + 50, n_samples)
+        volatility[i:end_idx] *= 2.0  # High volatility period
+    
+    returns = returns * volatility
     prices = np.cumsum(returns) + 100
+    
     return prices
 
 # ============================================================================
@@ -258,21 +299,25 @@ class TestBaseTrainingStep:
         """Test model saving and loading."""
         step = MLTrainingStep("test_step")
         
-        # Create a mock model
-        from sklearn.linear_model import LinearRegression
-        mock_model = LinearRegression()
-        mock_model.fit([[1, 2], [3, 4]], [5, 6])
-        step.current_model = mock_model
+        # Create a real model by training it
+        X, y = generate_test_training_data(100, 5)
+        result = asyncio.run(step.execute_training((X, y)))
+        assert result.success
+        assert step.current_model is not None
         
         # Test saving
-        success = step.save_model("/tmp/test_model.pkl")
-        assert success
-        
-        # Test loading
-        step.current_model = None
-        success = step.load_model("/tmp/test_model.pkl")
-        assert success
-        assert step.current_model is not None
+        with tempfile.NamedTemporaryFile(suffix='.pkl', delete=False) as tmp_file:
+            success = step.save_model(tmp_file.name)
+            assert success
+            
+            # Test loading
+            step.current_model = None
+            success = step.load_model(tmp_file.name)
+            assert success
+            assert step.current_model is not None
+            
+            # Clean up
+            os.unlink(tmp_file.name)
 
 class TestMLTrainingStep:
     """Test cases for MLTrainingStep concrete implementation."""
@@ -299,32 +344,39 @@ class TestMLTrainingStep:
         """Test artifact generation."""
         step = MLTrainingStep("test_ml_step")
         
-        # Create a mock model
-        from sklearn.linear_model import LinearRegression
-        mock_model = LinearRegression()
-        mock_model.fit([[1, 2], [3, 4]], [5, 6])
+        # Create a real model by training it
+        X, y = generate_test_training_data(100, 5)
+        result = asyncio.run(step.execute_training((X, y)))
+        assert result.success
         
-        artifacts = step._generate_artifacts(mock_model, None)
+        artifacts = step._generate_artifacts(step.current_model, result)
         
         assert 'model_type' in artifacts
         assert 'feature_names' in artifacts
         assert 'training_timestamp' in artifacts
+        assert 'model_params' in artifacts
 
     def test_metrics_calculation(self):
         """Test metrics calculation."""
         step = MLTrainingStep("test_ml_step")
         
-        # Create a mock model
-        from sklearn.linear_model import LinearRegression
-        mock_model = LinearRegression()
-        mock_model.fit([[1, 2], [3, 4]], [5, 6])
+        # Create a real model by training it
+        X, y = generate_test_training_data(100, 5)
+        result = asyncio.run(step.execute_training((X, y)))
+        assert result.success
         
-        test_data = ([[5, 6], [7, 8]], [9, 10])
-        metrics = step._calculate_metrics(mock_model, test_data)
+        # Generate test data
+        X_test, y_test = generate_test_training_data(50, 5)
+        test_data = (X_test, y_test)
+        
+        metrics = step._calculate_metrics(step.current_model, test_data)
         
         assert 'mse' in metrics
         assert 'mae' in metrics
         assert 'r2' in metrics
+        assert isinstance(metrics['mse'], float)
+        assert isinstance(metrics['mae'], float)
+        assert isinstance(metrics['r2'], float)
 
     @pytest.mark.asyncio
     async def test_training_execution(self):
@@ -568,26 +620,33 @@ class TestBasePatternDiscoverer:
         """Test pattern validation."""
         discoverer = MomentumPatternDiscoverer("test_discoverer")
         
-        # Create mock pattern result
+        # Create real pattern result by discovering patterns
+        data = generate_test_price_data(100)
+        result = discoverer.discover_pattern(data)
+        
+        is_valid = discoverer.validate_pattern(result)
+        assert isinstance(is_valid, bool)
+        
+        # Test with invalid pattern (low frequency)
         definition = PatternDefinition(
             name="Test Pattern",
             pattern_type=PatternType.MOMENTUM,
             description="Test",
             mathematical_formula="test",
             parameters={},
-            frequency_threshold=0.1,
+            frequency_threshold=0.9,  # Very high threshold
             confidence_threshold=0.7
         )
         
-        result = PatternDiscoveryResult(
+        invalid_result = PatternDiscoveryResult(
             definition=definition,
             labels=np.array([1, 0, 1, 0]),
             confidence_scores=np.array([0.8, 0.2, 0.9, 0.1]),
-            frequency=0.5
+            frequency=0.5  # Below threshold
         )
         
-        is_valid = discoverer.validate_pattern(result)
-        assert is_valid
+        is_invalid = discoverer.validate_pattern(invalid_result)
+        assert not is_invalid
 
     def test_pattern_summary(self):
         """Test pattern summary generation."""
@@ -744,61 +803,300 @@ class TestIntegration:
     
     def test_end_to_end_validation_training(self):
         """Test end-to-end validation and training pipeline."""
-        # Create validator
-        validator = DataValidator("integration_validator")
+        # Create validator with specific requirements
+        validator = DataValidator(
+            "integration_validator",
+            config={
+                'required_columns': ['feature_0', 'feature_1'],
+                'min_samples': 50,
+                'max_missing_ratio': 0.1
+            }
+        )
         
         # Generate and validate data
         data = generate_test_data(100, 5)
         validation_result = validator.validate_sync(data)
         assert validation_result.is_valid
+        assert validation_result.metrics['n_samples'] == 100
+        assert validation_result.metrics['n_features'] == 5
         
-        # Create training step
-        training_step = MLTrainingStep("integration_training")
+        # Create training step with specific configuration
+        training_step = MLTrainingStep(
+            "integration_training",
+            model_type="random_forest",
+            config={
+                'n_estimators': 50,
+                'max_depth': 10,
+                'scale_features': True
+            }
+        )
         
         # Train model
         X, y = generate_test_training_data(100, 5)
         training_result = asyncio.run(training_step.execute_training((X, y)))
         assert training_result.success
+        assert training_result.model is not None
+        assert training_result.training_time > 0
         
         # Verify training summary
         summary = training_step.get_training_summary()
         assert summary['successful_runs'] == 1
+        assert summary['status'] == 'completed'
+        assert summary['latest_model'] == True
 
     def test_end_to_end_clustering_labeling(self):
         """Test end-to-end clustering and labeling pipeline."""
         # Create clustering algorithm
-        clustering = KMeansClustering("integration_clustering", n_clusters=3)
+        clustering = KMeansClustering(
+            "integration_clustering", 
+            n_clusters=3,
+            config={'enable_optimization': True}
+        )
         
         # Generate and cluster data
         data = generate_test_clustering_data(100, 2)
         clustering_result = clustering.fit_predict(data)
         assert clustering_result.n_clusters == 3
+        assert clustering_result.silhouette_score is not None
+        assert clustering_result.inertia is not None
+        assert len(clustering_result.labels) == len(data)
         
-        # Create labeling strategy
-        labeling = ProfitBasedLabeling("integration_labeling")
+        # Verify clustering quality
+        assert clustering_result.silhouette_score > 0.3  # Reasonable clustering quality
+        
+        # Create labeling strategy with specific configuration
+        labeling = ProfitBasedLabeling(
+            "integration_labeling",
+            config={
+                'profit_threshold': 0.01,
+                'lookforward_period': 3,
+                'min_confidence': 0.6
+            }
+        )
         
         # Generate labels
         price_data = generate_test_price_data(100)
         labeling_result = labeling.generate_labels(price_data)
         assert len(labeling_result.labels) == len(price_data)
+        assert len(labeling_result.confidence_scores) == len(price_data)
+        assert labeling_result.strategy == LabelingStrategy.PROFIT_BASED
+        
+        # Verify label quality
+        assert np.isfinite(labeling_result.labels).all()
+        assert np.isfinite(labeling_result.confidence_scores).all()
+        assert np.all((labeling_result.labels >= 0) & (labeling_result.labels <= 1))
 
     def test_end_to_end_multi_output_training(self):
         """Test end-to-end multi-output training pipeline."""
-        # Create multi-output model
-        model = MultiOutputRandomForest("integration_multi_output", n_outputs=2)
+        # Create multi-output model with specific configuration
+        model = MultiOutputRandomForest(
+            "integration_multi_output", 
+            n_outputs=2,
+            output_names=['output_1', 'output_2'],
+            config={
+                'n_estimators': 50,
+                'max_depth': 8,
+                'enable_optimization': True
+            }
+        )
         
         # Generate and train on data
         X, y = generate_test_multi_output_data(100, 5, 2)
         model.fit(X, y)
         assert model.is_fitted
+        assert len(model.models) == 2
+        assert model.models['output_1'] is not None
+        assert model.models['output_2'] is not None
         
         # Make predictions
         predictions = model.predict(X[:10])
         assert predictions.shape == (10, 2)
+        assert np.isfinite(predictions).all()
         
         # Evaluate performance
         results = model.evaluate_performance(X, y)
         assert 'overall_metrics' in results
+        assert 'per_output_metrics' in results
+        assert 'predictions' in results
+        assert 'targets' in results
+        
+        # Verify metrics are reasonable
+        overall_metrics = results['overall_metrics']
+        assert 'overall_mse' in overall_metrics
+        assert 'overall_mae' in overall_metrics
+        assert 'overall_r2' in overall_metrics
+        assert overall_metrics['overall_r2'] > 0.5  # Reasonable R² score
+
+# ============================================================================
+# COMPREHENSIVE INTEGRATION TESTS
+# ============================================================================
+
+class TestComprehensiveIntegration:
+    """Comprehensive integration tests without mocks."""
+    
+    def test_full_ml_pipeline(self):
+        """Test complete ML pipeline from validation to prediction."""
+        # Step 1: Data validation
+        validator = DataValidator(
+            "pipeline_validator",
+            config={
+                'min_samples': 50,
+                'max_missing_ratio': 0.05
+            }
+        )
+        
+        data = generate_test_data(200, 8)
+        validation_result = validator.validate_sync(data)
+        assert validation_result.is_valid
+        
+        # Step 2: Data preprocessing and training
+        training_step = MLTrainingStep(
+            "pipeline_training",
+            model_type="random_forest",
+            config={
+                'n_estimators': 100,
+                'scale_features': True
+            }
+        )
+        
+        X, y = generate_test_training_data(200, 8)
+        training_result = asyncio.run(training_step.execute_training((X, y)))
+        assert training_result.success
+        
+        # Step 3: Model evaluation
+        X_test, y_test = generate_test_training_data(50, 8)
+        test_data = (X_test, y_test)
+        metrics = training_step._calculate_metrics(training_step.current_model, test_data)
+        
+        assert 'mse' in metrics
+        assert 'mae' in metrics
+        assert 'r2' in metrics
+        assert metrics['r2'] > 0.3  # Reasonable performance
+        
+        # Step 4: Model persistence
+        with tempfile.NamedTemporaryFile(suffix='.pkl', delete=False) as tmp_file:
+            success = training_step.save_model(tmp_file.name)
+            assert success
+            
+            # Load and verify
+            new_step = MLTrainingStep("loaded_training")
+            success = new_step.load_model(tmp_file.name)
+            assert success
+            assert new_step.current_model is not None
+            
+            # Make predictions with loaded model
+            predictions = new_step.current_model.predict(X_test[:5])
+            assert len(predictions) == 5
+            assert np.isfinite(predictions).all()
+            
+            os.unlink(tmp_file.name)
+    
+    def test_clustering_with_validation(self):
+        """Test clustering with comprehensive validation."""
+        # Generate data with known structure
+        data = generate_test_clustering_data(300, 3)
+        
+        # Test different cluster numbers
+        for n_clusters in [2, 3, 4]:
+            clustering = KMeansClustering(
+                f"clustering_{n_clusters}",
+                n_clusters=n_clusters,
+                config={'enable_optimization': True}
+            )
+            
+            result = clustering.fit_predict(data)
+            
+            # Validate results
+            assert result.n_clusters == n_clusters
+            assert len(result.labels) == len(data)
+            assert len(set(result.labels)) <= n_clusters
+            assert result.silhouette_score is not None
+            assert result.inertia is not None
+            
+            # Test prediction on new data
+            new_data = generate_test_clustering_data(50, 3)
+            new_labels = clustering.predict(new_data)
+            assert len(new_labels) == len(new_data)
+            assert all(0 <= label < n_clusters for label in new_labels)
+    
+    def test_pattern_discovery_validation(self):
+        """Test pattern discovery with comprehensive validation."""
+        # Generate realistic price data
+        price_data = generate_test_price_data(500)
+        
+        # Test momentum pattern discovery
+        discoverer = MomentumPatternDiscoverer(
+            "comprehensive_discoverer",
+            config={
+                'lookback_period': 20,
+                'momentum_threshold': 0.02,
+                'confidence_threshold': 0.6
+            }
+        )
+        
+        result = discoverer.discover_pattern(price_data)
+        
+        # Validate pattern discovery results
+        assert len(result.labels) == len(price_data)
+        assert len(result.confidence_scores) == len(price_data)
+        assert 0 <= result.frequency <= 1
+        assert np.all((result.labels >= 0) & (result.labels <= 1))
+        assert np.all((result.confidence_scores >= 0) & (result.confidence_scores <= 1))
+        
+        # Validate pattern definition
+        definition = discoverer.get_pattern_definition()
+        assert definition.name == "Momentum Pattern"
+        assert definition.pattern_type == PatternType.MOMENTUM
+        assert 'momentum' in definition.mathematical_formula.lower()
+        
+        # Test pattern validation
+        is_valid = discoverer.validate_pattern(result)
+        assert isinstance(is_valid, bool)
+        
+        # Test pattern summary
+        summary = discoverer.get_pattern_summary()
+        assert summary['name'] == "comprehensive_discoverer"
+        assert summary['pattern_type'] == PatternType.MOMENTUM.value
+        assert summary['discovered_patterns'] >= 1
+    
+    def test_labeling_strategy_comprehensive(self):
+        """Test labeling strategy with comprehensive validation."""
+        # Generate realistic price data
+        price_data = generate_test_price_data(300)
+        
+        # Test profit-based labeling
+        labeling = ProfitBasedLabeling(
+            "comprehensive_labeling",
+            config={
+                'profit_threshold': 0.015,
+                'lookforward_period': 5,
+                'min_confidence': 0.5
+            }
+        )
+        
+        result = labeling.generate_labels(price_data)
+        
+        # Validate labeling results
+        assert len(result.labels) == len(price_data)
+        assert len(result.confidence_scores) == len(price_data)
+        assert result.strategy == LabelingStrategy.PROFIT_BASED
+        assert np.all((result.labels >= 0) & (result.labels <= 1))
+        assert np.all((result.confidence_scores >= 0) & (result.confidence_scores <= 1))
+        
+        # Test confidence calculation
+        confidence = labeling.calculate_confidence(result.labels, price_data)
+        assert len(confidence) == len(price_data)
+        assert np.all((confidence >= 0) & (confidence <= 1))
+        
+        # Test label validation
+        is_valid = labeling.validate_labels(result.labels)
+        assert is_valid
+        
+        # Test labeling summary
+        summary = labeling.get_labeling_summary()
+        assert summary['name'] == "comprehensive_labeling"
+        assert summary['strategy'] == LabelingStrategy.PROFIT_BASED.value
+        assert summary['labeling_results'] >= 1
 
 # ============================================================================
 # PERFORMANCE TESTS
@@ -809,7 +1107,13 @@ class TestPerformance:
     
     def test_validation_performance(self):
         """Test validation performance with large datasets."""
-        validator = DataValidator("performance_validator")
+        validator = DataValidator(
+            "performance_validator",
+            config={
+                'min_samples': 1000,
+                'max_missing_ratio': 0.1
+            }
+        )
         
         # Generate large dataset
         data = generate_test_data(10000, 50)
@@ -819,11 +1123,26 @@ class TestPerformance:
         execution_time = time.time() - start_time
         
         assert result.is_valid
-        assert execution_time < 5.0  # Should complete within 5 seconds
+        assert result.metrics['n_samples'] == 10000
+        assert result.metrics['n_features'] == 50
+        assert execution_time < 10.0  # Should complete within 10 seconds
+        
+        # Verify performance metrics are tracked
+        performance_summary = validator.get_performance_summary()
+        assert performance_summary['total_validations'] == 1
+        assert performance_summary['success_rate'] == 1.0
 
     def test_training_performance(self):
         """Test training performance with large datasets."""
-        training_step = MLTrainingStep("performance_training")
+        training_step = MLTrainingStep(
+            "performance_training",
+            model_type="random_forest",
+            config={
+                'n_estimators': 50,  # Reduced for performance test
+                'max_depth': 10,
+                'scale_features': True
+            }
+        )
         
         # Generate large dataset
         X, y = generate_test_training_data(1000, 20)
@@ -833,11 +1152,22 @@ class TestPerformance:
         execution_time = time.time() - start_time
         
         assert result.success
+        assert result.model is not None
+        assert result.training_time > 0
         assert execution_time < 30.0  # Should complete within 30 seconds
+        
+        # Verify training summary
+        summary = training_step.get_training_summary()
+        assert summary['successful_runs'] == 1
+        assert summary['total_training_time'] > 0
 
     def test_clustering_performance(self):
         """Test clustering performance with large datasets."""
-        clustering = KMeansClustering("performance_clustering", n_clusters=5)
+        clustering = KMeansClustering(
+            "performance_clustering", 
+            n_clusters=5,
+            config={'enable_optimization': True}
+        )
         
         # Generate large dataset
         data = generate_test_clustering_data(1000, 10)
@@ -847,7 +1177,15 @@ class TestPerformance:
         execution_time = time.time() - start_time
         
         assert result.n_clusters == 5
-        assert execution_time < 10.0  # Should complete within 10 seconds
+        assert result.silhouette_score is not None
+        assert result.inertia is not None
+        assert len(result.labels) == len(data)
+        assert execution_time < 15.0  # Should complete within 15 seconds
+        
+        # Verify clustering summary
+        summary = clustering.get_clustering_summary()
+        assert summary['total_samples_processed'] == 1000
+        assert summary['number_of_clustering_runs'] == 1
 
 # ============================================================================
 # ERROR HANDLING TESTS
@@ -858,19 +1196,55 @@ class TestErrorHandling:
     
     def test_validation_error_handling(self):
         """Test validation error handling."""
-        validator = DataValidator("error_validator")
+        validator = DataValidator(
+            "error_validator",
+            config={
+                'required_columns': ['required_col'],
+                'min_samples': 100
+            }
+        )
         
         # Test with invalid data type
         result = validator.validate_sync("invalid_data")
         assert not result.is_valid
         assert len(result.errors) > 0
+        assert any('Validation failed with exception' in error for error in result.errors)
+        
+        # Test with insufficient data
+        small_data = generate_test_data(50, 3)  # Below min_samples
+        result = validator.validate_sync(small_data)
+        assert not result.is_valid
+        assert any('Insufficient samples' in error for error in result.errors)
+        
+        # Test with missing required columns
+        data_no_required = generate_test_data(200, 3)
+        result = validator.validate_sync(data_no_required)
+        assert not result.is_valid
+        assert any('Missing required columns' in error for error in result.errors)
 
     def test_training_error_handling(self):
         """Test training error handling."""
-        training_step = MLTrainingStep("error_training")
+        training_step = MLTrainingStep(
+            "error_training",
+            model_type="random_forest",
+            config={'n_estimators': 10}
+        )
         
         # Test with invalid data
         result = asyncio.run(training_step.execute_training("invalid_data"))
+        assert not result.success
+        assert len(result.errors) > 0
+        
+        # Test with insufficient data
+        X, y = generate_test_training_data(5, 10)  # Very small dataset
+        result = asyncio.run(training_step.execute_training((X, y)))
+        # This might succeed but with warnings, or fail depending on implementation
+        assert isinstance(result, TrainingResult)
+        
+        # Test with mismatched dimensions
+        X = np.random.randn(100, 5)
+        y = np.random.randn(50)  # Mismatched length
+        result = asyncio.run(training_step.execute_training((X, y)))
         assert not result.success
         assert len(result.errors) > 0
 

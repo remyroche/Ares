@@ -163,10 +163,8 @@ class AnalystTrainingConfig(BaseTrainingConfig):
     evaluation_metrics: List[str] = field(default_factory=lambda: ["mse", "mae", "r2", "mape", "smape", "directional_accuracy"])
     use_single_model: bool = True
     single_model_name: str = "analyst_unified_model"
-    enable_ensemble_training: bool = True
-    ensemble_method: str = "stacking"
-    meta_model: str = "ElasticNetCV"
-    ensemble_name: str = "analyst_ensemble"
+    # Ensemble training is handled by dedicated ensemble module
+    enable_ensemble_training: bool = False  # Disabled - handled elsewhere
     enable_hpo: bool = True
     save_models: bool = True
     enable_cross_validation: bool = True
@@ -277,10 +275,7 @@ class AnalystModelsTrainingStepRefactored(BaseStep):
                 evaluation_metrics=["mse", "mae", "r2", "mape", "smape", "directional_accuracy"],
                 use_single_model=True,
                 single_model_name="analyst_unified_model",
-                enable_ensemble_training=True,
-                ensemble_method="stacking",
-                meta_model="ElasticNetCV",
-                ensemble_name="analyst_ensemble",
+                enable_ensemble_training=False,  # Handled by dedicated ensemble module
                 enable_hpo=True,
                 save_models=True,
                 enable_cross_validation=True,
@@ -616,7 +611,7 @@ class AnalystModelsTrainingStepRefactored(BaseStep):
             else:
                 hpo_result = training_result
             
-            # Ensemble training phase
+            # Ensemble training phase - delegated to dedicated ensemble module
             if self.config.enable_ensemble_training:
                 self._start_phase(TrainingPhase.ENSEMBLE_TRAINING)
                 ensemble_result = await self._train_ensemble_models(hpo_result, config)
@@ -719,9 +714,14 @@ class AnalystModelsTrainingStepRefactored(BaseStep):
             return {'success': False, 'error': str(e)}
 
     async def _optimize_hyperparameters(self, training_result: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
-        """Optimize hyperparameters for trained models."""
+        """Optimize hyperparameters for trained models using existing ML common tools."""
         try:
-            tprint_info("🔍 Starting hyperparameter optimization...")
+            tprint_info("🔍 Starting hyperparameter optimization using ML common tools...")
+            
+            # Import the existing optimization tools
+            from src.utils.ml_common.optimization.consolidated_hpo import ConsolidatedHPO
+            from src.utils.ml_common.optimization.auto_tuner import AutoTuner, DatasetCharacteristics
+            from src.utils.ml_common.optimization.concrete_optimization_classes import TradingMultiFidelityObjective
             
             # Get training data from the result
             X = training_result.get('X_train')
@@ -733,45 +733,100 @@ class AnalystModelsTrainingStepRefactored(BaseStep):
                 tprint_warning("⚠️ No training data available for hyperparameter optimization")
                 return {'success': False, 'error': 'No training data available'}
             
+            # Analyze dataset characteristics
+            dataset_chars = self._analyze_dataset_characteristics(X, y)
+            
+            # Initialize auto-tuner
+            auto_tuner = AutoTuner(
+                conservative_mode=config.get('conservative_mode', False),
+                enable_adaptive_timeout=config.get('enable_adaptive_timeout', True),
+                enable_resource_monitoring=config.get('enable_resource_monitoring', True)
+            )
+            
             optimized_models = []
             models = training_result.get('models', [])
             
             for model_info in models:
                 model_type = model_info.get('type', 'unknown')
-                tprint_info(f"🔧 Optimizing hyperparameters for {model_type}...")
+                tprint_info(f"🔧 Optimizing hyperparameters for {model_type} using ML common tools...")
                 
-                # Create model instance
-                model = self._create_model_for_optimization(model_type)
-                if model is None:
-                    tprint_warning(f"⚠️ Could not create {model_type} model for optimization")
+                try:
+                    # Get auto-tuned configuration
+                    hpo_config = auto_tuner.auto_tune_hpo_config(
+                        X=X,
+                        y=y,
+                        model_type=model_type.lower(),
+                        available_time_minutes=config.get('optimization_time_minutes', 30.0),
+                        dataset_characteristics=dataset_chars
+                    )
+                    
+                    # Initialize consolidated HPO
+                    hpo = ConsolidatedHPO(
+                        model_type=model_type.lower(),
+                        config=hpo_config,
+                        enable_multi_fidelity=config.get('enable_multi_fidelity', True),
+                        enable_early_stopping=config.get('enable_early_stopping', True)
+                    )
+                    
+                    # Define objective function
+                    def objective_function(params):
+                        try:
+                            # Create model with parameters
+                            model = self._create_model_with_params(model_type, params)
+                            if model is None:
+                                return -np.inf
+                            
+                            # Train and evaluate
+                            model.fit(X, y)
+                            if X_val is not None and y_val is not None:
+                                score = model.score(X_val, y_val)
+                            else:
+                                score = model.score(X, y)
+                            
+                            return score
+                        except Exception:
+                            return -np.inf
+                    
+                    # Run optimization
+                    optimization_result = hpo.optimize(
+                        objective_function=objective_function,
+                        search_space=self._get_ml_common_search_space(model_type),
+                        n_trials=hpo_config.n_trials,
+                        timeout=hpo_config.timeout_seconds
+                    )
+                    
+                    if optimization_result.success:
+                        # Train final model with best parameters
+                        best_params = optimization_result.best_params
+                        optimized_model = self._create_model_with_params(model_type, best_params)
+                        optimized_model.fit(X, y)
+                        
+                        # Evaluate optimized model
+                        val_score = optimized_model.score(X_val, y_val) if X_val is not None else optimized_model.score(X, y)
+                        train_score = optimized_model.score(X, y)
+                        
+                        optimized_models.append({
+                            'type': model_type,
+                            'model': optimized_model,
+                            'accuracy': val_score,
+                            'training_accuracy': train_score,
+                            'best_params': best_params,
+                            'improvement': val_score - model_info.get('accuracy', 0),
+                            'optimization_metadata': {
+                                'n_trials': optimization_result.n_trials,
+                                'best_score': optimization_result.best_score,
+                                'optimization_time': optimization_result.optimization_time
+                            }
+                        })
+                        
+                        tprint_success(f"✅ {model_type} optimized: {val_score:.4f} accuracy (improvement: {val_score - model_info.get('accuracy', 0):.4f})")
+                    else:
+                        tprint_warning(f"⚠️ Optimization failed for {model_type}: {optimization_result.error_message}")
+                        continue
+                        
+                except Exception as e:
+                    tprint_warning(f"⚠️ Failed to optimize {model_type}: {e}")
                     continue
-                
-                # Define search space based on model type
-                search_space = self._get_search_space(model_type)
-                
-                # Optimize hyperparameters
-                best_params = await self._bayesian_optimization(
-                    model, X, y, X_val, y_val, search_space, model_type
-                )
-                
-                # Train model with best parameters
-                optimized_model = self._create_model_with_params(model_type, best_params)
-                optimized_model.fit(X, y)
-                
-                # Evaluate optimized model
-                val_score = optimized_model.score(X_val, y_val)
-                train_score = optimized_model.score(X, y)
-                
-                optimized_models.append({
-                    'type': model_type,
-                    'model': optimized_model,
-                    'accuracy': val_score,
-                    'training_accuracy': train_score,
-                    'best_params': best_params,
-                    'improvement': val_score - model_info.get('accuracy', 0)
-                })
-                
-                tprint_success(f"✅ {model_type} optimized: {val_score:.4f} accuracy")
             
             if not optimized_models:
                 return {'success': False, 'error': 'No models could be optimized'}
@@ -779,7 +834,7 @@ class AnalystModelsTrainingStepRefactored(BaseStep):
             avg_accuracy = sum(m['accuracy'] for m in optimized_models) / len(optimized_models)
             avg_improvement = sum(m['improvement'] for m in optimized_models) / len(optimized_models)
             
-            tprint_success(f"✅ Hyperparameter optimization completed. Average accuracy: {avg_accuracy:.4f}, Average improvement: {avg_improvement:.4f}")
+            tprint_success(f"✅ Hyperparameter optimization completed using ML common tools. Average accuracy: {avg_accuracy:.4f}, Average improvement: {avg_improvement:.4f}")
             
             return {
                 'success': True,
@@ -788,7 +843,8 @@ class AnalystModelsTrainingStepRefactored(BaseStep):
                 'improvement': avg_improvement,
                 'optimization_metadata': {
                     'models_optimized': len(optimized_models),
-                    'avg_improvement': avg_improvement
+                    'avg_improvement': avg_improvement,
+                    'optimization_tool': 'ml_common_consolidated_hpo'
                 }
             }
             
@@ -796,137 +852,102 @@ class AnalystModelsTrainingStepRefactored(BaseStep):
             tprint_error(f"❌ Hyperparameter optimization failed: {e}")
             return {'success': False, 'error': str(e)}
     
-    def _create_model_for_optimization(self, model_type: str):
-        """Create a model instance for hyperparameter optimization."""
+    def _analyze_dataset_characteristics(self, X, y) -> 'DatasetCharacteristics':
+        """Analyze dataset characteristics for auto-tuning."""
         try:
-            if model_type == 'XGBoost':
-                import xgboost as xgb
-                return xgb.XGBRegressor(random_state=42)
-            elif model_type == 'CatBoost':
-                import catboost as cb
-                return cb.CatBoostRegressor(random_seed=42, verbose=False)
-            elif model_type == 'LightGBM':
-                import lightgbm as lgb
-                return lgb.LGBMRegressor(random_state=42, verbose=-1)
-            elif model_type == 'RandomForest':
-                from sklearn.ensemble import RandomForestRegressor
-                return RandomForestRegressor(random_state=42)
+            from src.utils.ml_common.optimization.auto_tuner import DatasetCharacteristics
+            import numpy as np
+            
+            n_samples, n_features = X.shape if hasattr(X, 'shape') else (len(X), len(X[0]) if X else 0)
+            
+            # Calculate feature complexity (variance-based)
+            if hasattr(X, 'var'):
+                feature_variance = X.var()
+                feature_complexity = min(1.0, np.mean(feature_variance) / 10.0)  # Normalize
             else:
-                return None
-        except ImportError:
-            return None
+                feature_complexity = 0.5  # Default
+            
+            # Calculate class imbalance (for classification)
+            if hasattr(y, 'value_counts'):
+                class_counts = y.value_counts()
+                class_imbalance = 1.0 - (class_counts.min() / class_counts.max())
+            else:
+                class_imbalance = 0.0  # Assume balanced for regression
+            
+            # Data quality score (based on missing values and outliers)
+            if hasattr(X, 'isnull'):
+                missing_ratio = X.isnull().sum().sum() / (n_samples * n_features)
+                data_quality_score = max(0.0, 1.0 - missing_ratio)
+            else:
+                data_quality_score = 0.9  # Assume good quality
+            
+            # Temporal dependency (assume time series for financial data)
+            temporal_dependency = 0.8  # High for financial data
+            
+            return DatasetCharacteristics(
+                n_samples=n_samples,
+                n_features=n_features,
+                feature_complexity=feature_complexity,
+                class_imbalance=class_imbalance,
+                data_quality_score=data_quality_score,
+                temporal_dependency=temporal_dependency
+            )
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Error analyzing dataset characteristics: {e}")
+            # Return default characteristics
+            from src.utils.ml_common.optimization.auto_tuner import DatasetCharacteristics
+            return DatasetCharacteristics(
+                n_samples=1000,
+                n_features=10,
+                feature_complexity=0.5,
+                class_imbalance=0.0,
+                data_quality_score=0.9,
+                temporal_dependency=0.8
+            )
     
-    def _get_search_space(self, model_type: str) -> Dict[str, Any]:
-        """Get hyperparameter search space for model type."""
-        if model_type == 'XGBoost':
+    def _get_ml_common_search_space(self, model_type: str) -> Dict[str, Any]:
+        """Get hyperparameter search space compatible with ML common tools."""
+        if model_type.lower() == 'xgboost':
             return {
                 'n_estimators': (50, 500),
                 'max_depth': (3, 10),
                 'learning_rate': (0.01, 0.3),
                 'subsample': (0.6, 1.0),
-                'colsample_bytree': (0.6, 1.0)
+                'colsample_bytree': (0.6, 1.0),
+                'reg_alpha': (0.0, 1.0),
+                'reg_lambda': (0.0, 1.0)
             }
-        elif model_type == 'CatBoost':
+        elif model_type.lower() == 'catboost':
             return {
                 'iterations': (50, 500),
                 'depth': (3, 10),
                 'learning_rate': (0.01, 0.3),
-                'l2_leaf_reg': (1, 10)
+                'l2_leaf_reg': (1, 10),
+                'border_count': (32, 255),
+                'bagging_temperature': (0.0, 1.0)
             }
-        elif model_type == 'LightGBM':
+        elif model_type.lower() == 'lightgbm':
             return {
                 'n_estimators': (50, 500),
                 'max_depth': (3, 10),
                 'learning_rate': (0.01, 0.3),
                 'subsample': (0.6, 1.0),
-                'colsample_bytree': (0.6, 1.0)
+                'colsample_bytree': (0.6, 1.0),
+                'reg_alpha': (0.0, 1.0),
+                'reg_lambda': (0.0, 1.0)
             }
-        elif model_type == 'RandomForest':
+        elif model_type.lower() == 'randomforest':
             return {
                 'n_estimators': (50, 500),
                 'max_depth': (3, 20),
                 'min_samples_split': (2, 20),
-                'min_samples_leaf': (1, 10)
+                'min_samples_leaf': (1, 10),
+                'max_features': (0.1, 1.0),
+                'bootstrap': [True, False]
             }
         else:
             return {}
-    
-    async def _bayesian_optimization(self, model, X, y, X_val, y_val, search_space, model_type):
-        """Perform Bayesian optimization for hyperparameters."""
-        try:
-            from skopt import gp_minimize
-            from skopt.space import Real, Integer
-            from skopt.utils import use_named_args
-            
-            # Convert search space to skopt format
-            dimensions = []
-            param_names = []
-            
-            for param_name, param_range in search_space.items():
-                if isinstance(param_range, tuple) and len(param_range) == 2:
-                    if isinstance(param_range[0], int):
-                        dimensions.append(Integer(param_range[0], param_range[1], name=param_name))
-                    else:
-                        dimensions.append(Real(param_range[0], param_range[1], name=param_name))
-                    param_names.append(param_name)
-            
-            @use_named_args(dimensions=dimensions)
-            def objective(**params):
-                try:
-                    # Create model with parameters
-                    model_instance = self._create_model_with_params(model_type, params)
-                    model_instance.fit(X, y)
-                    score = model_instance.score(X_val, y_val)
-                    return -score  # Minimize negative score
-                except Exception:
-                    return 1.0  # Return high value for failed evaluations
-            
-            # Run optimization
-            result = gp_minimize(
-                func=objective,
-                dimensions=dimensions,
-                n_calls=50,  # Number of optimization iterations
-                random_state=42
-            )
-            
-            # Convert result back to parameter dictionary
-            best_params = dict(zip(param_names, result.x))
-            return best_params
-            
-        except ImportError:
-            tprint_warning("⚠️ scikit-optimize not available, using random search")
-            return self._random_search_hyperparameters(model, X, y, X_val, y_val, search_space, model_type)
-        except Exception as e:
-            tprint_warning(f"⚠️ Bayesian optimization failed: {e}, using random search")
-            return self._random_search_hyperparameters(model, X, y, X_val, y_val, search_space, model_type)
-    
-    def _random_search_hyperparameters(self, model, X, y, X_val, y_val, search_space, model_type):
-        """Fallback random search for hyperparameters."""
-        import random
-        
-        best_score = -float('inf')
-        best_params = {}
-        
-        for _ in range(20):  # 20 random trials
-            params = {}
-            for param_name, param_range in search_space.items():
-                if isinstance(param_range[0], int):
-                    params[param_name] = random.randint(param_range[0], param_range[1])
-                else:
-                    params[param_name] = random.uniform(param_range[0], param_range[1])
-            
-            try:
-                model_instance = self._create_model_with_params(model_type, params)
-                model_instance.fit(X, y)
-                score = model_instance.score(X_val, y_val)
-                
-                if score > best_score:
-                    best_score = score
-                    best_params = params
-            except Exception:
-                continue
-        
-        return best_params
     
     def _create_model_with_params(self, model_type: str, params: Dict[str, Any]):
         """Create model instance with specific parameters."""
@@ -949,203 +970,28 @@ class AnalystModelsTrainingStepRefactored(BaseStep):
             return None
 
     async def _train_ensemble_models(self, training_result: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
-        """Train ensemble models."""
+        """Train ensemble models - delegated to dedicated ensemble training module."""
         try:
-            tprint_info("🎯 Starting ensemble training...")
+            tprint_info("🎯 Ensemble training delegated to dedicated ensemble module...")
             
-            # Get individual models from training result
+            # Return the individual models for ensemble training elsewhere
             individual_models = training_result.get('models', [])
+            
             if not individual_models:
                 return {'success': False, 'error': 'No individual models available for ensemble training'}
             
-            # Get training data
-            X_train = training_result.get('X_train')
-            y_train = training_result.get('y_train')
-            X_val = training_result.get('X_val')
-            y_val = training_result.get('y_val')
-            
-            if X_train is None or y_train is None:
-                return {'success': False, 'error': 'No training data available for ensemble training'}
-            
-            # Create ensemble models
-            ensemble_models = []
-            
-            # 1. Voting Ensemble
-            voting_ensemble = await self._create_voting_ensemble(individual_models, X_train, y_train, X_val, y_val)
-            if voting_ensemble:
-                ensemble_models.append(voting_ensemble)
-            
-            # 2. Stacking Ensemble
-            stacking_ensemble = await self._create_stacking_ensemble(individual_models, X_train, y_train, X_val, y_val)
-            if stacking_ensemble:
-                ensemble_models.append(stacking_ensemble)
-            
-            # 3. Blending Ensemble
-            blending_ensemble = await self._create_blending_ensemble(individual_models, X_train, y_train, X_val, y_val)
-            if blending_ensemble:
-                ensemble_models.append(blending_ensemble)
-            
-            if not ensemble_models:
-                return {'success': False, 'error': 'No ensemble models could be created'}
-            
-            # Calculate ensemble performance
-            ensemble_accuracy = sum(m['accuracy'] for m in ensemble_models) / len(ensemble_models)
-            
-            tprint_success(f"✅ Ensemble training completed. {len(ensemble_models)} ensemble models created. Average accuracy: {ensemble_accuracy:.4f}")
+            tprint_info(f"📊 {len(individual_models)} individual models ready for ensemble training")
             
             return {
                 'success': True,
-                'models': ensemble_models,
-                'accuracy': ensemble_accuracy,
-                'ensemble_metadata': {
-                    'ensemble_count': len(ensemble_models),
-                    'individual_model_count': len(individual_models),
-                    'ensemble_types': [m['type'] for m in ensemble_models]
-                }
+                'individual_models': individual_models,
+                'ensemble_ready': True,
+                'delegation_note': 'Ensemble training handled by dedicated ensemble module'
             }
             
         except Exception as e:
-            tprint_error(f"❌ Ensemble training failed: {e}")
+            tprint_error(f"❌ Ensemble training delegation failed: {e}")
             return {'success': False, 'error': str(e)}
-    
-    async def _create_voting_ensemble(self, individual_models, X_train, y_train, X_val, y_val):
-        """Create voting ensemble from individual models."""
-        try:
-            from sklearn.ensemble import VotingRegressor
-            
-            # Prepare models for voting
-            estimators = []
-            for i, model_info in enumerate(individual_models):
-                if 'model' in model_info:
-                    estimators.append((f'model_{i}', model_info['model']))
-            
-            if len(estimators) < 2:
-                return None
-            
-            # Create voting ensemble
-            voting_ensemble = VotingRegressor(estimators=estimators)
-            voting_ensemble.fit(X_train, y_train)
-            
-            # Evaluate
-            train_score = voting_ensemble.score(X_train, y_train)
-            val_score = voting_ensemble.score(X_val, y_val) if X_val is not None else train_score
-            
-            return {
-                'name': 'Voting_Ensemble',
-                'type': 'Voting',
-                'model': voting_ensemble,
-                'accuracy': val_score,
-                'training_accuracy': train_score,
-                'base_models': len(estimators)
-            }
-            
-        except Exception as e:
-            tprint_warning(f"⚠️ Voting ensemble creation failed: {e}")
-            return None
-    
-    async def _create_stacking_ensemble(self, individual_models, X_train, y_train, X_val, y_val):
-        """Create stacking ensemble from individual models."""
-        try:
-            from sklearn.ensemble import StackingRegressor
-            from sklearn.linear_model import LinearRegression
-            
-            # Prepare models for stacking
-            estimators = []
-            for i, model_info in enumerate(individual_models):
-                if 'model' in model_info:
-                    estimators.append((f'model_{i}', model_info['model']))
-            
-            if len(estimators) < 2:
-                return None
-            
-            # Create stacking ensemble with linear regression as meta-learner
-            stacking_ensemble = StackingRegressor(
-                estimators=estimators,
-                final_estimator=LinearRegression(),
-                cv=3  # 3-fold cross-validation for meta-learner training
-            )
-            stacking_ensemble.fit(X_train, y_train)
-            
-            # Evaluate
-            train_score = stacking_ensemble.score(X_train, y_train)
-            val_score = stacking_ensemble.score(X_val, y_val) if X_val is not None else train_score
-            
-            return {
-                'name': 'Stacking_Ensemble',
-                'type': 'Stacking',
-                'model': stacking_ensemble,
-                'accuracy': val_score,
-                'training_accuracy': train_score,
-                'base_models': len(estimators)
-            }
-            
-        except Exception as e:
-            tprint_warning(f"⚠️ Stacking ensemble creation failed: {e}")
-            return None
-    
-    async def _create_blending_ensemble(self, individual_models, X_train, y_train, X_val, y_val):
-        """Create blending ensemble from individual models."""
-        try:
-            from sklearn.linear_model import LinearRegression
-            import numpy as np
-            
-            # Get predictions from individual models
-            predictions = []
-            for model_info in individual_models:
-                if 'model' in model_info:
-                    model = model_info['model']
-                    pred = model.predict(X_train)
-                    predictions.append(pred)
-            
-            if len(predictions) < 2:
-                return None
-            
-            # Stack predictions
-            X_blend = np.column_stack(predictions)
-            
-            # Train meta-learner
-            meta_learner = LinearRegression()
-            meta_learner.fit(X_blend, y_train)
-            
-            # Create blending ensemble class
-            class BlendingEnsemble:
-                def __init__(self, base_models, meta_learner):
-                    self.base_models = base_models
-                    self.meta_learner = meta_learner
-                
-                def predict(self, X):
-                    predictions = []
-                    for model in self.base_models:
-                        pred = model.predict(X)
-                        predictions.append(pred)
-                    X_blend = np.column_stack(predictions)
-                    return self.meta_learner.predict(X_blend)
-                
-                def score(self, X, y):
-                    from sklearn.metrics import r2_score
-                    y_pred = self.predict(X)
-                    return r2_score(y, y_pred)
-            
-            # Create ensemble
-            base_models = [model_info['model'] for model_info in individual_models if 'model' in model_info]
-            blending_ensemble = BlendingEnsemble(base_models, meta_learner)
-            
-            # Evaluate
-            train_score = blending_ensemble.score(X_train, y_train)
-            val_score = blending_ensemble.score(X_val, y_val) if X_val is not None else train_score
-            
-            return {
-                'name': 'Blending_Ensemble',
-                'type': 'Blending',
-                'model': blending_ensemble,
-                'accuracy': val_score,
-                'training_accuracy': train_score,
-                'base_models': len(base_models)
-            }
-            
-        except Exception as e:
-            tprint_warning(f"⚠️ Blending ensemble creation failed: {e}")
-            return None
 
     async def _save_trained_models(self, training_result: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
         """Save trained models."""

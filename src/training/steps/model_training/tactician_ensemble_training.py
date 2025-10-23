@@ -1666,12 +1666,13 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
     @optimize_cpu_execution(WorkloadType.ML_TRAINING)
     def _generate_oof_predictions(self, model: Any, X: np.ndarray, model_name: str, n_splits: int = 5) -> Optional[np.ndarray]:
         """
-        Generate OOF predictions using PurgedKFoldTime to prevent data leakage.
+        Generate OOF predictions using enhanced consolidated utilities.
 
         This implementation:
-        - Uses purged cross-validation with embargo periods
+        - Uses enhanced consolidated OOF generator
         - Prevents temporal leakage in time-series data
         - Uses out-of-fold predictions only
+        - Provides better error handling and validation
 
         Args:
             model: Pre-trained model to generate predictions from
@@ -1683,24 +1684,32 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
             OOF predictions array or None if failed
         """
         try:
-            tprint_debug(f"🔄 Generating OOF predictions for {model_name} with PurgedKFoldTime")
+            tprint_debug(f"🔄 Generating OOF predictions for {model_name} using enhanced consolidated utilities")
 
-            # Validate model has predict method
-            if not hasattr(model, 'predict'):
-                tprint_warning(f"⚠️ Model {model_name} does not have predict method")
-                return None
-
-            from src.utils.ml_common.validation.consolidated_cv import ConsolidatedCrossValidator as PurgedKFoldTime
+            # Import enhanced consolidated utilities
+            from src.utils.ml_common.validation.enhanced_consolidated_oof_oos import (
+                create_enhanced_oof_generator,
+                OOFStrategy,
+                ValidationType
+            )
             from src.utils.math_validation import validate_finite
             from src.utils.common_operations import safe_float
 
-            n = len(X)
+            # Convert to numpy array if needed
+            if isinstance(X, pd.DataFrame):
+                X_array = X.values
+                timestamps = X.index if isinstance(X.index, pd.DatetimeIndex) else None
+            else:
+                X_array = X.copy()
+                timestamps = None
+
+            n = len(X_array)
             if n < max(3, n_splits + 1):
                 tprint_warning(f"⚠️ Insufficient samples ({n}) for {n_splits}-fold CV")
                 # Too few samples for CV; use simple holdout
                 try:
                     holdout_size = max(1, int(0.2 * n))
-                    pred = model.predict(X[-holdout_size:])
+                    pred = model.predict(X_array[-holdout_size:])
                     pred_arr = np.asarray(pred).reshape(-1, 1)
                     oof = np.zeros((n, 1), dtype=float)
                     oof[-holdout_size:] = pred_arr
@@ -1709,81 +1718,44 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
                     tprint_error(f"❌ Holdout prediction failed for {model_name}: {e}")
                     return None
 
-            # Create DataFrame with DatetimeIndex for PurgedKFoldTime
-            # If X doesn't have index, create sequential timestamps
-            if isinstance(X, pd.DataFrame) and isinstance(X.index, pd.DatetimeIndex):
-                X_df = X
-            else:
-                # Create synthetic timestamps (1-minute intervals)
-                timestamps = pd.date_range(start='2020-01-01', periods=n, freq='1min')
-                if isinstance(X, pd.DataFrame):
-                    X_df = X.copy()
-                    X_df.index = timestamps
-                else:
-                    X_df = pd.DataFrame(X, index=timestamps)
-
-            # Initialize purged K-fold with embargo period
-            purge_minutes = safe_float(getattr(self.config, 'purge_minutes', 30), 30.0)
-            embargo_minutes = safe_float(getattr(self.config, 'embargo_minutes', 15), 15.0)
-
-            splitter = PurgedKFoldTime(
-                n_splits=n_splits,
-                purge=pd.Timedelta(minutes=purge_minutes),
-                embargo=pd.Timedelta(minutes=embargo_minutes)
+            # Create enhanced OOF generator
+            oof_generator = create_enhanced_oof_generator(
+                strategy=OOFStrategy.MEAN,
+                n_folds=n_splits,
+                cv_type=ValidationType.PURGED,
+                enable_confidence_intervals=False,
+                enable_diversity_metrics=False,
+                enable_leakage_detection=True,
+                enable_temporal_validation=True,
+                random_state=42
             )
 
             # Generate OOF predictions
-            oof = np.zeros((n, 1), dtype=float)
-            filled = np.zeros(n, dtype=bool)
+            oof_result = oof_generator.generate_oof_predictions(
+                models={model_name: model},
+                X=X_array,
+                y=np.zeros(n),  # Dummy target for OOF generation
+                timestamps=timestamps
+            )
 
-            tprint_progress(f"📊 Running {n_splits}-fold purged CV for {model_name}")
-
-            for fold_idx, (tr_idx, va_idx) in enumerate(splitter.split(X_df)):
-                try:
-                    tprint_debug(f"  Fold {fold_idx + 1}/{n_splits}: train={len(tr_idx)}, val={len(va_idx)}")
-
-                    # Predict on validation fold only (model already trained)
-                    if isinstance(X, pd.DataFrame):
-                        X_val = X.iloc[va_idx].values
-                    else:
-                        X_val = X[va_idx]
-
-                    pred = model.predict(X_val)
-                    pred_arr = np.asarray(pred).reshape(-1, 1)
-
-                    if pred_arr.shape[0] != len(va_idx):
-                        tprint_warning(f"⚠️ Shape mismatch in fold {fold_idx + 1}")
-                        continue
-
-                    # Validate predictions are finite
-                    if not validate_finite(pred_arr):
-                        tprint_warning(f"⚠️ Non-finite predictions in fold {fold_idx + 1}")
-                        pred_arr = np.nan_to_num(pred_arr, nan=0.0, posinf=1e6, neginf=-1e6)
-
-                    oof[va_idx, 0] = pred_arr[:, 0]
-                    filled[va_idx] = True
-
-                except Exception as e:
-                    tprint_error(f"❌ OOF prediction failed for {model_name} on fold {fold_idx + 1}: {e}")
-                    continue
-
-            # Check if we have sufficient coverage
-            fill_ratio = np.mean(filled)
-            tprint_info(f"📊 OOF coverage for {model_name}: {fill_ratio:.1%}")
-
-            if fill_ratio < 0.5:
-                tprint_warning(f"⚠️ Low OOF coverage ({fill_ratio:.1%}) for {model_name}")
+            # Extract predictions
+            if model_name in oof_result.oof_predictions:
+                oof_predictions = oof_result.oof_predictions[model_name]
+                
+                # Ensure 2D array
+                if len(oof_predictions.shape) == 1:
+                    oof_predictions = oof_predictions.reshape(-1, 1)
+                
+                # Validate predictions are finite
+                if not validate_finite(oof_predictions):
+                    tprint_warning(f"⚠️ Non-finite predictions for {model_name}")
+                    oof_predictions = np.nan_to_num(oof_predictions, nan=0.0, posinf=1e6, neginf=-1e6)
+                
+                tprint_success(f"✅ Generated OOF predictions for {model_name}")
+                return oof_predictions
+            else:
+                tprint_error(f"❌ No OOF predictions found for {model_name}")
                 return None
-
-            # For unfilled samples, use mean of filled predictions
-            if not filled.all():
-                unfilled_indices = ~filled
-                mean_pred = safe_float(np.mean(oof[filled, 0]), 0.0)
-                oof[unfilled_indices, 0] = mean_pred
-                tprint_debug(f"  Filled {np.sum(unfilled_indices)} missing predictions with mean: {mean_pred:.4f}")
-
-            tprint_success(f"✅ Generated OOF predictions for {model_name}")
-            return oof
 
         except Exception as e:
             tprint_error(f"❌ Failed to generate OOF predictions from {model_name}: {e}")

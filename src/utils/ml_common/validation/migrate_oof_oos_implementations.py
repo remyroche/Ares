@@ -219,6 +219,31 @@ class OOFOOSMigrationTransformer:
     def __init__(self):
         """Initialize the migration transformer."""
         self.logger = logging.getLogger(f"{__name__}.OOFOOSMigrationTransformer")
+        
+        # Migration mappings
+        self.import_mappings = {
+            'from src.utils.ml_common.ensembles.oof_stacking_ensemble_manager import OOFStackingEnsembleManager': 
+                'from src.utils.ml_common.validation.enhanced_consolidated_oof_oos import EnhancedConsolidatedOOFGenerator',
+            'from src.utils.ml_common.ensembles.enhanced_oof_stacking_with_confidence import EnhancedOOFStackingEnsembleManager':
+                'from src.utils.ml_common.validation.enhanced_consolidated_oof_oos import EnhancedConsolidatedOOFGenerator',
+            'from src.utils.ml_common.training.training_utils import create_oof_stacking_ensemble':
+                'from src.utils.ml_common.validation.enhanced_consolidated_oof_oos import create_enhanced_oof_generator',
+            'from leakage_detection_system import LeakageDetector':
+                'from src.utils.ml_common.validation.enhanced_consolidated_oof_oos import create_enhanced_oof_generator'
+        }
+        
+        self.class_mappings = {
+            'OOFStackingEnsembleManager': 'EnhancedConsolidatedOOFGenerator',
+            'EnhancedOOFStackingEnsembleManager': 'EnhancedConsolidatedOOFGenerator',
+            'LeakageDetector': 'create_enhanced_oof_generator'
+        }
+        
+        self.method_mappings = {
+            'create_oof_stacking_ensemble': 'create_enhanced_oof_generator',
+            'train_oof_stacking_ensemble': 'generate_oof_predictions',
+            'evaluate_oof_performance': 'generate_oof_predictions',
+            'detect_leakage': 'generate_oof_predictions'
+        }
     
     def transform_file(self, file_path: str, dry_run: bool = True) -> Dict[str, Any]:
         """Transform a file to use enhanced consolidated utilities."""

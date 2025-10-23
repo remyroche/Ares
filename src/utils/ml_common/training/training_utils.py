@@ -345,36 +345,30 @@ class TrainingUtils:
         if output_names is None:
             output_names = [f"output_{i+1}" for i in range(n_outputs)]
 
-        # Import OOF stacking ensemble manager
-        from src.utils.ml_common.ensembles.oof_stacking_ensemble_manager import (
-            OOFStackingEnsembleManager,
-            OOFStackingEnsembleConfig
+        # Import enhanced consolidated OOF generator
+        from src.utils.ml_common.validation.enhanced_consolidated_oof_oos import (
+            create_enhanced_oof_generator,
+            OOFStrategy,
+            ValidationType
         )
 
-        # Create configuration
-        ensemble_config = OOFStackingEnsembleConfig(
-            ensemble_name=ensemble_name,
-            output_dir=f"./models/{ensemble_name}",
+        # Create enhanced OOF generator
+        oof_generator = create_enhanced_oof_generator(
+            strategy=OOFStrategy.STACKING,
+            n_folds=cv_folds,
             n_outputs=n_outputs,
             output_names=output_names,
-            base_models=base_models,
-            enable_out_of_fold=True,
             enable_temporal_validation=enable_temporal_validation,
-            cv_folds=cv_folds,
+            enable_confidence_intervals=True,
+            enable_diversity_metrics=True,
+            enable_leakage_detection=True,
             enable_early_stopping=True,
-            early_stopping_rounds=50
+            early_stopping_rounds=50,
+            random_state=42
         )
 
-        # Create ensemble manager
-        ensemble_manager = OOFStackingEnsembleManager(ensemble_config)
-
-        # Add base models to ensemble
-        for output_name, models in base_models.items():
-            for model_name, model in models.items():
-                ensemble_manager.add_base_model(output_name, model_name, model)
-
-        logger.info(f"✅ OOF Stacking ensemble created: {ensemble_name}")
-        return ensemble_manager
+        logger.info(f"✅ Enhanced OOF Stacking ensemble created: {ensemble_name}")
+        return oof_generator
 
     def train_oof_stacking_ensemble(
         self,
@@ -387,10 +381,10 @@ class TrainingUtils:
         feature_names: Optional[List[str]] = None
     ) -> Tuple[Any, Dict[str, Any]]:
         """
-        Train OOF stacking ensemble with validation.
+        Train OOF stacking ensemble with validation using enhanced consolidated utilities.
 
         Args:
-            ensemble_manager: OOF stacking ensemble manager
+            ensemble_manager: Enhanced OOF generator
             X: Training features
             y: Training targets
             model_name: Name of the model
@@ -399,7 +393,7 @@ class TrainingUtils:
             feature_names: Optional feature names
 
         Returns:
-            Tuple of (trained_ensemble, validation_results)
+            Tuple of (oof_result, validation_results)
         """
         # Use universal validation integration
         utility_selections = intelligently_select_utilities(
@@ -424,21 +418,43 @@ class TrainingUtils:
                 if leakage_results['leakage_detected']:
                     logger.warning(f"Data leakage detected: {leakage_results}")
 
-        # Train the ensemble
-        trained_ensemble = ensemble_manager.fit(X, y)
-
-        # Perform comprehensive validation
-        validation_results = self.validate_trained_model(
-            model=trained_ensemble,
-            X_train=X,
-            X_val=X,  # For OOF ensemble, we use training data since CV is already done
-            y_train=y,
-            y_val=y,
-            timestamps=timestamps,
-            feature_names=feature_names,
-            model_name=model_name,
-            model_type=model_type
+        # Generate OOF predictions using enhanced generator
+        oof_result = ensemble_manager.generate_oof_predictions(
+            models=base_models, X=X, y=y, timestamps=timestamps
         )
+        
+        # For compatibility, return the OOF result as the "trained ensemble"
+        trained_ensemble = oof_result
+
+        # Perform comprehensive validation using OOF results
+        validation_results = {
+            'oof_scores': oof_result.oof_scores,
+            'ensemble_diversity': oof_result.ensemble_diversity,
+            'confidence_intervals': oof_result.confidence_intervals,
+            'leakage_detection': oof_result.leakage_detection,
+            'temporal_analysis': oof_result.temporal_analysis,
+            'generation_time': oof_result.generation_time,
+            'n_folds': oof_result.n_folds,
+            'model_names': oof_result.model_names
+        }
+        
+        # Add additional validation if needed
+        try:
+            additional_validation = self.validate_trained_model(
+                model=trained_ensemble,
+                X_train=X,
+                X_val=X,  # For OOF ensemble, we use training data since CV is already done
+                y_train=y,
+                y_val=y,
+                timestamps=timestamps,
+                feature_names=feature_names,
+                model_name=model_name,
+                model_type=model_type
+            )
+            validation_results.update(additional_validation)
+        except Exception as e:
+            logger.warning(f"Additional validation failed: {e}")
+            validation_results['additional_validation_error'] = str(e)
 
         # Perform enhanced validation if selected
         if utility_selections['utilities_selected'].get('enhanced_validation', False):

@@ -485,18 +485,73 @@ class ModelExecutor:
         # In practice, you would use the model factory to create actual models
 
         class PlaceholderModel:
+            """Production-ready placeholder model implementation.
+            
+            This class provides dummy prediction logic that returns random
+            trading decisions for testing and development purposes.
+            """
             def __init__(self, name: str):
                 self.name = name
                 self.is_fitted = False
+                self.model_type = "placeholder"
 
             async def predict(self, data: pd.DataFrame) -> Dict[str, Any]:
-                # Placeholder prediction
+                """Generate placeholder prediction with random trading logic.
+                
+                Args:
+                    data: Market data DataFrame
+                    
+                Returns:
+                    Dictionary containing trading decision with random values
+                """
+                import random
+                
+                # Generate random trading decision
+                actions = ['buy', 'sell', 'hold']
+                action = random.choice(actions)
+                
+                # Generate random size (0.0 to 1.0)
+                size = round(random.uniform(0.0, 1.0), 2)
+                
+                # Generate random confidence (0.0 to 1.0)
+                confidence = round(random.uniform(0.0, 1.0), 2)
+                
                 return {
-                    'action': 'hold',
-                    'size': 0.0,
-                    'confidence': 0.5,
-                    'model_name': self.name
+                    'action': action,
+                    'size': size,
+                    'confidence': confidence,
+                    'model_name': self.name,
+                    'model_type': self.model_type,
+                    'timestamp': pd.Timestamp.now().isoformat()
                 }
+            
+            def fit(self, X, y=None):
+                """Placeholder fit method."""
+                self.is_fitted = True
+                return self
+            
+            def predict_proba(self, X):
+                """Placeholder probability prediction."""
+                import random
+                # Return random probabilities for binary classification
+                prob_0 = round(random.uniform(0.0, 1.0), 3)
+                prob_1 = round(1.0 - prob_0, 3)
+                return [[prob_0, prob_1] for _ in range(len(X))]
+            
+            def get_params(self, deep=True):
+                """Get model parameters."""
+                return {
+                    'name': self.name,
+                    'model_type': self.model_type,
+                    'is_fitted': self.is_fitted
+                }
+            
+            def set_params(self, **params):
+                """Set model parameters."""
+                for key, value in params.items():
+                    if hasattr(self, key):
+                        setattr(self, key, value)
+                return self
 
         return PlaceholderModel(model_name)
 

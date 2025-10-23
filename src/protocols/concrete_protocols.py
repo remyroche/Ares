@@ -18,6 +18,12 @@ from .trading_protocols import (
     TradingDataProvider, TradingMLPredictor, TradingRiskManager
 )
 
+# Import exchange interfaces
+from exchanges.factory import ExchangeFactory
+from exchanges.shared.unified_exchange_interface import (
+    UnifiedExchangeAdapter, ExchangeType, create_unified_adapter
+)
+
 # Import custom types (these would be defined in the actual codebase)
 from typing import NewType, NamedTuple
 
@@ -95,6 +101,8 @@ class BinanceTradingDataProvider(TradingDataProvider):
         self.logger = logging.getLogger(self.__class__.__name__)
         self._connected = False
         self._rate_limits = {}
+        self._exchange_instance = None
+        self._unified_adapter = None
         self.logger.info(f"✅ BinanceTradingDataProvider initialized (testnet: {testnet})")
     
     async def get_market_data(
@@ -104,24 +112,52 @@ class BinanceTradingDataProvider(TradingDataProvider):
         try:
             self.logger.info(f"Fetching market data for {symbol} from {start_time} to {end_time}")
             
-            # TODO: Implement actual Binance API call for historical data
-            # This would typically involve:
-            # 1. Converting timestamps to milliseconds
-            # 2. Making HTTP request to Binance klines endpoint
-            # 3. Parsing and formatting the response
-            # 4. Handling rate limits and errors
+            # Ensure exchange is initialized
+            if not self._exchange_instance:
+                await self._initialize_exchange()
             
-            # Placeholder implementation - replace with actual API call
-            self.logger.warning("Market data API not implemented - returning empty data")
-            return {
+            if not self._unified_adapter:
+                self.logger.error("Exchange adapter not initialized")
+                return {'error': 'Exchange not initialized'}
+            
+            # Calculate time difference to determine limit
+            time_diff = end_time - start_time
+            minutes_diff = int(time_diff.total_seconds() / 60)
+            limit = min(max(minutes_diff, 1), 1000)  # Binance max is 1000
+            
+            # Get klines data using unified adapter
+            klines_df = await self._unified_adapter.get_klines(
+                symbol=symbol,
+                interval='1m',
+                start_time=start_time,
+                end_time=end_time,
+                limit=limit
+            )
+            
+            # Convert DataFrame to expected format
+            klines = []
+            if not klines_df.empty:
+                for _, row in klines_df.iterrows():
+                    klines.append({
+                        'timestamp': row.get('timestamp', row.get('time', datetime.now())),
+                        'open': float(row.get('open', 0)),
+                        'high': float(row.get('high', 0)),
+                        'low': float(row.get('low', 0)),
+                        'close': float(row.get('close', 0)),
+                        'volume': float(row.get('volume', 0))
+                    })
+            
+            result = {
                 'symbol': symbol,
-                'klines': [],
+                'klines': klines,
                 'start_time': start_time.isoformat(),
                 'end_time': end_time.isoformat(),
                 'interval': '1m',
-                'count': 0,
-                'error': 'API not implemented'
+                'count': len(klines)
             }
+            
+            self.logger.info(f"Retrieved {len(klines)} klines for {symbol}")
+            return result
             
         except Exception as e:
             self.logger.error(f"Failed to get market data: {e}")
@@ -132,19 +168,38 @@ class BinanceTradingDataProvider(TradingDataProvider):
         try:
             self.logger.debug(f"Fetching live data for {symbol}")
             
-            # TODO: Implement actual Binance WebSocket API for live data
-            # This would typically involve:
-            # 1. Establishing WebSocket connection to Binance
-            # 2. Subscribing to ticker stream for the symbol
-            # 3. Parsing real-time price updates
-            # 4. Handling connection errors and reconnection
+            # Ensure exchange is initialized
+            if not self._exchange_instance:
+                await self._initialize_exchange()
             
-            # Placeholder implementation - replace with actual WebSocket call
-            self.logger.warning("Live data API not implemented - returning empty data")
-            return {
+            if not self._unified_adapter:
+                self.logger.error("Exchange adapter not initialized")
+                return {'error': 'Exchange not initialized'}
+            
+            # Get ticker data for live price information
+            ticker_data = await self._unified_adapter.get_ticker(symbol)
+            
+            # Get order book for bid/ask information
+            orderbook_data = await self._unified_adapter.get_orderbook(symbol, limit=5)
+            
+            # Format live data response
+            live_data = {
                 'symbol': symbol,
-                'error': 'WebSocket API not implemented'
+                'price': ticker_data.get('last_price', 0.0),
+                'bid': ticker_data.get('bid_price', 0.0),
+                'ask': ticker_data.get('ask_price', 0.0),
+                'volume': ticker_data.get('volume_24h', 0.0),
+                'price_change_24h': ticker_data.get('price_change_24h', 0.0),
+                'price_change_percent_24h': ticker_data.get('price_change_percent_24h', 0.0),
+                'timestamp': ticker_data.get('timestamp', datetime.now()).isoformat(),
+                'orderbook': {
+                    'bids': orderbook_data.get('bids', []),
+                    'asks': orderbook_data.get('asks', [])
+                }
             }
+            
+            self.logger.debug(f"Retrieved live data for {symbol}")
+            return live_data
             
         except Exception as e:
             self.logger.error(f"Failed to get live data: {e}")
@@ -155,22 +210,33 @@ class BinanceTradingDataProvider(TradingDataProvider):
         try:
             self.logger.debug("Fetching account information")
             
-            # In a real implementation, this would call Binance API
-            account_info = {
-                'account_type': 'SPOT',
-                'can_trade': True,
-                'can_withdraw': True,
-                'can_deposit': True,
-                'balances': [
-                    {'asset': 'USDT', 'free': '10000.0', 'locked': '0.0'},
-                    {'asset': 'BTC', 'free': '0.5', 'locked': '0.0'},
-                    {'asset': 'ETH', 'free': '10.0', 'locked': '0.0'}
-                ],
-                'permissions': ['SPOT'],
-                'update_time': datetime.now().timestamp()
+            # Ensure exchange is initialized
+            if not self._exchange_instance:
+                await self._initialize_exchange()
+            
+            if not self._unified_adapter:
+                self.logger.error("Exchange adapter not initialized")
+                return {'error': 'Exchange not initialized'}
+            
+            # Get account information using unified adapter
+            account_info = await self._unified_adapter.get_account_info()
+            
+            # Get balance information
+            balance_info = await self._unified_adapter.get_balance()
+            
+            # Combine account and balance information
+            result = {
+                'account_type': account_info.get('account_type', 'SPOT'),
+                'can_trade': account_info.get('can_trade', False),
+                'can_withdraw': account_info.get('can_withdraw', False),
+                'can_deposit': account_info.get('can_deposit', False),
+                'balances': balance_info.get('balances', []),
+                'permissions': ['SPOT'],  # Default permissions
+                'update_time': account_info.get('update_time', datetime.now()).timestamp()
             }
             
-            return account_info
+            self.logger.debug("Retrieved account information")
+            return result
             
         except Exception as e:
             self.logger.error(f"Failed to get account info: {e}")
@@ -198,7 +264,7 @@ class BinanceTradingDataProvider(TradingDataProvider):
     async def connect(self) -> bool:
         """Connect to Binance API."""
         try:
-            # In a real implementation, this would establish API connection
+            await self._initialize_exchange()
             self._connected = True
             self.logger.info("Connected to Binance API")
             return True
@@ -206,81 +272,33 @@ class BinanceTradingDataProvider(TradingDataProvider):
             self.logger.error(f"Failed to connect to Binance: {e}")
             return False
     
+    async def _initialize_exchange(self) -> None:
+        """Initialize the exchange instance and unified adapter."""
+        try:
+            if self._exchange_instance is None:
+                # Create exchange instance using factory
+                self._exchange_instance = ExchangeFactory.get_exchange("binance")
+                
+                # Initialize the exchange
+                await self._exchange_instance.initialize()
+                
+                # Create unified adapter
+                self._unified_adapter = create_unified_adapter(
+                    self._exchange_instance, 
+                    "binance"
+                )
+                
+                self.logger.info("Exchange instance and adapter initialized")
+                
+        except Exception as e:
+            self.logger.error(f"Failed to initialize exchange: {e}")
+            raise
     
     
     
-    def _get_volatility_estimate(self, symbol: str) -> float:
-        """Get realistic volatility estimate for symbol."""
-        # In production, this would calculate from historical data
-        volatility_map = {
-            'BTCUSDT': 0.025,  # 2.5% daily volatility
-            'ETHUSDT': 0.035,  # 3.5% daily volatility
-            'ADAUSDT': 0.045,  # 4.5% daily volatility
-            'BNBUSDT': 0.030,  # 3.0% daily volatility
-            'SOLUSDT': 0.040,  # 4.0% daily volatility
-            'XRPUSDT': 0.050,  # 5.0% daily volatility
-            'DOTUSDT': 0.038,  # 3.8% daily volatility
-            'LINKUSDT': 0.042,  # 4.2% daily volatility
-            'UNIUSDT': 0.048,  # 4.8% daily volatility
-            'LTCUSDT': 0.032   # 3.2% daily volatility
-        }
-        
-        base_volatility = volatility_map.get(symbol, 0.030)
-        
-        # Add some time-varying volatility
-        current_hour = datetime.now().hour
-        if 9 <= current_hour <= 16:  # Market hours - higher volatility
-            base_volatility *= np.random.uniform(1.1, 1.3)
-        elif 22 <= current_hour or current_hour <= 6:  # Low activity - lower volatility
-            base_volatility *= np.random.uniform(0.7, 0.9)
-        else:
-            base_volatility *= np.random.uniform(0.9, 1.1)
-        
-        return base_volatility
     
-    def _get_trend_estimate(self, symbol: str, timestamp: datetime) -> float:
-        """Get realistic trend estimate for symbol."""
-        # In production, this would use technical analysis or ML models
-        # For now, simulate different market regimes
-        
-        # Simulate bull/bear/sideways markets
-        market_regime = np.random.choice(['bull', 'bear', 'sideways'], p=[0.3, 0.2, 0.5])
-        
-        if market_regime == 'bull':
-            return np.random.uniform(0.0001, 0.0005)  # 0.01-0.05% per minute
-        elif market_regime == 'bear':
-            return np.random.uniform(-0.0005, -0.0001)  # -0.05 to -0.01% per minute
-        else:
-            return np.random.uniform(-0.0001, 0.0001)  # -0.01 to 0.01% per minute
     
-    def _get_base_volume(self, symbol: str) -> float:
-        """Get realistic base volume for symbol."""
-        # In production, this would use historical volume data
-        volume_map = {
-            'BTCUSDT': 1000.0,
-            'ETHUSDT': 5000.0,
-            'ADAUSDT': 50000.0,
-            'BNBUSDT': 2000.0,
-            'SOLUSDT': 3000.0,
-            'XRPUSDT': 10000.0,
-            'DOTUSDT': 1500.0,
-            'LINKUSDT': 2000.0,
-            'UNIUSDT': 2500.0,
-            'LTCUSDT': 800.0
-        }
-        
-        base_volume = volume_map.get(symbol, 1000.0)
-        
-        # Add time-based volume variation
-        current_hour = datetime.now().hour
-        if 9 <= current_hour <= 16:  # Market hours - higher volume
-            base_volume *= np.random.uniform(1.5, 2.5)
-        elif 22 <= current_hour or current_hour <= 6:  # Low activity - lower volume
-            base_volume *= np.random.uniform(0.3, 0.7)
-        else:
-            base_volume *= np.random.uniform(0.8, 1.2)
-        
-        return base_volume
+    
 
 
 class MLTradingPredictor(TradingMLPredictor):
@@ -576,7 +594,18 @@ class MLTradingPredictor(TradingMLPredictor):
     
     def get_model_confidence(self) -> float:
         """Get overall model confidence."""
-        return 0.85  # Mock confidence level
+        # In a real implementation, this would calculate confidence from model performance
+        # For now, return a placeholder that indicates the model is not ready
+        if not self._model_ready:
+            return 0.0
+        
+        # TODO: Implement actual confidence calculation based on:
+        # - Model validation metrics
+        # - Recent prediction accuracy
+        # - Market conditions
+        # - Data quality scores
+        
+        return 0.0  # Placeholder - implement actual confidence calculation
     
     def is_model_ready(self) -> bool:
         """Check if model is ready for predictions."""
@@ -674,8 +703,14 @@ class AdvancedRiskManager(TradingRiskManager):
             
             # Check position size relative to portfolio
             position_value = trade_decision.quantity * trade_decision.price
-            if position_value > 10000:  # Mock portfolio size
-                self.logger.warning(f"Position size too large: {position_value}")
+            
+            # Get actual portfolio value from account info
+            # TODO: This should be passed as a parameter or retrieved from account
+            # For now, use a reasonable default that can be overridden
+            max_position_value = getattr(self, '_max_position_value', 10000.0)
+            
+            if position_value > max_position_value:
+                self.logger.warning(f"Position size too large: {position_value} > {max_position_value}")
                 return False
             
             # Check if stop loss is reasonable
@@ -839,64 +874,35 @@ class AdvancedRiskManager(TradingRiskManager):
         }
     
     async def _get_current_price(self, symbol: str) -> float:
-        """Get current price for symbol with realistic market data."""
-        # In a real implementation, this would fetch from exchange API
-        # For now, generate realistic price based on market conditions
-        
-        base_prices = {
-            'BTCUSDT': 45000.0,
-            'ETHUSDT': 2800.0,
-            'ADAUSDT': 0.45,
-            'BNBUSDT': 300.0,
-            'SOLUSDT': 100.0,
-            'XRPUSDT': 0.6,
-            'DOTUSDT': 6.0,
-            'LINKUSDT': 15.0,
-            'UNIUSDT': 8.0,
-            'LTCUSDT': 70.0
-        }
-        
-        base_price = base_prices.get(symbol, 100.0)
-        
-        # Add realistic price movement based on volatility
-        volatility = self._get_symbol_volatility(symbol)
-        price_change = np.random.normal(0, volatility * 0.1)
-        current_price = base_price * (1 + price_change)
-        
-        # Add time-based price variation
-        current_hour = datetime.now().hour
-        if 13 <= current_hour <= 15:  # Peak trading hours
-            current_price *= np.random.uniform(1.001, 1.003)
-        elif 22 <= current_hour or current_hour <= 6:  # Low activity hours
-            current_price *= np.random.uniform(0.998, 1.002)
-        
-        return round(current_price, 2)
+        """Get current price for symbol from exchange API."""
+        try:
+            # TODO: This should use the same exchange interface as the data provider
+            # For now, return a placeholder that indicates API integration needed
+            self.logger.warning(f"Price API not implemented for {symbol} - using placeholder")
+            
+            # In a real implementation, this would:
+            # 1. Use the exchange interface to get current ticker
+            # 2. Extract the last price from ticker data
+            # 3. Handle errors and fallbacks
+            
+            return 0.0  # Placeholder - implement actual price fetching
+            
+        except Exception as e:
+            self.logger.error(f"Failed to get current price for {symbol}: {e}")
+            return 0.0
     
     def _get_symbol_volatility(self, symbol: str) -> float:
-        """Get realistic volatility estimate for symbol."""
-        volatility_map = {
-            'BTCUSDT': 0.025,
-            'ETHUSDT': 0.035,
-            'ADAUSDT': 0.045,
-            'BNBUSDT': 0.030,
-            'SOLUSDT': 0.040,
-            'XRPUSDT': 0.050,
-            'DOTUSDT': 0.038,
-            'LINKUSDT': 0.042,
-            'UNIUSDT': 0.048,
-            'LTCUSDT': 0.032
-        }
+        """Get volatility estimate for symbol."""
+        # TODO: This should calculate actual volatility from historical data
+        # For now, return a placeholder that indicates calculation needed
         
-        base_volatility = volatility_map.get(symbol, 0.030)
+        # In a real implementation, this would:
+        # 1. Fetch recent price data for the symbol
+        # 2. Calculate rolling volatility (e.g., 20-day)
+        # 3. Return the current volatility estimate
         
-        # Add time-varying volatility
-        current_hour = datetime.now().hour
-        if 9 <= current_hour <= 16:  # Market hours
-            base_volatility *= np.random.uniform(1.1, 1.3)
-        elif 22 <= current_hour or current_hour <= 6:  # Low activity
-            base_volatility *= np.random.uniform(0.7, 0.9)
-        
-        return base_volatility
+        self.logger.warning(f"Volatility calculation not implemented for {symbol}")
+        return 0.03  # Placeholder - implement actual volatility calculation
     
     def update_risk_metrics(self, metrics: dict[str, float]) -> None:
         """Update internal risk metrics."""

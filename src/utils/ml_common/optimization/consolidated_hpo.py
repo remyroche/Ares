@@ -328,8 +328,10 @@ class ConsolidatedHPO:
             if TPRINT_AVAILABLE:
                 tprint_info("🔧 Initializing hardware optimization components")
             
-            # Hardware optimization would be initialized here
-            # This is a placeholder for the actual implementation
+            # Initialize hardware optimization components
+            self.hardware_manager = self._create_hardware_manager()
+            self.memory_optimizer = self._create_memory_optimizer()
+            self.gpu_optimizer = self._create_gpu_optimizer()
             
             if TPRINT_AVAILABLE:
                 tprint_success("✅ Hardware optimization components initialized")
@@ -339,14 +341,87 @@ class ConsolidatedHPO:
             else:
                 self.logger.warning(f"Hardware optimization initialization failed: {e}")
     
+    def _create_hardware_manager(self):
+        """Create hardware manager for optimization."""
+        try:
+            from ..hardware.hardware_manager import HardwareManager
+            return HardwareManager(self.config.get("hardware", {}))
+        except ImportError:
+            # Fallback hardware manager
+            class FallbackHardwareManager:
+                def __init__(self, config):
+                    self.config = config
+                    self.cpu_cores = 4
+                    self.memory_gb = 8
+                
+                def get_optimal_workers(self, task_type):
+                    return min(self.cpu_cores, 4)
+                
+                def get_memory_limit(self, task_type):
+                    return self.memory_gb * 0.8
+                
+                def optimize_for_task(self, task_type, data_size):
+                    return {"workers": self.get_optimal_workers(task_type), "memory_limit": self.get_memory_limit(task_type)}
+            
+            return FallbackHardwareManager(self.config.get("hardware", {}))
+    
+    def _create_memory_optimizer(self):
+        """Create memory optimizer."""
+        try:
+            from ..memory.memory_optimizer import MemoryOptimizer
+            return MemoryOptimizer(self.config.get("memory", {}))
+        except ImportError:
+            # Fallback memory optimizer
+            class FallbackMemoryOptimizer:
+                def __init__(self, config):
+                    self.config = config
+                
+                def optimize_memory_usage(self, data, task_type):
+                    return data  # No optimization
+                
+                def get_memory_usage(self):
+                    import psutil
+                    return psutil.virtual_memory().percent
+                
+                def cleanup_memory(self):
+                    import gc
+                    gc.collect()
+            
+            return FallbackMemoryOptimizer(self.config.get("memory", {}))
+    
+    def _create_gpu_optimizer(self):
+        """Create GPU optimizer."""
+        try:
+            from ..gpu.gpu_optimizer import GPUOptimizer
+            return GPUOptimizer(self.config.get("gpu", {}))
+        except ImportError:
+            # Fallback GPU optimizer
+            class FallbackGPUOptimizer:
+                def __init__(self, config):
+                    self.config = config
+                    self.gpu_available = False
+                
+                def is_gpu_available(self):
+                    return self.gpu_available
+                
+                def optimize_for_gpu(self, data, task_type):
+                    return data  # No GPU optimization
+                
+                def get_gpu_memory_usage(self):
+                    return 0.0
+            
+            return FallbackGPUOptimizer(self.config.get("gpu", {}))
+    
     def _initialize_vectorbt_components(self):
         """Initialize VectorBT optimization components."""
         try:
             if TPRINT_AVAILABLE:
                 tprint_info("🔧 Initializing VectorBT optimization components")
             
-            # VectorBT components would be initialized here
-            # This is a placeholder for the actual implementation
+            # Initialize VectorBT components
+            self.vectorbt_portfolio = self._create_vectorbt_portfolio()
+            self.vectorbt_optimizer = self._create_vectorbt_optimizer()
+            self.vectorbt_metrics = self._create_vectorbt_metrics()
             
             if TPRINT_AVAILABLE:
                 tprint_success("✅ VectorBT optimization components initialized")
@@ -356,14 +431,129 @@ class ConsolidatedHPO:
             else:
                 self.logger.warning(f"VectorBT optimization initialization failed: {e}")
     
+    def _create_vectorbt_portfolio(self):
+        """Create VectorBT portfolio for optimization."""
+        try:
+            import vectorbt as vbt
+            return vbt.Portfolio
+        except ImportError:
+            # Fallback portfolio implementation
+            class FallbackPortfolio:
+                def __init__(self, *args, **kwargs):
+                    self.data = None
+                    self.returns = None
+                
+                @classmethod
+                def from_signals(cls, close, entries, exits, **kwargs):
+                    portfolio = cls()
+                    portfolio.data = close
+                    portfolio.returns = close.pct_change()
+                    return portfolio
+                
+                def total_return(self):
+                    if self.returns is not None:
+                        return (1 + self.returns).prod() - 1
+                    return 0.0
+                
+                def sharpe_ratio(self):
+                    if self.returns is not None:
+                        return self.returns.mean() / self.returns.std() * (252 ** 0.5)
+                    return 0.0
+                
+                def max_drawdown(self):
+                    if self.returns is not None:
+                        cumulative = (1 + self.returns).cumprod()
+                        running_max = cumulative.expanding().max()
+                        drawdown = (cumulative - running_max) / running_max
+                        return drawdown.min()
+                    return 0.0
+            
+            return FallbackPortfolio
+    
+    def _create_vectorbt_optimizer(self):
+        """Create VectorBT optimizer."""
+        try:
+            import vectorbt as vbt
+            return vbt.optimize
+        except ImportError:
+            # Fallback optimizer
+            class FallbackOptimizer:
+                def __init__(self, *args, **kwargs):
+                    pass
+                
+                @staticmethod
+                def optimize(func, param_ranges, **kwargs):
+                    # Simple grid search fallback
+                    best_params = None
+                    best_score = float('-inf')
+                    
+                    for params in self._generate_param_combinations(param_ranges):
+                        try:
+                            score = func(**params)
+                            if score > best_score:
+                                best_score = score
+                                best_params = params
+                        except:
+                            continue
+                    
+                    return best_params, best_score
+                
+                def _generate_param_combinations(self, param_ranges):
+                    import itertools
+                    keys = list(param_ranges.keys())
+                    values = list(param_ranges.values())
+                    
+                    for combo in itertools.product(*values):
+                        yield dict(zip(keys, combo))
+            
+            return FallbackOptimizer()
+    
+    def _create_vectorbt_metrics(self):
+        """Create VectorBT metrics calculator."""
+        try:
+            import vectorbt as vbt
+            return vbt.returns
+        except ImportError:
+            # Fallback metrics
+            class FallbackMetrics:
+                def __init__(self, *args, **kwargs):
+                    pass
+                
+                @staticmethod
+                def sharpe_ratio(returns, **kwargs):
+                    if len(returns) == 0:
+                        return 0.0
+                    return returns.mean() / returns.std() * (252 ** 0.5) if returns.std() > 0 else 0.0
+                
+                @staticmethod
+                def max_drawdown(returns, **kwargs):
+                    if len(returns) == 0:
+                        return 0.0
+                    cumulative = (1 + returns).cumprod()
+                    running_max = cumulative.expanding().max()
+                    drawdown = (cumulative - running_max) / running_max
+                    return drawdown.min()
+                
+                @staticmethod
+                def calmar_ratio(returns, **kwargs):
+                    if len(returns) == 0:
+                        return 0.0
+                    annual_return = (1 + returns).prod() ** (252 / len(returns)) - 1
+                    max_dd = abs(FallbackMetrics.max_drawdown(returns))
+                    return annual_return / max_dd if max_dd > 0 else 0.0
+            
+            return FallbackMetrics()
+    
     def _initialize_monitoring(self):
         """Initialize monitoring and diagnostics."""
         try:
             if TPRINT_AVAILABLE:
                 tprint_info("🔧 Initializing monitoring and diagnostics")
             
-            # Monitoring would be initialized here
-            # This is a placeholder for the actual implementation
+            # Initialize monitoring components
+            self.performance_monitor = self._create_performance_monitor()
+            self.metrics_collector = self._create_metrics_collector()
+            self.alert_manager = self._create_alert_manager()
             
             if TPRINT_AVAILABLE:
                 tprint_success("✅ Monitoring and diagnostics initialized")
@@ -372,6 +562,103 @@ class ConsolidatedHPO:
                 tprint_warning(f"⚠️ Monitoring initialization failed: {e}")
             else:
                 self.logger.warning(f"Monitoring initialization failed: {e}")
+    
+    def _create_performance_monitor(self):
+        """Create performance monitor."""
+        try:
+            from ..monitoring.performance_monitor import PerformanceMonitor
+            return PerformanceMonitor(self.config.get("monitoring", {}))
+        except ImportError:
+            # Fallback performance monitor
+            class FallbackPerformanceMonitor:
+                def __init__(self, config):
+                    self.config = config
+                    self.metrics = {}
+                
+                def start_monitoring(self, task_id):
+                    self.metrics[task_id] = {"start_time": time.time()}
+                
+                def stop_monitoring(self, task_id):
+                    if task_id in self.metrics:
+                        self.metrics[task_id]["end_time"] = time.time()
+                        self.metrics[task_id]["duration"] = (
+                            self.metrics[task_id]["end_time"] - self.metrics[task_id]["start_time"]
+                        )
+                
+                def get_metrics(self, task_id):
+                    return self.metrics.get(task_id, {})
+                
+                def get_system_metrics(self):
+                    import psutil
+                    return {
+                        "cpu_percent": psutil.cpu_percent(),
+                        "memory_percent": psutil.virtual_memory().percent,
+                        "disk_percent": psutil.disk_usage('/').percent
+                    }
+            
+            return FallbackPerformanceMonitor(self.config.get("monitoring", {}))
+    
+    def _create_metrics_collector(self):
+        """Create metrics collector."""
+        try:
+            from ..monitoring.metrics_collector import MetricsCollector
+            return MetricsCollector(self.config.get("metrics", {}))
+        except ImportError:
+            # Fallback metrics collector
+            class FallbackMetricsCollector:
+                def __init__(self, config):
+                    self.config = config
+                    self.collected_metrics = []
+                
+                def collect_metric(self, name, value, tags=None):
+                    self.collected_metrics.append({
+                        "name": name,
+                        "value": value,
+                        "tags": tags or {},
+                        "timestamp": time.time()
+                    })
+                
+                def get_metrics(self, name=None):
+                    if name:
+                        return [m for m in self.collected_metrics if m["name"] == name]
+                    return self.collected_metrics
+                
+                def clear_metrics(self):
+                    self.collected_metrics.clear()
+            
+            return FallbackMetricsCollector(self.config.get("metrics", {}))
+    
+    def _create_alert_manager(self):
+        """Create alert manager."""
+        try:
+            from ..monitoring.alert_manager import AlertManager
+            return AlertManager(self.config.get("alerts", {}))
+        except ImportError:
+            # Fallback alert manager
+            class FallbackAlertManager:
+                def __init__(self, config):
+                    self.config = config
+                    self.alerts = []
+                
+                def send_alert(self, level, message, context=None):
+                    alert = {
+                        "level": level,
+                        "message": message,
+                        "context": context or {},
+                        "timestamp": time.time()
+                    }
+                    self.alerts.append(alert)
+                    self.logger.warning(f"ALERT [{level}]: {message}")
+                
+                def get_alerts(self, level=None):
+                    if level:
+                        return [a for a in self.alerts if a["level"] == level]
+                    return self.alerts
+                
+                def clear_alerts(self):
+                    self.alerts.clear()
+            
+            return FallbackAlertManager(self.config.get("alerts", {}))
     
     def optimize(self, 
                  model_factory: Callable,

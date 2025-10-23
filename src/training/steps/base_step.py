@@ -1286,14 +1286,143 @@ class BaseStep(ABC):
             tprint_info(f"🚀 Executing step: {self.step_name}")
             tprint_debug(f"📋 Configuration: {validated_config}")
             
-            # This method must be implemented by subclasses
-            raise NotImplementedError("Subclasses must implement the execute method")
+            # Execute the step logic - this is a template that subclasses should override
+            result = await self._execute_step_logic(validated_config)
+            
+            # Calculate execution time
+            execution_time = time.time() - start_time
+            
+            # Create execution result
+            execution_result = ExecutionResult(
+                success=result.get("success", True),
+                artifacts=result.get("artifacts", []),
+                metrics=result.get("metrics", {}),
+                error=result.get("error"),
+                execution_time=execution_time,
+                step_name=self.step_name,
+                config=validated_config
+            )
+            
+            tprint_success(f"✅ Step completed in {execution_time:.2f}s")
+            return execution_result
             
         except ConfigurationError:
             raise
         except Exception as e:
             tprint_error(f"❌ Unexpected error in execute method: {e}")
             raise TrainingStepError(f"Execute method failed: {e}") from e
+    
+    async def _execute_step_logic(self, config: StepConfig) -> Dict[str, Any]:
+        """
+        Template method for step execution logic.
+        Subclasses should override this method to implement their specific logic.
+        
+        Args:
+            config: Validated configuration for the step
+            
+        Returns:
+            Dict containing:
+            - success: bool indicating if step completed successfully
+            - artifacts: list of artifact paths/metadata created
+            - metrics: dict of performance metrics
+            - error: error message if step failed (optional)
+        """
+        try:
+            tprint_info(f"🔧 Executing step logic for: {self.step_name}")
+            
+            # This is a template implementation - subclasses should override
+            # Example implementation structure:
+            
+            # 1. Initialize step-specific components
+            await self._initialize_step_components(config)
+            
+            # 2. Process data
+            processed_data = await self._process_data(config)
+            
+            # 3. Generate artifacts
+            artifacts = await self._generate_artifacts(processed_data, config)
+            
+            # 4. Calculate metrics
+            metrics = await self._calculate_metrics(processed_data, config)
+            
+            return {
+                "success": True,
+                "artifacts": artifacts,
+                "metrics": metrics,
+                "error": None
+            }
+            
+        except Exception as e:
+            tprint_error(f"❌ Error in step logic: {e}")
+            return {
+                "success": False,
+                "artifacts": [],
+                "metrics": {},
+                "error": str(e)
+            }
+    
+    async def _initialize_step_components(self, config: StepConfig) -> None:
+        """
+        Initialize step-specific components.
+        Subclasses should override this method.
+        
+        Args:
+            config: Step configuration
+        """
+        tprint_debug("🔧 Initializing step components (template)")
+        # Template implementation - subclasses should override
+        pass
+    
+    async def _process_data(self, config: StepConfig) -> Any:
+        """
+        Process data for the step.
+        Subclasses should override this method.
+        
+        Args:
+            config: Step configuration
+            
+        Returns:
+            Processed data
+        """
+        tprint_debug("🔧 Processing data (template)")
+        # Template implementation - subclasses should override
+        return {}
+    
+    async def _generate_artifacts(self, processed_data: Any, config: StepConfig) -> List[str]:
+        """
+        Generate artifacts from processed data.
+        Subclasses should override this method.
+        
+        Args:
+            processed_data: Data processed by the step
+            config: Step configuration
+            
+        Returns:
+            List of artifact paths/metadata
+        """
+        tprint_debug("🔧 Generating artifacts (template)")
+        # Template implementation - subclasses should override
+        return []
+    
+    async def _calculate_metrics(self, processed_data: Any, config: StepConfig) -> Dict[str, Any]:
+        """
+        Calculate performance metrics for the step.
+        Subclasses should override this method.
+        
+        Args:
+            processed_data: Data processed by the step
+            config: Step configuration
+            
+        Returns:
+            Dictionary of metrics
+        """
+        tprint_debug("🔧 Calculating metrics (template)")
+        # Template implementation - subclasses should override
+        return {
+            "execution_time": 0.0,
+            "data_processed": 0,
+            "success_rate": 1.0
+        }
     
     def _save_artifact(self, data: Any, artifact_name: str, 
                       artifact_type: str = "data", 

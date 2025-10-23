@@ -207,8 +207,6 @@ class HardwarePerformanceMonitor:
     def _get_gpu_usage(self) -> float:
         """Get GPU usage percentage."""
         try:
-            # This is a simplified implementation
-            # In practice, you'd use platform-specific tools
             if platform.system() == 'Darwin':
                 # Try to get GPU usage from system
                 result = subprocess.run(
@@ -216,8 +214,25 @@ class HardwarePerformanceMonitor:
                     capture_output=True, text=True, timeout=5
                 )
                 if result.returncode == 0:
-                    # Parse output to get GPU usage (simplified)
-                    return 0.0  # Placeholder
+                    # Parse output to get GPU usage
+                    output = result.stdout.lower()
+                    if 'apple' in output and any(x in output for x in ['m1', 'm2', 'm3', 'm4']):
+                        # For Apple Silicon, we can estimate based on system load
+                        if PSUTIL_AVAILABLE:
+                            cpu_usage = psutil.cpu_percent(interval=0.1)
+                            # Estimate GPU usage as a fraction of CPU usage
+                            # This is a rough approximation since Apple Silicon shares resources
+                            return min(cpu_usage * 0.8, 100.0)
+                        else:
+                            return 0.0
+                    else:
+                        return 0.0
+                else:
+                    # Fallback: estimate based on system load
+                    if PSUTIL_AVAILABLE:
+                        cpu_usage = psutil.cpu_percent(interval=0.1)
+                        return min(cpu_usage * 0.6, 100.0)
+                    return 0.0
             return 0.0
         except Exception:
             return 0.0
@@ -235,8 +250,40 @@ class HardwarePerformanceMonitor:
     def _get_power_consumption(self) -> float:
         """Get power consumption in watts."""
         try:
-            # Simplified implementation
-            return 15.0  # Placeholder
+            if platform.system() == 'Darwin':
+                # Try to get power consumption from system
+                result = subprocess.run(
+                    ['pmset', '-g', 'batt'],
+                    capture_output=True, text=True, timeout=5
+                )
+                if result.returncode == 0:
+                    # Parse battery info to estimate power consumption
+                    output = result.stdout.lower()
+                    if 'drawing from' in output and 'ac power' in output:
+                        # On AC power, estimate based on system load
+                        if PSUTIL_AVAILABLE:
+                            cpu_usage = psutil.cpu_percent(interval=0.1)
+                            # Base power + load-dependent power
+                            base_power = 8.0  # Base power consumption
+                            load_power = cpu_usage * 0.1  # Additional power per CPU usage
+                            return base_power + load_power
+                        else:
+                            return 15.0
+                    else:
+                        # On battery, estimate lower consumption
+                        return 8.0
+                else:
+                    # Fallback estimation
+                    if PSUTIL_AVAILABLE:
+                        cpu_usage = psutil.cpu_percent(interval=0.1)
+                        return 8.0 + (cpu_usage * 0.1)
+                    return 15.0
+            else:
+                # Non-macOS systems
+                if PSUTIL_AVAILABLE:
+                    cpu_usage = psutil.cpu_percent(interval=0.1)
+                    return 20.0 + (cpu_usage * 0.2)
+                return 25.0
         except Exception:
             return 15.0
 
@@ -272,6 +319,7 @@ class HardwarePerformanceMonitor:
 
     def add_alert_callback(self, callback: Callable):
         """Add alert callback function."""
+        self.alert_callbacks.append(callback)
 
     def set_intensive_thresholds(self):
         """Switch to intensive workload thresholds for CPU/GPU intensive operations."""
@@ -815,22 +863,32 @@ class UnifiedHardwareManager:
         if not self.is_initialized:
             return {"error": "System not initialized"}
 
-        return {
-            "initialized": self.is_initialized,
-            "current_workload": self.current_workload_type.value if self.current_workload_type else None,
-            "performance_report": self.performance_monitor.get_performance_report(),
-            "scheduling_report": self.task_scheduler.get_scheduling_report(),
-            "cpu_info": self.cpu_optimizer.get_cpu_info(),
-            "gpu_info": self.gpu_manager.get_gpu_info(),
-            "memory_stats": self.memory_optimizer.get_memory_stats(),
-            "optimization_contexts": self.optimization_contexts,
-            "config": {
-                "cpu_optimization_level": self.config.cpu_optimization_level.value,
-                "gpu_optimization_level": self.config.gpu_optimization_level.value,
-                "memory_optimization_level": self.config.memory_optimization_level.value,
-                "adaptive_optimization_enabled": self.config.enable_adaptive_optimization
+        try:
+            return {
+                "initialized": self.is_initialized,
+                "current_workload": self.current_workload_type.value if self.current_workload_type else None,
+                "performance_report": self.performance_monitor.get_performance_report(),
+                "scheduling_report": self.task_scheduler.get_scheduling_report(),
+                "cpu_info": self.cpu_optimizer.get_cpu_info(),
+                "gpu_info": self.gpu_manager.get_gpu_info(),
+                "memory_stats": self.memory_optimizer.get_memory_stats(),
+                "optimization_contexts": self.optimization_contexts,
+                "config": {
+                    "cpu_optimization_level": self.config.cpu_optimization_level.value,
+                    "gpu_optimization_level": self.config.gpu_optimization_level.value,
+                    "memory_optimization_level": self.config.memory_optimization_level.value,
+                    "adaptive_optimization_enabled": self.config.enable_adaptive_optimization
+                },
+                "circuit_breaker_status": {
+                    "failures": self._optimization_failures,
+                    "max_failures": self._max_optimization_failures,
+                    "reset_time": self._circuit_breaker_reset_time,
+                    "is_active": self._optimization_failures >= self._max_optimization_failures
+                }
             }
-        }
+        except Exception as e:
+            self.logger.error(f"Failed to get system status: {e}")
+            return {"error": f"Failed to get system status: {e}"}
 
     def save_configuration(self, file_path: str):
         """Save current configuration to file."""
@@ -882,6 +940,64 @@ class UnifiedHardwareManager:
             self.logger.error(f"Failed to load configuration: {e}")
             return False
 
+    def get_hardware_capabilities(self) -> Dict[str, Any]:
+        """Get detailed hardware capabilities."""
+        try:
+            capabilities = {
+                "cpu": {
+                    "cores": self.cpu_optimizer.cpu_count,
+                    "performance_cores": self.cpu_optimizer.performance_cores,
+                    "efficiency_cores": self.cpu_optimizer.efficiency_cores,
+                    "optimization_level": self.config.cpu_optimization_level.value
+                },
+                "gpu": {
+                    "available": self.gpu_manager.mps_available,
+                    "device": self.gpu_manager.get_optimal_device(),
+                    "generation": self.gpu_manager.m1_generation,
+                    "optimization_level": self.config.gpu_optimization_level.value
+                },
+                "memory": {
+                    "limit_gb": self.config.memory_limit_gb,
+                    "optimization_level": self.config.memory_optimization_level.value,
+                    "pooling_enabled": self.config.enable_memory_pooling
+                },
+                "adaptive": {
+                    "enabled": self.config.enable_adaptive_optimization,
+                    "learning_enabled": self.config.enable_learning,
+                    "auto_tuning": self.config.auto_tuning_enabled
+                },
+                "monitoring": {
+                    "enabled": self.config.performance_monitoring_enabled,
+                    "interval": self.config.monitoring_interval,
+                    "retention_hours": self.config.metrics_retention_hours
+                }
+            }
+            
+            return capabilities
+        except Exception as e:
+            self.logger.error(f"Failed to get hardware capabilities: {e}")
+            return {"error": f"Failed to get hardware capabilities: {e}"}
+
+    def reset_circuit_breaker(self):
+        """Reset the circuit breaker for optimization failures."""
+        self._optimization_failures = 0
+        self._circuit_breaker_reset_time = None
+        self.logger.info("🔄 Circuit breaker reset")
+
+    def get_optimization_history(self) -> Dict[str, Any]:
+        """Get optimization history and performance data."""
+        try:
+            return {
+                "optimization_contexts": self.optimization_contexts,
+                "task_performance": self.task_scheduler.performance_history[-50:],  # Last 50 tasks
+                "performance_metrics": self.performance_monitor.metrics_history[-100:],  # Last 100 measurements
+                "circuit_breaker_failures": self._optimization_failures,
+                "total_optimizations": len(self.optimization_contexts)
+            }
+        except Exception as e:
+            self.logger.error(f"Failed to get optimization history: {e}")
+            return {"error": f"Failed to get optimization history: {e}"}
+
 # Global instance
 _unified_hardware_manager: Optional[UnifiedHardwareManager] = None
 
@@ -927,3 +1043,18 @@ def shutdown_hardware_manager():
     if _unified_hardware_manager:
         _unified_hardware_manager.shutdown()
         _unified_hardware_manager = None
+
+def get_hardware_capabilities() -> Dict[str, Any]:
+    """Get hardware capabilities."""
+    manager = get_unified_hardware_manager()
+    return manager.get_hardware_capabilities()
+
+def get_optimization_history() -> Dict[str, Any]:
+    """Get optimization history."""
+    manager = get_unified_hardware_manager()
+    return manager.get_optimization_history()
+
+def reset_circuit_breaker():
+    """Reset the circuit breaker."""
+    manager = get_unified_hardware_manager()
+    manager.reset_circuit_breaker()

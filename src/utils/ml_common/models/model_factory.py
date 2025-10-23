@@ -329,8 +329,6 @@ class EnhancedModelFactory:
                 model = self._create_nbeats_model(model_config)
             elif model_config.model_type == ModelType.MULTISCALE_NBEATS:
                 model = self._create_multiscale_nbeats_model(model_config)
-            elif model_config.model_type in [ModelType.NAS, ModelType.NAS_CLASSIFIER]:
-                model = self._create_nas_model(model_config)
             elif model_config.model_type in [ModelType.RIDGE, ModelType.RIDGE_CLASSIFIER]:
                 model = self._create_ridge_model(model_config)
             elif model_config.model_type in [ModelType.ELASTIC_NET, ModelType.ELASTIC_NET_CLASSIFIER]:
@@ -726,168 +724,6 @@ class EnhancedModelFactory:
         return TimeSeriesTransformer(**model_config.model_params)
 
 
-    def _create_deepscaler_model(self, model_config: ModelConfig) -> Any:
-        """Create DeepScaler model with overfitting prevention."""
-
-        # Default parameters with overfitting prevention
-        default_params = {
-            'n_layers': 4,
-            'n_units': 64,
-            'dropout': 0.2,
-            'l2_regularization': 0.01,
-            'activation': 'relu',
-            'optimizer': 'adam',
-            'learning_rate': 0.001,
-            'batch_size': 32,
-            'epochs': 100,
-            'early_stopping_patience': 15,
-            'use_batch_norm': True,
-            'use_residual_connections': True
-        }
-
-        # Merge with user parameters
-        params = {**default_params, **model_config.model_params}
-
-        # This is a placeholder implementation
-        # In practice, you would implement a custom DeepScaler class with proper overfitting prevention
-        class DeepScaler:
-            def __init__(self, **kwargs):
-                self.params = kwargs
-                self.is_fitted = False
-                self.n_layers = kwargs.get('n_layers', 4)
-                self.n_units = kwargs.get('n_units', 64)
-                self.dropout = kwargs.get('dropout', 0.2)
-                self.l2_regularization = kwargs.get('l2_regularization', 0.01)
-                self.activation = kwargs.get('activation', 'relu')
-                self.use_batch_norm = kwargs.get('use_batch_norm', True)
-                self.use_residual_connections = kwargs.get('use_residual_connections', True)
-                self.optimizer = kwargs.get('optimizer', 'adam')
-                self.learning_rate = kwargs.get('learning_rate', 0.001)
-                self.batch_size = kwargs.get('batch_size', 32)
-                self.epochs = kwargs.get('epochs', 100)
-                self.early_stopping_patience = kwargs.get('early_stopping_patience', 15)
-
-            def fit(self, X, y):
-                """Fit the DeepScaler model with overfitting prevention."""
-                try:
-                    # Store training data statistics
-                    if hasattr(X, 'values'):
-                        X_values = X.values
-                    else:
-                        X_values = np.array(X)
-                    
-                    self.feature_means_ = np.mean(X_values, axis=0)
-                    self.feature_stds_ = np.std(X_values, axis=0) + 1e-8
-                    self.target_mean_ = np.mean(y) if hasattr(y, 'values') else 0.0
-                    self.target_std_ = np.std(y) if hasattr(y, 'values') else 1.0
-                    
-                    # Initialize deep network weights
-                    self.weights_ = []
-                    self.biases_ = []
-                    
-                    # Input layer
-                    input_size = X_values.shape[1]
-                    current_size = input_size
-                    
-                    for i in range(self.n_layers):
-                        # Initialize weights for this layer
-                        layer_weights = np.random.normal(0, np.sqrt(2.0 / current_size), (current_size, self.n_units))
-                        layer_bias = np.zeros(self.n_units)
-                        
-                        self.weights_.append(layer_weights)
-                        self.biases_.append(layer_bias)
-                        current_size = self.n_units
-                    
-                    # Output layer
-                    output_weights = np.random.normal(0, np.sqrt(2.0 / current_size), (current_size, 1))
-                    output_bias = np.zeros(1)
-                    
-                    self.weights_.append(output_weights)
-                    self.biases_.append(output_bias)
-                    
-                    # Training history for early stopping
-                    self.training_loss_ = []
-                    self.validation_loss_ = []
-                    
-                    self.is_fitted = True
-                    self.feature_names_ = getattr(X, 'columns', None) if hasattr(X, 'columns') else None
-                    return self
-                except Exception as e:
-                    # Fallback to simple implementation
-                    self.is_fitted = True
-                    self.feature_names_ = getattr(X, 'columns', None) if hasattr(X, 'columns') else None
-                    return self
-
-            def predict(self, X):
-                """Make predictions using the fitted model."""
-                if not self.is_fitted:
-                    raise ValueError("Model not fitted")
-                
-                try:
-                    if hasattr(X, 'values'):
-                        X_values = X.values
-                    else:
-                        X_values = np.array(X)
-                    
-                    # Normalize features
-                    X_normalized = (X_values - self.feature_means_) / self.feature_stds_
-                    
-                    # Forward pass through the network
-                    current_input = X_normalized
-                    
-                    for i in range(len(self.weights_) - 1):  # Exclude output layer
-                        # Linear transformation
-                        z = np.dot(current_input, self.weights_[i]) + self.biases_[i]
-                        
-                        # Activation function (ReLU)
-                        current_input = np.maximum(0, z)
-                        
-                        # Apply dropout during inference (scaled)
-                        if self.dropout > 0:
-                            current_input = current_input * (1 - self.dropout)
-                    
-                    # Output layer
-                    z = np.dot(current_input, self.weights_[-1]) + self.biases_[-1]
-                    predictions = z.flatten()
-                    
-                    # Add some realistic noise
-                    noise = np.random.normal(0, 0.01, len(predictions))
-                    predictions = predictions + noise
-                    
-                    return predictions
-                except Exception:
-                    # Fallback to random predictions
-                    return np.random.normal(0, 0.1, len(X))
-
-            def predict_proba(self, X):
-                """Predict class probabilities."""
-                if not self.is_fitted:
-                    raise ValueError("Model not fitted")
-                
-                try:
-                    # Convert regression predictions to probabilities
-                    predictions = self.predict(X)
-                    
-                    # Apply sigmoid for binary classification
-                    probabilities = 1 / (1 + np.exp(-predictions))
-                    
-                    # Return probabilities for both classes
-                    proba_matrix = np.column_stack([1 - probabilities, probabilities])
-                    return proba_matrix
-                except Exception:
-                    # Fallback to random probabilities
-                    return np.random.dirichlet(np.ones(2), len(X))
-
-            def get_params(self, deep=True):
-                """Get model parameters."""
-                return self.params.copy()
-
-            def set_params(self, **params):
-                """Set model parameters."""
-                self.params.update(params)
-                return self
-
-        return DeepScaler(**params)
 
     def _create_nbeats_model(self, model_config: ModelConfig) -> Any:
         """Create N-BEATS model with regime-specific training support for 4D analysis."""
@@ -1571,67 +1407,6 @@ class EnhancedModelFactory:
 
 
 
-    def _create_tft_model(self, model_config: ModelConfig) -> Any:
-        """Create Temporal Fusion Transformer model."""
-
-        # Default parameters
-        default_params = {
-            'attention_heads': 8,
-            'hidden_size': 64,
-            'num_layers': 3,
-            'dropout': 0.1,
-            'use_interpretable_attention': True,
-            'batch_size': 32,
-            'epochs': 100
-        }
-
-        # Merge with user parameters
-        params = {**default_params, **model_config.model_params}
-
-        # This is a placeholder implementation
-        class TemporalFusionTransformer:
-            def __init__(self, **kwargs):
-                self.params = kwargs
-                self.is_fitted = False
-                self.attention_heads = kwargs.get('attention_heads', 8)
-                self.hidden_size = kwargs.get('hidden_size', 64)
-                self.num_layers = kwargs.get('num_layers', 3)
-                self.dropout = kwargs.get('dropout', 0.1)
-                self.use_interpretable_attention = kwargs.get('use_interpretable_attention', True)
-                self.batch_size = kwargs.get('batch_size', 32)
-                self.epochs = kwargs.get('epochs', 100)
-
-            def fit(self, X, y):
-                """Fit the TemporalFusionTransformer model."""
-                # Placeholder implementation
-                self.is_fitted = True
-                self.feature_names_ = getattr(X, 'columns', None) if hasattr(X, 'columns') else None
-                return self
-
-            def predict(self, X):
-                """Make predictions using the fitted model."""
-                if not self.is_fitted:
-                    raise ValueError("Model not fitted")
-                # Placeholder implementation
-                return np.zeros(len(X))
-
-            def predict_proba(self, X):
-                """Predict class probabilities."""
-                if not self.is_fitted:
-                    raise ValueError("Model not fitted")
-                # Placeholder implementation
-                return np.random.dirichlet(np.ones(2), len(X))
-
-            def get_params(self, deep=True):
-                """Get model parameters."""
-                return self.params.copy()
-
-            def set_params(self, **params):
-                """Set model parameters."""
-                self.params.update(params)
-                return self
-
-        return TemporalFusionTransformer(**params)
 
 
     def _create_elastic_net_model(self, model_config: ModelConfig) -> Any:
@@ -1807,53 +1582,6 @@ class EnhancedModelFactory:
         return model
 
 
-    def _create_nas_model(self, model_config: ModelConfig) -> Any:
-        """Create NAS (Neural Architecture Search) model for regime detection."""
-
-        # Default parameters for NAS regime detection
-        default_params = {
-            'learning_rate': 0.01,
-            'num_epochs': 50,
-            'hidden_size': 128,
-            'dropout': 0.2,
-            'batch_size': 32,
-            'regime_detection': True,
-            'economic_significance': True,
-            'trading_viability': True
-        }
-
-        params = {**default_params, **model_config.model_params}
-
-        # Create NAS model for regime detection
-        class NASRegimeDetector:
-            def __init__(self, **kwargs):
-                self.params = kwargs
-                self.is_fitted = False
-                self.regime_labels = None
-                self.feature_importance = None
-
-            def fit(self, X, y):
-                """Fit NAS model to regime detection data."""
-                # Placeholder for actual NAS implementation
-                self.is_fitted = True
-                self.regime_labels = y
-                return self
-
-            def predict(self, X):
-                """Predict regime labels."""
-                if not self.is_fitted:
-                    raise ValueError("Model must be fitted before prediction")
-                # Placeholder for actual NAS prediction
-                return np.zeros(len(X))
-
-            def predict_proba(self, X):
-                """Predict regime probabilities."""
-                if not self.is_fitted:
-                    raise ValueError("Model must be fitted before prediction")
-                # Placeholder for actual NAS probability prediction
-                return np.ones((len(X), len(np.unique(self.regime_labels))))
-
-        return NASRegimeDetector(**params)
 
     def _create_ridge_model(self, model_config: ModelConfig) -> Any:
         """Create ElasticNetCV model (replacing Ridge with automatic parameter optimization)."""
@@ -1898,48 +1626,10 @@ class EnhancedModelFactory:
 
     def _apply_m1_optimizations(self, model: Any, model_config: ModelConfig) -> Any:
         """Apply M1-specific optimizations to the model."""
-
-        # This is a placeholder for M1-specific optimizations
-        # In practice, you would apply specific optimizations based on model type
-
-        if hasattr(model, 'set_params'):
-            # Apply M1-specific parameters if available
-            m1_params = {}
-
-            # Memory optimization
-            if self.m1_memory and model_config.enable_memory_optimization:
-                m1_params.update({
-                    'n_jobs': min(model_config.n_jobs, 4),  # Limit parallel jobs on M1
-                })
-
-            # GPU acceleration (if supported by model)
-            if self.m1_gpu and model_config.enable_gpu_acceleration:
-                # Add GPU-specific parameters if the model supports them
-                gpu_params = {}
-
-                # Common GPU parameters for different model types
-                if hasattr(model, 'device') and TORCH_AVAILABLE:
-                    # PyTorch models
-                    gpu_params['device'] = 'mps' if hasattr(torch, 'mps') else 'cuda'
-                elif hasattr(model, 'gpu_id'):
-                    # XGBoost/LightGBM style models
-                    gpu_params['gpu_id'] = 0
-                elif hasattr(model, 'n_gpus'):
-                    # Some ensemble models
-                    gpu_params['n_gpus'] = 1
-
-                # Add any GPU parameters we found
-                if gpu_params:
-                    m1_params.update(gpu_params)
-                    self.logger.debug(f"🚀 Added GPU acceleration parameters: {gpu_params}")
-                else:
-                    # If GPU acceleration was requested but not supported, continue without it
-                    self.logger.warning("GPU acceleration requested but not supported by model, continuing without GPU")
-
-            # Apply parameters
-            if m1_params:
-                model.set_params(**m1_params)
-                self.logger.debug(f"🔧 Applied M1 optimizations: {m1_params}")
+        # Apply memory optimization if enabled
+        if self.m1_memory and model_config.enable_memory_optimization:
+            if hasattr(model, 'set_params'):
+                model.set_params(n_jobs=min(model_config.n_jobs, 4))
 
         return model
 

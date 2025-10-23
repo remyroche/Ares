@@ -120,9 +120,7 @@ except ImportError:
 
 # Sklearn imports
 try:
-    from sklearn.model_selection import cross_val_score, StratifiedKFold, TimeSeriesSplit, cross_validate
-    from sklearn.metrics import make_scorer
-    from sklearn.utils.class_weight import compute_sample_weight
+    from sklearn.model_selection import cross_val_score, StratifiedKFold, TimeSeriesSplit, KFold
     SKLEARN_AVAILABLE = True
 except ImportError:
     SKLEARN_AVAILABLE = False
@@ -158,11 +156,11 @@ class HPOConfig:
     n_ei_candidates: int = 24
     multivariate: bool = True
     group: bool = True
-    gamma: Callable[[int], int] = lambda t: min(int(np.ceil(0.15 * t)), 100)
+    gamma: Optional[Callable[[int], int]] = None
     
     # BOHB settings
-    min_budget: float = 1.0
-    max_budget: float = 3.0
+    min_budget: float = 0.1  # Changed to proper data fraction range
+    max_budget: float = 1.0  # Changed to proper data fraction range
     reduction_factor: float = 3.0
     n_brackets: int = 1
     
@@ -200,6 +198,18 @@ class HPOConfig:
     cache_dir: str = "./hpo_cache"
     save_results: bool = True
     results_dir: str = "./hpo_results"
+    
+    # Additional configuration
+    enable_detailed_logging: bool = False
+    resource_param: Optional[str] = None
+    resource_values: Optional[List[int]] = None
+    coarse_top_k: int = 5
+    fine_span_frac: float = 0.3
+    overfitting_threshold: float = 0.1
+    
+    def __post_init__(self):
+        if self.gamma is None:
+            self.gamma = lambda t: min(int(np.ceil(0.15 * t)), 100)
 
 @dataclass
 class HPOPhaseConfig:
@@ -273,6 +283,10 @@ class ConsolidatedHPO:
         self.config = config or HPOConfig()
         self.logger = logger.getChild('ConsolidatedHPO')
         
+        # Set random seeds for reproducibility
+        if self.config.random_state is not None:
+            np.random.seed(self.config.random_state)
+        
         # Initialize hardware optimization
         if self.config.enable_hardware_optimization:
             self._initialize_hardware_optimization()
@@ -301,6 +315,9 @@ class ConsolidatedHPO:
         self.optimization_history = []
         self.active_studies = {}
         self.trial_results = {}
+        
+        # Initialize caching
+        self._score_cache = {}
         
         if TPRINT_AVAILABLE:
             tprint_success("✅ Consolidated HPO system initialized")
@@ -418,14 +435,19 @@ class ConsolidatedHPO:
     def _bayesian_optimization(self, model_factory: Callable, X: np.ndarray, 
                               y: np.ndarray, search_space: Dict[str, Any], 
                               model_name: str) -> HPOResult:
-        """Perform Bayesian optimization with TPE."""
+        """Perform Bayesian optimization with TPE and early pruning."""
         if not OPTUNA_AVAILABLE:
             raise ImportError("Optuna is required for Bayesian optimization")
         
         if TPRINT_AVAILABLE:
             tprint_info("🎯 Starting Bayesian optimization with TPE")
         
-        # Create study
+        # Create study with proper pruner
+        pruner = None
+        if self.config.enable_monitoring:
+            from optuna.pruners import MedianPruner
+            pruner = MedianPruner(n_startup_trials=5, n_warmup_steps=10)
+        
         study = optuna.create_study(
             direction='maximize',
             sampler=TPESampler(
@@ -436,7 +458,7 @@ class ConsolidatedHPO:
                 gamma=self.config.gamma,
                 seed=self.config.random_state
             ),
-            pruner=MedianPruner() if self.config.enable_monitoring else None
+            pruner=pruner
         )
         
         # Define objective function
@@ -481,7 +503,10 @@ class ConsolidatedHPO:
         if TPRINT_AVAILABLE:
             tprint_info("🎯 Starting BOHB-style multi-fidelity optimization")
         
-        # Create study with Hyperband pruner
+        # Use SuccessiveHalvingPruner for better multi-fidelity support
+        from optuna.pruners import SuccessiveHalvingPruner
+        
+        # Create study with SuccessiveHalving pruner
         study = optuna.create_study(
             direction='maximize',
             sampler=TPESampler(
@@ -492,10 +517,9 @@ class ConsolidatedHPO:
                 gamma=self.config.gamma,
                 seed=self.config.random_state
             ),
-            pruner=HyperbandPruner(
-                min_resource=self.config.min_budget,
-                max_resource=self.config.max_budget,
-                reduction_factor=self.config.reduction_factor
+            pruner=SuccessiveHalvingPruner(
+                min_resource=1,
+                reduction_factor=int(self.config.reduction_factor)
             )
         )
         
@@ -545,53 +569,44 @@ class ConsolidatedHPO:
     def _grid_optimization(self, model_factory: Callable, X: np.ndarray, 
                           y: np.ndarray, search_space: Dict[str, Any], 
                           model_name: str) -> HPOResult:
-        """Perform grid search optimization."""
+        """Perform grid search optimization with staged refinement."""
         if TPRINT_AVAILABLE:
             tprint_info("🎯 Starting grid search optimization")
         
-        # Generate parameter grid
-        param_grid = self._generate_parameter_grid(search_space)
+        # Stage 1: Coarse grid search
+        coarse_grid = self._generate_parameter_grid(search_space, points=self.config.coarse_grid_points)
+        stage1_results = self._eval_param_list(model_factory, X, y, coarse_grid)
         
-        best_score = -np.inf
-        best_params = {}
-        trial_results = []
+        # Pick top K from coarse stage
+        top = sorted(stage1_results, key=lambda d: d['value'], reverse=True)[:self.config.coarse_top_k]
+        best_score = top[0]['value'] if top else -np.inf
+        best_params = top[0]['params'] if top else {}
         
-        for i, params in enumerate(param_grid):
-            try:
-                # Create model with parameters
-                model = model_factory(**params)
-                
-                # Evaluate model
-                score = self._evaluate_model(model, X, y)
-                
-                trial_results.append({
-                    'trial_number': i,
-                    'params': params,
-                    'value': score,
-                    'state': 'COMPLETE'
-                })
-                
-                if score > best_score:
-                    best_score = score
-                    best_params = params
-                
-                if TPRINT_AVAILABLE and (i + 1) % 10 == 0:
-                    tprint_info(f"   Evaluated {i + 1}/{len(param_grid)} combinations")
-                
-            except Exception as e:
-                if TPRINT_AVAILABLE:
-                    tprint_warning(f"⚠️ Failed to evaluate parameters {params}: {e}")
-                continue
+        # Stage 2: Fine grid search (optional)
+        trial_results = stage1_results[:]
+        if self.config.enable_staged_optimization and top:
+            if TPRINT_AVAILABLE:
+                tprint_info(f"🔍 Refining search around top {len(top)} configurations")
+            
+            refined_space = self._refine_search_space([t['params'] for t in top], search_space)
+            fine_grid = self._generate_parameter_grid(refined_space, points=self.config.fine_grid_points)
+            stage2_results = self._eval_param_list(model_factory, X, y, fine_grid)
+            trial_results.extend(stage2_results)
+            
+            # Update best if we found something better
+            for r in stage2_results:
+                if r['value'] > best_score:
+                    best_score, best_params = r['value'], r['params']
         
         return HPOResult(
             best_params=best_params,
             best_score=best_score,
             n_trials=len(trial_results),
             trial_results=trial_results,
-            mean_score=np.mean([t['value'] for t in trial_results]),
-            std_score=np.std([t['value'] for t in trial_results]),
-            min_score=np.min([t['value'] for t in trial_results]),
-            max_score=np.max([t['value'] for t in trial_results])
+            mean_score=float(np.mean([t['value'] for t in trial_results])) if trial_results else -np.inf,
+            std_score=float(np.std([t['value'] for t in trial_results])) if trial_results else 0.0,
+            min_score=float(np.min([t['value'] for t in trial_results])) if trial_results else -np.inf,
+            max_score=float(np.max([t['value'] for t in trial_results])) if trial_results else -np.inf
         )
     
     def _random_optimization(self, model_factory: Callable, X: np.ndarray, 
@@ -648,7 +663,7 @@ class ConsolidatedHPO:
     
     def _objective_function(self, trial: optuna.Trial, model_factory: Callable, 
                            X: np.ndarray, y: np.ndarray, search_space: Dict[str, Any]) -> float:
-        """Objective function for optimization."""
+        """Objective function for optimization with early pruning support."""
         try:
             # Sample hyperparameters
             params = self._sample_parameters_from_trial(trial, search_space)
@@ -656,9 +671,11 @@ class ConsolidatedHPO:
             # Create model with sampled parameters
             model = model_factory(**params)
             
-            # Evaluate model
-            return self._evaluate_model(model, X, y)
+            # Evaluate model with trial for pruning
+            return self._evaluate_model(model, X, y, trial=trial)
             
+        except optuna.TrialPruned:
+            raise  # Re-raise pruning exceptions
         except Exception as e:
             if TPRINT_AVAILABLE:
                 tprint_warning(f"⚠️ Trial failed: {e}")
@@ -671,14 +688,21 @@ class ConsolidatedHPO:
             # Sample hyperparameters
             params = self._sample_parameters_from_trial(trial, search_space)
             
-            # Sample budget (fidelity level)
-            budget = trial.suggest_float('budget', self.config.min_budget, self.config.max_budget)
+            # Sample budget (fidelity level) - ensure it's in (0, 1] range
+            budget = trial.suggest_float('budget', 0.1, 1.0)
             
             # Create model with sampled parameters
             model = model_factory(**params)
             
             # Evaluate model with limited budget
-            return self._evaluate_model_with_budget(model, X, y, budget)
+            score = self._evaluate_model_with_budget(model, X, y, budget)
+            
+            # Report intermediate result for pruning
+            trial.report(score, step=int(budget * 100))
+            if trial.should_prune():
+                raise optuna.TrialPruned()
+            
+            return score
             
         except Exception as e:
             if TPRINT_AVAILABLE:
@@ -732,8 +756,11 @@ class ConsolidatedHPO:
         
         return params
     
-    def _generate_parameter_grid(self, search_space: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def _generate_parameter_grid(self, search_space: Dict[str, Any], points: int = None) -> List[Dict[str, Any]]:
         """Generate parameter grid for grid search."""
+        if points is None:
+            points = self.config.coarse_grid_points
+            
         param_combinations = []
         
         for param_name, param_config in search_space.items():
@@ -742,22 +769,22 @@ class ConsolidatedHPO:
                     values = np.logspace(
                         np.log10(param_config['low']), 
                         np.log10(param_config['high']), 
-                        self.config.coarse_grid_points
+                        points
                     )
                 else:
                     values = np.linspace(
                         param_config['low'], 
                         param_config['high'], 
-                        self.config.coarse_grid_points
+                        points
                     )
                 param_combinations.append([(param_name, v) for v in values])
             elif param_config['type'] == 'int':
-                values = np.linspace(
+                values = np.unique(np.linspace(
                     param_config['low'], 
                     param_config['high'], 
-                    self.config.coarse_grid_points, 
+                    points, 
                     dtype=int
-                )
+                ))
                 param_combinations.append([(param_name, v) for v in values])
             elif param_config['type'] == 'categorical':
                 param_combinations.append([(param_name, v) for v in param_config['choices']])
@@ -773,42 +800,157 @@ class ConsolidatedHPO:
         
         return grid
     
-    def _evaluate_model(self, model: Any, X: np.ndarray, y: np.ndarray) -> float:
-        """Evaluate model performance."""
+    def _eval_param_list(self, model_factory: Callable, X: np.ndarray, y: np.ndarray, param_list: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Evaluate a list of parameter combinations."""
+        out = []
+        for i, params in enumerate(param_list):
+            try:
+                score = self._evaluate_model(model_factory(**params), X, y)
+                out.append({'trial_number': i, 'params': params, 'value': score, 'state': 'COMPLETE'})
+                if TPRINT_AVAILABLE and (i + 1) % 10 == 0:
+                    tprint_info(f"   Evaluated {i + 1}/{len(param_list)} combinations")
+            except Exception as e:
+                if TPRINT_AVAILABLE:
+                    tprint_warning(f"⚠️ Failed {params}: {e}")
+        return out
+    
+    def _refine_search_space(self, winners: List[Dict[str, Any]], base_space: Dict[str, Any]) -> Dict[str, Any]:
+        """Refine search space around winning configurations."""
+        refined = {}
+        for name, cfg in base_space.items():
+            if cfg['type'] == 'categorical':
+                # Keep observed best categories
+                seen = list({w[name] for w in winners if name in w})
+                refined[name] = {'type': 'categorical', 'choices': seen or cfg['choices']}
+            elif cfg['type'] in ('float', 'int'):
+                vals = np.array([w[name] for w in winners if name in w])
+                if len(vals) > 0:
+                    lo, hi = np.min(vals), np.max(vals)
+                    span = (hi - lo)
+                    if span == 0:
+                        lo, hi = cfg['low'], cfg['high']  # fallback to base range
+                    pad = max(span * self.config.fine_span_frac, (cfg['high'] - cfg['low']) * 0.05)
+                    lo2 = max(cfg['low'], lo - pad)
+                    hi2 = min(cfg['high'], hi + pad)
+                    refined[name] = dict(cfg)  # copy
+                    refined[name]['low'] = float(lo2)
+                    refined[name]['high'] = float(hi2)
+                else:
+                    refined[name] = cfg
+            else:
+                raise ValueError(f"Unsupported type {cfg['type']}")
+        return refined
+    
+    def _evaluate_model(self, model: Any, X: np.ndarray, y: np.ndarray, trial: Optional[Any] = None) -> float:
+        """Evaluate model performance with caching and overfitting detection."""
         try:
+            # Create cache key for this model configuration
+            model_params = getattr(model, 'get_params', lambda: {})()
+            cache_key = tuple(sorted(model_params.items()))
+            
+            # Check cache first
+            if self.config.enable_caching and cache_key in self._score_cache:
+                return self._score_cache[cache_key]
+            
             # Determine CV strategy
             if self.config.enable_time_series_cv:
-                cv = TimeSeriesSplit(n_splits=self.config.cv_folds)
+                # Guard against too short series
+                if len(X) < self.config.cv_folds * 2:
+                    cv = TimeSeriesSplit(n_splits=min(2, len(X) // 2))
+                else:
+                    cv = TimeSeriesSplit(n_splits=self.config.cv_folds)
             else:
-                # Determine if classification
-                unique_values = np.unique(y)
-                is_classification = len(unique_values) <= 10
+                # Determine if classification using a more robust method
+                is_classification = self._is_classification_task(model, y)
                 
                 if is_classification:
                     cv = StratifiedKFold(n_splits=self.config.cv_folds, shuffle=False)
                 else:
                     cv = KFold(n_splits=self.config.cv_folds, shuffle=False)
             
-            # Perform cross-validation
-            scores = cross_val_score(model, X, y, cv=cv, scoring=self.config.scoring, n_jobs=1)
+            # Auto-select scoring metric
+            scoring = self._get_auto_scoring_metric(model, y)
             
-            return float(np.mean(scores))
+            # Perform cross-validation with overfitting detection
+            if self.config.enable_overfitting_detection:
+                from sklearn.model_selection import cross_validate
+                cv_results = cross_validate(
+                    model, X, y, cv=cv, scoring=scoring, 
+                    return_train_score=True, n_jobs=1
+                )
+                
+                test_scores = cv_results['test_score']
+                train_scores = cv_results['train_score']
+                
+                # Check for overfitting
+                overfitting_detected = (np.mean(train_scores) - np.mean(test_scores)) > self.config.overfitting_threshold
+                
+                if overfitting_detected and TPRINT_AVAILABLE:
+                    tprint_warning(f"⚠️ Overfitting detected: train={np.mean(train_scores):.4f}, test={np.mean(test_scores):.4f}")
+                
+                score = float(np.mean(test_scores))
+            else:
+                scores = cross_val_score(model, X, y, cv=cv, scoring=scoring, n_jobs=1)
+                score = float(np.mean(scores))
+            
+            # Cache the result
+            if self.config.enable_caching:
+                self._score_cache[cache_key] = score
+            
+            # Report intermediate result for pruning if trial is provided
+            if trial is not None:
+                trial.report(score)
+                if trial.should_prune():
+                    raise optuna.TrialPruned()
+            
+            return score
             
         except Exception as e:
             if TPRINT_AVAILABLE:
                 tprint_warning(f"⚠️ Model evaluation failed: {e}")
             return float('-inf')
     
+    def _is_classification_task(self, model: Any, y: np.ndarray) -> bool:
+        """Determine if this is a classification task."""
+        # Check if model has predict_proba method (classification indicator)
+        if hasattr(model, 'predict_proba'):
+            return True
+        
+        # Check if y contains only integers and has few unique values
+        if np.issubdtype(y.dtype, np.integer):
+            unique_values = np.unique(y)
+            if len(unique_values) <= 10 and np.all(unique_values >= 0):
+                return True
+        
+        return False
+    
+    def _get_auto_scoring_metric(self, model: Any, y: np.ndarray) -> str:
+        """Automatically select appropriate scoring metric."""
+        if self.config.scoring != 'neg_mean_squared_error':
+            return self.config.scoring
+        
+        if self._is_classification_task(model, y):
+            # For classification, use accuracy or roc_auc
+            unique_values = np.unique(y)
+            if len(unique_values) == 2:
+                return 'roc_auc'  # Binary classification
+            else:
+                return 'accuracy'  # Multi-class classification
+        else:
+            return 'neg_mean_squared_error'  # Regression
+    
     def _evaluate_model_with_budget(self, model: Any, X: np.ndarray, y: np.ndarray, budget: float) -> float:
         """Evaluate model with limited budget (for multi-fidelity)."""
         try:
             # Use a subset of data based on budget
+            # Budget should be in (0, 1] range for data fraction
+            budget = max(0.01, min(1.0, budget))  # Clamp to [0.01, 1.0]
             n_samples = int(len(X) * budget)
-            if n_samples < 10:
-                n_samples = 10
+            n_samples = max(10, min(n_samples, len(X)))  # Ensure valid range
             
-            # Sample data
-            indices = np.random.choice(len(X), n_samples, replace=False)
+            # Sample data with replacement if needed
+            replace = n_samples > len(X)
+            indices = np.random.choice(len(X), n_samples, replace=replace)
             X_subset = X[indices]
             y_subset = y[indices]
             
@@ -883,8 +1025,8 @@ def create_bayesian_hpo(n_trials: int = 100,
     return ConsolidatedHPO(config)
 
 def create_bohb_hpo(n_trials: int = 100,
-                   min_budget: float = 1.0,
-                   max_budget: float = 3.0,
+                   min_budget: float = 0.1,
+                   max_budget: float = 1.0,
                    timeout: Optional[float] = None) -> ConsolidatedHPO:
     """Create BOHB HPO with basic settings."""
     config = HPOConfig(

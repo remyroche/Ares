@@ -84,15 +84,54 @@ class BasePatternDiscoverer(ProductionBasePatternDiscoverer):
         self.pattern_type = pattern_type
         self.logger = system_logger.getChild(f'PatternDiscoverer_{name}')
 
-    @abstractmethod
     def discover_pattern(self, prices: pd.Series, **kwargs) -> PatternDiscoveryResult:
         """Discover and define pattern in price data."""
-        pass
+        # Default implementation that can be overridden by subclasses
+        try:
+            # Create basic pattern labels (all zeros for base implementation)
+            labels = pd.Series(0, index=prices.index)
+            
+            # Calculate basic statistics
+            stats = self._calculate_pattern_statistics(labels, prices)
+            
+            # Create basic pattern definition
+            definition = self.get_pattern_definition()
+            
+            return PatternDiscoveryResult(
+                definition=definition,
+                labels=labels,
+                frequency=stats['frequency'],
+                duration_stats=stats['duration_stats'],
+                magnitude_stats=stats['magnitude_stats'],
+                predictability_score=stats['predictability_score'],
+                noise_ratio=stats['noise_ratio'],
+                statistical_significance=stats['statistical_significance']
+            )
+        except Exception as e:
+            self.logger.error(f"Pattern discovery failed: {e}")
+            # Return empty result
+            return PatternDiscoveryResult(
+                definition=self.get_pattern_definition(),
+                labels=pd.Series(0, index=prices.index),
+                frequency=0.0,
+                duration_stats={'mean': 0, 'median': 0, 'std': 0, 'min': 0, 'max': 0},
+                magnitude_stats={'mean': 0, 'median': 0, 'std': 0, 'min': 0, 'max': 0},
+                predictability_score=0.0,
+                noise_ratio=1.0,
+                statistical_significance={'p_value': 1.0, 't_statistic': 0.0}
+            )
 
-    @abstractmethod
     def get_pattern_definition(self) -> PatternDefinition:
         """Get mathematical definition of the pattern."""
-        pass
+        # Default implementation that can be overridden by subclasses
+        return PatternDefinition(
+            name="Base Pattern",
+            pattern_type=self.pattern_type,
+            description="Base pattern implementation",
+            mathematical_formula="Base pattern formula",
+            parameters={},
+            frequency_threshold=0.0
+        )
 
     def _calculate_pattern_statistics(self,
                                     labels: pd.Series,

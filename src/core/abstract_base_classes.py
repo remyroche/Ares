@@ -435,6 +435,490 @@ class BaseClusteringAlgorithm(ABC):
     """
     Abstract base class for clustering algorithms.
     
+    def _get_hardware_info(self) -> Dict[str, Any]:
+        """Get hardware information."""
+        info = {}
+        
+        try:
+            import psutil
+            info['cpu_count'] = psutil.cpu_count()
+            info['memory_total_gb'] = psutil.virtual_memory().total / (1024**3)
+            info['memory_available_gb'] = psutil.virtual_memory().available / (1024**3)
+        except ImportError:
+            info['psutil_available'] = False
+        
+        # M1 specific info
+        if self.m1_optimizer:
+            try:
+                info['m1_optimization'] = self.m1_optimizer.get_info()
+            except Exception:
+                info['m1_optimization'] = 'unavailable'
+        
+        return info
+    
+    def _generate_step_specific_artifacts(self, model: Any, results: TrainingResult) -> Dict[str, Any]:
+        """Generate step-specific artifacts. Override in subclasses."""
+        return {}
+
+    @abstractmethod
+    def _calculate_metrics(self, model: Any, test_data: Any) -> Dict[str, Any]:
+        """Calculate performance metrics."""
+        try:
+            if self.logger:
+                self.logger.info("Calculating performance metrics")
+            
+            metrics = {}
+            
+            if model is None:
+                if self.logger:
+                    self.logger.warning("No model provided for metrics calculation")
+                return {'error': 'No model provided'}
+            
+            if test_data is None:
+                if self.logger:
+                    self.logger.warning("No test data provided for metrics calculation")
+                return {'error': 'No test data provided'}
+            
+            # Basic model validation
+            if not hasattr(model, 'predict'):
+                if self.logger:
+                    self.logger.warning("Model does not have predict method")
+                return {'error': 'Model does not support prediction'}
+            
+            try:
+                # Extract features and targets from test data
+                if isinstance(test_data, dict):
+                    X_test = test_data.get('X', test_data.get('features', test_data.get('X_test')))
+                    y_test = test_data.get('y', test_data.get('targets', test_data.get('y_test')))
+                elif hasattr(test_data, 'shape') and len(test_data.shape) == 2:
+                    # Assume last column is target
+                    X_test = test_data[:, :-1]
+                    y_test = test_data[:, -1]
+                else:
+                    X_test = test_data
+                    y_test = None
+                
+                if X_test is None:
+                    if self.logger:
+                        self.logger.warning("Could not extract features from test data")
+                    return {'error': 'Could not extract features from test data'}
+                
+                # Make predictions
+                y_pred = model.predict(X_test)
+                
+                # Calculate basic metrics if we have true labels
+                if y_test is not None:
+                    metrics.update(self._calculate_basic_metrics(y_test, y_pred))
+                
+                # Model-specific metrics
+                metrics.update(self._calculate_model_specific_metrics(model, X_test, y_test, y_pred))
+                
+                # Data quality metrics
+                metrics.update(self._calculate_data_quality_metrics(X_test, y_test, y_pred))
+                
+                if self.logger:
+                    self.logger.info(f"Calculated {len(metrics)} performance metrics")
+                
+                return metrics
+                
+            except Exception as e:
+                if self.logger:
+                    self.logger.error(f"Error during metrics calculation: {e}")
+                return {'error': f'Metrics calculation failed: {str(e)}'}
+            
+        except Exception as e:
+            if self.logger:
+                self.logger.error(f"Failed to calculate metrics: {e}")
+            return {'error': f'Metrics calculation failed: {str(e)}'}
+    
+    def _calculate_basic_metrics(self, y_true: Any, y_pred: Any) -> Dict[str, Any]:
+        """Calculate basic performance metrics."""
+        import numpy as np
+        from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score, accuracy_score
+        
+        metrics = {}
+        
+        try:
+            # Convert to numpy arrays
+            y_true = np.array(y_true)
+            y_pred = np.array(y_pred)
+            
+            # Ensure same shape
+            if y_true.shape != y_pred.shape:
+                if self.logger:
+                    self.logger.warning(f"Shape mismatch: y_true {y_true.shape} vs y_pred {y_pred.shape}")
+                return {'error': 'Shape mismatch between true and predicted values'}
+            
+            # Regression metrics
+            metrics['mse'] = float(mean_squared_error(y_true, y_pred))
+            metrics['rmse'] = float(np.sqrt(metrics['mse']))
+            metrics['mae'] = float(mean_absolute_error(y_true, y_pred))
+            metrics['r2'] = float(r2_score(y_true, y_pred))
+            
+            # Check if this is classification (discrete values)
+            unique_true = len(np.unique(y_true))
+            unique_pred = len(np.unique(y_pred))
+            
+            if unique_true <= 20 and unique_pred <= 20:  # Likely classification
+                try:
+                    metrics['accuracy'] = float(accuracy_score(y_true, y_pred))
+                except Exception:
+                    pass
+            
+            # Additional metrics
+            metrics['mean_absolute_percentage_error'] = float(np.mean(np.abs((y_true - y_pred) / (y_true + 1e-8))) * 100)
+            metrics['max_error'] = float(np.max(np.abs(y_true - y_pred)))
+            
+        except Exception as e:
+            if self.logger:
+                self.logger.warning(f"Error calculating basic metrics: {e}")
+            metrics['basic_metrics_error'] = str(e)
+        
+        return metrics
+    
+    def _calculate_model_specific_metrics(self, model: Any, X_test: Any, y_test: Any, y_pred: Any) -> Dict[str, Any]:
+        """Calculate model-specific metrics."""
+        metrics = {}
+        
+        try:
+            # Model complexity metrics
+            if hasattr(model, 'n_estimators'):
+                metrics['n_estimators'] = model.n_estimators
+            if hasattr(model, 'max_depth'):
+                metrics['max_depth'] = model.max_depth
+            if hasattr(model, 'n_features_in_'):
+                metrics['n_features'] = model.n_features_in_
+            
+            # Feature importance if available
+            if hasattr(model, 'feature_importances_'):
+                importances = model.feature_importances_
+                metrics['feature_importance_mean'] = float(np.mean(importances))
+                metrics['feature_importance_std'] = float(np.std(importances))
+                metrics['feature_importance_max'] = float(np.max(importances))
+                metrics['n_important_features'] = int(np.sum(importances > 0.01))  # Features with >1% importance
+            
+            # Model-specific scores
+            if hasattr(model, 'score') and y_test is not None:
+                try:
+                    score = model.score(X_test, y_test)
+                    metrics['model_score'] = float(score)
+                except Exception:
+                    pass
+            
+        except Exception as e:
+            if self.logger:
+                self.logger.warning(f"Error calculating model-specific metrics: {e}")
+            metrics['model_specific_metrics_error'] = str(e)
+        
+        return metrics
+    
+    def _calculate_data_quality_metrics(self, X_test: Any, y_test: Any, y_pred: Any) -> Dict[str, Any]:
+        """Calculate data quality metrics."""
+        import numpy as np
+        
+        metrics = {}
+        
+        try:
+            # Data shape metrics
+            if hasattr(X_test, 'shape'):
+                metrics['n_samples'] = int(X_test.shape[0])
+                metrics['n_features'] = int(X_test.shape[1]) if len(X_test.shape) > 1 else 1
+            
+            # Missing values
+            if hasattr(X_test, 'isnull'):
+                missing_count = X_test.isnull().sum().sum()
+                metrics['missing_values'] = int(missing_count)
+            else:
+                metrics['missing_values'] = int(np.isnan(X_test).sum()) if hasattr(X_test, 'dtype') else 0
+            
+            # Prediction quality
+            if y_pred is not None:
+                pred_array = np.array(y_pred)
+                metrics['prediction_mean'] = float(np.mean(pred_array))
+                metrics['prediction_std'] = float(np.std(pred_array))
+                metrics['prediction_min'] = float(np.min(pred_array))
+                metrics['prediction_max'] = float(np.max(pred_array))
+                
+                # Check for constant predictions
+                if np.std(pred_array) < 1e-10:
+                    metrics['constant_predictions'] = True
+                else:
+                    metrics['constant_predictions'] = False
+            
+        except Exception as e:
+            if self.logger:
+                self.logger.warning(f"Error calculating data quality metrics: {e}")
+            metrics['data_quality_metrics_error'] = str(e)
+        
+        return metrics
+
+    async def execute_training(self, 
+                             data: Any,
+                             test_data: Optional[Any] = None,
+                             context: Optional[Dict[str, Any]] = None) -> TrainingResult:
+        """
+        Execute complete training workflow.
+        
+        Args:
+            data: Training data
+            test_data: Optional test data for evaluation
+            context: Additional context
+            
+        Returns:
+            TrainingResult with training outcome
+        """
+        start_time = time.time()
+        start_memory = self._get_memory_usage()
+        
+        if self.logger:
+            self.logger.info(f"Starting training execution: {self.name}")
+        
+        try:
+            self.status = TrainingStatus.IN_PROGRESS
+            
+            # Initialize components
+            self._initialize_step_components()
+            
+            # Process data
+            processed_data = self._process_data(data)
+            
+            # Train model (implemented by subclasses)
+            model = await self._train_model(processed_data, context)
+            
+            # Calculate metrics
+            metrics = {}
+            if test_data is not None:
+                metrics = self._calculate_metrics(model, test_data)
+            
+            # Generate artifacts
+            artifacts = self._generate_artifacts(model, None)
+            
+            # Create result
+            training_time = time.time() - start_time
+            memory_usage = self._get_memory_usage() - start_memory
+            
+            result = TrainingResult(
+                success=True,
+                model=model,
+                metrics=metrics,
+                training_time=training_time,
+                memory_usage_mb=memory_usage,
+                artifacts=artifacts,
+                timestamp=datetime.now()
+            )
+            
+            # Update state
+            self.current_model = model
+            self.status = TrainingStatus.COMPLETED
+            self.training_results.append(result)
+            self.total_training_time += training_time
+            self.total_memory_usage += memory_usage
+            
+            if self.logger:
+                self.logger.info(f"Training completed successfully in {training_time:.2f}s")
+            
+            return result
+            
+        except Exception as e:
+            training_time = time.time() - start_time
+            memory_usage = self._get_memory_usage() - start_memory
+            
+            result = TrainingResult(
+                success=False,
+                errors=[str(e)],
+                training_time=training_time,
+                memory_usage_mb=memory_usage,
+                timestamp=datetime.now()
+            )
+            
+            self.status = TrainingStatus.FAILED
+            self.training_results.append(result)
+            
+            if self.logger:
+                self.logger.error(f"Training failed: {e}")
+            
+            return result
+
+    @abstractmethod
+    async def _train_model(self, data: Any, context: Optional[Dict[str, Any]] = None) -> Any:
+        """Train the model (implemented by subclasses)."""
+        try:
+            if self.logger:
+                self.logger.info("Training model with processed data")
+            
+            # Default implementation - create a simple model
+            # Subclasses should override this with specific training logic
+            model = self._create_default_model(data, context)
+            
+            # Train the model
+            if hasattr(model, 'fit'):
+                # Extract features and targets from data
+                if isinstance(data, dict):
+                    X = data.get('X', data.get('features'))
+                    y = data.get('y', data.get('targets'))
+                elif hasattr(data, 'shape') and len(data.shape) == 2:
+                    # Assume last column is target
+                    X = data[:, :-1]
+                    y = data[:, -1]
+                else:
+                    # Use data as features, create dummy targets
+                    X = data
+                    y = np.zeros(len(data))
+                
+                if X is not None and y is not None:
+                    model.fit(X, y)
+                    if self.logger:
+                        self.logger.info("Model training completed successfully")
+                else:
+                    if self.logger:
+                        self.logger.warning("Could not extract features and targets for training")
+            else:
+                if self.logger:
+                    self.logger.warning("Model does not support fit method")
+            
+            return model
+            
+        except Exception as e:
+            if self.logger:
+                self.logger.error(f"Model training failed: {e}")
+            raise
+    
+    def _create_default_model(self, data: Any, context: Optional[Dict[str, Any]] = None) -> Any:
+        """Create a default model for training."""
+        try:
+            # Try to determine if this is classification or regression
+            is_classification = self._determine_task_type(data)
+            
+            if is_classification:
+                from sklearn.ensemble import RandomForestClassifier
+                model = RandomForestClassifier(
+                    n_estimators=self.config.get('n_estimators', 100),
+                    random_state=self.config.get('random_state', 42),
+                    n_jobs=self.config.get('n_jobs', -1)
+                )
+            else:
+                from sklearn.ensemble import RandomForestRegressor
+                model = RandomForestRegressor(
+                    n_estimators=self.config.get('n_estimators', 100),
+                    random_state=self.config.get('random_state', 42),
+                    n_jobs=self.config.get('n_jobs', -1)
+                )
+            
+            if self.logger:
+                self.logger.info(f"Created default {type(model).__name__} model")
+            
+            return model
+            
+        except Exception as e:
+            if self.logger:
+                self.logger.warning(f"Failed to create default model: {e}")
+            
+            # Fallback to simple linear model
+            try:
+                from sklearn.linear_model import LinearRegression
+                return LinearRegression()
+            except Exception as e:
+                if self.logger:
+                    self.logger.error(f"Failed to create any model: {e}")
+                raise RuntimeError(f"Unable to create any model: {e}")
+    
+    def _determine_task_type(self, data: Any) -> bool:
+        """Determine if this is a classification task."""
+        try:
+            # Extract targets from data
+            if isinstance(data, dict):
+                y = data.get('y', data.get('targets'))
+            elif hasattr(data, 'shape') and len(data.shape) == 2:
+                y = data[:, -1]
+            else:
+                return False  # Default to regression
+            
+            if y is None:
+                return False
+            
+            # Check if targets are discrete (classification)
+            unique_values = np.unique(y)
+            if len(unique_values) <= 20:  # Likely classification
+                return True
+            
+            return False
+            
+        except Exception:
+            return False
+
+    def _get_memory_usage(self) -> float:
+        """Get current memory usage in MB."""
+        try:
+            import psutil
+            process = psutil.Process()
+            return process.memory_info().rss / 1024 / 1024
+        except ImportError:
+            return 0.0
+
+    def get_training_summary(self) -> Dict[str, Any]:
+        """Get comprehensive training summary."""
+        return {
+            'name': self.name,
+            'status': self.status.value,
+            'total_training_time': self.total_training_time,
+            'total_memory_usage': self.total_memory_usage,
+            'number_of_training_runs': len(self.training_results),
+            'successful_runs': sum(1 for r in self.training_results if r.success),
+            'failed_runs': sum(1 for r in self.training_results if not r.success),
+            'latest_model': self.current_model is not None,
+            'hardware_optimization_enabled': self.enable_hardware_optimization
+        }
+
+    def save_model(self, filepath: str) -> bool:
+        """Save current model to file."""
+        if self.current_model is None:
+            if self.logger:
+                self.logger.warning("No model to save")
+            return False
+        
+        try:
+            ensure_directory(Path(filepath).parent)
+            
+            with open(filepath, 'wb') as f:
+                pickle.dump(self.current_model, f)
+            
+            if self.logger:
+                self.logger.info(f"Model saved to: {filepath}")
+            return True
+            
+        except Exception as e:
+            if self.logger:
+                self.logger.error(f"Failed to save model: {e}")
+            return False
+
+    def load_model(self, filepath: str) -> bool:
+        """Load model from file."""
+        try:
+            if not safe_file_exists(filepath):
+                if self.logger:
+                    self.logger.error(f"Model file not found: {filepath}")
+                return False
+            
+            with open(filepath, 'rb') as f:
+                self.current_model = pickle.load(f)
+            
+            if self.logger:
+                self.logger.info(f"Model loaded from: {filepath}")
+            return True
+            
+        except Exception as e:
+            if self.logger:
+                self.logger.error(f"Failed to load model: {e}")
+            return False
+
+# ============================================================================
+# BASE CLUSTERING ALGORITHM
+# ============================================================================
+
+class BaseClusteringAlgorithm(ABC):
+    """
+    Abstract base class for clustering algorithms.
+    
     Provides comprehensive clustering framework with:
     - Multiple clustering algorithm support
     - Performance optimization and validation
@@ -579,6 +1063,179 @@ class MultiOutputModel(ABC):
 
         if self.logger:
             self.logger.info(f"Initialized {self.__class__.__name__} with {n_outputs} outputs")
+    @abstractmethod
+    def fit(self, X: np.ndarray, y: np.ndarray) -> 'MultiOutputModel':
+        """
+        Fit multi-output model.
+        
+        Args:
+            X: Input features
+            y: Target outputs
+            
+        Returns:
+            Self for method chaining
+        """
+        start_time = time.time()
+        
+        try:
+            if self.logger:
+                self.logger.info(f"Fitting multi-output model with {X.shape[0]} samples, {X.shape[1]} features")
+            
+            # Validate inputs
+            if not self._validate_inputs(X, y):
+                raise ValueError("Invalid input data for multi-output model")
+            
+            # Ensure y is 2D
+            y_2d = self._ensure_2d_targets(y)
+            
+            # Initialize individual models for each output
+            self.models = {}
+            
+            # Train models for each output
+            for i in range(self.n_outputs):
+                output_name = self.output_names[i] if i < len(self.output_names) else f"output_{i+1}"
+                
+                if self.logger:
+                    self.logger.info(f"Training model for {output_name} (output {i+1}/{self.n_outputs})")
+                
+                # Extract target for this output
+                if y_2d.shape[1] > i:
+                    y_output = y_2d[:, i]
+                else:
+                    # If not enough outputs, use the last available
+                    y_output = y_2d[:, -1]
+                
+                # Create and train model for this output
+                model = self._create_single_output_model(i, y_output)
+                model.fit(X, y_output)
+                
+                self.models[output_name] = model
+                
+                if self.logger:
+                    self.logger.info(f"Model for {output_name} trained successfully")
+            
+            # Update state
+            self.is_fitted = True
+            self.total_training_time += time.time() - start_time
+            
+            if self.logger:
+                self.logger.info(f"Multi-output model fitted successfully with {len(self.models)} individual models")
+            
+            return self
+            
+        except Exception as e:
+            if self.logger:
+                self.logger.error(f"Multi-output model fitting failed: {e}")
+            raise
+    
+    def _validate_inputs(self, X: np.ndarray, y: np.ndarray) -> bool:
+        """Validate input data."""
+        try:
+            # Check X
+            if X is None or not isinstance(X, np.ndarray):
+                return False
+            
+            if len(X.shape) != 2 or X.shape[0] == 0 or X.shape[1] == 0:
+                return False
+            
+            # Check y
+            if y is None or not isinstance(y, np.ndarray):
+                return False
+            
+            if len(y.shape) not in [1, 2]:
+                return False
+            
+            if y.shape[0] != X.shape[0]:
+                return False
+            
+            # Check for NaN or infinite values
+            if not np.isfinite(X).all() or not np.isfinite(y).all():
+                if self.logger:
+                    self.logger.warning("Non-finite values found in input data")
+                return False
+            
+            return True
+            
+        except Exception:
+            return False
+    
+    def _ensure_2d_targets(self, y: np.ndarray) -> np.ndarray:
+        """Ensure targets are 2D."""
+        if len(y.shape) == 1:
+            # Single output - duplicate for multi-output
+            y_2d = np.column_stack([y] * self.n_outputs)
+            if self.logger:
+                self.logger.info(f"Converted single output to multi-output: {y.shape} -> {y_2d.shape}")
+        else:
+            y_2d = y
+            if y_2d.shape[1] != self.n_outputs:
+                if self.logger:
+                    self.logger.warning(f"Output count mismatch: expected {self.n_outputs}, got {y_2d.shape[1]}")
+                # Adjust to match expected outputs
+                if y_2d.shape[1] < self.n_outputs:
+                    # Pad with last column
+                    padding = np.column_stack([y_2d[:, -1]] * (self.n_outputs - y_2d.shape[1]))
+                    y_2d = np.column_stack([y_2d, padding])
+                else:
+                    # Truncate to expected number
+                    y_2d = y_2d[:, :self.n_outputs]
+        
+        return y_2d
+    
+    def _create_single_output_model(self, output_index: int, y_target: np.ndarray) -> Any:
+        """Create a single-output model for the specified output."""
+        try:
+            # Determine if this is classification or regression
+            is_classification = self._is_classification_task(y_target)
+            
+            if is_classification:
+                from sklearn.ensemble import RandomForestClassifier
+                model = RandomForestClassifier(
+                    n_estimators=self.config.get('n_estimators', 100),
+                    random_state=self.config.get('random_state', 42),
+                    n_jobs=self.config.get('n_jobs', -1)
+                )
+            else:
+                from sklearn.ensemble import RandomForestRegressor
+                model = RandomForestRegressor(
+                    n_estimators=self.config.get('n_estimators', 100),
+                    random_state=self.config.get('random_state', 42),
+                    n_jobs=self.config.get('n_jobs', -1)
+                )
+            
+            if self.logger:
+                self.logger.debug(f"Created {type(model).__name__} for output {output_index}")
+            
+            return model
+            
+        except Exception as e:
+            if self.logger:
+                self.logger.warning(f"Failed to create model for output {output_index}: {e}")
+            
+            # Fallback to simple linear model
+            try:
+                from sklearn.linear_model import LinearRegression
+                return LinearRegression()
+            except Exception as e:
+                if self.logger:
+                    self.logger.error(f"Failed to create any model for output {output_index}: {e}")
+                raise RuntimeError(f"Unable to create any model for output {output_index}: {e}")
+    
+    def _is_classification_task(self, y: np.ndarray) -> bool:
+        """Determine if this is a classification task."""
+        try:
+            unique_values = np.unique(y)
+            
+            # If few unique values and they look like integers, treat as classification
+            if len(unique_values) <= 20:
+                # Check if values are integer-like
+                if np.all(np.equal(np.mod(unique_values, 1), 0)):
+                    return True
+            
+            return False
+            
+        except Exception:
+            return False
 
     @abstractmethod
     def fit(self, X: Any, y: Any) -> 'MultiOutputModel':

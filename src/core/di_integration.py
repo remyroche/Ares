@@ -7,7 +7,12 @@ throughout the Ares trading system.
 from typing import Any
 from .analyst.di_analyst import DIAnalyst
 from .config import CONFIG
-from .core.dependency_injection import DependencyContainer, ServiceLifetime
+try:
+    from .core.dependency_injection import DependencyContainer, ServiceLifetime
+except ImportError:
+    # Fallback if dependency injection is not available
+    DependencyContainer = None
+    ServiceLifetime = None
 from .core.enhanced_factories import TradingSystemFactory
 from .core.service_registry import ServiceRegistry
 from src.interfaces.base_interfaces import IAnalyst, IEventBus, IStrategist, ISupervisor, ITactician

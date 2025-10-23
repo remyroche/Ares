@@ -278,6 +278,119 @@ class MomentumStrategy(LabelBasedStrategy):
 
         return signals
 
+class MeanReversionStrategy(LabelBasedStrategy):
+    """Strategy based on mean reversion of labels."""
+
+    def __init__(self, config: BacktestingConfig, lookback_window: int = 20, z_threshold: float = 1.5):
+        """Initialize mean reversion strategy."""
+        super().__init__(StrategyType.MEAN_REVERSION_STRATEGY, config)
+        self.lookback_window = lookback_window
+        self.z_threshold = z_threshold
+
+    def generate_signals(self,
+                        labels: pd.DataFrame,
+                        market_data: pd.DataFrame) -> pd.Series:
+        """Generate signals based on mean reversion."""
+        # Use main opportunity column
+        opportunity_cols = [col for col in labels.columns if 'opportunity' in col.lower()]
+
+        if not opportunity_cols:
+            return pd.Series(0.0, index=labels.index)
+
+        main_signal = labels[opportunity_cols[0]].fillna(0)
+
+        # Calculate rolling mean and standard deviation
+        rolling_mean = main_signal.rolling(self.lookback_window, min_periods=5).mean()
+        rolling_std = main_signal.rolling(self.lookback_window, min_periods=5).std()
+
+        # Calculate z-score
+        z_score = (main_signal - rolling_mean) / (rolling_std + 1e-8)
+
+        # Generate signals for mean reversion (negative z-score indicates oversold)
+        signals = (z_score < -self.z_threshold).astype(float)
+
+        return signals
+
+class EnsembleStrategy(LabelBasedStrategy):
+    """Strategy that combines multiple label-based signals."""
+
+    def __init__(self, config: BacktestingConfig, weights: Optional[Dict[str, float]] = None):
+        """Initialize ensemble strategy."""
+        super().__init__(StrategyType.ENSEMBLE_STRATEGY, config)
+        self.weights = weights or {'threshold': 0.4, 'ranking': 0.3, 'momentum': 0.3}
+
+    def generate_signals(self,
+                        labels: pd.DataFrame,
+                        market_data: pd.DataFrame) -> pd.Series:
+        """Generate ensemble signals from multiple strategies."""
+        # Use main opportunity column
+        opportunity_cols = [col for col in labels.columns if 'opportunity' in col.lower()]
+
+        if not opportunity_cols:
+            return pd.Series(0.0, index=labels.index)
+
+        main_signal = labels[opportunity_cols[0]].fillna(0)
+
+        # Create individual strategy signals
+        threshold_strategy = ThresholdStrategy(self.config, 0.7)
+        ranking_strategy = RankingStrategy(self.config, 0.8)
+        momentum_strategy = MomentumStrategy(self.config, 5)
+
+        # Generate individual signals
+        threshold_signals = threshold_strategy.generate_signals(labels, market_data)
+        ranking_signals = ranking_strategy.generate_signals(labels, market_data)
+        momentum_signals = momentum_strategy.generate_signals(labels, market_data)
+
+        # Combine signals with weights
+        ensemble_signals = (
+            self.weights['threshold'] * threshold_signals +
+            self.weights['ranking'] * ranking_signals +
+            self.weights['momentum'] * momentum_signals
+        )
+
+        # Convert to binary signals
+        signals = (ensemble_signals > 0.5).astype(float)
+
+        return signals
+
+class AdaptiveStrategy(LabelBasedStrategy):
+    """Strategy that adapts its parameters based on market conditions."""
+
+    def __init__(self, config: BacktestingConfig, adaptation_window: int = 50):
+        """Initialize adaptive strategy."""
+        super().__init__(StrategyType.ADAPTIVE_STRATEGY, config)
+        self.adaptation_window = adaptation_window
+
+    def generate_signals(self,
+                        labels: pd.DataFrame,
+                        market_data: pd.DataFrame) -> pd.Series:
+        """Generate adaptive signals based on market conditions."""
+        # Use main opportunity column
+        opportunity_cols = [col for col in labels.columns if 'opportunity' in col.lower()]
+
+        if not opportunity_cols:
+            return pd.Series(0.0, index=labels.index)
+
+        main_signal = labels[opportunity_cols[0]].fillna(0)
+
+        # Calculate market volatility for adaptation
+        if 'close' in market_data.columns:
+            returns = market_data['close'].pct_change()
+            volatility = returns.rolling(20).std()
+        else:
+            volatility = main_signal.rolling(20).std()
+
+        # Adaptive threshold based on volatility
+        vol_percentile = volatility.rolling(self.adaptation_window, min_periods=10).rank(pct=True)
+        
+        # Higher volatility -> higher threshold (more selective)
+        adaptive_threshold = 0.5 + 0.3 * vol_percentile
+
+        # Generate signals with adaptive threshold
+        signals = (main_signal > adaptive_threshold).astype(float)
+
+        return signals
+
 class BacktestingEngine:
     """Backtesting engine for strategy validation."""
 
@@ -730,6 +843,28 @@ class BacktestingIntegratedValidator:
                 for window in [3, 5, 10]:
                     strategy_name = f"momentum_{window}"
                     strategies[strategy_name] = MomentumStrategy(self.config, window)
+
+            elif strategy_type == StrategyType.MEAN_REVERSION_STRATEGY:
+                for window in [10, 20, 30]:
+                    for z_thresh in [1.0, 1.5, 2.0]:
+                        strategy_name = f"mean_reversion_{window}_{z_thresh}"
+                        strategies[strategy_name] = MeanReversionStrategy(self.config, window, z_thresh)
+
+            elif strategy_type == StrategyType.ENSEMBLE_STRATEGY:
+                # Create ensemble with different weight combinations
+                weight_combinations = [
+                    {'threshold': 0.5, 'ranking': 0.3, 'momentum': 0.2},
+                    {'threshold': 0.3, 'ranking': 0.5, 'momentum': 0.2},
+                    {'threshold': 0.2, 'ranking': 0.3, 'momentum': 0.5}
+                ]
+                for i, weights in enumerate(weight_combinations):
+                    strategy_name = f"ensemble_{i+1}"
+                    strategies[strategy_name] = EnsembleStrategy(self.config, weights)
+
+            elif strategy_type == StrategyType.ADAPTIVE_STRATEGY:
+                for window in [30, 50, 100]:
+                    strategy_name = f"adaptive_{window}"
+                    strategies[strategy_name] = AdaptiveStrategy(self.config, window)
 
         return strategies
 

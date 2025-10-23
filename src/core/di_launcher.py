@@ -1,7 +1,11 @@
 '\nDependency injection-aware launcher for the Ares trading system.\n\nThis module provides a launcher that uses proper dependency injection\npatterns for creating and managing trading system components.\n'
 from typing import Any
 from .config import CONFIG
-from .core.dependency_injection import DependencyContainer
+try:
+    from .core.dependency_injection import DependencyContainer
+except ImportError:
+    # Fallback if dependency injection is not available
+    DependencyContainer = None
 from .core.enhanced_factories import TradingSystemFactory
 from .core.service_registry import ServiceRegistry
 from .utils.logger import system_logger

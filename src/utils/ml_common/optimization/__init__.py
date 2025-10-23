@@ -8,10 +8,14 @@ This module contains all optimization-related functionality including:
 - Multi-objective optimization
 """
 
-from .hpo_utils import HyperparameterOptimization
+from .consolidated_hpo import (
+    ConsolidatedHPO, HPOConfig, HPOPhaseConfig, HPOResult,
+    # Legacy compatibility
+    HyperparameterOptimization, HierarchicalHPO, HierarchicalHPOConfig,
+    optimize_hyperparameters, staged_hpo, bayesian_optimization
+)
 from .pareto import ParetoFront, ParetoFrontAnalyzer, ParetoOptimizer
 from .regime_specific_tpsl_optimizer import RegimeSpecificTPSLOptimizer
-from .hierarchical_hpo import HierarchicalHPO, HierarchicalHPOConfig, HPOPhaseConfig
 from .grid_utils import build_coarse_grid_from_search_space, build_fine_grid_around_best
 # Enhanced hardware optimization imports
 try:
@@ -47,17 +51,18 @@ except ImportError:
     LEGACY_HARDWARE_AVAILABLE = False
 
 __all__ = [
-    # Hyperparameter Optimization
-    'HyperparameterOptimization',
+    # Consolidated HPO (main)
+    'ConsolidatedHPO', 'HPOConfig', 'HPOResult',
+    
+    # Legacy HPO compatibility
+    'HyperparameterOptimization', 'HierarchicalHPO', 'HierarchicalHPOConfig', 'HPOPhaseConfig',
+    'optimize_hyperparameters', 'staged_hpo', 'bayesian_optimization',
 
     # Pareto Optimization
     'ParetoFront', 'ParetoFrontAnalyzer', 'ParetoOptimizer',
 
     # Regime-specific Optimization
     'RegimeSpecificTPSLOptimizer',
-
-    # Hierarchical HPO
-    'HierarchicalHPO', 'HierarchicalHPOConfig', 'HPOPhaseConfig',
 
     # Grid utilities
     'build_coarse_grid_from_search_space', 'build_fine_grid_around_best',

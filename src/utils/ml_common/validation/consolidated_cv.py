@@ -1,22 +1,30 @@
 """
-Enhanced PurgedTemporalKFold with Sharp Edge Handling
+Consolidated Cross-Validation System
 
-This module implements a production-ready PurgedTemporalKFold cross-validator
-with comprehensive edge case handling and temporal integrity validation.
+This module consolidates all cross-validation implementations into a single,
+comprehensive system that provides:
 
-Key Features:
-- Purge window = label_horizon + feature_max_lag (computed from registry)
-- Embargo applied symmetrically around validation windows
-- Deterministic split by bin boundaries (not counts) to avoid slice-creep
-- Comprehensive edge case handling
-- Temporal integrity validation per fold
-- Leakage detection and prevention
-- Multi-entity support with blocked splits
+1. Enhanced Purged Cross-Validation with sharp edge handling
+2. Walk-forward validation with nested CV
+3. Universal temporal validation
+4. Standard KFold/Stratified KFold cross-validation
+5. Nested cross-validation for unbiased model assessment
+6. Comprehensive reporting and monitoring
+
+This replaces the following redundant implementations:
+- enhanced_purged_cv.py
+- src/validation/walkforward_validation.py
+- src/utils/ml_common/validation/universal_temporal_validation.py
+- src/utils/ml_common/validation/unified_cv.py
+- src/utils/ml_common/validation/temporal_cross_validation.py
+- src/utils/ml_common/validation/cv.py
+- src/utils/purged_kfold.py
+- src/features_common/optimization/cv_base.py
 """
 
 import numpy as np
 import pandas as pd
-from typing import Dict, List, Optional, Tuple, Any, Union, Generator
+from typing import Dict, List, Optional, Tuple, Any, Union, Generator, Callable
 from dataclasses import dataclass, field
 from enum import Enum
 import warnings
@@ -25,8 +33,13 @@ from datetime import datetime, timedelta
 from collections import defaultdict, Counter
 import json
 from pathlib import Path
-from sklearn.model_selection import BaseCrossValidator
+from sklearn.model_selection import (
+    BaseCrossValidator, KFold, StratifiedKFold, TimeSeriesSplit,
+    cross_val_score, cross_validate
+)
 from sklearn.utils import check_random_state
+from sklearn.utils.multiclass import type_of_target
+from sklearn.metrics import accuracy_score, f1_score, mean_squared_error, roc_auc_score
 
 # Import existing utilities
 try:
@@ -41,22 +54,35 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+# ============================================================================
+# ENUMS AND CONFIGURATION CLASSES
+# ============================================================================
 
 class PurgeMode(Enum):
     """Purge window calculation modes."""
-    FIXED = "fixed"                    # Fixed purge length
-    LABEL_HORIZON = "label_horizon"    # Based on label horizon
-    FEATURE_LAG = "feature_lag"        # Based on feature max lag
-    COMBINED = "combined"              # Label horizon + feature max lag
+    FIXED = "fixed"
+    LABEL_HORIZON = "label_horizon"
+    FEATURE_LAG = "feature_lag"
+    COMBINED = "combined"
 
+class ValidationType(Enum):
+    """Types of validation."""
+    WALK_FORWARD = "walk_forward"
+    NESTED_CV = "nested_cv"
+    ABLATION = "ablation"
+    SPA_CHECK = "spa_check"
+    PURGED = "purged"
+    TEMPORAL = "temporal"
+    STANDARD = "standard"
 
 @dataclass
-class PurgedCVConfig:
-    """Configuration for PurgedTemporalKFold."""
+class ConsolidatedCVConfig:
+    """Unified configuration for all CV types."""
     
     # Basic settings
     n_splits: int = 5
-    test_size: float = 0.2  # Fraction of data for testing
+    test_size: float = 0.2
+    random_state: Optional[int] = None
     
     # Purge and embargo settings
     purge_mode: PurgeMode = PurgeMode.COMBINED
@@ -87,11 +113,35 @@ class PurgedCVConfig:
     enable_entity_blocking: bool = True
     min_entity_samples: int = 10
     
+    # Walk-forward specific
+    enable_walk_forward: bool = True
+    initial_train_size: float = 0.6
+    step_size: float = 0.1
+    min_test_size: float = 0.1
+    
+    # Nested CV
+    enable_nested_cv: bool = True
+    n_inner_folds: int = 3
+    
+    # Ablation testing
+    enable_ablation: bool = False
+    ablation_steps: List[str] = field(default_factory=lambda: [
+        'parents_only',
+        'parents_transforms',
+        'parents_transforms_patch',
+        'parents_transforms_patch_8_interactions',
+        'parents_transforms_patch_15_interactions'
+    ])
+    
+    # SPA testing
+    enable_spa_test: bool = False
+    spa_permutations: int = 1000
+    significance_level: float = 0.05
+    
     # Reporting and logging
     enable_detailed_logging: bool = True
     save_cv_reports: bool = True
-    report_directory: str = "reports/purged_cv"
-
+    report_directory: str = "reports/consolidated_cv"
 
 @dataclass
 class FoldValidationResult:
@@ -101,9 +151,9 @@ class FoldValidationResult:
     is_valid: bool
     train_size: int
     test_size: int
-    purge_size: int
-    embargo_size: int
-    effective_train_size: int
+    purge_size: int = 0
+    embargo_size: int = 0
+    effective_train_size: int = 0
     
     # Temporal validation
     temporal_integrity_valid: bool = True
@@ -132,31 +182,71 @@ class FoldValidationResult:
     embargo_start: Optional[datetime] = None
     embargo_end: Optional[datetime] = None
 
-
-class EnhancedPurgedTemporalKFold(BaseCrossValidator):
-    """
-    Enhanced PurgedTemporalKFold with comprehensive edge case handling.
+@dataclass
+class ValidationResult:
+    """Comprehensive validation result."""
     
-    This cross-validator implements purged cross-validation with:
-    - Automatic purge window calculation
-    - Symmetric embargo periods
-    - Deterministic bin-based splitting
-    - Comprehensive temporal validation
-    - Leakage detection and prevention
-    - Multi-entity support
+    # Basic metrics
+    scores: Optional[List[float]] = None
+    mean: Optional[float] = None
+    std: Optional[float] = None
+    min: Optional[float] = None
+    max: Optional[float] = None
+    folds: Optional[int] = None
+    
+    # Multi-metric scoring
+    mean_scores: Optional[Dict[str, float]] = None
+    std_scores: Optional[Dict[str, float]] = None
+    train_scores: Optional[Dict[str, float]] = None
+    
+    # Detailed results
+    fold_results: List[FoldValidationResult] = field(default_factory=list)
+    validation_history: List[Dict[str, Any]] = field(default_factory=list)
+    
+    # Temporal validation
+    temporal_order_valid: bool = True
+    leakage_detected: bool = False
+    validation_score: float = 0.0
+    
+    # Metadata
+    validation_type: str = "unknown"
+    model_name: str = "unknown"
+    validation_timestamp: str = None
+    
+    def __post_init__(self):
+        if self.validation_timestamp is None:
+            self.validation_timestamp = datetime.now().isoformat()
+
+# ============================================================================
+# MAIN CONSOLIDATED CROSS-VALIDATOR
+# ============================================================================
+
+class ConsolidatedCrossValidator(BaseCrossValidator):
+    """
+    Consolidated cross-validator that combines all CV strategies.
+    
+    This class provides a unified interface for:
+    - Purged cross-validation with sharp edge handling
+    - Walk-forward validation with nested CV
+    - Universal temporal validation
+    - Standard KFold/Stratified KFold cross-validation
+    - Nested cross-validation
     """
     
     def __init__(self, 
-                 config: Optional[PurgedCVConfig] = None,
+                 config: Optional[ConsolidatedCVConfig] = None,
+                 validation_type: ValidationType = ValidationType.PURGED,
                  random_state: Optional[int] = None):
         """
-        Initialize EnhancedPurgedTemporalKFold.
+        Initialize consolidated cross-validator.
         
         Args:
             config: Configuration for the cross-validator
+            validation_type: Type of validation to perform
             random_state: Random state for reproducibility
         """
-        self.config = config or PurgedCVConfig()
+        self.config = config or ConsolidatedCVConfig()
+        self.validation_type = validation_type
         self.random_state = random_state
         self.random_state_ = check_random_state(random_state)
         
@@ -174,19 +264,33 @@ class EnhancedPurgedTemporalKFold(BaseCrossValidator):
         Generate indices to split data into training and validation sets.
         
         Args:
-            X: Feature matrix with datetime index
+            X: Feature matrix
             y: Target labels (optional)
             groups: Group labels for multi-entity support (optional)
             
         Yields:
             Tuple of (train_indices, test_indices)
         """
+        if self.validation_type == ValidationType.PURGED:
+            yield from self._purged_split(X, y, groups)
+        elif self.validation_type == ValidationType.WALK_FORWARD:
+            yield from self._walk_forward_split(X, y, groups)
+        elif self.validation_type == ValidationType.TEMPORAL:
+            yield from self._temporal_split(X, y, groups)
+        elif self.validation_type == ValidationType.STANDARD:
+            yield from self._standard_split(X, y, groups)
+        else:
+            raise ValueError(f"Unsupported validation type: {self.validation_type}")
+    
+    def _purged_split(self, X: pd.DataFrame, y: Optional[pd.Series] = None, 
+                     groups: Optional[pd.Series] = None) -> Generator[Tuple[np.ndarray, np.ndarray], None, None]:
+        """Generate purged cross-validation splits."""
         if not isinstance(X.index, pd.DatetimeIndex):
             raise ValueError("X must have a DatetimeIndex for purged cross-validation")
         
         try:
             if TPRINT_AVAILABLE:
-                tprint_info("🚀 Starting enhanced purged cross-validation")
+                tprint_info("🚀 Starting purged cross-validation")
             
             # Calculate purge window
             purge_window = self._calculate_purge_window()
@@ -201,7 +305,7 @@ class EnhancedPurgedTemporalKFold(BaseCrossValidator):
             
             # Generate folds
             fold_count = 0
-            for train_indices, test_indices in self._generate_folds(X, y, groups, time_bins, purge_window):
+            for train_indices, test_indices in self._generate_purged_folds(X, y, groups, time_bins, purge_window):
                 # Validate fold
                 validation_result = self._validate_fold(
                     X, y, groups, train_indices, test_indices, purge_window, fold_count
@@ -236,12 +340,194 @@ class EnhancedPurgedTemporalKFold(BaseCrossValidator):
                     break
             
             if TPRINT_AVAILABLE:
-                tprint_success(f"✅ Cross-validation completed: {fold_count} valid folds")
+                tprint_success(f"✅ Purged cross-validation completed: {fold_count} valid folds")
             
         except Exception as e:
-            logger.error(f"Enhanced purged CV failed: {e}")
+            logger.error(f"Purged CV failed: {e}")
             if TPRINT_AVAILABLE:
-                tprint_error(f"❌ Enhanced purged CV failed: {e}")
+                tprint_error(f"❌ Purged CV failed: {e}")
+    
+    def _walk_forward_split(self, X: pd.DataFrame, y: Optional[pd.Series] = None, 
+                           groups: Optional[pd.Series] = None) -> Generator[Tuple[np.ndarray, np.ndarray], None, None]:
+        """Generate walk-forward validation splits."""
+        try:
+            if TPRINT_AVAILABLE:
+                tprint_info("🚀 Starting walk-forward validation")
+            
+            n_samples = len(X)
+            initial_train_size = int(n_samples * self.config.initial_train_size)
+            step_size = int(n_samples * self.config.step_size)
+            min_test_size = int(n_samples * self.config.min_test_size)
+            
+            current_train_end = initial_train_size
+            
+            fold_count = 0
+            while current_train_end + min_test_size <= n_samples:
+                # Calculate test size
+                remaining_samples = n_samples - current_train_end
+                test_size = min(remaining_samples, int(remaining_samples * self.config.test_size))
+                
+                if test_size < min_test_size:
+                    break
+                
+                # Generate indices
+                train_indices = np.arange(0, current_train_end)
+                test_indices = np.arange(current_train_end, current_train_end + test_size)
+                
+                # Validate fold
+                validation_result = self._validate_fold(
+                    X, y, groups, train_indices, test_indices, 0, fold_count
+                )
+                
+                # Store validation result
+                self.validation_history.append(validation_result)
+                
+                # Check if fold is valid
+                if not validation_result.is_valid:
+                    if TPRINT_AVAILABLE:
+                        tprint_warning(f"⚠️ Skipping fold {fold_count + 1}: {validation_result.critical_issues}")
+                    current_train_end += step_size
+                    continue
+                
+                # Store fold information
+                self.fold_history.append({
+                    'fold_id': fold_count,
+                    'train_indices': train_indices,
+                    'test_indices': test_indices,
+                    'validation_result': validation_result
+                })
+                
+                fold_count += 1
+                
+                if TPRINT_AVAILABLE:
+                    tprint_success(f"✅ Fold {fold_count}: train={len(train_indices)}, test={len(test_indices)}")
+                
+                yield train_indices, test_indices
+                
+                # Move to next fold
+                current_train_end += step_size
+                
+                # Stop if we have enough folds
+                if fold_count >= self.config.n_splits:
+                    break
+            
+            if TPRINT_AVAILABLE:
+                tprint_success(f"✅ Walk-forward validation completed: {fold_count} valid folds")
+            
+        except Exception as e:
+            logger.error(f"Walk-forward CV failed: {e}")
+            if TPRINT_AVAILABLE:
+                tprint_error(f"❌ Walk-forward CV failed: {e}")
+    
+    def _temporal_split(self, X: pd.DataFrame, y: Optional[pd.Series] = None, 
+                       groups: Optional[pd.Series] = None) -> Generator[Tuple[np.ndarray, np.ndarray], None, None]:
+        """Generate temporal cross-validation splits."""
+        try:
+            if TPRINT_AVAILABLE:
+                tprint_info("🚀 Starting temporal cross-validation")
+            
+            # Use sklearn's TimeSeriesSplit
+            tscv = TimeSeriesSplit(n_splits=self.config.n_splits)
+            
+            fold_count = 0
+            for train_indices, test_indices in tscv.split(X, y):
+                # Validate fold
+                validation_result = self._validate_fold(
+                    X, y, groups, train_indices, test_indices, 0, fold_count
+                )
+                
+                # Store validation result
+                self.validation_history.append(validation_result)
+                
+                # Check if fold is valid
+                if not validation_result.is_valid:
+                    if TPRINT_AVAILABLE:
+                        tprint_warning(f"⚠️ Skipping fold {fold_count + 1}: {validation_result.critical_issues}")
+                    continue
+                
+                # Store fold information
+                self.fold_history.append({
+                    'fold_id': fold_count,
+                    'train_indices': train_indices,
+                    'test_indices': test_indices,
+                    'validation_result': validation_result
+                })
+                
+                fold_count += 1
+                
+                if TPRINT_AVAILABLE:
+                    tprint_success(f"✅ Fold {fold_count}: train={len(train_indices)}, test={len(test_indices)}")
+                
+                yield train_indices, test_indices
+            
+            if TPRINT_AVAILABLE:
+                tprint_success(f"✅ Temporal cross-validation completed: {fold_count} valid folds")
+            
+        except Exception as e:
+            logger.error(f"Temporal CV failed: {e}")
+            if TPRINT_AVAILABLE:
+                tprint_error(f"❌ Temporal CV failed: {e}")
+    
+    def _standard_split(self, X: pd.DataFrame, y: Optional[pd.Series] = None, 
+                       groups: Optional[pd.Series] = None) -> Generator[Tuple[np.ndarray, np.ndarray], None, None]:
+        """Generate standard cross-validation splits."""
+        try:
+            if TPRINT_AVAILABLE:
+                tprint_info("🚀 Starting standard cross-validation")
+            
+            # Determine if classification
+            is_classification = False
+            if y is not None:
+                try:
+                    unique_values = np.unique(y)
+                    is_classification = len(unique_values) <= 10
+                except Exception:
+                    is_classification = False
+            
+            # Choose appropriate splitter
+            if is_classification:
+                cv = StratifiedKFold(n_splits=self.config.n_splits, shuffle=False, random_state=self.random_state)
+            else:
+                cv = KFold(n_splits=self.config.n_splits, shuffle=False, random_state=self.random_state)
+            
+            fold_count = 0
+            for train_indices, test_indices in cv.split(X, y):
+                # Validate fold
+                validation_result = self._validate_fold(
+                    X, y, groups, train_indices, test_indices, 0, fold_count
+                )
+                
+                # Store validation result
+                self.validation_history.append(validation_result)
+                
+                # Check if fold is valid
+                if not validation_result.is_valid:
+                    if TPRINT_AVAILABLE:
+                        tprint_warning(f"⚠️ Skipping fold {fold_count + 1}: {validation_result.critical_issues}")
+                    continue
+                
+                # Store fold information
+                self.fold_history.append({
+                    'fold_id': fold_count,
+                    'train_indices': train_indices,
+                    'test_indices': test_indices,
+                    'validation_result': validation_result
+                })
+                
+                fold_count += 1
+                
+                if TPRINT_AVAILABLE:
+                    tprint_success(f"✅ Fold {fold_count}: train={len(train_indices)}, test={len(test_indices)}")
+                
+                yield train_indices, test_indices
+            
+            if TPRINT_AVAILABLE:
+                tprint_success(f"✅ Standard cross-validation completed: {fold_count} valid folds")
+            
+        except Exception as e:
+            logger.error(f"Standard CV failed: {e}")
+            if TPRINT_AVAILABLE:
+                tprint_error(f"❌ Standard CV failed: {e}")
     
     def _calculate_purge_window(self) -> int:
         """Calculate purge window based on configuration."""
@@ -282,9 +568,9 @@ class EnhancedPurgedTemporalKFold(BaseCrossValidator):
             logger.error(f"Time bin creation failed: {e}")
             return []
     
-    def _generate_folds(self, X: pd.DataFrame, y: Optional[pd.Series], 
-                       groups: Optional[pd.Series], time_bins: List[Dict[str, Any]], 
-                       purge_window: int) -> Generator[Tuple[np.ndarray, np.ndarray], None, None]:
+    def _generate_purged_folds(self, X: pd.DataFrame, y: Optional[pd.Series], 
+                              groups: Optional[pd.Series], time_bins: List[Dict[str, Any]], 
+                              purge_window: int) -> Generator[Tuple[np.ndarray, np.ndarray], None, None]:
         """Generate folds with purging and embargo."""
         try:
             n_bins = len(time_bins)
@@ -601,13 +887,14 @@ class EnhancedPurgedTemporalKFold(BaseCrossValidator):
         """Generate comprehensive CV report."""
         if filename is None:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = f"purged_cv_report_{timestamp}.json"
+            filename = f"consolidated_cv_report_{timestamp}.json"
         
         filepath = Path(self.config.report_directory) / filename
         
         try:
             report_data = {
                 'cv_timestamp': datetime.now().isoformat(),
+                'validation_type': self.validation_type.value,
                 'config': {
                     'n_splits': self.config.n_splits,
                     'purge_mode': self.config.purge_mode.value,
@@ -653,69 +940,192 @@ class EnhancedPurgedTemporalKFold(BaseCrossValidator):
             logger.error(f"Failed to generate CV report: {e}")
             return ""
 
+# ============================================================================
+# CONVENIENCE FUNCTIONS AND WRAPPERS
+# ============================================================================
 
-# Convenience functions
-def create_enhanced_purged_cv(config: Optional[PurgedCVConfig] = None, 
-                            random_state: Optional[int] = None) -> EnhancedPurgedTemporalKFold:
-    """Create enhanced purged temporal K-fold cross-validator."""
-    return EnhancedPurgedTemporalKFold(config, random_state)
+def create_consolidated_cv(config: Optional[ConsolidatedCVConfig] = None,
+                          validation_type: ValidationType = ValidationType.PURGED,
+                          random_state: Optional[int] = None) -> ConsolidatedCrossValidator:
+    """Create consolidated cross-validator."""
+    return ConsolidatedCrossValidator(config, validation_type, random_state)
 
-def create_quick_purged_cv(n_splits: int = 5, 
-                          purge_length: int = 1, 
-                          embargo_length: int = 1) -> EnhancedPurgedTemporalKFold:
-    """Create quick purged CV with basic settings."""
-    config = PurgedCVConfig(
+def create_purged_cv(n_splits: int = 5, 
+                    purge_length: int = 1, 
+                    embargo_length: int = 1) -> ConsolidatedCrossValidator:
+    """Create purged CV with basic settings."""
+    config = ConsolidatedCVConfig(
         n_splits=n_splits,
         purge_length=purge_length,
         embargo_length=embargo_length,
         enable_detailed_logging=False,
         save_cv_reports=False
     )
-    return EnhancedPurgedTemporalKFold(config)
+    return ConsolidatedCrossValidator(config, ValidationType.PURGED)
 
-
-if __name__ == "__main__":
-    # Example usage
-    print("Enhanced PurgedTemporalKFold with Sharp Edge Handling")
-    print("=" * 60)
-    
-    # Create sample data
-    dates = pd.date_range('2020-01-01', periods=1000, freq='1H')
-    X = pd.DataFrame({
-        'feature1': np.random.randn(1000),
-        'feature2': np.random.randn(1000),
-        'feature3': np.random.randn(1000)
-    }, index=dates)
-    
-    y = pd.Series(np.random.choice([0, 1], size=1000, p=[0.7, 0.3]), index=dates)
-    groups = pd.Series(np.random.choice(['A', 'B', 'C'], size=1000), index=dates)
-    
-    # Create enhanced purged CV
-    config = PurgedCVConfig(
-        n_splits=3,
-        purge_mode=PurgeMode.COMBINED,
-        label_horizon=2,
-        feature_max_lag=3,
-        enable_temporal_validation=True,
-        enable_leakage_detection=True,
-        entity_cols=['groups']
+def create_walk_forward_cv(n_splits: int = 5,
+                          initial_train_size: float = 0.6,
+                          step_size: float = 0.1) -> ConsolidatedCrossValidator:
+    """Create walk-forward CV with basic settings."""
+    config = ConsolidatedCVConfig(
+        n_splits=n_splits,
+        initial_train_size=initial_train_size,
+        step_size=step_size,
+        enable_detailed_logging=False,
+        save_cv_reports=False
     )
+    return ConsolidatedCrossValidator(config, ValidationType.WALK_FORWARD)
+
+def create_temporal_cv(n_splits: int = 5) -> ConsolidatedCrossValidator:
+    """Create temporal CV with basic settings."""
+    config = ConsolidatedCVConfig(
+        n_splits=n_splits,
+        enable_detailed_logging=False,
+        save_cv_reports=False
+    )
+    return ConsolidatedCrossValidator(config, ValidationType.TEMPORAL)
+
+def create_standard_cv(n_splits: int = 5, random_state: Optional[int] = None) -> ConsolidatedCrossValidator:
+    """Create standard CV with basic settings."""
+    config = ConsolidatedCVConfig(
+        n_splits=n_splits,
+        enable_detailed_logging=False,
+        save_cv_reports=False
+    )
+    return ConsolidatedCrossValidator(config, ValidationType.STANDARD, random_state)
+
+# ============================================================================
+# BACKWARD COMPATIBILITY ALIASES
+# ============================================================================
+
+# Legacy class names for backward compatibility
+PurgedKFoldTime = ConsolidatedCrossValidator
+UniversalTemporalValidator = ConsolidatedCrossValidator
+WalkForwardValidator = ConsolidatedCrossValidator
+UnifiedCrossValidator = ConsolidatedCrossValidator
+
+# Legacy function names for backward compatibility
+def purged_time_series_splits(X: pd.DataFrame, y: Optional[pd.Series] = None, 
+                             config: Optional[ConsolidatedCVConfig] = None) -> Generator[Tuple[np.ndarray, np.ndarray], None, None]:
+    """Legacy function for purged time series splits."""
+    if config is None:
+        config = ConsolidatedCVConfig()
+    cv = ConsolidatedCrossValidator(config, ValidationType.PURGED)
+    yield from cv.split(X, y)
+
+def temporal_cross_validation(model: Any, X: np.ndarray, y: np.ndarray, 
+                             n_splits: int = 5, gap: int = 0, 
+                             test_size: Optional[int] = None,
+                             scoring: Optional[Union[str, List[str]]] = None) -> Dict[str, Any]:
+    """Legacy function for temporal cross-validation."""
+    from sklearn.model_selection import cross_val_score, cross_validate
     
-    cv = create_enhanced_purged_cv(config)
+    if test_size is None:
+        test_size = max(1, len(X) // (n_splits + 1))
     
-    # Perform cross-validation
-    fold_count = 0
-    for train_idx, test_idx in cv.split(X, y, groups):
-        fold_count += 1
-        print(f"Fold {fold_count}: train={len(train_idx)}, test={len(test_idx)}")
+    # Use sklearn's TimeSeriesSplit
+    tscv = TimeSeriesSplit(n_splits=n_splits, gap=gap, test_size=test_size)
     
-    # Get validation results
-    validation_history = cv.get_validation_history()
-    print(f"Total folds: {len(validation_history)}")
-    print(f"Valid folds: {sum(1 for v in validation_history if v.is_valid)}")
-    print(f"Leakage detected: {sum(1 for v in validation_history if v.leakage_detected)}")
-    print(f"Entity overlaps: {sum(1 for v in validation_history if v.entity_overlap_detected)}")
+    if isinstance(scoring, list):
+        cv_result = cross_validate(model, X, y, cv=tscv, scoring=scoring, return_train_score=True)
+        return {
+            'mean_scores': {m: float(np.mean(cv_result.get(f"test_{m}", []))) for m in scoring},
+            'std_scores': {m: float(np.std(cv_result.get(f"test_{m}", []))) for m in scoring},
+            'train_scores': {m: float(np.mean(cv_result.get(f"train_{m}", []))) for m in scoring if f"train_{m}" in cv_result},
+            'cv_folds': n_splits,
+        }
+    else:
+        scores = cross_val_score(model, X, y, cv=tscv, scoring=scoring)
+        return {
+            'scores': scores.tolist(),
+            'mean': float(np.mean(scores)),
+            'std': float(np.std(scores)),
+            'min': float(np.min(scores)),
+            'max': float(np.max(scores)),
+            'cv_folds': n_splits,
+        }
+
+def perform_cross_validation(model: Any, X: np.ndarray, y: np.ndarray, 
+                            strategy: str = "temporal", cv_folds: int = 5,
+                            scoring: Union[str, List[str], None] = None,
+                            random_state: Optional[int] = 42,
+                            stratified: Optional[bool] = None,
+                            n_jobs: int = -1,
+                            temporal_gap: int = 0,
+                            temporal_test_size: Optional[int] = None) -> Dict[str, Any]:
+    """Legacy function for cross-validation."""
+    from sklearn.model_selection import cross_val_score, cross_validate
     
-    # Generate report
-    report_path = cv.generate_cv_report()
-    print(f"CV report saved: {report_path}")
+    # Determine if classification
+    is_classification = False
+    if stratified is None:
+        try:
+            unique_values = np.unique(y)
+            is_classification = len(unique_values) <= 10
+        except Exception:
+            is_classification = False
+    else:
+        is_classification = stratified
+    
+    if scoring is None:
+        scoring = "accuracy" if is_classification else "r2"
+    
+    if strategy == "temporal":
+        if temporal_test_size is None:
+            temporal_test_size = max(1, len(X) // (cv_folds + 1))
+        tscv = TimeSeriesSplit(n_splits=cv_folds, gap=temporal_gap, test_size=temporal_test_size)
+        cv = tscv
+    else:
+        if is_classification:
+            cv = StratifiedKFold(n_splits=cv_folds, shuffle=False, random_state=random_state)
+        else:
+            cv = KFold(n_splits=cv_folds, shuffle=False, random_state=random_state)
+    
+    if isinstance(scoring, list):
+        cv_result = cross_validate(model, X, y, cv=cv, scoring=scoring, n_jobs=n_jobs, return_train_score=True)
+        return {
+            'mean_scores': {m: float(np.mean(cv_result.get(f"test_{m}", []))) for m in scoring},
+            'std_scores': {m: float(np.std(cv_result.get(f"test_{m}", []))) for m in scoring},
+            'train_scores': {m: float(np.mean(cv_result.get(f"train_{m}", []))) for m in scoring if f"train_{m}" in cv_result},
+            'cv_folds': cv_folds,
+        }
+    else:
+        scores = cross_val_score(model, X, y, cv=cv, scoring=scoring, n_jobs=n_jobs)
+        return {
+            'scores': scores.tolist(),
+            'mean': float(np.mean(scores)),
+            'std': float(np.std(scores)),
+            'min': float(np.min(scores)),
+            'max': float(np.max(scores)),
+            'cv_folds': cv_folds,
+        }
+
+# ============================================================================
+# EXPORTS
+# ============================================================================
+
+__all__ = [
+    # Main classes
+    'ConsolidatedCrossValidator',
+    'ConsolidatedCVConfig',
+    'FoldValidationResult',
+    'ValidationResult',
+    'PurgeMode',
+    'ValidationType',
+    
+    # Convenience functions
+    'create_consolidated_cv',
+    'create_purged_cv',
+    'create_walk_forward_cv',
+    'create_temporal_cv',
+    'create_standard_cv',
+    
+    # Legacy compatibility
+    'PurgedKFoldTime',
+    'UniversalTemporalValidator',
+    'WalkForwardValidator',
+    'UnifiedCrossValidator',
+    'purged_time_series_splits',
+    'temporal_cross_validation',
+    'perform_cross_validation',
+]

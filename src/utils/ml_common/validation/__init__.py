@@ -77,20 +77,20 @@ from .data_leakage_detector import (
     DataLeakageDetector
 )
 
-from .cv_utils import (
-    CrossValidationUtilities,
-    PurgedKFold,
-    TemporalCrossValidator,
-    TimeSeriesSplitValidator,
-    OOFGenerator
+from .consolidated_cv import (
+    ConsolidatedCrossValidator, ConsolidatedCVConfig, FoldValidationResult, ValidationResult,
+    PurgeMode, ValidationType,
+    create_consolidated_cv, create_purged_cv, create_walk_forward_cv, 
+    create_temporal_cv, create_standard_cv,
+    # Legacy compatibility
+    PurgedKFoldTime, UniversalTemporalValidator, WalkForwardValidator, 
+    UnifiedCrossValidator, purged_time_series_splits, temporal_cross_validation, 
+    perform_cross_validation
 )
 
-from .unified_cv import (
-    UnifiedCrossValidator,
-    UnifiedCVResult,
-    perform_cross_validation,
-    temporal_cross_validation,
-    nested_cross_validation
+from .cv_utils import (
+    CrossValidationUtilities,
+    OOFGenerator
 )
 
 from .stability import (
@@ -155,17 +155,19 @@ __all__ = [
     # Data leakage detection
     'DataLeakageDetector',
     
-    # Cross-validation utilities
-    'CrossValidationUtilities',
-    'PurgedKFold',
-    'TemporalCrossValidator',
-    'TimeSeriesSplitValidator',
-    'OOFGenerator',
-    'UnifiedCrossValidator',
-    'UnifiedCVResult',
+    # Consolidated Cross-Validation (main)
+    'ConsolidatedCrossValidator', 'ConsolidatedCVConfig', 'FoldValidationResult', 'ValidationResult',
+    'PurgeMode', 'ValidationType',
+    'create_consolidated_cv', 'create_purged_cv', 'create_walk_forward_cv', 
+    'create_temporal_cv', 'create_standard_cv',
+    
+    # Legacy CV compatibility
+    'PurgedKFoldTime', 'UniversalTemporalValidator', 'WalkForwardValidator', 
+    'UnifiedCrossValidator', 'purged_time_series_splits', 'temporal_cross_validation', 
     'perform_cross_validation',
-    'temporal_cross_validation',
-    'nested_cross_validation',
+    
+    # Other CV utilities
+    'CrossValidationUtilities', 'OOFGenerator',
     
     # Stability analysis
     'StabilityAnalyzer'

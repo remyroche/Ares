@@ -63,7 +63,9 @@ try:
 
     # Optimization
     from .optimization import (
-        # HyperparameterOptimization,
+        ConsolidatedHPO, HPOConfig, HPOResult,
+        # Legacy compatibility
+        HyperparameterOptimization, optimize_hyperparameters, staged_hpo, bayesian_optimization,
         ParetoOptimizer, ParetoFront, ParetoFrontAnalyzer,
         RegimeSpecificTPSLOptimizer
     )
@@ -83,13 +85,18 @@ try:
 
     # Validation
     from .validation import (
-        ConfigurationValidator,
-        CrossValidationUtilities, PurgedKFold, TemporalCrossValidator,
-        TimeSeriesSplitValidator, OOFGenerator, DataLeakageDetector,
-        StabilityAnalyzer,
-        # Unified CV
-        UnifiedCrossValidator, UnifiedCVResult,
-        perform_cross_validation, temporal_cross_validation, nested_cross_validation
+        # Consolidated CV (main)
+        ConsolidatedCrossValidator, ConsolidatedCVConfig, FoldValidationResult, ValidationResult,
+        PurgeMode, ValidationType,
+        create_consolidated_cv, create_purged_cv, create_walk_forward_cv, 
+        create_temporal_cv, create_standard_cv,
+        # Legacy CV compatibility
+        PurgedKFoldTime, UniversalTemporalValidator, WalkForwardValidator, 
+        UnifiedCrossValidator, purged_time_series_splits, temporal_cross_validation, 
+        perform_cross_validation,
+        # Other validation utilities
+        ConfigurationValidator, CrossValidationUtilities, OOFGenerator, DataLeakageDetector,
+        StabilityAnalyzer
     )
 
     # Lookahead bias detection
@@ -179,7 +186,9 @@ try:
         'ModelInterpretabilityEngine', 'ExplanationResult',
 
         # Optimization
-        # 'HyperparameterOptimization',
+        'ConsolidatedHPO', 'HPOConfig', 'HPOResult',
+        # Legacy HPO compatibility
+        'HyperparameterOptimization', 'optimize_hyperparameters', 'staged_hpo', 'bayesian_optimization',
         'ParetoFront', 'ParetoFrontAnalyzer',
         'RegimeSpecificTPSLOptimizer',
 
@@ -187,12 +196,17 @@ try:
         'EnhancedDataLabelerGetter', 'LabelingConfigGetter',
 
         # Validation
-        'ConfigurationValidator',
-        'TemporalCrossValidator', 'PurgedKFold', 'CrossValidationUtilities', 'PurgedSplitConfig',
-        'TimeSeriesSplitValidator', 'OOFGenerator', 'DataLeakageDetector',
-        # Unified CV exports
-        'UnifiedCrossValidator', 'UnifiedCVResult',
-        'perform_cross_validation', 'temporal_cross_validation', 'nested_cross_validation',
+        # Consolidated CV (main)
+        'ConsolidatedCrossValidator', 'ConsolidatedCVConfig', 'FoldValidationResult', 'ValidationResult',
+        'PurgeMode', 'ValidationType',
+        'create_consolidated_cv', 'create_purged_cv', 'create_walk_forward_cv', 
+        'create_temporal_cv', 'create_standard_cv',
+        # Legacy CV compatibility
+        'PurgedKFoldTime', 'UniversalTemporalValidator', 'WalkForwardValidator', 
+        'UnifiedCrossValidator', 'purged_time_series_splits', 'temporal_cross_validation', 
+        'perform_cross_validation',
+        # Other validation utilities
+        'ConfigurationValidator', 'CrossValidationUtilities', 'OOFGenerator', 'DataLeakageDetector',
         'LookaheadBiasDetector', 'LookaheadBiasError', 'lookahead_bias_detector',
         'hyperparameter_optimization',
         'StabilityAnalyzer', 'feature_selection_stability', 'aggregate_time_blocks',

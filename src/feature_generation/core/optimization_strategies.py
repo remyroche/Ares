@@ -68,19 +68,59 @@ class OptimizationStrategy(ABC):
 class ConservativeOptimizationStrategy(OptimizationStrategy):
     """Conservative optimization - minimal changes, maximum compatibility."""
 
+    def __init__(self, config: 'AutoOptimizationConfig'):
+        super().__init__(config)
+        self._initialize_hardware_components()
+
+    def _initialize_hardware_components(self):
+        """Initialize hardware components for optimization."""
+        try:
+            from src.utils.hardware.unified_hardware_manager import get_unified_hardware_manager, HardwareConfig, WorkloadType, OptimizationLevel
+            from src.feature_generation.utils.unified_vectorization_manager import UnifiedVectorizationManager
+            from src.feature_generation.utils.vectorbt_rolling_optimizer import VectorBTRollingOptimizer
+            
+            # Initialize hardware manager
+            hardware_config = HardwareConfig(
+                cpu_optimization_level=OptimizationLevel.MINIMAL,
+                memory_optimization_level=OptimizationLevel.MINIMAL,
+                enable_adaptive_optimization=False
+            )
+            self.hardware_manager = get_unified_hardware_manager(hardware_config, conservative_mode=True)
+            
+            # Initialize vectorization components
+            self.vectorization_manager = UnifiedVectorizationManager()
+            self.rolling_optimizer = VectorBTRollingOptimizer()
+            
+        except ImportError:
+            self.hardware_manager = None
+            self.vectorization_manager = None
+            self.rolling_optimizer = None
+
     def optimize_data(self, data: pd.DataFrame, generator) -> pd.DataFrame:
         """Apply conservative optimization."""
         try:
             start_time = time.time()
             optimized_data = data
 
-            # Only basic memory optimization
+            # Enhanced memory optimization with hardware components
             if (self.config.enable_memory_optimization and
                 hasattr(generator, 'optimize_dataframe_processing')):
                 try:
                     original_memory = data.memory_usage(deep=True).sum() / 1024 / 1024  # MB
 
-                    optimized_data = generator.optimize_dataframe_processing(data)
+                    # Use hardware manager for memory optimization if available
+                    if self.hardware_manager:
+                        # Configure hardware for data processing workload
+                        self.hardware_manager.configure_workload(
+                            WorkloadType.DATA_PROCESSING, 
+                            OptimizationLevel.MINIMAL
+                        )
+                        
+                        # Use hardware-optimized memory management
+                        optimized_data = self.hardware_manager.memory_optimizer.optimize_memory_usage(data, "data_processing")
+                    else:
+                        # Fallback to generator optimization
+                        optimized_data = generator.optimize_dataframe_processing(data)
                     
                     # Clean any non-finite values introduced by optimization
                     optimized_data = self._clean_non_finite_values(optimized_data)
@@ -140,6 +180,34 @@ class ConservativeOptimizationStrategy(OptimizationStrategy):
 class BalancedOptimizationStrategy(OptimizationStrategy):
     """Balanced optimization - good performance/quality tradeoff."""
 
+    def __init__(self, config: 'AutoOptimizationConfig'):
+        super().__init__(config)
+        self._initialize_hardware_components()
+
+    def _initialize_hardware_components(self):
+        """Initialize hardware components for optimization."""
+        try:
+            from src.utils.hardware.unified_hardware_manager import get_unified_hardware_manager, HardwareConfig, WorkloadType, OptimizationLevel
+            from src.feature_generation.utils.unified_vectorization_manager import UnifiedVectorizationManager
+            from src.feature_generation.utils.vectorbt_rolling_optimizer import VectorBTRollingOptimizer
+            
+            # Initialize hardware manager
+            hardware_config = HardwareConfig(
+                cpu_optimization_level=OptimizationLevel.BALANCED,
+                memory_optimization_level=OptimizationLevel.BALANCED,
+                enable_adaptive_optimization=True
+            )
+            self.hardware_manager = get_unified_hardware_manager(hardware_config)
+            
+            # Initialize vectorization components
+            self.vectorization_manager = UnifiedVectorizationManager()
+            self.rolling_optimizer = VectorBTRollingOptimizer()
+            
+        except ImportError:
+            self.hardware_manager = None
+            self.vectorization_manager = None
+            self.rolling_optimizer = None
+
     def optimize_data(self, data: pd.DataFrame, generator) -> pd.DataFrame:
         """Apply balanced optimization."""
         try:
@@ -179,14 +247,18 @@ class BalancedOptimizationStrategy(OptimizationStrategy):
             else:
                 pass  # tprint statement removed
 
-            # VectorBT optimization for large datasets
+            # Enhanced VectorBT optimization for large datasets
             if (self.config.enable_vectorbt_optimization and
                 len(optimized_data) > self.config.vectorbt_threshold and
                 hasattr(generator, '_should_use_vectorbt')):
                 try:
-                    # Reduce verbosity - only log when VectorBT is actually applied
-                    if generator._should_use_vectorbt(optimized_data):
-                        optimized_data = self._apply_vectorbt_optimizations(optimized_data, generator)
+                    # Use VectorBT rolling optimizer if available
+                    if self.rolling_optimizer and generator._should_use_vectorbt(optimized_data):
+                        # Apply VectorBT rolling optimizations
+                        optimized_data = self.rolling_optimizer.optimize_rolling_operations(
+                            optimized_data, 
+                            ['mean', 'std', 'min', 'max', 'sum']
+                        )
                         
                         # Clean any non-finite values introduced by VectorBT optimization
                         optimized_data = self._clean_non_finite_values(optimized_data)
@@ -198,6 +270,11 @@ class BalancedOptimizationStrategy(OptimizationStrategy):
 
                         if self.config.enable_optimization_logging:
                             self.logger.debug(f"VectorBT optimization applied for {len(optimized_data)} rows")
+                    else:
+                        # Fallback to original VectorBT optimization
+                        optimized_data = self._apply_vectorbt_optimizations(optimized_data, generator)
+                        optimized_data = self._clean_non_finite_values(optimized_data)
+                        self.stats['optimizations_applied'] += 1
 
                 except Exception as e:
                     self.logger.warning(f"VectorBT optimization failed: {e}")
@@ -270,17 +347,59 @@ class BalancedOptimizationStrategy(OptimizationStrategy):
 class AggressiveOptimizationStrategy(OptimizationStrategy):
     """Aggressive optimization - maximum performance."""
 
+    def __init__(self, config: 'AutoOptimizationConfig'):
+        super().__init__(config)
+        self._initialize_hardware_components()
+
+    def _initialize_hardware_components(self):
+        """Initialize hardware components for optimization."""
+        try:
+            from src.utils.hardware.unified_hardware_manager import get_unified_hardware_manager, HardwareConfig, WorkloadType, OptimizationLevel
+            from src.feature_generation.utils.unified_vectorization_manager import UnifiedVectorizationManager
+            from src.feature_generation.utils.vectorbt_rolling_optimizer import VectorBTRollingOptimizer
+            
+            # Initialize hardware manager with aggressive settings
+            hardware_config = HardwareConfig(
+                cpu_optimization_level=OptimizationLevel.AGGRESSIVE,
+                memory_optimization_level=OptimizationLevel.AGGRESSIVE,
+                enable_adaptive_optimization=True,
+                performance_monitoring_enabled=True
+            )
+            self.hardware_manager = get_unified_hardware_manager(hardware_config)
+            
+            # Initialize vectorization components
+            self.vectorization_manager = UnifiedVectorizationManager()
+            self.rolling_optimizer = VectorBTRollingOptimizer()
+            
+        except ImportError:
+            self.hardware_manager = None
+            self.vectorization_manager = None
+            self.rolling_optimizer = None
+
     def optimize_data(self, data: pd.DataFrame, generator) -> pd.DataFrame:
         """Apply aggressive optimization."""
         start_time = time.time()
         optimized_data = data
 
-        # All available optimizations
+        # Enhanced memory optimization with hardware components
         if (self.config.enable_memory_optimization and
             hasattr(generator, 'optimize_dataframe_processing')):
             try:
                 original_memory = data.memory_usage(deep=True).sum() / 1024 / 1024  # MB
-                optimized_data = generator.optimize_dataframe_processing(data)
+                
+                # Use hardware manager for aggressive memory optimization
+                if self.hardware_manager:
+                    # Configure hardware for intensive workload
+                    self.hardware_manager.configure_workload(
+                        WorkloadType.ML_TRAINING, 
+                        OptimizationLevel.AGGRESSIVE
+                    )
+                    
+                    # Use hardware-optimized memory management
+                    optimized_data = self.hardware_manager.memory_optimizer.optimize_memory_usage(data, "ml_training")
+                else:
+                    # Fallback to generator optimization
+                    optimized_data = generator.optimize_dataframe_processing(data)
                 
                 # Clean any non-finite values introduced by optimization
                 optimized_data = self._clean_non_finite_values(optimized_data)
@@ -314,12 +433,20 @@ class AggressiveOptimizationStrategy(OptimizationStrategy):
             except Exception as e:
                 self.logger.warning(f"Chunked processing failed: {e}")
 
-        # VectorBT optimization
+        # Enhanced VectorBT optimization with unified vectorization
         if (self.config.enable_vectorbt_optimization and
             hasattr(generator, '_should_use_vectorbt')):
             try:
                 if generator._should_use_vectorbt(optimized_data):
-                    optimized_data = self._apply_vectorbt_optimizations(optimized_data, generator)
+                    # Use unified vectorization manager for comprehensive optimization
+                    if self.vectorization_manager:
+                        optimized_data = self.vectorization_manager.optimize_dataframe(
+                            optimized_data, 
+                            operations=['rolling_mean', 'rolling_std', 'rolling_min', 'rolling_max']
+                        )
+                    else:
+                        # Fallback to original VectorBT optimization
+                        optimized_data = self._apply_vectorbt_optimizations(optimized_data, generator)
                     
                     # Clean any non-finite values introduced by VectorBT optimization
                     optimized_data = self._clean_non_finite_values(optimized_data)

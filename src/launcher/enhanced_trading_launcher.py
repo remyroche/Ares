@@ -77,6 +77,7 @@ class EnhancedTradingLauncher:
         # Trading components
         self.paper_trading_integration: PaperTradingIntegration | None = None
         self.enhanced_backtester: Any = None
+        self.live_trading_system: Any = None
 
         # Launcher state
         self.is_initialized: bool = False
@@ -192,6 +193,38 @@ class EnhancedTradingLauncher:
                 else:
                     self.logger.error(failed("⚠️ Failed to initialize enhanced backtester"))
 
+            # Initialize live trading system
+            if self.enable_live_trading:
+                try:
+                    from live_trading.unified_trading_system import create_trading_system
+                    from live_trading.config import TradingConfig, TradingMode
+                    
+                    # Create trading configuration for live trading
+                    live_trading_config = TradingConfig(
+                        mode=TradingMode.LIVE,
+                        symbols=self.launcher_config.get("live_trading_symbols", ["BTCUSDT", "ETHUSDT"]),
+                        max_position_size=self.launcher_config.get("max_position_size", 1000.0),
+                        max_daily_loss=self.launcher_config.get("max_daily_loss", 100.0),
+                        enable_risk_management=self.launcher_config.get("enable_risk_management", True)
+                    )
+                    
+                    # Create live trading system
+                    self.live_trading_system = await create_trading_system(
+                        trading_config=live_trading_config,
+                        exchanges=self.launcher_config.get("live_trading_exchanges", ["binance"]),
+                        enable_websockets=True,
+                        enable_paper_trading=False
+                    )
+                    
+                    if self.live_trading_system:
+                        self.logger.info("✅ Live trading system initialized")
+                    else:
+                        self.logger.error(failed("⚠️ Failed to initialize live trading system"))
+                        
+                except Exception as e:
+                    self.logger.error(failed(f"Live trading system import/setup failed: {e}"))
+                    self.live_trading_system = None
+
         except Exception as e:
             self.logger.error(initialization_error(f"Error initializing components: {e}"))
 
@@ -283,9 +316,8 @@ class EnhancedTradingLauncher:
             if trading_config:
                 self.config.update(trading_config)
 
-            # TODO: Initialize live trading components
-            # This would integrate with the existing live trading system
-            self.logger.warning(warning("⚠️ Live trading not yet implemented"))
+            # Initialize live trading components
+            await self._initialize_live_trading_components()
 
             return True
 
@@ -401,9 +433,14 @@ class EnhancedTradingLauncher:
                     trade_metadata=trade_metadata,
                 )
             if self.current_mode == "live":
-                # TODO: Implement live trading execution
-                self.logger.error(execution_error("⚠️ Live trading execution not yet implemented"))
-                return False
+                return await self._execute_live_trade(
+                    symbol=symbol,
+                    side=side,
+                    quantity=quantity,
+                    price=price,
+                    timestamp=timestamp,
+                    trade_metadata=trade_metadata,
+                )
             self.logger.error(
                 f"Trade execution not available for mode: {self.current_mode}",
             )
@@ -421,8 +458,7 @@ class EnhancedTradingLauncher:
             if self.current_mode == "backtest" and self.enhanced_backtester:
                 return self.enhanced_backtester.get_backtest_results()
             if self.current_mode == "live":
-                # TODO: Implement live trading metrics
-                return {"mode": "live", "status": "not_implemented"}
+                return await self._get_live_trading_metrics()
             return {"mode": self.current_mode, "status": "no_metrics_available"}
 
         except Exception as e:
@@ -550,6 +586,7 @@ class EnhancedTradingLauncher:
             "enable_detailed_reporting": self.enable_detailed_reporting,
             "paper_trading_available": self.paper_trading_integration is not None,
             "enhanced_backtester_available": self.enhanced_backtester is not None,
+            "live_trading_available": self.live_trading_system is not None,
         }
 
     @handles_errors(
@@ -566,6 +603,8 @@ class EnhancedTradingLauncher:
                 await self.paper_trading_integration.stop()
             elif self.current_mode == "backtest" and self.enhanced_backtester:
                 self.enhanced_backtester.stop()
+            elif self.current_mode == "live" and self.live_trading_system:
+                await self.live_trading_system.stop()
 
             # Generate final report
             await self.generate_comprehensive_report("final")
@@ -575,6 +614,94 @@ class EnhancedTradingLauncher:
 
         except Exception as e:
             self.logger.error(error(f"Error stopping launcher: {e}"))
+
+    async def _initialize_live_trading_components(self) -> None:
+        """Initialize live trading components."""
+        try:
+            if not self.live_trading_system:
+                self.logger.error(error("Live trading system not available"))
+                return
+
+            # Start the live trading system
+            await self.live_trading_system.start()
+            self.logger.info("✅ Live trading components initialized and started")
+
+        except Exception as e:
+            self.logger.error(error(f"Error initializing live trading components: {e}"))
+            raise
+
+    async def _execute_live_trade(
+        self,
+        symbol: str,
+        side: str,
+        quantity: float,
+        price: float,
+        timestamp: datetime,
+        trade_metadata: dict[str, Any] | None = None,
+    ) -> bool:
+        """Execute live trade through the live trading system."""
+        try:
+            if not self.live_trading_system:
+                self.logger.error(error("Live trading system not available"))
+                return False
+
+            # Create trade decision
+            from src.interfaces.base_interfaces import TradeDecision
+            
+            trade_decision = TradeDecision(
+                symbol=symbol,
+                action=side,
+                quantity=quantity,
+                price=price,
+                confidence=trade_metadata.get("confidence", 0.8) if trade_metadata else 0.8,
+                risk_score=trade_metadata.get("risk_score", 0.5) if trade_metadata else 0.5,
+                leverage=trade_metadata.get("leverage", 1.0) if trade_metadata else 1.0,
+                stop_loss=trade_metadata.get("stop_loss") if trade_metadata else None,
+                take_profit=trade_metadata.get("take_profit") if trade_metadata else None,
+                timestamp=timestamp
+            )
+
+            # Execute trade decision
+            success = await self.live_trading_system.execute_trade_decision(trade_decision)
+            
+            if success:
+                self.logger.info(f"✅ Live trade executed: {symbol} {side} {quantity}")
+            else:
+                self.logger.warning(f"⚠️ Live trade execution failed: {symbol} {side} {quantity}")
+
+            return success
+
+        except Exception as e:
+            self.logger.error(error(f"Error executing live trade: {e}"))
+            return False
+
+    async def _get_live_trading_metrics(self) -> dict[str, Any]:
+        """Get live trading performance metrics."""
+        try:
+            if not self.live_trading_system:
+                return {"mode": "live", "status": "system_not_available"}
+
+            # Get system status
+            system_status = await self.live_trading_system.get_system_status()
+            
+            # Get account summary
+            account_summary = await self.live_trading_system.get_account_summary()
+            
+            return {
+                "mode": "live",
+                "status": "active" if system_status.get("system_running", False) else "inactive",
+                "system_status": system_status,
+                "account_summary": account_summary,
+                "uptime_seconds": system_status.get("uptime_seconds", 0),
+                "total_trades_executed": system_status.get("total_trades_executed", 0),
+                "total_signals_processed": system_status.get("total_signals_processed", 0),
+                "errors": system_status.get("errors", 0),
+                "warnings": system_status.get("warnings", 0)
+            }
+
+        except Exception as e:
+            self.logger.error(error(f"Error getting live trading metrics: {e}"))
+            return {"mode": "live", "status": "error", "error": str(e)}
 
 @handles_errors(
     exceptions=(Exception,),

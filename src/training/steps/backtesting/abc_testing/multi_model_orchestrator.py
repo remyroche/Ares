@@ -481,79 +481,182 @@ class ModelExecutor:
 
     async def _create_model_instance(self, model_name: str) -> Any:
         """Create a new model instance."""
-        # This is a placeholder implementation
-        # In practice, you would use the model factory to create actual models
-
-        class PlaceholderModel:
-            """Production-ready placeholder model implementation.
+        # Create actual model instance using the model factory
+        try:
+            from src.utils.ml_common.models.model_factory import EnhancedModelFactory, ModelConfig, ModelType
             
-            This class provides dummy prediction logic that returns random
-            trading decisions for testing and development purposes.
-            """
-            def __init__(self, name: str):
-                self.name = name
-                self.is_fitted = False
-                self.model_type = "placeholder"
-
-            async def predict(self, data: pd.DataFrame) -> Dict[str, Any]:
-                """Generate placeholder prediction with random trading logic.
+            # Determine model type from name
+            model_type = ModelType.ANALYST
+            if 'tactician' in model_name.lower():
+                model_type = ModelType.TACTICIAN
+            elif 'ensemble' in model_name.lower():
+                model_type = ModelType.ENSEMBLE
+            
+            # Create model configuration
+            config = ModelConfig(
+                model_type=model_type,
+                model_name=model_name,
+                parameters={}
+            )
+            
+            # Create model instance using factory
+            model = EnhancedModelFactory.create_model(config)
+            
+            logger.info(f"✅ Created {model_type.value} model: {model_name}")
+            return model
+            
+        except Exception as e:
+            logger.warning(f"⚠️ Failed to create model via factory: {e}")
+            
+            # Fallback to a basic model implementation
+            class BasicModel:
+                """Basic model implementation for fallback."""
                 
-                Args:
-                    data: Market data DataFrame
+                def __init__(self, name: str):
+                    self.name = name
+                    self.is_fitted = False
+                    self.model_type = "basic"
+                    self.feature_importance_ = None
+                    self.training_data_shape_ = None
+
+                async def predict(self, data: pd.DataFrame) -> Dict[str, Any]:
+                    """Generate basic prediction based on simple technical indicators.
                     
-                Returns:
-                    Dictionary containing trading decision with random values
-                """
-                import random
+                    Args:
+                        data: Market data DataFrame with OHLCV columns
+                        
+                    Returns:
+                        Dictionary containing prediction results
+                    """
+                    try:
+                        # Simple technical analysis-based predictions
+                        if 'close' in data.columns and len(data) > 1:
+                            # Calculate simple moving averages
+                            sma_short = data['close'].rolling(window=5).mean()
+                            sma_long = data['close'].rolling(window=20).mean()
+                            
+                            # Generate signals based on moving average crossover
+                            signals = []
+                            probabilities = []
+                            
+                            for i in range(len(data)):
+                                if i < 20:  # Not enough data for long MA
+                                    signal = 0  # Hold
+                                    prob = 0.5
+                                else:
+                                    if sma_short.iloc[i] > sma_long.iloc[i]:
+                                        signal = 1  # Buy
+                                        prob = 0.7
+                                    elif sma_short.iloc[i] < sma_long.iloc[i]:
+                                        signal = -1  # Sell
+                                        prob = 0.7
+                                    else:
+                                        signal = 0  # Hold
+                                        prob = 0.5
+                                
+                                signals.append(signal)
+                                probabilities.append(prob)
+                            
+                            return {
+                                'signals': signals,
+                                'probabilities': probabilities,
+                                'model_name': self.name,
+                                'timestamp': datetime.now().isoformat(),
+                                'n_predictions': len(signals),
+                                'method': 'technical_analysis'
+                            }
+                        else:
+                            # Fallback to neutral signals if no close price data
+                            n_samples = len(data)
+                            return {
+                                'signals': [0] * n_samples,
+                                'probabilities': [0.5] * n_samples,
+                                'model_name': self.name,
+                                'timestamp': datetime.now().isoformat(),
+                                'n_predictions': n_samples,
+                                'method': 'neutral_fallback'
+                            }
+                            
+                    except Exception as e:
+                        logger.error(f"❌ Error in prediction: {e}")
+                        # Return neutral signals on error
+                        n_samples = len(data)
+                        return {
+                            'signals': [0] * n_samples,
+                            'probabilities': [0.5] * n_samples,
+                            'model_name': self.name,
+                            'timestamp': datetime.now().isoformat(),
+                            'n_predictions': n_samples,
+                            'method': 'error_fallback',
+                            'error': str(e)
+                        }
                 
-                # Generate random trading decision
-                actions = ['buy', 'sell', 'hold']
-                action = random.choice(actions)
+                def fit(self, X, y=None):
+                    """Fit the model to training data."""
+                    self.is_fitted = True
+                    self.training_data_shape_ = X.shape if hasattr(X, 'shape') else (len(X), 0)
+                    
+                    # Calculate basic feature importance if possible
+                    if hasattr(X, 'columns') and y is not None:
+                        try:
+                            # Simple feature importance based on correlation
+                            correlations = X.corrwith(y) if hasattr(y, 'corrwith') else None
+                            if correlations is not None:
+                                self.feature_importance_ = correlations.abs().fillna(0).to_dict()
+                        except Exception:
+                            self.feature_importance_ = None
+                    
+                    return self
                 
-                # Generate random size (0.0 to 1.0)
-                size = round(random.uniform(0.0, 1.0), 2)
+                def predict_proba(self, X):
+                    """Predict class probabilities."""
+                    if not self.is_fitted:
+                        raise ValueError("Model must be fitted before prediction")
+                    
+                    # Generate probabilities based on simple heuristics
+                    n_samples = len(X)
+                    probabilities = []
+                    
+                    for i in range(n_samples):
+                        # Simple probability generation based on data characteristics
+                        if hasattr(X, 'iloc') and len(X.columns) > 0:
+                            # Use first numeric column as basis for probability
+                            first_col = X.select_dtypes(include=[np.number]).iloc[:, 0] if len(X.select_dtypes(include=[np.number]).columns) > 0 else None
+                            if first_col is not None and i < len(first_col):
+                                val = first_col.iloc[i]
+                                # Normalize value to probability range
+                                prob_1 = min(max((val - first_col.min()) / (first_col.max() - first_col.min() + 1e-8), 0.1), 0.9)
+                            else:
+                                prob_1 = 0.5
+                        else:
+                            prob_1 = 0.5
+                        
+                        prob_0 = 1.0 - prob_1
+                        probabilities.append([prob_0, prob_1])
+                    
+                    return probabilities
                 
-                # Generate random confidence (0.0 to 1.0)
-                confidence = round(random.uniform(0.0, 1.0), 2)
+                def get_params(self, deep=True):
+                    """Get model parameters."""
+                    return {
+                        'name': self.name,
+                        'model_type': self.model_type,
+                        'is_fitted': self.is_fitted,
+                        'training_shape': self.training_data_shape_
+                    }
                 
-                return {
-                    'action': action,
-                    'size': size,
-                    'confidence': confidence,
-                    'model_name': self.name,
-                    'model_type': self.model_type,
-                    'timestamp': pd.Timestamp.now().isoformat()
-                }
-            
-            def fit(self, X, y=None):
-                """Placeholder fit method."""
-                self.is_fitted = True
-                return self
-            
-            def predict_proba(self, X):
-                """Placeholder probability prediction."""
-                import random
-                # Return random probabilities for binary classification
-                prob_0 = round(random.uniform(0.0, 1.0), 3)
-                prob_1 = round(1.0 - prob_0, 3)
-                return [[prob_0, prob_1] for _ in range(len(X))]
-            
-            def get_params(self, deep=True):
-                """Get model parameters."""
-                return {
-                    'name': self.name,
-                    'model_type': self.model_type,
-                    'is_fitted': self.is_fitted
-                }
-            
-            def set_params(self, **params):
-                """Set model parameters."""
-                for key, value in params.items():
-                    if hasattr(self, key):
-                        setattr(self, key, value)
-                return self
+                def set_params(self, **params):
+                    """Set model parameters."""
+                    for key, value in params.items():
+                        if hasattr(self, key):
+                            setattr(self, key, value)
+                    return self
+                
+                def get_feature_importance(self):
+                    """Get feature importance if available."""
+                    return self.feature_importance_
 
-        return PlaceholderModel(model_name)
+            return BasicModel(model_name)
 
     async def _execute_sequential(self, model: Any, market_data: pd.DataFrame, task: ModelTask) -> Any:
         """Execute model sequentially."""

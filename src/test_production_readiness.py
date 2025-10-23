@@ -174,13 +174,20 @@ class ProductionReadinessTester:
             state_manager = InMemoryStateManager()
             performance_reporter = PerformanceReporter(state_manager)
             
-            # Test trade logging
+            # Test trade logging with realistic data
+            base_price = 45000.0
+            price_change = np.random.normal(0, 0.02)  # 2% volatility
+            current_price = base_price * (1 + price_change)
+            
             trade_data = {
                 'symbol': 'BTCUSDT',
                 'action': 'BUY',
-                'quantity': 0.1,
-                'price': 50000,
-                'pnl': 100.0
+                'quantity': round(np.random.uniform(0.01, 0.1), 6),
+                'price': round(current_price, 2),
+                'pnl': round(np.random.normal(50, 200), 2),  # Realistic P&L
+                'commission': round(np.random.uniform(0.1, 1.0), 6),
+                'timestamp': datetime.now().isoformat(),
+                'order_id': f"test_order_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
             }
             
             await performance_reporter.log_trade(trade_data)
@@ -222,10 +229,12 @@ class ProductionReadinessTester:
             assert len(klines) == 60
             assert all(hasattr(kline, 'symbol') for kline in klines)
             
-            # Test order creation
-            order_result = await exchange_client.create_order('BTCUSDT', 'BUY', 0.001, 50000)
+            # Test order creation with realistic parameters
+            current_price = 45000.0 + np.random.normal(0, 1000)  # Realistic price
+            order_result = await exchange_client.create_order('BTCUSDT', 'BUY', 0.001, current_price)
             assert 'order_id' in order_result
             assert order_result['symbol'] == 'BTCUSDT'
+            assert order_result['status'] in ['FILLED', 'NEW']
             
             return {'success': True, 'message': 'Exchange integration tests passed'}
             
@@ -243,15 +252,39 @@ class ProductionReadinessTester:
             analyst = Analyst(state_manager, event_bus)
             await analyst.start()
             
-            # Create mock market data
+            # Create realistic market data for testing
+            base_price = 45000.0
+            volatility = 0.025
+            price_change = np.random.normal(0, volatility)
+            current_price = base_price * (1 + price_change)
+            
+            # Generate realistic OHLC data
+            price_range = current_price * volatility * 0.5
+            high = current_price + abs(np.random.normal(0, price_range * 0.3))
+            low = current_price - abs(np.random.normal(0, price_range * 0.3))
+            open_price = current_price + np.random.normal(0, price_range * 0.1)
+            close_price = current_price
+            
+            # Ensure OHLC consistency
+            high = max(high, open_price, close_price)
+            low = min(low, open_price, close_price)
+            
+            # Generate realistic volume
+            base_volume = 1000.0
+            volume_multiplier = 1.0
+            if abs(price_change) > volatility * 2:
+                volume_multiplier *= 2.0  # Higher volume during high volatility
+            
+            volume = base_volume * volume_multiplier * np.random.lognormal(0, 0.3)
+            
             market_data = type('MarketData', (), {
                 'symbol': 'BTCUSDT',
                 'timestamp': datetime.now(),
-                'open': 50000.0,
-                'high': 51000.0,
-                'low': 49000.0,
-                'close': 50500.0,
-                'volume': 1000.0,
+                'open': round(open_price, 2),
+                'high': round(high, 2),
+                'low': round(low, 2),
+                'close': round(close_price, 2),
+                'volume': round(volume, 2),
                 'interval': '1m'
             })()
             
@@ -292,13 +325,52 @@ class ProductionReadinessTester:
             # Test ML Trading Predictor
             predictor = MLTradingPredictor()
             
-            # Create mock input data
-            features = np.random.randn(100, 10)
+            # Create realistic input data with proper feature engineering
+            # Generate features that simulate technical indicators
+            n_samples = 100
+            n_features = 10
+            
+            # Generate realistic price-based features
+            base_prices = np.random.randn(n_samples) * 0.02 + 1.0  # Price changes
+            features = np.zeros((n_samples, n_features))
+            
+            # Feature 0: Price momentum (SMA crossover)
+            features[:, 0] = np.convolve(base_prices, np.ones(5)/5, mode='same') - np.convolve(base_prices, np.ones(20)/20, mode='same')
+            
+            # Feature 1: RSI-like momentum
+            gains = np.maximum(np.diff(base_prices, prepend=base_prices[0]), 0)
+            losses = np.maximum(-np.diff(base_prices, prepend=base_prices[0]), 0)
+            avg_gain = np.convolve(gains, np.ones(14)/14, mode='same')
+            avg_loss = np.convolve(losses, np.ones(14)/14, mode='same')
+            features[:, 1] = 100 - (100 / (1 + avg_gain / (avg_loss + 1e-8)))
+            
+            # Feature 2: Volatility (rolling standard deviation)
+            features[:, 2] = np.convolve(np.abs(np.diff(base_prices, prepend=base_prices[0])), np.ones(20)/20, mode='same')
+            
+            # Feature 3: Volume-weighted price (simulated)
+            volume = np.random.lognormal(0, 0.5, n_samples)
+            features[:, 3] = np.convolve(base_prices * volume, np.ones(10)/10, mode='same') / np.convolve(volume, np.ones(10)/10, mode='same')
+            
+            # Feature 4-9: Additional technical indicators
+            features[:, 4] = np.convolve(base_prices, np.ones(12)/12, mode='same')  # 12-period MA
+            features[:, 5] = np.convolve(base_prices, np.ones(26)/26, mode='same')  # 26-period MA
+            features[:, 6] = features[:, 4] - features[:, 5]  # MACD line
+            features[:, 7] = np.convolve(features[:, 6], np.ones(9)/9, mode='same')  # MACD signal
+            features[:, 8] = (base_prices - np.minimum.accumulate(base_prices)) / (np.maximum.accumulate(base_prices) - np.minimum.accumulate(base_prices) + 1e-8)  # Stochastic
+            features[:, 9] = np.random.randn(n_samples) * 0.1  # Random noise feature
+            
+            # Normalize features
+            features = (features - np.mean(features, axis=0)) / (np.std(features, axis=0) + 1e-8)
+            
             model_input = type('ModelInput', (), {
                 'features': features,
                 'symbol': 'BTCUSDT',
                 'timestamp': datetime.now(),
-                'market_data': {}
+                'market_data': {
+                    'current_price': 45000.0,
+                    'volume': 1000.0,
+                    'volatility': 0.025
+                }
             })()
             
             # Test market direction prediction
@@ -328,33 +400,43 @@ class ProductionReadinessTester:
         try:
             risk_manager = AdvancedRiskManager()
             
-            # Test trade validation
+            # Test trade validation with realistic parameters
+            base_price = 45000.0
+            price_change = np.random.normal(0, 0.02)
+            current_price = base_price * (1 + price_change)
+            
             trade_decision = type('TradeDecision', (), {
                 'symbol': 'BTCUSDT',
                 'action': 'BUY',
-                'quantity': 0.1,
-                'price': 50000.0,
-                'leverage': 2.0,
-                'stop_loss': 49000.0,
-                'take_profit': 52000.0,
-                'confidence': 0.8,
-                'risk_score': 0.3,
+                'quantity': round(np.random.uniform(0.01, 0.1), 6),
+                'price': round(current_price, 2),
+                'leverage': np.random.uniform(1.0, 3.0),
+                'stop_loss': round(current_price * 0.95, 2),  # 5% stop loss
+                'take_profit': round(current_price * 1.10, 2),  # 10% take profit
+                'confidence': np.random.uniform(0.6, 0.9),
+                'risk_score': np.random.uniform(0.2, 0.6),
                 'timestamp': datetime.now()
             })()
             
             is_valid = await risk_manager.validate_trade(trade_decision)
             assert isinstance(is_valid, bool)
             
-            # Test position size calculation
+            # Test position size calculation with realistic account info
+            account_balance = np.random.uniform(5000, 50000)  # $5k-$50k account
             account_info = {
-                'balances': [{'asset': 'USDT', 'free': '10000.0'}]
+                'balances': [
+                    {'asset': 'USDT', 'free': f'{account_balance:.2f}'},
+                    {'asset': 'BTC', 'free': f'{np.random.uniform(0.01, 0.5):.6f}'},
+                    {'asset': 'ETH', 'free': f'{np.random.uniform(1.0, 10.0):.4f}'}
+                ]
             }
             risk_params = type('RiskParameters', (), {
-                'max_position_size': 0.1,
-                'stop_loss_pct': 2.0,
-                'take_profit_pct': 4.0,
-                'max_drawdown': 0.15,
-                'risk_score': 0.3
+                'max_position_size': np.random.uniform(0.05, 0.15),  # 5-15% position size
+                'stop_loss_pct': np.random.uniform(1.5, 3.0),  # 1.5-3% stop loss
+                'take_profit_pct': np.random.uniform(3.0, 6.0),  # 3-6% take profit
+                'max_drawdown': np.random.uniform(0.10, 0.20),  # 10-20% max drawdown
+                'risk_score': np.random.uniform(0.2, 0.6),
+                'leverage': np.random.uniform(1.0, 3.0)
             })()
             
             position_size = await risk_manager.calculate_position_size('BTCUSDT', account_info, risk_params)

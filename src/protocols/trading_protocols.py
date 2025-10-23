@@ -5,10 +5,73 @@ Enhanced trading system protocols with comprehensive type safety (minimal scaffo
 """
 
 from abc import abstractmethod
-from typing import TYPE_CHECKING, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Protocol, runtime_checkable, NamedTuple
+from datetime import datetime
+from typing import NewType
+
+# Define basic types for runtime use
+Symbol = NewType('Symbol', str)
+Timestamp = NewType('Timestamp', datetime)
+
+# Define basic trading types for runtime use
+class PositionInfo(NamedTuple):
+    symbol: str
+    size: float
+    side: str
+    entry_price: float
+    current_price: float
+    unrealized_pnl: float
+    margin_used: float
+
+class PredictionResult(NamedTuple):
+    prediction: float
+    confidence: float
+    probability: float
+    features_used: list
+    model_version: str
+    timestamp: datetime
+
+class ModelInput(NamedTuple):
+    features: list
+    symbol: str
+    timestamp: datetime
+    market_data: dict
+
+class RegimeClassification(NamedTuple):
+    regime: str
+    confidence: float
+    probability_distribution: dict
+    features_used: list
+    timestamp: datetime
+
+class RiskParameters(NamedTuple):
+    max_position_size: float
+    stop_loss_pct: float
+    take_profit_pct: float
+    max_drawdown: float
+    risk_score: float
+
+class TradeDecision(NamedTuple):
+    symbol: str
+    action: str
+    quantity: float
+    price: float
+    leverage: float
+    stop_loss: float
+    take_profit: float
+    confidence: float
+    risk_score: float
+    timestamp: datetime
+
+class TradingSignal(NamedTuple):
+    signal_type: str
+    strength: float
+    direction: str
+    confidence: float
+    features: dict
+    timestamp: datetime
 
 if TYPE_CHECKING:
-    from src.custom_types.base_types import Symbol, Timestamp
     from src.custom_types.ml_types import PredictionResult, ModelInput
     import logging
 

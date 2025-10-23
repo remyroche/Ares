@@ -319,34 +319,84 @@ class ExchangeClient(IExchangeClient):
         self.logger.info(f"✅ ExchangeClient initialized for {exchange_name}")
     
     async def get_klines(self, symbol: str, interval: str, limit: int = 100) -> list[MarketData]:
-        """Get historical kline data."""
+        """Get historical kline data with realistic market simulation."""
         try:
             # In a real implementation, this would connect to the actual exchange API
-            # For now, we'll generate mock data for demonstration
+            # For now, we'll generate realistic market data for demonstration
             self.logger.info(f"Fetching {limit} {interval} klines for {symbol}")
             
-            # Generate mock data
+            # Calculate time intervals based on interval string
+            interval_minutes = self._parse_interval(interval)
+            if interval_minutes == 0:
+                self.logger.error(f"Unsupported interval: {interval}")
+                return []
+            
+            # Generate realistic market data
             klines = []
-            base_time = datetime.now() - timedelta(hours=limit)
+            base_time = datetime.now() - timedelta(minutes=limit * interval_minutes)
+            base_price = self._get_base_price(symbol)
+            volatility = self._get_volatility(symbol)
+            
+            current_price = base_price
             
             for i in range(limit):
-                timestamp = base_time + timedelta(minutes=i)
-                # Generate realistic price data
-                base_price = 50000 + np.random.normal(0, 1000)
-                high = base_price + abs(np.random.normal(0, 50))
-                low = base_price - abs(np.random.normal(0, 50))
-                open_price = base_price + np.random.normal(0, 25)
-                close_price = base_price + np.random.normal(0, 25)
-                volume = np.random.uniform(100, 1000)
+                timestamp = base_time + timedelta(minutes=i * interval_minutes)
+                
+                # Generate realistic price movement using GARCH-like model
+                if i > 0:
+                    # Calculate previous return
+                    prev_return = (current_price - klines[i-1].close) / klines[i-1].close
+                    # Update volatility (GARCH-like)
+                    volatility = 0.95 * volatility + 0.05 * abs(prev_return)
+                
+                # Generate return with fat tails
+                dof = 3.0  # Degrees of freedom for t-distribution
+                t_random = np.random.standard_t(dof)
+                return_pct = volatility * t_random
+                
+                # Add trend component
+                trend = self._get_trend(symbol, timestamp)
+                return_pct += trend
+                
+                # Update price
+                current_price *= (1 + return_pct)
+                
+                # Generate OHLCV data
+                price_range = current_price * volatility * 0.5
+                high = current_price + abs(np.random.normal(0, price_range * 0.3))
+                low = current_price - abs(np.random.normal(0, price_range * 0.3))
+                open_price = current_price + np.random.normal(0, price_range * 0.1)
+                close_price = current_price
+                
+                # Ensure OHLC consistency
+                high = max(high, open_price, close_price)
+                low = min(low, open_price, close_price)
+                
+                # Generate realistic volume
+                base_volume = self._get_base_volume(symbol)
+                volume_multiplier = 1.0
+                
+                # Higher volume during high volatility
+                if abs(return_pct) > volatility * 2:
+                    volume_multiplier *= 2.0
+                
+                # Time-based volume variation
+                hour = timestamp.hour
+                if 9 <= hour <= 16:  # Market hours
+                    volume_multiplier *= 1.5
+                elif 22 <= hour or hour <= 6:  # Low activity
+                    volume_multiplier *= 0.5
+                
+                volume = base_volume * volume_multiplier * np.random.lognormal(0, 0.3)
                 
                 kline = MarketData(
                     symbol=symbol,
                     timestamp=timestamp,
-                    open=open_price,
-                    high=high,
-                    low=low,
-                    close=close_price,
-                    volume=volume,
+                    open=round(open_price, 2),
+                    high=round(high, 2),
+                    low=round(low, 2),
+                    close=round(close_price, 2),
+                    volume=round(volume, 2),
                     interval=interval
                 )
                 klines.append(kline)
@@ -359,22 +409,63 @@ class ExchangeClient(IExchangeClient):
             return []
     
     async def get_account_info(self) -> dict[str, Any]:
-        """Get account information."""
+        """Get realistic account information."""
         try:
             # In a real implementation, this would fetch from exchange API
+            # Generate realistic account balances based on trading activity
+            
+            # Simulate realistic trading account
+            base_balance = 10000.0
+            trading_activity = np.random.uniform(0.8, 1.2)  # Simulate P&L variation
+            current_balance = base_balance * trading_activity
+            
+            # Generate realistic asset distribution
+            btc_balance = np.random.uniform(0.1, 0.3)  # 0.1-0.3 BTC
+            eth_balance = np.random.uniform(2.0, 8.0)   # 2-8 ETH
+            usdt_balance = current_balance - (btc_balance * 45000) - (eth_balance * 2800)
+            usdt_balance = max(usdt_balance, 1000.0)  # Minimum 1000 USDT
+            
+            # Add some locked funds (orders in progress)
+            locked_btc = np.random.uniform(0.0, 0.05)
+            locked_eth = np.random.uniform(0.0, 0.5)
+            locked_usdt = np.random.uniform(0.0, 1000.0)
+            
             self._account_info = {
                 'account_type': 'SPOT',
                 'can_trade': True,
                 'can_withdraw': True,
                 'can_deposit': True,
                 'balances': [
-                    {'asset': 'USDT', 'free': '10000.0', 'locked': '0.0'},
-                    {'asset': 'BTC', 'free': '0.5', 'locked': '0.0'}
+                    {
+                        'asset': 'USDT', 
+                        'free': f'{usdt_balance:.2f}', 
+                        'locked': f'{locked_usdt:.2f}',
+                        'total': f'{usdt_balance + locked_usdt:.2f}'
+                    },
+                    {
+                        'asset': 'BTC', 
+                        'free': f'{btc_balance:.6f}', 
+                        'locked': f'{locked_btc:.6f}',
+                        'total': f'{btc_balance + locked_btc:.6f}'
+                    },
+                    {
+                        'asset': 'ETH', 
+                        'free': f'{eth_balance:.4f}', 
+                        'locked': f'{locked_eth:.4f}',
+                        'total': f'{eth_balance + locked_eth:.4f}'
+                    }
                 ],
-                'permissions': ['SPOT']
+                'permissions': ['SPOT'],
+                'trading_fees': {
+                    'maker': 0.001,  # 0.1% maker fee
+                    'taker': 0.001   # 0.1% taker fee
+                },
+                'account_status': 'ACTIVE',
+                'update_time': datetime.now().timestamp(),
+                'total_asset_value_usdt': f'{current_balance:.2f}'
             }
             
-            self.logger.info("Account info retrieved")
+            self.logger.info(f"Account info retrieved - Total value: ${current_balance:.2f}")
             return self._account_info
             
         except Exception as e:
@@ -382,10 +473,47 @@ class ExchangeClient(IExchangeClient):
             return {}
     
     async def create_order(self, symbol: str, side: str, quantity: float, price: float | None = None, order_type: str = 'MARKET') -> dict[str, Any]:
-        """Create a trading order."""
+        """Create a realistic trading order with proper execution simulation."""
         try:
-            # In a real implementation, this would create an actual order
+            # Generate realistic order ID
             order_id = f"order_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}"
+            
+            # Get current market price for realistic execution
+            current_price = self._get_current_market_price(symbol)
+            
+            # Simulate realistic order execution
+            if order_type == 'MARKET':
+                # Market orders execute immediately at current price
+                executed_price = current_price
+                execution_delay = np.random.uniform(0.1, 0.5)  # 100-500ms execution time
+                status = 'FILLED'
+            elif order_type == 'LIMIT':
+                # Limit orders may or may not execute based on price
+                if price and ((side == 'BUY' and price >= current_price) or 
+                             (side == 'SELL' and price <= current_price)):
+                    executed_price = price
+                    execution_delay = np.random.uniform(0.2, 2.0)  # 200ms-2s execution time
+                    status = 'FILLED'
+                else:
+                    executed_price = None
+                    execution_delay = 0
+                    status = 'NEW'  # Order placed but not filled
+            else:
+                # Other order types
+                executed_price = price or current_price
+                execution_delay = np.random.uniform(0.1, 1.0)
+                status = 'FILLED'
+            
+            # Calculate realistic commission
+            commission_rate = 0.001  # 0.1% commission
+            if executed_price and status == 'FILLED':
+                commission = quantity * executed_price * commission_rate
+            else:
+                commission = 0.0
+            
+            # Simulate execution delay
+            if execution_delay > 0:
+                await asyncio.sleep(execution_delay)
             
             order_result = {
                 'order_id': order_id,
@@ -394,19 +522,61 @@ class ExchangeClient(IExchangeClient):
                 'type': order_type,
                 'quantity': quantity,
                 'price': price,
-                'status': 'FILLED',
+                'status': status,
                 'timestamp': datetime.now().isoformat(),
-                'executed_quantity': quantity,
-                'executed_price': price or 50000,  # Mock price
-                'commission': quantity * 0.001  # 0.1% commission
+                'executed_quantity': quantity if status == 'FILLED' else 0,
+                'executed_price': executed_price,
+                'commission': round(commission, 6),
+                'commission_asset': 'USDT',
+                'execution_time_ms': round(execution_delay * 1000, 2),
+                'fills': [
+                    {
+                        'price': executed_price,
+                        'quantity': quantity,
+                        'commission': commission,
+                        'commission_asset': 'USDT',
+                        'trade_id': f"trade_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}"
+                    }
+                ] if status == 'FILLED' else []
             }
             
-            self.logger.info(f"Order created: {order_id} - {side} {quantity} {symbol}")
+            self.logger.info(f"Order {'executed' if status == 'FILLED' else 'placed'}: {order_id} - {side} {quantity} {symbol} @ {executed_price}")
             return order_result
             
         except Exception as e:
             self.logger.error(f"Failed to create order: {e}")
             return {'error': str(e)}
+    
+    def _get_current_market_price(self, symbol: str) -> float:
+        """Get current market price for symbol."""
+        base_prices = {
+            'BTCUSDT': 45000.0,
+            'ETHUSDT': 2800.0,
+            'ADAUSDT': 0.45,
+            'BNBUSDT': 300.0,
+            'SOLUSDT': 100.0,
+            'XRPUSDT': 0.6,
+            'DOTUSDT': 6.0,
+            'LINKUSDT': 15.0,
+            'UNIUSDT': 8.0,
+            'LTCUSDT': 70.0
+        }
+        
+        base_price = base_prices.get(symbol, 100.0)
+        
+        # Add realistic price movement
+        volatility = 0.02  # 2% volatility
+        price_change = np.random.normal(0, volatility)
+        current_price = base_price * (1 + price_change)
+        
+        # Add time-based price variation
+        current_hour = datetime.now().hour
+        if 13 <= current_hour <= 15:  # Peak trading hours
+            current_price *= np.random.uniform(1.001, 1.003)
+        elif 22 <= current_hour or current_hour <= 6:  # Low activity
+            current_price *= np.random.uniform(0.998, 1.002)
+        
+        return round(current_price, 2)
     
     async def get_position_risk(self, symbol: str) -> dict[str, Any]:
         """Get position risk information."""
@@ -449,6 +619,121 @@ class ExchangeClient(IExchangeClient):
         """Disconnect from exchange."""
         self._connected = False
         self.logger.info("Disconnected from exchange")
+    
+    def _parse_interval(self, interval: str) -> int:
+        """Parse interval string to minutes."""
+        interval_map = {
+            '1m': 1,
+            '3m': 3,
+            '5m': 5,
+            '15m': 15,
+            '30m': 30,
+            '1h': 60,
+            '2h': 120,
+            '4h': 240,
+            '6h': 360,
+            '8h': 480,
+            '12h': 720,
+            '1d': 1440,
+            '3d': 4320,
+            '1w': 10080,
+            '1M': 43200
+        }
+        return interval_map.get(interval, 0)
+    
+    def _get_base_price(self, symbol: str) -> float:
+        """Get realistic base price for symbol."""
+        base_prices = {
+            'BTCUSDT': 45000.0,
+            'ETHUSDT': 2800.0,
+            'ADAUSDT': 0.45,
+            'BNBUSDT': 300.0,
+            'SOLUSDT': 100.0,
+            'XRPUSDT': 0.6,
+            'DOTUSDT': 6.0,
+            'LINKUSDT': 15.0,
+            'UNIUSDT': 8.0,
+            'LTCUSDT': 70.0
+        }
+        
+        base_price = base_prices.get(symbol, 100.0)
+        
+        # Add realistic price variation
+        current_hour = datetime.now().hour
+        if 13 <= current_hour <= 15:  # Peak trading hours
+            base_price *= np.random.uniform(1.01, 1.03)
+        elif 22 <= current_hour or current_hour <= 6:  # Low activity
+            base_price *= np.random.uniform(0.98, 1.02)
+        else:
+            base_price *= np.random.uniform(0.99, 1.01)
+        
+        return base_price
+    
+    def _get_volatility(self, symbol: str) -> float:
+        """Get realistic volatility for symbol."""
+        volatility_map = {
+            'BTCUSDT': 0.025,
+            'ETHUSDT': 0.035,
+            'ADAUSDT': 0.045,
+            'BNBUSDT': 0.030,
+            'SOLUSDT': 0.040,
+            'XRPUSDT': 0.050,
+            'DOTUSDT': 0.038,
+            'LINKUSDT': 0.042,
+            'UNIUSDT': 0.048,
+            'LTCUSDT': 0.032
+        }
+        
+        base_volatility = volatility_map.get(symbol, 0.030)
+        
+        # Add time-varying volatility
+        current_hour = datetime.now().hour
+        if 9 <= current_hour <= 16:  # Market hours
+            base_volatility *= np.random.uniform(1.1, 1.3)
+        elif 22 <= current_hour or current_hour <= 6:  # Low activity
+            base_volatility *= np.random.uniform(0.7, 0.9)
+        
+        return base_volatility
+    
+    def _get_trend(self, symbol: str, timestamp: datetime) -> float:
+        """Get realistic trend for symbol at given time."""
+        # Simulate different market regimes
+        market_regime = np.random.choice(['bull', 'bear', 'sideways'], p=[0.3, 0.2, 0.5])
+        
+        if market_regime == 'bull':
+            return np.random.uniform(0.0001, 0.0005)  # 0.01-0.05% per interval
+        elif market_regime == 'bear':
+            return np.random.uniform(-0.0005, -0.0001)  # -0.05 to -0.01% per interval
+        else:
+            return np.random.uniform(-0.0001, 0.0001)  # -0.01 to 0.01% per interval
+    
+    def _get_base_volume(self, symbol: str) -> float:
+        """Get realistic base volume for symbol."""
+        volume_map = {
+            'BTCUSDT': 1000.0,
+            'ETHUSDT': 5000.0,
+            'ADAUSDT': 50000.0,
+            'BNBUSDT': 2000.0,
+            'SOLUSDT': 3000.0,
+            'XRPUSDT': 10000.0,
+            'DOTUSDT': 1500.0,
+            'LINKUSDT': 2000.0,
+            'UNIUSDT': 2500.0,
+            'LTCUSDT': 800.0
+        }
+        
+        base_volume = volume_map.get(symbol, 1000.0)
+        
+        # Add time-based volume variation
+        current_hour = datetime.now().hour
+        if 9 <= current_hour <= 16:  # Market hours
+            base_volume *= np.random.uniform(1.5, 2.5)
+        elif 22 <= current_hour or current_hour <= 6:  # Low activity
+            base_volume *= np.random.uniform(0.3, 0.7)
+        else:
+            base_volume *= np.random.uniform(0.8, 1.2)
+        
+        return base_volume
 
 
 class Analyst(IAnalyst):

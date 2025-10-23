@@ -1,0 +1,277 @@
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix prov: <http://www.w3.org/ns/prov#> .
+@prefix qudt: <http://qudt.org/schema/qudt/> .
+@prefix chebi: <http://purl.obolibrary.org/obo/CHEBI_> .
+@prefix ncbi: <http://purl.obolibrary.org/obo/NCBITaxon_> .
+@prefix envo: <http://purl.obolibrary.org/obo/ENVO_> .
+@prefix po: <http://purl.obolibrary.org/obo/PO_> .
+@prefix ex: <http://example.org/truffle/kg#> .
+
+# Core Classes
+ex:Fungus a owl:Class ;
+    rdfs:label "Fungus" ;
+    rdfs:comment "Truffle fungus species, strains, and genotypes" .
+
+ex:HostTree a owl:Class ;
+    rdfs:label "Host Tree" ;
+    rdfs:comment "Tree species that can form mycorrhizal associations with truffles" .
+
+ex:Mycorrhiza a owl:Class ;
+    rdfs:label "Mycorrhiza" ;
+    rdfs:comment "Mycorrhizal association between fungus and host tree" .
+
+ex:NutrientRecipe a owl:Class ;
+    rdfs:label "Nutrient Recipe" ;
+    rdfs:comment "Composition of macro and micro nutrients for hydroponic cultivation" .
+
+ex:Nutrient a owl:Class ;
+    rdfs:label "Nutrient" ;
+    rdfs:comment "Individual nutrient compound with concentration and form" .
+
+ex:Environment a owl:Class ;
+    rdfs:label "Environment" ;
+    rdfs:comment "Environmental conditions (pH, EC, DO, CO2, temp, RH, light, flow)" .
+
+ex:Protocol a owl:Class ;
+    rdfs:label "Protocol" ;
+    rdfs:comment "Experimental or cultivation protocol (inoculation, sterilization, etc.)" .
+
+ex:Experiment a owl:Class ;
+    rdfs:label "Experiment" ;
+    rdfs:comment "Experimental design with replicates, sensors, and measurement schedule" .
+
+ex:Outcome a owl:Class ;
+    rdfs:label "Outcome" ;
+    rdfs:comment "Measured results (colonization %, hyphal density, yield, etc.)" .
+
+ex:Evidence a owl:Class ;
+    rdfs:label "Evidence" ;
+    rdfs:comment "Evidence supporting measurements and observations" .
+
+ex:Measurement a owl:Class ;
+    rdfs:label "Measurement" ;
+    rdfs:comment "Quantitative measurement with value, unit, and uncertainty" .
+
+# Object Properties
+ex:formsMycorrhizaWith a owl:ObjectProperty ;
+    rdfs:domain ex:Fungus ;
+    rdfs:range ex:HostTree ;
+    rdfs:label "forms mycorrhiza with" .
+
+ex:observedUnder a owl:ObjectProperty ;
+    rdfs:domain ex:Mycorrhiza ;
+    rdfs:range ex:Environment ;
+    rdfs:label "observed under" .
+
+ex:hasNutrient a owl:ObjectProperty ;
+    rdfs:domain ex:NutrientRecipe ;
+    rdfs:range ex:Nutrient ;
+    rdfs:label "has nutrient" .
+
+ex:hasOutcome a owl:ObjectProperty ;
+    rdfs:domain ex:Experiment ;
+    rdfs:range ex:Outcome ;
+    rdfs:label "has outcome" .
+
+ex:hasProvenance a owl:ObjectProperty ;
+    rdfs:range prov:Entity, prov:Activity ;
+    rdfs:label "has provenance" .
+
+ex:supportedBy a owl:ObjectProperty ;
+    rdfs:domain ex:Outcome ;
+    rdfs:range ex:Evidence ;
+    rdfs:label "supported by" .
+
+ex:usesProtocol a owl:ObjectProperty ;
+    rdfs:domain ex:Experiment ;
+    rdfs:range ex:Protocol ;
+    rdfs:label "uses protocol" .
+
+ex:usesNutrientRecipe a owl:ObjectProperty ;
+    rdfs:domain ex:Experiment ;
+    rdfs:range ex:NutrientRecipe ;
+    rdfs:label "uses nutrient recipe" .
+
+ex:hasMeasurement a owl:ObjectProperty ;
+    rdfs:domain ex:Outcome ;
+    rdfs:range ex:Measurement ;
+    rdfs:label "has measurement" .
+
+# Data Properties
+ex:species a owl:DatatypeProperty ;
+    rdfs:domain ex:Fungus, ex:HostTree ;
+    rdfs:range xsd:string ;
+    rdfs:label "species" .
+
+ex:strain a owl:DatatypeProperty ;
+    rdfs:domain ex:Fungus ;
+    rdfs:range xsd:string ;
+    rdfs:label "strain" .
+
+ex:genotype a owl:DatatypeProperty ;
+    rdfs:domain ex:Fungus ;
+    rdfs:range xsd:string ;
+    rdfs:label "genotype" .
+
+ex:matingType a owl:DatatypeProperty ;
+    rdfs:domain ex:Fungus ;
+    rdfs:range xsd:string ;
+    rdfs:label "mating type" .
+
+ex:age a owl:DatatypeProperty ;
+    rdfs:domain ex:HostTree ;
+    rdfs:range xsd:integer ;
+    rdfs:label "age" .
+
+ex:rootstock a owl:DatatypeProperty ;
+    rdfs:domain ex:HostTree ;
+    rdfs:range xsd:string ;
+    rdfs:label "rootstock" .
+
+ex:pH a owl:DatatypeProperty ;
+    rdfs:domain ex:Environment ;
+    rdfs:range xsd:decimal ;
+    rdfs:label "pH" .
+
+ex:EC a owl:DatatypeProperty ;
+    rdfs:domain ex:Environment ;
+    rdfs:range xsd:decimal ;
+    rdfs:label "electrical conductivity" .
+
+ex:DO a owl:DatatypeProperty ;
+    rdfs:domain ex:Environment ;
+    rdfs:range xsd:decimal ;
+    rdfs:label "dissolved oxygen" .
+
+ex:CO2 a owl:DatatypeProperty ;
+    rdfs:domain ex:Environment ;
+    rdfs:range xsd:decimal ;
+    rdfs:label "CO2 concentration" .
+
+ex:temperature a owl:DatatypeProperty ;
+    rdfs:domain ex:Environment ;
+    rdfs:range xsd:decimal ;
+    rdfs:label "temperature" .
+
+ex:humidity a owl:DatatypeProperty ;
+    rdfs:domain ex:Environment ;
+    rdfs:range xsd:decimal ;
+    rdfs:label "relative humidity" .
+
+ex:flowRate a owl:DatatypeProperty ;
+    rdfs:domain ex:Environment ;
+    rdfs:range xsd:decimal ;
+    rdfs:label "flow rate" .
+
+ex:concentration a owl:DatatypeProperty ;
+    rdfs:domain ex:Nutrient ;
+    rdfs:range xsd:decimal ;
+    rdfs:label "concentration" .
+
+ex:unit a owl:DatatypeProperty ;
+    rdfs:domain ex:Measurement ;
+    rdfs:range xsd:string ;
+    rdfs:label "unit" .
+
+ex:value a owl:DatatypeProperty ;
+    rdfs:domain ex:Measurement ;
+    rdfs:range xsd:decimal ;
+    rdfs:label "value" .
+
+ex:uncertainty a owl:DatatypeProperty ;
+    rdfs:domain ex:Measurement ;
+    rdfs:range xsd:decimal ;
+    rdfs:label "uncertainty" .
+
+ex:confidence a owl:DatatypeProperty ;
+    rdfs:domain ex:Measurement ;
+    rdfs:range xsd:decimal ;
+    rdfs:label "confidence" .
+
+ex:evidenceCode a owl:DatatypeProperty ;
+    rdfs:domain ex:Evidence ;
+    rdfs:range xsd:string ;
+    rdfs:label "evidence code" .
+
+ex:inoculationMethod a owl:DatatypeProperty ;
+    rdfs:domain ex:Protocol ;
+    rdfs:range xsd:string ;
+    rdfs:label "inoculation method" .
+
+ex:colonizationPercent a owl:DatatypeProperty ;
+    rdfs:domain ex:Outcome ;
+    rdfs:range xsd:decimal ;
+    rdfs:label "colonization percent" .
+
+ex:hyphalDensity a owl:DatatypeProperty ;
+    rdfs:domain ex:Outcome ;
+    rdfs:range xsd:decimal ;
+    rdfs:label "hyphal density" .
+
+ex:yield a owl:DatatypeProperty ;
+    rdfs:domain ex:Outcome ;
+    rdfs:range xsd:decimal ;
+    rdfs:label "yield" .
+
+# Specific instances for common truffle species
+ex:Tuber_melanosporum a ex:Fungus ;
+    ex:species "Tuber melanosporum" ;
+    rdfs:label "Black Truffle" .
+
+ex:Tuber_magnatum a ex:Fungus ;
+    ex:species "Tuber magnatum" ;
+    rdfs:label "White Truffle" .
+
+ex:Tuber_borchii a ex:Fungus ;
+    ex:species "Tuber borchii" ;
+    rdfs:label "Bianchetto Truffle" .
+
+# Common host trees
+ex:Quercus_ilex a ex:HostTree ;
+    ex:species "Quercus ilex" ;
+    rdfs:label "Holm Oak" .
+
+ex:Quercus_petraea a ex:HostTree ;
+    ex:species "Quercus petraea" ;
+    rdfs:label "Sessile Oak" .
+
+ex:Corylus_avellana a ex:HostTree ;
+    ex:species "Corylus avellana" ;
+    rdfs:label "Hazel" .
+
+# Common nutrients
+ex:Nitrate a ex:Nutrient ;
+    rdfs:label "Nitrate" .
+
+ex:Phosphate a ex:Nutrient ;
+    rdfs:label "Phosphate" .
+
+ex:Potassium a ex:Nutrient ;
+    rdfs:label "Potassium" .
+
+ex:Calcium a ex:Nutrient ;
+    rdfs:label "Calcium" .
+
+ex:Magnesium a ex:Nutrient ;
+    rdfs:label "Magnesium" .
+
+ex:Iron a ex:Nutrient ;
+    rdfs:label "Iron" .
+
+ex:Zinc a ex:Nutrient ;
+    rdfs:label "Zinc" .
+
+ex:Manganese a ex:Nutrient ;
+    rdfs:label "Manganese" .
+
+ex:Copper a ex:Nutrient ;
+    rdfs:label "Copper" .
+
+ex:Boron a ex:Nutrient ;
+    rdfs:label "Boron" .
+
+ex:Molybdenum a ex:Nutrient ;
+    rdfs:label "Molybdenum" .

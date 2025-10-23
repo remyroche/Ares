@@ -58,6 +58,14 @@ class EnhancedEarlyStoppingConfig:
 class EarlyStoppingStrategy(ABC):
     """Abstract base class for early stopping strategies."""
     
+    def __init__(self, config: EnhancedEarlyStoppingConfig = None):
+        """Initialize early stopping strategy."""
+        self.config = config or EnhancedEarlyStoppingConfig()
+        self.stopping_reason = None
+        self.trials_without_improvement = 0
+        self.best_value = float('-inf') if self.config.direction == 'maximize' else float('inf')
+        self.best_trial = 0
+    
     @abstractmethod
     def should_stop(self, history: List[float], current_trial: int) -> bool:
         """Determine if optimization should stop early."""
@@ -67,6 +75,30 @@ class EarlyStoppingStrategy(ABC):
     def get_stopping_reason(self) -> str:
         """Get reason for early stopping."""
         pass
+    
+    def reset(self):
+        """Reset the early stopping strategy state."""
+        self.stopping_reason = None
+        self.trials_without_improvement = 0
+        self.best_value = float('-inf') if self.config.direction == 'maximize' else float('inf')
+        self.best_trial = 0
+    
+    def update_best_value(self, value: float, trial: int):
+        """Update the best value and trial."""
+        if self.config.direction == 'maximize':
+            if value > self.best_value:
+                self.best_value = value
+                self.best_trial = trial
+                self.trials_without_improvement = 0
+            else:
+                self.trials_without_improvement += 1
+        else:
+            if value < self.best_value:
+                self.best_value = value
+                self.best_trial = trial
+                self.trials_without_improvement = 0
+            else:
+                self.trials_without_improvement += 1
 
 
 class AdaptivePatienceStrategy(EarlyStoppingStrategy):
@@ -146,6 +178,177 @@ class AdaptivePatienceStrategy(EarlyStoppingStrategy):
         
         convergence_rate = max(0.1, min(2.0, avg_improvement / value_range * 10))
         return convergence_rate
+
+
+class ConvergenceBasedStrategy(EarlyStoppingStrategy):
+    """Convergence-based early stopping strategy."""
+    
+    def __init__(self, config: EnhancedEarlyStoppingConfig = None):
+        super().__init__(config)
+        self.convergence_window = config.convergence_window if config else 10
+        self.min_improvement_rate = config.min_improvement_rate if config else 0.001
+        self.convergence_history = []
+    
+    def should_stop(self, history: List[float], current_trial: int) -> bool:
+        """Check if convergence criteria is met."""
+        if len(history) < self.convergence_window:
+            return False
+        
+        # Calculate convergence rate
+        recent_values = history[-self.convergence_window:]
+        if len(recent_values) < 5:
+            return False
+        
+        # Calculate improvement rate
+        improvements = []
+        for i in range(1, len(recent_values)):
+            if self.config.direction == 'maximize':
+                improvement = recent_values[i] - recent_values[i-1]
+            else:
+                improvement = recent_values[i-1] - recent_values[i]
+            improvements.append(improvement)
+        
+        if not improvements:
+            return False
+        
+        avg_improvement = np.mean(improvements)
+        value_range = max(recent_values) - min(recent_values)
+        
+        if value_range == 0:
+            return True  # No variation, consider converged
+        
+        improvement_rate = avg_improvement / value_range
+        self.convergence_history.append(improvement_rate)
+        
+        # Check if improvement rate is below threshold
+        if improvement_rate < self.min_improvement_rate:
+            self.stopping_reason = f"Convergence achieved: improvement rate {improvement_rate:.6f} < {self.min_improvement_rate}"
+            return True
+        
+        return False
+    
+    def get_stopping_reason(self) -> str:
+        """Get reason for early stopping."""
+        return self.stopping_reason or "No stopping reason available"
+
+
+class PerformanceBasedStrategy(EarlyStoppingStrategy):
+    """Performance-based early stopping strategy."""
+    
+    def __init__(self, config: EnhancedEarlyStoppingConfig = None):
+        super().__init__(config)
+        self.performance_threshold = config.performance_threshold if config else 0.95
+        self.performance_window = config.performance_window if config else 5
+        self.performance_history = []
+    
+    def should_stop(self, history: List[float], current_trial: int) -> bool:
+        """Check if performance criteria is met."""
+        if len(history) < self.performance_window:
+            return False
+        
+        # Calculate current performance relative to best possible
+        current_best = max(history) if self.config.direction == 'maximize' else min(history)
+        theoretical_best = max(history) if self.config.direction == 'maximize' else min(history)
+        
+        if theoretical_best == 0:
+            performance_ratio = 1.0
+        else:
+            performance_ratio = current_best / theoretical_best if self.config.direction == 'maximize' else theoretical_best / current_best
+        
+        self.performance_history.append(performance_ratio)
+        
+        # Check if performance is above threshold
+        if performance_ratio >= self.performance_threshold:
+            self.stopping_reason = f"Performance threshold reached: {performance_ratio:.4f} >= {self.performance_threshold}"
+            return True
+        
+        return False
+    
+    def get_stopping_reason(self) -> str:
+        """Get reason for early stopping."""
+        return self.stopping_reason or "No stopping reason available"
+
+
+class TimeBasedStrategy(EarlyStoppingStrategy):
+    """Time-based early stopping strategy."""
+    
+    def __init__(self, config: EnhancedEarlyStoppingConfig = None):
+        super().__init__(config)
+        self.max_time_seconds = config.max_time_seconds if config else 3600  # 1 hour default
+        self.start_time = time.time()
+    
+    def should_stop(self, history: List[float], current_trial: int) -> bool:
+        """Check if time limit is exceeded."""
+        elapsed_time = time.time() - self.start_time
+        
+        if elapsed_time >= self.max_time_seconds:
+            self.stopping_reason = f"Time limit exceeded: {elapsed_time:.2f}s >= {self.max_time_seconds}s"
+            return True
+        
+        return False
+    
+    def get_stopping_reason(self) -> str:
+        """Get reason for early stopping."""
+        return self.stopping_reason or "No stopping reason available"
+
+
+class TrialBasedStrategy(EarlyStoppingStrategy):
+    """Trial-based early stopping strategy."""
+    
+    def __init__(self, config: EnhancedEarlyStoppingConfig = None):
+        super().__init__(config)
+        self.max_trials = config.max_trials if config else 1000
+        self.min_trials = config.min_trials if config else 10
+    
+    def should_stop(self, history: List[float], current_trial: int) -> bool:
+        """Check if trial limit is exceeded."""
+        if current_trial >= self.max_trials:
+            self.stopping_reason = f"Trial limit exceeded: {current_trial} >= {self.max_trials}"
+            return True
+        
+        if current_trial < self.min_trials:
+            return False
+        
+        # Also check for improvement
+        if len(history) >= 2:
+            recent_improvement = abs(history[-1] - history[-2])
+            if recent_improvement < self.config.early_stopping_threshold:
+                self.trials_without_improvement += 1
+            else:
+                self.trials_without_improvement = 0
+            
+            if self.trials_without_improvement >= self.config.early_stopping_patience:
+                self.stopping_reason = f"No improvement for {self.trials_without_improvement} trials"
+                return True
+        
+        return False
+    
+    def get_stopping_reason(self) -> str:
+        """Get reason for early stopping."""
+        return self.stopping_reason or "No stopping reason available"
+
+
+class CompositeStrategy(EarlyStoppingStrategy):
+    """Composite early stopping strategy that combines multiple strategies."""
+    
+    def __init__(self, strategies: List[EarlyStoppingStrategy], config: EnhancedEarlyStoppingConfig = None):
+        super().__init__(config)
+        self.strategies = strategies
+        self.stopping_strategy = None
+    
+    def should_stop(self, history: List[float], current_trial: int) -> bool:
+        """Check if any strategy indicates stopping."""
+        for strategy in self.strategies:
+            if strategy.should_stop(history, current_trial):
+                self.stopping_strategy = strategy
+                return True
+        return False
+    
+    def get_stopping_reason(self) -> str:
+        """Get reason for early stopping."""
+        if self.stopping_strategy:
+            return f"Composite strategy: {self.stopping_strategy.get_stopping_reason()}"
+        return "No stopping reason available"
     
     def _calculate_adaptive_patience(self, convergence_rate: float) -> int:
         """Calculate adaptive patience based on convergence rate."""

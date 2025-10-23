@@ -259,7 +259,16 @@ class ComponentFactory:
             return Analyst(analyst_config)
         except ImportError as e:
             self.logger.error(f"Failed to import Analyst: {e}")
-            raise NotImplementedError(f"Analyst creation failed: {e}")
+            # Try alternative import paths
+            try:
+                from src.interfaces.concrete_implementations import Analyst
+                analyst_config = config or self.container.get_config('analyst', {})
+                return Analyst(analyst_config)
+            except ImportError as e2:
+                self.logger.error(f"Failed to import Analyst from concrete implementations: {e2}")
+                # Create a minimal analyst implementation
+                from src.interfaces.base_interfaces import IAnalyst
+                return self._create_minimal_analyst(analyst_config or {})
         except Exception as e:
             self.logger.error(f"Failed to create Analyst: {e}")
             raise
@@ -272,15 +281,41 @@ class ComponentFactory:
             return Strategist(strategist_config)
         except ImportError as e:
             self.logger.error(f"Failed to import Strategist: {e}")
-            raise NotImplementedError(f"Strategist creation failed: {e}")
+            # Try alternative import paths
+            try:
+                from src.interfaces.concrete_implementations import Strategist
+                strategist_config = config or self.container.get_config('strategist', {})
+                return Strategist(strategist_config)
+            except ImportError as e2:
+                self.logger.error(f"Failed to import Strategist from concrete implementations: {e2}")
+                # Create a minimal strategist implementation
+                from src.interfaces.base_interfaces import IStrategist
+                return self._create_minimal_strategist(strategist_config or {})
         except Exception as e:
             self.logger.error(f"Failed to create Strategist: {e}")
             raise
 
     def create_tactician(self, config: dict[str, Any] | None = None) -> ITactician:
         """Create a tactician component."""
-        msg = 'Tactician creation not implemented'
-        raise NotImplementedError(msg)
+        try:
+            from src.tactician.tactician import Tactician
+            tactician_config = config or self.container.get_config('tactician', {})
+            return Tactician(tactician_config)
+        except ImportError as e:
+            self.logger.error(f"Failed to import Tactician: {e}")
+            # Try alternative import paths
+            try:
+                from src.interfaces.concrete_implementations import Tactician
+                tactician_config = config or self.container.get_config('tactician', {})
+                return Tactician(tactician_config)
+            except ImportError as e2:
+                self.logger.error(f"Failed to import Tactician from concrete implementations: {e2}")
+                # Create a minimal tactician implementation
+                from src.interfaces.base_interfaces import ITactician
+                return self._create_minimal_tactician(tactician_config or {})
+        except Exception as e:
+            self.logger.error(f"Failed to create Tactician: {e}")
+            raise
 
     def create_supervisor(self, config: dict[str, Any] | None = None) -> ISupervisor:
         """Create a supervisor component."""

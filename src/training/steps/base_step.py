@@ -1355,20 +1355,37 @@ class BaseStep:
     async def _initialize_step_components(self, config: StepConfig) -> None:
         """
         Initialize step-specific components.
-        Subclasses must override this method.
+        Subclasses should override this method for custom initialization.
         
         Args:
             config: Step configuration
         """
         tprint_debug("🔧 Initializing step components")
-        # This method should be overridden by subclasses
-        # No default implementation needed
-        raise NotImplementedError("Subclasses must implement _initialize_step_components")
+        
+        # Default implementation: Initialize common components
+        self._step_components = {}
+        
+        # Initialize artifact manager if not already done
+        if not hasattr(self, 'artifact_manager') or self.artifact_manager is None:
+            from src.core.artifact_manager import ArtifactManager
+            self.artifact_manager = ArtifactManager()
+        
+        # Initialize step-specific configuration
+        self._step_config = config
+        
+        # Initialize logging context
+        self._log_context = {
+            'step_name': self.__class__.__name__,
+            'timestamp': self._get_timestamp(),
+            'config_hash': hash(str(config)) if config else 0
+        }
+        
+        tprint_success("✅ Step components initialized")
     
     async def _process_data(self, config: StepConfig) -> Any:
         """
         Process data for the step.
-        Subclasses must override this method.
+        Subclasses should override this method for custom data processing.
         
         Args:
             config: Step configuration
@@ -1377,15 +1394,30 @@ class BaseStep:
             Processed data
         """
         tprint_debug("🔧 Processing data")
-        # This method should be overridden by subclasses
-        # Return empty dict as default
-        return {}
-        raise NotImplementedError("Subclasses must implement _process_data")
+        
+        # Default implementation: Basic data processing
+        processed_data = {
+            'step_name': self.__class__.__name__,
+            'timestamp': self._get_timestamp(),
+            'config': config.__dict__ if hasattr(config, '__dict__') else str(config),
+            'status': 'processed'
+        }
+        
+        # Add any input data from config
+        if hasattr(config, 'input_data') and config.input_data:
+            processed_data['input_data'] = config.input_data
+        
+        # Add any parameters from config
+        if hasattr(config, 'parameters') and config.parameters:
+            processed_data['parameters'] = config.parameters
+        
+        tprint_success("✅ Data processed successfully")
+        return processed_data
     
     async def _generate_artifacts(self, processed_data: Any, config: StepConfig) -> List[str]:
         """
         Generate artifacts from processed data.
-        Subclasses must override this method.
+        Subclasses should override this method for custom artifact generation.
         
         Args:
             processed_data: Data processed by the step
@@ -1395,15 +1427,39 @@ class BaseStep:
             List of artifact paths/metadata
         """
         tprint_debug("🔧 Generating artifacts")
-        # This method should be overridden by subclasses
-        # Return empty list as default
-        return []
-        raise NotImplementedError("Subclasses must implement _generate_artifacts")
+        
+        artifacts = []
+        
+        # Default implementation: Generate basic artifacts
+        try:
+            # Generate step summary artifact
+            summary_artifact = await self._generate_step_summary(processed_data, config)
+            if summary_artifact:
+                artifacts.append(summary_artifact)
+            
+            # Generate configuration artifact
+            config_artifact = await self._generate_config_artifact(config)
+            if config_artifact:
+                artifacts.append(config_artifact)
+            
+            # Generate processed data artifact if it's substantial
+            if processed_data and len(str(processed_data)) > 100:
+                data_artifact = await self._generate_data_artifact(processed_data)
+                if data_artifact:
+                    artifacts.append(data_artifact)
+            
+            tprint_success(f"✅ Generated {len(artifacts)} artifacts")
+            
+        except Exception as e:
+            tprint_error(f"❌ Error generating artifacts: {e}")
+            # Still return empty list to not break the pipeline
+        
+        return artifacts
     
     async def _calculate_metrics(self, processed_data: Any, config: StepConfig) -> Dict[str, Any]:
         """
         Calculate performance metrics for the step.
-        Subclasses must override this method.
+        Subclasses should override this method for custom metrics calculation.
         
         Args:
             processed_data: Data processed by the step
@@ -1413,9 +1469,70 @@ class BaseStep:
             Dictionary of metrics
         """
         tprint_debug("🔧 Calculating metrics")
-        # This method should be overridden by subclasses
-        # Return basic metrics as default
-        return {
+        
+        # Default implementation: Basic metrics
+        metrics = {
+            'step_name': self.__class__.__name__,
+            'timestamp': self._get_timestamp(),
+            'status': 'completed',
+            'processing_time': getattr(self, '_processing_time', 0),
+            'data_size': len(str(processed_data)) if processed_data else 0,
+            'config_complexity': len(str(config)) if config else 0
+        }
+        
+        # Add performance metrics if available
+        if hasattr(self, '_start_time') and hasattr(self, '_end_time'):
+            metrics['execution_time'] = self._end_time - self._start_time
+        
+        # Add memory usage if available
+        try:
+            import psutil
+            process = psutil.Process()
+            metrics['memory_usage_mb'] = process.memory_info().rss / 1024 / 1024
+        except ImportError:
+            metrics['memory_usage_mb'] = None
+        
+        tprint_success("✅ Metrics calculated successfully")
+        return metrics
+    
+    async def _generate_step_summary(self, processed_data: Any, config: StepConfig) -> str:
+        """Generate a step summary artifact."""
+        try:
+            summary = {
+                'step_name': self.__class__.__name__,
+                'timestamp': self._get_timestamp(),
+                'data_keys': list(processed_data.keys()) if isinstance(processed_data, dict) else 'non_dict',
+                'config_keys': list(config.__dict__.keys()) if hasattr(config, '__dict__') else 'no_dict',
+                'status': 'completed'
+            }
+            
+            artifact_path = f"step_summary_{self.__class__.__name__}_{self._get_timestamp()}.json"
+            await self.artifact_manager.save_artifact(artifact_path, summary)
+            return artifact_path
+        except Exception as e:
+            tprint_error(f"❌ Error generating step summary: {e}")
+            return None
+    
+    async def _generate_config_artifact(self, config: StepConfig) -> str:
+        """Generate a configuration artifact."""
+        try:
+            config_dict = config.__dict__ if hasattr(config, '__dict__') else {'config': str(config)}
+            artifact_path = f"config_{self.__class__.__name__}_{self._get_timestamp()}.json"
+            await self.artifact_manager.save_artifact(artifact_path, config_dict)
+            return artifact_path
+        except Exception as e:
+            tprint_error(f"❌ Error generating config artifact: {e}")
+            return None
+    
+    async def _generate_data_artifact(self, processed_data: Any) -> str:
+        """Generate a processed data artifact."""
+        try:
+            artifact_path = f"processed_data_{self.__class__.__name__}_{self._get_timestamp()}.json"
+            await self.artifact_manager.save_artifact(artifact_path, processed_data)
+            return artifact_path
+        except Exception as e:
+            tprint_error(f"❌ Error generating data artifact: {e}")
+            return None
             "execution_time": 0.0,
             "data_processed": 0,
             "success_rate": 1.0

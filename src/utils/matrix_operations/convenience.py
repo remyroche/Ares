@@ -53,7 +53,7 @@ def _safe_correlation_matrix(*args, **kwargs):
     try:
         from .unified_operations import safe_correlation_matrix
         return safe_correlation_matrix(*args, **kwargs)
-    except ImportError:
+    except ImportError as e:
         # Fallback implementation
         import numpy as np
         if NUMPY_AVAILABLE and len(args) > 0:
@@ -62,7 +62,8 @@ def _safe_correlation_matrix(*args, **kwargs):
                 return data.corr()
             elif isinstance(data, np.ndarray):
                 return np.corrcoef(data)
-        raise NotImplementedError("safe_correlation_matrix not available")
+        # If we can't import or compute, raise a more informative error
+        raise ImportError(f"safe_correlation_matrix not available: {e}")
 
 # Import VectorBT optimizations
 try:

@@ -674,6 +674,7 @@ class BaseTrainer(ABC):
        - Automatic data validation
        - Feature engineering integration
        - Data quality monitoring
+    Production-ready base trainer for all training components.
     
     4. ENTERPRISE FEATURES:
        - Model versioning and lifecycle management

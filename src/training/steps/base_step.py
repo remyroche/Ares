@@ -242,6 +242,7 @@ class DataProcessor(Protocol):
     """Protocol for data processing objects."""
     def process(self, data: Any) -> Any: ...
     def validate(self, data: Any) -> bool: ...
+    def get_metadata(self) -> Dict[str, Any]: ...
 
 @runtime_checkable
 class Cacheable(Protocol):
@@ -262,22 +263,47 @@ class BaseDataProcessor:
     def __init__(self, config: Dict[str, Any] = None):
         self.config = config or {}
         self.processor_type = self.config.get('type', 'base')
+        self.metadata = {
+            'processor_type': self.processor_type,
+            'created_at': datetime.datetime.now().isoformat(),
+            'version': '1.0.0'
+        }
     
     def process(self, data: Any) -> Any:
         """Process data according to processor configuration."""
-        tprint_debug(f"🔧 Processing data with {self.processor_type} processor")
-        return data
+        try:
+            # Use safe logging if available
+            if 'tprint_debug' in globals():
+                tprint_debug(f"🔧 Processing data with {self.processor_type} processor")
+            return data
+        except Exception as e:
+            # Fallback logging
+            print(f"Processing data with {self.processor_type} processor: {e}")
+            return data
     
     def validate(self, data: Any) -> bool:
         """Validate processed data."""
-        return data is not None
+        try:
+            if data is None:
+                return False
+            # Basic validation - can be extended by subclasses
+            return True
+        except Exception as e:
+            print(f"Validation error: {e}")
+            return False
+    
+    def get_metadata(self) -> Dict[str, Any]:
+        """Get processor metadata."""
+        return self.metadata.copy()
 
 
 class BaseCacheable:
     """Base implementation of Cacheable protocol."""
     
     def __init__(self, cache_key: str = None):
-        self._cache_key = cache_key or f"cache_{id(self)}"
+        self._cache_key = cache_key or f"cache_{id(self)}_{datetime.datetime.now().timestamp()}"
+        self._size_bytes = 1024  # Default estimate
+        self._last_updated = datetime.datetime.now()
     
     def get_cache_key(self) -> str:
         """Get cache key for this object."""
@@ -285,7 +311,13 @@ class BaseCacheable:
     
     def get_size_bytes(self) -> int:
         """Get estimated size in bytes."""
-        return 1024  # Default 1KB estimate
+        try:
+            # Try to calculate actual size if possible
+            import sys
+            return sys.getsizeof(self)
+        except Exception:
+            # Fallback to stored estimate
+            return self._size_bytes
 
 
 class BaseExecutable:
@@ -293,11 +325,47 @@ class BaseExecutable:
     
     def __init__(self, config: Dict[str, Any] = None):
         self.config = config or {}
+        self.execution_history = []
     
     async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """Execute the executable with given configuration."""
-        tprint_debug("🔧 Executing base executable")
-        return {'status': 'completed', 'config': config}
+        try:
+            # Use safe logging if available
+            if 'tprint_debug' in globals():
+                tprint_debug("🔧 Executing base executable")
+            
+            # Merge configs
+            merged_config = {**self.config, **config}
+            
+            # Record execution
+            execution_record = {
+                'timestamp': datetime.datetime.now().isoformat(),
+                'config': merged_config,
+                'status': 'completed'
+            }
+            self.execution_history.append(execution_record)
+            
+            return {
+                'status': 'completed', 
+                'config': merged_config,
+                'execution_id': len(self.execution_history),
+                'timestamp': execution_record['timestamp']
+            }
+        except Exception as e:
+            error_record = {
+                'timestamp': datetime.datetime.now().isoformat(),
+                'config': config,
+                'status': 'failed',
+                'error': str(e)
+            }
+            self.execution_history.append(error_record)
+            
+            return {
+                'status': 'failed',
+                'config': config,
+                'error': str(e),
+                'execution_id': len(self.execution_history)
+            }
 
 
 # Processor factory for creating different types of processors

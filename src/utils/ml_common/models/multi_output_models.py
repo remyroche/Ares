@@ -223,16 +223,9 @@ class MultiOutputModel(ProductionMultiOutputModel):
             try:
                 from sklearn.linear_model import LinearRegression
                 return LinearRegression()
-            except Exception:
-                # Last resort - create a dummy model
-                class DummyModel:
-                    def fit(self, X, y):
-                        self._mean = float(np.mean(y)) if len(y) else 0.0
-                        return self
-                    def predict(self, X):
-                        n = X.shape[0] if hasattr(X, 'shape') else len(X)
-                        return np.full(n, getattr(self, '_mean', 0.0))
-                return DummyModel()
+            except Exception as e:
+                self.logger.error(f"Failed to create any model for output {output_index}: {e}")
+                raise RuntimeError(f"Unable to create model for output {output_index}: {e}")
 
     def _calculate_output_weights(self, X: np.ndarray, y: np.ndarray) -> List[float]:
         """
@@ -643,15 +636,9 @@ class MultiOutputModel(ProductionMultiOutputModel):
             try:
                 from sklearn.linear_model import LinearRegression
                 return LinearRegression()
-            except Exception:
-                class DummyModel:
-                    def fit(self, X, y):
-                        self._mean = float(np.mean(y)) if len(y) else 0.0
-                        return self
-                    def predict(self, X):
-                        n = X.shape[0] if hasattr(X, 'shape') else len(X)
-                        return np.full(n, getattr(self, '_mean', 0.0))
-                return DummyModel()
+            except Exception as e:
+                self.logger.error(f"Failed to create any model for output {output_index}: {e}")
+                raise RuntimeError(f"Unable to create model for output {output_index}: {e}")
 
     def validate_outputs(self, y: np.ndarray) -> bool:
         """Validate output data format."""

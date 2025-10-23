@@ -104,12 +104,24 @@ class BinanceTradingDataProvider(TradingDataProvider):
         try:
             self.logger.info(f"Fetching market data for {symbol} from {start_time} to {end_time}")
             
-            # In a real implementation, this would call Binance API
-            # For now, generate realistic mock data
-            data = self._generate_mock_market_data(symbol, start_time, end_time)
+            # TODO: Implement actual Binance API call for historical data
+            # This would typically involve:
+            # 1. Converting timestamps to milliseconds
+            # 2. Making HTTP request to Binance klines endpoint
+            # 3. Parsing and formatting the response
+            # 4. Handling rate limits and errors
             
-            self.logger.info(f"Retrieved {len(data.get('klines', []))} klines for {symbol}")
-            return data
+            # Placeholder implementation - replace with actual API call
+            self.logger.warning("Market data API not implemented - returning empty data")
+            return {
+                'symbol': symbol,
+                'klines': [],
+                'start_time': start_time.isoformat(),
+                'end_time': end_time.isoformat(),
+                'interval': '1m',
+                'count': 0,
+                'error': 'API not implemented'
+            }
             
         except Exception as e:
             self.logger.error(f"Failed to get market data: {e}")
@@ -120,11 +132,19 @@ class BinanceTradingDataProvider(TradingDataProvider):
         try:
             self.logger.debug(f"Fetching live data for {symbol}")
             
-            # In a real implementation, this would call Binance WebSocket API
-            # For now, generate mock live data
-            live_data = self._generate_mock_live_data(symbol)
+            # TODO: Implement actual Binance WebSocket API for live data
+            # This would typically involve:
+            # 1. Establishing WebSocket connection to Binance
+            # 2. Subscribing to ticker stream for the symbol
+            # 3. Parsing real-time price updates
+            # 4. Handling connection errors and reconnection
             
-            return live_data
+            # Placeholder implementation - replace with actual WebSocket call
+            self.logger.warning("Live data API not implemented - returning empty data")
+            return {
+                'symbol': symbol,
+                'error': 'WebSocket API not implemented'
+            }
             
         except Exception as e:
             self.logger.error(f"Failed to get live data: {e}")
@@ -186,178 +206,8 @@ class BinanceTradingDataProvider(TradingDataProvider):
             self.logger.error(f"Failed to connect to Binance: {e}")
             return False
     
-    def _generate_mock_market_data(self, symbol: str, start_time: datetime, end_time: datetime) -> dict:
-        """Generate realistic market data using advanced statistical models."""
-        # Calculate number of 1-minute intervals
-        time_diff = end_time - start_time
-        num_intervals = int(time_diff.total_seconds() / 60)
-        
-        if num_intervals <= 0:
-            return {
-                'symbol': symbol,
-                'klines': [],
-                'start_time': start_time.isoformat(),
-                'end_time': end_time.isoformat(),
-                'interval': '1m',
-                'count': 0
-            }
-        
-        # Get base price and volatility from historical data or market conditions
-        base_price = self._get_base_price(symbol)
-        volatility = self._get_volatility_estimate(symbol)
-        trend = self._get_trend_estimate(symbol, start_time)
-        
-        prices = []
-        current_price = base_price
-        
-        # Generate realistic price data using GARCH-like model
-        for i in range(num_intervals):
-            # Time-varying volatility (higher during market hours)
-            market_hour = (start_time + timedelta(minutes=i)).hour
-            volatility_multiplier = 1.2 if 9 <= market_hour <= 16 else 0.8
-            
-            # GARCH-like volatility clustering
-            if i > 0:
-                prev_return = (current_price - prices[i-1]['close']) / prices[i-1]['close']
-                volatility = 0.95 * volatility + 0.05 * abs(prev_return) * volatility_multiplier
-            
-            # Generate realistic return with fat tails (t-distribution)
-            dof = 3.0  # Degrees of freedom for t-distribution
-            t_random = np.random.standard_t(dof)
-            return_pct = trend + volatility * t_random * volatility_multiplier
-            
-            # Apply mean reversion
-            mean_reversion = 0.001 * (base_price - current_price) / base_price
-            return_pct += mean_reversion
-            
-            # Update price
-            current_price *= (1 + return_pct)
-            
-            # Generate OHLCV data with realistic patterns
-            price_range = current_price * volatility * 0.5
-            high = current_price + abs(np.random.normal(0, price_range * 0.3))
-            low = current_price - abs(np.random.normal(0, price_range * 0.3))
-            open_price = current_price + np.random.normal(0, price_range * 0.1)
-            close_price = current_price
-            
-            # Ensure OHLC consistency
-            high = max(high, open_price, close_price)
-            low = min(low, open_price, close_price)
-            
-            # Generate volume with realistic patterns
-            base_volume = self._get_base_volume(symbol)
-            volume_multiplier = 1.0
-            
-            # Higher volume during market hours
-            if 9 <= market_hour <= 16:
-                volume_multiplier *= 1.5
-            
-            # Volume spikes during high volatility
-            if abs(return_pct) > volatility * 2:
-                volume_multiplier *= 2.0
-            
-            # Add some randomness to volume
-            volume = base_volume * volume_multiplier * np.random.lognormal(0, 0.3)
-            
-            prices.append({
-                'timestamp': start_time + timedelta(minutes=i),
-                'open': round(open_price, 2),
-                'high': round(high, 2),
-                'low': round(low, 2),
-                'close': round(close_price, 2),
-                'volume': round(volume, 2)
-            })
-        
-        return {
-            'symbol': symbol,
-            'klines': prices,
-            'start_time': start_time.isoformat(),
-            'end_time': end_time.isoformat(),
-            'interval': '1m',
-            'count': len(prices),
-            'metadata': {
-                'base_price': base_price,
-                'volatility': volatility,
-                'trend': trend,
-                'generated_at': datetime.now().isoformat()
-            }
-        }
     
-    def _generate_mock_live_data(self, symbol: str) -> dict:
-        """Generate realistic live market data with proper bid-ask spreads."""
-        base_price = self._get_base_price(symbol)
-        volatility = self._get_volatility_estimate(symbol)
-        
-        # Generate current price with realistic movement
-        price_change = np.random.normal(0, volatility * 0.1)
-        current_price = base_price * (1 + price_change)
-        
-        # Calculate realistic bid-ask spread based on volatility and price
-        spread_pct = max(0.0001, volatility * 0.01)  # Minimum 0.01% spread
-        spread = current_price * spread_pct
-        
-        # Add some randomness to spread
-        spread *= np.random.uniform(0.8, 1.2)
-        
-        bid_price = current_price - spread / 2
-        ask_price = current_price + spread / 2
-        
-        # Generate realistic volume
-        base_volume = self._get_base_volume(symbol)
-        volume_multiplier = np.random.lognormal(0, 0.5)
-        current_volume = base_volume * volume_multiplier
-        
-        # Add market depth simulation
-        bid_volume = current_volume * np.random.uniform(0.3, 0.7)
-        ask_volume = current_volume * np.random.uniform(0.3, 0.7)
-        
-        return {
-            'symbol': symbol,
-            'price': round(current_price, 2),
-            'bid': round(bid_price, 2),
-            'ask': round(ask_price, 2),
-            'bid_volume': round(bid_volume, 2),
-            'ask_volume': round(ask_volume, 2),
-            'volume': round(current_volume, 2),
-            'spread': round(spread, 2),
-            'spread_pct': round(spread_pct * 100, 4),
-            'timestamp': datetime.now().isoformat(),
-            'metadata': {
-                'volatility': volatility,
-                'base_price': base_price,
-                'price_change_pct': round(price_change * 100, 4)
-            }
-        }
     
-    def _get_base_price(self, symbol: str) -> float:
-        """Get realistic base price for symbol based on market conditions."""
-        # In production, this would fetch from a real price feed
-        base_prices = {
-            'BTCUSDT': 45000.0,
-            'ETHUSDT': 2800.0,
-            'ADAUSDT': 0.45,
-            'BNBUSDT': 300.0,
-            'SOLUSDT': 100.0,
-            'XRPUSDT': 0.6,
-            'DOTUSDT': 6.0,
-            'LINKUSDT': 15.0,
-            'UNIUSDT': 8.0,
-            'LTCUSDT': 70.0
-        }
-        
-        # Add some realistic price movement based on time
-        base_price = base_prices.get(symbol, 100.0)
-        
-        # Simulate daily price variation (higher during certain hours)
-        current_hour = datetime.now().hour
-        if 13 <= current_hour <= 15:  # Peak trading hours
-            base_price *= np.random.uniform(1.02, 1.05)
-        elif 22 <= current_hour or current_hour <= 6:  # Low activity hours
-            base_price *= np.random.uniform(0.98, 1.02)
-        else:
-            base_price *= np.random.uniform(0.99, 1.03)
-        
-        return base_price
     
     def _get_volatility_estimate(self, symbol: str) -> float:
         """Get realistic volatility estimate for symbol."""

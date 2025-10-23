@@ -9,6 +9,9 @@ from ..utils.error_handling import (
 )
 from ..utils.validation import validate_trading_config, validate_market_data
 
+# Import the enhanced monitoring orchestrator
+from ..monitoring.comprehensive_trade_monitor import EnhancedMonitoringOrchestrator
+
 # src/paper_trader.py
 """
 PaperTrader for training and testnet trading.
@@ -21,15 +24,165 @@ from enum import Enum
 from typing import Any, Dict, List
 from dataclasses import dataclass
 
-# Simple trade tracker stub
+# Enhanced trade tracker for paper trading
 @dataclass
 class TradeTracker:
-    """Simple trade tracker for paper trading."""
+    """Enhanced trade tracker for paper trading with comprehensive analytics."""
     trades: List[Dict[str, Any]] = None
+    performance_metrics: Dict[str, Any] = None
+    position_tracker: Dict[str, Any] = None
+    risk_metrics: Dict[str, Any] = None
 
     def __post_init__(self):
         if self.trades is None:
             self.trades = []
+        if self.performance_metrics is None:
+            self.performance_metrics = {}
+        if self.position_tracker is None:
+            self.position_tracker = {}
+        if self.risk_metrics is None:
+            self.risk_metrics = {}
+    
+    def add_trade(self, trade_data: Dict[str, Any]) -> None:
+        """Add a new trade to the tracker."""
+        trade_data['trade_id'] = f"trade_{len(self.trades) + 1}"
+        trade_data['timestamp'] = datetime.now()
+        self.trades.append(trade_data)
+        self._update_position_tracker(trade_data)
+        self._update_performance_metrics()
+        self._update_risk_metrics()
+    
+    def _update_position_tracker(self, trade_data: Dict[str, Any]) -> None:
+        """Update position tracking."""
+        symbol = trade_data.get('symbol', 'UNKNOWN')
+        side = trade_data.get('side', 'UNKNOWN')
+        quantity = trade_data.get('quantity', 0.0)
+        price = trade_data.get('price', 0.0)
+        
+        if symbol not in self.position_tracker:
+            self.position_tracker[symbol] = {
+                'quantity': 0.0,
+                'avg_price': 0.0,
+                'total_cost': 0.0,
+                'unrealized_pnl': 0.0
+            }
+        
+        pos = self.position_tracker[symbol]
+        
+        if side.upper() == 'BUY':
+            # Adding to position
+            old_quantity = pos['quantity']
+            old_cost = pos['total_cost']
+            
+            new_quantity = old_quantity + quantity
+            new_cost = old_cost + (quantity * price)
+            new_avg_price = new_cost / new_quantity if new_quantity > 0 else 0
+            
+            pos['quantity'] = new_quantity
+            pos['avg_price'] = new_avg_price
+            pos['total_cost'] = new_cost
+            
+        elif side.upper() == 'SELL':
+            # Reducing position
+            old_quantity = pos['quantity']
+            old_cost = pos['total_cost']
+            
+            new_quantity = old_quantity - quantity
+            if new_quantity <= 0:
+                # Position closed
+                pos['quantity'] = 0.0
+                pos['avg_price'] = 0.0
+                pos['total_cost'] = 0.0
+            else:
+                # Update remaining position
+                remaining_ratio = new_quantity / old_quantity
+                pos['quantity'] = new_quantity
+                pos['total_cost'] = old_cost * remaining_ratio
+                pos['avg_price'] = pos['total_cost'] / new_quantity if new_quantity > 0 else 0
+    
+    def _update_performance_metrics(self) -> None:
+        """Update performance metrics."""
+        if not self.trades:
+            return
+        
+        # Calculate basic metrics
+        total_trades = len(self.trades)
+        buy_trades = [t for t in self.trades if t.get('side') == 'BUY']
+        sell_trades = [t for t in self.trades if t.get('side') == 'SELL']
+        
+        # Calculate P&L
+        total_buy_cost = sum(t.get('total_cost', 0) for t in buy_trades)
+        total_sell_proceeds = sum(t.get('net_proceeds', 0) for t in sell_trades)
+        total_pnl = total_sell_proceeds - total_buy_cost
+        
+        # Calculate win rate
+        profitable_trades = len([t for t in sell_trades if t.get('net_proceeds', 0) > 0])
+        win_rate = profitable_trades / len(sell_trades) if sell_trades else 0.0
+        
+        # Calculate average win/loss
+        avg_win = sum(t.get('net_proceeds', 0) for t in sell_trades if t.get('net_proceeds', 0) > 0) / profitable_trades if profitable_trades > 0 else 0
+        avg_loss = sum(t.get('net_proceeds', 0) for t in sell_trades if t.get('net_proceeds', 0) < 0) / (len(sell_trades) - profitable_trades) if (len(sell_trades) - profitable_trades) > 0 else 0
+        
+        self.performance_metrics = {
+            'total_trades': total_trades,
+            'buy_trades': len(buy_trades),
+            'sell_trades': len(sell_trades),
+            'total_pnl': total_pnl,
+            'win_rate': win_rate,
+            'avg_win': avg_win,
+            'avg_loss': avg_loss,
+            'profit_factor': abs(avg_win / avg_loss) if avg_loss != 0 else float('inf'),
+            'total_volume': sum(t.get('quantity', 0) * t.get('price', 0) for t in self.trades)
+        }
+    
+    def _update_risk_metrics(self) -> None:
+        """Update risk metrics."""
+        if not self.trades:
+            return
+        
+        # Calculate position sizes
+        total_value = sum(pos['quantity'] * pos['avg_price'] for pos in self.position_tracker.values())
+        
+        position_sizes = {}
+        for symbol, pos in self.position_tracker.items():
+            if pos['quantity'] > 0:
+                position_value = pos['quantity'] * pos['avg_price']
+                position_sizes[symbol] = position_value / total_value if total_value > 0 else 0
+        
+        # Calculate concentration risk
+        max_position_size = max(position_sizes.values()) if position_sizes else 0
+        concentration_risk = max_position_size
+        
+        # Calculate portfolio risk (simplified)
+        portfolio_risk = sum(position_sizes.values()) if position_sizes else 0
+        
+        self.risk_metrics = {
+            'position_sizes': position_sizes,
+            'concentration_risk': concentration_risk,
+            'portfolio_risk': portfolio_risk,
+            'number_of_positions': len([p for p in self.position_tracker.values() if p['quantity'] > 0])
+        }
+    
+    def get_position_summary(self, symbol: str = None) -> Dict[str, Any]:
+        """Get position summary for symbol or all positions."""
+        if symbol:
+            return self.position_tracker.get(symbol, {})
+        return self.position_tracker.copy()
+    
+    def get_performance_summary(self) -> Dict[str, Any]:
+        """Get performance summary."""
+        return self.performance_metrics.copy()
+    
+    def get_risk_summary(self) -> Dict[str, Any]:
+        """Get risk summary."""
+        return self.risk_metrics.copy()
+    
+    def clear_history(self) -> None:
+        """Clear all trade history and reset metrics."""
+        self.trades.clear()
+        self.performance_metrics.clear()
+        self.position_tracker.clear()
+        self.risk_metrics.clear()
 
 def get_trade_tracker() -> TradeTracker:
     """Get a trade tracker instance."""
@@ -121,7 +274,7 @@ class PaperTrader:
 
             # Validate configuration
             if not self._validate_configuration():
-                self.logger.error(invalid("Invalid configuration for paper trader"))
+                self.logger.error("Invalid configuration for paper trader")
                 return False
 
             # Initialize trading state
@@ -183,22 +336,22 @@ class PaperTrader:
         try:
             # Validate initial balance
             if self.initial_balance <= 0:
-                self.logger.error(invalid("Invalid initial balance"))
+                self.logger.error("Invalid initial balance")
                 return False
 
             # Validate position size
             if self.max_position_size <= 0 or self.max_position_size > 1:
-                self.logger.error(invalid("Invalid max position size"))
+                self.logger.error("Invalid max position size")
                 return False
 
             # Validate commission rate
             if self.commission_rate < 0 or self.commission_rate > 0.1:
-                self.logger.error(invalid("Invalid commission rate"))
+                self.logger.error("Invalid commission rate")
                 return False
 
             # Validate slippage rate
             if self.slippage_rate < 0 or self.slippage_rate > 0.01:
-                self.logger.error(invalid("Invalid slippage rate"))
+                self.logger.error("Invalid slippage rate")
                 return False
 
             self.logger.info("Configuration validation successful")
@@ -559,17 +712,17 @@ class PaperTrader:
         try:
             # Validate symbol
             if not symbol or len(symbol) == 0:
-                self.logger.error(invalid("Invalid symbol"))
+                self.logger.error("Invalid symbol")
                 return False
 
             # Validate quantity
             if quantity <= 0:
-                self.logger.error(invalid("Invalid quantity"))
+                self.logger.error("Invalid quantity")
                 return False
 
             # Validate price
             if price <= 0:
-                self.logger.error(invalid("Invalid price"))
+                self.logger.error("Invalid price")
                 return False
 
             # Check position size limits

@@ -1203,11 +1203,11 @@ class ExchangeInterface:
 
 class SimulatedExchange:
     """
-    Stub class for SimulatedExchange - provides simulated trading functionality.
+    Comprehensive simulated exchange - provides realistic trading functionality.
     
     This class simulates exchange operations for testing and development purposes.
     It maintains internal state for orders, balances, and positions without
-    connecting to real exchanges.
+    connecting to real exchanges, with realistic market behavior simulation.
     """
     
     def __init__(self, config: Dict[str, Any]):
@@ -1216,29 +1216,66 @@ class SimulatedExchange:
         self.exchange_type = config.get('exchange_type', 'simulated')
         self.symbol = config.get('symbol', 'BTCUSDT')
         
-        # Simulated account state
+        # Enhanced simulated account state
         self.balances = {
-            'USDT': 10000.0,  # Starting with 10k USDT
+            'USDT': config.get('initial_balance', 10000.0),
             'BTC': 0.0,
-            'ETH': 0.0
+            'ETH': 0.0,
+            'BNB': 0.0
         }
         
-        # Simulated order book
+        # Simulated order book with realistic depth
         self.orders = {}
         self.order_counter = 0
-        
-        # Simulated positions
-        self.positions = {}
-        
-        # Simulated market data
-        self.current_prices = {
-            'BTCUSDT': 50000.0,
-            'ETHUSDT': 3000.0
+        self.order_book = {
+            'bids': [],  # List of [price, quantity] tuples
+            'asks': []   # List of [price, quantity] tuples
         }
+        
+        # Simulated positions with detailed tracking
+        self.positions = {}
+        self.position_history = []
+        
+        # Enhanced market data simulation
+        self.current_prices = {
+            'BTCUSDT': config.get('btc_price', 50000.0),
+            'ETHUSDT': config.get('eth_price', 3000.0),
+            'BNBUSDT': config.get('bnb_price', 300.0)
+        }
+        
+        # Market simulation parameters
+        self.volatility = config.get('volatility', 0.02)
+        self.trend = config.get('trend', 0.0)
+        self.liquidity = config.get('liquidity', 1000.0)
+        
+        # Order execution simulation
+        self.slippage_model = config.get('slippage_model', 'linear')
+        self.commission_rate = config.get('commission_rate', 0.001)
+        self.min_order_size = config.get('min_order_size', 0.001)
         
         # Connection state
         self.is_connected = False
         self.last_update = datetime.now()
+        self.connection_errors = []
+        
+        # Performance tracking
+        self.total_orders = 0
+        self.successful_orders = 0
+        self.failed_orders = 0
+        self.total_volume = 0.0
+        
+        # Market data streams
+        self.price_history = {symbol: [] for symbol in self.current_prices.keys()}
+        self.volume_history = {symbol: [] for symbol in self.current_prices.keys()}
+        
+        # Risk management
+        self.max_position_size = config.get('max_position_size', 0.1)
+        self.max_daily_volume = config.get('max_daily_volume', 100000.0)
+        self.daily_volume = 0.0
+        self.last_reset_date = datetime.now().date()
+        
+        # Initialize order book
+        self._initialize_order_book()
         
         self.logger = logger.getChild('SimulatedExchange')
         self.logger.info(f"SimulatedExchange initialized for {self.symbol}")
@@ -1498,15 +1535,316 @@ class SimulatedExchange:
         except Exception as e:
             self.logger.error(f"Error updating balances and positions: {e}")
     
+    def _initialize_order_book(self) -> None:
+        """Initialize realistic order book."""
+        for symbol in self.current_prices.keys():
+            base_price = self.current_prices[symbol]
+            
+            # Generate realistic bid/ask spread
+            spread = base_price * 0.001  # 0.1% spread
+            mid_price = base_price
+            
+            # Generate bids (below mid price)
+            bids = []
+            for i in range(20):
+                price = mid_price - (i + 1) * spread / 20
+                quantity = np.random.uniform(0.1, 5.0)
+                bids.append([price, quantity])
+            
+            # Generate asks (above mid price)
+            asks = []
+            for i in range(20):
+                price = mid_price + (i + 1) * spread / 20
+                quantity = np.random.uniform(0.1, 5.0)
+                asks.append([price, quantity])
+            
+            self.order_book[symbol] = {
+                'bids': sorted(bids, key=lambda x: x[0], reverse=True),
+                'asks': sorted(asks, key=lambda x: x[0])
+            }
+    
+    def _update_market_prices(self) -> None:
+        """Update market prices with realistic simulation."""
+        current_time = datetime.now()
+        
+        # Reset daily volume if new day
+        if current_time.date() != self.last_reset_date:
+            self.daily_volume = 0.0
+            self.last_reset_date = current_time.date()
+        
+        for symbol in self.current_prices.keys():
+            # Generate realistic price movement
+            base_price = self.current_prices[symbol]
+            
+            # Random walk with trend and volatility
+            price_change = np.random.normal(self.trend, self.volatility) * base_price
+            new_price = base_price + price_change
+            
+            # Ensure positive prices
+            new_price = max(new_price, base_price * 0.5)
+            
+            self.current_prices[symbol] = new_price
+            
+            # Update price history
+            self.price_history[symbol].append({
+                'timestamp': current_time,
+                'price': new_price,
+                'volume': np.random.uniform(100, 1000)
+            })
+            
+            # Keep only last 1000 price points
+            if len(self.price_history[symbol]) > 1000:
+                self.price_history[symbol] = self.price_history[symbol][-1000:]
+    
+    def _calculate_slippage(self, symbol: str, quantity: float, side: str) -> float:
+        """Calculate realistic slippage based on order size and market conditions."""
+        base_price = self.current_prices[symbol]
+        
+        # Calculate market impact based on order size relative to liquidity
+        market_impact = (quantity * base_price) / self.liquidity
+        
+        if self.slippage_model == 'linear':
+            slippage = market_impact * 0.001  # 0.1% per 1% market impact
+        elif self.slippage_model == 'sqrt':
+            slippage = np.sqrt(market_impact) * 0.002
+        else:
+            slippage = market_impact * 0.001
+        
+        # Add random component
+        slippage += np.random.uniform(0, 0.0005)
+        
+        return min(slippage, 0.01)  # Cap at 1%
+    
+    def _validate_order(self, symbol: str, side: str, quantity: float, price: float) -> Tuple[bool, str]:
+        """Validate order parameters."""
+        # Check minimum order size
+        if quantity < self.min_order_size:
+            return False, f"Order size {quantity} below minimum {self.min_order_size}"
+        
+        # Check position limits
+        if side.upper() == 'BUY':
+            cost = quantity * price
+            if cost > self.balances.get('USDT', 0):
+                return False, f"Insufficient balance: {cost} > {self.balances.get('USDT', 0)}"
+        else:  # SELL
+            if symbol not in self.positions or self.positions[symbol]['amount'] < quantity:
+                return False, f"Insufficient position: {quantity} > {self.positions.get(symbol, {}).get('amount', 0)}"
+        
+        # Check daily volume limits
+        order_value = quantity * price
+        if self.daily_volume + order_value > self.max_daily_volume:
+            return False, f"Daily volume limit exceeded"
+        
+        return True, "Valid"
+    
+    def _execute_order(self, symbol: str, side: str, quantity: float, price: float) -> Dict[str, Any]:
+        """Execute order with realistic simulation."""
+        # Calculate slippage
+        slippage = self._calculate_slippage(symbol, quantity, side)
+        
+        if side.upper() == 'BUY':
+            execution_price = price * (1 + slippage)
+        else:
+            execution_price = price * (1 - slippage)
+        
+        # Calculate commission
+        commission = quantity * execution_price * self.commission_rate
+        
+        # Update balances and positions
+        if side.upper() == 'BUY':
+            cost = quantity * execution_price + commission
+            self.balances['USDT'] -= cost
+            
+            if symbol not in self.positions:
+                self.positions[symbol] = {'amount': 0.0, 'avg_price': 0.0, 'total_cost': 0.0}
+            
+            # Update position
+            pos = self.positions[symbol]
+            old_amount = pos['amount']
+            old_cost = pos['total_cost']
+            
+            new_amount = old_amount + quantity
+            new_cost = old_cost + cost
+            new_avg_price = new_cost / new_amount if new_amount > 0 else 0
+            
+            pos['amount'] = new_amount
+            pos['avg_price'] = new_avg_price
+            pos['total_cost'] = new_cost
+            
+        else:  # SELL
+            proceeds = quantity * execution_price - commission
+            self.balances['USDT'] += proceeds
+            
+            if symbol in self.positions:
+                pos = self.positions[symbol]
+                old_amount = pos['amount']
+                old_cost = pos['total_cost']
+                
+                new_amount = old_amount - quantity
+                if new_amount <= 0:
+                    # Position closed
+                    del self.positions[symbol]
+                else:
+                    # Update remaining position proportionally
+                    remaining_ratio = new_amount / old_amount
+                    pos['amount'] = new_amount
+                    pos['total_cost'] = old_cost * remaining_ratio
+                    pos['avg_price'] = pos['total_cost'] / new_amount if new_amount > 0 else 0
+        
+        # Update tracking
+        self.total_orders += 1
+        self.successful_orders += 1
+        self.total_volume += quantity * execution_price
+        self.daily_volume += quantity * execution_price
+        
+        return {
+            'executed_quantity': quantity,
+            'execution_price': execution_price,
+            'slippage': slippage,
+            'commission': commission,
+            'status': 'FILLED'
+        }
+    
+    def get_market_depth(self, symbol: str, limit: int = 10) -> Dict[str, Any]:
+        """Get market depth for symbol."""
+        if symbol not in self.order_book:
+            return {'bids': [], 'asks': []}
+        
+        book = self.order_book[symbol]
+        return {
+            'bids': book['bids'][:limit],
+            'asks': book['asks'][:limit],
+            'timestamp': datetime.now().isoformat()
+        }
+    
+    def get_24h_stats(self, symbol: str) -> Dict[str, Any]:
+        """Get 24-hour statistics for symbol."""
+        if symbol not in self.price_history:
+            return {}
+        
+        history = self.price_history[symbol]
+        if not history:
+            return {}
+        
+        # Calculate 24h stats
+        prices = [h['price'] for h in history[-1440:]]  # Last 24 hours (1min intervals)
+        volumes = [h['volume'] for h in history[-1440:]]
+        
+        if not prices:
+            return {}
+        
+        current_price = prices[-1]
+        open_price = prices[0]
+        high_price = max(prices)
+        low_price = min(prices)
+        volume_24h = sum(volumes)
+        price_change = current_price - open_price
+        price_change_percent = (price_change / open_price) * 100 if open_price > 0 else 0
+        
+        return {
+            'symbol': symbol,
+            'price': current_price,
+            'open': open_price,
+            'high': high_price,
+            'low': low_price,
+            'volume': volume_24h,
+            'change': price_change,
+            'change_percent': price_change_percent,
+            'timestamp': datetime.now().isoformat()
+        }
+    
+    def get_account_summary(self) -> Dict[str, Any]:
+        """Get comprehensive account summary."""
+        # Calculate total portfolio value
+        total_value = 0.0
+        for symbol, position in self.positions.items():
+            if symbol in self.current_prices:
+                market_value = position['amount'] * self.current_prices[symbol]
+                total_value += market_value
+        
+        total_value += self.balances.get('USDT', 0)
+        
+        return {
+            'total_balance': total_value,
+            'balances': self.balances.copy(),
+            'positions': self.positions.copy(),
+            'open_orders': len([o for o in self.orders.values() if o['status'] in ['NEW', 'PARTIALLY_FILLED']]),
+            'total_orders': self.total_orders,
+            'successful_orders': self.successful_orders,
+            'failed_orders': self.failed_orders,
+            'success_rate': self.successful_orders / self.total_orders if self.total_orders > 0 else 0,
+            'total_volume': self.total_volume,
+            'daily_volume': self.daily_volume,
+            'last_update': self.last_update.isoformat()
+        }
+    
+    def get_performance_metrics(self) -> Dict[str, Any]:
+        """Get trading performance metrics."""
+        if not self.position_history:
+            return {}
+        
+        # Calculate P&L
+        total_pnl = 0.0
+        winning_trades = 0
+        losing_trades = 0
+        
+        for trade in self.position_history:
+            pnl = trade.get('pnl', 0)
+            total_pnl += pnl
+            if pnl > 0:
+                winning_trades += 1
+            elif pnl < 0:
+                losing_trades += 1
+        
+        total_trades = winning_trades + losing_trades
+        win_rate = winning_trades / total_trades if total_trades > 0 else 0
+        
+        return {
+            'total_pnl': total_pnl,
+            'total_trades': total_trades,
+            'winning_trades': winning_trades,
+            'losing_trades': losing_trades,
+            'win_rate': win_rate,
+            'avg_win': total_pnl / winning_trades if winning_trades > 0 else 0,
+            'avg_loss': total_pnl / losing_trades if losing_trades < 0 else 0,
+            'profit_factor': abs(total_pnl / losing_trades) if losing_trades < 0 else float('inf')
+        }
+    
+    def reset_account(self, initial_balance: float = 10000.0) -> None:
+        """Reset account to initial state."""
+        self.balances = {'USDT': initial_balance, 'BTC': 0.0, 'ETH': 0.0, 'BNB': 0.0}
+        self.positions.clear()
+        self.orders.clear()
+        self.position_history.clear()
+        self.total_orders = 0
+        self.successful_orders = 0
+        self.failed_orders = 0
+        self.total_volume = 0.0
+        self.daily_volume = 0.0
+        self.last_reset_date = datetime.now().date()
+        
+        self.logger.info(f"Account reset with initial balance: {initial_balance}")
+    
     def get_status(self) -> Dict[str, Any]:
-        """Get simulated exchange status."""
+        """Get comprehensive simulated exchange status."""
         return {
             'is_connected': self.is_connected,
             'exchange_type': self.exchange_type,
             'symbol': self.symbol,
-            'balances': self.balances.copy(),
-            'positions': self.positions.copy(),
-            'orders_count': len(self.orders),
+            'account_summary': self.get_account_summary(),
+            'performance_metrics': self.get_performance_metrics(),
+            'market_data': {
+                'current_prices': self.current_prices.copy(),
+                'volatility': self.volatility,
+                'trend': self.trend,
+                'liquidity': self.liquidity
+            },
+            'configuration': {
+                'commission_rate': self.commission_rate,
+                'min_order_size': self.min_order_size,
+                'max_position_size': self.max_position_size,
+                'max_daily_volume': self.max_daily_volume
+            },
             'last_update': self.last_update.isoformat()
         }
 

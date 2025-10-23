@@ -1255,7 +1255,655 @@ class FeatureImportanceRanker:
                 'success': False
             }
 
-# Additional selector classes can be added here following the same pattern
-# Note: The following classes were removed as they contained only stub implementations
-# and were not production-ready. They can be re-implemented with full functionality
-# when needed for specific use cases.
+# Additional selector classes with full implementations
+class StabilityWeightedSelector:
+    """Stability-weighted feature selection using multiple bootstrap samples and cross-validation."""
+
+    def __init__(self, config: Optional[Dict[str, Any]] = None):
+        """Initialize stability-weighted selector."""
+        self.config = config or {}
+        self.logger = logger.getChild('StabilityWeightedSelector')
+
+        self.n_bootstraps = self.config.get('n_bootstraps', 20)
+        self.bootstrap_fraction = self.config.get('bootstrap_fraction', 0.8)
+        self.cv_folds = self.config.get('cv_folds', 5)
+        self.stability_threshold = self.config.get('stability_threshold', 0.6)
+        self.methods = self.config.get('methods', ['mrmr', 'elastic_net', 'correlation'])
+        self.random_state = self.config.get('random_state', 42)
+
+        _LOGGER.info("🔍 StabilityWeightedSelector initialized")
+        _LOGGER.info(f"⚙️ Bootstrap samples: {self.n_bootstraps}")
+        _LOGGER.info(f"⚙️ Methods: {self.methods}")
+        _LOGGER.info(f"⚙️ Stability threshold: {self.stability_threshold}")
+
+    def select_features(self, X: np.ndarray, y: np.ndarray, feature_names: List[str],
+                       n_features: int) -> Dict[str, Any]:
+        """Perform stability-weighted feature selection."""
+        start_time = time.time()
+        _LOGGER.info(f"🔍 Starting stability-weighted feature selection...")
+        _LOGGER.info(f"📊 Parameters - Features to select: {n_features}, Data shape: {X.shape}")
+
+        try:
+            if not SKLEARN_AVAILABLE:
+                raise ImportError("Scikit-learn is required for stability-weighted selection")
+
+            # Preprocess data to handle infinity values
+            X = preprocess_features_for_ml(X, "stability-weighted selection", feature_names)
+
+            n_samples, n_total_features = X.shape
+            n_features = min(n_features, n_total_features)
+            bootstrap_size = int(n_samples * self.bootstrap_fraction)
+
+            # Initialize feature selection counts for each method
+            feature_counts = {method: np.zeros(n_total_features) for method in self.methods}
+            method_scores = {method: [] for method in self.methods}
+
+            # Perform bootstrap sampling
+            np.random.seed(self.random_state)
+
+            for bootstrap_idx in range(self.n_bootstraps):
+                _LOGGER.debug(f"🔄 Bootstrap {bootstrap_idx + 1}/{self.n_bootstraps}")
+
+                # Sample bootstrap data
+                bootstrap_indices = np.random.choice(n_samples, size=bootstrap_size, replace=True)
+                X_bootstrap = X[bootstrap_indices]
+                y_bootstrap = y[bootstrap_indices]
+
+                # Apply each method
+                for method in self.methods:
+                    try:
+                        selected_features = self._apply_method(method, X_bootstrap, y_bootstrap, feature_names, n_features)
+                        if selected_features:
+                            feature_counts[method][selected_features] += 1
+                            method_scores[method].append(len(selected_features))
+                    except Exception as e:
+                        _LOGGER.warning(f"⚠️ Method {method} failed in bootstrap {bootstrap_idx + 1}: {e}")
+
+            # Calculate stability scores for each method
+            stability_scores = {}
+            for method in self.methods:
+                if method_scores[method]:
+                    stability_scores[method] = feature_counts[method] / self.n_bootstraps
+                else:
+                    stability_scores[method] = np.zeros(n_total_features)
+
+            # Combine stability scores using weighted average
+            combined_stability = np.zeros(n_total_features)
+            method_weights = {method: 1.0 / len(self.methods) for method in self.methods}
+            
+            for method in self.methods:
+                combined_stability += method_weights[method] * stability_scores[method]
+
+            # Select features based on combined stability
+            stable_features = np.where(combined_stability >= self.stability_threshold)[0]
+            
+            # If not enough stable features, select top features by stability score
+            if len(stable_features) < n_features:
+                top_features = np.argsort(combined_stability)[-n_features:]
+                stable_features = top_features
+
+            # Prepare results
+            selected_feature_names = [feature_names[i] for i in stable_features]
+            stability_scores_dict = {feature_names[i]: combined_stability[i] for i in stable_features}
+
+            execution_time = time.time() - start_time
+
+            result = {
+                'selected_features': selected_feature_names,
+                'selected_indices': stable_features.tolist(),
+                'stability_scores': stability_scores_dict,
+                'method_scores': {method: stability_scores[method] for method in self.methods},
+                'method': 'stability_weighted',
+                'parameters': {
+                    'n_features': n_features,
+                    'n_bootstraps': self.n_bootstraps,
+                    'bootstrap_fraction': self.bootstrap_fraction,
+                    'cv_folds': self.cv_folds,
+                    'stability_threshold': self.stability_threshold,
+                    'methods': self.methods
+                },
+                'execution_time': execution_time,
+                'success': True
+            }
+
+            _LOGGER.info(f"✅ Stability-weighted selection completed in {execution_time:.3f}s")
+            _LOGGER.info(f"📊 Selected {len(stable_features)} features: {selected_feature_names}")
+
+            return result
+
+        except Exception as e:
+            _LOGGER.error(f"❌ Stability-weighted selection failed: {e}")
+            return {
+                'selected_features': [],
+                'selected_indices': [],
+                'stability_scores': {},
+                'method': 'stability_weighted',
+                'error': str(e),
+                'success': False
+            }
+
+    def _apply_method(self, X: np.ndarray, y: np.ndarray, feature_names: List[str], n_features: int) -> List[int]:
+        """Apply a specific feature selection method."""
+        if 'mrmr' in self.methods:
+            mrmr_selector = MRMRSelector()
+            result = mrmr_selector.select_features(X, y, feature_names, n_features)
+            return result.get('selected_indices', [])
+        
+        elif 'elastic_net' in self.methods:
+            elastic_net_selector = ElasticNetStabilitySelector({'n_bootstraps': 1})
+            result = elastic_net_selector.select_features(X, y, feature_names)
+            return result.get('selected_indices', [])
+        
+        elif 'correlation' in self.methods:
+            corr_filter = CorrelationBasedFilter()
+            result = corr_filter.select_features(X, y, feature_names)
+            return result.get('selected_indices', [])
+        
+        else:
+            return []
+
+
+class CompositeFeatureScorer:
+    """Composite feature scoring combining multiple methods with weighted scoring."""
+
+    def __init__(self, config: Optional[Dict[str, Any]] = None):
+        """Initialize composite feature scorer."""
+        self.config = config or {}
+        self.logger = logger.getChild('CompositeFeatureScorer')
+
+        self.methods = self.config.get('methods', ['mrmr', 'elastic_net', 'correlation', 'feature_importance'])
+        self.method_weights = self.config.get('method_weights', None)
+        self.normalize_scores = self.config.get('normalize_scores', True)
+        self.random_state = self.config.get('random_state', 42)
+
+        # Set default weights if not provided
+        if self.method_weights is None:
+            self.method_weights = {method: 1.0 / len(self.methods) for method in self.methods}
+
+        _LOGGER.info("🔍 CompositeFeatureScorer initialized")
+        _LOGGER.info(f"⚙️ Methods: {self.methods}")
+        _LOGGER.info(f"⚙️ Weights: {self.method_weights}")
+
+    def select_features(self, X: np.ndarray, y: np.ndarray, feature_names: List[str],
+                       n_features: int) -> Dict[str, Any]:
+        """Perform composite feature scoring."""
+        start_time = time.time()
+        _LOGGER.info(f"🔍 Starting composite feature scoring...")
+        _LOGGER.info(f"📊 Parameters - Features to select: {n_features}, Data shape: {X.shape}")
+
+        try:
+            if not SKLEARN_AVAILABLE:
+                raise ImportError("Scikit-learn is required for composite feature scoring")
+
+            # Preprocess data to handle infinity values
+            X = preprocess_features_for_ml(X, "composite feature scoring", feature_names)
+
+            n_samples, n_total_features = X.shape
+            n_features = min(n_features, n_total_features)
+
+            # Initialize composite scores
+            composite_scores = np.zeros(n_total_features)
+            method_scores = {}
+
+            # Apply each method and collect scores
+            for method in self.methods:
+                try:
+                    method_result = self._apply_scoring_method(method, X, y, feature_names, n_features)
+                    if method_result and 'scores' in method_result:
+                        scores = method_result['scores']
+                        if isinstance(scores, dict):
+                            # Convert dict scores to array
+                            method_scores_array = np.zeros(n_total_features)
+                            for i, name in enumerate(feature_names):
+                                if name in scores:
+                                    method_scores_array[i] = scores[name]
+                        else:
+                            method_scores_array = np.array(scores)
+                        
+                        # Normalize scores if requested
+                        if self.normalize_scores and len(method_scores_array) > 0:
+                            max_score = np.max(method_scores_array)
+                            if max_score > 0:
+                                method_scores_array = method_scores_array / max_score
+                        
+                        # Add weighted scores to composite
+                        weight = self.method_weights.get(method, 1.0)
+                        composite_scores += weight * method_scores_array
+                        method_scores[method] = method_scores_array
+                        
+                        _LOGGER.debug(f"✅ Method {method} completed with {len(scores)} scores")
+                    else:
+                        _LOGGER.warning(f"⚠️ Method {method} returned no scores")
+                        method_scores[method] = np.zeros(n_total_features)
+                        
+                except Exception as e:
+                    _LOGGER.warning(f"⚠️ Method {method} failed: {e}")
+                    method_scores[method] = np.zeros(n_total_features)
+
+            # Select top features based on composite scores
+            top_indices = np.argsort(composite_scores)[-n_features:][::-1]  # Sort descending
+            selected_features = top_indices.tolist()
+
+            # Prepare results
+            selected_feature_names = [feature_names[i] for i in selected_features]
+            composite_scores_dict = {feature_names[i]: composite_scores[i] for i in selected_features}
+
+            execution_time = time.time() - start_time
+
+            result = {
+                'selected_features': selected_feature_names,
+                'selected_indices': selected_features,
+                'composite_scores': composite_scores_dict,
+                'method_scores': {method: {feature_names[i]: scores[i] for i in range(n_total_features)} 
+                                for method, scores in method_scores.items()},
+                'method': 'composite_scoring',
+                'parameters': {
+                    'n_features': n_features,
+                    'methods': self.methods,
+                    'method_weights': self.method_weights,
+                    'normalize_scores': self.normalize_scores
+                },
+                'execution_time': execution_time,
+                'success': True
+            }
+
+            _LOGGER.info(f"✅ Composite feature scoring completed in {execution_time:.3f}s")
+            _LOGGER.info(f"📊 Selected {len(selected_features)} features: {selected_feature_names}")
+
+            return result
+
+        except Exception as e:
+            _LOGGER.error(f"❌ Composite feature scoring failed: {e}")
+            return {
+                'selected_features': [],
+                'selected_indices': [],
+                'composite_scores': {},
+                'method': 'composite_scoring',
+                'error': str(e),
+                'success': False
+            }
+
+    def _apply_scoring_method(self, method: str, X: np.ndarray, y: np.ndarray, 
+                            feature_names: List[str], n_features: int) -> Dict[str, Any]:
+        """Apply a specific scoring method."""
+        if method == 'mrmr':
+            mrmr_selector = MRMRSelector()
+            return mrmr_selector.select_features(X, y, feature_names, n_features)
+        
+        elif method == 'elastic_net':
+            elastic_net_selector = ElasticNetStabilitySelector({'n_bootstraps': 5})
+            return elastic_net_selector.select_features(X, y, feature_names)
+        
+        elif method == 'correlation':
+            corr_filter = CorrelationBasedFilter()
+            return corr_filter.select_features(X, y, feature_names)
+        
+        elif method == 'feature_importance':
+            importance_ranker = FeatureImportanceRanker({'n_estimators': 50})
+            return importance_ranker.select_features(X, y, feature_names, n_features)
+        
+        else:
+            return {}
+
+
+class CrossValidatedSelector:
+    """Cross-validated feature selection using multiple CV folds."""
+
+    def __init__(self, config: Optional[Dict[str, Any]] = None):
+        """Initialize cross-validated selector."""
+        self.config = config or {}
+        self.logger = logger.getChild('CrossValidatedSelector')
+
+        self.cv_folds = self.config.get('cv_folds', 5)
+        self.base_method = self.config.get('base_method', 'mrmr')
+        self.scoring = self.config.get('scoring', 'accuracy')
+        self.random_state = self.config.get('random_state', 42)
+        self.consensus_threshold = self.config.get('consensus_threshold', 0.6)
+
+        _LOGGER.info("🔍 CrossValidatedSelector initialized")
+        _LOGGER.info(f"⚙️ CV folds: {self.cv_folds}")
+        _LOGGER.info(f"⚙️ Base method: {self.base_method}")
+        _LOGGER.info(f"⚙️ Consensus threshold: {self.consensus_threshold}")
+
+    def select_features(self, X: np.ndarray, y: np.ndarray, feature_names: List[str],
+                       n_features: int) -> Dict[str, Any]:
+        """Perform cross-validated feature selection."""
+        start_time = time.time()
+        _LOGGER.info(f"🔍 Starting cross-validated feature selection...")
+        _LOGGER.info(f"📊 Parameters - Features to select: {n_features}, Data shape: {X.shape}")
+
+        try:
+            if not SKLEARN_AVAILABLE:
+                raise ImportError("Scikit-learn is required for cross-validated selection")
+
+            # Preprocess data to handle infinity values
+            X = preprocess_features_for_ml(X, "cross-validated selection", feature_names)
+
+            n_samples, n_total_features = X.shape
+            n_features = min(n_features, n_total_features)
+
+            # Set up cross-validation
+            if len(np.unique(y)) <= 10:  # Classification
+                from sklearn.model_selection import StratifiedKFold
+                cv = StratifiedKFold(n_splits=self.cv_folds, shuffle=True, random_state=self.random_state)
+            else:  # Regression
+                from sklearn.model_selection import KFold
+                cv = KFold(n_splits=self.cv_folds, shuffle=True, random_state=self.random_state)
+
+            # Initialize feature selection counts
+            feature_counts = np.zeros(n_total_features)
+            fold_results = []
+            fold_scores = []
+
+            # Perform cross-validation
+            for fold_idx, (train_idx, val_idx) in enumerate(cv.split(X, y)):
+                _LOGGER.debug(f"🔄 CV Fold {fold_idx + 1}/{self.cv_folds}")
+
+                X_train, X_val = X[train_idx], X[val_idx]
+                y_train, y_val = y[train_idx], y[val_idx]
+
+                # Apply base method
+                try:
+                    fold_result = self._apply_base_method(self.base_method, X_train, y_train, feature_names, n_features)
+                    if fold_result and 'selected_indices' in fold_result:
+                        selected_indices = fold_result['selected_indices']
+                        feature_counts[selected_indices] += 1
+                        fold_results.append(selected_indices)
+                        
+                        # Calculate validation score if possible
+                        if 'scores' in fold_result:
+                            fold_scores.append(fold_result['scores'])
+                        else:
+                            fold_scores.append({})
+                    else:
+                        _LOGGER.warning(f"⚠️ Fold {fold_idx + 1} returned no features")
+                        fold_results.append([])
+                        fold_scores.append({})
+                        
+                except Exception as e:
+                    _LOGGER.warning(f"⚠️ Fold {fold_idx + 1} failed: {e}")
+                    fold_results.append([])
+                    fold_scores.append({})
+
+            # Calculate consensus scores
+            consensus_scores = feature_counts / self.cv_folds
+
+            # Select features based on consensus
+            consensus_features = np.where(consensus_scores >= self.consensus_threshold)[0]
+            
+            # If not enough consensus features, select top features by consensus score
+            if len(consensus_features) < n_features:
+                top_features = np.argsort(consensus_scores)[-n_features:][::-1]
+                consensus_features = top_features
+
+            # Prepare results
+            selected_feature_names = [feature_names[i] for i in consensus_features]
+            consensus_scores_dict = {feature_names[i]: consensus_scores[i] for i in consensus_features}
+
+            execution_time = time.time() - start_time
+
+            result = {
+                'selected_features': selected_feature_names,
+                'selected_indices': consensus_features.tolist(),
+                'consensus_scores': consensus_scores_dict,
+                'fold_results': fold_results,
+                'fold_scores': fold_scores,
+                'method': 'cross_validated',
+                'parameters': {
+                    'n_features': n_features,
+                    'cv_folds': self.cv_folds,
+                    'base_method': self.base_method,
+                    'consensus_threshold': self.consensus_threshold
+                },
+                'execution_time': execution_time,
+                'success': True
+            }
+
+            _LOGGER.info(f"✅ Cross-validated selection completed in {execution_time:.3f}s")
+            _LOGGER.info(f"📊 Selected {len(consensus_features)} features: {selected_feature_names}")
+
+            return result
+
+        except Exception as e:
+            _LOGGER.error(f"❌ Cross-validated selection failed: {e}")
+            return {
+                'selected_features': [],
+                'selected_indices': [],
+                'consensus_scores': {},
+                'method': 'cross_validated',
+                'error': str(e),
+                'success': False
+            }
+
+    def _apply_base_method(self, method: str, X: np.ndarray, y: np.ndarray, 
+                          feature_names: List[str], n_features: int) -> Dict[str, Any]:
+        """Apply the base feature selection method."""
+        if method == 'mrmr':
+            mrmr_selector = MRMRSelector()
+            return mrmr_selector.select_features(X, y, feature_names, n_features)
+        
+        elif method == 'elastic_net':
+            elastic_net_selector = ElasticNetStabilitySelector({'n_bootstraps': 3})
+            return elastic_net_selector.select_features(X, y, feature_names)
+        
+        elif method == 'correlation':
+            corr_filter = CorrelationBasedFilter()
+            return corr_filter.select_features(X, y, feature_names)
+        
+        elif method == 'feature_importance':
+            importance_ranker = FeatureImportanceRanker({'n_estimators': 50})
+            return importance_ranker.select_features(X, y, feature_names, n_features)
+        
+        else:
+            return {}
+
+
+class TreeBasedEnsembleSelector:
+    """Tree-based ensemble feature selection using multiple tree models."""
+
+    def __init__(self, config: Optional[Dict[str, Any]] = None):
+        """Initialize tree-based ensemble selector."""
+        self.config = config or {}
+        self.logger = logger.getChild('TreeBasedEnsembleSelector')
+
+        self.n_models = self.config.get('n_models', 5)
+        self.model_types = self.config.get('model_types', ['random_forest', 'extra_trees', 'gradient_boosting'])
+        self.n_estimators = self.config.get('n_estimators', 100)
+        self.max_depth = self.config.get('max_depth', 10)
+        self.random_state = self.config.get('random_state', 42)
+        self.consensus_threshold = self.config.get('consensus_threshold', 0.5)
+
+        _LOGGER.info("🔍 TreeBasedEnsembleSelector initialized")
+        _LOGGER.info(f"⚙️ Number of models: {self.n_models}")
+        _LOGGER.info(f"⚙️ Model types: {self.model_types}")
+        _LOGGER.info(f"⚙️ Consensus threshold: {self.consensus_threshold}")
+
+    def select_features(self, X: np.ndarray, y: np.ndarray, feature_names: List[str],
+                       n_features: int) -> Dict[str, Any]:
+        """Perform tree-based ensemble feature selection."""
+        start_time = time.time()
+        _LOGGER.info(f"🔍 Starting tree-based ensemble feature selection...")
+        _LOGGER.info(f"📊 Parameters - Features to select: {n_features}, Data shape: {X.shape}")
+
+        try:
+            if not SKLEARN_AVAILABLE:
+                raise ImportError("Scikit-learn is required for tree-based ensemble selection")
+
+            # Preprocess data to handle infinity values
+            X = preprocess_features_for_ml(X, "tree-based ensemble selection", feature_names)
+
+            n_samples, n_total_features = X.shape
+            n_features = min(n_features, n_total_features)
+
+            # Initialize feature importance accumulation
+            feature_importances = np.zeros(n_total_features)
+            model_results = []
+
+            # Train multiple models and collect feature importances
+            for model_idx in range(self.n_models):
+                _LOGGER.debug(f"🔄 Training model {model_idx + 1}/{self.n_models}")
+
+                # Select random model type
+                model_type = np.random.choice(self.model_types)
+                
+                try:
+                    model = self._create_model(model_type, model_idx)
+                    model.fit(X, y)
+                    
+                    # Get feature importances
+                    if hasattr(model, 'feature_importances_'):
+                        importances = model.feature_importances_
+                    else:
+                        # Fallback: use coefficients for linear models
+                        if hasattr(model, 'coef_'):
+                            importances = np.abs(model.coef_.flatten())
+                        else:
+                            importances = np.zeros(n_total_features)
+                    
+                    # Normalize importances
+                    if np.sum(importances) > 0:
+                        importances = importances / np.sum(importances)
+                    
+                    feature_importances += importances
+                    model_results.append({
+                        'model_type': model_type,
+                        'importances': importances,
+                        'model_idx': model_idx
+                    })
+                    
+                    _LOGGER.debug(f"✅ Model {model_idx + 1} ({model_type}) completed")
+                    
+                except Exception as e:
+                    _LOGGER.warning(f"⚠️ Model {model_idx + 1} ({model_type}) failed: {e}")
+                    model_results.append({
+                        'model_type': model_type,
+                        'importances': np.zeros(n_total_features),
+                        'model_idx': model_idx,
+                        'error': str(e)
+                    })
+
+            # Calculate average feature importance
+            if len(model_results) > 0:
+                feature_importances = feature_importances / len(model_results)
+            else:
+                feature_importances = np.zeros(n_total_features)
+
+            # Select features based on importance
+            top_indices = np.argsort(feature_importances)[-n_features:][::-1]  # Sort descending
+            selected_features = top_indices.tolist()
+
+            # Prepare results
+            selected_feature_names = [feature_names[i] for i in selected_features]
+            importance_scores_dict = {feature_names[i]: feature_importances[i] for i in selected_features}
+
+            execution_time = time.time() - start_time
+
+            result = {
+                'selected_features': selected_feature_names,
+                'selected_indices': selected_features,
+                'importance_scores': importance_scores_dict,
+                'all_importances': {feature_names[i]: feature_importances[i] for i in range(n_total_features)},
+                'model_results': model_results,
+                'method': 'tree_ensemble',
+                'parameters': {
+                    'n_features': n_features,
+                    'n_models': self.n_models,
+                    'model_types': self.model_types,
+                    'n_estimators': self.n_estimators,
+                    'max_depth': self.max_depth,
+                    'consensus_threshold': self.consensus_threshold
+                },
+                'execution_time': execution_time,
+                'success': True
+            }
+
+            _LOGGER.info(f"✅ Tree-based ensemble selection completed in {execution_time:.3f}s")
+            _LOGGER.info(f"📊 Selected {len(selected_features)} features: {selected_feature_names}")
+
+            return result
+
+        except Exception as e:
+            _LOGGER.error(f"❌ Tree-based ensemble selection failed: {e}")
+            return {
+                'selected_features': [],
+                'selected_indices': [],
+                'importance_scores': {},
+                'method': 'tree_ensemble',
+                'error': str(e),
+                'success': False
+            }
+
+    def _create_model(self, model_type: str, model_idx: int):
+        """Create a tree-based model."""
+        random_state = (self.random_state + model_idx) % 2**32
+        
+        if model_type == 'random_forest':
+            if len(np.unique(y)) <= 10:  # Classification
+                from sklearn.ensemble import RandomForestClassifier
+                return RandomForestClassifier(
+                    n_estimators=self.n_estimators,
+                    max_depth=self.max_depth,
+                    random_state=random_state,
+                    n_jobs=-1
+                )
+            else:  # Regression
+                from sklearn.ensemble import RandomForestRegressor
+                return RandomForestRegressor(
+                    n_estimators=self.n_estimators,
+                    max_depth=self.max_depth,
+                    random_state=random_state,
+                    n_jobs=-1
+                )
+        
+        elif model_type == 'extra_trees':
+            if len(np.unique(y)) <= 10:  # Classification
+                from sklearn.ensemble import ExtraTreesClassifier
+                return ExtraTreesClassifier(
+                    n_estimators=self.n_estimators,
+                    max_depth=self.max_depth,
+                    random_state=random_state,
+                    n_jobs=-1
+                )
+            else:  # Regression
+                from sklearn.ensemble import ExtraTreesRegressor
+                return ExtraTreesRegressor(
+                    n_estimators=self.n_estimators,
+                    max_depth=self.max_depth,
+                    random_state=random_state,
+                    n_jobs=-1
+                )
+        
+        elif model_type == 'gradient_boosting':
+            if len(np.unique(y)) <= 10:  # Classification
+                from sklearn.ensemble import GradientBoostingClassifier
+                return GradientBoostingClassifier(
+                    n_estimators=self.n_estimators,
+                    max_depth=self.max_depth,
+                    random_state=random_state
+                )
+            else:  # Regression
+                from sklearn.ensemble import GradientBoostingRegressor
+                return GradientBoostingRegressor(
+                    n_estimators=self.n_estimators,
+                    max_depth=self.max_depth,
+                    random_state=random_state
+                )
+        
+        else:
+            # Default to RandomForest
+            if len(np.unique(y)) <= 10:  # Classification
+                from sklearn.ensemble import RandomForestClassifier
+                return RandomForestClassifier(
+                    n_estimators=self.n_estimators,
+                    max_depth=self.max_depth,
+                    random_state=random_state,
+                    n_jobs=-1
+                )
+            else:  # Regression
+                from sklearn.ensemble import RandomForestRegressor
+                return RandomForestRegressor(
+                    n_estimators=self.n_estimators,
+                    max_depth=self.max_depth,
+                    random_state=random_state,
+                    n_jobs=-1
+                )

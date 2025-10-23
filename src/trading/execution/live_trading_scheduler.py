@@ -31,13 +31,7 @@ from src.utils.tprint import (
 )
 
 # Import partial-bar nowcasting
-try:
-    from .partial_bar_nowcasting import PartialBarNowcaster, create_partial_bar_nowcaster
-except ImportError:
-    # Fallback if partial_bar_nowcasting is not available
-    tprint_warning("⚠️ Partial-bar nowcasting not available, using mock implementation")
-    PartialBarNowcaster = None
-    create_partial_bar_nowcaster = None
+from .partial_bar_nowcasting import PartialBarNowcaster, create_partial_bar_nowcaster
 
 logger = system_logger.getChild('LiveTradingScheduler')
 
@@ -108,16 +102,12 @@ class LiveTradingScheduler:
         self.logger = logger.getChild(f'{symbol}_{exchange}')
 
         # Initialize partial-bar nowcaster for HMM
-        if create_partial_bar_nowcaster:
-            self.nowcaster = create_partial_bar_nowcaster(
-                base_timeframe="1h",
-                evaluation_interval=15 * 60,  # 15 minutes
-                min_bar_completion=0.25,     # 25% minimum completion
-                max_bar_completion=0.95      # 95% maximum completion
-            )
-        else:
-            self.nowcaster = None
-            tprint_warning("⚠️ Partial-bar nowcaster not available, HMM will use mock data")
+        self.nowcaster = create_partial_bar_nowcaster(
+            base_timeframe="1h",
+            evaluation_interval=15 * 60,  # 15 minutes
+            min_bar_completion=0.25,     # 25% minimum completion
+            max_bar_completion=0.95      # 95% maximum completion
+        )
 
         # Model configurations
         self.model_configs = {
@@ -193,14 +183,7 @@ class LiveTradingScheduler:
             tprint_info("🚀 Starting Live Trading Scheduler...")
 
             # Initialize partial-bar nowcaster
-            if self.nowcaster:
-                try:
-                    await self.nowcaster.initialize()
-                except Exception as e:
-                    tprint_warning(f"⚠️ Failed to initialize nowcaster: {e}")
-                    self.nowcaster = None
-            else:
-                tprint_warning("⚠️ Skipping nowcaster initialization - not available")
+            await self.nowcaster.initialize()
 
             # Initialize models
             try:
@@ -267,108 +250,22 @@ class LiveTradingScheduler:
     async def _initialize_hmm_models(self):
         """Initialize HMM models for regime detection."""
         try:
-            # Try to import the actual HDBSCAN regime discovery implementation
-            try:
-                from src.training.steps.market_analysis.hdbscan_clustering.main_regime_discovery import HDBSCANRegimeDiscovery
-                
-                config = self.model_configs[ModelType.HMM]
-                
-                # Initialize HDBSCAN regime discovery
-                self.hmm_models = HDBSCANRegimeDiscovery()
-                
-                # Initialize with default configuration
-                await self.hmm_models.initialize()
-                
-                tprint_success("✅ HMM models initialized (HDBSCAN regime discovery)")
-                
-            except ImportError:
-                # Fallback to a simplified HMM implementation using sklearn
-                try:
-                    from sklearn.mixture import GaussianMixture
-                    from sklearn.preprocessing import StandardScaler
-                    
-                    class SimpleHMMPipeline:
-                        def __init__(self, n_regimes=20, n_features=100):
-                            self.n_regimes = n_regimes
-                            self.n_features = n_features
-                            self.model = GaussianMixture(n_components=n_regimes, random_state=42)
-                            self.scaler = StandardScaler()
-                            self.is_initialized = False
-                        
-                        async def fit(self, data):
-                            """Fit the HMM model."""
-                            if len(data) == 0:
-                                raise ValueError("No data provided for fitting")
-                            
-                            # Scale the data
-                            data_scaled = self.scaler.fit_transform(data)
-                            
-                            # Fit the model
-                            self.model.fit(data_scaled)
-                            self.is_initialized = True
-                            
-                        async def predict(self, data):
-                            """Predict regime states."""
-                            if not self.is_initialized:
-                                # Return random predictions if not fitted
-                                return np.random.randint(0, self.n_regimes, len(data))
-                            
-                            if len(data) == 0:
-                                return np.array([])
-                            
-                            # Scale the data
-                            data_scaled = self.scaler.transform(data)
-                            
-                            # Predict regime states
-                            return self.model.predict(data_scaled)
-                        
-                        async def predict_proba(self, data):
-                            """Predict regime probabilities."""
-                            if not self.is_initialized:
-                                # Return random probabilities if not fitted
-                                return np.random.rand(len(data), self.n_regimes)
-                            
-                            if len(data) == 0:
-                                return np.array([]).reshape(0, self.n_regimes)
-                            
-                            # Scale the data
-                            data_scaled = self.scaler.transform(data)
-                            
-                            # Predict regime probabilities
-                            return self.model.predict_proba(data_scaled)
-                    
-                    config = self.model_configs[ModelType.HMM]
-                    self.hmm_models = SimpleHMMPipeline(
-                        n_regimes=config.custom_params['n_regimes'],
-                        n_features=config.custom_params['n_features']
-                    )
-                    
-                    tprint_success("✅ HMM models initialized (Gaussian Mixture fallback)")
-                    
-                except ImportError:
-                    # Final fallback to mock implementation
-                    class MockHMMPipeline:
-                        def __init__(self, n_regimes=20, n_features=100):
-                            self.n_regimes = n_regimes
-                            self.n_features = n_features
-                            self.is_initialized = True
-                        
-                        async def predict(self, data):
-                            """Mock prediction method."""
-                            return np.random.randint(0, self.n_regimes, len(data))
-                        
-                        async def predict_proba(self, data):
-                            """Mock probability prediction."""
-                            return np.random.rand(len(data), self.n_regimes)
-                    
-                    config = self.model_configs[ModelType.HMM]
-                    self.hmm_models = MockHMMPipeline(
-                        n_regimes=config.custom_params['n_regimes'],
-                        n_features=config.custom_params['n_features']
-                    )
-                    
-                    tprint_warning("⚠️ HMM models initialized (mock implementation - no ML libraries available)")
+            # Import the actual HDBSCAN regime discovery implementation - fast fail if not available
+            from src.training.steps.market_analysis.hdbscan_clustering.main_regime_discovery import HDBSCANRegimeDiscovery
+            
+            config = self.model_configs[ModelType.HMM]
+            
+            # Initialize HDBSCAN regime discovery
+            self.hmm_models = HDBSCANRegimeDiscovery()
+            
+            # Initialize with default configuration
+            await self.hmm_models.initialize()
+            
+            tprint_success("✅ HMM models initialized (HDBSCAN regime discovery)")
 
+        except ImportError as e:
+            tprint_error(f"❌ HMM model initialization failed: HDBSCANRegimeDiscovery not available - {e}")
+            raise RuntimeError(f"HDBSCANRegimeDiscovery is required but not available: {e}")
         except Exception as e:
             tprint_error(f"❌ HMM model initialization failed: {e}")
             raise
@@ -376,37 +273,22 @@ class LiveTradingScheduler:
     async def _initialize_analyst_models(self):
         """Initialize Analyst models for trade decisions."""
         try:
-            # Try to import the actual module, fallback to mock if not available
-            try:
-                from src.training.steps.model_training.analyst_ensemble_training import AnalystEnsembleTrainingStep
-                
-                # Initialize with default configuration
-                config = self.model_configs[ModelType.ANALYST]
-                self.analyst_models = AnalystEnsembleTrainingStep()
-                
-                # Initialize the models (this would typically load pre-trained models)
-                # For now, we'll mark as initialized - in production, you'd load saved models
-                self.analyst_models.is_initialized = True
-                
-                tprint_success("✅ Analyst models initialized")
-                
-            except ImportError:
-                # Create mock implementation
-                class MockAnalystEnsemble:
-                    def __init__(self):
-                        self.is_initialized = True
-                    
-                    async def predict(self, data):
-                        """Mock prediction method."""
-                        return np.random.choice([0, 1], len(data), p=[0.7, 0.3])
-                    
-                    async def predict_proba(self, data):
-                        """Mock probability prediction."""
-                        return np.random.rand(len(data), 2)
-                
-                self.analyst_models = MockAnalystEnsemble()
-                tprint_success("✅ Analyst models initialized (mock implementation)")
+            # Import the actual module - fast fail if not available
+            from src.training.steps.model_training.analyst_ensemble_training import AnalystEnsembleTrainingStep
+            
+            # Initialize with default configuration
+            config = self.model_configs[ModelType.ANALYST]
+            self.analyst_models = AnalystEnsembleTrainingStep()
+            
+            # Initialize the models (this would typically load pre-trained models)
+            # For now, we'll mark as initialized - in production, you'd load saved models
+            self.analyst_models.is_initialized = True
+            
+            tprint_success("✅ Analyst models initialized")
 
+        except ImportError as e:
+            tprint_error(f"❌ Analyst model initialization failed: AnalystEnsembleTrainingStep not available - {e}")
+            raise RuntimeError(f"AnalystEnsembleTrainingStep is required but not available: {e}")
         except Exception as e:
             tprint_error(f"❌ Analyst model initialization failed: {e}")
             raise
@@ -414,37 +296,22 @@ class LiveTradingScheduler:
     async def _initialize_tactician_models(self):
         """Initialize Tactician models for timing decisions."""
         try:
-            # Try to import the actual module, fallback to mock if not available
-            try:
-                from src.training.steps.model_training.tactician_ensemble_training import TacticianEnsembleTrainingStep
-                
-                # Initialize with default configuration
-                config = self.model_configs[ModelType.TACTICIAN]
-                self.tactician_models = TacticianEnsembleTrainingStep()
-                
-                # Initialize the models (this would typically load pre-trained models)
-                # For now, we'll mark as initialized - in production, you'd load saved models
-                self.tactician_models.is_initialized = True
-                
-                tprint_success("✅ Tactician models initialized")
-                
-            except ImportError:
-                # Create mock implementation
-                class MockTacticianEnsemble:
-                    def __init__(self):
-                        self.is_initialized = True
-                    
-                    async def predict(self, data):
-                        """Mock prediction method."""
-                        return np.random.choice([0, 1], len(data), p=[0.8, 0.2])
-                    
-                    async def predict_proba(self, data):
-                        """Mock probability prediction."""
-                        return np.random.rand(len(data), 2)
-                
-                self.tactician_models = MockTacticianEnsemble()
-                tprint_success("✅ Tactician models initialized (mock implementation)")
+            # Import the actual module - fast fail if not available
+            from src.training.steps.model_training.tactician_ensemble_training import TacticianEnsembleTrainingStep
+            
+            # Initialize with default configuration
+            config = self.model_configs[ModelType.TACTICIAN]
+            self.tactician_models = TacticianEnsembleTrainingStep()
+            
+            # Initialize the models (this would typically load pre-trained models)
+            # For now, we'll mark as initialized - in production, you'd load saved models
+            self.tactician_models.is_initialized = True
+            
+            tprint_success("✅ Tactician models initialized")
 
+        except ImportError as e:
+            tprint_error(f"❌ Tactician model initialization failed: TacticianEnsembleTrainingStep not available - {e}")
+            raise RuntimeError(f"TacticianEnsembleTrainingStep is required but not available: {e}")
         except Exception as e:
             tprint_error(f"❌ Tactician model initialization failed: {e}")
             raise
@@ -472,7 +339,7 @@ class LiveTradingScheduler:
         def engineer_features(data):
             """Engineer features for HMM regime detection."""
             if data is None or len(data) == 0:
-                return np.random.randn(24, 100)  # Fallback to mock data
+                raise ValueError("No data provided for HMM feature engineering")
             
             # Basic feature engineering for regime detection
             features = []
@@ -520,7 +387,7 @@ class LiveTradingScheduler:
         def engineer_features(data):
             """Engineer features for Analyst trade decisions."""
             if data is None or len(data) == 0:
-                return np.random.randn(100, 300)  # Fallback to mock data
+                raise ValueError("No data provided for Analyst feature engineering")
             
             # Basic feature engineering for trade decisions
             features = []
@@ -577,7 +444,7 @@ class LiveTradingScheduler:
         def engineer_features(data):
             """Engineer features for Tactician timing decisions."""
             if data is None or len(data) == 0:
-                return np.random.randn(100, 50)  # Fallback to mock data
+                raise ValueError("No data provided for Tactician feature engineering")
             
             # Basic feature engineering for timing decisions
             features = []
@@ -637,11 +504,12 @@ class LiveTradingScheduler:
     async def _load_market_data(self, timeframe: str, n_bars: int = 100) -> pd.DataFrame:
         """Load market data for the specified timeframe."""
         try:
-            # In a real implementation, this would connect to your data source
-            # For now, generate mock market data
+            # TODO: Replace with real data source connection
+            # This is a placeholder implementation that generates synthetic data
+            # In production, connect to your actual market data provider
             dates = pd.date_range(end=datetime.now(), periods=n_bars, freq=timeframe)
             
-            # Generate realistic mock data
+            # Generate synthetic data for testing
             np.random.seed(42)  # For reproducible results
             base_price = 100.0
             returns = np.random.normal(0, 0.02, n_bars)
@@ -801,107 +669,75 @@ class LiveTradingScheduler:
         try:
             tprint_info("🔮 Executing HMM with partial-bar nowcasting...")
 
-            if self.nowcaster:
-                # Get complete hourly bars using nowcasting
-                complete_bars = await self.nowcaster.get_complete_hourly_bars(n_bars=24)
+            # Get complete hourly bars using nowcasting
+            complete_bars = await self.nowcaster.get_complete_hourly_bars(n_bars=24)
 
-                if len(complete_bars) == 0:
-                    tprint_warning("⚠️ No complete bars available for HMM evaluation")
-                    return {
-                        'regime_states': [],
-                        'regime_probabilities': [],
-                        'regime_confidence': [],
-                        'n_regimes': 0,
-                        'n_features': 0,
-                        'execution_time': datetime.now().isoformat(),
-                        'error': 'No complete bars available'
-                    }
-
-                # Create bar split for this evaluation
-                bar_split = await self.nowcaster.create_bar_split()
-
-                # Engineer features for HMM
-                hmm_features = self.feature_engineers[ModelType.HMM](complete_bars)
-
-                # Prepare data for HMM prediction
-                if hasattr(self.hmm_models, 'predict_regimes'):
-                    # Use HDBSCAN regime discovery
-                    regime_labels, regime_probs, method_used = self.hmm_models.predict_regimes(complete_bars)
-                    
-                    result = {
-                        'regime_states': regime_labels.tolist(),
-                        'regime_probabilities': regime_probs.tolist(),
-                        'regime_confidence': np.max(regime_probs, axis=1).tolist(),
-                        'n_regimes': len(np.unique(regime_labels)),
-                        'n_features': complete_bars.shape[1] if hasattr(complete_bars, 'shape') else 100,
-                        'execution_time': datetime.now().isoformat(),
-                        'method_used': method_used,
-                        'nowcasting_info': {
-                            'bar_completion': bar_split.split_ratio,
-                            'complete_bars_count': len(complete_bars),
-                            'nowcasted_bars_count': len(complete_bars[complete_bars.get('is_nowcasted', False)]),
-                            'bar_split_time': bar_split.end_time.isoformat()
-                        }
-                    }
-                else:
-                    # Use simple HMM or mock implementation
-                    if hasattr(self.hmm_models, 'predict') and hasattr(self.hmm_models, 'predict_proba'):
-                        # Use engineered features for prediction
-                        regime_states = await self.hmm_models.predict(hmm_features)
-                        regime_probs = await self.hmm_models.predict_proba(hmm_features)
-                        
-                        result = {
-                            'regime_states': regime_states.tolist(),
-                            'regime_probabilities': regime_probs.tolist(),
-                            'regime_confidence': np.max(regime_probs, axis=1).tolist(),
-                            'n_regimes': len(np.unique(regime_states)),
-                            'n_features': data_array.shape[1] if len(data_array.shape) > 1 else 100,
-                            'execution_time': datetime.now().isoformat(),
-                            'nowcasting_info': {
-                                'bar_completion': bar_split.split_ratio,
-                                'complete_bars_count': len(complete_bars),
-                                'nowcasted_bars_count': len(complete_bars[complete_bars.get('is_nowcasted', False)]),
-                                'bar_split_time': bar_split.end_time.isoformat()
-                            }
-                        }
-                    else:
-                        # Fallback to mock data
-                        result = {
-                            'regime_states': np.random.randint(0, 20, len(complete_bars)).tolist(),
-                            'regime_probabilities': np.random.rand(len(complete_bars), 20).tolist(),
-                            'regime_confidence': np.random.rand(len(complete_bars)).tolist(),
-                            'n_regimes': 20,
-                            'n_features': 100,
-                            'execution_time': datetime.now().isoformat(),
-                            'nowcasting_info': {
-                                'bar_completion': bar_split.split_ratio,
-                                'complete_bars_count': len(complete_bars),
-                                'nowcasted_bars_count': len(complete_bars[complete_bars.get('is_nowcasted', False)]),
-                                'bar_split_time': bar_split.end_time.isoformat()
-                            }
-                        }
-
-                # Update evaluation time
-                await self.nowcaster.update_evaluation_time()
-
-                tprint_success(f"✅ HMM execution completed with {len(complete_bars)} complete bars")
-            else:
-                # Fallback to mock data without nowcasting
-                tprint_warning("⚠️ Using mock HMM data (nowcaster not available)")
-                result = {
-                    'regime_states': np.random.randint(0, 20, 24).tolist(),
-                    'regime_probabilities': np.random.rand(24, 20).tolist(),
-                    'regime_confidence': np.random.rand(24).tolist(),
-                    'n_regimes': 20,
-                    'n_features': 100,
+            if len(complete_bars) == 0:
+                tprint_warning("⚠️ No complete bars available for HMM evaluation")
+                return {
+                    'regime_states': [],
+                    'regime_probabilities': [],
+                    'regime_confidence': [],
+                    'n_regimes': 0,
+                    'n_features': 0,
                     'execution_time': datetime.now().isoformat(),
+                    'error': 'No complete bars available'
+                }
+
+            # Create bar split for this evaluation
+            bar_split = await self.nowcaster.create_bar_split()
+
+            # Engineer features for HMM
+            hmm_features = self.feature_engineers[ModelType.HMM](complete_bars)
+
+            # Prepare data for HMM prediction
+            if hasattr(self.hmm_models, 'predict_regimes'):
+                # Use HDBSCAN regime discovery
+                regime_labels, regime_probs, method_used = self.hmm_models.predict_regimes(complete_bars)
+                
+                result = {
+                    'regime_states': regime_labels.tolist(),
+                    'regime_probabilities': regime_probs.tolist(),
+                    'regime_confidence': np.max(regime_probs, axis=1).tolist(),
+                    'n_regimes': len(np.unique(regime_labels)),
+                    'n_features': complete_bars.shape[1] if hasattr(complete_bars, 'shape') else 100,
+                    'execution_time': datetime.now().isoformat(),
+                    'method_used': method_used,
                     'nowcasting_info': {
-                        'bar_completion': 1.0,
-                        'complete_bars_count': 24,
-                        'nowcasted_bars_count': 0,
-                        'bar_split_time': datetime.now().isoformat()
+                        'bar_completion': bar_split.split_ratio,
+                        'complete_bars_count': len(complete_bars),
+                        'nowcasted_bars_count': len(complete_bars[complete_bars.get('is_nowcasted', False)]),
+                        'bar_split_time': bar_split.end_time.isoformat()
                     }
                 }
+            else:
+                # Use HMM models with predict/predict_proba methods
+                if not (hasattr(self.hmm_models, 'predict') and hasattr(self.hmm_models, 'predict_proba')):
+                    raise RuntimeError("HMM models must have predict and predict_proba methods")
+                
+                # Use engineered features for prediction
+                regime_states = await self.hmm_models.predict(hmm_features)
+                regime_probs = await self.hmm_models.predict_proba(hmm_features)
+                
+                result = {
+                    'regime_states': regime_states.tolist(),
+                    'regime_probabilities': regime_probs.tolist(),
+                    'regime_confidence': np.max(regime_probs, axis=1).tolist(),
+                    'n_regimes': len(np.unique(regime_states)),
+                    'n_features': hmm_features.shape[1] if len(hmm_features.shape) > 1 else 100,
+                    'execution_time': datetime.now().isoformat(),
+                    'nowcasting_info': {
+                        'bar_completion': bar_split.split_ratio,
+                        'complete_bars_count': len(complete_bars),
+                        'nowcasted_bars_count': len(complete_bars[complete_bars.get('is_nowcasted', False)]),
+                        'bar_split_time': bar_split.end_time.isoformat()
+                    }
+                }
+
+            # Update evaluation time
+            await self.nowcaster.update_evaluation_time()
+
+            tprint_success(f"✅ HMM execution completed with {len(complete_bars)} complete bars")
 
             # Store HMM data for other models
             self.hmm_data = result
@@ -940,29 +776,19 @@ class LiveTradingScheduler:
                     features = np.column_stack([features, regime_features])
             
             # Execute Analyst prediction
-            if hasattr(self.analyst_models, 'predict') and hasattr(self.analyst_models, 'predict_proba'):
-                try:
-                    # Use real Analyst prediction
-                    trade_signals = await self.analyst_models.predict(features)
-                    confidence_scores = await self.analyst_models.predict_proba(features)
-                    
-                    # Convert to appropriate format
-                    if len(confidence_scores.shape) > 1:
-                        confidence_scores = confidence_scores[:, 1] if confidence_scores.shape[1] > 1 else confidence_scores[:, 0]
-                    
-                    # Determine green light periods (when to allow Tactician to trade)
-                    green_light_periods = (trade_signals == 1) & (confidence_scores > 0.6)
-                    
-                except Exception as pred_error:
-                    tprint_warning(f"⚠️ Analyst prediction failed: {pred_error}, using mock data")
-                    trade_signals = np.random.choice([0, 1], n_samples, p=[0.7, 0.3])
-                    confidence_scores = np.random.rand(n_samples)
-                    green_light_periods = np.random.choice([True, False], n_samples, p=[0.3, 0.7])
-            else:
-                # Fallback to mock data
-                trade_signals = np.random.choice([0, 1], n_samples, p=[0.7, 0.3])
-                confidence_scores = np.random.rand(n_samples)
-                green_light_periods = np.random.choice([True, False], n_samples, p=[0.3, 0.7])
+            if not (hasattr(self.analyst_models, 'predict') and hasattr(self.analyst_models, 'predict_proba')):
+                raise RuntimeError("Analyst models must have predict and predict_proba methods")
+            
+            # Use real Analyst prediction
+            trade_signals = await self.analyst_models.predict(features)
+            confidence_scores = await self.analyst_models.predict_proba(features)
+            
+            # Convert to appropriate format
+            if len(confidence_scores.shape) > 1:
+                confidence_scores = confidence_scores[:, 1] if confidence_scores.shape[1] > 1 else confidence_scores[:, 0]
+            
+            # Determine green light periods (when to allow Tactician to trade)
+            green_light_periods = (trade_signals == 1) & (confidence_scores > 0.6)
             
             result = {
                 'trade_signals': trade_signals.tolist(),
@@ -1031,33 +857,23 @@ class LiveTradingScheduler:
                     features = np.column_stack([features, analyst_features])
             
             # Execute Tactician prediction
-            if hasattr(self.tactician_models, 'predict') and hasattr(self.tactician_models, 'predict_proba'):
-                try:
-                    # Use real Tactician prediction
-                    timing_signals = await self.tactician_models.predict(features)
-                    confidence_scores = await self.tactician_models.predict_proba(features)
-                    
-                    # Convert to appropriate format
-                    if len(confidence_scores.shape) > 1:
-                        confidence_scores = confidence_scores[:, 1] if confidence_scores.shape[1] > 1 else confidence_scores[:, 0]
-                    
-                    # Generate price change predictions based on timing signals
-                    price_change_predictions = np.where(
-                        timing_signals == 1,
-                        np.random.normal(0.005, 0.01, n_samples),  # Positive expected return when signal = 1
-                        np.random.normal(-0.002, 0.01, n_samples)  # Negative expected return when signal = 0
-                    )
-                    
-                except Exception as pred_error:
-                    tprint_warning(f"⚠️ Tactician prediction failed: {pred_error}, using mock data")
-                    timing_signals = np.random.choice([0, 1], n_samples, p=[0.8, 0.2])
-                    confidence_scores = np.random.rand(n_samples)
-                    price_change_predictions = np.random.normal(0, 0.01, n_samples)
-            else:
-                # Fallback to mock data
-                timing_signals = np.random.choice([0, 1], n_samples, p=[0.8, 0.2])
-                confidence_scores = np.random.rand(n_samples)
-                price_change_predictions = np.random.normal(0, 0.01, n_samples)
+            if not (hasattr(self.tactician_models, 'predict') and hasattr(self.tactician_models, 'predict_proba')):
+                raise RuntimeError("Tactician models must have predict and predict_proba methods")
+            
+            # Use real Tactician prediction
+            timing_signals = await self.tactician_models.predict(features)
+            confidence_scores = await self.tactician_models.predict_proba(features)
+            
+            # Convert to appropriate format
+            if len(confidence_scores.shape) > 1:
+                confidence_scores = confidence_scores[:, 1] if confidence_scores.shape[1] > 1 else confidence_scores[:, 0]
+            
+            # Generate price change predictions based on timing signals
+            price_change_predictions = np.where(
+                timing_signals == 1,
+                np.random.normal(0.005, 0.01, n_samples),  # Positive expected return when signal = 1
+                np.random.normal(-0.002, 0.01, n_samples)  # Negative expected return when signal = 0
+            )
             
             result = {
                 'timing_signals': timing_signals.tolist(),

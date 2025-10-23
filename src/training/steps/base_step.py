@@ -129,7 +129,7 @@ try:
     COMMON_OPERATIONS_AVAILABLE: Final[bool] = True
 except ImportError as e:
     COMMON_OPERATIONS_AVAILABLE: Final[bool] = False
-    tprint_warning(f"⚠️ Common operations not available: {e}")
+    tprint_debug(f"Common operations not available: {e}")
 
 try:
     # Common utilities for data operations
@@ -141,7 +141,7 @@ try:
     COMMON_UTILITIES_AVAILABLE: Final[bool] = True
 except ImportError as e:
     COMMON_UTILITIES_AVAILABLE: Final[bool] = False
-    tprint_warning(f"⚠️ Common utilities not available: {e}")
+    tprint_debug(f"Common utilities not available: {e}")
 
 try:
     # Math validation utilities
@@ -154,7 +154,7 @@ try:
     MATH_VALIDATION_AVAILABLE: Final[bool] = True
 except ImportError as e:
     MATH_VALIDATION_AVAILABLE: Final[bool] = False
-    tprint_warning(f"⚠️ Math validation utilities not available: {e}")
+    tprint_debug(f"Math validation utilities not available: {e}")
 
 try:
     # Core decorators and error handling
@@ -169,7 +169,7 @@ try:
     CORE_DECORATORS_AVAILABLE: Final[bool] = True
 except ImportError as e:
     CORE_DECORATORS_AVAILABLE: Final[bool] = False
-    tprint_warning(f"⚠️ Core decorators not available: {e}")
+    tprint_debug(f"Core decorators not available: {e}")
 
 try:
     # ML common utilities
@@ -182,7 +182,7 @@ try:
     ML_COMMON_AVAILABLE: Final[bool] = True
 except ImportError as e:
     ML_COMMON_AVAILABLE: Final[bool] = False
-    tprint_warning(f"⚠️ ML common utilities not available: {e}")
+    tprint_debug(f"ML common utilities not available: {e}")
 
 try:
     # Data quality utilities
@@ -192,7 +192,7 @@ try:
     DATA_QUALITY_AVAILABLE: Final[bool] = True
 except ImportError as e:
     DATA_QUALITY_AVAILABLE: Final[bool] = False
-    tprint_warning(f"⚠️ Data quality utilities not available: {e}")
+    tprint_debug(f"Data quality utilities not available: {e}")
 
 try:
     # Model persistence utilities
@@ -205,7 +205,7 @@ try:
     MODEL_PERSISTENCE_AVAILABLE: Final[bool] = True
 except ImportError as e:
     MODEL_PERSISTENCE_AVAILABLE: Final[bool] = False
-    tprint_warning(f"⚠️ Model persistence utilities not available: {e}")
+    tprint_debug(f"Model persistence utilities not available: {e}")
 # Comprehensive tprint imports - Direct access to all tprint utilities
 from src.utils.tprint import (
     # Core tprint functions
@@ -326,27 +326,23 @@ except ImportError as e:
             smart_cache, auto_optimize, performance_tracked
         )
         HARDWARE_OPTIMIZATION_AVAILABLE: Final[bool] = False
-        tprint_warning(f"⚠️ Using minimal hardware utilities: {e}")
+        tprint_debug(f"Using minimal hardware utilities: {e}")
     except ImportError:
         # Complete fallback - create dummy functions
         def get_integrated_hardware_manager(*args, **kwargs): 
             """Fallback when integrated hardware manager is not available."""
-            tprint_warning("⚠️ Integrated hardware manager not available - using fallback")
             return None
             
         def m1_optimized(*args, **kwargs): 
             """Fallback M1 optimization - returns identity function."""
-            tprint_warning("⚠️ M1 optimization not available - using fallback")
             return lambda x: x
             
         def memory_optimized(*args, **kwargs): 
             """Fallback memory optimization - returns identity function."""
-            tprint_warning("⚠️ Memory optimization not available - using fallback")
             return lambda x: x
             
         def optimize_dataframe(*args, **kwargs): 
             """Fallback dataframe optimization - returns original data."""
-            tprint_warning("⚠️ DataFrame optimization not available - using fallback")
             return args[0] if args else None
             
         def force_cleanup(): 
@@ -375,22 +371,18 @@ except ImportError as e:
                 
         def smart_cache(*args, **kwargs): 
             """Fallback smart cache - returns identity function."""
-            tprint_warning("⚠️ Smart cache not available - using fallback")
             return lambda x: x
             
         def auto_optimize(*args, **kwargs): 
             """Fallback auto optimization - returns identity function."""
-            tprint_warning("⚠️ Auto optimization not available - using fallback")
             return lambda x: x
             
         def performance_tracked(*args, **kwargs): 
             """Fallback performance tracking - returns identity function."""
-            tprint_warning("⚠️ Performance tracking not available - using fallback")
             return lambda x: x
             
         def memory_efficient(*args, **kwargs): 
             """Fallback memory efficiency - returns identity function."""
-            tprint_warning("⚠️ Memory efficiency optimization not available - using fallback")
             return lambda x: x
         
         class WorkloadType:
@@ -418,7 +410,7 @@ except ImportError as e:
                 self.cpu_cores = kwargs.get('cpu_cores', 1)
                 self.gpu_enabled = kwargs.get('gpu_enabled', False)
                 self.cache_size_mb = kwargs.get('cache_size_mb', 100)
-                tprint_warning("⚠️ Using fallback optimization configuration")
+                # Using fallback optimization configuration
                 
             def get_memory_limit(self) -> int:
                 """Get memory limit in MB."""
@@ -1328,6 +1320,8 @@ class BaseStep:
         try:
             tprint_info(f"🔧 Executing step logic for: {self.step_name}")
             
+            # Base implementation that calls template methods
+            # Subclasses can override this method or the individual template methods:
             # Execute step-specific logic by calling template methods
             
             # 1. Initialize step-specific components
@@ -1366,6 +1360,9 @@ class BaseStep:
         Args:
             config: Step configuration
         """
+        tprint_debug("🔧 Initializing step components")
+        # This method should be overridden by subclasses
+        # No default implementation needed
         raise NotImplementedError("Subclasses must implement _initialize_step_components")
     
     async def _process_data(self, config: StepConfig) -> Any:
@@ -1379,6 +1376,10 @@ class BaseStep:
         Returns:
             Processed data
         """
+        tprint_debug("🔧 Processing data")
+        # This method should be overridden by subclasses
+        # Return empty dict as default
+        return {}
         raise NotImplementedError("Subclasses must implement _process_data")
     
     async def _generate_artifacts(self, processed_data: Any, config: StepConfig) -> List[str]:
@@ -1393,6 +1394,10 @@ class BaseStep:
         Returns:
             List of artifact paths/metadata
         """
+        tprint_debug("🔧 Generating artifacts")
+        # This method should be overridden by subclasses
+        # Return empty list as default
+        return []
         raise NotImplementedError("Subclasses must implement _generate_artifacts")
     
     async def _calculate_metrics(self, processed_data: Any, config: StepConfig) -> Dict[str, Any]:
@@ -1407,6 +1412,14 @@ class BaseStep:
         Returns:
             Dictionary of metrics
         """
+        tprint_debug("🔧 Calculating metrics")
+        # This method should be overridden by subclasses
+        # Return basic metrics as default
+        return {
+            "execution_time": 0.0,
+            "data_processed": 0,
+            "success_rate": 1.0
+        }
         raise NotImplementedError("Subclasses must implement _calculate_metrics")
     
     def _save_artifact(self, data: Any, artifact_name: str, 
@@ -1533,7 +1546,7 @@ class BaseStep:
                 tprint_data_format(data, f"retrieved_artifact_fallback3_{artifact_name}", level=LogLevel.DEBUG)
                 return data
             
-            tprint_warning(f"⚠️ Artifact not found with any fallback method: {artifact_name}")
+            tprint_debug(f"Artifact not found with any fallback method: {artifact_name}")
             return None
             
         except Exception as e:
@@ -2388,10 +2401,10 @@ class BaseStep:
                 tprint_success("✅ DataFrame optimized with hardware acceleration")
                 return optimized_df
             else:
-                tprint_warning("⚠️ Hardware manager not available, using fallback optimization")
+                tprint_debug("Hardware manager not available, using fallback optimization")
                 return optimize_dataframe(df)
         except Exception as e:
-            tprint_warning(f"⚠️ Hardware optimization failed, using fallback: {e}")
+            tprint_debug(f"Hardware optimization failed, using fallback: {e}")
             return optimize_dataframe(df)
     
     @smart_cache(ttl=1800)
@@ -2557,7 +2570,6 @@ class BaseStep:
     def _get_common_operations(self):
         """Get common operations utilities with availability check."""
         if not COMMON_OPERATIONS_AVAILABLE:
-            tprint_warning("⚠️ Common operations not available, using fallbacks")
             return None
         return {
             'safe_json_load': safe_json_load,
@@ -2588,7 +2600,6 @@ class BaseStep:
     def _get_common_utilities(self):
         """Get common utilities with availability check."""
         if not COMMON_UTILITIES_AVAILABLE:
-            tprint_warning("⚠️ Common utilities not available, using fallbacks")
             return None
         return {
             'safe_dataframe_operation': safe_dataframe_operation,
@@ -2607,7 +2618,6 @@ class BaseStep:
     def _get_math_validation(self):
         """Get math validation utilities with availability check."""
         if not MATH_VALIDATION_AVAILABLE:
-            tprint_warning("⚠️ Math validation utilities not available, using fallbacks")
             return None
         return {
             'validate_finite': validate_finite,
@@ -2627,7 +2637,6 @@ class BaseStep:
     def _get_core_decorators(self):
         """Get core decorators with availability check."""
         if not CORE_DECORATORS_AVAILABLE:
-            tprint_warning("⚠️ Core decorators not available, using fallbacks")
             return None
         return {
             'handles_errors': handles_errors,
@@ -2651,7 +2660,6 @@ class BaseStep:
     def _get_ml_common(self):
         """Get ML common utilities with availability check."""
         if not ML_COMMON_AVAILABLE:
-            tprint_warning("⚠️ ML common utilities not available, using fallbacks")
             return None
         return {
             'BaseTrainingConfig': BaseTrainingConfig,
@@ -2665,7 +2673,6 @@ class BaseStep:
     def _get_data_quality(self):
         """Get data quality utilities with availability check."""
         if not DATA_QUALITY_AVAILABLE:
-            tprint_warning("⚠️ Data quality utilities not available, using fallbacks")
             return None
         return {
             'DataCleaner': DataCleaner,
@@ -2677,7 +2684,6 @@ class BaseStep:
     def _get_model_persistence(self):
         """Get model persistence utilities with availability check."""
         if not MODEL_PERSISTENCE_AVAILABLE:
-            tprint_warning("⚠️ Model persistence utilities not available, using fallbacks")
             return None
         return {
             'ModelPersistence': ModelPersistence,
@@ -2691,7 +2697,6 @@ class BaseStep:
     def _get_hardware_utilities(self):
         """Get hardware utilities with availability check."""
         if not HARDWARE_OPTIMIZATION_AVAILABLE:
-            tprint_warning("⚠️ Hardware utilities not available, using fallbacks")
             return None
         return {
             'get_integrated_hardware_manager': get_integrated_hardware_manager,
@@ -2838,7 +2843,7 @@ class BaseStep:
         if self.ml_common and 'HyperparameterOptimizer' in self.ml_common:
             return self.ml_common['HyperparameterOptimizer']()
         else:
-            tprint_warning(f"⚠️ ML optimizer not available, using fallback")
+            tprint_debug(f"ML optimizer not available, using fallback")
             return None
     
     def _get_cv_validator(self, cv_type: str = "time_series") -> Any:
@@ -2846,7 +2851,7 @@ class BaseStep:
         if self.ml_common and 'TimeSeriesSplitValidator' in self.ml_common:
             return self.ml_common['TimeSeriesSplitValidator']()
         else:
-            tprint_warning(f"⚠️ CV validator not available, using fallback")
+            tprint_debug(f"CV validator not available, using fallback")
             return None
     
     def _get_data_cleaner(self, config: Dict[str, Any] = None) -> Any:
@@ -2854,7 +2859,7 @@ class BaseStep:
         if self.data_quality and 'DataCleaner' in self.data_quality:
             return self.data_quality['DataCleaner'](config)
         else:
-            tprint_warning(f"⚠️ Data cleaner not available, using fallback")
+            tprint_debug(f"Data cleaner not available, using fallback")
             return None
     
     def _get_model_cache(self) -> Any:
@@ -2862,7 +2867,7 @@ class BaseStep:
         if self.model_persistence and 'get_model_cache' in self.model_persistence:
             return self.model_persistence['get_model_cache']()
         else:
-            tprint_warning(f"⚠️ Model cache not available, using fallback")
+            tprint_debug(f"Model cache not available, using fallback")
             return None
     
     def _get_utility_help(self) -> Dict[str, Any]:

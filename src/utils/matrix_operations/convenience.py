@@ -8,6 +8,9 @@ with backwards compatibility and easy access to unified functionality.
 from typing import Any, Dict, List, Optional, Tuple, Union, Callable
 import logging
 
+# Initialize logger
+logger = logging.getLogger(__name__)
+
 # Conditional imports for optional dependencies
 try:
     import numpy as np
@@ -749,7 +752,7 @@ class MatrixConvenience:
         """Convenient SVD with hardware optimization."""
         return svd_decomposition(matrix, k, use_gpu=use_gpu)
 
-def safe_matrix_operations(operation: str, *args, **kwargs):
+def safe_matrix_operations_unified(operation: str, *args, **kwargs):
     """
     Unified safe matrix operations interface.
 
@@ -861,7 +864,7 @@ def get_enhanced_matrix_operations():
     logger.warning("⚠️ get_enhanced_matrix_operations() is deprecated. Use get_unified_matrix_operations() instead.")
     return get_unified_matrix_operations()
 
-def safe_matrix_operations(operation_func, *args, **kwargs):
+def safe_matrix_operations_wrapper(operation_func, *args, **kwargs):
     """
     Safe wrapper for matrix operations with error handling.
 
@@ -876,11 +879,10 @@ def safe_matrix_operations(operation_func, *args, **kwargs):
     try:
         return operation_func(*args, **kwargs)
     except Exception as e:
-        logger = logging.getLogger(__name__)
         logger.warning(f"Matrix operation failed: {e}")
         return None
 
-def validate_matrix_properties(matrix, **kwargs):
+def validate_matrix_properties_simple(matrix, **kwargs):
     """
     Validate matrix properties for safe operations.
 
@@ -898,11 +900,10 @@ def validate_matrix_properties(matrix, **kwargs):
             return False
         return True
     except Exception as e:
-        logger = logging.getLogger(__name__)
         logger.warning(f"Matrix validation failed: {e}")
         return False
 
-def optimize_matrix_computations(matrix, **kwargs):
+def optimize_matrix_computations_simple(matrix, **kwargs):
     """
     Optimize matrix computations for better performance.
 
@@ -918,6 +919,5 @@ def optimize_matrix_computations(matrix, **kwargs):
         # In a real implementation, this would apply optimizations
         return matrix
     except Exception as e:
-        logger = logging.getLogger(__name__)
         logger.warning(f"Matrix optimization failed: {e}")
         return matrix

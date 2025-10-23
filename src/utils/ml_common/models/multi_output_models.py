@@ -1378,10 +1378,95 @@ class MultiOutputStackingModel(MultiOutputModel):
         self.logger.debug(f"🔮 Making probability predictions for {X.shape[0]} samples")
 
         try:
-            # For now, return None as most base models don't support predict_proba
-            # In practice, you would implement probability prediction logic
-            self.logger.warning("⚠️ Probability predictions not implemented for stacking model")
-            return None
+            # Check if this is a classification task
+            if not self.is_classification:
+                self.logger.info("ℹ️ predict_proba called on regression model - returning None")
+                return None
+
+            # Collect probability predictions from all models
+            probas = []
+            proba_details = {}
+
+            for output_idx, output_name in enumerate(self.config.output_names):
+                self.logger.debug(f"🎯 Predicting probabilities for {output_name}")
+
+                # Ensure base and meta models exist
+                if output_name not in self.base_models or output_name not in self.meta_models:
+                    self.logger.warning(f"⚠️ Missing models for output {output_name}, skipping probability prediction")
+                    continue
+
+                # Get base model probability predictions
+                base_probas = []
+                X_arr = X.values if isinstance(X, pd.DataFrame) else X
+                
+                for model_name, model in self.base_models[output_name].items():
+                    try:
+                        if hasattr(model, 'predict_proba'):
+                            base_proba = model.predict_proba(X_arr)
+                            # For binary classification, use positive class probability
+                            if base_proba.ndim > 1 and base_proba.shape[1] > 1:
+                                base_proba = base_proba[:, 1]  # Use positive class
+                            base_probas.append(base_proba)
+                        else:
+                            # Convert predictions to pseudo-probabilities
+                            pred = model.predict(X_arr)
+                            # Simple sigmoid-like transformation
+                            pseudo_proba = 1 / (1 + np.exp(-pred))
+                            base_probas.append(pseudo_proba)
+                    except Exception as e:
+                        self.logger.warning(f"Failed to get probabilities from {model_name}: {e}")
+                        # Fallback to uniform probabilities
+                        base_probas.append(np.full(X_arr.shape[0], 0.5))
+
+                if not base_probas:
+                    self.logger.warning(f"No valid base model probabilities for {output_name}")
+                    continue
+
+                # Stack base probabilities
+                base_proba_array = np.column_stack(base_probas)
+
+                # Combine original features with base model probabilities
+                meta_features = np.hstack([X_arr, base_proba_array])
+
+                # Get meta model probability prediction
+                meta_model = self.meta_models[output_name]
+                try:
+                    if hasattr(meta_model, 'predict_proba'):
+                        meta_proba = meta_model.predict_proba(meta_features)
+                        if meta_proba.ndim > 1 and meta_proba.shape[1] > 1:
+                            meta_proba = meta_proba[:, 1]  # Use positive class
+                    else:
+                        # Convert meta prediction to probability
+                        meta_pred = meta_model.predict(meta_features)
+                        meta_proba = 1 / (1 + np.exp(-meta_pred))
+                    
+                    probas.append(meta_proba)
+                    proba_details[output_name] = {
+                        'shape': meta_proba.shape,
+                        'range': (meta_proba.min(), meta_proba.max()) if len(meta_proba) > 0 else None
+                    }
+                    
+                except Exception as e:
+                    self.logger.warning(f"Meta model probability prediction failed for {output_name}: {e}")
+                    # Fallback to average of base probabilities
+                    meta_proba = base_proba_array.mean(axis=1)
+                    probas.append(meta_proba)
+                    proba_details[output_name] = {
+                        'shape': meta_proba.shape,
+                        'note': 'Fallback to base model average'
+                    }
+
+            if not probas:
+                self.logger.warning("⚠️ No valid probability predictions generated")
+                return None
+
+            # Stack all probabilities
+            final_probas = np.column_stack(probas)
+
+            self.logger.info(f"✅ Probability predictions completed - Shape: {final_probas.shape}")
+            self.logger.debug(f"📊 Probability details: {proba_details}")
+
+            return final_probas
 
         except Exception as e:
             self.logger.error(f"❌ Failed to make probability predictions: {e}")

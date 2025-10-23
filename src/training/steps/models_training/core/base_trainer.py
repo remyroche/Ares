@@ -187,7 +187,6 @@ class BaseTrainer(ABC):
         tprint_info(f"🔧 Initializing {self.__class__.__name__} for {config.role.value}")
         self.logger.info(f"Initialized {self.__class__.__name__} for {config.role.value}")
     
-    @abstractmethod
     async def train(self, data: pd.DataFrame, targets: Optional[pd.Series] = None) -> TrainingResult:
         """
         Train the model with given data.
@@ -199,9 +198,102 @@ class BaseTrainer(ABC):
         Returns:
             Training result with model and metrics
         """
-        pass
+        try:
+            tprint_info("🚀 Starting model training...")
+            self.logger.info("Starting model training...")
+            
+            start_time = time.time()
+            
+            # Preprocess data
+            processed_data, processed_targets = self._preprocess_data(data, targets)
+            
+            # Initialize training state
+            self._training_state['training_started'] = True
+            self._training_state['training_completed'] = False
+            
+            # Train each model type
+            all_models = {}
+            all_metrics = {}
+            best_model = None
+            best_score = -float('inf')
+            
+            for model_type in self.config.model_types:
+                tprint_info(f"🔧 Training {model_type.value} model...")
+                
+                # Create model
+                model = self._create_model(model_type)
+                if model is None:
+                    tprint_warning(f"⚠️ Failed to create {model_type.value} model, skipping...")
+                    continue
+                
+                # Train model
+                model_result = await self._train_single_model(
+                    model, processed_data, processed_targets, model_type
+                )
+                
+                if model_result['success']:
+                    all_models[model_type.value] = model_result['model']
+                    all_metrics[model_type.value] = model_result['metrics']
+                    
+                    # Track best model
+                    primary_metric = self.config.custom_params.get('primary_metric', 'accuracy')
+                    if primary_metric in model_result['metrics']:
+                        score = model_result['metrics'][primary_metric]
+                        if score > best_score:
+                            best_score = score
+                            best_model = model_result['model']
+                    
+                    tprint_success(f"✅ {model_type.value} model trained successfully")
+                else:
+                    tprint_error(f"❌ {model_type.value} model training failed: {model_result.get('error', 'Unknown error')}")
+            
+            # Calculate training time
+            training_time = time.time() - start_time
+            self._performance_metrics['training_time'] = training_time
+            
+            # Update state
+            self._training_state['training_completed'] = True
+            self._model_state['model'] = best_model
+            self._model_state['best_model'] = best_model
+            
+            # Get feature importance if available
+            feature_importance = None
+            if best_model is not None:
+                feature_importance = self._get_feature_importance(best_model)
+            
+            # Create result
+            result = TrainingResult(
+                success=len(all_models) > 0,
+                model=best_model,
+                metrics=all_metrics.get(list(all_models.keys())[0], {}) if all_models else {},
+                training_time=training_time,
+                validation_metrics=all_metrics,
+                feature_importance=feature_importance,
+                metadata={
+                    'models_trained': list(all_models.keys()),
+                    'best_model_type': list(all_models.keys())[0] if all_models else None,
+                    'best_score': best_score
+                }
+            )
+            
+            if result.success:
+                tprint_success(f"✅ Training completed successfully in {training_time:.2f}s")
+                self.logger.info(f"Training completed successfully in {training_time:.2f}s")
+            else:
+                tprint_error("❌ Training failed - no models were successfully trained")
+                result.error_message = "No models were successfully trained"
+            
+            return result
+            
+        except Exception as e:
+            tprint_error(f"❌ Training failed: {e}")
+            self.logger.error(f"Training failed: {e}")
+            return TrainingResult(
+                success=False,
+                error_message=str(e),
+                training_time=time.time() - start_time if 'start_time' in locals() else 0.0
+            )
     
-    @abstractmethod
     async def validate(self, data: pd.DataFrame, targets: Optional[pd.Series] = None) -> ValidationResult:
         """
         Validate the trained model.
@@ -213,9 +305,64 @@ class BaseTrainer(ABC):
         Returns:
             Validation result with metrics
         """
-        pass
+        try:
+            tprint_info("🔍 Starting model validation...")
+            self.logger.info("Starting model validation...")
+            
+            start_time = time.time()
+            
+            # Check if model is trained
+            if not self._training_state['training_completed']:
+                return ValidationResult(
+                    success=False,
+                    error_message="Model not trained yet"
+                )
+            
+            # Preprocess validation data
+            processed_data, processed_targets = self._preprocess_data(data, targets)
+            
+            # Get the best model
+            model = self._model_state['best_model']
+            if model is None:
+                return ValidationResult(
+                    success=False,
+                    error_message="No trained model available"
+                )
+            
+            # Make predictions
+            predictions = await self._predict_with_model(model, processed_data)
+            
+            # Calculate validation metrics
+            metrics = self._calculate_validation_metrics(
+                processed_targets, predictions, processed_data
+            )
+            
+            # Calculate validation time
+            validation_time = time.time() - start_time
+            self._performance_metrics['validation_time'] = validation_time
+            
+            tprint_success(f"✅ Validation completed in {validation_time:.2f}s")
+            self.logger.info(f"Validation completed in {validation_time:.2f}s")
+            
+            return ValidationResult(
+                success=True,
+                metrics=metrics,
+                predictions=predictions,
+                metadata={
+                    'validation_time': validation_time,
+                    'data_shape': processed_data.shape,
+                    'predictions_shape': predictions.shape if predictions is not None else None
+                }
+            )
+            
+        except Exception as e:
+            tprint_error(f"❌ Validation failed: {e}")
+            self.logger.error(f"Validation failed: {e}")
+            return ValidationResult(
+                success=False,
+                error_message=str(e)
+            )
     
-    @abstractmethod
     async def predict(self, data: pd.DataFrame) -> PredictionResult:
         """
         Make predictions with the trained model.
@@ -226,9 +373,66 @@ class BaseTrainer(ABC):
         Returns:
             Prediction result
         """
-        pass
+        try:
+            tprint_info("🔮 Making predictions...")
+            self.logger.info("Making predictions...")
+            
+            start_time = time.time()
+            
+            # Check if model is trained
+            if not self._training_state['training_completed']:
+                return PredictionResult(
+                    success=False,
+                    error_message="Model not trained yet"
+                )
+            
+            # Preprocess data (without targets)
+            processed_data, _ = self._preprocess_data(data, None)
+            
+            # Get the best model
+            model = self._model_state['best_model']
+            if model is None:
+                return PredictionResult(
+                    success=False,
+                    error_message="No trained model available"
+                )
+            
+            # Make predictions
+            predictions = await self._predict_with_model(model, processed_data)
+            
+            # Calculate confidence scores if possible
+            confidence_scores = self._calculate_confidence_scores(model, processed_data, predictions)
+            
+            # Calculate probabilities if possible
+            probabilities = self._calculate_probabilities(model, processed_data)
+            
+            # Calculate prediction time
+            prediction_time = time.time() - start_time
+            self._performance_metrics['prediction_time'] = prediction_time
+            
+            tprint_success(f"✅ Predictions completed in {prediction_time:.2f}s")
+            self.logger.info(f"Predictions completed in {prediction_time:.2f}s")
+            
+            return PredictionResult(
+                success=True,
+                predictions=predictions,
+                probabilities=probabilities,
+                confidence_scores=confidence_scores,
+                metadata={
+                    'prediction_time': prediction_time,
+                    'data_shape': processed_data.shape,
+                    'predictions_shape': predictions.shape if predictions is not None else None
+                }
+            )
+            
+        except Exception as e:
+            tprint_error(f"❌ Prediction failed: {e}")
+            self.logger.error(f"Prediction failed: {e}")
+            return PredictionResult(
+                success=False,
+                error_message=str(e)
+            )
     
-    @abstractmethod
     def _create_model(self, model_type: ModelType) -> Any:
         """
         Create a model instance.
@@ -239,9 +443,27 @@ class BaseTrainer(ABC):
         Returns:
             Model instance
         """
-        pass
+        try:
+            tprint_debug(f"🔧 Creating {model_type.value} model...")
+            
+            if model_type == ModelType.LIGHTGBM:
+                return self._create_lightgbm_model()
+            elif model_type == ModelType.CATBOOST:
+                return self._create_catboost_model()
+            elif model_type == ModelType.NEURAL_NETWORK:
+                return self._create_neural_network_model()
+            elif model_type == ModelType.ENSEMBLE:
+                return self._create_ensemble_model()
+            elif model_type == ModelType.LINEAR:
+                return self._create_linear_model()
+            else:
+                raise ValueError(f"Unsupported model type: {model_type}")
+                
+        except Exception as e:
+            tprint_error(f"❌ Failed to create {model_type.value} model: {e}")
+            self.logger.error(f"Failed to create {model_type.value} model: {e}")
+            return None
     
-    @abstractmethod
     def _get_feature_importance(self, model: Any) -> Optional[Dict[str, float]]:
         """
         Extract feature importance from model.
@@ -252,7 +474,48 @@ class BaseTrainer(ABC):
         Returns:
             Feature importance dictionary
         """
-        pass
+        try:
+            if model is None:
+                return None
+            
+            # Try different methods based on model type
+            if hasattr(model, 'feature_importances_'):
+                # Tree-based models (LightGBM, CatBoost, etc.)
+                importances = model.feature_importances_
+                feature_names = getattr(model, 'feature_name_', None)
+                
+                if feature_names is not None and len(feature_names) == len(importances):
+                    return dict(zip(feature_names, importances))
+                else:
+                    # Use generic feature names
+                    return {f"feature_{i}": imp for i, imp in enumerate(importances)}
+            
+            elif hasattr(model, 'coef_'):
+                # Linear models
+                coef = model.coef_
+                if coef.ndim == 1:
+                    # Binary classification or regression
+                    return {f"feature_{i}": abs(coef[i]) for i in range(len(coef))}
+                else:
+                    # Multi-class classification
+                    # Use L2 norm of coefficients
+                    importance = np.linalg.norm(coef, axis=0)
+                    return {f"feature_{i}": imp for i, imp in enumerate(importance)}
+            
+            elif hasattr(model, 'named_steps'):
+                # Pipeline models
+                # Try to get feature importance from the last step
+                last_step = model.named_steps[list(model.named_steps.keys())[-1]]
+                return self._get_feature_importance(last_step)
+            
+            else:
+                tprint_warning(f"⚠️ Cannot extract feature importance from {type(model).__name__}")
+                return None
+                
+        except Exception as e:
+            tprint_warning(f"⚠️ Failed to extract feature importance: {e}")
+            self.logger.warning(f"Failed to extract feature importance: {e}")
+            return None
     
     @handles_errors(
         exceptions=(ValueError, AttributeError, RuntimeError),
@@ -598,3 +861,274 @@ class BaseTrainer(ABC):
             'estimated_memory_mb': base_memory + data_memory + model_memory,
             'peak_memory_mb': (base_memory + data_memory + model_memory) * 1.5
         }
+    
+    # Helper methods for the implemented abstract methods
+    
+    async def _train_single_model(self, model: Any, data: pd.DataFrame, targets: pd.Series, model_type: ModelType) -> Dict[str, Any]:
+        """Train a single model and return results."""
+        try:
+            start_time = time.time()
+            
+            # Split data for validation
+            from sklearn.model_selection import train_test_split
+            X_train, X_val, y_train, y_val = train_test_split(
+                data, targets, 
+                test_size=self.config.validation_split,
+                random_state=self.config.random_seed
+            )
+            
+            # Train model
+            if hasattr(model, 'fit'):
+                model.fit(X_train, y_train)
+            else:
+                raise ValueError(f"Model {type(model).__name__} does not have fit method")
+            
+            # Make predictions on validation set
+            if hasattr(model, 'predict'):
+                val_predictions = model.predict(X_val)
+            else:
+                raise ValueError(f"Model {type(model).__name__} does not have predict method")
+            
+            # Calculate metrics
+            metrics = self._calculate_validation_metrics(y_val, val_predictions, X_val)
+            
+            training_time = time.time() - start_time
+            
+            return {
+                'success': True,
+                'model': model,
+                'metrics': metrics,
+                'training_time': training_time
+            }
+            
+        except Exception as e:
+            return {
+                'success': False,
+                'error': str(e),
+                'model': None,
+                'metrics': {},
+                'training_time': 0.0
+            }
+    
+    async def _predict_with_model(self, model: Any, data: pd.DataFrame) -> np.ndarray:
+        """Make predictions with a trained model."""
+        try:
+            if hasattr(model, 'predict'):
+                return model.predict(data)
+            else:
+                raise ValueError(f"Model {type(model).__name__} does not have predict method")
+        except Exception as e:
+            tprint_error(f"❌ Prediction failed: {e}")
+            raise
+    
+    def _calculate_validation_metrics(self, y_true: pd.Series, y_pred: np.ndarray, X: pd.DataFrame) -> Dict[str, float]:
+        """Calculate validation metrics."""
+        try:
+            from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, mean_squared_error, r2_score
+            
+            metrics = {}
+            
+            # Determine if classification or regression
+            unique_values = len(np.unique(y_true))
+            is_classification = unique_values <= 20  # Heuristic for classification
+            
+            if is_classification:
+                # Classification metrics
+                metrics['accuracy'] = accuracy_score(y_true, y_pred)
+                try:
+                    metrics['precision'] = precision_score(y_true, y_pred, average='weighted', zero_division=0)
+                    metrics['recall'] = recall_score(y_true, y_pred, average='weighted', zero_division=0)
+                    metrics['f1'] = f1_score(y_true, y_pred, average='weighted', zero_division=0)
+                except:
+                    # Handle edge cases
+                    metrics['precision'] = 0.0
+                    metrics['recall'] = 0.0
+                    metrics['f1'] = 0.0
+            else:
+                # Regression metrics
+                metrics['mse'] = mean_squared_error(y_true, y_pred)
+                metrics['rmse'] = np.sqrt(metrics['mse'])
+                metrics['r2'] = r2_score(y_true, y_pred)
+                
+                # Additional regression metrics
+                mae = np.mean(np.abs(y_true - y_pred))
+                metrics['mae'] = mae
+                
+                # Mean absolute percentage error
+                mape = np.mean(np.abs((y_true - y_pred) / (y_true + 1e-8))) * 100
+                metrics['mape'] = mape
+            
+            return metrics
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Failed to calculate metrics: {e}")
+            return {'error': str(e)}
+    
+    def _calculate_confidence_scores(self, model: Any, data: pd.DataFrame, predictions: np.ndarray) -> Optional[np.ndarray]:
+        """Calculate confidence scores for predictions."""
+        try:
+            # Try to get prediction probabilities
+            if hasattr(model, 'predict_proba'):
+                proba = model.predict_proba(data)
+                if proba.ndim == 2:
+                    # Multi-class: use max probability as confidence
+                    return np.max(proba, axis=1)
+                else:
+                    return proba
+            elif hasattr(model, 'decision_function'):
+                # SVM or similar: use decision function values
+                scores = model.decision_function(data)
+                if scores.ndim == 1:
+                    return np.abs(scores)
+                else:
+                    return np.max(scores, axis=1)
+            else:
+                # Fallback: use prediction variance or simple confidence
+                return np.ones(len(predictions)) * 0.5
+                
+        except Exception as e:
+            tprint_debug(f"Could not calculate confidence scores: {e}")
+            return None
+    
+    def _calculate_probabilities(self, model: Any, data: pd.DataFrame) -> Optional[np.ndarray]:
+        """Calculate prediction probabilities."""
+        try:
+            if hasattr(model, 'predict_proba'):
+                return model.predict_proba(data)
+            else:
+                return None
+        except Exception as e:
+            tprint_debug(f"Could not calculate probabilities: {e}")
+            return None
+    
+    def _create_lightgbm_model(self):
+        """Create LightGBM model."""
+        try:
+            import lightgbm as lgb
+            
+            params = {
+                'objective': 'regression',
+                'metric': 'rmse',
+                'boosting_type': 'gbdt',
+                'num_leaves': 31,
+                'learning_rate': 0.05,
+                'feature_fraction': 0.9,
+                'bagging_fraction': 0.8,
+                'bagging_freq': 5,
+                'verbose': -1,
+                'random_state': self.config.random_seed
+            }
+            
+            # Update with custom parameters
+            params.update(self.config.custom_params.get('lightgbm_params', {}))
+            
+            return lgb.LGBMRegressor(**params)
+            
+        except ImportError:
+            tprint_warning("⚠️ LightGBM not available, using fallback")
+            return None
+        except Exception as e:
+            tprint_error(f"❌ Failed to create LightGBM model: {e}")
+            return None
+    
+    def _create_catboost_model(self):
+        """Create CatBoost model."""
+        try:
+            import catboost as cb
+            
+            params = {
+                'iterations': 100,
+                'learning_rate': 0.1,
+                'depth': 6,
+                'verbose': False,
+                'random_seed': self.config.random_seed
+            }
+            
+            # Update with custom parameters
+            params.update(self.config.custom_params.get('catboost_params', {}))
+            
+            return cb.CatBoostRegressor(**params)
+            
+        except ImportError:
+            tprint_warning("⚠️ CatBoost not available, using fallback")
+            return None
+        except Exception as e:
+            tprint_error(f"❌ Failed to create CatBoost model: {e}")
+            return None
+    
+    def _create_neural_network_model(self):
+        """Create neural network model."""
+        try:
+            from sklearn.neural_network import MLPRegressor
+            
+            params = {
+                'hidden_layer_sizes': (100, 50),
+                'activation': 'relu',
+                'solver': 'adam',
+                'alpha': 0.0001,
+                'learning_rate': 'constant',
+                'learning_rate_init': 0.001,
+                'max_iter': 200,
+                'random_state': self.config.random_seed
+            }
+            
+            # Update with custom parameters
+            params.update(self.config.custom_params.get('neural_network_params', {}))
+            
+            return MLPRegressor(**params)
+            
+        except Exception as e:
+            tprint_error(f"❌ Failed to create neural network model: {e}")
+            return None
+    
+    def _create_ensemble_model(self):
+        """Create ensemble model."""
+        try:
+            from sklearn.ensemble import VotingRegressor
+            from sklearn.linear_model import LinearRegression
+            
+            # Create base models
+            base_models = []
+            
+            # Try to add different model types
+            lgb_model = self._create_lightgbm_model()
+            if lgb_model:
+                base_models.append(('lightgbm', lgb_model))
+            
+            cb_model = self._create_catboost_model()
+            if cb_model:
+                base_models.append(('catboost', cb_model))
+            
+            # Always add linear regression as fallback
+            base_models.append(('linear', LinearRegression()))
+            
+            if len(base_models) < 2:
+                tprint_warning("⚠️ Not enough models for ensemble, using single model")
+                return base_models[0][1] if base_models else None
+            
+            return VotingRegressor(base_models)
+            
+        except Exception as e:
+            tprint_error(f"❌ Failed to create ensemble model: {e}")
+            return None
+    
+    def _create_linear_model(self):
+        """Create linear model."""
+        try:
+            from sklearn.linear_model import LinearRegression
+            
+            params = {
+                'fit_intercept': True,
+                'normalize': False,
+                'copy_X': True,
+                'n_jobs': -1
+            }
+            
+            # Update with custom parameters
+            params.update(self.config.custom_params.get('linear_params', {}))
+            
+            return LinearRegression(**params)
+            
+        except Exception as e:
+            tprint_error(f"❌ Failed to create linear model: {e}")
+            return None

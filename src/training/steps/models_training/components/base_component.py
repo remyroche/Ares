@@ -321,10 +321,48 @@ class BaseModelsTrainingComponent(ModularComponent):
             self._update_performance_stats(False, 0)
             raise
     
-    @abstractmethod
     def _train_epoch_impl(self, model: Any, data: Any, epoch: int) -> Dict[str, float]:
         """Implement epoch training logic."""
-        pass
+        try:
+            # Extract training data
+            if isinstance(data, dict):
+                X_train = data.get('X_train')
+                y_train = data.get('y_train')
+            else:
+                # Assume data is a tuple or list
+                X_train, y_train = data[0], data[1]
+            
+            if X_train is None or y_train is None:
+                raise ValueError("Training data must contain X_train and y_train")
+            
+            # Train the model
+            if hasattr(model, 'fit'):
+                model.fit(X_train, y_train)
+            else:
+                raise ValueError(f"Model {type(model).__name__} does not have fit method")
+            
+            # Make predictions for metrics
+            if hasattr(model, 'predict'):
+                train_predictions = model.predict(X_train)
+            else:
+                raise ValueError(f"Model {type(model).__name__} does not have predict method")
+            
+            # Calculate training metrics
+            metrics = self._calculate_training_metrics(y_train, train_predictions)
+            
+            # Add epoch-specific metrics
+            metrics['epoch'] = epoch
+            metrics['training_loss'] = self._calculate_loss(y_train, train_predictions)
+            
+            return metrics
+            
+        except Exception as e:
+            self.logger.error(f"Epoch training implementation failed: {e}")
+            return {
+                'epoch': epoch,
+                'error': str(e),
+                'training_loss': float('inf')
+            }
     
     def validate_epoch(self, data: Any, epoch: int) -> Dict[str, float]:
         """
@@ -378,10 +416,42 @@ class BaseModelsTrainingComponent(ModularComponent):
             self._update_performance_stats(False, 0)
             raise
     
-    @abstractmethod
     def _validate_epoch_impl(self, model: Any, data: Any, epoch: int) -> Dict[str, float]:
         """Implement epoch validation logic."""
-        pass
+        try:
+            # Extract validation data
+            if isinstance(data, dict):
+                X_val = data.get('X_val', data.get('X_train'))
+                y_val = data.get('y_val', data.get('y_train'))
+            else:
+                # Assume data is a tuple or list
+                X_val, y_val = data[0], data[1]
+            
+            if X_val is None or y_val is None:
+                raise ValueError("Validation data must contain X_val and y_val")
+            
+            # Make predictions
+            if hasattr(model, 'predict'):
+                val_predictions = model.predict(X_val)
+            else:
+                raise ValueError(f"Model {type(model).__name__} does not have predict method")
+            
+            # Calculate validation metrics
+            metrics = self._calculate_validation_metrics(y_val, val_predictions)
+            
+            # Add epoch-specific metrics
+            metrics['epoch'] = epoch
+            metrics['validation_loss'] = self._calculate_loss(y_val, val_predictions)
+            
+            return metrics
+            
+        except Exception as e:
+            self.logger.error(f"Epoch validation implementation failed: {e}")
+            return {
+                'epoch': epoch,
+                'error': str(e),
+                'validation_loss': float('inf')
+            }
     
     def _check_early_stopping(self, metrics: Dict[str, float]) -> bool:
         """Check if early stopping should be triggered."""
@@ -600,3 +670,126 @@ class BaseModelsTrainingComponent(ModularComponent):
             'model_memory_mb': model_memory,
             'base_memory_mb': base_memory
         }
+    
+    # Helper methods for the implemented abstract methods
+    
+    def _calculate_training_metrics(self, y_true, y_pred) -> Dict[str, float]:
+        """Calculate training metrics."""
+        try:
+            import numpy as np
+            from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, mean_squared_error, r2_score
+            
+            metrics = {}
+            
+            # Determine if classification or regression
+            unique_values = len(np.unique(y_true))
+            is_classification = unique_values <= 20  # Heuristic for classification
+            
+            if is_classification:
+                # Classification metrics
+                metrics['accuracy'] = accuracy_score(y_true, y_pred)
+                try:
+                    metrics['precision'] = precision_score(y_true, y_pred, average='weighted', zero_division=0)
+                    metrics['recall'] = recall_score(y_true, y_pred, average='weighted', zero_division=0)
+                    metrics['f1'] = f1_score(y_true, y_pred, average='weighted', zero_division=0)
+                except:
+                    metrics['precision'] = 0.0
+                    metrics['recall'] = 0.0
+                    metrics['f1'] = 0.0
+            else:
+                # Regression metrics
+                metrics['mse'] = mean_squared_error(y_true, y_pred)
+                metrics['rmse'] = np.sqrt(metrics['mse'])
+                metrics['r2'] = r2_score(y_true, y_pred)
+                
+                # Additional regression metrics
+                mae = np.mean(np.abs(y_true - y_pred))
+                metrics['mae'] = mae
+                
+                # Mean absolute percentage error
+                mape = np.mean(np.abs((y_true - y_pred) / (y_true + 1e-8))) * 100
+                metrics['mape'] = mape
+            
+            return metrics
+            
+        except Exception as e:
+            self.logger.warning(f"Failed to calculate training metrics: {e}")
+            return {'error': str(e)}
+    
+    def _calculate_validation_metrics(self, y_true, y_pred) -> Dict[str, float]:
+        """Calculate validation metrics."""
+        try:
+            import numpy as np
+            from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, mean_squared_error, r2_score
+            
+            metrics = {}
+            
+            # Determine if classification or regression
+            unique_values = len(np.unique(y_true))
+            is_classification = unique_values <= 20  # Heuristic for classification
+            
+            if is_classification:
+                # Classification metrics
+                metrics['val_accuracy'] = accuracy_score(y_true, y_pred)
+                try:
+                    metrics['val_precision'] = precision_score(y_true, y_pred, average='weighted', zero_division=0)
+                    metrics['val_recall'] = recall_score(y_true, y_pred, average='weighted', zero_division=0)
+                    metrics['val_f1'] = f1_score(y_true, y_pred, average='weighted', zero_division=0)
+                except:
+                    metrics['val_precision'] = 0.0
+                    metrics['val_recall'] = 0.0
+                    metrics['val_f1'] = 0.0
+            else:
+                # Regression metrics
+                metrics['val_mse'] = mean_squared_error(y_true, y_pred)
+                metrics['val_rmse'] = np.sqrt(metrics['val_mse'])
+                metrics['val_r2'] = r2_score(y_true, y_pred)
+                
+                # Additional regression metrics
+                mae = np.mean(np.abs(y_true - y_pred))
+                metrics['val_mae'] = mae
+                
+                # Mean absolute percentage error
+                mape = np.mean(np.abs((y_true - y_pred) / (y_true + 1e-8))) * 100
+                metrics['val_mape'] = mape
+            
+            return metrics
+            
+        except Exception as e:
+            self.logger.warning(f"Failed to calculate validation metrics: {e}")
+            return {'error': str(e)}
+    
+    def _calculate_loss(self, y_true, y_pred) -> float:
+        """Calculate loss for the given predictions."""
+        try:
+            import numpy as np
+            
+            # Use mean squared error as default loss
+            mse = np.mean((y_true - y_pred) ** 2)
+            return float(mse)
+            
+        except Exception as e:
+            self.logger.warning(f"Failed to calculate loss: {e}")
+            return float('inf')
+    
+    def _update_performance_stats(self, success: bool, duration: float) -> None:
+        """Update performance statistics."""
+        try:
+            if success:
+                self._performance_stats['successful_operations'] = self._performance_stats.get('successful_operations', 0) + 1
+                self._performance_stats['total_success_time'] = self._performance_stats.get('total_success_time', 0.0) + duration
+            else:
+                self._performance_stats['failed_operations'] = self._performance_stats.get('failed_operations', 0) + 1
+                self._performance_stats['total_failure_time'] = self._performance_stats.get('total_failure_time', 0.0) + duration
+            
+            # Update averages
+            total_ops = self._performance_stats.get('successful_operations', 0) + self._performance_stats.get('failed_operations', 0)
+            if total_ops > 0:
+                self._performance_stats['success_rate'] = self._performance_stats.get('successful_operations', 0) / total_ops
+                self._performance_stats['avg_operation_time'] = (
+                    self._performance_stats.get('total_success_time', 0.0) + 
+                    self._performance_stats.get('total_failure_time', 0.0)
+                ) / total_ops
+            
+        except Exception as e:
+            self.logger.warning(f"Failed to update performance stats: {e}")

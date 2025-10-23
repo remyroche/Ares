@@ -62,6 +62,68 @@ class EnhancedDataDownloader(BaseStep):
             self.tprint_error(f"❌ Failed to initialize UnifiedDataDownloader: {e}")
             raise DataLoadError(f"Failed to initialize UnifiedDataDownloader: {e}") from e
     
+    def _validate_symbol_and_exchange(self, symbol: str, exchange: str) -> bool:
+        """
+        Validate symbol and exchange parameters.
+        
+        Args:
+            symbol: Trading symbol to validate
+            exchange: Exchange name to validate
+            
+        Returns:
+            True if both parameters are valid, False otherwise
+        """
+        try:
+            # Validate symbol
+            if not symbol or not isinstance(symbol, str):
+                self.tprint_error(f"❌ Invalid symbol: {symbol}")
+                return False
+            
+            # Check symbol format (basic validation)
+            symbol = symbol.strip().upper()
+            if len(symbol) < 2 or len(symbol) > 20:
+                self.tprint_error(f"❌ Symbol length invalid: {symbol} (length: {len(symbol)})")
+                return False
+            
+            # Check for valid characters (letters, numbers, and common separators)
+            import re
+            if not re.match(r'^[A-Z0-9/_-]+$', symbol):
+                self.tprint_error(f"❌ Symbol contains invalid characters: {symbol}")
+                return False
+            
+            # Validate exchange
+            if not exchange or not isinstance(exchange, str):
+                self.tprint_error(f"❌ Invalid exchange: {exchange}")
+                return False
+            
+            # Check exchange format
+            exchange = exchange.strip().lower()
+            if len(exchange) < 2 or len(exchange) > 20:
+                self.tprint_error(f"❌ Exchange length invalid: {exchange} (length: {len(exchange)})")
+                return False
+            
+            # Check for valid characters (letters, numbers, and common separators)
+            if not re.match(r'^[a-z0-9_-]+$', exchange):
+                self.tprint_error(f"❌ Exchange contains invalid characters: {exchange}")
+                return False
+            
+            # Validate against known exchanges (basic check)
+            valid_exchanges = {
+                'binance', 'coinbase', 'kraken', 'bitfinex', 'huobi', 'okx', 'bybit',
+                'kucoin', 'gate', 'mexc', 'bitget', 'crypto.com', 'binance.us',
+                'coinbase_pro', 'gemini', 'bitstamp', 'bittrex', 'poloniex'
+            }
+            
+            if exchange not in valid_exchanges:
+                self.tprint_warning(f"⚠️ Unknown exchange: {exchange} (proceeding anyway)")
+            
+            self.tprint_debug(f"✅ Validated symbol '{symbol}' and exchange '{exchange}'")
+            return True
+            
+        except Exception as e:
+            self.tprint_error(f"❌ Validation error: {e}")
+            return False
+    
     async def execute(self, config: StepConfig) -> ExecutionResult:
         """
         Execute the enhanced data download process.
@@ -189,9 +251,9 @@ class EnhancedDataDownloader(BaseStep):
         try:
             self.tprint_operation_start(f"Downloading klines data for {symbol}")
             
-            # Use BaseStep safe operations for data validation
-            if not self._validate_dataframe_columns(None, ['symbol', 'exchange']):  # Placeholder validation
-                raise DataLoadError("Invalid symbol or exchange format")
+            # Validate input parameters
+            if not self._validate_symbol_and_exchange(symbol, exchange_name):
+                raise DataLoadError(f"Invalid symbol '{symbol}' or exchange '{exchange_name}' format")
             
             # Download klines data
             klines_success, klines_data, klines_error = await self.downloader.download_klines(

@@ -53,121 +53,24 @@ except ImportError:
     def tprint_timer(*args, **kwargs): 
         print(f"[TIMER] {' '.join(map(str, args))}")
 
-# VectorBT imports
+# VectorBT imports - Production ready
+from src.vectorbt import (
+    vbt, rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max,
+    rolling_sum, rolling_apply, rolling_corr, rolling_cov, rolling_quantile,
+    rolling_skew, rolling_kurt, scale, rank, zscore, winsorize, clip, quantile,
+    VECTORBT_AVAILABLE
+)
+
+# Import available VectorBT functions
 try:
-    import vectorbt as vbt
-    # Import available VectorBT functions
     from vectorbt import FMEAN, FSTD, MEANLB, MSTD, RollingSplitter
-    # Use pandas rolling functions as fallback for missing VectorBT functions
-    import pandas as pd
-    import numpy as np
-
-    # Create wrapper functions for compatibility
-    def rolling_mean(data, window, **kwargs):
-        if hasattr(data, 'rolling'):
-            return data.rolling(window, **kwargs).mean()
-        return pd.Series(data).rolling(window, **kwargs).mean()
-
-    def rolling_std(data, window, **kwargs):
-        if hasattr(data, 'rolling'):
-            return data.rolling(window, **kwargs).std()
-        return pd.Series(data).rolling(window, **kwargs).std()
-
-    def rolling_var(data, window, **kwargs):
-        if hasattr(data, 'rolling'):
-            return data.rolling(window, **kwargs).var()
-        return pd.Series(data).rolling(window, **kwargs).var()
-
-    def rolling_min(data, window, **kwargs):
-        if hasattr(data, 'rolling'):
-            return data.rolling(window, **kwargs).min()
-        return pd.Series(data).rolling(window, **kwargs).min()
-
-    def rolling_max(data, window, **kwargs):
-        if hasattr(data, 'rolling'):
-            return data.rolling(window, **kwargs).max()
-        return pd.Series(data).rolling(window, **kwargs).max()
-
-    def rolling_sum(data, window, **kwargs):
-        if hasattr(data, 'rolling'):
-            return data.rolling(window, **kwargs).sum()
-        return pd.Series(data).rolling(window, **kwargs).sum()
-
-    def rolling_apply(data, func, window, **kwargs):
-        if hasattr(data, 'rolling'):
-            return data.rolling(window, **kwargs).apply(func)
-        return pd.Series(data).rolling(window, **kwargs).apply(func)
-
-    def rolling_corr(data, window, **kwargs):
-        if hasattr(data, 'rolling'):
-            return data.rolling(window, **kwargs).corr()
-        return pd.Series(data).rolling(window, **kwargs).corr()
-
-    def rolling_cov(data, window, **kwargs):
-        if hasattr(data, 'rolling'):
-            return data.rolling(window, **kwargs).cov()
-        return pd.Series(data).rolling(window, **kwargs).cov()
-
-    def rolling_quantile(data, window, q, **kwargs):
-        if hasattr(data, 'rolling'):
-            return data.rolling(window, **kwargs).quantile(q)
-        return pd.Series(data).rolling(window, **kwargs).quantile(q)
-
-    def rolling_skew(data, window, **kwargs):
-        if hasattr(data, 'rolling'):
-            return data.rolling(window, **kwargs).skew()
-        return pd.Series(data).rolling(window, **kwargs).skew()
-
-    def rolling_kurt(data, window, **kwargs):
-        if hasattr(data, 'rolling'):
-            return data.rolling(window, **kwargs).kurt()
-        return pd.Series(data).rolling(window, **kwargs).kurt()
-
-    # Scaling functions using pandas/numpy
-    def scale(data, **kwargs):
-        return (data - data.mean()) / data.std()
-
-    def rank(data, **kwargs):
-        return data.rank(**kwargs)
-
-    def zscore(data, **kwargs):
-        return (data - data.mean()) / data.std()
-
-    def winsorize(data, limits=None, **kwargs):
-        if limits is None:
-            limits = (0.05, 0.05)
-        from scipy.stats import mstats
-        return pd.Series(mstats.winsorize(data, limits=limits), index=data.index)
-
-    def clip(data, lower=None, upper=None, **kwargs):
-        return data.clip(lower=lower, upper=upper, **kwargs)
-
-    def quantile(data, q, **kwargs):
-        return data.quantile(q, **kwargs)
-
-    VECTORBT_AVAILABLE = True
 except ImportError:
-    VECTORBT_AVAILABLE = False
-    vbt = None
-    rolling_mean = None
-    rolling_std = None
-    rolling_var = None
-    rolling_min = None
-    rolling_max = None
-    rolling_sum = None
-    rolling_apply = None
-    rolling_corr = None
-    rolling_cov = None
-    rolling_quantile = None
-    rolling_skew = None
-    rolling_kurt = None
-    scale = None
-    rank = None
-    zscore = None
-    winsorize = None
-    clip = None
-    quantile = None
-    warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
+    # These functions may not be available in all VectorBT versions
+    FMEAN = None
+    FSTD = None
+    MEANLB = None
+    MSTD = None
+    RollingSplitter = None
 
 # Import our optimization modules - using lazy imports to avoid circular imports
 VectorBTRollingOptimizer = None

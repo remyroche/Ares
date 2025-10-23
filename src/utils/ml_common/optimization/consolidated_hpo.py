@@ -84,7 +84,7 @@ except ImportError:
 
 # VectorBT optimization imports
 try:
-    import vectorbt as vbt
+    from src.vectorbt import vbt
     from src.feature_generation.utils.vectorbt_rolling_optimizer import (
         VectorBTRollingOptimizer, get_vectorbt_rolling_optimizer
     )
@@ -713,7 +713,7 @@ class ConsolidatedHPO:
     def _create_vectorbt_metrics(self):
         """Create VectorBT metrics calculator."""
         try:
-            import vectorbt as vbt
+            from src.vectorbt import vbt
             return vbt.returns
         except ImportError:
             # Fallback metrics

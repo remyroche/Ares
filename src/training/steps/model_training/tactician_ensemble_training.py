@@ -42,15 +42,11 @@ except ImportError as e:
     print(f"❌ CRITICAL: Failed to import core ML utilities: {e}")
     raise
 
-# VectorBT imports with fallback
-try:
-    import vectorbt as vbt
-    from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply
-    VECTORBT_AVAILABLE = True
-except ImportError:
-    VECTORBT_AVAILABLE = False
-    # VectorBT not available - raise error instead of using dummy functions
-    raise ImportError("VectorBT is required for this module but not available. Please install vectorbt.")
+# VectorBT imports - production ready
+from src.vectorbt import (
+    vbt, rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, 
+    rolling_sum, rolling_apply, VECTORBT_AVAILABLE
+)
 
 @dataclass
 class TacticianEnsembleTrainingConfig:

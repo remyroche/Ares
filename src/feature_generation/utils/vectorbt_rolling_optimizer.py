@@ -48,15 +48,8 @@ except ImportError:
     def tprint_timer(*args, **kwargs): 
         print(f"[TIMER] {' '.join(map(str, args))}")
 
-# VectorBT imports for optimization
-try:
-    import vectorbt as vbt
-    # VectorBT 0.28+ uses pandas rolling interface instead of separate functions
-    VECTORBT_AVAILABLE = True
-except ImportError:
-    VECTORBT_AVAILABLE = False
-    vbt = None
-    warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
+# VectorBT imports for optimization - Production ready
+from src.vectorbt import vbt, VECTORBT_AVAILABLE, rolling_corr, rolling_cov
 
 # GPU acceleration removed - CuPy not supported on all platforms
 CUPY_AVAILABLE = False
@@ -330,13 +323,8 @@ class VectorBTRollingOptimizer:
             # Use VectorBT's optimized rolling correlation if available
             if VECTORBT_AVAILABLE and self._should_use_vectorbt(data):
                 try:
-                    # Try VectorBT's optimized rolling correlation
-                    if hasattr(vbt, 'rolling_corr'):
-                        return vbt.rolling_corr(data, other, window=window, **kwargs)
-                    else:
-                        # Fallback to pandas rolling interface
-                        rolling_obj = data.rolling(window=window, **kwargs)
-                        return rolling_obj.corr(other)
+                    # Use VectorBT's optimized rolling correlation
+                    return rolling_corr(data, other, window=window, **kwargs)
                 except Exception as e:
                     self.logger.warning(f"VectorBT rolling_corr failed: {e}, using pandas fallback")
                     return data.rolling(window=window, **kwargs).corr(other)
@@ -354,13 +342,8 @@ class VectorBTRollingOptimizer:
             # Use VectorBT's optimized rolling covariance if available
             if VECTORBT_AVAILABLE and self._should_use_vectorbt(data):
                 try:
-                    # Try VectorBT's optimized rolling covariance
-                    if hasattr(vbt, 'rolling_cov'):
-                        return vbt.rolling_cov(data, other, window=window, **kwargs)
-                    else:
-                        # Fallback to pandas rolling interface
-                        rolling_obj = data.rolling(window=window, **kwargs)
-                        return rolling_obj.cov(other)
+                    # Use VectorBT's optimized rolling covariance
+                    return rolling_cov(data, other, window=window, **kwargs)
                 except Exception as e:
                     self.logger.warning(f"VectorBT rolling_cov failed: {e}, using pandas fallback")
                     return data.rolling(window=window, **kwargs).cov(other)

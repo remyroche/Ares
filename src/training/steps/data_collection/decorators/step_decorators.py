@@ -571,13 +571,100 @@ def _check_lookahead_bias(
     if temporal_column not in df.columns:
         return
 
-    # Sort by timestamp
-    df_sorted = df.sort_values(temporal_column)
+    logger = logging.getLogger(__name__)
+    logger.debug(f"Checking for lookahead bias in column '{temporal_column}' with max_lookahead={max_lookahead}")
 
-    # Check for future data leakage
-    # This is a simplified check - more sophisticated checks would be needed
-    # for complex feature engineering scenarios
-    pass
+    try:
+        # Sort by timestamp
+        df_sorted = df.sort_values(temporal_column).copy()
+        
+        # Check if timestamp column is datetime
+        if not pd.api.types.is_datetime64_any_dtype(df_sorted[temporal_column]):
+            logger.warning(f"Timestamp column '{temporal_column}' is not datetime type - cannot check lookahead bias")
+            return
+
+        # Check for duplicate timestamps
+        duplicate_timestamps = df_sorted[temporal_column].duplicated()
+        if duplicate_timestamps.any():
+            logger.warning(f"Found {duplicate_timestamps.sum()} duplicate timestamps - this may indicate data quality issues")
+
+        # Check for non-monotonic timestamps (future data in past)
+        timestamp_diff = df_sorted[temporal_column].diff()
+        negative_diffs = timestamp_diff < pd.Timedelta(0)
+        if negative_diffs.any():
+            logger.error(f"Found {negative_diffs.sum()} non-monotonic timestamps - potential lookahead bias detected")
+            raise ValueError(f"Non-monotonic timestamps detected in column '{temporal_column}' - potential lookahead bias")
+
+        # Check for gaps in time series that might indicate data leakage
+        if len(df_sorted) > 1:
+            time_gaps = timestamp_diff[1:]  # Skip first NaN
+            median_gap = time_gaps.median()
+            large_gaps = time_gaps > median_gap * 10  # Gaps 10x larger than median
+            
+            if large_gaps.any():
+                logger.warning(f"Found {large_gaps.sum()} large time gaps - verify data integrity")
+                
+                # Log details of large gaps
+                large_gap_indices = df_sorted.index[large_gaps]
+                for idx in large_gap_indices[:5]:  # Show first 5 large gaps
+                    prev_time = df_sorted.loc[idx - 1, temporal_column] if idx > 0 else None
+                    curr_time = df_sorted.loc[idx, temporal_column]
+                    if prev_time:
+                        gap_duration = curr_time - prev_time
+                        logger.debug(f"Large gap at index {idx}: {gap_duration}")
+
+        # Check for potential future data leakage in feature columns
+        # This is a heuristic check - look for columns that might contain future information
+        suspicious_columns = []
+        for col in df_sorted.columns:
+            if col == temporal_column:
+                continue
+                
+            # Check for columns that might be forward-looking
+            if any(keyword in col.lower() for keyword in ['future', 'next', 'forward', 'ahead', 'prediction']):
+                suspicious_columns.append(col)
+                logger.warning(f"Column '{col}' contains suspicious keywords - verify it doesn't contain future data")
+
+        # Check for statistical patterns that might indicate lookahead bias
+        if len(df_sorted) > 100:  # Only check if we have enough data
+            # Check for perfect correlation between features and targets (if target columns exist)
+            target_columns = [col for col in df_sorted.columns if any(keyword in col.lower() for keyword in ['target', 'label', 'y', 'outcome'])]
+            
+            for target_col in target_columns:
+                for feature_col in df_sorted.columns:
+                    if feature_col in [temporal_column, target_col]:
+                        continue
+                    
+                    try:
+                        # Calculate rolling correlation to detect suspicious patterns
+                        if pd.api.types.is_numeric_dtype(df_sorted[feature_col]) and pd.api.types.is_numeric_dtype(df_sorted[target_col]):
+                            # Use a small window to avoid lookahead bias in the check itself
+                            window_size = min(20, len(df_sorted) // 10)
+                            if window_size > 5:
+                                rolling_corr = df_sorted[feature_col].rolling(window=window_size).corr(df_sorted[target_col].rolling(window=window_size))
+                                high_corr = rolling_corr.abs() > 0.95
+                                
+                                if high_corr.any():
+                                    logger.warning(f"High correlation detected between '{feature_col}' and '{target_col}' - verify no lookahead bias")
+                    except Exception as e:
+                        logger.debug(f"Could not check correlation between '{feature_col}' and '{target_col}': {e}")
+
+        # Check for max_lookahead constraint
+        if max_lookahead > 0:
+            # This is a basic check - in practice, you'd need more sophisticated validation
+            # based on your specific feature engineering pipeline
+            logger.debug(f"Max lookahead constraint: {max_lookahead} periods")
+            
+            # Check if any features might be using more than max_lookahead periods
+            # This would require knowledge of your feature engineering pipeline
+            # For now, we'll just log the constraint
+            logger.info(f"Lookahead bias check completed with max_lookahead={max_lookahead}")
+
+        logger.debug("Lookahead bias check completed successfully")
+
+    except Exception as e:
+        logger.error(f"Lookahead bias check failed: {e}")
+        raise ValueError(f"Lookahead bias validation failed: {e}")
 
 def _validate_statistical_properties(result: dict) -> None:
     """Validate statistical properties of analysis results."""
@@ -628,7 +715,62 @@ def _check_authentication() -> None:
 
 class AuthenticationError(Exception):
     """Raised when authentication fails."""
-    pass
+    
+    def __init__(self, message: str = "Authentication failed", error_code: str = "AUTH_ERROR", details: Optional[Dict[str, Any]] = None):
+        """
+        Initialize authentication error.
+        
+        Args:
+            message: Error message
+            error_code: Error code for programmatic handling
+            details: Additional error details
+        """
+        super().__init__(message)
+        self.message = message
+        self.error_code = error_code
+        self.details = details or {}
+        self.timestamp = get_current_datetime()
+    
+    def __str__(self) -> str:
+        """String representation of the error."""
+        return f"{self.error_code}: {self.message}"
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert error to dictionary for logging/serialization."""
+        return {
+            "error_type": "AuthenticationError",
+            "error_code": self.error_code,
+            "message": self.message,
+            "details": self.details,
+            "timestamp": format_datetime(self.timestamp)
+        }
+    
+    @classmethod
+    def from_credentials(cls, username: str, reason: str = "Invalid credentials") -> 'AuthenticationError':
+        """Create authentication error from credential failure."""
+        return cls(
+            message=f"Authentication failed for user '{username}': {reason}",
+            error_code="INVALID_CREDENTIALS",
+            details={"username": username, "reason": reason}
+        )
+    
+    @classmethod
+    def from_token(cls, token_type: str, reason: str = "Invalid token") -> 'AuthenticationError':
+        """Create authentication error from token failure."""
+        return cls(
+            message=f"Token authentication failed ({token_type}): {reason}",
+            error_code="INVALID_TOKEN",
+            details={"token_type": token_type, "reason": reason}
+        )
+    
+    @classmethod
+    def from_permission(cls, operation: str, required_permission: str) -> 'AuthenticationError':
+        """Create authentication error from permission failure."""
+        return cls(
+            message=f"Insufficient permissions for operation '{operation}': requires '{required_permission}'",
+            error_code="INSUFFICIENT_PERMISSIONS",
+            details={"operation": operation, "required_permission": required_permission}
+        )
 
 def _check_rate_limit(operation_name: str, rate_limit: int) -> None:
     """Check rate limiting for operations."""
@@ -671,7 +813,83 @@ def _check_rate_limit(operation_name: str, rate_limit: int) -> None:
 
 class RateLimitError(Exception):
     """Raised when rate limit is exceeded."""
-    pass
+    
+    def __init__(self, message: str = "Rate limit exceeded", operation: str = "unknown", 
+                 limit: int = 0, reset_time: Optional[float] = None, 
+                 details: Optional[Dict[str, Any]] = None):
+        """
+        Initialize rate limit error.
+        
+        Args:
+            message: Error message
+            operation: Operation that hit the rate limit
+            limit: Rate limit that was exceeded
+            reset_time: Time when the rate limit resets (Unix timestamp)
+            details: Additional error details
+        """
+        super().__init__(message)
+        self.message = message
+        self.operation = operation
+        self.limit = limit
+        self.reset_time = reset_time
+        self.details = details or {}
+        self.timestamp = get_current_datetime()
+    
+    def __str__(self) -> str:
+        """String representation of the error."""
+        if self.reset_time:
+            time_until_reset = self.reset_time - time.time()
+            return f"RateLimitError: {self.message} (resets in {time_until_reset:.1f}s)"
+        return f"RateLimitError: {self.message}"
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert error to dictionary for logging/serialization."""
+        return {
+            "error_type": "RateLimitError",
+            "message": self.message,
+            "operation": self.operation,
+            "limit": self.limit,
+            "reset_time": self.reset_time,
+            "details": self.details,
+            "timestamp": format_datetime(self.timestamp)
+        }
+    
+    @classmethod
+    def from_operation(cls, operation: str, limit: int, current_count: int, 
+                      window_seconds: int = 60) -> 'RateLimitError':
+        """Create rate limit error from operation details."""
+        reset_time = time.time() + window_seconds
+        return cls(
+            message=f"Rate limit exceeded for operation '{operation}': {current_count}/{limit} requests in {window_seconds}s",
+            operation=operation,
+            limit=limit,
+            reset_time=reset_time,
+            details={
+                "current_count": current_count,
+                "window_seconds": window_seconds,
+                "time_until_reset": window_seconds
+            }
+        )
+    
+    @classmethod
+    def from_api_call(cls, endpoint: str, limit: int, current_count: int) -> 'RateLimitError':
+        """Create rate limit error from API call."""
+        return cls(
+            message=f"API rate limit exceeded for endpoint '{endpoint}': {current_count}/{limit} requests",
+            operation=f"api_call_{endpoint}",
+            limit=limit,
+            details={
+                "endpoint": endpoint,
+                "current_count": current_count,
+                "api_error": True
+            }
+        )
+    
+    def get_retry_after(self) -> float:
+        """Get seconds to wait before retrying."""
+        if self.reset_time:
+            return max(0, self.reset_time - time.time())
+        return 60.0  # Default 1 minute
 
 async def _retry_operation(
     func: Callable,

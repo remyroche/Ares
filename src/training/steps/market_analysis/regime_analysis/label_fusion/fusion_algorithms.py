@@ -510,8 +510,25 @@ class LabelFusionEngine:
                 agreement_scores.append(agreement)
             agreement_score = np.mean(agreement_scores)
             
-            # Confidence score: average confidence
-            confidence_score = np.mean(np.ones(n_samples))  # Placeholder
+            # Confidence score: average confidence from individual label sets
+            confidence_scores = []
+            for i in range(n_labels):
+                # Calculate confidence based on label consistency within each set
+                label_array = original_labels[i]
+                unique_labels, counts = np.unique(label_array, return_counts=True)
+                if len(unique_labels) > 1:
+                    # Confidence based on entropy - lower entropy = higher confidence
+                    probabilities = counts / np.sum(counts)
+                    entropy_val = entropy(probabilities)
+                    max_entropy = np.log(len(unique_labels))
+                    normalized_entropy = entropy_val / max_entropy if max_entropy > 0 else 0
+                    confidence = 1.0 - normalized_entropy
+                else:
+                    # All labels are the same - high confidence
+                    confidence = 1.0
+                confidence_scores.append(confidence)
+            
+            confidence_score = np.mean(confidence_scores) if confidence_scores else 0.0
             
             # Stability score: consistency across different label sets
             stability_scores = []

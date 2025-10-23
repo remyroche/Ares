@@ -3,6 +3,7 @@ Clustering algorithms for NAS-TAS regime analysis.
 
 This module provides specialized clustering algorithms with optimization
 and validation for financial time series data.
+Now inherits from the production-ready BaseClusteringAlgorithm in core module.
 """
 
 import numpy as np
@@ -25,6 +26,9 @@ from src.utils.tprint import (
 from .memory_manager import MemoryManager, memory_checkpoint
 from .clustering_config import ClusteringConfig
 
+# Import the production-ready BaseClusteringAlgorithm
+from src.core.abstract_base_classes import BaseClusteringAlgorithm as ProductionBaseClusteringAlgorithm, ClusteringResult as ProductionClusteringResult, ClusteringAlgorithm
+
 @dataclass
 class ClusteringResult:
     """Result of clustering operation."""
@@ -46,7 +50,7 @@ class ClusteringResult:
             'execution_time': self.execution_time
         }
 
-class BaseClusteringAlgorithm:
+class BaseClusteringAlgorithm(ProductionBaseClusteringAlgorithm):
     """Base class for clustering algorithms."""
 
     def __init__(self, config: ClusteringConfig, memory_manager: Optional[MemoryManager] = None):

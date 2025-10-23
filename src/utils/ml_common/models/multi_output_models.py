@@ -11,6 +11,8 @@ Key Features:
 - Data preparation utilities for multi-output targets
 - Prediction combination logic
 - M1 hardware optimization integration
+
+Now inherits from the production-ready MultiOutputModel in core module.
 """
 
 import numpy as np
@@ -21,6 +23,9 @@ from abc import ABC, abstractmethod
 import logging
 import time
 from datetime import datetime
+
+# Import the production-ready MultiOutputModel
+from src.core.abstract_base_classes import MultiOutputModel as ProductionMultiOutputModel
 
 # M1 Optimization imports
 from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer, M1MemoryOptimizer
@@ -151,7 +156,7 @@ class MultiOutputResult:
     memory_usage_mb: float = 0.0
     optimization_used: List[str] = field(default_factory=list)
 
-class MultiOutputModel(ABC):
+class MultiOutputModel(ProductionMultiOutputModel):
     """
     Abstract base class for multi-output models.
     

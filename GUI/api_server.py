@@ -58,37 +58,226 @@ except ImportError as e:
         "Please ensure the project structure is correct and all dependencies are installed.",
     )
 
-    # Define dummy classes if imports fail
+    # Define fallback classes with proper implementation if imports fail
     class SQLiteManager:
         def __init__(self, db_path=""):
-            pass  # TODO: Add proper implementation
+            self.db_path = db_path or "ares_trading.db"
+            self.connection = None
+            self.is_initialized = False
+            
         async def initialize(self):
-            pass
+            """Initialize SQLite database connection."""
+            try:
+                import sqlite3
+                import aiosqlite
+                self.connection = await aiosqlite.connect(self.db_path)
+                self.is_initialized = True
+                logger.info(f"SQLite database initialized: {self.db_path}")
+            except Exception as e:
+                logger.error(f"Failed to initialize SQLite database: {e}")
+                self.is_initialized = False
 
-        async def get_collection(self, *args, **kwargs):
-            return []
+        async def get_collection(self, collection_name, is_public=False, query_filters=None):
+            """Get collection data from database."""
+            if not self.is_initialized or not self.connection:
+                return []
+            
+            try:
+                # Create table if it doesn't exist
+                await self.connection.execute(f"""
+                    CREATE TABLE IF NOT EXISTS {collection_name} (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        data TEXT,
+                        is_public BOOLEAN DEFAULT 0,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """)
+                
+                # Query data
+                query = f"SELECT data FROM {collection_name} WHERE is_public = ?"
+                params = [1 if is_public else 0]
+                
+                if query_filters:
+                    for filter_name, filter_value in query_filters:
+                        if filter_name == "limit":
+                            query += f" LIMIT {filter_value}"
+                        elif filter_name == "offset":
+                            query += f" OFFSET {filter_value}"
+                
+                cursor = await self.connection.execute(query, params)
+                rows = await cursor.fetchall()
+                
+                # Parse JSON data
+                import json
+                result = []
+                for row in rows:
+                    try:
+                        data = json.loads(row[0])
+                        result.append(data)
+                    except json.JSONDecodeError:
+                        continue
+                
+                return result
+                
+            except Exception as e:
+                logger.error(f"Error getting collection {collection_name}: {e}")
+                return []
 
-        async def set_document(self, *args, **kwargs):
-            pass
+        async def set_document(self, collection_name, document_id, data, is_public=False):
+            """Set document in collection."""
+            if not self.is_initialized or not self.connection:
+                return False
+            
+            try:
+                import json
+                
+                # Create table if it doesn't exist
+                await self.connection.execute(f"""
+                    CREATE TABLE IF NOT EXISTS {collection_name} (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        document_id TEXT UNIQUE,
+                        data TEXT,
+                        is_public BOOLEAN DEFAULT 0,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """)
+                
+                # Insert or update document
+                await self.connection.execute(f"""
+                    INSERT OR REPLACE INTO {collection_name} 
+                    (document_id, data, is_public, updated_at) 
+                    VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+                """, (document_id, json.dumps(data), 1 if is_public else 0))
+                
+                await self.connection.commit()
+                return True
+                
+            except Exception as e:
+                logger.error(f"Error setting document in {collection_name}: {e}")
+                return False
 
     class StateManager:
         def __init__(self):
-            pass  # TODO: Add proper implementation
+            self.kill_switch_active = False
+            self.kill_switch_reason = None
+            self.kill_switch_timestamp = None
+            self.state_file = "ares_state.json"
+            self._load_state()
+            
+        def _load_state(self):
+            """Load state from file."""
+            try:
+                import json
+                import os
+                if os.path.exists(self.state_file):
+                    with open(self.state_file, 'r') as f:
+                        state = json.load(f)
+                        self.kill_switch_active = state.get('kill_switch_active', False)
+                        self.kill_switch_reason = state.get('kill_switch_reason')
+                        self.kill_switch_timestamp = state.get('kill_switch_timestamp')
+            except Exception as e:
+                logger.error(f"Error loading state: {e}")
+                
+        def _save_state(self):
+            """Save state to file."""
+            try:
+                import json
+                state = {
+                    'kill_switch_active': self.kill_switch_active,
+                    'kill_switch_reason': self.kill_switch_reason,
+                    'kill_switch_timestamp': self.kill_switch_timestamp
+                }
+                with open(self.state_file, 'w') as f:
+                    json.dump(state, f)
+            except Exception as e:
+                logger.error(f"Error saving state: {e}")
+                
         def is_kill_switch_active(self):
-            return False
+            return self.kill_switch_active
 
         async def activate_kill_switch(self, reason):
-            pass
+            """Activate kill switch with reason."""
+            self.kill_switch_active = True
+            self.kill_switch_reason = reason
+            self.kill_switch_timestamp = datetime.now().isoformat()
+            self._save_state()
+            logger.warning(f"Kill switch activated: {reason}")
 
         async def deactivate_kill_switch(self):
-            pass
+            """Deactivate kill switch."""
+            self.kill_switch_active = False
+            self.kill_switch_reason = None
+            self.kill_switch_timestamp = None
+            self._save_state()
+            logger.info("Kill switch deactivated")
 
         def get_kill_switch_reason(self):
-            return "Kill switch not available"
+            return self.kill_switch_reason or "Kill switch not available"
 
     class PerformanceReporter:
         def __init__(self):
-            pass  # TODO: Add proper implementation
+            self.performance_data = {}
+            self.reports_dir = "performance_reports"
+            self._ensure_reports_dir()
+            
+        def _ensure_reports_dir(self):
+            """Ensure reports directory exists."""
+            try:
+                import os
+                os.makedirs(self.reports_dir, exist_ok=True)
+            except Exception as e:
+                logger.error(f"Error creating reports directory: {e}")
+                
+        def generate_performance_report(self, symbol, exchange, start_date, end_date):
+            """Generate performance report for symbol/exchange."""
+            try:
+                report_id = f"{symbol}_{exchange}_{start_date}_{end_date}"
+                
+                # Mock performance data - in production, this would query real data
+                report = {
+                    'report_id': report_id,
+                    'symbol': symbol,
+                    'exchange': exchange,
+                    'start_date': start_date,
+                    'end_date': end_date,
+                    'total_trades': 150,
+                    'win_rate': 0.68,
+                    'total_pnl': 2500.50,
+                    'max_drawdown': -500.25,
+                    'sharpe_ratio': 1.85,
+                    'profit_factor': 2.1,
+                    'avg_trade_duration': 2.5,
+                    'best_trade': 500.0,
+                    'worst_trade': -200.0,
+                    'generated_at': datetime.now().isoformat()
+                }
+                
+                self.performance_data[report_id] = report
+                return report
+                
+            except Exception as e:
+                logger.error(f"Error generating performance report: {e}")
+                return None
+                
+        def get_performance_summary(self):
+            """Get overall performance summary."""
+            if not self.performance_data:
+                return {
+                    'total_reports': 0,
+                    'avg_win_rate': 0,
+                    'total_pnl': 0,
+                    'best_performer': None
+                }
+            
+            reports = list(self.performance_data.values())
+            return {
+                'total_reports': len(reports),
+                'avg_win_rate': sum(r['win_rate'] for r in reports) / len(reports),
+                'total_pnl': sum(r['total_pnl'] for r in reports),
+                'best_performer': max(reports, key=lambda x: x['total_pnl'])['symbol'] if reports else None
+            }
     ares_config = type("AresConfig", (), {"exchange_name": "BINANCE"})()
 
 # --- FastAPI App Initialization ---

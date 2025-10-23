@@ -502,11 +502,62 @@ class LiveTradingScheduler:
             return pd.Series([50] * len(prices), index=prices.index)
 
     async def _load_market_data(self, timeframe: str, n_bars: int = 100) -> pd.DataFrame:
-        """Load market data for the specified timeframe."""
+        """Load market data for the specified timeframe using ExchangeInterface."""
         try:
-            # TODO: Replace with real data source connection
-            # This is a placeholder implementation that generates synthetic data
-            # In production, connect to your actual market data provider
+            # Initialize ExchangeInterface if not already done
+            if not hasattr(self, 'exchange_interface') or self.exchange_interface is None:
+                from src.trading.execution.exchange_interface import ExchangeInterface
+                
+                exchange_config = {
+                    'exchange_type': self.exchange,
+                    'api_key': None,  # Will use simulated mode
+                    'api_secret': None,
+                    'testnet': True,
+                    'rate_limits': {
+                        'public': 100,
+                        'trading': 50
+                    }
+                }
+                
+                self.exchange_interface = ExchangeInterface(exchange_config)
+                await self.exchange_interface.connect()
+            
+            # Get kline data from exchange
+            klines = await self.exchange_interface.get_klines(
+                symbol=self.symbol,
+                interval=timeframe,
+                limit=n_bars
+            )
+            
+            if not klines:
+                tprint_warning(f"⚠️ No kline data received for {self.symbol} {timeframe}")
+                return pd.DataFrame()
+            
+            # Convert klines to DataFrame
+            data = pd.DataFrame([{
+                'timestamp': kline.timestamp,
+                'open': kline.open_price,
+                'high': kline.high_price,
+                'low': kline.low_price,
+                'close': kline.close_price,
+                'volume': kline.volume
+            } for kline in klines])
+            
+            # Sort by timestamp
+            data = data.sort_values('timestamp').reset_index(drop=True)
+            
+            tprint_success(f"✅ Loaded {len(data)} bars of {timeframe} data for {self.symbol}")
+            return data
+            
+        except Exception as e:
+            tprint_error(f"❌ Failed to load market data: {e}")
+            # Fallback to synthetic data for development
+            tprint_warning("⚠️ Falling back to synthetic data")
+            return self._generate_synthetic_data(timeframe, n_bars)
+    
+    def _generate_synthetic_data(self, timeframe: str, n_bars: int = 100) -> pd.DataFrame:
+        """Generate synthetic data as fallback."""
+        try:
             dates = pd.date_range(end=datetime.now(), periods=n_bars, freq=timeframe)
             
             # Generate synthetic data for testing
@@ -530,7 +581,7 @@ class LiveTradingScheduler:
             return data
             
         except Exception as e:
-            tprint_error(f"❌ Failed to load market data: {e}")
+            tprint_error(f"❌ Failed to generate synthetic data: {e}")
             return pd.DataFrame()
 
     def _schedule_initial_executions(self):

@@ -239,14 +239,123 @@ from src.training.steps.base_step import BaseStep
 _lazy_import_quality_utilities()
 
 class StorageConfig:
-    """Simple storage config."""
-    def __init__(self, *args, **kwargs):
-        pass
+    """Configuration for data storage operations."""
+    
+    def __init__(
+        self,
+        base_path: str = "data",
+        compression: str = "snappy",
+        partition_by: Optional[List[str]] = None,
+        max_file_size_mb: int = 100,
+        backup_enabled: bool = True,
+        versioning_enabled: bool = True,
+        **kwargs
+    ):
+        """
+        Initialize storage configuration.
+        
+        Args:
+            base_path: Base directory for data storage
+            compression: Compression algorithm (snappy, gzip, lz4, none)
+            partition_by: Columns to partition data by
+            max_file_size_mb: Maximum file size in MB before splitting
+            backup_enabled: Whether to create backups
+            versioning_enabled: Whether to enable versioning
+        """
+        self.base_path = Path(base_path)
+        self.compression = compression
+        self.partition_by = partition_by or []
+        self.max_file_size_mb = max_file_size_mb
+        self.backup_enabled = backup_enabled
+        self.versioning_enabled = versioning_enabled
+        
+        # Create base directory if it doesn't exist
+        self.base_path.mkdir(parents=True, exist_ok=True)
+        
+        # Additional configuration from kwargs
+        for key, value in kwargs.items():
+            setattr(self, key, value)
 
 class KlinesMetadata:
-    """Simple klines metadata."""
-    def __init__(self, *args, **kwargs):
-        pass
+    """Metadata for klines data operations."""
+    
+    def __init__(
+        self,
+        symbol: str,
+        exchange: str,
+        timeframe: str,
+        start_time: Optional[datetime] = None,
+        end_time: Optional[datetime] = None,
+        total_candles: int = 0,
+        data_quality_score: float = 0.0,
+        gaps_detected: int = 0,
+        gaps_filled: int = 0,
+        duplicates_removed: int = 0,
+        processing_steps: Optional[List[str]] = None,
+        **kwargs
+    ):
+        """
+        Initialize klines metadata.
+        
+        Args:
+            symbol: Trading symbol
+            exchange: Exchange name
+            timeframe: Data timeframe
+            start_time: Start timestamp of data
+            end_time: End timestamp of data
+            total_candles: Total number of candles
+            data_quality_score: Quality score (0.0-1.0)
+            gaps_detected: Number of gaps detected
+            gaps_filled: Number of gaps filled
+            duplicates_removed: Number of duplicates removed
+            processing_steps: List of processing steps completed
+        """
+        self.symbol = symbol
+        self.exchange = exchange
+        self.timeframe = timeframe
+        self.start_time = start_time
+        self.end_time = end_time
+        self.total_candles = total_candles
+        self.data_quality_score = data_quality_score
+        self.gaps_detected = gaps_detected
+        self.gaps_filled = gaps_filled
+        self.duplicates_removed = duplicates_removed
+        self.processing_steps = processing_steps or []
+        self.created_at = datetime.now()
+        
+        # Additional metadata from kwargs
+        for key, value in kwargs.items():
+            setattr(self, key, value)
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert metadata to dictionary."""
+        return {
+            'symbol': self.symbol,
+            'exchange': self.exchange,
+            'timeframe': self.timeframe,
+            'start_time': self.start_time.isoformat() if self.start_time else None,
+            'end_time': self.end_time.isoformat() if self.end_time else None,
+            'total_candles': self.total_candles,
+            'data_quality_score': self.data_quality_score,
+            'gaps_detected': self.gaps_detected,
+            'gaps_filled': self.gaps_filled,
+            'duplicates_removed': self.duplicates_removed,
+            'processing_steps': self.processing_steps,
+            'created_at': self.created_at.isoformat()
+        }
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'KlinesMetadata':
+        """Create metadata from dictionary."""
+        # Convert timestamp strings back to datetime objects
+        if data.get('start_time'):
+            data['start_time'] = datetime.fromisoformat(data['start_time'])
+        if data.get('end_time'):
+            data['end_time'] = datetime.fromisoformat(data['end_time'])
+        if data.get('created_at'):
+            data['created_at'] = datetime.fromisoformat(data['created_at'])
+        
+        return cls(**data)
 
 class ProcessingStep(Enum):
     """Enumeration of processing steps."""

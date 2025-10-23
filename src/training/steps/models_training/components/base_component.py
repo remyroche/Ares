@@ -66,8 +66,35 @@ class ModularComponent:
         return self._process_data(data, **kwargs)
     
     def _process_data(self, data: Any, **kwargs) -> Any:
-        """Process data - to be implemented by subclasses."""
-        raise NotImplementedError
+        """Process data - default implementation with validation."""
+        try:
+            # Basic data validation
+            if data is None:
+                self.logger.warning("Received None data, returning empty result")
+                return {}
+            
+            # If data is a dictionary, return as-is
+            if isinstance(data, dict):
+                return data
+            
+            # If data is a list, convert to dictionary with indexed keys
+            if isinstance(data, list):
+                return {f"item_{i}": item for i, item in enumerate(data)}
+            
+            # For other types, wrap in a result dictionary
+            return {
+                "processed_data": data,
+                "data_type": type(data).__name__,
+                "processing_timestamp": datetime.now().isoformat()
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Error processing data: {e}")
+            return {
+                "error": str(e),
+                "data_type": type(data).__name__ if data is not None else "None",
+                "processing_timestamp": datetime.now().isoformat()
+            }
 
 class ErrorInfo:
     """Error information class."""

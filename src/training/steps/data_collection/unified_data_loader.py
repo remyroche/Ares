@@ -282,8 +282,130 @@ except ImportError:
 
     @log_important_calls
     class ParquetDatasetManager:
-        def __init__(self, *args, **kwargs):
-            pass
+        """Manager for parquet dataset operations with validation and optimization."""
+        
+        def __init__(
+            self,
+            base_path: Union[str, Path],
+            compression: str = "snappy",
+            validation_enabled: bool = True,
+            optimize_memory: bool = True,
+            **kwargs
+        ):
+            """
+            Initialize parquet dataset manager.
+            
+            Args:
+                base_path: Base directory for parquet files
+                compression: Compression algorithm
+                validation_enabled: Whether to enable data validation
+                optimize_memory: Whether to optimize memory usage
+            """
+            self.base_path = Path(base_path)
+            self.compression = compression
+            self.validation_enabled = validation_enabled
+            self.optimize_memory = optimize_memory
+            self.logger = logging.getLogger(__name__)
+            
+            # Create base directory if it doesn't exist
+            self.base_path.mkdir(parents=True, exist_ok=True)
+            
+            # Additional configuration
+            for key, value in kwargs.items():
+                setattr(self, key, value)
+        
+        def save_dataset(
+            self,
+            df: pd.DataFrame,
+            filename: str,
+            partition_by: Optional[List[str]] = None,
+            metadata: Optional[Dict[str, Any]] = None
+        ) -> bool:
+            """Save DataFrame as parquet dataset."""
+            try:
+                file_path = self.base_path / filename
+                
+                # Optimize memory if enabled
+                if self.optimize_memory:
+                    df = self._optimize_dataframe(df)
+                
+                # Save with compression
+                df.to_parquet(
+                    file_path,
+                    compression=self.compression,
+                    partition_cols=partition_by,
+                    index=False
+                )
+                
+                # Save metadata if provided
+                if metadata:
+                    metadata_path = file_path.with_suffix('.metadata.json')
+                    with open(metadata_path, 'w') as f:
+                        json.dump(metadata, f, indent=2, default=str)
+                
+                self.logger.info(f"Dataset saved: {file_path}")
+                return True
+                
+            except Exception as e:
+                self.logger.error(f"Failed to save dataset: {e}")
+                return False
+        
+        def load_dataset(
+            self,
+            filename: str,
+            filters: Optional[List[Tuple]] = None
+        ) -> Optional[pd.DataFrame]:
+            """Load parquet dataset."""
+            try:
+                file_path = self.base_path / filename
+                
+                if not file_path.exists():
+                    self.logger.warning(f"Dataset not found: {file_path}")
+                    return None
+                
+                # Load with optional filters
+                df = pd.read_parquet(file_path, filters=filters)
+                
+                self.logger.info(f"Dataset loaded: {file_path} ({len(df)} rows)")
+                return df
+                
+            except Exception as e:
+                self.logger.error(f"Failed to load dataset: {e}")
+                return None
+        
+        def _optimize_dataframe(self, df: pd.DataFrame) -> pd.DataFrame:
+            """Optimize DataFrame memory usage."""
+            try:
+                optimized_df = df.copy()
+                
+                # Downcast numeric types
+                for col in optimized_df.select_dtypes(include=['int64']).columns:
+                    col_min, col_max = optimized_df[col].min(), optimized_df[col].max()
+                    if col_min >= 0:
+                        if col_max <= 255:
+                            optimized_df[col] = optimized_df[col].astype('uint8')
+                        elif col_max <= 65535:
+                            optimized_df[col] = optimized_df[col].astype('uint16')
+                        elif col_max <= 4294967295:
+                            optimized_df[col] = optimized_df[col].astype('uint32')
+                    else:
+                        if col_min >= -128 and col_max <= 127:
+                            optimized_df[col] = optimized_df[col].astype('int8')
+                        elif col_min >= -32768 and col_max <= 32767:
+                            optimized_df[col] = optimized_df[col].astype('int16')
+                        elif col_min >= -2147483648 and col_max <= 2147483647:
+                            optimized_df[col] = optimized_df[col].astype('int32')
+                
+                # Downcast float types
+                for col in optimized_df.select_dtypes(include=['float64']).columns:
+                    if optimized_df[col].astype('float32').equals(optimized_df[col]):
+                        optimized_df[col] = optimized_df[col].astype('float32')
+                
+                return optimized_df
+                
+            except Exception as e:
+                self.logger.warning(f"Failed to optimize DataFrame: {e}")
+                return df
 
 class UnifiedDataLoader:
     """Secure data loader for step1_5 unified data with comprehensive validation."""

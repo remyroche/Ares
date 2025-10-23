@@ -149,16 +149,10 @@ class EnsembleResult:
 
 class BaseLabelingStrategy(ProductionBaseLabelingStrategy):
     """Base class for labeling strategies."""
-
-    @abstractmethod
-    def generate_labels(self, market_data: pd.DataFrame) -> StrategyResult:
-        """Generate labels using this strategy."""
-        pass
-
-    @abstractmethod
-    def calculate_confidence(self, labels: pd.DataFrame, market_data: pd.DataFrame) -> pd.Series:
-        """Calculate confidence scores for labels."""
-        pass
+    
+    def __init__(self, name: str, strategy: LabelingStrategy, config: Optional[Dict[str, Any]] = None, enable_logging: bool = True):
+        """Initialize base labeling strategy."""
+        super().__init__(name, strategy, config, enable_logging)
 
 class MultiHorizonStrategy(BaseLabelingStrategy):
     """Multi-horizon profit labeling strategy."""
@@ -168,34 +162,64 @@ class MultiHorizonStrategy(BaseLabelingStrategy):
         self.config = config or MultiHorizonConfig()
         self.labeler = MultiHorizonProfitLabeler(self.config)
 
-    def generate_labels(self, market_data: pd.DataFrame) -> StrategyResult:
+    def generate_labels(self, data: np.ndarray, **kwargs) -> LabelingResult:
         """Generate labels using multi-horizon approach."""
+        # Convert numpy array to DataFrame if needed
+        if isinstance(data, np.ndarray):
+            if data.ndim == 1:
+                market_data = pd.DataFrame({'close': data})
+            else:
+                market_data = pd.DataFrame(data, columns=['open', 'high', 'low', 'close', 'volume'][:data.shape[1]])
+        else:
+            market_data = data
+            
         labeled_data = self.labeler.generate_labels(market_data.copy())
         confidence_scores = self.calculate_confidence(labeled_data, market_data)
 
         # Calculate performance metrics
         performance_metrics = self._calculate_performance_metrics(labeled_data, market_data)
 
-        return StrategyResult(
+        # Convert to LabelingResult format expected by parent class
+        labels_array = labeled_data.get('overall_opportunity', pd.Series(0.0, index=labeled_data.index)).values
+        confidence_array = confidence_scores.values if hasattr(confidence_scores, 'values') else confidence_scores
+
+        return LabelingResult(
+            labels=labels_array,
+            confidence_scores=confidence_array,
             strategy=LabelingStrategy.MULTI_HORIZON,
-            labels=labeled_data,
-            confidence_scores=confidence_scores,
-            performance_metrics=performance_metrics,
+            metrics=performance_metrics,
             metadata={'config': self.config.__dict__}
         )
 
-    def calculate_confidence(self, labels: pd.DataFrame, market_data: pd.DataFrame) -> pd.Series:
+    def calculate_confidence(self, labels: np.ndarray, data: np.ndarray, **kwargs) -> np.ndarray:
         """Calculate confidence based on quality scores."""
-        quality_columns = [col for col in labels.columns if col.endswith('_quality_score')]
+        # Convert inputs to DataFrame if needed for processing
+        if isinstance(labels, np.ndarray):
+            if len(labels.shape) == 1:
+                labels_df = pd.DataFrame({'overall_opportunity': labels})
+            else:
+                labels_df = pd.DataFrame(labels)
+        else:
+            labels_df = labels
+            
+        if isinstance(data, np.ndarray):
+            if data.ndim == 1:
+                market_data = pd.DataFrame({'close': data})
+            else:
+                market_data = pd.DataFrame(data, columns=['open', 'high', 'low', 'close', 'volume'][:data.shape[1]])
+        else:
+            market_data = data
+
+        quality_columns = [col for col in labels_df.columns if col.endswith('_quality_score')]
 
         if quality_columns:
             # Average quality scores as confidence
-            confidence = labels[quality_columns].mean(axis=1)
+            confidence = labels_df[quality_columns].mean(axis=1)
         else:
             # Use overall opportunity as proxy
-            confidence = labels.get('overall_opportunity', pd.Series(0.5, index=labels.index))
+            confidence = labels_df.get('overall_opportunity', pd.Series(0.5, index=labels_df.index))
 
-        return confidence.fillna(0.5)
+        return confidence.fillna(0.5).values
 
     def _calculate_performance_metrics(self, labels: pd.DataFrame, market_data: pd.DataFrame) -> Dict[str, float]:
         """Calculate performance metrics for the strategy."""
@@ -232,17 +256,28 @@ class VolatilityAdjustedStrategy(BaseLabelingStrategy):
         """Initialize volatility-adjusted strategy."""
         self.volatility_window = volatility_window
 
-    def generate_labels(self, market_data: pd.DataFrame) -> StrategyResult:
+    def generate_labels(self, data: np.ndarray, **kwargs) -> LabelingResult:
         """Generate volatility-adjusted labels."""
+        # Convert numpy array to DataFrame if needed
+        if isinstance(data, np.ndarray):
+            if data.ndim == 1:
+                market_data = pd.DataFrame({'close': data})
+            else:
+                market_data = pd.DataFrame(data, columns=['open', 'high', 'low', 'close', 'volume'][:data.shape[1]])
+        else:
+            market_data = data
+            
         if 'close' not in market_data.columns:
             # Return empty result
             empty_labels = pd.DataFrame(index=market_data.index)
             empty_labels['volatility_opportunity'] = 0.0
-            return StrategyResult(
+            labels_array = np.zeros(len(market_data))
+            confidence_array = np.zeros(len(market_data))
+            return LabelingResult(
+                labels=labels_array,
+                confidence_scores=confidence_array,
                 strategy=LabelingStrategy.VOLATILITY_ADJUSTED,
-                labels=empty_labels,
-                confidence_scores=pd.Series(0.0, index=market_data.index),
-                performance_metrics={},
+                metrics={},
                 metadata={}
             )
 
@@ -273,24 +308,45 @@ class VolatilityAdjustedStrategy(BaseLabelingStrategy):
         confidence_scores = self.calculate_confidence(labels, market_data)
         performance_metrics = self._calculate_performance_metrics(labels, market_data)
 
-        return StrategyResult(
+        # Convert to LabelingResult format
+        labels_array = labels['volatility_opportunity'].values
+        confidence_array = confidence_scores.values if hasattr(confidence_scores, 'values') else confidence_scores
+
+        return LabelingResult(
+            labels=labels_array,
+            confidence_scores=confidence_array,
             strategy=LabelingStrategy.VOLATILITY_ADJUSTED,
-            labels=labels,
-            confidence_scores=confidence_scores,
-            performance_metrics=performance_metrics,
+            metrics=performance_metrics,
             metadata={'volatility_window': self.volatility_window}
         )
 
-    def calculate_confidence(self, labels: pd.DataFrame, market_data: pd.DataFrame) -> pd.Series:
+    def calculate_confidence(self, labels: np.ndarray, data: np.ndarray, **kwargs) -> np.ndarray:
         """Calculate confidence based on volatility consistency."""
-        if 'volatility_opportunity' in labels.columns:
+        # Convert inputs to DataFrame if needed for processing
+        if isinstance(labels, np.ndarray):
+            if len(labels.shape) == 1:
+                labels_df = pd.DataFrame({'volatility_opportunity': labels})
+            else:
+                labels_df = pd.DataFrame(labels)
+        else:
+            labels_df = labels
+            
+        if isinstance(data, np.ndarray):
+            if data.ndim == 1:
+                market_data = pd.DataFrame({'close': data})
+            else:
+                market_data = pd.DataFrame(data, columns=['open', 'high', 'low', 'close', 'volume'][:data.shape[1]])
+        else:
+            market_data = data
+
+        if 'volatility_opportunity' in labels_df.columns:
             # Confidence is higher when volatility is more predictable
-            opportunity = labels['volatility_opportunity']
+            opportunity = labels_df['volatility_opportunity']
             rolling_std = opportunity.rolling(20).std()
             confidence = 1.0 - (rolling_std / (opportunity.std() + 1e-10))
-            return confidence.fillna(0.5).clip(0.1, 1.0)
+            return confidence.fillna(0.5).clip(0.1, 1.0).values
 
-        return pd.Series(0.5, index=labels.index)
+        return np.full(len(labels), 0.5)
 
     def _calculate_performance_metrics(self, labels: pd.DataFrame, market_data: pd.DataFrame) -> Dict[str, float]:
         """Calculate performance metrics."""
@@ -314,16 +370,27 @@ class MomentumBasedStrategy(BaseLabelingStrategy):
         """Initialize momentum-based strategy."""
         self.momentum_windows = momentum_windows
 
-    def generate_labels(self, market_data: pd.DataFrame) -> StrategyResult:
+    def generate_labels(self, data: np.ndarray, **kwargs) -> LabelingResult:
         """Generate momentum-based labels."""
+        # Convert numpy array to DataFrame if needed
+        if isinstance(data, np.ndarray):
+            if data.ndim == 1:
+                market_data = pd.DataFrame({'close': data})
+            else:
+                market_data = pd.DataFrame(data, columns=['open', 'high', 'low', 'close', 'volume'][:data.shape[1]])
+        else:
+            market_data = data
+            
         if 'close' not in market_data.columns:
             empty_labels = pd.DataFrame(index=market_data.index)
             empty_labels['momentum_opportunity'] = 0.0
-            return StrategyResult(
+            labels_array = np.zeros(len(market_data))
+            confidence_array = np.zeros(len(market_data))
+            return LabelingResult(
+                labels=labels_array,
+                confidence_scores=confidence_array,
                 strategy=LabelingStrategy.MOMENTUM_BASED,
-                labels=empty_labels,
-                confidence_scores=pd.Series(0.0, index=market_data.index),
-                performance_metrics={},
+                metrics={},
                 metadata={}
             )
 
@@ -356,22 +423,43 @@ class MomentumBasedStrategy(BaseLabelingStrategy):
         confidence_scores = self.calculate_confidence(labels, market_data)
         performance_metrics = self._calculate_performance_metrics(labels, market_data)
 
-        return StrategyResult(
+        # Convert to LabelingResult format
+        labels_array = labels['momentum_opportunity'].values
+        confidence_array = confidence_scores.values if hasattr(confidence_scores, 'values') else confidence_scores
+
+        return LabelingResult(
+            labels=labels_array,
+            confidence_scores=confidence_array,
             strategy=LabelingStrategy.MOMENTUM_BASED,
-            labels=labels,
-            confidence_scores=confidence_scores,
-            performance_metrics=performance_metrics,
+            metrics=performance_metrics,
             metadata={'momentum_windows': self.momentum_windows}
         )
 
-    def calculate_confidence(self, labels: pd.DataFrame, market_data: pd.DataFrame) -> pd.Series:
+    def calculate_confidence(self, labels: np.ndarray, data: np.ndarray, **kwargs) -> np.ndarray:
         """Calculate confidence based on momentum consistency."""
-        if 'momentum_opportunity' in labels.columns:
-            opportunity = labels['momentum_opportunity']
-            # Higher opportunity = higher confidence
-            return opportunity.clip(0.1, 1.0)
+        # Convert inputs to DataFrame if needed for processing
+        if isinstance(labels, np.ndarray):
+            if len(labels.shape) == 1:
+                labels_df = pd.DataFrame({'momentum_opportunity': labels})
+            else:
+                labels_df = pd.DataFrame(labels)
+        else:
+            labels_df = labels
+            
+        if isinstance(data, np.ndarray):
+            if data.ndim == 1:
+                market_data = pd.DataFrame({'close': data})
+            else:
+                market_data = pd.DataFrame(data, columns=['open', 'high', 'low', 'close', 'volume'][:data.shape[1]])
+        else:
+            market_data = data
 
-        return pd.Series(0.5, index=labels.index)
+        if 'momentum_opportunity' in labels_df.columns:
+            opportunity = labels_df['momentum_opportunity']
+            # Higher opportunity = higher confidence
+            return opportunity.clip(0.1, 1.0).values
+
+        return np.full(len(labels), 0.5)
 
     def _calculate_performance_metrics(self, labels: pd.DataFrame, market_data: pd.DataFrame) -> Dict[str, float]:
         """Calculate performance metrics."""
@@ -396,16 +484,27 @@ class MeanReversionStrategy(BaseLabelingStrategy):
         self.lookback_window = lookback_window
         self.threshold_std = threshold_std
 
-    def generate_labels(self, market_data: pd.DataFrame) -> StrategyResult:
+    def generate_labels(self, data: np.ndarray, **kwargs) -> LabelingResult:
         """Generate mean reversion labels."""
+        # Convert numpy array to DataFrame if needed
+        if isinstance(data, np.ndarray):
+            if data.ndim == 1:
+                market_data = pd.DataFrame({'close': data})
+            else:
+                market_data = pd.DataFrame(data, columns=['open', 'high', 'low', 'close', 'volume'][:data.shape[1]])
+        else:
+            market_data = data
+            
         if 'close' not in market_data.columns:
             empty_labels = pd.DataFrame(index=market_data.index)
             empty_labels['reversion_opportunity'] = 0.0
-            return StrategyResult(
+            labels_array = np.zeros(len(market_data))
+            confidence_array = np.zeros(len(market_data))
+            return LabelingResult(
+                labels=labels_array,
+                confidence_scores=confidence_array,
                 strategy=LabelingStrategy.MEAN_REVERSION,
-                labels=empty_labels,
-                confidence_scores=pd.Series(0.0, index=market_data.index),
-                performance_metrics={},
+                metrics={},
                 metadata={}
             )
 
@@ -433,25 +532,46 @@ class MeanReversionStrategy(BaseLabelingStrategy):
         confidence_scores = self.calculate_confidence(labels, market_data)
         performance_metrics = self._calculate_performance_metrics(labels, market_data)
 
-        return StrategyResult(
+        # Convert to LabelingResult format
+        labels_array = labels['reversion_opportunity'].values
+        confidence_array = confidence_scores.values if hasattr(confidence_scores, 'values') else confidence_scores
+
+        return LabelingResult(
+            labels=labels_array,
+            confidence_scores=confidence_array,
             strategy=LabelingStrategy.MEAN_REVERSION,
-            labels=labels,
-            confidence_scores=confidence_scores,
-            performance_metrics=performance_metrics,
+            metrics=performance_metrics,
             metadata={
                 'lookback_window': self.lookback_window,
                 'threshold_std': self.threshold_std
             }
         )
 
-    def calculate_confidence(self, labels: pd.DataFrame, market_data: pd.DataFrame) -> pd.Series:
+    def calculate_confidence(self, labels: np.ndarray, data: np.ndarray, **kwargs) -> np.ndarray:
         """Calculate confidence based on reversion strength."""
-        if 'reversion_strength' in labels.columns:
-            strength = labels['reversion_strength']
-            # Confidence increases with reversion strength but caps at 1.0
-            return np.clip(strength * 0.5 + 0.2, 0.1, 1.0)
+        # Convert inputs to DataFrame if needed for processing
+        if isinstance(labels, np.ndarray):
+            if len(labels.shape) == 1:
+                labels_df = pd.DataFrame({'reversion_opportunity': labels})
+            else:
+                labels_df = pd.DataFrame(labels)
+        else:
+            labels_df = labels
+            
+        if isinstance(data, np.ndarray):
+            if data.ndim == 1:
+                market_data = pd.DataFrame({'close': data})
+            else:
+                market_data = pd.DataFrame(data, columns=['open', 'high', 'low', 'close', 'volume'][:data.shape[1]])
+        else:
+            market_data = data
 
-        return pd.Series(0.5, index=labels.index)
+        if 'reversion_strength' in labels_df.columns:
+            strength = labels_df['reversion_strength']
+            # Confidence increases with reversion strength but caps at 1.0
+            return np.clip(strength * 0.5 + 0.2, 0.1, 1.0).values
+
+        return np.full(len(labels), 0.5)
 
     def _calculate_performance_metrics(self, labels: pd.DataFrame, market_data: pd.DataFrame) -> Dict[str, float]:
         """Calculate performance metrics."""

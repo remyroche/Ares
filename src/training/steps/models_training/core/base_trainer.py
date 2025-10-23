@@ -187,6 +187,126 @@ class BaseTrainer(ABC):
         tprint_info(f"🔧 Initializing {self.__class__.__name__} for {config.role.value}")
         self.logger.info(f"Initialized {self.__class__.__name__} for {config.role.value}")
     
+    async def _create_model(self, model_type: ModelType) -> Optional[Any]:
+        """
+        Create a model instance for the given model type.
+        
+        Args:
+            model_type: Type of model to create
+            
+        Returns:
+            Model instance or None if creation fails
+        """
+        try:
+            tprint_debug(f"🔧 Creating {model_type.value} model...")
+            
+            if model_type == ModelType.ANALYST:
+                return self._create_analyst_model()
+            elif model_type == ModelType.TACTICIAN:
+                return self._create_tactician_model()
+            elif model_type == ModelType.ENSEMBLE:
+                return self._create_ensemble_model()
+            else:
+                tprint_warning(f"⚠️ Unknown model type: {model_type}")
+                return None
+                
+        except Exception as e:
+            tprint_error(f"❌ Failed to create {model_type.value} model: {e}")
+            return None
+    
+    async def _preprocess_data(self, data: pd.DataFrame, targets: Optional[pd.Series] = None) -> Tuple[pd.DataFrame, pd.Series]:
+        """
+        Preprocess training data and targets.
+        
+        Args:
+            data: Training data
+            targets: Target variables
+            
+        Returns:
+            Tuple of (processed_data, processed_targets)
+        """
+        try:
+            tprint_debug("🔄 Preprocessing training data...")
+            
+            # Handle missing values
+            if data.isnull().any().any():
+                tprint_debug("🔧 Handling missing values...")
+                data = data.fillna(data.mean())
+            
+            # Handle infinite values
+            data = data.replace([np.inf, -np.inf], np.nan)
+            data = data.fillna(data.mean())
+            
+            # Ensure targets are available
+            if targets is None:
+                # Try to infer targets from data
+                target_columns = [col for col in data.columns if 'target' in col.lower() or 'label' in col.lower()]
+                if target_columns:
+                    targets = data[target_columns[0]]
+                    data = data.drop(columns=target_columns)
+                    tprint_debug(f"🔧 Inferred targets from column: {target_columns[0]}")
+                else:
+                    # Create dummy targets for unsupervised learning
+                    targets = pd.Series([0] * len(data), index=data.index)
+                    tprint_warning("⚠️ No targets found, using dummy targets")
+            
+            # Ensure targets are numeric
+            if not pd.api.types.is_numeric_dtype(targets):
+                tprint_debug("🔧 Converting targets to numeric...")
+                targets = pd.to_numeric(targets, errors='coerce')
+                targets = targets.fillna(0)
+            
+            # Remove any remaining non-numeric columns from data
+            numeric_columns = data.select_dtypes(include=[np.number]).columns
+            data = data[numeric_columns]
+            
+            tprint_success(f"✅ Preprocessed data: {data.shape[0]} samples, {data.shape[1]} features")
+            return data, targets
+            
+        except Exception as e:
+            tprint_error(f"❌ Data preprocessing failed: {e}")
+            raise
+    
+    def _get_feature_importance(self, model: Any) -> Optional[Dict[str, float]]:
+        """
+        Extract feature importance from trained model.
+        
+        Args:
+            model: Trained model
+            
+        Returns:
+            Dictionary of feature importance scores or None
+        """
+        try:
+            # Check if model has feature_importances_ attribute
+            if hasattr(model, 'feature_importances_'):
+                return dict(zip(
+                    getattr(self, '_feature_names', [f'feature_{i}' for i in range(len(model.feature_importances_))]),
+                    model.feature_importances_
+                ))
+            
+            # Check if model has coef_ attribute (linear models)
+            elif hasattr(model, 'coef_'):
+                coef = model.coef_
+                if coef.ndim > 1:
+                    coef = coef[0]  # Take first class for multi-class
+                return dict(zip(
+                    getattr(self, '_feature_names', [f'feature_{i}' for i in range(len(coef))]),
+                    coef
+                ))
+            
+            # Check if model has feature_importances_ method
+            elif hasattr(model, 'get_feature_importance'):
+                return model.get_feature_importance()
+            
+            else:
+                tprint_debug("🔧 Model does not support feature importance extraction")
+                return None
+                
+        except Exception as e:
+            tprint_warning(f"⚠️ Could not extract feature importance: {e}")
+            return None
+
     async def train(self, data: pd.DataFrame, targets: Optional[pd.Series] = None) -> TrainingResult:
         """
         Train the model with given data.
@@ -1131,4 +1251,102 @@ class BaseTrainer(ABC):
             
         except Exception as e:
             tprint_error(f"❌ Failed to create linear model: {e}")
+            return None
+    
+    def _create_analyst_model(self) -> Optional[Any]:
+        """Create an analyst model instance."""
+        try:
+            from sklearn.ensemble import RandomForestClassifier
+            from sklearn.linear_model import LogisticRegression
+            from sklearn.svm import SVC
+            
+            model_type = self.config.custom_params.get('analyst_model_type', 'random_forest')
+            
+            if model_type == 'random_forest':
+                return RandomForestClassifier(
+                    n_estimators=self.config.custom_params.get('n_estimators', 100),
+                    random_state=42,
+                    n_jobs=-1
+                )
+            elif model_type == 'logistic_regression':
+                return LogisticRegression(
+                    random_state=42,
+                    max_iter=1000
+                )
+            elif model_type == 'svm':
+                return SVC(
+                    random_state=42,
+                    probability=True
+                )
+            else:
+                tprint_warning(f"⚠️ Unknown analyst model type: {model_type}, using RandomForest")
+                return RandomForestClassifier(random_state=42, n_jobs=-1)
+                
+        except Exception as e:
+            tprint_error(f"❌ Failed to create analyst model: {e}")
+            return None
+    
+    def _create_tactician_model(self) -> Optional[Any]:
+        """Create a tactician model instance."""
+        try:
+            from sklearn.ensemble import GradientBoostingClassifier
+            from sklearn.neural_network import MLPClassifier
+            from sklearn.linear_model import RidgeClassifier
+            
+            model_type = self.config.custom_params.get('tactician_model_type', 'gradient_boosting')
+            
+            if model_type == 'gradient_boosting':
+                return GradientBoostingClassifier(
+                    n_estimators=self.config.custom_params.get('n_estimators', 100),
+                    random_state=42
+                )
+            elif model_type == 'neural_network':
+                return MLPClassifier(
+                    hidden_layer_sizes=(100, 50),
+                    random_state=42,
+                    max_iter=1000
+                )
+            elif model_type == 'ridge':
+                return RidgeClassifier(random_state=42)
+            else:
+                tprint_warning(f"⚠️ Unknown tactician model type: {model_type}, using GradientBoosting")
+                return GradientBoostingClassifier(random_state=42)
+                
+        except Exception as e:
+            tprint_error(f"❌ Failed to create tactician model: {e}")
+            return None
+    
+    def _create_ensemble_model(self) -> Optional[Any]:
+        """Create an ensemble model instance."""
+        try:
+            from sklearn.ensemble import VotingClassifier, BaggingClassifier
+            
+            model_type = self.config.custom_params.get('ensemble_model_type', 'voting')
+            
+            if model_type == 'voting':
+                from sklearn.ensemble import RandomForestClassifier
+                from sklearn.linear_model import LogisticRegression
+                
+                estimators = [
+                    ('rf', RandomForestClassifier(random_state=42, n_jobs=-1)),
+                    ('lr', LogisticRegression(random_state=42, max_iter=1000))
+                ]
+                return VotingClassifier(estimators, voting='soft')
+            
+            elif model_type == 'bagging':
+                from sklearn.tree import DecisionTreeClassifier
+                return BaggingClassifier(
+                    DecisionTreeClassifier(random_state=42),
+                    n_estimators=10,
+                    random_state=42
+                )
+            else:
+                tprint_warning(f"⚠️ Unknown ensemble model type: {model_type}, using Voting")
+                from sklearn.ensemble import RandomForestClassifier, VotingClassifier
+                return VotingClassifier([
+                    ('rf', RandomForestClassifier(random_state=42, n_jobs=-1))
+                ])
+                
+        except Exception as e:
+            tprint_error(f"❌ Failed to create ensemble model: {e}")
             return None

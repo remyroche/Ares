@@ -253,6 +253,76 @@ class Executable(Protocol):
     """Protocol for executable objects."""
     async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]: ...
 
+
+# Concrete implementations of protocols
+class BaseDataProcessor:
+    """Base implementation of DataProcessor protocol."""
+    
+    def __init__(self, config: Dict[str, Any] = None):
+        self.config = config or {}
+        self.processor_type = self.config.get('type', 'base')
+    
+    def process(self, data: Any) -> Any:
+        """Process data according to processor configuration."""
+        tprint_debug(f"🔧 Processing data with {self.processor_type} processor")
+        return data
+    
+    def validate(self, data: Any) -> bool:
+        """Validate processed data."""
+        return data is not None
+
+
+class BaseCacheable:
+    """Base implementation of Cacheable protocol."""
+    
+    def __init__(self, cache_key: str = None):
+        self._cache_key = cache_key or f"cache_{id(self)}"
+    
+    def get_cache_key(self) -> str:
+        """Get cache key for this object."""
+        return self._cache_key
+    
+    def get_size_bytes(self) -> int:
+        """Get estimated size in bytes."""
+        return 1024  # Default 1KB estimate
+
+
+class BaseExecutable:
+    """Base implementation of Executable protocol."""
+    
+    def __init__(self, config: Dict[str, Any] = None):
+        self.config = config or {}
+    
+    async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
+        """Execute the executable with given configuration."""
+        tprint_debug("🔧 Executing base executable")
+        return {'status': 'completed', 'config': config}
+
+
+# Processor factory for creating different types of processors
+class ProcessorFactory:
+    """Factory for creating different types of data processors."""
+    
+    _processors = {
+        'base': BaseDataProcessor,
+        'data_loader': BaseDataProcessor,
+        'data_transformer': BaseDataProcessor,
+        'data_validator': BaseDataProcessor,
+        'feature_extractor': BaseDataProcessor,
+        'data_cleaner': BaseDataProcessor,
+    }
+    
+    @classmethod
+    def create_processor(cls, processor_type: str, config: Dict[str, Any] = None) -> DataProcessor:
+        """Create a processor of the specified type."""
+        processor_class = cls._processors.get(processor_type, BaseDataProcessor)
+        return processor_class(config)
+    
+    @classmethod
+    def register_processor(cls, processor_type: str, processor_class: type):
+        """Register a new processor type."""
+        cls._processors[processor_type] = processor_class
+
 # Import KlinesParquetManager with error handling
 try:
     from src.utils.kline_parquet import KlinesParquetManager, StorageConfig
@@ -1434,12 +1504,19 @@ class BaseStep:
         try:
             # Initialize data processors if configured
             if hasattr(config, 'data_processors') and config.data_processors:
+                self.data_processors = []
                 for processor_config in config.data_processors:
                     processor_type = processor_config.get('type')
                     if processor_type:
                         tprint_debug(f"🔧 Initializing data processor: {processor_type}")
-                        # Processor initialization would go here
-                        # This is a placeholder for actual processor creation
+                        try:
+                            processor = ProcessorFactory.create_processor(processor_type, processor_config)
+                            self.data_processors.append(processor)
+                            tprint_debug(f"✅ Successfully initialized {processor_type} processor")
+                        except Exception as e:
+                            tprint_error(f"❌ Failed to initialize {processor_type} processor: {e}")
+                            # Continue with other processors even if one fails
+                tprint_debug(f"🔧 Initialized {len(self.data_processors)} data processors")
             
             # Initialize validators if configured
             if hasattr(config, 'validators') and config.validators:
@@ -1658,60 +1735,6 @@ class BaseStep:
         artifacts.append(metadata_path)
         
         return artifacts
-        raise NotImplementedError("Subclasses must implement _generate_artifacts")
-        try:
-            artifacts = []
-            
-            # Generate step execution report
-            execution_report = {
-                'step_name': self.__class__.__name__,
-                'execution_time': time.time(),
-                'config': config.__dict__ if hasattr(config, '__dict__') else str(config),
-                'processed_data_summary': self._summarize_data(processed_data),
-                'status': 'completed'
-            }
-            
-            # Save execution report
-            report_path = self._save_artifact(
-                execution_report, 
-                f"{self.__class__.__name__}_execution_report",
-                artifact_type="json"
-            )
-            artifacts.append(report_path)
-            
-            # Generate data summary if data is available
-            if processed_data and isinstance(processed_data, dict):
-                data_summary = self._create_data_summary(processed_data)
-                if data_summary:
-                    summary_path = self._save_artifact(
-                        data_summary,
-                        f"{self.__class__.__name__}_data_summary",
-                        artifact_type="json"
-                    )
-                    artifacts.append(summary_path)
-            
-            # Generate performance metrics artifact
-            performance_metrics = {
-                'execution_time': time.time(),
-                'memory_usage': self._get_memory_usage(),
-                'cpu_usage': self._get_cpu_usage(),
-                'artifacts_generated': len(artifacts)
-            }
-            
-            metrics_path = self._save_artifact(
-                performance_metrics,
-                f"{self.__class__.__name__}_performance_metrics",
-                artifact_type="json"
-            )
-            artifacts.append(metrics_path)
-            
-            tprint_success(f"✅ Generated {len(artifacts)} artifacts successfully")
-            return artifacts
-            
-        except Exception as e:
-            tprint_error(f"❌ Artifact generation failed: {e}")
-            # Return empty list instead of raising to allow step to continue
-            return []
     
     async def _calculate_metrics(self, processed_data: Any, config: StepConfig) -> Dict[str, Any]:
         """

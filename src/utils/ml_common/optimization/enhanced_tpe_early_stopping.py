@@ -26,6 +26,7 @@ class EnhancedEarlyStoppingConfig:
     # Basic early stopping
     early_stopping_patience: int = 5
     early_stopping_threshold: float = 0.001
+    direction: str = 'maximize'  # 'maximize' or 'minimize'
     
     # Adaptive patience
     adaptive_patience: bool = True
@@ -66,15 +67,28 @@ class EarlyStoppingStrategy(ABC):
         self.best_value = float('-inf') if self.config.direction == 'maximize' else float('inf')
         self.best_trial = 0
     
-    @abstractmethod
     def should_stop(self, history: List[float], current_trial: int) -> bool:
         """Determine if optimization should stop early."""
-        pass
+        if not history:
+            return False
+        
+        # Check if we have enough trials
+        if current_trial < self.config.early_stopping_patience:
+            return False
+        
+        # Update best value
+        self.update_best_value(history[-1], current_trial)
+        
+        # Check if we've exceeded patience without improvement
+        if self.trials_without_improvement >= self.config.early_stopping_patience:
+            self.stopping_reason = f"No improvement for {self.trials_without_improvement} trials"
+            return True
+        
+        return False
     
-    @abstractmethod
     def get_stopping_reason(self) -> str:
         """Get reason for early stopping."""
-        pass
+        return self.stopping_reason or "No stopping reason available"
     
     def reset(self):
         """Reset the early stopping strategy state."""

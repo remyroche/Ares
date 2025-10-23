@@ -98,7 +98,7 @@ The klines manager is automatically configured with:
 
 import os
 import logging
-from abc import ABC, abstractmethod
+from abc import abstractmethod
 from typing import Dict, Any, Optional, Union, List, TypeVar, Generic, Protocol, runtime_checkable, Literal, Final, ClassVar, cast, overload, Callable, Type, Tuple, Set, FrozenSet, Mapping, MutableMapping, Sequence, MutableSequence, Iterable, Iterator, Generator, Awaitable, Coroutine, AnyStr, Text, BinaryIO, IO
 from datetime import datetime
 import traceback
@@ -437,7 +437,7 @@ except ImportError as e:
         tprint_error(f"❌ Hardware utilities not available, using fallbacks: {e}")
 
 
-class BaseStep(ABC):
+class BaseStep:
     """
     Abstract base class for all autonomous pipeline steps with comprehensive utilities integration.
     
@@ -1251,7 +1251,6 @@ class BaseStep(ABC):
             tprint_error(f"❌ Error getting klines compression stats: {e}")
             return {}
     
-    @abstractmethod
     async def execute(self, config: StepConfig) -> ExecutionResult:
         """
         Execute the step logic with comprehensive type safety.

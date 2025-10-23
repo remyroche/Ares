@@ -2,7 +2,7 @@
 Base component class for market analysis pipeline components.
 """
 
-from abc import ABC, abstractmethod
+from abc import abstractmethod
 from typing import Any, Dict, List, Optional
 from dataclasses import dataclass, asdict
 from datetime import datetime
@@ -63,7 +63,7 @@ class ComponentConfig:
                 r"trade",
             ]
 
-class BaseMarketAnalysisComponent(ModularComponent if MODULAR_COMPONENT_AVAILABLE else ABC):
+class BaseMarketAnalysisComponent(ModularComponent if MODULAR_COMPONENT_AVAILABLE else object):
     """
     Base class for market analysis pipeline components.
 
@@ -248,6 +248,64 @@ class BaseMarketAnalysisComponent(ModularComponent if MODULAR_COMPONENT_AVAILABL
         
         return loaded_artifacts
 
+    def _process_data(self, data: Any, **kwargs) -> Any:
+        """
+        Process data with component-specific logic.
+        
+        Args:
+            data: Input data to process
+            **kwargs: Additional processing parameters
+            
+        Returns:
+            Processed data
+        """
+        # Default implementation - return data as-is
+        # Subclasses should override this method
+        return data
+    
+    async def _generate_artifacts(self, processed_data: Any, pipeline_state: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Generate artifacts from processed data.
+        
+        Args:
+            processed_data: Processed data
+            pipeline_state: Current pipeline state
+            
+        Returns:
+            Dictionary of generated artifacts
+        """
+        # Default implementation - return basic artifacts
+        return {
+            'processed_data': processed_data,
+            'component_name': self.__class__.__name__,
+            'execution_timestamp': datetime.now().isoformat()
+        }
+    
+    def _calculate_metrics(self, processed_data: Any, pipeline_state: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Calculate metrics from processed data.
+        
+        Args:
+            processed_data: Processed data
+            pipeline_state: Current pipeline state
+            
+        Returns:
+            Dictionary of calculated metrics
+        """
+        # Default implementation - return basic metrics
+        metrics = {
+            'execution_time': self._end_execution() if self.start_time else 0.0,
+            'component_name': self.__class__.__name__
+        }
+        
+        # Add data-specific metrics if possible
+        if hasattr(processed_data, 'shape'):
+            metrics['data_shape'] = processed_data.shape
+        if hasattr(processed_data, '__len__'):
+            metrics['data_size'] = len(processed_data)
+            
+        return metrics
+
     def validate_artifacts(self, required_artifacts: List[str]) -> bool:
         """
         Validate that all required artifacts exist and are non-empty.
@@ -284,10 +342,12 @@ class BaseMarketAnalysisComponent(ModularComponent if MODULAR_COMPONENT_AVAILABL
         
         return True
 
-    @abstractmethod
     async def execute(self, data: Any, pipeline_state: Dict[str, Any]) -> ComponentResult:
         """
         Execute the component logic.
+
+        This is a concrete implementation that provides a default execution flow.
+        Subclasses can override this method to provide specific functionality.
 
         Args:
             data: Input data for the component
@@ -296,17 +356,67 @@ class BaseMarketAnalysisComponent(ModularComponent if MODULAR_COMPONENT_AVAILABL
         Returns:
             ComponentResult with execution results
         """
-        pass
+        try:
+            self._start_execution()
+            
+            # Validate input data
+            if data is None:
+                return ComponentResult(
+                    success=False,
+                    artifacts={},
+                    error=ComponentError("No input data provided"),
+                    execution_time=self._end_execution()
+                )
+            
+            # Process data using the component's specific logic
+            processed_data = self._process_data(data, **pipeline_state)
+            
+            # Generate artifacts
+            artifacts = await self._generate_artifacts(processed_data, pipeline_state)
+            
+            # Calculate metrics
+            metrics = self._calculate_metrics(processed_data, pipeline_state)
+            
+            # Validate artifacts
+            if not self.validate_artifacts(artifacts):
+                return ComponentResult(
+                    success=False,
+                    artifacts=artifacts,
+                    error=ComponentError("Generated artifacts failed validation"),
+                    execution_time=self._end_execution()
+                )
+            
+            return ComponentResult(
+                success=True,
+                artifacts=artifacts,
+                metrics=metrics,
+                execution_time=self._end_execution()
+            )
+            
+        except Exception as e:
+            self.logger.error(f"Component execution failed: {e}")
+            return ComponentResult(
+                success=False,
+                artifacts={},
+                error=ComponentError(f"Execution failed: {str(e)}"),
+                execution_time=self._end_execution()
+            )
 
-    @abstractmethod
     def get_required_artifacts(self) -> list[str]:
         """
         Get list of required artifacts this component must produce.
 
+        This is a concrete implementation that returns a default set of artifacts.
+        Subclasses can override this method to provide specific artifact requirements.
+
         Returns:
             List of artifact names that must be present for success
         """
-        pass
+        return [
+            'processed_data',
+            'metrics',
+            'metadata'
+        ]
 
     def validate_artifacts(self, artifacts: Dict[str, Any]) -> bool:
         """

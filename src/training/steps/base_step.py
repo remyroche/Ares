@@ -98,6 +98,7 @@ The klines manager is automatically configured with:
 
 import os
 import logging
+import time
 from typing import Dict, Any, Optional, Union, List, TypeVar, Generic, Protocol, runtime_checkable, Literal, Final, ClassVar, cast, overload, Callable, Type, Tuple, Set, FrozenSet, Mapping, MutableMapping, Sequence, MutableSequence, Iterable, Iterator, Generator, Awaitable, Coroutine, AnyStr, Text, BinaryIO, IO
 from datetime import datetime
 import traceback
@@ -1266,6 +1267,9 @@ class BaseStep:
             ArtifactError: If artifact operations fail
         """
         try:
+            # Record start time for execution timing
+            start_time = time.time()
+            
             # Validate input parameters
             if not is_valid_config(config):
                 raise ConfigurationError(f"Invalid configuration: {config}")
@@ -1288,9 +1292,7 @@ class BaseStep:
                 artifacts=result.get("artifacts", []),
                 metrics=result.get("metrics", {}),
                 error=result.get("error"),
-                execution_time=execution_time,
-                step_name=self.step_name,
-                config=validated_config
+                execution_time=execution_time
             )
             
             tprint_success(f"✅ Step completed in {execution_time:.2f}s")

@@ -19,7 +19,20 @@ from .utils import (
 from .backward_compatibility import BaseScaler, create_enhanced_scaler, enable_enhanced_logging
 from .transforms.base_scaler import create_optimized_scaler, create_optimized_batch_scaler
 from .transforms.vectorbt_scaler import VectorBTScaler, VectorBTBatchScaler
-from .optimization.cv_base import BaseCVSplitter, PurgedCVSplitter
+# Import consolidated CV implementations
+try:
+    from src.utils.ml_common.validation.consolidated_cv import (
+        ConsolidatedCrossValidator, ConsolidatedCVConfig, ValidationType,
+        create_purged_cv, create_temporal_cv
+    )
+    # Legacy aliases for backward compatibility
+    BaseCVSplitter = ConsolidatedCrossValidator
+    PurgedCVSplitter = ConsolidatedCrossValidator
+    CV_AVAILABLE = True
+except ImportError:
+    BaseCVSplitter = None
+    PurgedCVSplitter = None
+    CV_AVAILABLE = False
 from .registry.base_registry import BaseFeatureRegistry
 
 # Enhanced imports

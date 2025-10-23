@@ -23,9 +23,9 @@ try:
 except Exception:  # pragma: no cover - environment dependent
     SkTimeSeriesSplit = None  # type: ignore
 
-# Purged K-Fold time-aware splitter (existing implementation)
+# Purged K-Fold time-aware splitter (consolidated implementation)
 try:
-    from src.utils.purged_kfold import PurgedKFoldTime as PurgedKFold  # type: ignore
+    from .consolidated_cv import ConsolidatedCrossValidator as PurgedKFold  # type: ignore
 except Exception:  # pragma: no cover - fallback if unavailable
     PurgedKFold = None  # type: ignore
 

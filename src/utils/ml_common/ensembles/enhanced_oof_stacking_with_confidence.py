@@ -32,7 +32,7 @@ from .oof_stacking_ensemble_manager import (
 )
 
 # Import purged K-fold for temporal validation
-from src.utils.purged_kfold import PurgedKFoldTime
+from src.utils.ml_common.validation.consolidated_cv import ConsolidatedCrossValidator as PurgedKFoldTime
 
 logger = logging.getLogger(__name__)
 

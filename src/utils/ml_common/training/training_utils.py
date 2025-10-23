@@ -48,7 +48,7 @@ from .universal_validation_integration import (
 
 # CV utilities for safe HPO (time-series CV / purged)
 try:
-    from src.utils.purged_kfold import PurgedKFoldTime  # type: ignore
+    from src.utils.ml_common.validation.consolidated_cv import ConsolidatedCrossValidator as PurgedKFoldTime  # type: ignore
     _PURGED_AVAILABLE = True
 except Exception:
     _PURGED_AVAILABLE = False

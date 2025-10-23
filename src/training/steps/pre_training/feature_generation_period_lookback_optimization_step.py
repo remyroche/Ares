@@ -2395,7 +2395,7 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
         # Prepare indices for outer folds (simple time-based split if PurgedKFold not available)
         splits: List[Tuple[int, int]] = []
         try:
-            from src.utils.purged_kfold import PurgedKFoldTime  # type: ignore
+            from src.utils.ml_common.validation.consolidated_cv import ConsolidatedCrossValidator as PurgedKFoldTime  # type: ignore
             pkf = PurgedKFoldTime(n_splits=outer_folds, purge_pct=0.01, embargo_pct=0.01)
             idx = np.arange(n)
             for tr, te in pkf.split(idx, None, None):
@@ -2474,7 +2474,7 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
         # Build folds
         if use_pkf:
             # Construct folds using PurgedKFoldTime split indices
-            from src.utils.purged_kfold import PurgedKFoldTime  # type: ignore
+            from src.utils.ml_common.validation.consolidated_cv import ConsolidatedCrossValidator as PurgedKFoldTime  # type: ignore
             pkf = PurgedKFoldTime(n_splits=outer_folds, purge_pct=0.01, embargo_pct=0.01)
             xs = series.values
             rs = returns.values
@@ -2616,7 +2616,7 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
         # Outer folds generation
         folds: List[Tuple[np.ndarray, np.ndarray]] = []
         try:
-            from src.utils.purged_kfold import PurgedKFoldTime  # type: ignore
+            from src.utils.ml_common.validation.consolidated_cv import ConsolidatedCrossValidator as PurgedKFoldTime  # type: ignore
             pkf = PurgedKFoldTime(n_splits=outer_folds, purge_pct=0.01, embargo_pct=0.01)
             idx = np.arange(n)
             for tr_idx, te_idx in pkf.split(idx, None, None):

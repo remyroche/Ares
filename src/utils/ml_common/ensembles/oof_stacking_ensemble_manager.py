@@ -22,7 +22,7 @@ from sklearn.base import clone
 import warnings
 
 # Import purged K-fold for temporal validation
-from src.utils.purged_kfold import PurgedKFoldTime
+from src.utils.ml_common.validation.consolidated_cv import ConsolidatedCrossValidator as PurgedKFoldTime
 
 # M1 Optimization imports
 from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer, M1MemoryOptimizer

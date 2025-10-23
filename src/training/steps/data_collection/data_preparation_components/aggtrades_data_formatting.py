@@ -205,27 +205,6 @@ def auto_reformat_aggtrades_files_for_exchange(exchange: str, symbol: str) -> No
         else:
             shutil.copy2(backup_path, file_path)
 
-def create_dummy_files(input_dir: Any) -> None:
-    """Creates a set of dummy CSV files for demonstration purposes.
-    This function simulates the two different formats you provided.
-    """
-    if os.path.exists(input_dir):
-        shutil.rmtree(input_dir)
-    os.makedirs(input_dir)
-    file1_path = os.path.join(input_dir, 'aggtrades_format1_2025-07-13.csv')
-    with open(file1_path, 'w', newline='', encoding='utf-8') as f:
-        f.write('timestamp;price;quantity;is_buyer_maker\n')
-        f.write('2025-07-12 22:00:00.604;2939.2;0.3152;False\n')
-        f.write('2025-07-12 22:00:00.614;2939.21;0.1917;False\n')
-        f.write('2025-07-12 22:00:00.614;2939.22;0.1702;False\n')
-    file2_path = os.path.join(input_dir, 'aggtrades_format2_2025-07-30.csv')
-    with open(file2_path, 'w', newline='', encoding='utf-8') as f:
-        f.write('timestamp,p;rice,quantity,is_buyer_maker,agg_trade_id\n')
-        f.write('2025-07-30;00:00:02.623,3791.56,0.065,False,2338842426\n')
-        f.write('2025-07-30;00:00:04.240,3791.55,0.022,True,2338842427\n')
-        f.write('2025-07-30;00:00:04.865,3791.55,0.018,True,2338842428\n')
-    file3_path = os.path.join(input_dir, 'empty_file.csv')
-    open(file3_path, 'w').close()
 
 class CSVNormalizer:
     """Class to handle normalization of CSV files with different formats."""
@@ -274,8 +253,9 @@ class CSVNormalizer:
                 format_type = self._detect_file_format(infile)
                 if format_type in self.processors:
                     self.processors[format_type](infile, writer)
-        except Exception:
-            pass
+        except Exception as e:
+            tprint_warning(f"⚠️ Error in data processing: {e}")
+            # Continue processing other files even if one fails
     @log_all_calls
 
     def _detect_file_format(self, infile: Any) -> str:

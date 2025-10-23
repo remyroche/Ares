@@ -89,7 +89,12 @@ from src.utils.matrix_operations import safe_matrix_multiply, optimize_dataframe
 # Input validation utilities
 class ValidationError(Exception):
     """Custom exception for validation errors."""
-    pass
+    
+    def __init__(self, message: str, validation_details: Optional[Dict[str, Any]] = None):
+        super().__init__(message)
+        self.message = message
+        self.validation_details = validation_details or {}
+        self.timestamp = datetime.now()
 
 class InputValidator:
     """Comprehensive input validation utilities."""

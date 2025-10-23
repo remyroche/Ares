@@ -49,21 +49,8 @@ try:
     VECTORBT_AVAILABLE = True
 except ImportError:
     VECTORBT_AVAILABLE = False
-    # Define dummy functions for fallback
-    def rolling_mean(data, **kwargs):
-        return data.rolling(**kwargs).mean()
-    def rolling_std(data, **kwargs):
-        return data.rolling(**kwargs).std()
-    def rolling_var(data, **kwargs):
-        return data.rolling(**kwargs).var()
-    def rolling_min(data, **kwargs):
-        return data.rolling(**kwargs).min()
-    def rolling_max(data, **kwargs):
-        return data.rolling(**kwargs).max()
-    def rolling_sum(data, **kwargs):
-        return data.rolling(**kwargs).sum()
-    def rolling_apply(data, func, **kwargs):
-        return data.rolling(**kwargs).apply(func)
+    # VectorBT not available - raise error instead of using dummy functions
+    raise ImportError("VectorBT is required for this module but not available. Please install vectorbt.")
 
 @dataclass
 class TacticianEnsembleTrainingConfig:
@@ -1472,8 +1459,9 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
                                 self.logger.info(f"✅ Generated OOF predictions for base tactician model: {base_name}")
                         except Exception as te:
                             self.logger.warning(f"⚠️ Failed OOF for base tactician {base_name}: {te}")
-            except Exception:
-                pass
+            except Exception as e:
+                self.logger.warning(f"⚠️ Error in OOF prediction generation: {e}")
+                # Continue with other operations
 
             # Generate OOF predictions for analyst ensembles to prevent data leakage
             ensemble_predictions = []

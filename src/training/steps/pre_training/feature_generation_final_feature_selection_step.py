@@ -81,13 +81,40 @@ except ImportError:
     def tprint_warning(*args, **kwargs): print("WARNING:", *args, **kwargs)
     def tprint_error(*args, **kwargs): print("ERROR:", *args, **kwargs)
     def tprint_debug(*args, **kwargs): print("DEBUG:", *args, **kwargs)
-    def tprint_data_preview(*args, **kwargs): pass  # No-op fallback
-    def tprint_data_format(*args, **kwargs): return None  # No-op fallback
-    def tprint_performance(*args, **kwargs): pass  # No-op fallback
-    def tprint_progress(*args, **kwargs): pass  # No-op fallback
-    def tprint_structured(*args, **kwargs): pass  # No-op fallback
-    def tprint_timer(*args, **kwargs): return lambda f: f  # No-op fallback
-    def tprint_exception(*args, **kwargs): pass  # No-op fallback
+    def tprint_data_preview(*args, **kwargs): 
+        """Fallback for data preview logging."""
+        if args:
+            print(f"[DATA_PREVIEW] {args[0]}")
+            
+    def tprint_data_format(*args, **kwargs): 
+        """Fallback for data format logging."""
+        if args:
+            print(f"[DATA_FORMAT] {args[0]}")
+        return None
+        
+    def tprint_performance(*args, **kwargs): 
+        """Fallback for performance logging."""
+        if args:
+            print(f"[PERFORMANCE] {args[0]}")
+            
+    def tprint_progress(*args, **kwargs): 
+        """Fallback for progress logging."""
+        if args:
+            print(f"[PROGRESS] {args[0]}")
+            
+    def tprint_structured(*args, **kwargs): 
+        """Fallback for structured logging."""
+        if args:
+            print(f"[STRUCTURED] {args[0]}")
+            
+    def tprint_timer(*args, **kwargs): 
+        """Fallback for timer decorator."""
+        return lambda f: f
+        
+    def tprint_exception(*args, **kwargs): 
+        """Fallback for exception logging."""
+        if args:
+            print(f"[EXCEPTION] {args[0]}")
     class LogLevel:
         DEBUG = "DEBUG"
         INFO = "INFO"

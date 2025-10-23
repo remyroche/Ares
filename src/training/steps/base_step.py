@@ -330,16 +330,69 @@ except ImportError as e:
         tprint_warning(f"⚠️ Using minimal hardware utilities: {e}")
     except ImportError:
         # Complete fallback - create dummy functions
-        def get_integrated_hardware_manager(*args, **kwargs): return None
-        def m1_optimized(*args, **kwargs): return lambda x: x
-        def memory_optimized(*args, **kwargs): return lambda x: x
-        def optimize_dataframe(*args, **kwargs): return args[0] if args else None
-        def force_cleanup(): pass
-        def get_memory_stats(): return {}
-        def smart_cache(*args, **kwargs): return lambda x: x
-        def auto_optimize(*args, **kwargs): return lambda x: x
-        def performance_tracked(*args, **kwargs): return lambda x: x
-        def memory_efficient(*args, **kwargs): return lambda x: x
+        def get_integrated_hardware_manager(*args, **kwargs): 
+            """Fallback when integrated hardware manager is not available."""
+            tprint_warning("⚠️ Integrated hardware manager not available - using fallback")
+            return None
+            
+        def m1_optimized(*args, **kwargs): 
+            """Fallback M1 optimization - returns identity function."""
+            tprint_warning("⚠️ M1 optimization not available - using fallback")
+            return lambda x: x
+            
+        def memory_optimized(*args, **kwargs): 
+            """Fallback memory optimization - returns identity function."""
+            tprint_warning("⚠️ Memory optimization not available - using fallback")
+            return lambda x: x
+            
+        def optimize_dataframe(*args, **kwargs): 
+            """Fallback dataframe optimization - returns original data."""
+            tprint_warning("⚠️ DataFrame optimization not available - using fallback")
+            return args[0] if args else None
+            
+        def force_cleanup(): 
+            """Force cleanup of resources when optimization modules are not available."""
+            tprint_info("🧹 Performing fallback cleanup")
+            try:
+                import gc
+                gc.collect()
+                tprint_success("✅ Fallback cleanup completed")
+            except Exception as e:
+                tprint_warning(f"⚠️ Fallback cleanup failed: {e}")
+                
+        def get_memory_stats(): 
+            """Get basic memory statistics when advanced monitoring is not available."""
+            try:
+                import psutil
+                process = psutil.Process()
+                memory_info = process.memory_info()
+                return {
+                    'rss_mb': memory_info.rss / 1024 / 1024,
+                    'vms_mb': memory_info.vms / 1024 / 1024,
+                    'available_mb': psutil.virtual_memory().available / 1024 / 1024
+                }
+            except ImportError:
+                return {'error': 'psutil not available'}
+                
+        def smart_cache(*args, **kwargs): 
+            """Fallback smart cache - returns identity function."""
+            tprint_warning("⚠️ Smart cache not available - using fallback")
+            return lambda x: x
+            
+        def auto_optimize(*args, **kwargs): 
+            """Fallback auto optimization - returns identity function."""
+            tprint_warning("⚠️ Auto optimization not available - using fallback")
+            return lambda x: x
+            
+        def performance_tracked(*args, **kwargs): 
+            """Fallback performance tracking - returns identity function."""
+            tprint_warning("⚠️ Performance tracking not available - using fallback")
+            return lambda x: x
+            
+        def memory_efficient(*args, **kwargs): 
+            """Fallback memory efficiency - returns identity function."""
+            tprint_warning("⚠️ Memory efficiency optimization not available - using fallback")
+            return lambda x: x
         
         class WorkloadType:
             DATA_PROCESSING = "data_processing"
@@ -357,7 +410,28 @@ except ImportError as e:
             AGGRESSIVE = "aggressive"
         
         class OptimizationConfig:
-            def __init__(self, **kwargs): pass
+            """Fallback optimization configuration when optimization modules are not available."""
+            
+            def __init__(self, **kwargs):
+                """Initialize with default optimization settings."""
+                self.enabled = False
+                self.memory_limit_mb = kwargs.get('memory_limit_mb', 1024)
+                self.cpu_cores = kwargs.get('cpu_cores', 1)
+                self.gpu_enabled = kwargs.get('gpu_enabled', False)
+                self.cache_size_mb = kwargs.get('cache_size_mb', 100)
+                tprint_warning("⚠️ Using fallback optimization configuration")
+                
+            def get_memory_limit(self) -> int:
+                """Get memory limit in MB."""
+                return self.memory_limit_mb
+                
+            def get_cpu_cores(self) -> int:
+                """Get number of CPU cores."""
+                return self.cpu_cores
+                
+            def is_gpu_enabled(self) -> bool:
+                """Check if GPU optimization is enabled."""
+                return self.gpu_enabled
         
         HARDWARE_OPTIMIZATION_AVAILABLE: Final[bool] = False
         tprint_error(f"❌ Hardware utilities not available, using fallbacks: {e}")

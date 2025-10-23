@@ -188,23 +188,7 @@ try:
     PSUTIL_AVAILABLE = True
 except ImportError:
     PSUTIL_AVAILABLE = False
-
-    class MockProcess:
-
-        def memory_info(self) -> None:
-
-            class MemoryInfo:
-                rss = 0
-            return MemoryInfo()
-
-    class MockPsutil:
-
-        def Process(self) -> None:
-            return MockProcess()
-
-        def cpu_percent(self) -> float:
-            return 0.0
-    psutil = MockPsutil()
+    psutil = None
 try:
     from src.core.domain.decorators_extended import monitor_feature_engineering
     from src.core.decorators import validates, cached, log_execution_time, traced

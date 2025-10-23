@@ -1230,11 +1230,28 @@ class DataDrivenSimilarityMerger:
                     
                     # Calculate uncertainty if enabled
                     if self.config.enhanced_similarity.adaptive_thresholds.enable_uncertainty_quantification:
-                        uncertainty_result = self.calculate_similarity_with_uncertainty(
-                            np.random.randn(2), np.random.randn(2),  # Dummy centers
-                            np.random.randn(100, 2), cluster_labels,  # Dummy features
-                            unique_labels[i], unique_labels[j]
-                        )
+                        # Use actual cluster data for uncertainty calculation
+                        cluster1_mask = cluster_labels == unique_labels[i]
+                        cluster2_mask = cluster_labels == unique_labels[j]
+                        
+                        if np.sum(cluster1_mask) > 0 and np.sum(cluster2_mask) > 0:
+                            cluster1_features = features[cluster1_mask]
+                            cluster2_features = features[cluster2_mask]
+                            
+                            # Calculate actual cluster centers
+                            center1 = np.mean(cluster1_features, axis=0)
+                            center2 = np.mean(cluster2_features, axis=0)
+                            
+                            uncertainty_result = self.calculate_similarity_with_uncertainty(
+                                center1, center2,
+                                features, cluster_labels,
+                                unique_labels[i], unique_labels[j]
+                            )
+                        else:
+                            uncertainty_result = {
+                                'uncertainty': 0.0,
+                                'confidence_interval': (similarity_matrix[i, j], similarity_matrix[i, j])
+                            }
                         uncertainty = uncertainty_result['uncertainty']
                         confidence_lower = uncertainty_result['confidence_interval'][0]
                         confidence_upper = uncertainty_result['confidence_interval'][1]
@@ -3020,6 +3037,7 @@ class DataDrivenSimilarityMerger:
             
         except Exception:
             return 0.0
+    
 
 
 # Alias for backward compatibility

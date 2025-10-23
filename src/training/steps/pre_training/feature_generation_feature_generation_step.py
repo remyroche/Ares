@@ -47,13 +47,40 @@ except ImportError:
     def tprint_warning(*args, **kwargs): print("WARNING:", *args)
     def tprint_error(*args, **kwargs): print("ERROR:", *args)
     def tprint_debug(*args, **kwargs): print("DEBUG:", *args)
-    def tprint_data_preview(*args, **kwargs): pass  # Silent fallback for data preview
-    def tprint_data_format(*args, **kwargs): return None  # Silent fallback for data format
-    def tprint_performance(*args, **kwargs): pass  # Silent fallback for performance
-    def tprint_progress(*args, **kwargs): pass  # Silent fallback for progress
-    def tprint_structured(*args, **kwargs): pass  # Silent fallback for structured
-    def tprint_timer(*args, **kwargs): pass  # Silent fallback for timer
-    def tprint_exception(*args, **kwargs): pass  # Silent fallback for exception
+    def tprint_data_preview(*args, **kwargs): 
+        """Fallback for data preview logging."""
+        if args:
+            print(f"[DATA_PREVIEW] {args[0]}")
+            
+    def tprint_data_format(*args, **kwargs): 
+        """Fallback for data format logging."""
+        if args:
+            print(f"[DATA_FORMAT] {args[0]}")
+        return None
+        
+    def tprint_performance(*args, **kwargs): 
+        """Fallback for performance logging."""
+        if args:
+            print(f"[PERFORMANCE] {args[0]}")
+            
+    def tprint_progress(*args, **kwargs): 
+        """Fallback for progress logging."""
+        if args:
+            print(f"[PROGRESS] {args[0]}")
+            
+    def tprint_structured(*args, **kwargs): 
+        """Fallback for structured logging."""
+        if args:
+            print(f"[STRUCTURED] {args[0]}")
+            
+    def tprint_timer(*args, **kwargs): 
+        """Fallback for timer decorator."""
+        return lambda f: f
+        
+    def tprint_exception(*args, **kwargs): 
+        """Fallback for exception logging."""
+        if args:
+            print(f"[EXCEPTION] {args[0]}")
 
 # Self-contained CMI complementarity components
 @dataclass
@@ -595,10 +622,10 @@ class FeatureGenerationStep(BaseStep):
                             clean_features_df[col] = first_value.data
                         elif isinstance(first_value, pd.Series):
                             # Already a series, keep as is
-                            pass
+                            continue
                         else:
                             # Regular numeric data, keep as is
-                            pass
+                            continue
                 
                 # Ensure all columns are numeric
                 clean_features_df = clean_features_df.select_dtypes(include=[np.number])

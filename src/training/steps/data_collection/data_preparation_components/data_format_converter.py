@@ -256,8 +256,10 @@ class DataFormatConverter:
                 ts = pd.to_datetime(df['timestamp'], unit='ms', utc = True, errors='coerce')
                 if self.logger:
                     self.logger.info(f'Timestamp coverage: {ts.min()} → {ts.max()} (UTC)')
-        except Exception:
-            pass
+        except Exception as e:
+            if self.logger:
+                self.logger.warning(f"⚠️ Error in timestamp processing: {e}")
+            # Continue with other operations
         if 'timestamp' in df.columns and auto_add_date_columns:
             ts = pd.to_datetime(df['timestamp'], unit='ms', utc = True)
             if 'year' not in df.columns:
@@ -272,8 +274,10 @@ class DataFormatConverter:
                 meta = {str(k): str(v) if v is not None else '' for k, v in metadata.items()}
                 schema_with_meta = table.schema.with_metadata(meta)
                 table = table.cast(schema_with_meta)
-            except Exception:
-                pass
+            except Exception as e:
+                if self.logger:
+                    self.logger.warning(f"⚠️ Error adding metadata to schema: {e}")
+                # Continue without metadata if it fails
         partitioning = None
         try:
             if partition_cols:

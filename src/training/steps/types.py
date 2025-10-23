@@ -131,31 +131,72 @@ class DataLoader(Protocol):
 
 class TrainingStepError(Exception):
     """Base exception for training step errors."""
-    pass
+    
+    def __init__(self, message: str, context: Optional[Dict[str, Any]] = None, original_error: Optional[Exception] = None):
+        super().__init__(message)
+        self.message = message
+        self.context = context or {}
+        self.original_error = original_error
+        self.timestamp = datetime.now()
+    
+    def __str__(self) -> str:
+        base_msg = f"{self.__class__.__name__}: {self.message}"
+        if self.context:
+            context_str = ", ".join(f"{k}={v}" for k, v in self.context.items())
+            base_msg += f" (Context: {context_str})"
+        if self.original_error:
+            base_msg += f" (Original: {type(self.original_error).__name__}: {self.original_error})"
+        return base_msg
 
 class ValidationError(TrainingStepError):
     """Exception raised when data validation fails."""
-    pass
+    
+    def __init__(self, message: str, validation_details: Optional[Dict[str, Any]] = None, **kwargs):
+        super().__init__(message, **kwargs)
+        self.validation_details = validation_details or {}
+        self.error_type = "validation"
 
 class DataLoadError(TrainingStepError):
     """Exception raised when data loading fails."""
-    pass
+    
+    def __init__(self, message: str, source: Optional[str] = None, **kwargs):
+        super().__init__(message, **kwargs)
+        self.source = source
+        self.error_type = "data_load"
 
 class ModelTrainingError(TrainingStepError):
     """Exception raised when model training fails."""
-    pass
+    
+    def __init__(self, message: str, model_type: Optional[str] = None, training_phase: Optional[str] = None, **kwargs):
+        super().__init__(message, **kwargs)
+        self.model_type = model_type
+        self.training_phase = training_phase
+        self.error_type = "model_training"
 
 class FeatureSelectionError(TrainingStepError):
     """Exception raised when feature selection fails."""
-    pass
+    
+    def __init__(self, message: str, selection_method: Optional[str] = None, **kwargs):
+        super().__init__(message, **kwargs)
+        self.selection_method = selection_method
+        self.error_type = "feature_selection"
 
 class ConfigurationError(TrainingStepError):
     """Exception raised when configuration is invalid."""
-    pass
+    
+    def __init__(self, message: str, config_field: Optional[str] = None, **kwargs):
+        super().__init__(message, **kwargs)
+        self.config_field = config_field
+        self.error_type = "configuration"
 
 class ArtifactError(TrainingStepError):
     """Exception raised when artifact operations fail."""
-    pass
+    
+    def __init__(self, message: str, artifact_name: Optional[str] = None, operation: Optional[str] = None, **kwargs):
+        super().__init__(message, **kwargs)
+        self.artifact_name = artifact_name
+        self.operation = operation
+        self.error_type = "artifact"
 
 # ============================================================================
 # UTILITY TYPE FUNCTIONS

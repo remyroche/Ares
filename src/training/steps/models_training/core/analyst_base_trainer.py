@@ -385,16 +385,64 @@ class AnalystBaseTrainer(BaseTrainer):
     async def _create_patchtst_features(self, data: pd.DataFrame) -> pd.DataFrame:
         """Create PatchTST (Patch Time Series Transformer) features for time series analysis.
         
-        PLACEHOLDER IMPLEMENTATION: Returns data unchanged for production readiness.
+        This implementation creates time series patches and statistical features
+        that are commonly used in transformer-based time series models.
         """
         try:
-            tprint_debug("🔧 Creating PatchTST features (placeholder implementation)...")
+            tprint_debug("🔧 Creating PatchTST features...")
             
-            # PLACEHOLDER: Return data unchanged as specified
-            # This ensures production readiness while maintaining the interface
             feature_data = data.copy()
             
-            tprint_success("✅ PatchTST features placeholder completed - data returned unchanged")
+            # Create time series patches for transformer models
+            if 'close' in data.columns and len(data) > 10:
+                # Calculate patch-based features
+                patch_size = 16  # Standard patch size for time series
+                
+                # Create rolling patches
+                for i in range(patch_size, len(data)):
+                    patch = data['close'].iloc[i-patch_size:i]
+                    
+                    # Statistical features from patches
+                    feature_data.loc[i, 'patch_mean'] = patch.mean()
+                    feature_data.loc[i, 'patch_std'] = patch.std()
+                    feature_data.loc[i, 'patch_min'] = patch.min()
+                    feature_data.loc[i, 'patch_max'] = patch.max()
+                    feature_data.loc[i, 'patch_range'] = patch.max() - patch.min()
+                    
+                    # Trend features
+                    feature_data.loc[i, 'patch_trend'] = (patch.iloc[-1] - patch.iloc[0]) / patch.iloc[0] if patch.iloc[0] != 0 else 0
+                    
+                    # Volatility features
+                    feature_data.loc[i, 'patch_volatility'] = patch.pct_change().std()
+                    
+                    # Momentum features
+                    feature_data.loc[i, 'patch_momentum'] = patch.iloc[-1] / patch.mean() - 1 if patch.mean() != 0 else 0
+                
+                # Fill NaN values for the first patch_size rows
+                patch_columns = ['patch_mean', 'patch_std', 'patch_min', 'patch_max', 
+                               'patch_range', 'patch_trend', 'patch_volatility', 'patch_momentum']
+                for col in patch_columns:
+                    feature_data[col] = feature_data[col].fillna(feature_data[col].mean())
+            
+            # Create additional time series features
+            if 'close' in data.columns:
+                # Moving averages with different windows
+                for window in [5, 10, 20, 50]:
+                    feature_data[f'sma_{window}'] = data['close'].rolling(window=window).mean()
+                    feature_data[f'ema_{window}'] = data['close'].ewm(span=window).mean()
+                
+                # Price position within recent range
+                feature_data['price_position_20'] = (data['close'] - data['close'].rolling(20).min()) / (data['close'].rolling(20).max() - data['close'].rolling(20).min())
+                feature_data['price_position_50'] = (data['close'] - data['close'].rolling(50).min()) / (data['close'].rolling(50).max() - data['close'].rolling(50).min())
+                
+                # Volatility features
+                feature_data['volatility_5'] = data['close'].pct_change().rolling(5).std()
+                feature_data['volatility_20'] = data['close'].pct_change().rolling(20).std()
+                
+                # Fill NaN values
+                feature_data = feature_data.fillna(method='bfill').fillna(method='ffill')
+            
+            tprint_success(f"✅ PatchTST features created - added {len(feature_data.columns) - len(data.columns)} new features")
             return feature_data
             
         except Exception as e:
@@ -405,16 +453,58 @@ class AnalystBaseTrainer(BaseTrainer):
     async def _create_regime_features(self, data: pd.DataFrame) -> pd.DataFrame:
         """Create regime detection and classification features.
         
-        PLACEHOLDER IMPLEMENTATION: Returns data unchanged for production readiness.
+        This implementation creates features that help identify different market regimes
+        such as trending, ranging, high volatility, and low volatility periods.
         """
         try:
-            tprint_debug("🔧 Creating regime features (placeholder implementation)...")
+            tprint_debug("🔧 Creating regime features...")
             
-            # PLACEHOLDER: Return data unchanged as specified
-            # This ensures production readiness while maintaining the interface
             feature_data = data.copy()
             
-            tprint_success("✅ Regime features placeholder completed - data returned unchanged")
+            if 'close' in data.columns and len(data) > 20:
+                # Volatility regime features
+                feature_data['volatility_20'] = data['close'].pct_change().rolling(20).std()
+                feature_data['volatility_regime'] = pd.cut(feature_data['volatility_20'], 
+                                                         bins=3, labels=['low_vol', 'medium_vol', 'high_vol'])
+                
+                # Trend regime features
+                feature_data['trend_20'] = (data['close'] - data['close'].shift(20)) / data['close'].shift(20)
+                feature_data['trend_regime'] = pd.cut(feature_data['trend_20'], 
+                                                    bins=3, labels=['downtrend', 'sideways', 'uptrend'])
+                
+                # Price range regime features
+                feature_data['range_20'] = (data['close'].rolling(20).max() - data['close'].rolling(20).min()) / data['close'].rolling(20).mean()
+                feature_data['range_regime'] = pd.cut(feature_data['range_20'], 
+                                                    bins=3, labels=['narrow_range', 'medium_range', 'wide_range'])
+                
+                # Momentum regime features
+                feature_data['momentum_5'] = data['close'].pct_change(5)
+                feature_data['momentum_10'] = data['close'].pct_change(10)
+                feature_data['momentum_regime'] = pd.cut(feature_data['momentum_10'], 
+                                                       bins=3, labels=['negative_momentum', 'neutral_momentum', 'positive_momentum'])
+                
+                # Market structure features
+                feature_data['higher_highs'] = (data['close'] > data['close'].rolling(20).max().shift(1)).astype(int)
+                feature_data['lower_lows'] = (data['close'] < data['close'].rolling(20).min().shift(1)).astype(int)
+                
+                # Support and resistance levels
+                feature_data['resistance_level'] = data['close'].rolling(20).max()
+                feature_data['support_level'] = data['close'].rolling(20).min()
+                feature_data['price_vs_resistance'] = data['close'] / feature_data['resistance_level']
+                feature_data['price_vs_support'] = data['close'] / feature_data['support_level']
+                
+                # Regime change detection
+                feature_data['volatility_change'] = feature_data['volatility_20'].pct_change()
+                feature_data['trend_change'] = feature_data['trend_20'].diff()
+                
+                # Market state indicators
+                feature_data['is_trending'] = (feature_data['trend_20'].abs() > feature_data['trend_20'].rolling(50).std()).astype(int)
+                feature_data['is_volatile'] = (feature_data['volatility_20'] > feature_data['volatility_20'].rolling(50).mean()).astype(int)
+                
+                # Fill NaN values
+                feature_data = feature_data.fillna(method='bfill').fillna(method='ffill')
+            
+            tprint_success(f"✅ Regime features created - added {len(feature_data.columns) - len(data.columns)} new features")
             return feature_data
             
         except Exception as e:
@@ -425,16 +515,73 @@ class AnalystBaseTrainer(BaseTrainer):
     async def _create_multi_timeframe_features(self, data: pd.DataFrame) -> pd.DataFrame:
         """Create multi-timeframe analysis features.
         
-        PLACEHOLDER IMPLEMENTATION: Returns data unchanged for production readiness.
+        This implementation creates features that capture patterns across different
+        time horizons, from short-term to long-term market dynamics.
         """
         try:
-            tprint_debug("🔧 Creating multi-timeframe features (placeholder implementation)...")
+            tprint_debug("🔧 Creating multi-timeframe features...")
             
-            # PLACEHOLDER: Return data unchanged as specified
-            # This ensures production readiness while maintaining the interface
             feature_data = data.copy()
             
-            tprint_success("✅ Multi-timeframe features placeholder completed - data returned unchanged")
+            if 'close' in data.columns and len(data) > 50:
+                # Short-term features (1-5 periods)
+                feature_data['st_return_1'] = data['close'].pct_change(1)
+                feature_data['st_return_3'] = data['close'].pct_change(3)
+                feature_data['st_return_5'] = data['close'].pct_change(5)
+                
+                # Medium-term features (10-20 periods)
+                feature_data['mt_return_10'] = data['close'].pct_change(10)
+                feature_data['mt_return_15'] = data['close'].pct_change(15)
+                feature_data['mt_return_20'] = data['close'].pct_change(20)
+                
+                # Long-term features (30-50 periods)
+                feature_data['lt_return_30'] = data['close'].pct_change(30)
+                feature_data['lt_return_40'] = data['close'].pct_change(40)
+                feature_data['lt_return_50'] = data['close'].pct_change(50)
+                
+                # Multi-timeframe moving averages
+                for period in [5, 10, 20, 30, 50]:
+                    feature_data[f'sma_{period}'] = data['close'].rolling(period).mean()
+                    feature_data[f'ema_{period}'] = data['close'].ewm(span=period).mean()
+                
+                # Multi-timeframe volatility
+                for period in [5, 10, 20, 30]:
+                    feature_data[f'volatility_{period}'] = data['close'].pct_change().rolling(period).std()
+                
+                # Timeframe relationships
+                feature_data['st_vs_mt_trend'] = feature_data['st_return_5'] - feature_data['mt_return_20']
+                feature_data['mt_vs_lt_trend'] = feature_data['mt_return_20'] - feature_data['lt_return_50']
+                feature_data['st_vs_lt_trend'] = feature_data['st_return_5'] - feature_data['lt_return_50']
+                
+                # Multi-timeframe momentum
+                feature_data['momentum_ratio_5_20'] = feature_data['st_return_5'] / (feature_data['mt_return_20'] + 1e-8)
+                feature_data['momentum_ratio_10_30'] = feature_data['mt_return_10'] / (feature_data['lt_return_30'] + 1e-8)
+                
+                # Multi-timeframe volatility ratios
+                feature_data['vol_ratio_5_20'] = feature_data['volatility_5'] / (feature_data['volatility_20'] + 1e-8)
+                feature_data['vol_ratio_10_30'] = feature_data['volatility_10'] / (feature_data['volatility_30'] + 1e-8)
+                
+                # Cross-timeframe price position
+                feature_data['price_position_5'] = (data['close'] - data['close'].rolling(5).min()) / (data['close'].rolling(5).max() - data['close'].rolling(5).min())
+                feature_data['price_position_20'] = (data['close'] - data['close'].rolling(20).min()) / (data['close'].rolling(20).max() - data['close'].rolling(20).min())
+                feature_data['price_position_50'] = (data['close'] - data['close'].rolling(50).min()) / (data['close'].rolling(50).max() - data['close'].rolling(50).min())
+                
+                # Timeframe divergence detection
+                feature_data['price_momentum_divergence'] = (feature_data['st_return_5'] > 0).astype(int) != (feature_data['mt_return_20'] > 0).astype(int)
+                feature_data['volatility_divergence'] = (feature_data['volatility_5'] > feature_data['volatility_20']).astype(int) != (feature_data['volatility_10'] > feature_data['volatility_30']).astype(int)
+                
+                # Multi-timeframe trend strength
+                feature_data['trend_strength_5'] = feature_data['st_return_5'].abs()
+                feature_data['trend_strength_20'] = feature_data['mt_return_20'].abs()
+                feature_data['trend_strength_50'] = feature_data['lt_return_50'].abs()
+                
+                # Timeframe consistency
+                feature_data['trend_consistency'] = ((feature_data['st_return_5'] > 0) == (feature_data['mt_return_20'] > 0) == (feature_data['lt_return_50'] > 0)).astype(int)
+                
+                # Fill NaN values
+                feature_data = feature_data.fillna(method='bfill').fillna(method='ffill')
+            
+            tprint_success(f"✅ Multi-timeframe features created - added {len(feature_data.columns) - len(data.columns)} new features")
             return feature_data
             
         except Exception as e:
@@ -488,16 +635,116 @@ class AnalystBaseTrainer(BaseTrainer):
     def _create_neural_network_model(self):
         """Create neural network model for Analyst predictions.
         
-        PLACEHOLDER IMPLEMENTATION: Returns None for production readiness.
+        This implementation creates a simple feedforward neural network
+        using scikit-learn's MLPRegressor for regression tasks.
         """
         try:
-            tprint_debug("🔧 Creating neural network model (placeholder implementation)...")
+            tprint_debug("🔧 Creating neural network model...")
             
-            # PLACEHOLDER: Return None as specified
-            # This ensures production readiness while maintaining the interface
-            tprint_success("✅ Neural network model placeholder completed - returning None")
+            from sklearn.neural_network import MLPRegressor
+            from sklearn.preprocessing import StandardScaler
+            
+            # Create a simple neural network model
+            model = MLPRegressor(
+                hidden_layer_sizes=(100, 50, 25),  # Three hidden layers
+                activation='relu',
+                solver='adam',
+                alpha=0.001,  # L2 regularization
+                batch_size='auto',
+                learning_rate='adaptive',
+                learning_rate_init=0.001,
+                max_iter=1000,
+                shuffle=True,
+                random_state=42,
+                early_stopping=True,
+                validation_fraction=0.1,
+                n_iter_no_change=10,
+                tol=1e-4
+            )
+            
+            # Create a scaler for input normalization
+            scaler = StandardScaler()
+            
+            # Wrap model and scaler in a custom class
+            class NeuralNetworkModel:
+                def __init__(self, model, scaler):
+                    self.model = model
+                    self.scaler = scaler
+                    self.is_fitted = False
+                    self.feature_names_ = None
+                
+                def fit(self, X, y):
+                    """Fit the neural network model."""
+                    try:
+                        # Store feature names if available
+                        if hasattr(X, 'columns'):
+                            self.feature_names_ = list(X.columns)
+                        
+                        # Scale the features
+                        X_scaled = self.scaler.fit_transform(X)
+                        
+                        # Fit the model
+                        self.model.fit(X_scaled, y)
+                        self.is_fitted = True
+                        
+                        return self
+                    except Exception as e:
+                        tprint_error(f"❌ Neural network fitting failed: {e}")
+                        raise
+                
+                def predict(self, X):
+                    """Make predictions."""
+                    if not self.is_fitted:
+                        raise ValueError("Model must be fitted before prediction")
+                    
+                    try:
+                        # Scale the features
+                        X_scaled = self.scaler.transform(X)
+                        
+                        # Make predictions
+                        predictions = self.model.predict(X_scaled)
+                        return predictions
+                    except Exception as e:
+                        tprint_error(f"❌ Neural network prediction failed: {e}")
+                        raise
+                
+                def get_params(self, deep=True):
+                    """Get model parameters."""
+                    return {
+                        'hidden_layer_sizes': self.model.hidden_layer_sizes,
+                        'activation': self.model.activation,
+                        'solver': self.model.solver,
+                        'alpha': self.model.alpha,
+                        'is_fitted': self.is_fitted
+                    }
+                
+                def set_params(self, **params):
+                    """Set model parameters."""
+                    for key, value in params.items():
+                        if hasattr(self.model, key):
+                            setattr(self.model, key, value)
+                    return self
+                
+                def get_feature_importance(self):
+                    """Get feature importance (not directly available for MLP)."""
+                    if self.is_fitted and hasattr(self.model, 'coefs_'):
+                        # Approximate feature importance using first layer weights
+                        if len(self.model.coefs_) > 0:
+                            importance = np.abs(self.model.coefs_[0]).mean(axis=1)
+                            if self.feature_names_:
+                                return dict(zip(self.feature_names_, importance))
+                            else:
+                                return {f'feature_{i}': imp for i, imp in enumerate(importance)}
+                    return None
+            
+            neural_model = NeuralNetworkModel(model, scaler)
+            
+            tprint_success("✅ Neural network model created successfully")
+            return neural_model
+            
+        except ImportError as e:
+            tprint_warning(f"⚠️ scikit-learn not available for neural network: {e}")
             return None
-            
         except Exception as e:
             tprint_error(f"❌ Failed to create neural network model: {e}")
             self.logger.error(f"Failed to create neural network model: {e}")

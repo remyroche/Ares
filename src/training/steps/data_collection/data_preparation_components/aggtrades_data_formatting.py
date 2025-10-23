@@ -206,26 +206,234 @@ def auto_reformat_aggtrades_files_for_exchange(exchange: str, symbol: str) -> No
             shutil.copy2(backup_path, file_path)
 
 def create_dummy_files(input_dir: Any) -> None:
-    """Creates a set of dummy CSV files for demonstration purposes.
-    This function simulates the two different formats you provided.
+    """Creates a comprehensive set of dummy CSV files for demonstration and testing purposes.
+    
+    This function generates realistic trading data in multiple formats to test
+    the data formatting and processing pipeline. It creates various scenarios
+    including different data formats, edge cases, and realistic trading patterns.
+    
+    Args:
+        input_dir: Directory path where dummy files will be created
     """
+    import random
+    import pandas as pd
+    from datetime import datetime, timedelta
+    import numpy as np
+    
+    # Clean and create directory
     if os.path.exists(input_dir):
         shutil.rmtree(input_dir)
     os.makedirs(input_dir)
-    file1_path = os.path.join(input_dir, 'aggtrades_format1_2025-07-13.csv')
+    
+    # Generate realistic trading data parameters
+    base_price = 3000.0
+    base_volume = 0.1
+    start_time = datetime(2025, 1, 1, 0, 0, 0)
+    
+    # Format 1: Semicolon-separated with proper timestamp format
+    file1_path = os.path.join(input_dir, 'aggtrades_format1_2025-01-01.csv')
     with open(file1_path, 'w', newline='', encoding='utf-8') as f:
         f.write('timestamp;price;quantity;is_buyer_maker\n')
-        f.write('2025-07-12 22:00:00.604;2939.2;0.3152;False\n')
-        f.write('2025-07-12 22:00:00.614;2939.21;0.1917;False\n')
-        f.write('2025-07-12 22:00:00.614;2939.22;0.1702;False\n')
-    file2_path = os.path.join(input_dir, 'aggtrades_format2_2025-07-30.csv')
+        
+        # Generate 1000 realistic trading records
+        current_time = start_time
+        current_price = base_price
+        
+        for i in range(1000):
+            # Simulate price movement
+            price_change = random.uniform(-0.01, 0.01) * current_price
+            current_price = max(current_price + price_change, 1.0)  # Prevent negative prices
+            
+            # Generate realistic volume
+            volume = random.uniform(0.001, 10.0)
+            
+            # Generate realistic timestamp (every 1-5 seconds)
+            current_time += timedelta(seconds=random.uniform(1, 5))
+            
+            # Random buyer/seller maker
+            is_buyer_maker = random.choice([True, False])
+            
+            f.write(f'{current_time.strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]};{current_price:.2f};{volume:.4f};{is_buyer_maker}\n')
+    
+    # Format 2: Comma-separated with additional fields
+    file2_path = os.path.join(input_dir, 'aggtrades_format2_2025-01-02.csv')
     with open(file2_path, 'w', newline='', encoding='utf-8') as f:
-        f.write('timestamp,p;rice,quantity,is_buyer_maker,agg_trade_id\n')
-        f.write('2025-07-30;00:00:02.623,3791.56,0.065,False,2338842426\n')
-        f.write('2025-07-30;00:00:04.240,3791.55,0.022,True,2338842427\n')
-        f.write('2025-07-30;00:00:04.865,3791.55,0.018,True,2338842428\n')
-    file3_path = os.path.join(input_dir, 'empty_file.csv')
-    open(file3_path, 'w').close()
+        f.write('timestamp,price,quantity,is_buyer_maker,agg_trade_id,first_trade_id,last_trade_id\n')
+        
+        # Generate 1000 records with trade IDs
+        current_time = start_time + timedelta(days=1)
+        current_price = base_price * 1.02  # Slight price increase
+        trade_id = 1000000
+        
+        for i in range(1000):
+            price_change = random.uniform(-0.005, 0.005) * current_price
+            current_price = max(current_price + price_change, 1.0)
+            
+            volume = random.uniform(0.001, 5.0)
+            current_time += timedelta(seconds=random.uniform(0.5, 3))
+            
+            is_buyer_maker = random.choice([True, False])
+            
+            # Generate trade IDs
+            first_id = trade_id
+            last_id = trade_id + random.randint(1, 10)
+            trade_id = last_id + 1
+            
+            f.write(f'{current_time.strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]},{current_price:.2f},{volume:.4f},{is_buyer_maker},{trade_id},{first_id},{last_id}\n')
+    
+    # Format 3: Tab-separated with different structure
+    file3_path = os.path.join(input_dir, 'aggtrades_format3_2025-01-03.tsv')
+    with open(file3_path, 'w', newline='', encoding='utf-8') as f:
+        f.write('time\tprice\tqty\tis_buyer_maker\ttrade_id\n')
+        
+        current_time = start_time + timedelta(days=2)
+        current_price = base_price * 0.98  # Slight price decrease
+        trade_id = 2000000
+        
+        for i in range(500):  # Fewer records for variety
+            price_change = random.uniform(-0.008, 0.008) * current_price
+            current_price = max(current_price + price_change, 1.0)
+            
+            volume = random.uniform(0.01, 2.0)
+            current_time += timedelta(seconds=random.uniform(2, 8))
+            
+            is_buyer_maker = random.choice([True, False])
+            trade_id += 1
+            
+            f.write(f'{current_time.strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]}\t{current_price:.3f}\t{volume:.5f}\t{is_buyer_maker}\t{trade_id}\n')
+    
+    # Format 4: JSON Lines format
+    file4_path = os.path.join(input_dir, 'aggtrades_format4_2025-01-04.jsonl')
+    with open(file4_path, 'w', newline='', encoding='utf-8') as f:
+        current_time = start_time + timedelta(days=3)
+        current_price = base_price * 1.01
+        
+        for i in range(300):
+            price_change = random.uniform(-0.003, 0.003) * current_price
+            current_price = max(current_price + price_change, 1.0)
+            
+            volume = random.uniform(0.005, 1.0)
+            current_time += timedelta(seconds=random.uniform(1, 4))
+            
+            is_buyer_maker = random.choice([True, False])
+            
+            record = {
+                'timestamp': current_time.isoformat(),
+                'price': round(current_price, 2),
+                'quantity': round(volume, 4),
+                'is_buyer_maker': is_buyer_maker,
+                'trade_id': 3000000 + i
+            }
+            
+            f.write(f'{json.dumps(record)}\n')
+    
+    # Format 5: Corrupted/malformed data for testing error handling
+    file5_path = os.path.join(input_dir, 'aggtrades_corrupted_2025-01-05.csv')
+    with open(file5_path, 'w', newline='', encoding='utf-8') as f:
+        f.write('timestamp,price,quantity,is_buyer_maker\n')
+        f.write('2025-01-05 10:00:00.000,3000.50,0.1000,false\n')  # Valid
+        f.write('2025-01-05 10:00:01.000,invalid_price,0.2000,true\n')  # Invalid price
+        f.write('2025-01-05 10:00:02.000,3001.00,invalid_quantity,false\n')  # Invalid quantity
+        f.write('2025-01-05 10:00:03.000,3002.00,0.3000,invalid_boolean\n')  # Invalid boolean
+        f.write('invalid_timestamp,3003.00,0.4000,true\n')  # Invalid timestamp
+        f.write('2025-01-05 10:00:05.000,3004.00,0.5000,true\n')  # Valid
+        f.write('')  # Empty line
+        f.write('2025-01-05 10:00:06.000,3005.00,0.6000,false\n')  # Valid
+    
+    # Format 6: Empty file
+    file6_path = os.path.join(input_dir, 'empty_file.csv')
+    with open(file6_path, 'w', newline='', encoding='utf-8') as f:
+        f.write('timestamp,price,quantity,is_buyer_maker\n')
+        # Intentionally empty
+    
+    # Format 7: Large file for performance testing
+    file7_path = os.path.join(input_dir, 'aggtrades_large_2025-01-06.csv')
+    with open(file7_path, 'w', newline='', encoding='utf-8') as f:
+        f.write('timestamp,price,quantity,is_buyer_maker,trade_id\n')
+        
+        current_time = start_time + timedelta(days=6)
+        current_price = base_price * 1.05
+        
+        # Generate 10000 records for performance testing
+        for i in range(10000):
+            if i % 1000 == 0:  # Progress indicator
+                print(f"Generating large file: {i}/10000 records")
+                
+            price_change = random.uniform(-0.002, 0.002) * current_price
+            current_price = max(current_price + price_change, 1.0)
+            
+            volume = random.uniform(0.001, 0.5)
+            current_time += timedelta(milliseconds=random.randint(10, 100))
+            
+            is_buyer_maker = random.choice([True, False])
+            trade_id = 4000000 + i
+            
+            f.write(f'{current_time.strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]},{current_price:.2f},{volume:.4f},{is_buyer_maker},{trade_id}\n')
+    
+    # Create metadata file
+    metadata_path = os.path.join(input_dir, 'dummy_files_metadata.json')
+    metadata = {
+        'generated_at': datetime.now().isoformat(),
+        'total_files': 7,
+        'files': {
+            'format1': {
+                'path': 'aggtrades_format1_2025-01-01.csv',
+                'format': 'semicolon_separated',
+                'records': 1000,
+                'description': 'Standard semicolon-separated format'
+            },
+            'format2': {
+                'path': 'aggtrades_format2_2025-01-02.csv',
+                'format': 'comma_separated',
+                'records': 1000,
+                'description': 'Comma-separated with trade IDs'
+            },
+            'format3': {
+                'path': 'aggtrades_format3_2025-01-03.tsv',
+                'format': 'tab_separated',
+                'records': 500,
+                'description': 'Tab-separated format'
+            },
+            'format4': {
+                'path': 'aggtrades_format4_2025-01-04.jsonl',
+                'format': 'json_lines',
+                'records': 300,
+                'description': 'JSON Lines format'
+            },
+            'corrupted': {
+                'path': 'aggtrades_corrupted_2025-01-05.csv',
+                'format': 'comma_separated',
+                'records': 4,
+                'description': 'Corrupted data for error handling tests'
+            },
+            'empty': {
+                'path': 'empty_file.csv',
+                'format': 'comma_separated',
+                'records': 0,
+                'description': 'Empty file for edge case testing'
+            },
+            'large': {
+                'path': 'aggtrades_large_2025-01-06.csv',
+                'format': 'comma_separated',
+                'records': 10000,
+                'description': 'Large file for performance testing'
+            }
+        },
+        'data_characteristics': {
+            'base_price': base_price,
+            'price_range': f'{base_price * 0.95:.2f} - {base_price * 1.05:.2f}',
+            'volume_range': '0.001 - 10.0',
+            'time_range': f'{start_time.isoformat()} - {(start_time + timedelta(days=6)).isoformat()}',
+            'total_records': 12500
+        }
+    }
+    
+    with open(metadata_path, 'w', encoding='utf-8') as f:
+        json.dump(metadata, f, indent=2)
+    
+    print(f"✅ Created {len(metadata['files'])} dummy files in {input_dir}")
+    print(f"📊 Total records generated: {metadata['data_characteristics']['total_records']}")
+    print(f"📁 Metadata saved to: {metadata_path}")
 
 class CSVNormalizer:
     """Class to handle normalization of CSV files with different formats."""

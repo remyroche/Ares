@@ -190,20 +190,133 @@ except ImportError:
     PSUTIL_AVAILABLE = False
 
     class MockProcess:
-
-        def memory_info(self) -> None:
-
+        """Mock process implementation for testing when psutil is not available."""
+        
+        def __init__(self, pid: int = None):
+            self.pid = pid or 1234
+            self._memory_info = None
+            self._cpu_percent = 0.0
+            
+        def memory_info(self):
+            """Return mock memory information."""
             class MemoryInfo:
-                rss = 0
-            return MemoryInfo()
+                def __init__(self):
+                    self.rss = 1024 * 1024 * 100  # 100MB RSS
+                    self.vms = 1024 * 1024 * 200  # 200MB VMS
+                    self.available = 1024 * 1024 * 1024  # 1GB available
+                    self.percent = 10.0
+                    self.used = 1024 * 1024 * 100
+                    self.free = 1024 * 1024 * 900
+                    
+            if self._memory_info is None:
+                self._memory_info = MemoryInfo()
+            return self._memory_info
+            
+        def cpu_percent(self, interval: float = None) -> float:
+            """Return mock CPU percentage."""
+            return 25.0
+            
+        def memory_percent(self) -> float:
+            """Return mock memory percentage."""
+            return 10.0
+            
+        def num_threads(self) -> int:
+            """Return mock thread count."""
+            return 4
+            
+        def create_time(self) -> float:
+            """Return mock process creation time."""
+            import time
+            return time.time() - 3600  # 1 hour ago
+            
+        def status(self) -> str:
+            """Return mock process status."""
+            return 'running'
+            
+        def name(self) -> str:
+            """Return mock process name."""
+            return 'python'
+            
+        def exe(self) -> str:
+            """Return mock executable path."""
+            return '/usr/bin/python3'
+            
+        def cwd(self) -> str:
+            """Return mock current working directory."""
+            return '/workspace'
+            
+        def cmdline(self) -> list:
+            """Return mock command line."""
+            return ['python', 'regime_data_splitting_main.py']
 
     class MockPsutil:
-
-        def Process(self) -> None:
-            return MockProcess()
-
-        def cpu_percent(self) -> float:
-            return 0.0
+        """Mock psutil implementation for testing when psutil is not available."""
+        
+        def __init__(self):
+            self._processes = {}
+            self._cpu_count = 4
+            self._memory_total = 8 * 1024 * 1024 * 1024  # 8GB
+            self._memory_available = 6 * 1024 * 1024 * 1024  # 6GB
+            
+        def Process(self, pid: int = None) -> MockProcess:
+            """Return a mock process instance."""
+            if pid not in self._processes:
+                self._processes[pid] = MockProcess(pid)
+            return self._processes[pid]
+            
+        def cpu_percent(self, interval: float = None, percpu: bool = False) -> float:
+            """Return mock CPU percentage."""
+            if percpu:
+                return [25.0, 30.0, 20.0, 35.0]  # Per-CPU percentages
+            return 27.5  # Overall CPU percentage
+            
+        def cpu_count(self, logical: bool = True) -> int:
+            """Return mock CPU count."""
+            return self._cpu_count if logical else self._cpu_count // 2
+            
+        def virtual_memory(self):
+            """Return mock virtual memory information."""
+            class VirtualMemory:
+                def __init__(self, total, available):
+                    self.total = total
+                    self.available = available
+                    self.used = total - available
+                    self.free = available
+                    self.percent = (self.used / self.total) * 100
+                    
+            return VirtualMemory(self._memory_total, self._memory_available)
+            
+        def disk_usage(self, path: str = '/'):
+            """Return mock disk usage information."""
+            class DiskUsage:
+                def __init__(self):
+                    self.total = 500 * 1024 * 1024 * 1024  # 500GB
+                    self.used = 200 * 1024 * 1024 * 1024   # 200GB
+                    self.free = 300 * 1024 * 1024 * 1024   # 300GB
+                    self.percent = (self.used / self.total) * 100
+                    
+            return DiskUsage()
+            
+        def boot_time(self) -> float:
+            """Return mock boot time."""
+            import time
+            return time.time() - 86400  # 24 hours ago
+            
+        def users(self) -> list:
+            """Return mock users list."""
+            class User:
+                def __init__(self, name, terminal, host, started):
+                    self.name = name
+                    self.terminal = terminal
+                    self.host = host
+                    self.started = started
+                    
+            import time
+            return [User('testuser', 'pts/0', 'localhost', time.time() - 3600)]
+            
+        def pids(self) -> list:
+            """Return mock process IDs."""
+            return [1, 2, 3, 1234, 5678]
     psutil = MockPsutil()
 try:
     from src.core.domain.decorators_extended import monitor_feature_engineering

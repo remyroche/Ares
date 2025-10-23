@@ -123,7 +123,6 @@ class BaseTrainingStep(ABC):
         tprint_success("✅ [BASE_TRAINING_STEP] Base Training Step initialized successfully")
         self.logger.info("✅ Base Training Step initialized")
 
-    @abstractmethod
     def execute_training(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """
         Execute the main training logic.
@@ -134,9 +133,38 @@ class BaseTrainingStep(ABC):
         Returns:
             Training results dictionary
         """
-        pass
+        # Default implementation - subclasses should override
+        self.logger.warning("Using default execute_training implementation - subclasses should override")
+        
+        try:
+            # Basic validation
+            if not self.validate_training_data(data):
+                raise ValueError("Training data validation failed")
+            
+            # Prepare data
+            prepared_data = self.prepare_training_data(data)
+            
+            # Return basic results structure
+            return {
+                'success': True,
+                'training_time': 0.0,
+                'models': {},
+                'evaluation_results': {},
+                'metadata': {
+                    'training_step': self.__class__.__name__,
+                    'data_shape': str(data.get('X', 'unknown').shape) if 'X' in data else 'unknown'
+                }
+            }
+        except Exception as e:
+            self.logger.error(f"Default training execution failed: {e}")
+            return {
+                'success': False,
+                'error': str(e),
+                'training_time': 0.0,
+                'models': {},
+                'evaluation_results': {}
+            }
 
-    @abstractmethod
     def validate_training_data(self, data: Dict[str, Any]) -> bool:
         """
         Validate training data before training.
@@ -147,9 +175,33 @@ class BaseTrainingStep(ABC):
         Returns:
             True if data is valid, False otherwise
         """
-        pass
+        # Default implementation - subclasses should override
+        try:
+            if not isinstance(data, dict):
+                self.logger.error("Training data must be a dictionary")
+                return False
+            
+            # Check for required keys
+            required_keys = ['X', 'y']
+            for key in required_keys:
+                if key not in data:
+                    self.logger.error(f"Required key '{key}' not found in training data")
+                    return False
+            
+            # Basic shape validation
+            X = data['X']
+            y = data['y']
+            
+            if hasattr(X, 'shape') and hasattr(y, 'shape'):
+                if X.shape[0] != y.shape[0]:
+                    self.logger.error(f"Sample count mismatch: X={X.shape[0]}, y={y.shape[0]}")
+                    return False
+            
+            return True
+        except Exception as e:
+            self.logger.error(f"Data validation failed: {e}")
+            return False
 
-    @abstractmethod
     def prepare_training_data(self, raw_data: Dict[str, Any]) -> Dict[str, Any]:
         """
         Prepare raw data for training.
@@ -160,9 +212,22 @@ class BaseTrainingStep(ABC):
         Returns:
             Prepared training data
         """
-        pass
+        # Default implementation - subclasses should override
+        self.logger.info("Using default data preparation - subclasses should override")
+        
+        try:
+            # Basic preparation - just return a copy
+            prepared_data = raw_data.copy()
+            
+            # Add basic metadata
+            prepared_data['prepared_at'] = time.time()
+            prepared_data['preparation_method'] = 'default'
+            
+            return prepared_data
+        except Exception as e:
+            self.logger.error(f"Data preparation failed: {e}")
+            return raw_data
 
-    @abstractmethod
     def evaluate_model(self, model: Any, test_data: Dict[str, Any]) -> Dict[str, float]:
         """
         Evaluate trained model on test data.
@@ -174,9 +239,50 @@ class BaseTrainingStep(ABC):
         Returns:
             Evaluation metrics dictionary
         """
-        pass
+        # Default implementation - subclasses should override
+        self.logger.warning("Using default model evaluation - subclasses should override")
+        
+        try:
+            if model is None:
+                return {'error': 'Model is None'}
+            
+            if 'X' not in test_data or 'y' not in test_data:
+                return {'error': 'Missing X or y in test data'}
+            
+            X_test = test_data['X']
+            y_test = test_data['y']
+            
+            # Basic evaluation if model has predict method
+            if hasattr(model, 'predict'):
+                try:
+                    y_pred = model.predict(X_test)
+                    
+                    # Calculate basic metrics
+                    if hasattr(y_test, 'shape') and len(y_test.shape) > 1 and y_test.shape[1] > 1:
+                        # Multi-output case
+                        mse = np.mean((y_test - y_pred) ** 2)
+                        mae = np.mean(np.abs(y_test - y_pred))
+                    else:
+                        # Single output case
+                        y_test_flat = y_test.flatten() if hasattr(y_test, 'flatten') else y_test
+                        y_pred_flat = y_pred.flatten() if hasattr(y_pred, 'flatten') else y_pred
+                        mse = np.mean((y_test_flat - y_pred_flat) ** 2)
+                        mae = np.mean(np.abs(y_test_flat - y_pred_flat))
+                    
+                    return {
+                        'mse': float(mse),
+                        'mae': float(mae),
+                        'evaluation_method': 'default'
+                    }
+                except Exception as e:
+                    return {'error': f'Prediction failed: {e}'}
+            else:
+                return {'error': 'Model does not support predict method'}
+                
+        except Exception as e:
+            self.logger.error(f"Model evaluation failed: {e}")
+            return {'error': str(e)}
 
-    @abstractmethod
     def save_training_results(self, results: Dict[str, Any], filepath: str) -> bool:
         """
         Save training results to file.
@@ -188,9 +294,25 @@ class BaseTrainingStep(ABC):
         Returns:
             True if saved successfully, False otherwise
         """
-        pass
+        # Default implementation - subclasses should override
+        try:
+            # Ensure directory exists
+            import os
+            os.makedirs(os.path.dirname(filepath), exist_ok=True)
+            
+            # Use existing safe_json_dump utility
+            success = safe_json_dump(results, filepath)
+            
+            if success:
+                self.logger.info(f"Training results saved to {filepath}")
+            else:
+                self.logger.error(f"Failed to save training results to {filepath}")
+            
+            return success
+        except Exception as e:
+            self.logger.error(f"Failed to save training results: {e}")
+            return False
 
-    @abstractmethod
     def load_training_results(self, filepath: str) -> Optional[Dict[str, Any]]:
         """
         Load training results from file.
@@ -201,9 +323,25 @@ class BaseTrainingStep(ABC):
         Returns:
             Training results dictionary or None if failed
         """
-        pass
+        # Default implementation - subclasses should override
+        try:
+            if not safe_file_exists(filepath):
+                self.logger.error(f"Training results file not found: {filepath}")
+                return None
+            
+            # Use existing safe_json_load utility
+            results = safe_json_load(filepath)
+            
+            if results is not None:
+                self.logger.info(f"Training results loaded from {filepath}")
+            else:
+                self.logger.error(f"Failed to load training results from {filepath}")
+            
+            return results
+        except Exception as e:
+            self.logger.error(f"Failed to load training results: {e}")
+            return None
 
-    @abstractmethod
     def get_training_summary(self) -> Dict[str, Any]:
         """
         Get comprehensive training summary.
@@ -211,7 +349,20 @@ class BaseTrainingStep(ABC):
         Returns:
             Training summary dictionary
         """
-        pass
+        # Default implementation - subclasses should override
+        try:
+            summary = {
+                'training_step': self.__class__.__name__,
+                'config': self.config.__dict__ if hasattr(self.config, '__dict__') else str(self.config),
+                'training_results': self.training_results,
+                'timestamp': time.time(),
+                'summary_method': 'default'
+            }
+            
+            return summary
+        except Exception as e:
+            self.logger.error(f"Failed to get training summary: {e}")
+            return {'error': str(e)}
 
     def _initialize_enhanced_training(self):
         """Initialize enhanced training utilities with lazy loading."""

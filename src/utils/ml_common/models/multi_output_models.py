@@ -48,7 +48,8 @@ from src.core.errors import (
 
 # CV and cloning utilities
 from sklearn.model_selection import TimeSeriesSplit
-from sklearn.base import clone as skl_clone
+from sklearn.base import clone as skl_clone, BaseEstimator
+from sklearn.linear_model import LinearRegression
 import inspect
 
 # Purged CV (if available)
@@ -185,8 +186,7 @@ class MultiOutputModel(ABC):
         self.logger.info(f"📊 Output names: {config.output_names}")
         self.logger.info(f"⚖️ Output weights: {self.output_weights}")
 
-    @abstractmethod
-    def _create_single_output_model(self, output_index: int, target: np.ndarray) -> BaseEstimator:
+    def _create_single_output_model(self, output_index: int, target: np.ndarray) -> Any:
         """
         Create a single-output model for the specified output.
         
@@ -197,9 +197,38 @@ class MultiOutputModel(ABC):
         Returns:
             Fitted single-output model
         """
-        pass
+        # Default implementation - subclasses should override
+        try:
+            # Determine if this is classification or regression
+            is_classification = self._determine_task_type(target.reshape(-1, 1))
+            
+            if is_classification:
+                from sklearn.linear_model import LogisticRegression
+                model = LogisticRegression(max_iter=1000, random_state=42)
+            else:
+                from sklearn.ensemble import RandomForestRegressor
+                model = RandomForestRegressor(n_estimators=100, random_state=42, n_jobs=-1)
+            
+            self.logger.info(f"Created default {type(model).__name__} for output {output_index}")
+            return model
+            
+        except Exception as e:
+            self.logger.error(f"Failed to create model for output {output_index}: {e}")
+            # Fallback to simple model
+            try:
+                from sklearn.linear_model import LinearRegression
+                return LinearRegression()
+            except Exception:
+                # Last resort - create a dummy model
+                class DummyModel:
+                    def fit(self, X, y):
+                        self._mean = float(np.mean(y)) if len(y) else 0.0
+                        return self
+                    def predict(self, X):
+                        n = X.shape[0] if hasattr(X, 'shape') else len(X)
+                        return np.full(n, getattr(self, '_mean', 0.0))
+                return DummyModel()
 
-    @abstractmethod
     def _calculate_output_weights(self, X: np.ndarray, y: np.ndarray) -> List[float]:
         """
         Calculate optimal weights for each output.
@@ -211,9 +240,19 @@ class MultiOutputModel(ABC):
         Returns:
             List of weights for each output
         """
-        pass
+        # Default implementation - subclasses should override
+        try:
+            # Simple equal weighting
+            n_outputs = y.shape[1] if len(y.shape) > 1 else 1
+            weights = [1.0 / n_outputs] * n_outputs
+            
+            self.logger.info(f"Using equal weights for {n_outputs} outputs: {weights}")
+            return weights
+            
+        except Exception as e:
+            self.logger.error(f"Failed to calculate output weights: {e}")
+            return [1.0] * self.config.n_outputs
 
-    @abstractmethod
     def _validate_output_consistency(self, predictions: Dict[str, np.ndarray]) -> bool:
         """
         Validate that predictions from all outputs are consistent.
@@ -224,9 +263,31 @@ class MultiOutputModel(ABC):
         Returns:
             True if predictions are consistent, False otherwise
         """
-        pass
+        # Default implementation - subclasses should override
+        try:
+            if not predictions:
+                self.logger.warning("No predictions provided for validation")
+                return False
+            
+            # Check that all predictions have the same length
+            lengths = [len(pred) for pred in predictions.values()]
+            if len(set(lengths)) > 1:
+                self.logger.error(f"Inconsistent prediction lengths: {lengths}")
+                return False
+            
+            # Check for NaN values
+            for output_name, pred in predictions.items():
+                if np.any(np.isnan(pred)):
+                    self.logger.error(f"NaN values found in {output_name} predictions")
+                    return False
+            
+            self.logger.info("Output consistency validation passed")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Output consistency validation failed: {e}")
+            return False
 
-    @abstractmethod
     def _calculate_confidence_scores(self, predictions: Dict[str, np.ndarray]) -> Dict[str, np.ndarray]:
         """
         Calculate confidence scores for each output prediction.
@@ -237,9 +298,28 @@ class MultiOutputModel(ABC):
         Returns:
             Dictionary of confidence scores for each output
         """
-        pass
+        # Default implementation - subclasses should override
+        try:
+            confidence_scores = {}
+            
+            for output_name, pred in predictions.items():
+                # Simple confidence based on prediction magnitude
+                pred_abs = np.abs(pred)
+                if np.max(pred_abs) > 0:
+                    confidence = pred_abs / np.max(pred_abs)
+                else:
+                    confidence = np.ones_like(pred)
+                
+                confidence_scores[output_name] = confidence
+                self.logger.debug(f"Calculated confidence scores for {output_name}: mean={np.mean(confidence):.3f}")
+            
+            return confidence_scores
+            
+        except Exception as e:
+            self.logger.error(f"Failed to calculate confidence scores: {e}")
+            # Return default confidence scores
+            return {name: np.ones(len(pred)) for name, pred in predictions.items()}
 
-    @abstractmethod
     def _get_feature_importance(self, output_index: int) -> Optional[np.ndarray]:
         """
         Get feature importance for a specific output.
@@ -250,9 +330,31 @@ class MultiOutputModel(ABC):
         Returns:
             Feature importance array or None if not available
         """
-        pass
+        # Default implementation - subclasses should override
+        try:
+            if not hasattr(self, 'models') or not self.models:
+                return None
+            
+            output_name = self.config.output_names[output_index] if output_index < len(self.config.output_names) else f"output_{output_index}"
+            
+            if output_name not in self.models:
+                return None
+            
+            model = self.models[output_name]
+            
+            # Try to get feature importance from the model
+            if hasattr(model, 'feature_importances_'):
+                return model.feature_importances_
+            elif hasattr(model, 'coef_'):
+                return np.abs(model.coef_)
+            else:
+                self.logger.debug(f"No feature importance available for {output_name}")
+                return None
+                
+        except Exception as e:
+            self.logger.error(f"Failed to get feature importance for output {output_index}: {e}")
+            return None
 
-    @abstractmethod
     def _get_model_metadata(self) -> Dict[str, Any]:
         """
         Get metadata about the model.
@@ -260,7 +362,31 @@ class MultiOutputModel(ABC):
         Returns:
             Dictionary containing model metadata
         """
-        pass
+        # Default implementation - subclasses should override
+        try:
+            metadata = {
+                'model_type': self.__class__.__name__,
+                'n_outputs': self.config.n_outputs,
+                'output_names': self.config.output_names,
+                'is_fitted': self.is_fitted,
+                'output_weights': self.output_weights,
+                'output_loss_weights': self.output_loss_weights,
+                'created_at': time.time(),
+                'training_history_length': len(self.training_history),
+                'prediction_history_length': len(self.prediction_history)
+            }
+            
+            # Add model-specific metadata if available
+            if hasattr(self, 'models') and self.models:
+                metadata['individual_models'] = {
+                    name: type(model).__name__ for name, model in self.models.items()
+                }
+            
+            return metadata
+            
+        except Exception as e:
+            self.logger.error(f"Failed to get model metadata: {e}")
+            return {'error': str(e)}
 
     def fit(self, X: np.ndarray, y: np.ndarray) -> 'MultiOutputModel':
         """Fit the multi-output model."""

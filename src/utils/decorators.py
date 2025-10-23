@@ -22,6 +22,28 @@ logger = logging.getLogger(__name__)
 # Circuit breaker state
 _circuit_breaker_states: Dict[str, Dict[str, Any]] = {}
 
+def _validate_auth_token(token: str) -> bool:
+    """Validate authentication token."""
+    try:
+        # Simple token validation - in production, this would check against a database
+        # or use JWT validation
+        if not token or len(token) < 10:
+            return False
+        
+        # Check if token has valid format (basic validation)
+        if not token.replace('-', '').replace('_', '').isalnum():
+            return False
+        
+        # In a real implementation, you would:
+        # 1. Decode JWT token
+        # 2. Check expiration
+        # 3. Validate signature
+        # 4. Check against user database
+        
+        return True
+    except Exception:
+        return False
+
 def handles_errors(fallback = None, log_errors = True, reraise = False):
     """
     Decorator for handling errors in functions.
@@ -303,9 +325,26 @@ def authenticated(required_roles = None):
     def decorator(func: Callable) -> Callable:
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
-            # This is a placeholder implementation
-            # In a real system, you would check authentication tokens, sessions, etc.
-            logger.debug(f"Authentication check for {func.__name__}")
+            # Check for authentication token in kwargs or request context
+            auth_token = kwargs.get('auth_token')
+            if not auth_token:
+                # Try to get from request context if available
+                try:
+                    from flask import request
+                    auth_token = request.headers.get('Authorization', '').replace('Bearer ', '')
+                except ImportError:
+                    pass
+            
+            if not auth_token:
+                logger.warning(f"Authentication required for {func.__name__} but no token provided")
+                raise PermissionError("Authentication required")
+            
+            # Validate token (simplified implementation)
+            if not _validate_auth_token(auth_token):
+                logger.warning(f"Invalid authentication token for {func.__name__}")
+                raise PermissionError("Invalid authentication token")
+            
+            logger.debug(f"Authentication successful for {func.__name__}")
             return func(*args, **kwargs)
         return wrapper
     return decorator
@@ -320,9 +359,27 @@ def requires_role(*roles):
     def decorator(func: Callable) -> Callable:
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
-            # This is a placeholder implementation
-            # In a real system, you would check user roles
-            logger.debug(f"Role check for {func.__name__}: required roles {roles}")
+            # Get user roles from kwargs or request context
+            user_roles = kwargs.get('user_roles', [])
+            if not user_roles:
+                # Try to get from request context if available
+                try:
+                    from flask import request
+                    user_roles = getattr(request, 'user_roles', [])
+                except ImportError:
+                    pass
+            
+            if not user_roles:
+                logger.warning(f"Role check failed for {func.__name__}: no user roles provided")
+                raise PermissionError("User roles required")
+            
+            # Check if user has any of the required roles
+            has_required_role = any(role in user_roles for role in roles)
+            if not has_required_role:
+                logger.warning(f"Role check failed for {func.__name__}: user roles {user_roles} don't include required roles {roles}")
+                raise PermissionError(f"Insufficient permissions. Required roles: {roles}")
+            
+            logger.debug(f"Role check successful for {func.__name__}: user has required roles")
             return func(*args, **kwargs)
         return wrapper
     return decorator
@@ -337,10 +394,31 @@ def validate_schema(schema):
     def decorator(func: Callable) -> Callable:
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
-            # This is a placeholder implementation
-            # In a real system, you would validate against the schema
-            logger.debug(f"Schema validation for {func.__name__}")
-            return func(*args, **kwargs)
+            try:
+                # Validate input arguments against schema
+                if hasattr(schema, 'validate'):
+                    # If schema has a validate method (e.g., Marshmallow, Pydantic)
+                    validation_result = schema.validate(kwargs)
+                    if validation_result:
+                        logger.warning(f"Schema validation failed for {func.__name__}: {validation_result}")
+                        raise ValueError(f"Schema validation failed: {validation_result}")
+                elif isinstance(schema, dict):
+                    # Simple dict-based schema validation
+                    for field, expected_type in schema.items():
+                        if field in kwargs:
+                            if not isinstance(kwargs[field], expected_type):
+                                logger.warning(f"Schema validation failed for {func.__name__}: {field} should be {expected_type}, got {type(kwargs[field])}")
+                                raise TypeError(f"Field '{field}' should be {expected_type}, got {type(kwargs[field])}")
+                        elif field not in kwargs and not field.startswith('optional_'):
+                            logger.warning(f"Schema validation failed for {func.__name__}: required field '{field}' missing")
+                            raise ValueError(f"Required field '{field}' missing")
+                
+                logger.debug(f"Schema validation successful for {func.__name__}")
+                return func(*args, **kwargs)
+                
+            except Exception as e:
+                logger.error(f"Schema validation error for {func.__name__}: {e}")
+                raise
         return wrapper
     return decorator
 
@@ -355,10 +433,47 @@ def validate_dataframe(required_columns = None, required_dtypes = None):
     def decorator(func: Callable) -> Callable:
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
-            # This is a placeholder implementation
-            # In a real system, you would validate DataFrame structure
-            logger.debug(f"DataFrame validation for {func.__name__}")
-            return func(*args, **kwargs)
+            try:
+                # Find DataFrame arguments
+                dataframes = []
+                for arg in args:
+                    if isinstance(arg, pd.DataFrame):
+                        dataframes.append(arg)
+                
+                for value in kwargs.values():
+                    if isinstance(value, pd.DataFrame):
+                        dataframes.append(value)
+                
+                # Validate each DataFrame
+                for i, df in enumerate(dataframes):
+                    logger.debug(f"Validating DataFrame {i+1} for {func.__name__}")
+                    
+                    # Check required columns
+                    if required_columns:
+                        missing_columns = set(required_columns) - set(df.columns)
+                        if missing_columns:
+                            logger.warning(f"DataFrame validation failed for {func.__name__}: missing columns {missing_columns}")
+                            raise ValueError(f"Missing required columns: {missing_columns}")
+                    
+                    # Check required dtypes
+                    if required_dtypes:
+                        for column, expected_dtype in required_dtypes.items():
+                            if column in df.columns:
+                                if not pd.api.types.is_dtype_equal(df[column].dtype, expected_dtype):
+                                    logger.warning(f"DataFrame validation failed for {func.__name__}: column '{column}' should be {expected_dtype}, got {df[column].dtype}")
+                                    raise TypeError(f"Column '{column}' should be {expected_dtype}, got {df[column].dtype}")
+                    
+                    # Check for empty DataFrame
+                    if df.empty:
+                        logger.warning(f"DataFrame validation failed for {func.__name__}: DataFrame is empty")
+                        raise ValueError("DataFrame cannot be empty")
+                
+                logger.debug(f"DataFrame validation successful for {func.__name__}")
+                return func(*args, **kwargs)
+                
+            except Exception as e:
+                logger.error(f"DataFrame validation error for {func.__name__}: {e}")
+                raise
         return wrapper
     return decorator
 
@@ -372,10 +487,43 @@ def comprehensive_validation(validators = None):
     def decorator(func: Callable) -> Callable:
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
-            # This is a placeholder implementation
-            # In a real system, you would run comprehensive validations
-            logger.debug(f"Comprehensive validation for {func.__name__}")
-            return func(*args, **kwargs)
+            try:
+                validation_errors = []
+                
+                # Run custom validators if provided
+                if validators:
+                    for validator in validators:
+                        try:
+                            result = validator(*args, **kwargs)
+                            if result is not None and not result:
+                                validation_errors.append(f"Validation failed: {validator.__name__}")
+                        except Exception as e:
+                            validation_errors.append(f"Validation error in {validator.__name__}: {e}")
+                
+                # Basic input validation
+                for i, arg in enumerate(args):
+                    if arg is None:
+                        validation_errors.append(f"Argument {i} cannot be None")
+                    elif isinstance(arg, (list, tuple)) and len(arg) == 0:
+                        validation_errors.append(f"Argument {i} cannot be empty")
+                
+                # Check for required keyword arguments
+                required_kwargs = ['data', 'config']  # Common required kwargs
+                for req_kwarg in required_kwargs:
+                    if req_kwarg not in kwargs or kwargs[req_kwarg] is None:
+                        validation_errors.append(f"Required keyword argument '{req_kwarg}' missing or None")
+                
+                if validation_errors:
+                    error_msg = f"Comprehensive validation failed for {func.__name__}: {'; '.join(validation_errors)}"
+                    logger.warning(error_msg)
+                    raise ValueError(error_msg)
+                
+                logger.debug(f"Comprehensive validation successful for {func.__name__}")
+                return func(*args, **kwargs)
+                
+            except Exception as e:
+                logger.error(f"Comprehensive validation error for {func.__name__}: {e}")
+                raise
         return wrapper
     return decorator
 

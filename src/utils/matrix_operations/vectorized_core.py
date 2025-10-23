@@ -383,9 +383,38 @@ class VectorizedProcessingCore:
     def optimize_dataframe_for_processing(self, df):
         """Optimize DataFrame for processing."""
         try:
-            # Basic optimization - return the DataFrame as-is for now
-            # This is a placeholder implementation
-            return df
+            import pandas as pd
+            
+            # Create a copy to avoid modifying original
+            optimized_df = df.copy()
+            
+            # Optimize data types
+            for col in optimized_df.columns:
+                if optimized_df[col].dtype == 'object':
+                    # Try to convert to numeric
+                    try:
+                        optimized_df[col] = pd.to_numeric(optimized_df[col], errors='ignore')
+                    except:
+                        pass
+                elif optimized_df[col].dtype == 'float64':
+                    # Convert to float32 if precision allows
+                    if optimized_df[col].min() >= np.finfo(np.float32).min and optimized_df[col].max() <= np.finfo(np.float32).max:
+                        optimized_df[col] = optimized_df[col].astype(np.float32)
+                elif optimized_df[col].dtype == 'int64':
+                    # Convert to int32 if range allows
+                    if optimized_df[col].min() >= np.iinfo(np.int32).min and optimized_df[col].max() <= np.iinfo(np.int32).max:
+                        optimized_df[col] = optimized_df[col].astype(np.int32)
+            
+            # Sort index if not already sorted
+            if not optimized_df.index.is_monotonic_increasing:
+                optimized_df = optimized_df.sort_index()
+            
+            # Remove duplicate rows
+            if optimized_df.duplicated().any():
+                optimized_df = optimized_df.drop_duplicates()
+            
+            return optimized_df
+            
         except Exception as e:
             self.logger.warning(f"DataFrame optimization failed: {e}")
             return df

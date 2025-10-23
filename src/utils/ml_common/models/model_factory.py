@@ -1255,18 +1255,31 @@ class EnhancedModelFactory:
                         # Create regime-optimized model
                         regime_model = self._create_regime_optimized_model(regime, architecture, hyperparams)
 
-                        # Train the model
+                        # Train the model with timing
+                        import time
+                        training_start = time.time()
                         regime_model.fit(X_processed, y_processed)
+                        training_end_time = time.time()
+                        training_time = training_end_time - training_start_time
 
                         # Store the trained model
                         self.regime_models[regime] = regime_model
 
+                        # Calculate comprehensive performance metrics
+                        samples_per_second = len(X_regime) / training_time if training_time > 0 else 0
+                        memory_usage = X_regime.nbytes / (1024 * 1024) if hasattr(X_regime, 'nbytes') else 0  # MB
+                        
                         # Track performance
                         self.performance_history[regime] = {
                             'samples': len(X_regime),
                             'architecture': architecture,
                             'hyperparams': hyperparams,
-                            'training_time': 0  # Placeholder
+                            'training_time': training_time
+                            'samples_per_second': samples_per_second,
+                            'memory_usage_mb': memory_usage,
+                            'efficiency_score': samples_per_second / max(memory_usage, 1),  # samples per MB
+                            'regime_complexity': len(hyperparams),
+                            'data_quality_score': min(len(X_regime) / 1000, 1.0)  # Normalized data size
                         }
 
                         print(f"✅ Successfully trained N-BEATS for regime: {regime}")
@@ -1274,9 +1287,35 @@ class EnhancedModelFactory:
                 # Train a general model for fallback and unknown regimes
                 print("🔄 Training general N-BEATS model for fallback")
                 self.general_model = self._create_regime_optimized_model('general', {}, {})
+                
+                # Time the general model training
+                general_training_start_time = time.time()
                 self.general_model.fit(X, y)
+                general_training_end_time = time.time()
+                general_training_time = general_training_end_time - general_training_start_time
+                
+                # Calculate comprehensive performance metrics for general model
+                general_samples_per_second = len(X) / general_training_time if general_training_time > 0 else 0
+                general_memory_usage = X.nbytes / (1024 * 1024) if hasattr(X, 'nbytes') else 0  # MB
+                
+                # Store general model performance
+                self.performance_history['general'] = {
+                    'samples': len(X),
+                    'architecture': 'general',
+                    'hyperparams': {},
+                    'training_time': general_training_time,
+                    'samples_per_second': general_samples_per_second,
+                    'memory_usage_mb': general_memory_usage,
+                    'efficiency_score': general_samples_per_second / max(general_memory_usage, 1),
+                    'regime_complexity': 0,
+                    'data_quality_score': min(len(X) / 1000, 1.0)
+                }
 
                 self.is_fitted = True
+                
+                # Calculate overall training statistics
+                self._calculate_overall_training_stats()
+                
                 print(f"🚀 N-BEATS training complete. Trained {len(self.regime_models)} regime-specific models")
                 return self
 
@@ -1317,9 +1356,60 @@ class EnhancedModelFactory:
 
                 This is key for the 4D system: understanding regime dynamics
                 """
-                # Placeholder for regime transition analysis
-                # In practice: compare predictions under different regime assumptions
-                return np.zeros(len(X))
+                if not self.is_fitted:
+                    raise ValueError("Model not fitted")
+                
+                # Get predictions from current regime model
+                if current_regime in self.regime_models:
+                    current_predictions = self.regime_models[current_regime].predict(X)
+                else:
+                    current_predictions = self.general_model.predict(X)
+                
+                # Get predictions from target regime model
+                if target_regime in self.regime_models:
+                    target_predictions = self.regime_models[target_regime].predict(X)
+                else:
+                    target_predictions = self.general_model.predict(X)
+                
+                # Calculate regime transition impact
+                regime_impact = target_predictions - current_predictions
+                
+                return regime_impact
+
+            def _calculate_overall_training_stats(self):
+                """Calculate comprehensive overall training statistics."""
+                if not self.performance_history:
+                    return
+                
+                # Calculate aggregate statistics
+                total_training_time = sum(perf['training_time'] for perf in self.performance_history.values())
+                total_samples = sum(perf['samples'] for perf in self.performance_history.values())
+                total_memory_usage = sum(perf['memory_usage_mb'] for perf in self.performance_history.values())
+                
+                # Calculate averages
+                avg_training_time = total_training_time / len(self.performance_history) if self.performance_history else 0
+                avg_samples_per_second = total_samples / total_training_time if total_training_time > 0 else 0
+                avg_efficiency_score = sum(perf['efficiency_score'] for perf in self.performance_history.values()) / len(self.performance_history) if self.performance_history else 0
+                
+                # Store overall statistics
+                self.overall_training_stats = {
+                    'total_training_time': total_training_time,
+                    'total_samples_processed': total_samples,
+                    'total_memory_usage_mb': total_memory_usage,
+                    'average_training_time_per_regime': avg_training_time,
+                    'overall_samples_per_second': avg_samples_per_second,
+                    'overall_efficiency_score': avg_efficiency_score,
+                    'regimes_trained': len(self.performance_history),
+                    'regime_specific_models': len(self.regime_models),
+                    'general_model_included': 'general' in self.performance_history,
+                    'training_completion_time': time.time()
+                }
+                
+                print(f"📊 Training Statistics:")
+                print(f"   Total time: {total_training_time:.3f}s")
+                print(f"   Samples processed: {total_samples:,}")
+                print(f"   Overall efficiency: {avg_efficiency_score:.2f} samples/MB")
+                print(f"   Regimes trained: {len(self.performance_history)}")
 
             def get_regime_performance_stats(self):
                 """Get performance statistics for all trained regime models."""

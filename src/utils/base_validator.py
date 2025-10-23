@@ -79,14 +79,16 @@ class BaseValidator(ABC):
         """Synchronous validation check."""
         try:
             import asyncio
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
+            try:
+                # Try to get the current event loop
+                loop = asyncio.get_running_loop()
                 # If we're in an async context, create a new task
                 import concurrent.futures
                 with concurrent.futures.ThreadPoolExecutor() as executor:
                     future = executor.submit(asyncio.run, self.validate(data, context))
                     result = future.result(timeout=30)  # 30 second timeout
-            else:
+            except RuntimeError:
+                # No event loop running, we can create one
                 result = asyncio.run(self.validate(data, context))
             return result.get('success', False)
         except Exception as e:

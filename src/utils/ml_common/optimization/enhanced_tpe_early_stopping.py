@@ -7,14 +7,51 @@ including aggressive early stopping, adaptive patience, and confidence-based sto
 Enhancement: TPE Early Stopping for All Current Usage
 """
 
-import numpy as np
-import pandas as pd
 from typing import Dict, Any, Optional, List, Callable, Union
 from dataclasses import dataclass
 import logging
 from abc import ABC, abstractmethod
 import time
-from scipy import stats
+
+# Optional imports with fallbacks
+try:
+    import numpy as np
+    NUMPY_AVAILABLE = True
+except ImportError:
+    NUMPY_AVAILABLE = False
+    # Fallback for basic operations
+    class NumpyFallback:
+        @staticmethod
+        def mean(data):
+            return sum(data) / len(data) if data else 0
+        @staticmethod
+        def std(data):
+            if not data:
+                return 0
+            mean_val = sum(data) / len(data)
+            variance = sum((x - mean_val) ** 2 for x in data) / len(data)
+            return variance ** 0.5
+        @staticmethod
+        def min(data):
+            return min(data) if data else 0
+        @staticmethod
+        def max(data):
+            return max(data) if data else 0
+    np = NumpyFallback()
+
+try:
+    import pandas as pd
+    PANDAS_AVAILABLE = True
+except ImportError:
+    PANDAS_AVAILABLE = False
+    pd = None
+
+try:
+    from scipy import stats
+    SCIPY_AVAILABLE = True
+except ImportError:
+    SCIPY_AVAILABLE = False
+    stats = None
 
 logger = logging.getLogger(__name__)
 
@@ -171,7 +208,7 @@ class AdaptivePatienceStrategy(EarlyStoppingStrategy):
         
         # Calculate average improvement rate
         avg_improvement = np.mean(improvements)
-        value_range = max(recent_values) - min(recent_values)
+        value_range = np.max(recent_values) - np.min(recent_values)
         
         if value_range == 0:
             return 1.0
@@ -247,8 +284,8 @@ class PerformanceBasedStrategy(EarlyStoppingStrategy):
             return False
         
         # Calculate current performance relative to best possible
-        current_best = max(history) if self.config.direction == 'maximize' else min(history)
-        theoretical_best = max(history) if self.config.direction == 'maximize' else min(history)
+        current_best = np.max(history) if self.config.direction == 'maximize' else np.min(history)
+        theoretical_best = np.max(history) if self.config.direction == 'maximize' else np.min(history)
         
         if theoretical_best == 0:
             performance_ratio = 1.0

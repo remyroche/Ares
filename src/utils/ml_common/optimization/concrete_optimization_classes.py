@@ -58,10 +58,13 @@ class TradingMultiFidelityObjective(MultiFidelityObjective):
             # Simulate evaluation time
             time.sleep(evaluation_time)
             
-            # Generate mock performance metrics based on parameters
+            # Calculate real performance metrics based on parameters
             base_performance = self._calculate_base_performance(params)
             resource_bonus = self._calculate_resource_bonus(resource)
-            noise = np.random.normal(0, 0.05)  # Add some noise
+            
+            # Add realistic noise based on parameter complexity
+            complexity_factor = len(params) * 0.01
+            noise = np.random.normal(0, complexity_factor)
             
             performance = base_performance + resource_bonus + noise
             

@@ -855,20 +855,52 @@ async def _cpu_backtesting_fallback(
             'device': 'cpu'
         }
 
-        # Generate mock results
-        results['total_trades'] = np.random.randint(50, 500)
-        results['win_rate'] = 0.5 + np.random.normal(0, 0.1)
-        results['profit_factor'] = 1.0 + np.random.exponential(0.3)
-        results['max_drawdown'] = np.random.exponential(0.08)
-        results['sharpe_ratio'] = np.random.normal(0.8, 0.3)
-        results['total_return'] = np.random.normal(0.05, 0.1)
-
-        # Ensure reasonable bounds
-        results['win_rate'] = np.clip(results['win_rate'], 0.1, 0.9)
-        results['profit_factor'] = max(0.5, results['profit_factor'])
-        results['max_drawdown'] = min(results['max_drawdown'], 0.5)
-        results['sharpe_ratio'] = np.clip(results['sharpe_ratio'], -2, 3)
-        results['total_return'] = np.clip(results['total_return'], -0.5, 0.5)
+        # Calculate real backtesting results
+        if len(prices) < 2:
+            # Not enough data for meaningful backtesting
+            results['total_trades'] = 0
+            results['win_rate'] = 0.0
+            results['profit_factor'] = 0.0
+            results['max_drawdown'] = 0.0
+            results['sharpe_ratio'] = 0.0
+            results['total_return'] = 0.0
+        else:
+            # Calculate returns
+            returns = np.diff(prices) / prices[:-1]
+            
+            # Calculate trading statistics
+            positive_returns = returns[returns > 0]
+            negative_returns = returns[returns < 0]
+            
+            results['total_trades'] = len(returns)
+            results['win_rate'] = len(positive_returns) / len(returns) if len(returns) > 0 else 0.0
+            
+            # Calculate profit factor
+            total_profit = np.sum(positive_returns) if len(positive_returns) > 0 else 0.0
+            total_loss = abs(np.sum(negative_returns)) if len(negative_returns) > 0 else 0.0
+            results['profit_factor'] = total_profit / total_loss if total_loss > 0 else float('inf')
+            
+            # Calculate drawdown
+            cumulative_returns = np.cumprod(1 + returns)
+            running_max = np.maximum.accumulate(cumulative_returns)
+            drawdown = (cumulative_returns - running_max) / running_max
+            results['max_drawdown'] = abs(np.min(drawdown))
+            
+            # Calculate Sharpe ratio
+            if len(returns) > 1 and np.std(returns) > 0:
+                results['sharpe_ratio'] = np.mean(returns) / np.std(returns) * np.sqrt(252)  # Annualized
+            else:
+                results['sharpe_ratio'] = 0.0
+            
+            # Calculate total return
+            results['total_return'] = (prices[-1] - prices[0]) / prices[0]
+            
+            # Ensure reasonable bounds
+            results['win_rate'] = np.clip(results['win_rate'], 0.0, 1.0)
+            results['profit_factor'] = min(results['profit_factor'], 10.0)  # Cap at 10
+            results['max_drawdown'] = min(results['max_drawdown'], 1.0)
+            results['sharpe_ratio'] = np.clip(results['sharpe_ratio'], -5, 5)
+            results['total_return'] = np.clip(results['total_return'], -1.0, 1.0)
 
         logger.info("✅ CPU backtesting simulation completed")
         return results
@@ -1120,19 +1152,54 @@ async def _cpu_monte_carlo_fallback(
             'device': 'cpu'
         }
 
-        # Generate mock Monte Carlo statistics
-        base_return = np.random.normal(0.03, 0.025)  # Around 3% return
-        volatility = np.random.uniform(0.15, 0.4)     # 15-40% volatility
-
-        results['mean_return'] = base_return
-        results['std_return'] = volatility
-        results['var_95'] = -volatility * 1.645      # 95% VaR
-        results['var_99'] = -volatility * 2.326      # 99% VaR
-        results['cvar_95'] = -volatility * 2.0       # 95% CVaR (approximate)
-        results['cvar_99'] = -volatility * 2.5       # 99% CVaR (approximate)
-        results['max_drawdown'] = np.random.uniform(0.08, 0.35)  # 8-35% max drawdown
-        results['sharpe_ratio'] = base_return / volatility if volatility > 0 else 0
-        results['sortino_ratio'] = base_return / (volatility * 0.8) if volatility > 0 else 0  # Downside deviation approx
+        # Perform real Monte Carlo simulation
+        if hasattr(data, 'values') and len(data.values) > 1:
+            # Extract returns from data
+            returns = np.diff(data.values) / data.values[:-1]
+            mean_return = np.mean(returns)
+            std_return = np.std(returns)
+        else:
+            # Use strategy parameters to estimate returns
+            mean_return = strategy_params.get('expected_return', 0.03)
+            std_return = strategy_params.get('volatility', 0.2)
+        
+        # Generate Monte Carlo simulations
+        np.random.seed(42)  # For reproducibility
+        simulated_returns = np.random.normal(mean_return, std_return, n_simulations)
+        
+        # Calculate statistics
+        results['mean_return'] = np.mean(simulated_returns)
+        results['std_return'] = np.std(simulated_returns)
+        
+        # Calculate VaR (Value at Risk)
+        results['var_95'] = np.percentile(simulated_returns, 5)  # 95% VaR
+        results['var_99'] = np.percentile(simulated_returns, 1)  # 99% VaR
+        
+        # Calculate CVaR (Conditional Value at Risk)
+        var_95_threshold = results['var_95']
+        var_99_threshold = results['var_99']
+        results['cvar_95'] = np.mean(simulated_returns[simulated_returns <= var_95_threshold])
+        results['cvar_99'] = np.mean(simulated_returns[simulated_returns <= var_99_threshold])
+        
+        # Calculate maximum drawdown
+        cumulative_returns = np.cumprod(1 + simulated_returns)
+        running_max = np.maximum.accumulate(cumulative_returns)
+        drawdowns = (cumulative_returns - running_max) / running_max
+        results['max_drawdown'] = abs(np.min(drawdowns))
+        
+        # Calculate risk-adjusted returns
+        if results['std_return'] > 0:
+            results['sharpe_ratio'] = results['mean_return'] / results['std_return'] * np.sqrt(252)
+        else:
+            results['sharpe_ratio'] = 0.0
+        
+        # Calculate Sortino ratio (downside deviation)
+        downside_returns = simulated_returns[simulated_returns < 0]
+        if len(downside_returns) > 0:
+            downside_std = np.std(downside_returns)
+            results['sortino_ratio'] = results['mean_return'] / downside_std * np.sqrt(252) if downside_std > 0 else 0.0
+        else:
+            results['sortino_ratio'] = float('inf') if results['mean_return'] > 0 else 0.0
 
         logger.info("✅ CPU Monte Carlo simulation completed")
         return results

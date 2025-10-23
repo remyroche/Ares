@@ -424,9 +424,36 @@ class MultiObjectiveStrategy(EarlyStoppingStrategy):
         if not self.config.multi_objective_stopping:
             return False
         
-        # This would need to be implemented with actual multi-objective data
-        # For now, return False as this is a placeholder
-        return False
+        # For multi-objective optimization, we need to track Pareto front improvements
+        # Since we only have single objective history, we'll use a simplified approach
+        if len(history) < self.config.min_trials:
+            return False
+        
+        # Check if we've had recent improvements
+        recent_window = min(20, len(history))
+        recent_values = history[-recent_window:]
+        
+        # Calculate improvement rate in recent window
+        if len(recent_values) < 5:
+            return False
+        
+        # For multi-objective, we consider any improvement as progress
+        # In practice, this would be replaced with Pareto dominance checks
+        if self.config.direction == 'maximize':
+            best_recent = max(recent_values)
+            worst_recent = min(recent_values)
+        else:
+            best_recent = min(recent_values)
+            worst_recent = max(recent_values)
+        
+        improvement_range = abs(best_recent - worst_recent)
+        if improvement_range < self.config.min_improvement_rate:
+            self.trials_without_pareto_improvement += 1
+        else:
+            self.trials_without_pareto_improvement = 0
+        
+        # Stop if no Pareto improvement for too long
+        return self.trials_without_pareto_improvement >= self.config.patience
     
     def get_stopping_reason(self) -> str:
         """Get reason for early stopping."""

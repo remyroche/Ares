@@ -1286,9 +1286,9 @@ class PerRegimeTrainingStep(BaseTrainingStep):
             return {
                 'success': True,
                 'regime_id': regime_id,
-                'models_trained': successful_models,
-                'training_time': total_training_time,
-                'trained_models': trained_models,
+                'models_trained': models_trained,
+                'training_time': training_time,
+                'samples_processed': len(X_regime)
                 'performance_metrics': performance_metrics,
                 'data_shape': {
                     'features': X.shape if hasattr(X, 'shape') else len(X),
@@ -1305,3 +1305,29 @@ class PerRegimeTrainingStep(BaseTrainingStep):
                 'models_trained': 0,
                 'training_time': 0.0
             }
+    
+    def _create_regime_ensemble(self, regime_id: str, X_regime, y_regime):
+        """Create ensemble models for a specific regime."""
+        ensemble_models = []
+        
+        try:
+            # Create different model types for ensemble
+            model_types = ['linear', 'tree', 'neural_network']
+            
+            for model_type in model_types:
+                if hasattr(self, 'model_manager') and self.model_manager:
+                    ensemble_model = self.model_manager.create_model(
+                        model_type=model_type,
+                        regime_id=f"{regime_id}_{model_type}",
+                        config=self.config
+                    )
+                    
+                    if ensemble_model:
+                        ensemble_model.fit(X_regime, y_regime)
+                        ensemble_models.append(ensemble_model)
+            
+            return ensemble_models
+            
+        except Exception as e:
+            self.logger.warning(f"Failed to create ensemble for regime {regime_id}: {e}")
+            return []

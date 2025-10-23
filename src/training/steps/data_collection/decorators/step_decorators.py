@@ -592,12 +592,85 @@ def _validate_statistical_properties(result: dict) -> None:
 
 def _check_authentication() -> None:
     """Check user authentication."""
-    # Placeholder for authentication logic
+    try:
+        # Check if user is authenticated
+        # In a production environment, this would check against an authentication service
+        # For now, we'll implement a basic check
+        
+        # Check environment variables for authentication tokens
+        import os
+        auth_token = os.getenv('AUTH_TOKEN')
+        api_key = os.getenv('API_KEY')
+        
+        if not auth_token and not api_key:
+            # Check if we're in a development environment
+            if os.getenv('ENVIRONMENT') == 'development':
+                logging.warning("Running in development mode without authentication")
+                return
+            
+            raise AuthenticationError("Authentication required: No valid tokens found")
+        
+        # Validate token format (basic validation)
+        if auth_token and len(auth_token) < 32:
+            raise AuthenticationError("Invalid authentication token format")
+        
+        if api_key and len(api_key) < 16:
+            raise AuthenticationError("Invalid API key format")
+        
+        # In production, you would validate the token against your auth service
+        # For now, we'll just log that authentication passed
+        logging.info("Authentication check passed")
+        
+    except Exception as e:
+        logging.error(f"Authentication check failed: {e}")
+        raise AuthenticationError(f"Authentication failed: {e}")
+
+
+class AuthenticationError(Exception):
+    """Raised when authentication fails."""
     pass
 
 def _check_rate_limit(operation_name: str, rate_limit: int) -> None:
     """Check rate limiting for operations."""
-    # Placeholder for rate limiting logic
+    try:
+        import time
+        from collections import defaultdict
+        
+        # In-memory rate limiting (in production, use Redis or similar)
+        if not hasattr(_check_rate_limit, '_rate_limits'):
+            _check_rate_limit._rate_limits = defaultdict(list)
+        
+        current_time = time.time()
+        operation_requests = _check_rate_limit._rate_limits[operation_name]
+        
+        # Remove old requests outside the time window
+        window_start = current_time - 60  # 1 minute window
+        operation_requests[:] = [req_time for req_time in operation_requests if req_time > window_start]
+        
+        # Check if we're within rate limit
+        if len(operation_requests) >= rate_limit:
+            time_until_reset = operation_requests[0] + 60 - current_time
+            raise RateLimitError(
+                f"Rate limit exceeded for {operation_name}. "
+                f"Limit: {rate_limit} requests per minute. "
+                f"Try again in {time_until_reset:.1f} seconds"
+            )
+        
+        # Add current request
+        operation_requests.append(current_time)
+        
+        logging.debug(f"Rate limit check passed for {operation_name}: {len(operation_requests)}/{rate_limit}")
+        
+    except RateLimitError:
+        raise
+    except Exception as e:
+        logging.error(f"Rate limit check failed: {e}")
+        # Don't block operations if rate limiting fails
+        logging.warning("Rate limiting disabled due to error")
+
+
+class RateLimitError(Exception):
+    """Raised when rate limit is exceeded."""
     pass
 
 async def _retry_operation(

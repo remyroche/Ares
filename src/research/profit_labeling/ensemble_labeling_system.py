@@ -152,13 +152,30 @@ class BaseLabelingStrategy(ProductionBaseLabelingStrategy):
 
     @abstractmethod
     def generate_labels(self, market_data: pd.DataFrame) -> StrategyResult:
-        """Generate labels using this strategy."""
-        pass
+        """
+        Generate labels using this strategy.
+        
+        Args:
+            market_data: OHLCV market data
+            
+        Returns:
+            StrategyResult containing labels, confidence scores, and metadata
+        """
+        raise NotImplementedError("Subclasses must implement generate_labels method")
 
     @abstractmethod
     def calculate_confidence(self, labels: pd.DataFrame, market_data: pd.DataFrame) -> pd.Series:
-        """Calculate confidence scores for labels."""
-        pass
+        """
+        Calculate confidence scores for labels.
+        
+        Args:
+            labels: Generated labels DataFrame
+            market_data: Original market data
+            
+        Returns:
+            Series of confidence scores (0-1 range)
+        """
+        raise NotImplementedError("Subclasses must implement calculate_confidence method")
 
 class MultiHorizonStrategy(BaseLabelingStrategy):
     """Multi-horizon profit labeling strategy."""

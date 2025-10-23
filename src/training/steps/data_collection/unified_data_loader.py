@@ -282,7 +282,7 @@ except ImportError:
 
     @log_important_calls
     class ParquetDatasetManager:
-        """Manager for parquet dataset operations with validation and optimization."""
+        """Manager for parquet dataset operations with validation and hardware optimization."""
         
         def __init__(
             self,
@@ -290,22 +290,36 @@ except ImportError:
             compression: str = "snappy",
             validation_enabled: bool = True,
             optimize_memory: bool = True,
+            enable_hardware_optimization: bool = True,
+            enable_vectorbt_optimization: bool = True,
             **kwargs
         ):
             """
-            Initialize parquet dataset manager.
+            Initialize parquet dataset manager with hardware optimization.
             
             Args:
                 base_path: Base directory for parquet files
                 compression: Compression algorithm
                 validation_enabled: Whether to enable data validation
                 optimize_memory: Whether to optimize memory usage
+                enable_hardware_optimization: Whether to enable hardware optimizations
+                enable_vectorbt_optimization: Whether to enable VectorBT optimizations
             """
             self.base_path = Path(base_path)
             self.compression = compression
             self.validation_enabled = validation_enabled
             self.optimize_memory = optimize_memory
+            self.enable_hardware_optimization = enable_hardware_optimization
+            self.enable_vectorbt_optimization = enable_vectorbt_optimization
             self.logger = logging.getLogger(__name__)
+            
+            # Initialize hardware optimization components
+            if self.enable_hardware_optimization:
+                self._init_hardware_optimization()
+            
+            # Initialize VectorBT optimization if enabled
+            if self.enable_vectorbt_optimization:
+                self._init_vectorbt_optimization()
             
             # Create base directory if it doesn't exist
             self.base_path.mkdir(parents=True, exist_ok=True)
@@ -313,6 +327,55 @@ except ImportError:
             # Additional configuration
             for key, value in kwargs.items():
                 setattr(self, key, value)
+        
+        def _init_hardware_optimization(self):
+            """Initialize hardware optimization components."""
+            try:
+                from src.utils.hardware.unified_hardware_manager import UnifiedHardwareManager
+                from src.utils.hardware.optimization_decorators import smart_cache, memory_efficient, auto_optimize
+                from src.utils.hardware.m1_memory_optimizer import M1MemoryOptimizer
+                
+                # Initialize hardware manager
+                self.hardware_manager = UnifiedHardwareManager()
+                self.memory_optimizer = M1MemoryOptimizer()
+                
+                # Apply optimization decorators
+                self._apply_optimization_decorators()
+                
+            except ImportError as e:
+                self.logger.warning(f"Hardware optimization not available: {e}")
+                self.hardware_manager = None
+                self.memory_optimizer = None
+        
+        def _init_vectorbt_optimization(self):
+            """Initialize VectorBT optimization components."""
+            try:
+                from src.feature_generation.utils.vectorbt_rolling_optimizer import VectorBTRollingOptimizer
+                from src.utils.ml_common.unified_vectorization_manager import UnifiedVectorizationManager, OperationType, OptimizationStrategy
+                
+                # Initialize VectorBT rolling optimizer
+                self.vectorbt_optimizer = VectorBTRollingOptimizer()
+                
+                # Initialize vectorization manager
+                self.vectorization_manager = UnifiedVectorizationManager()
+                
+            except ImportError as e:
+                self.logger.warning(f"VectorBT optimization not available: {e}")
+                self.vectorbt_optimizer = None
+                self.vectorization_manager = None
+        
+        def _apply_optimization_decorators(self):
+            """Apply optimization decorators to methods."""
+            try:
+                from src.utils.hardware.optimization_decorators import smart_cache, memory_efficient, auto_optimize
+                
+                # Apply decorators to key methods
+                self.save_dataset = smart_cache(ttl=1800)(memory_efficient()(self.save_dataset))
+                self.load_dataset = smart_cache(ttl=1800)(memory_efficient()(self.load_dataset))
+                self._optimize_dataframe = auto_optimize()(self._optimize_dataframe)
+                
+            except ImportError:
+                pass
         
         def save_dataset(
             self,
@@ -374,11 +437,25 @@ except ImportError:
                 return None
         
         def _optimize_dataframe(self, df: pd.DataFrame) -> pd.DataFrame:
-            """Optimize DataFrame memory usage."""
+            """Optimize DataFrame memory usage with hardware acceleration."""
             try:
+                # Use hardware memory optimizer if available
+                if self.memory_optimizer:
+                    optimized_df = self.memory_optimizer.optimize_dataframe(df)
+                    if optimized_df is not None:
+                        return optimized_df
+                
+                # Fallback to manual optimization
                 optimized_df = df.copy()
                 
-                # Downcast numeric types
+                # Use VectorBT optimization for numeric operations if available
+                if self.vectorbt_optimizer and hasattr(self.vectorbt_optimizer, 'optimize_dataframe'):
+                    try:
+                        optimized_df = self.vectorbt_optimizer.optimize_dataframe(optimized_df)
+                    except Exception as e:
+                        self.logger.debug(f"VectorBT optimization failed, using fallback: {e}")
+                
+                # Downcast numeric types with hardware-aware optimization
                 for col in optimized_df.select_dtypes(include=['int64']).columns:
                     col_min, col_max = optimized_df[col].min(), optimized_df[col].max()
                     if col_min >= 0:
@@ -400,6 +477,13 @@ except ImportError:
                 for col in optimized_df.select_dtypes(include=['float64']).columns:
                     if optimized_df[col].astype('float32').equals(optimized_df[col]):
                         optimized_df[col] = optimized_df[col].astype('float32')
+                
+                # Apply additional hardware optimizations if available
+                if self.hardware_manager:
+                    try:
+                        optimized_df = self.hardware_manager.optimize_dataframe(optimized_df)
+                    except Exception as e:
+                        self.logger.debug(f"Hardware optimization failed: {e}")
                 
                 return optimized_df
                 

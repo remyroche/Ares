@@ -239,7 +239,7 @@ from src.training.steps.base_step import BaseStep
 _lazy_import_quality_utilities()
 
 class StorageConfig:
-    """Configuration for data storage operations."""
+    """Configuration for data storage operations with hardware optimization."""
     
     def __init__(
         self,
@@ -249,10 +249,12 @@ class StorageConfig:
         max_file_size_mb: int = 100,
         backup_enabled: bool = True,
         versioning_enabled: bool = True,
+        enable_hardware_optimization: bool = True,
+        memory_optimization_level: str = "balanced",
         **kwargs
     ):
         """
-        Initialize storage configuration.
+        Initialize storage configuration with hardware optimization.
         
         Args:
             base_path: Base directory for data storage
@@ -261,6 +263,8 @@ class StorageConfig:
             max_file_size_mb: Maximum file size in MB before splitting
             backup_enabled: Whether to create backups
             versioning_enabled: Whether to enable versioning
+            enable_hardware_optimization: Whether to enable hardware optimizations
+            memory_optimization_level: Memory optimization level (conservative, balanced, aggressive)
         """
         self.base_path = Path(base_path)
         self.compression = compression
@@ -268,6 +272,12 @@ class StorageConfig:
         self.max_file_size_mb = max_file_size_mb
         self.backup_enabled = backup_enabled
         self.versioning_enabled = versioning_enabled
+        self.enable_hardware_optimization = enable_hardware_optimization
+        self.memory_optimization_level = memory_optimization_level
+        
+        # Initialize hardware optimization if enabled
+        if self.enable_hardware_optimization:
+            self._init_hardware_optimization()
         
         # Create base directory if it doesn't exist
         self.base_path.mkdir(parents=True, exist_ok=True)
@@ -275,6 +285,48 @@ class StorageConfig:
         # Additional configuration from kwargs
         for key, value in kwargs.items():
             setattr(self, key, value)
+    
+    def _init_hardware_optimization(self):
+        """Initialize hardware optimization components."""
+        try:
+            from src.utils.hardware.unified_hardware_manager import UnifiedHardwareManager
+            from src.utils.hardware.optimization_decorators import smart_cache, memory_efficient
+            from src.utils.ml_common.unified_vectorization_manager import UnifiedVectorizationManager, OperationType, OptimizationStrategy
+            
+            # Initialize hardware manager
+            self.hardware_manager = UnifiedHardwareManager()
+            
+            # Initialize vectorization manager
+            self.vectorization_manager = UnifiedVectorizationManager()
+            
+            # Configure optimization strategy based on memory level
+            strategy_map = {
+                "conservative": OptimizationStrategy.MEMORY,
+                "balanced": OptimizationStrategy.BALANCED,
+                "aggressive": OptimizationStrategy.SPEED
+            }
+            self.optimization_strategy = strategy_map.get(self.memory_optimization_level, OptimizationStrategy.BALANCED)
+            
+            # Apply memory-efficient decorators to key methods
+            self._apply_optimization_decorators()
+            
+        except ImportError as e:
+            # Fallback if hardware optimization not available
+            self.hardware_manager = None
+            self.vectorization_manager = None
+            self.optimization_strategy = None
+    
+    def _apply_optimization_decorators(self):
+        """Apply optimization decorators to methods."""
+        try:
+            from src.utils.hardware.optimization_decorators import smart_cache, memory_efficient
+            
+            # Apply decorators to data processing methods
+            if hasattr(self, 'process_data'):
+                self.process_data = smart_cache(ttl=3600)(memory_efficient()(self.process_data))
+            
+        except ImportError:
+            pass
 
 class KlinesMetadata:
     """Metadata for klines data operations."""

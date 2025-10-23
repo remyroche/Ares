@@ -259,13 +259,7 @@ class ComponentFactory:
             return Analyst(analyst_config)
         except ImportError as e:
             self.logger.error(f"Failed to import Analyst: {e}")
-            # Return a mock analyst instead of raising NotImplementedError
-            class MockAnalyst:
-                def __init__(self, config):
-                    self.config = config
-                def analyze(self, *args, **kwargs):
-                    return {}
-            return MockAnalyst(analyst_config or {})
+            raise ImportError(f"Analyst component not available: {e}")
         except Exception as e:
             self.logger.error(f"Failed to create Analyst: {e}")
             raise
@@ -278,13 +272,7 @@ class ComponentFactory:
             return Strategist(strategist_config)
         except ImportError as e:
             self.logger.error(f"Failed to import Strategist: {e}")
-            # Return a mock strategist instead of raising NotImplementedError
-            class MockStrategist:
-                def __init__(self, config):
-                    self.config = config
-                def generate_strategy(self, *args, **kwargs):
-                    return {}
-            return MockStrategist(strategist_config or {})
+            raise ImportError(f"Strategist component not available: {e}")
         except Exception as e:
             self.logger.error(f"Failed to create Strategist: {e}")
             raise
@@ -297,13 +285,7 @@ class ComponentFactory:
             return Tactician(tactician_config)
         except ImportError as e:
             self.logger.error(f"Failed to import Tactician: {e}")
-            # Return a mock tactician instead of raising NotImplementedError
-            class MockTactician:
-                def __init__(self, config):
-                    self.config = config
-                def execute_tactics(self, *args, **kwargs):
-                    return {}
-            return MockTactician(tactician_config or {})
+            raise ImportError(f"Tactician component not available: {e}")
         except Exception as e:
             self.logger.error(f"Failed to create Tactician: {e}")
             raise
@@ -316,13 +298,7 @@ class ComponentFactory:
             return Supervisor(supervisor_config)
         except ImportError as e:
             self.logger.error(f"Failed to import Supervisor: {e}")
-            # Return a mock supervisor instead of raising NotImplementedError
-            class MockSupervisor:
-                def __init__(self, config):
-                    self.config = config
-                def supervise(self, *args, **kwargs):
-                    return {}
-            return MockSupervisor(supervisor_config or {})
+            raise ImportError(f"Supervisor component not available: {e}")
         except Exception as e:
             self.logger.error(f"Failed to create Supervisor: {e}")
             raise

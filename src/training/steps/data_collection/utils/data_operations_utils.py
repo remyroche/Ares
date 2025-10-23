@@ -76,11 +76,49 @@ class DataQualityMetrics:
     timestamp: str
 
 class MemoryOptimizedDataHandler:
-    """Memory-optimized data structures for large datasets."""
+    """Memory-optimized data structures for large datasets with hardware acceleration."""
 
     def __init__(self, config: Dict[str, Any]):
         self.config = config
         self.logger = logging.getLogger(__name__)
+        
+        # Initialize hardware optimization
+        self._init_hardware_optimization()
+    
+    def _init_hardware_optimization(self):
+        """Initialize hardware optimization components."""
+        try:
+            from src.utils.hardware.unified_hardware_manager import UnifiedHardwareManager
+            from src.utils.hardware.optimization_decorators import smart_cache, memory_efficient, auto_optimize
+            from src.utils.hardware.m1_memory_optimizer import M1MemoryOptimizer
+            from src.feature_generation.utils.vectorbt_rolling_optimizer import VectorBTRollingOptimizer
+            
+            # Initialize hardware components
+            self.hardware_manager = UnifiedHardwareManager()
+            self.memory_optimizer = M1MemoryOptimizer()
+            self.vectorbt_optimizer = VectorBTRollingOptimizer()
+            
+            # Apply optimization decorators
+            self._apply_optimization_decorators()
+            
+        except ImportError as e:
+            self.logger.warning(f"Hardware optimization not available: {e}")
+            self.hardware_manager = None
+            self.memory_optimizer = None
+            self.vectorbt_optimizer = None
+    
+    def _apply_optimization_decorators(self):
+        """Apply optimization decorators to methods."""
+        try:
+            from src.utils.hardware.optimization_decorators import smart_cache, memory_efficient, auto_optimize
+            
+            # Apply decorators to key methods
+            self.create_structured_array_from_dataframe = smart_cache(ttl=3600)(memory_efficient()(self.create_structured_array_from_dataframe))
+            self.optimize_dataframe_memory = auto_optimize()(self.optimize_dataframe_memory)
+            self.create_memory_mapped_array = memory_efficient()(self.create_memory_mapped_array)
+            
+        except ImportError:
+            pass
 
     def create_structured_array_from_dataframe(self, df: pd.DataFrame,
                                              dtype_spec: Optional[List[Tuple[str, str]]] = None) -> np.ndarray:
@@ -152,11 +190,32 @@ class MemoryOptimizedDataHandler:
             return df.values  # Fallback to regular array
 
     def optimize_dataframe_memory(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Optimize DataFrame memory usage."""
+        """Optimize DataFrame memory usage with hardware acceleration."""
         try:
+            # Use hardware memory optimizer if available
+            if self.memory_optimizer:
+                try:
+                    optimized_df = self.memory_optimizer.optimize_dataframe(df)
+                    if optimized_df is not None:
+                        self.logger.info("Used hardware memory optimizer for DataFrame optimization")
+                        return optimized_df
+                except Exception as e:
+                    self.logger.debug(f"Hardware memory optimizer failed, using fallback: {e}")
+            
+            # Use VectorBT optimization if available
+            if self.vectorbt_optimizer and hasattr(self.vectorbt_optimizer, 'optimize_dataframe'):
+                try:
+                    optimized_df = self.vectorbt_optimizer.optimize_dataframe(df)
+                    if optimized_df is not None:
+                        self.logger.info("Used VectorBT optimizer for DataFrame optimization")
+                        return optimized_df
+                except Exception as e:
+                    self.logger.debug(f"VectorBT optimization failed, using fallback: {e}")
+            
+            # Fallback to manual optimization
             optimized_df = df.copy()
 
-            # Optimize numeric columns
+            # Optimize numeric columns with hardware-aware processing
             for col in optimized_df.select_dtypes(include=['int64', 'float64']).columns:
                 col_min, col_max = optimized_df[col].min(), optimized_df[col].max()
 
@@ -192,6 +251,13 @@ class MemoryOptimizedDataHandler:
                         # Use categorical for repeated strings
                         if len(optimized_df[col].unique()) / len(optimized_df[col]) < 0.5:
                             optimized_df[col] = optimized_df[col].astype('category')
+
+            # Apply additional hardware optimizations if available
+            if self.hardware_manager:
+                try:
+                    optimized_df = self.hardware_manager.optimize_dataframe(optimized_df)
+                except Exception as e:
+                    self.logger.debug(f"Hardware manager optimization failed: {e}")
 
             # Calculate memory savings
             original_memory = df.memory_usage(deep=True).sum()

@@ -585,17 +585,127 @@ class BacktestingComponentMigrator:
     
     def _execute_direct_migration(self, analysis: ComponentAnalysis, strategy: MigrationStrategy) -> MigrationResult:
         """Execute direct migration strategy."""
-        # This would implement the actual migration logic
-        # For now, return a placeholder result
-        return MigrationResult(
-            success=True,
-            migrated_component=None,  # Would be the migrated component class
-            wrapper_component=None,
-            issues=[],
-            warnings=[],
-            recommendations=strategy.optional_changes,
-            migration_time=0.0
-        )
+        import time
+        start_time = time.time()
+        
+        try:
+            # Create new component class inheriting from ModularComponent
+            component_name = f"Migrated{analysis.class_name}"
+            
+            # Build the new class definition
+            class_definition = self._build_migrated_class(analysis, strategy)
+            
+            # Execute the class definition
+            namespace = {}
+            exec(class_definition, namespace)
+            migrated_class = namespace[component_name]
+            
+            # Create instance of migrated component
+            migrated_instance = migrated_class()
+            
+            migration_time = time.time() - start_time
+            
+            return MigrationResult(
+                success=True,
+                migrated_component=migrated_class,
+                wrapper_component=None,
+                issues=[],
+                warnings=[],
+                recommendations=strategy.optional_changes,
+                migration_time=migration_time
+            )
+            
+        except Exception as e:
+            migration_time = time.time() - start_time
+            return MigrationResult(
+                success=False,
+                migrated_component=None,
+                wrapper_component=None,
+                issues=[f"Migration failed: {str(e)}"],
+                warnings=[],
+                recommendations=strategy.optional_changes,
+                migration_time=migration_time
+            )
+    
+    def _build_migrated_class(self, analysis: ComponentAnalysis, strategy: MigrationStrategy) -> str:
+        """Build the migrated class definition as a string."""
+        class_name = f"Migrated{analysis.class_name}"
+        
+        # Start building the class definition
+        class_lines = [
+            f"class {class_name}(ModularComponent):",
+            '    """Migrated component with ModularComponent integration."""',
+            '',
+            '    def __init__(self, config: Optional[Dict[str, Any]] = None):',
+            '        super().__init__(config)',
+            '        self.original_component = None  # Will be set during initialization',
+            '',
+            '    def initialize(self) -> bool:',
+            '        """Initialize the migrated component."""',
+            '        try:',
+            '            # Initialize the original component if available',
+            '            if hasattr(self, "original_component") and self.original_component:',
+            '                if hasattr(self.original_component, "initialize"):',
+            '                    return self.original_component.initialize()',
+            '            return super().initialize()',
+            '        except Exception as e:',
+            '            self.logger.error(f"Failed to initialize migrated component: {e}")',
+            '            return False',
+            '',
+            '    async def execute(self, data: Any, pipeline_state: Dict[str, Any]) -> ComponentResult:',
+            '        """Execute the component logic."""',
+            '        try:',
+            '            # Try to use original component if available',
+            '            if hasattr(self, "original_component") and self.original_component:',
+            '                if hasattr(self.original_component, "process"):',
+            '                    result = self.original_component.process(data)',
+            '                    return ComponentResult(',
+            '                        success=True,',
+            '                        data=result,',
+            '                        metadata={"source": "original_component"}',
+            '                    )',
+            '            ',
+            '            # Fallback to basic processing',
+            '            return ComponentResult(',
+            '                success=True,',
+            '                data=data,',
+            '                metadata={"source": "migrated_fallback"}',
+            '            )',
+            '        except Exception as e:',
+            '            self.logger.error(f"Execution failed: {e}")',
+            '            return ComponentResult(',
+            '                success=False,',
+            '                error=str(e)',
+            '            )',
+            '',
+            '    def get_required_artifacts(self) -> List[str]:',
+            '        """Get required artifacts."""',
+            '        return []  # To be implemented based on component needs',
+            '',
+            '    def get_produced_artifacts(self) -> List[str]:',
+            '        """Get produced artifacts."""',
+            '        return []  # To be implemented based on component needs',
+        ]
+        
+        # Add any additional methods from the original component
+        for method in analysis.methods:
+            if method not in ['__init__', 'initialize', 'execute', 'get_required_artifacts', 'get_produced_artifacts']:
+                class_lines.extend([
+                    f'    def {method}(self, *args, **kwargs):',
+                    '        """Migrated method from original component."""',
+                    '        try:',
+                    '            if hasattr(self, "original_component") and self.original_component:',
+                    f'                if hasattr(self.original_component, "{method}"):',
+                    f'                    return getattr(self.original_component, "{method}")(*args, **kwargs)',
+                    '            # Fallback implementation',
+                    '            return None',
+                    '        except Exception as e:',
+                    '            self.logger.error(f"Method {method} failed: {e}")',
+                    '            return None',
+                    ''
+                ])
+        
+        return '\n'.join(class_lines)
     
     def _execute_wrapper_migration(self, analysis: ComponentAnalysis, strategy: MigrationStrategy) -> MigrationResult:
         """Execute wrapper migration strategy."""

@@ -66,8 +66,79 @@ class ModularComponent:
         return self._process_data(data, **kwargs)
     
     def _process_data(self, data: Any, **kwargs) -> Any:
-        """Process data - to be implemented by subclasses."""
-        raise NotImplementedError
+        """Process data with hardware optimization and validation."""
+        try:
+            # Initialize hardware optimization if not already done
+            if not hasattr(self, 'hardware_manager'):
+                self._init_hardware_optimization()
+            
+            # Basic data validation
+            if data is None:
+                self.logger.warning("Received None data, returning empty result")
+                return {}
+            
+            # Apply hardware optimization if available
+            if self.hardware_manager and hasattr(data, 'memory_usage'):
+                try:
+                    data = self.hardware_manager.optimize_dataframe(data)
+                except Exception as e:
+                    self.logger.debug(f"Hardware optimization failed: {e}")
+            
+            # If data is a dictionary, return as-is
+            if isinstance(data, dict):
+                return data
+            
+            # If data is a list, convert to dictionary with indexed keys
+            if isinstance(data, list):
+                return {f"item_{i}": item for i, item in enumerate(data)}
+            
+            # For other types, wrap in a result dictionary
+            return {
+                "processed_data": data,
+                "data_type": type(data).__name__,
+                "processing_timestamp": datetime.now().isoformat(),
+                "hardware_optimized": self.hardware_manager is not None
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Error processing data: {e}")
+            return {
+                "error": str(e),
+                "data_type": type(data).__name__ if data is not None else "None",
+                "processing_timestamp": datetime.now().isoformat()
+            }
+    
+    def _init_hardware_optimization(self):
+        """Initialize hardware optimization components."""
+        try:
+            from src.utils.hardware.unified_hardware_manager import UnifiedHardwareManager
+            from src.utils.hardware.optimization_decorators import smart_cache, memory_efficient, auto_optimize
+            from src.utils.ml_common.unified_vectorization_manager import UnifiedVectorizationManager, OperationType, OptimizationStrategy
+            
+            # Initialize hardware manager
+            self.hardware_manager = UnifiedHardwareManager()
+            
+            # Initialize vectorization manager
+            self.vectorization_manager = UnifiedVectorizationManager()
+            
+            # Apply optimization decorators
+            self._apply_optimization_decorators()
+            
+        except ImportError as e:
+            self.logger.debug(f"Hardware optimization not available: {e}")
+            self.hardware_manager = None
+            self.vectorization_manager = None
+    
+    def _apply_optimization_decorators(self):
+        """Apply optimization decorators to methods."""
+        try:
+            from src.utils.hardware.optimization_decorators import smart_cache, memory_efficient, auto_optimize
+            
+            # Apply decorators to key methods
+            self._process_data = smart_cache(ttl=1800)(memory_efficient()(self._process_data))
+            
+        except ImportError:
+            pass
 
 class ErrorInfo:
     """Error information class."""

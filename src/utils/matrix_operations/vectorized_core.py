@@ -346,8 +346,9 @@ class VectorizedProcessingCore:
             from ..hardware.m1_gpu_utils import get_m1_gpu_manager
             from ..hardware.m1_memory_optimizer import get_m1_memory_optimizer
             from ..hardware.m1_cpu_optimizer import get_m1_cpu_optimizer
-        except ImportError:
-            pass
+        except ImportError as e:
+            logger.debug(f"M1 hardware optimizations not available: {e}")
+            # Continue without M1 optimizations
 
         # Initialize hardware optimizations
         self.m1_gpu_manager = None
@@ -362,8 +363,9 @@ class VectorizedProcessingCore:
             self.m1_gpu_manager = get_m1_gpu_manager()
             self.m1_memory_optimizer = get_m1_memory_optimizer()
             self.m1_cpu_optimizer = get_m1_cpu_optimizer()
-        except ImportError:
-            pass
+        except ImportError as e:
+            logger.debug(f"M1 hardware initialization failed: {e}")
+            # Continue without M1 optimizations
 
         # Initialize performance monitoring
         try:
@@ -375,9 +377,112 @@ class VectorizedProcessingCore:
         except ImportError:
             # Create a dummy performance monitor if not available
             class DummyPerformanceMonitor:
-                def get_memory_usage(self): return 0
-                def get_cpu_usage(self): return 0
-                def get_performance_metrics(self): return {}
+                """Dummy performance monitor for when the real one is not available."""
+                
+                def __init__(self):
+                    self.start_time = time.time()
+                    self.memory_samples = []
+                    self.cpu_samples = []
+                    self.operation_count = 0
+                
+                def get_memory_usage(self):
+                    """Get current memory usage in MB."""
+                    try:
+                        if psutil:
+                            process = psutil.Process()
+                            memory_info = process.memory_info()
+                            return memory_info.rss / 1024 / 1024  # Convert to MB
+                        return 0.0
+                    except Exception:
+                        return 0.0
+                
+                def get_cpu_usage(self):
+                    """Get current CPU usage percentage."""
+                    try:
+                        if psutil:
+                            return psutil.cpu_percent(interval=0.1)
+                        return 0.0
+                    except Exception:
+                        return 0.0
+                
+                def get_performance_metrics(self):
+                    """Get comprehensive performance metrics."""
+                    try:
+                        current_time = time.time()
+                        uptime = current_time - self.start_time
+                        
+                        memory_usage = self.get_memory_usage()
+                        cpu_usage = self.get_cpu_usage()
+                        
+                        # Store samples for trend analysis
+                        self.memory_samples.append(memory_usage)
+                        self.cpu_samples.append(cpu_usage)
+                        
+                        # Keep only last 100 samples
+                        if len(self.memory_samples) > 100:
+                            self.memory_samples = self.memory_samples[-100:]
+                        if len(self.cpu_samples) > 100:
+                            self.cpu_samples = self.cpu_samples[-100:]
+                        
+                        return {
+                            'memory_usage_mb': memory_usage,
+                            'cpu_usage_percent': cpu_usage,
+                            'uptime_seconds': uptime,
+                            'operation_count': self.operation_count,
+                            'memory_trend': self._calculate_trend(self.memory_samples),
+                            'cpu_trend': self._calculate_trend(self.cpu_samples),
+                            'peak_memory_mb': max(self.memory_samples) if self.memory_samples else 0,
+                            'avg_memory_mb': sum(self.memory_samples) / len(self.memory_samples) if self.memory_samples else 0,
+                            'avg_cpu_percent': sum(self.cpu_samples) / len(self.cpu_samples) if self.cpu_samples else 0
+                        }
+                    except Exception:
+                        return {
+                            'memory_usage_mb': 0,
+                            'cpu_usage_percent': 0,
+                            'uptime_seconds': 0,
+                            'operation_count': 0,
+                            'memory_trend': 'stable',
+                            'cpu_trend': 'stable',
+                            'peak_memory_mb': 0,
+                            'avg_memory_mb': 0,
+                            'avg_cpu_percent': 0
+                        }
+                
+                def _calculate_trend(self, samples):
+                    """Calculate trend from samples."""
+                    if len(samples) < 2:
+                        return 'stable'
+                    
+                    recent_avg = sum(samples[-5:]) / min(5, len(samples))
+                    older_avg = sum(samples[:-5]) / max(1, len(samples) - 5) if len(samples) > 5 else recent_avg
+                    
+                    if recent_avg > older_avg * 1.1:
+                        return 'increasing'
+                    elif recent_avg < older_avg * 0.9:
+                        return 'decreasing'
+                    else:
+                        return 'stable'
+                
+                def record_operation(self, operation_name, duration=None):
+                    """Record an operation for tracking."""
+                    self.operation_count += 1
+                
+                def get_memory_report(self):
+                    """Get detailed memory report."""
+                    return {
+                        'current_memory_mb': self.get_memory_usage(),
+                        'peak_memory_mb': max(self.memory_samples) if self.memory_samples else 0,
+                        'memory_efficiency': 0.8,  # Dummy efficiency score
+                        'memory_trend': self._calculate_trend(self.memory_samples),
+                        'sample_count': len(self.memory_samples)
+                    }
+                
+                def reset_metrics(self):
+                    """Reset all performance metrics."""
+                    self.start_time = time.time()
+                    self.memory_samples.clear()
+                    self.cpu_samples.clear()
+                    self.operation_count = 0
             self.performance_monitor = DummyPerformanceMonitor()
 
     def optimize_dataframe_for_processing(self, df):
@@ -394,8 +499,9 @@ class VectorizedProcessingCore:
                     # Try to convert to numeric
                     try:
                         optimized_df[col] = pd.to_numeric(optimized_df[col], errors='ignore')
-                    except:
-                        pass
+                    except Exception as e:
+                        logger.debug(f"Failed to convert column '{col}' to numeric: {e}")
+                        # Continue with original column
                 elif optimized_df[col].dtype == 'float64':
                     # Convert to float32 if precision allows
                     if optimized_df[col].min() >= np.finfo(np.float32).min and optimized_df[col].max() <= np.finfo(np.float32).max:
@@ -576,15 +682,17 @@ class VectorizedCore:
                                 if (df[col].max() < 3.4e38 and df[col].min() > -3.4e38 and
                                     df[col].notna().all() and not df[col].isin([np.inf, -np.inf]).any()):
                                     df[col] = df[col].astype('float32', copy=False)
-                            except (ValueError, OverflowError):
-                                pass
+                            except (ValueError, OverflowError) as e:
+                                logger.debug(f"Failed to convert column '{col}' to float32: {e}")
+                                # Continue with original dtype
                         elif 'int64' in str(df[col].dtype):
                             try:
                                 # Try to convert to int32 if values are within range
                                 if df[col].max() < 2147483647 and df[col].min() > -2147483648:
                                     df[col] = df[col].astype('int32', copy=False)
-                            except (ValueError, OverflowError):
-                                pass
+                            except (ValueError, OverflowError) as e:
+                                logger.debug(f"Failed to convert column '{col}' to int32: {e}")
+                                # Continue with original dtype
 
             return df
 
@@ -630,13 +738,15 @@ class VectorizedCore:
                         mn = df_in.rolling(window=w, min_periods=1).min()
                         mx = df_in.rolling(window=w, min_periods=1).max()
                         rng = (mx - mn).rename(columns=lambda c: f"{c}_rolling_range_{w}")
-                    except Exception:
+                    except Exception as e:
+                        logger.debug(f"Failed to compute rolling range: {e}")
                         rng = None
                     try:
                         m = df_in.rolling(window=w, min_periods=1).mean()
                         s = df_in.rolling(window=w, min_periods=1).std()
                         cv = (s / m).fillna(0).rename(columns=lambda c: f"{c}_rolling_cv_{w}")
-                    except Exception:
+                    except Exception as e:
+                        logger.debug(f"Failed to compute rolling coefficient of variation: {e}")
                         cv = None
                     frames.extend([f for f in [med, q25, q75, skew, kurt, rng, cv] if f is not None])
 
@@ -647,8 +757,9 @@ class VectorizedCore:
                         num_cols = combined.select_dtypes(include=[np.number]).columns
                         if len(num_cols) > 0:
                             combined[num_cols] = combined[num_cols].astype('float32', copy=False)
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.debug(f"Failed to optimize data types: {e}")
+                        # Continue without optimization
                     return pd.concat([data_optimized, combined], axis=1)
                 return data_optimized
             except Exception as e:
@@ -687,8 +798,9 @@ class VectorizedCore:
                     m = rolled.mean()
                     s = rolled.std()
                     frames.append((s / m).fillna(0).rename(columns=lambda c: f"{c}_rolling_cv_{w}"))
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug(f"Failed to compute rolling coefficient of variation in fallback: {e}")
+                    # Continue without this feature
 
             if frames:
                 combined = pd.concat(frames, axis=1)
@@ -696,8 +808,9 @@ class VectorizedCore:
                     num_cols = combined.select_dtypes(include=[np.number]).columns
                     if len(num_cols) > 0:
                         combined[num_cols] = combined[num_cols].astype('float32', copy=False)
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug(f"Failed to optimize data types in fallback: {e}")
+                    # Continue without optimization
                 return pd.concat([data_optimized, combined], axis=1)
             return data_optimized
 

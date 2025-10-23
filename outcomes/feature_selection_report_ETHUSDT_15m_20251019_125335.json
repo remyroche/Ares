@@ -1,0 +1,204 @@
+{
+  "title": "Feature Selection Report",
+  "timestamp": "2025-10-19T12:53:35.113973",
+  "configuration": {
+    "symbol": "ETHUSDT",
+    "timeframe": "15m",
+    "direction": "DirectionType.LONGS",
+    "selection_strategy": "sophisticated_multi_stage"
+  },
+  "input_summary": {
+    "rows": 1162368,
+    "columns": 354,
+    "selected_columns": 1,
+    "reduction_pct": 99.71751412429379
+  },
+  "selection_metrics": {
+    "advanced_metrics": {
+      "average_score": 0.8489717872417654,
+      "max_score": 0.8489717872417654,
+      "min_score": 0.8489717872417654,
+      "average_variance": "558469.94",
+      "average_correlation": 0.9999999999999999,
+      "average_information_content": 0.9948594646609732,
+      "average_uniqueness": 1.1102230246251565e-16,
+      "score_std": 0.0,
+      "total_features": 1
+    },
+    "multi_objective_metrics": {},
+    "economic_metrics": {},
+    "vectorbt_metrics": {
+      "interaction_generation": [
+        {
+          "name": "polynomial_macd_delta_12_26_9",
+          "feature_series": "0                 0.0\n1                 0.0\n2                 0.0\n3                 0.0\n4                 0.0\n              ...    \n1162363    12916322.0\n1162364    12916322.0\n1162365    12916524.0\n1162366    12916631.0\n1162367    12915478.0\nName: macd_delta_12_26_9, Length: 1162368, dtype: float32",
+          "parent_features": [
+            "macd_delta_12_26_9"
+          ],
+          "interaction_type": "polynomial",
+          "utility_score": 0.98996932033324,
+          "vectorbt_optimized": true
+        },
+        {
+          "name": "rolling_mean_macd_delta_12_26_9",
+          "feature_series": "0                  NaN\n1                  NaN\n2                  NaN\n3                  NaN\n4                  NaN\n              ...     \n1162363    3594.091736\n1162364    3594.043481\n1162365    3594.009106\n1162366    3593.987854\n1162367    3593.960059\nName: macd_delta_12_26_9, Length: 1162368, dtype: float64",
+          "parent_features": [
+            "macd_delta_12_26_9"
+          ],
+          "interaction_type": "rolling_mean",
+          "utility_score": 0.9999769269921569,
+          "vectorbt_optimized": true
+        },
+        {
+          "name": "rolling_std_macd_delta_12_26_9",
+          "feature_series": "0               NaN\n1               NaN\n2               NaN\n3               NaN\n4               NaN\n             ...   \n1162363    0.366531\n1162364    0.315372\n1162365    0.282189\n1162366    0.267080\n1162367    0.254166\nName: macd_delta_12_26_9, Length: 1162368, dtype: float64",
+          "parent_features": [
+            "macd_delta_12_26_9"
+          ],
+          "interaction_type": "rolling_std",
+          "utility_score": 0.1920398324401831,
+          "vectorbt_optimized": true
+        }
+      ],
+      "lookback_analysis": {
+        "macd_delta_12_26_9": {
+          "5": {
+            "lookback": 5,
+            "rolling_mean": "0                  NaN\n1                  NaN\n2                  NaN\n3                  NaN\n4             0.000000\n              ...     \n1162363    3593.841406\n1162364    3593.889111\n1162365    3593.922607\n1162366    3593.948682\n1162367    3593.919189\nName: macd_delta_12_26_9, Length: 1162368, dtype: float64",
+            "rolling_std": "0               NaN\n1               NaN\n2               NaN\n3               NaN\n4          0.000000\n             ...   \n1162363    0.108364\n1162364    0.071117\n1162365    0.047848\n1162366    0.019321\n1162367    0.063235\nName: macd_delta_12_26_9, Length: 1162368, dtype: float64",
+            "rolling_min": "0                  NaN\n1                  NaN\n2                  NaN\n3                  NaN\n4             0.000000\n              ...     \n1162363    3593.689941\n1162364    3593.789062\n1162365    3593.841064\n1162366    3593.928467\n1162367    3593.811035\nName: macd_delta_12_26_9, Length: 1162368, dtype: float64",
+            "rolling_max": "0                  NaN\n1                  NaN\n2                  NaN\n3                  NaN\n4             0.000000\n              ...     \n1162363    3593.958496\n1162364    3593.958496\n1162365    3593.958496\n1162366    3593.971436\n1162367    3593.971436\nName: macd_delta_12_26_9, Length: 1162368, dtype: float64",
+            "stability": 5859.799531782981,
+            "predictability": 9659.342958432804,
+            "information_content": 0.00016972110987314399,
+            "data_quality": {
+              "missing_ratio": 0.0,
+              "outlier_ratio": 0.0,
+              "stationarity": 180650.94153583987,
+              "data_length": 1162368,
+              "lookback_coverage": 232473.6
+            }
+          },
+          "10": {
+            "lookback": 10,
+            "rolling_mean": "0                  NaN\n1                  NaN\n2                  NaN\n3                  NaN\n4                  NaN\n              ...     \n1162363    3593.793091\n1162364    3593.789648\n1162365    3593.795508\n1162366    3593.812598\n1162367    3593.838062\nName: macd_delta_12_26_9, Length: 1162368, dtype: float64",
+            "rolling_std": "0               NaN\n1               NaN\n2               NaN\n3               NaN\n4               NaN\n             ...   \n1162363    0.162245\n1162364    0.158565\n1162365    0.164001\n1162366    0.173228\n1162367    0.148306\nName: macd_delta_12_26_9, Length: 1162368, dtype: float64",
+            "rolling_min": "0                  NaN\n1                  NaN\n2                  NaN\n3                  NaN\n4                  NaN\n              ...     \n1162363    3593.506104\n1162364    3593.506104\n1162365    3593.506104\n1162366    3593.506104\n1162367    3593.506104\nName: macd_delta_12_26_9, Length: 1162368, dtype: float64",
+            "rolling_max": "0                  NaN\n1                  NaN\n2                  NaN\n3                  NaN\n4                  NaN\n              ...     \n1162363    3593.962891\n1162364    3593.958496\n1162365    3593.958496\n1162366    3593.971436\n1162367    3593.971436\nName: macd_delta_12_26_9, Length: 1162368, dtype: float64",
+            "stability": 4736.294489563332,
+            "predictability": 5862.156378083525,
+            "information_content": 0.0003191463706868475,
+            "data_quality": {
+              "missing_ratio": 0.0,
+              "outlier_ratio": 0.0,
+              "stationarity": 147710.94306083003,
+              "data_length": 1162368,
+              "lookback_coverage": 116236.8
+            }
+          },
+          "20": {
+            "lookback": 20,
+            "rolling_mean": "0                  NaN\n1                  NaN\n2                  NaN\n3                  NaN\n4                  NaN\n              ...     \n1162363    3594.091736\n1162364    3594.043481\n1162365    3594.009106\n1162366    3593.987854\n1162367    3593.960059\nName: macd_delta_12_26_9, Length: 1162368, dtype: float64",
+            "rolling_std": "0               NaN\n1               NaN\n2               NaN\n3               NaN\n4               NaN\n             ...   \n1162363    0.366531\n1162364    0.315372\n1162365    0.282189\n1162366    0.267080\n1162367    0.254166\nName: macd_delta_12_26_9, Length: 1162368, dtype: float64",
+            "rolling_min": "0                  NaN\n1                  NaN\n2                  NaN\n3                  NaN\n4                  NaN\n              ...     \n1162363    3593.506104\n1162364    3593.506104\n1162365    3593.506104\n1162366    3593.506104\n1162367    3593.506104\nName: macd_delta_12_26_9, Length: 1162368, dtype: float64",
+            "rolling_max": "0                  NaN\n1                  NaN\n2                  NaN\n3                  NaN\n4                  NaN\n              ...     \n1162363    3594.893555\n1162364    3594.644043\n1162365    3594.460938\n1162366    3594.460938\n1162367    3594.460938\nName: macd_delta_12_26_9, Length: 1162368, dtype: float64",
+            "stability": 3013.2958434032653,
+            "predictability": 3363.100734921331,
+            "information_content": 0.0005985469617846599,
+            "data_quality": {
+              "missing_ratio": 0.0,
+              "outlier_ratio": 0.0026231364246022495,
+              "stationarity": 121922.0272088319,
+              "data_length": 1162368,
+              "lookback_coverage": 58118.4
+            }
+          },
+          "50": {
+            "lookback": 50,
+            "rolling_mean": "0                  NaN\n1                  NaN\n2                  NaN\n3                  NaN\n4                  NaN\n              ...     \n1162363    3594.430366\n1162364    3594.376167\n1162365    3594.333506\n1162366    3594.298086\n1162367    3594.268545\nName: macd_delta_12_26_9, Length: 1162368, dtype: float64",
+            "rolling_std": "0               NaN\n1               NaN\n2               NaN\n3               NaN\n4               NaN\n             ...   \n1162363    0.626145\n1162364    0.542863\n1162365    0.486334\n1162366    0.444302\n1162367    0.425856\nName: macd_delta_12_26_9, Length: 1162368, dtype: float64",
+            "rolling_min": "0                  NaN\n1                  NaN\n2                  NaN\n3                  NaN\n4                  NaN\n              ...     \n1162363    3593.506104\n1162364    3593.506104\n1162365    3593.506104\n1162366    3593.506104\n1162367    3593.506104\nName: macd_delta_12_26_9, Length: 1162368, dtype: float64",
+            "rolling_max": "0                  NaN\n1                  NaN\n2                  NaN\n3                  NaN\n4                  NaN\n              ...     \n1162363    3596.638428\n1162364    3596.089600\n1162365    3595.742432\n1162366    3595.288086\n1162367    3594.987061\nName: macd_delta_12_26_9, Length: 1162368, dtype: float64",
+            "stability": 431.0451334287431,
+            "predictability": 434.15048410201825,
+            "information_content": 0.0012547792024956992,
+            "data_quality": {
+              "missing_ratio": 0.0,
+              "outlier_ratio": 0.018840782952012313,
+              "stationarity": 97959.85163381853,
+              "data_length": 1162368,
+              "lookback_coverage": 23247.36
+            }
+          }
+        }
+      }
+    }
+  },
+  "quality_metrics": {
+    "average_score": 0.8489717872417654,
+    "max_score": 0.8489717872417654,
+    "min_score": 0.8489717872417654,
+    "average_variance": "558469.94",
+    "average_correlation": 0.9999999999999999,
+    "average_information_content": 0.9948594646609732,
+    "average_uniqueness": 1.1102230246251565e-16,
+    "score_std": 0.0,
+    "total_features": 1
+  },
+  "diversity_metrics": {
+    "category_diversity": 1,
+    "aspect_diversity": 1,
+    "average_uniqueness": 1.1102230246251565e-16,
+    "min_uniqueness": 1.1102230246251565e-16,
+    "max_uniqueness": 1.1102230246251565e-16
+  },
+  "stability_metrics": {
+    "average_stability": 3013.2958434032653,
+    "min_stability": 3013.2958434032653,
+    "max_stability": 3013.2958434032653,
+    "average_predictability": 0.9999989430957075
+  },
+  "multi_objective_results": {
+    "selected_features": [
+      "macd_delta_12_26_9"
+    ],
+    "objective_values": {},
+    "pareto_front": [],
+    "optimization_metadata": {},
+    "is_valid": true,
+    "feature_scores": {},
+    "success": false,
+    "error_message": "'M1CPUOptimizer' object has no attribute 'optimize_series_cpu'"
+  },
+  "economic_validation": {
+    "economic_scores": {},
+    "validation_metrics": {},
+    "performance_stats": {
+      "total_evaluations": 0,
+      "successful_evaluations": 0,
+      "failed_evaluations": 0,
+      "total_execution_time": 0.0002601146697998047,
+      "backtest_operations": 0,
+      "vectorbt_operations": 0
+    },
+    "success": false,
+    "error_message": "No price data available for economic validation"
+  },
+  "vectorbt_optimizations": {
+    "performance_stats": {
+      "total_operations": 2,
+      "vectorbt_operations": 3,
+      "fallback_operations": 0,
+      "gpu_operations": 0,
+      "total_execution_time": 3.8575527667999268,
+      "memory_usage": 0.0
+    },
+    "success": true,
+    "error_message": null
+  },
+  "selected_features": [
+    "macd_delta_12_26_9"
+  ],
+  "feature_importance": {},
+  "rankings": []
+}

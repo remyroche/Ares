@@ -1,0 +1,77 @@
+# S/R Weight Optimization Configuration
+
+analyst:
+  unified_regime_classifier:
+    # Enable weight optimization
+    enable_weight_optimization: true
+    enable_dynamic_adjustment: true
+    
+    # Optimization settings
+    optimization_method: "optuna"  # Options: "optuna", "scipy", "grid"
+    n_trials: 100  # Number of optimization trials
+    validation_metric: "sharpe_ratio"  # Options: "accuracy", "profit", "sharpe_ratio"
+    
+    # Optimization frequency
+    optimization_frequency_hours: 24  # Re-optimize daily
+    min_data_for_optimization: 1000  # Minimum data points needed
+    
+    # Market regime detection
+    market_regime_lookback: 100  # Periods to analyze for regime
+    
+    # Weight bounds for optimization
+    # Each factor can vary within these bounds
+    weight_bounds:
+      return_magnitude: [0.1, 0.5]      # Most important factor
+      touch_count: [0.05, 0.3]          # Secondary importance
+      recency: [0.05, 0.3]              # Can vary by market
+      volume_confirmation: [0.05, 0.25]  # Supporting factor
+      success_rate: [0.1, 0.4]          # Very important for validation
+    
+    # Dynamic adjustment multipliers by regime
+    regime_adjustments:
+      trending:
+        recency: 1.2          # Recent levels more important
+        success_rate: 1.3     # Reliability crucial
+        touch_count: 0.8      # Fewer touches expected
+      ranging:
+        touch_count: 1.4      # Many touches expected
+        return_magnitude: 1.2  # Reversals stronger
+        recency: 0.8          # Older levels still valid
+      volatile:
+        volume_confirmation: 1.5  # Volume crucial
+        return_magnitude: 1.3    # Larger moves
+        touch_count: 0.7         # Levels break more
+    
+    # Volatility-based adjustments
+    volatility_adjustments:
+      high:  # > 80th percentile
+        volume_confirmation: 1.2
+        return_magnitude: 1.1
+      low:   # < 20th percentile
+        touch_count: 1.2
+        success_rate: 1.1
+    
+    # Model persistence
+    model_dir: "models/sr_weights"
+    
+# Optimization Process:
+#
+# 1. Initial Optimization:
+#    - Uses historical data to find optimal weight ratios
+#    - Tests different combinations using chosen method
+#    - Validates using selected metric (Sharpe ratio recommended)
+#
+# 2. Dynamic Adjustment:
+#    - Detects current market regime (trending/ranging/volatile)
+#    - Calculates volatility percentile
+#    - Adjusts weights based on conditions
+#
+# 3. Continuous Learning:
+#    - Re-optimizes every 24 hours (configurable)
+#    - Saves best weights to disk
+#    - Tracks optimization history
+#
+# Example Optimized Weights:
+# - Normal Market: {return_magnitude: 0.28, touch_count: 0.18, recency: 0.22, volume: 0.14, success: 0.18}
+# - Trending: {return_magnitude: 0.25, touch_count: 0.12, recency: 0.28, volume: 0.13, success: 0.22}
+# - Volatile: {return_magnitude: 0.35, touch_count: 0.10, recency: 0.20, volume: 0.20, success: 0.15}

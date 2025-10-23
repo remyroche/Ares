@@ -1,0 +1,320 @@
+# Multi-Output Stacking Ensemble Migration Configuration
+# Configuration for migrating from single-output to multi-output stacking ensemble models
+
+# Migration overview
+migration:
+  version: "1.0.0"
+  description: "Migration from single-output to multi-output stacking ensemble models"
+  target_models: ["analyst", "tactician"]
+  
+  # Migration phases
+  phases:
+    phase1:
+      name: "Core Infrastructure"
+      description: "Create core multi-output support files"
+      status: "completed"
+      components:
+        - "model_factory.py"
+        - "multi_output_models.py"
+        - "stacking_ensemble_manager.py"
+        - "stacking_confidence_calibration.py"
+    
+    phase2:
+      name: "Training Integration"
+      description: "Create training integration files"
+      status: "completed"
+      components:
+        - "stacking_ensemble_training.py"
+        - "stacking_model_training.py"
+    
+    phase3:
+      name: "ML Common Updates"
+      description: "Update existing ML common files"
+      status: "completed"
+      components:
+        - "ensemble_manager.py"
+        - "model_training.py"
+        - "confidence_metrics.py"
+        - "__init__.py"
+    
+    phase4:
+      name: "Training Pipeline Updates"
+      description: "Update training pipeline files"
+      status: "completed"
+      components:
+        - "training pipeline __init__.py"
+        - "simplified training components"
+    
+    phase5:
+      name: "Configuration Files"
+      description: "Create configuration files"
+      status: "in_progress"
+      components:
+        - "analyst_multi_output_config.yaml"
+        - "tactician_multi_output_config.yaml"
+        - "migration_config.yaml"
+    
+    phase6:
+      name: "Feature Engineering Updates"
+      description: "Update feature engineering for multi-output support"
+      status: "pending"
+      components:
+        - "interactive_feature_generation_component.py"
+        - "multi_timeframe_training_analysis.py"
+    
+    phase7:
+      name: "Training Configuration Updates"
+      description: "Update existing training configuration files"
+      status: "pending"
+      components:
+        - "advanced_trading_pipeline.yaml"
+        - "basic_ml_pipeline.yaml"
+
+# Data preparation settings
+data_preparation:
+  # Multi-output target generation
+  target_generation:
+    analyst:
+      signal_strength:
+        method: "price_momentum"
+        lookback_periods: [5, 10, 20]
+        threshold: 0.02
+      
+      confidence:
+        method: "volatility_based"
+        lookback_periods: [20, 50]
+        confidence_threshold: 0.8
+      
+      risk_score:
+        method: "drawdown_based"
+        lookback_periods: [50, 100]
+        risk_threshold: 0.05
+      
+      regime_label:
+        method: "hmm_based"
+        n_regimes: 3
+        lookback_periods: [100, 200]
+    
+    tactician:
+      entry_timing:
+        method: "momentum_based"
+        lookback_periods: [5, 10, 20]
+        momentum_threshold: 0.01
+      
+      position_size:
+        method: "kelly_criterion"
+        lookback_periods: [50, 100]
+        max_position_size: 0.1
+      
+      stop_loss:
+        method: "atr_based"
+        lookback_periods: [20, 50]
+        atr_multiplier: 2.0
+      
+      take_profit:
+        method: "risk_reward_ratio"
+        lookback_periods: [20, 50]
+        risk_reward_ratio: 2.0
+  
+  # Data validation
+  validation:
+    enable_data_quality_checks: true
+    enable_target_distribution_analysis: true
+    enable_correlation_analysis: true
+    enable_outlier_detection: true
+    
+    # Quality thresholds
+    thresholds:
+      min_samples: 1000
+      max_missing_ratio: 0.1
+      max_outlier_ratio: 0.05
+      min_correlation: 0.1
+
+# Model validation parameters
+model_validation:
+  # Performance thresholds
+  performance_thresholds:
+    analyst:
+      min_r2: 0.3
+      min_accuracy: 0.6
+      max_mse: 0.1
+      min_confidence: 0.7
+    
+    tactician:
+      min_r2: 0.4
+      min_accuracy: 0.65
+      max_mse: 0.08
+      min_confidence: 0.75
+  
+  # Cross-validation settings
+  cross_validation:
+    method: "time_series_split"
+    n_splits: 5
+    test_size: 0.2
+    enable_stratified_sampling: false
+  
+  # Model comparison
+  comparison:
+    enable_legacy_comparison: true
+    comparison_metrics: ["r2", "mae", "mse", "accuracy"]
+    enable_statistical_tests: true
+    significance_level: 0.05
+
+# Performance thresholds
+performance_thresholds:
+  # Training performance
+  training:
+    max_training_time_minutes: 60
+    max_memory_usage_gb: 16
+    min_training_samples: 1000
+  
+  # Prediction performance
+  prediction:
+    max_prediction_time_ms: 100
+    max_memory_usage_mb: 1000
+    min_confidence_threshold: 0.6
+  
+  # Model performance
+  model:
+    min_ensemble_performance: 0.7
+    max_performance_degradation: 0.1
+    min_individual_model_performance: 0.5
+
+# Migration strategy
+migration_strategy:
+  # Migration mode
+  mode: "gradual"  # gradual, immediate, hybrid
+  
+  # Gradual migration settings
+  gradual:
+    enable_ab_testing: true
+    ab_test_ratio: 0.1  # 10% of traffic to new models
+    ab_test_duration_days: 7
+    performance_comparison_threshold: 0.05
+  
+  # Immediate migration settings
+  immediate:
+    enable_rollback: true
+    rollback_threshold: 0.1  # rollback if performance drops by 10%
+    enable_monitoring: true
+  
+  # Hybrid migration settings
+  hybrid:
+    enable_model_switching: true
+    switch_threshold: 0.05
+    enable_ensemble_combination: true
+    combination_weight: 0.5
+
+# Monitoring and alerting
+monitoring:
+  # Performance monitoring
+  performance:
+    enable_real_time_monitoring: true
+    monitoring_interval_seconds: 60
+    enable_alerting: true
+    
+    # Alert thresholds
+    alerts:
+      performance_degradation: 0.1
+      high_memory_usage: 0.8
+      prediction_latency: 200  # ms
+      model_confidence: 0.5
+  
+  # Model monitoring
+  model:
+    enable_drift_detection: true
+    drift_threshold: 0.1
+    enable_retraining: true
+    retraining_threshold: 0.15
+    
+    # Retraining settings
+    retraining:
+      enable_automatic_retraining: true
+      retraining_interval_days: 7
+      min_retraining_samples: 1000
+      enable_incremental_learning: true
+
+# Rollback configuration
+rollback:
+  enable_automatic_rollback: true
+  rollback_triggers:
+    - "performance_degradation"
+    - "high_error_rate"
+    - "memory_overflow"
+    - "prediction_timeout"
+  
+  # Rollback thresholds
+  thresholds:
+    performance_degradation: 0.15
+    error_rate: 0.1
+    memory_usage: 0.9
+    prediction_timeout: 1000  # ms
+  
+  # Rollback process
+  process:
+    enable_gradual_rollback: true
+    rollback_steps: 3
+    step_duration_minutes: 5
+    enable_notification: true
+
+# Testing configuration
+testing:
+  # Unit testing
+  unit_tests:
+    enable_automated_testing: true
+    test_coverage_threshold: 0.8
+    enable_integration_tests: true
+  
+  # Integration testing
+  integration_tests:
+    enable_end_to_end_testing: true
+    test_data_size: 1000
+    enable_performance_testing: true
+  
+  # Load testing
+  load_tests:
+    enable_load_testing: true
+    max_concurrent_requests: 100
+    test_duration_minutes: 10
+    enable_stress_testing: true
+
+# Documentation and reporting
+documentation:
+  enable_auto_documentation: true
+  documentation_format: "markdown"
+  enable_api_documentation: true
+  enable_model_documentation: true
+  
+  # Reporting
+  reporting:
+    enable_performance_reports: true
+    report_frequency: "daily"
+    enable_comparison_reports: true
+    enable_migration_reports: true
+
+# Security and compliance
+security:
+  enable_model_encryption: true
+  enable_secure_storage: true
+  enable_access_logging: true
+  
+  # Compliance
+  compliance:
+    enable_audit_logging: true
+    enable_data_privacy: true
+    enable_model_explainability: true
+    enable_bias_detection: true
+
+# Backup and recovery
+backup:
+  enable_automatic_backup: true
+  backup_frequency: "daily"
+  backup_retention_days: 30
+  enable_incremental_backup: true
+  
+  # Recovery
+  recovery:
+    enable_automatic_recovery: true
+    recovery_time_objective_minutes: 30
+    enable_disaster_recovery: true
+    enable_cross_region_backup: true

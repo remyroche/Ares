@@ -1,0 +1,133 @@
+# Feature Selection Configuration
+# This file contains parameters for the VectorizedFeatureSelector to prevent over-aggressive feature removal
+
+feature_selection:
+  # Model-specific configurations
+  model_profiles:
+    AdvancedMambaHybrid:
+      target_features: 100
+      min_features: 80
+      max_features: 120
+      vif_threshold: 8.0              # More permissive for multi-timeframe fusion
+      vif_threshold_step2: 15.0       # Allow some multicollinearity
+      mutual_info_threshold: 0.002    # Moderate MI threshold for attention
+      lightgbm_importance_threshold: 0.002
+      correlation_threshold: 0.88     # More permissive correlation for fusion
+      cluster_corr_threshold: 0.85    # Allow more feature diversity
+      max_removal_percentage: 0.15    # Allow more aggressive removal
+      enable_interaction_features: true
+      priority_categories: ["momentum", "interaction", "microstructure", "temporal"]
+
+    FinancialResNet:
+      target_features: 120
+      min_features: 100
+      max_features: 150
+      vif_threshold: 12.0             # More restrictive for regime classification
+      vif_threshold_step2: 25.0       # Very high threshold for regime features
+      mutual_info_threshold: 0.001    # Lower MI threshold for comprehensive input
+      lightgbm_importance_threshold: 0.001
+      correlation_threshold: 0.95     # Tight correlation for clean regime detection
+      cluster_corr_threshold: 0.92    # Tight clustering for regime features
+      max_removal_percentage: 0.12    # Moderate removal
+      enable_regime_features: true
+      priority_categories: ["regime", "temporal", "volatility", "microstructure"]
+
+    DeepScaler:
+      target_features: 80
+      min_features: 60
+      max_features: 100
+      vif_threshold: 6.0              # Very restrictive for precision
+      vif_threshold_step2: 10.0       # Moderate for precision
+      mutual_info_threshold: 0.005    # Higher MI threshold for quality
+      lightgbm_importance_threshold: 0.005
+      correlation_threshold: 0.85     # Very tight correlation for clean features
+      cluster_corr_threshold: 0.90    # Tight clustering for precision
+      max_removal_percentage: 0.08    # Conservative removal for precision
+      enable_precision_filtering: true
+      priority_categories: ["statistical", "momentum", "volatility"]
+
+    NBEATS:
+      target_features: 70
+      min_features: 50
+      max_features: 80
+      vif_threshold: 8.0              # Moderate for time series
+      vif_threshold_step2: 12.0       # Allow some temporal correlation
+      mutual_info_threshold: 0.003    # Moderate MI for temporal modeling
+      lightgbm_importance_threshold: 0.003
+      correlation_threshold: 0.90     # Moderate correlation for time series
+      cluster_corr_threshold: 0.88    # Allow temporal feature groups
+      max_removal_percentage: 0.10    # Moderate removal for temporal
+      enable_temporal_filtering: true
+      priority_categories: ["temporal", "trend", "seasonality", "volatility"]
+
+  # Default settings (used when no model-specific profile is selected)
+  target_features: 80
+  min_features: 60
+  max_features: 100
+
+  # VIF (Variance Inflation Factor) threshold - higher values are more permissive
+  # This threshold is used for remaining features after PCA combination
+  vif_threshold: 10.0
+  # Optional distinct VIF threshold for Step 2 (if different policy is desired)
+  vif_threshold_step2: 20.0
+
+  # PCA combination settings for highly collinear features
+  pca_combination:
+    # High VIF threshold for PCA combination (only features above this will be combined)
+    high_vif_threshold: 20.0
+    # Correlation threshold for clustering features (features with correlation > 0.7 will be grouped)
+    correlation_threshold: 0.7
+    # Variance explained threshold for PCA components (95% of variance)
+    variance_explained_threshold: 0.95
+    # Scaling method for PCA preprocessing (standard, robust, minmax)
+    # Standard scaling (z-score) is recommended for PCA as it ensures features have zero mean and unit variance
+    scaling_method: "standard"
+
+  # Mutual information threshold - lower values are more permissive
+  mutual_info_threshold: 0.001
+
+  # LightGBM importance threshold - lower values are more permissive
+  lightgbm_importance_threshold: 0.001
+
+  # Minimum number of features to keep after selection
+  min_features_to_keep: 10
+
+  # Correlation threshold for removing highly correlated features
+  correlation_threshold: 0.98
+
+  # Cluster-based correlation pruning (reduces redundancy while keeping a representative)
+  cluster_corr_threshold: 0.95
+  # Maximum fraction of features to remove via cluster correlation pruning
+  cluster_corr_max_removal_fraction: 0.5
+
+  # Global safety cap for total removal at this stage (correlation + VIF)
+  max_total_removal_fraction: 0.5
+
+  # Maximum percentage of features to remove in a single step
+  # Optimized to allow reasonable feature removal while preventing over-aggressive filtering
+  max_removal_percentage: 0.1
+
+  # Whether to enable each selection method
+  enable_constant_removal: true
+  enable_correlation_removal: true
+  enable_vif_removal: true  # Re-enabled with new intelligent removal approach
+  enable_mutual_info_removal: true
+  enable_importance_removal: true
+  enable_regime_features: false
+  enable_interaction_features: false
+  enable_precision_filtering: false
+  enable_temporal_filtering: false
+
+  # Safety checks
+  enable_safety_checks: true
+  return_original_on_failure: true
+
+  # Optimized removal settings
+  # Allow small feature removals (up to this percentage) even if above max_removal_percentage
+  small_removal_allowance: 0.05  # 5% allowance for small beneficial removals
+
+  # Emergency override for perfect multicollinearity
+  # These settings will ALWAYS remove problematic features regardless of safety thresholds
+  emergency_override_perfect_correlation: true  # Always remove perfectly correlated features (r=1.000)
+  emergency_override_infinite_vif: true         # Always remove features with infinite VIF
+  emergency_override_zero_importance: true      # Always remove features with zero importance 

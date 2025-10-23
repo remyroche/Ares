@@ -1,0 +1,1477 @@
+{
+  "total_files": 481,
+  "files_analyzed": 44,
+  "total_functions": 672,
+  "functions_with_hints": 505,
+  "files_needing_hints": [
+    {
+      "file": "/workspace/src/tasks.py",
+      "total_functions": 3,
+      "functions_without_hints": [
+        {
+          "name": "run_monthly_training_pipeline",
+          "line": 34,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "run_training",
+          "line": 40,
+          "has_return_type": false,
+          "has_param_types": false,
+          "params": []
+        }
+      ],
+      "coverage": 0.33333333333333337
+    },
+    {
+      "file": "/workspace/src/ares_pipeline.py",
+      "total_functions": 18,
+      "functions_without_hints": [
+        {
+          "name": "main",
+          "line": 1102,
+          "has_return_type": false,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "initialize",
+          "line": 114,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "run",
+          "line": 449,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "get_pipeline_status",
+          "line": 903,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "stop",
+          "line": 955,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        }
+      ],
+      "coverage": 0.7222222222222222
+    },
+    {
+      "file": "/workspace/src/config.py",
+      "total_functions": 29,
+      "functions_without_hints": [
+        {
+          "name": "get_config",
+          "line": 55,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "get_environment_settings",
+          "line": 64,
+          "has_return_type": false,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "__post_init__",
+          "line": 113,
+          "has_return_type": false,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "initialize",
+          "line": 210,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "run",
+          "line": 347,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "stop",
+          "line": 452,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "get_status",
+          "line": 462,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "get_config_sections",
+          "line": 476,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "get_config_service",
+          "line": 480,
+          "has_return_type": false,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "get_dual_model_config",
+          "line": 485,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "get_ml_confidence_predictor_config",
+          "line": 489,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "get_position_sizing_config",
+          "line": 493,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "get_leverage_sizing_config",
+          "line": 497,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "get_position_closing_config",
+          "line": 501,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "get_position_division_config",
+          "line": 505,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "get_position_monitoring_config",
+          "line": 509,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "get_enhanced_training_config",
+          "line": 513,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "get_complete_config",
+          "line": 517,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        }
+      ],
+      "coverage": 0.3793103448275862
+    },
+    {
+      "file": "/workspace/src/config_optuna.py",
+      "total_functions": 18,
+      "functions_without_hints": [
+        {
+          "name": "get_sr_optimization_config",
+          "line": 493,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "get_hyperparameter_optimization_config",
+          "line": 498,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "get_optuna_config",
+          "line": 511,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "get_optimizable_parameters",
+          "line": 530,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "__post_init__",
+          "line": 138,
+          "has_return_type": false,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "__post_init__",
+          "line": 204,
+          "has_return_type": false,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "__post_init__",
+          "line": 295,
+          "has_return_type": false,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "get_strength_score_weights",
+          "line": 306,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "get_level_detection_params",
+          "line": 316,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "get_breakout_thresholds",
+          "line": 326,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "get_zone_multipliers",
+          "line": 334,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "get_confidence_thresholds",
+          "line": 342,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "__post_init__",
+          "line": 382,
+          "has_return_type": false,
+          "has_param_types": false,
+          "params": []
+        }
+      ],
+      "coverage": 0.2777777777777778
+    },
+    {
+      "file": "/workspace/src/monitoring/error_detection_system.py",
+      "total_functions": 2,
+      "functions_without_hints": [
+        {
+          "name": "initialize",
+          "line": 64,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        }
+      ],
+      "coverage": 0.5
+    },
+    {
+      "file": "/workspace/src/monitoring/tracking_system.py",
+      "total_functions": 2,
+      "functions_without_hints": [
+        {
+          "name": "initialize",
+          "line": 42,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        }
+      ],
+      "coverage": 0.5
+    },
+    {
+      "file": "/workspace/src/monitoring/correlation_manager.py",
+      "total_functions": 6,
+      "functions_without_hints": [
+        {
+          "name": "initialize",
+          "line": 77,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "list_requests",
+          "line": 127,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        }
+      ],
+      "coverage": 0.6666666666666667
+    },
+    {
+      "file": "/workspace/src/monitoring/report_scheduler.py",
+      "total_functions": 2,
+      "functions_without_hints": [
+        {
+          "name": "initialize",
+          "line": 79,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        }
+      ],
+      "coverage": 0.5
+    },
+    {
+      "file": "/workspace/src/monitoring/fractional_system_monitor.py",
+      "total_functions": 17,
+      "functions_without_hints": [
+        {
+          "name": "__init__",
+          "line": 23,
+          "has_return_type": false,
+          "has_param_types": true,
+          "params": [
+            "config"
+          ]
+        },
+        {
+          "name": "start_monitoring",
+          "line": 70,
+          "has_return_type": false,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "stop_monitoring",
+          "line": 76,
+          "has_return_type": false,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "track_performance",
+          "line": 83,
+          "has_return_type": false,
+          "has_param_types": true,
+          "params": [
+            "features",
+            "labels",
+            "hmm_regime",
+            "processing_time",
+            "error_occurred"
+          ]
+        },
+        {
+          "name": "get_performance_summary",
+          "line": 523,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "get_current_status",
+          "line": 578,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        }
+      ],
+      "coverage": 0.6470588235294117
+    },
+    {
+      "file": "/workspace/src/monitoring/enhanced_ml_tracker.py",
+      "total_functions": 2,
+      "functions_without_hints": [
+        {
+          "name": "initialize",
+          "line": 53,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        }
+      ],
+      "coverage": 0.5
+    },
+    {
+      "file": "/workspace/src/monitoring/performance_dashboard.py",
+      "total_functions": 2,
+      "functions_without_hints": [
+        {
+          "name": "initialize",
+          "line": 77,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        }
+      ],
+      "coverage": 0.5
+    },
+    {
+      "file": "/workspace/src/monitoring/integration_manager.py",
+      "total_functions": 2,
+      "functions_without_hints": [
+        {
+          "name": "initialize",
+          "line": 52,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        }
+      ],
+      "coverage": 0.5
+    },
+    {
+      "file": "/workspace/src/monitoring/performance_monitor.py",
+      "total_functions": 4,
+      "functions_without_hints": [
+        {
+          "name": "initialize",
+          "line": 75,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "latest_metrics",
+          "line": 84,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        }
+      ],
+      "coverage": 0.5
+    },
+    {
+      "file": "/workspace/src/monitoring/surrogate_optimization_monitor.py",
+      "total_functions": 19,
+      "functions_without_hints": [
+        {
+          "name": "__init__",
+          "line": 62,
+          "has_return_type": false,
+          "has_param_types": true,
+          "params": [
+            "config"
+          ]
+        },
+        {
+          "name": "get_performance_summary",
+          "line": 223,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "stop_monitoring",
+          "line": 495,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "__del__",
+          "line": 502,
+          "has_return_type": false,
+          "has_param_types": false,
+          "params": []
+        }
+      ],
+      "coverage": 0.7894736842105263
+    },
+    {
+      "file": "/workspace/src/monitoring/metrics_dashboard.py",
+      "total_functions": 3,
+      "functions_without_hints": [
+        {
+          "name": "initialize",
+          "line": 65,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        }
+      ],
+      "coverage": 0.6666666666666667
+    },
+    {
+      "file": "/workspace/src/monitoring/fractional_performance_tracker.py",
+      "total_functions": 12,
+      "functions_without_hints": [
+        {
+          "name": "__init__",
+          "line": 23,
+          "has_return_type": false,
+          "has_param_types": true,
+          "params": [
+            "config",
+            "output_dir"
+          ]
+        },
+        {
+          "name": "set_baseline_metrics",
+          "line": 81,
+          "has_return_type": false,
+          "has_param_types": true,
+          "params": [
+            "metrics"
+          ]
+        },
+        {
+          "name": "update_current_metrics",
+          "line": 91,
+          "has_return_type": false,
+          "has_param_types": true,
+          "params": [
+            "metrics"
+          ]
+        },
+        {
+          "name": "get_performance_summary",
+          "line": 310,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "get_alert_summary",
+          "line": 351,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        }
+      ],
+      "coverage": 0.5833333333333333
+    },
+    {
+      "file": "/workspace/src/monitoring/csv_exporter.py",
+      "total_functions": 5,
+      "functions_without_hints": [
+        {
+          "name": "initialize",
+          "line": 55,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        }
+      ],
+      "coverage": 0.8
+    },
+    {
+      "file": "/workspace/src/monitoring/regime_sr_tracker.py",
+      "total_functions": 2,
+      "functions_without_hints": [
+        {
+          "name": "initialize",
+          "line": 40,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        }
+      ],
+      "coverage": 0.5
+    },
+    {
+      "file": "/workspace/src/monitoring/advanced_tracer.py",
+      "total_functions": 8,
+      "functions_without_hints": [
+        {
+          "name": "initialize",
+          "line": 132,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "create_correlation_id",
+          "line": 142,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "get_traces_count",
+          "line": 188,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        }
+      ],
+      "coverage": 0.625
+    },
+    {
+      "file": "/workspace/src/monitoring/trade_conditions_monitor.py",
+      "total_functions": 2,
+      "functions_without_hints": [
+        {
+          "name": "initialize",
+          "line": 41,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        }
+      ],
+      "coverage": 0.5
+    },
+    {
+      "file": "/workspace/src/monitoring/ml_monitor.py",
+      "total_functions": 5,
+      "functions_without_hints": [
+        {
+          "name": "initialize",
+          "line": 103,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "list_alerts",
+          "line": 120,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        }
+      ],
+      "coverage": 0.6
+    },
+    {
+      "file": "/workspace/src/components/modular_analyst.py",
+      "total_functions": 41,
+      "functions_without_hints": [
+        {
+          "name": "initialize",
+          "line": 55,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "get_analyst_status",
+          "line": 841,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "stop",
+          "line": 870,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        }
+      ],
+      "coverage": 0.926829268292683
+    },
+    {
+      "file": "/workspace/src/components/modular_tactician.py",
+      "total_functions": 37,
+      "functions_without_hints": [
+        {
+          "name": "initialize",
+          "line": 58,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "get_tactician_status",
+          "line": 980,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "stop",
+          "line": 1009,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        }
+      ],
+      "coverage": 0.9189189189189189
+    },
+    {
+      "file": "/workspace/src/components/modular_supervisor.py",
+      "total_functions": 43,
+      "functions_without_hints": [
+        {
+          "name": "initialize",
+          "line": 61,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "get_supervisor_status",
+          "line": 1033,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "stop",
+          "line": 1062,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        }
+      ],
+      "coverage": 0.9302325581395349
+    },
+    {
+      "file": "/workspace/src/components/modular_strategist.py",
+      "total_functions": 37,
+      "functions_without_hints": [
+        {
+          "name": "initialize",
+          "line": 62,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "get_strategist_status",
+          "line": 989,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "stop",
+          "line": 1018,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        }
+      ],
+      "coverage": 0.9189189189189189
+    },
+    {
+      "file": "/workspace/src/interfaces/event_bus.py",
+      "total_functions": 17,
+      "functions_without_hints": [
+        {
+          "name": "initialize",
+          "line": 79,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "run",
+          "line": 150,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "stop",
+          "line": 236,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "get_status",
+          "line": 305,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "get_subscribers",
+          "line": 320,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        }
+      ],
+      "coverage": 0.7058823529411764
+    },
+    {
+      "file": "/workspace/src/interfaces/base_interfaces.py",
+      "total_functions": 39,
+      "functions_without_hints": [
+        {
+          "name": "get_account_info",
+          "line": 79,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "get_performance_summary",
+          "line": 121,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "generate_report",
+          "line": 125,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "start",
+          "line": 149,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "stop",
+          "line": 153,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "start",
+          "line": 180,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "stop",
+          "line": 184,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "get_strategy_performance",
+          "line": 198,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "start",
+          "line": 206,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "stop",
+          "line": 210,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "start",
+          "line": 236,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "stop",
+          "line": 240,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "monitor_performance",
+          "line": 244,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "manage_risk",
+          "line": 248,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "coordinate_components",
+          "line": 252,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "get_analyst",
+          "line": 260,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "get_strategist",
+          "line": 264,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "get_tactician",
+          "line": 268,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "promote_challenger_to_champion",
+          "line": 276,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        }
+      ],
+      "coverage": 0.5128205128205128
+    },
+    {
+      "file": "/workspace/src/trading/live_wavelet_analyzer.py",
+      "total_functions": 13,
+      "functions_without_hints": [
+        {
+          "name": "initialize",
+          "line": 85,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "get_performance_stats",
+          "line": 389,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "get_latest_signal",
+          "line": 419,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "clear_history",
+          "line": 423,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        }
+      ],
+      "coverage": 0.6923076923076923
+    },
+    {
+      "file": "/workspace/src/trading/live_wavelet_demo.py",
+      "total_functions": 12,
+      "functions_without_hints": [
+        {
+          "name": "main",
+          "line": 284,
+          "has_return_type": false,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "__init__",
+          "line": 29,
+          "has_return_type": false,
+          "has_param_types": true,
+          "params": [
+            "config_path"
+          ]
+        },
+        {
+          "name": "initialize",
+          "line": 50,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "stop_demo",
+          "line": 279,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        }
+      ],
+      "coverage": 0.6666666666666667
+    },
+    {
+      "file": "/workspace/src/trading/live_wavelet_integration.py",
+      "total_functions": 15,
+      "functions_without_hints": [
+        {
+          "name": "initialize",
+          "line": 51,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "get_performance_stats",
+          "line": 332,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "get_latest_signal",
+          "line": 369,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "is_healthy",
+          "line": 375,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "disable",
+          "line": 405,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "enable",
+          "line": 410,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "clear_history",
+          "line": 415,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        }
+      ],
+      "coverage": 0.5333333333333333
+    },
+    {
+      "file": "/workspace/src/trading/sr_trading_intelligence.py",
+      "total_functions": 18,
+      "functions_without_hints": [
+        {
+          "name": "__init__",
+          "line": 39,
+          "has_return_type": false,
+          "has_param_types": true,
+          "params": [
+            "config"
+          ]
+        },
+        {
+          "name": "initialize",
+          "line": 63,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "update_position",
+          "line": 407,
+          "has_return_type": false,
+          "has_param_types": true,
+          "params": [
+            "position_type",
+            "entry_price",
+            "size",
+            "timestamp"
+          ]
+        },
+        {
+          "name": "close_position",
+          "line": 438,
+          "has_return_type": false,
+          "has_param_types": true,
+          "params": [
+            "exit_price",
+            "timestamp"
+          ]
+        },
+        {
+          "name": "save_trading_history",
+          "line": 541,
+          "has_return_type": false,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "shutdown",
+          "line": 559,
+          "has_return_type": false,
+          "has_param_types": false,
+          "params": []
+        }
+      ],
+      "coverage": 0.6666666666666667
+    },
+    {
+      "file": "/workspace/src/supervisor/enhanced_prediction_service.py",
+      "total_functions": 16,
+      "functions_without_hints": [
+        {
+          "name": "__init__",
+          "line": 34,
+          "has_return_type": false,
+          "has_param_types": true,
+          "params": [
+            "config"
+          ]
+        },
+        {
+          "name": "initialize",
+          "line": 63,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "verify_all_models_probability_outputs",
+          "line": 608,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "check_service_health",
+          "line": 678,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "get_service_info",
+          "line": 708,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        }
+      ],
+      "coverage": 0.6875
+    },
+    {
+      "file": "/workspace/src/supervisor/performance_reporter.py",
+      "total_functions": 51,
+      "functions_without_hints": [
+        {
+          "name": "initialize",
+          "line": 430,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "run",
+          "line": 597,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "stop",
+          "line": 822,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "get_status",
+          "line": 831,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "get_latest_report",
+          "line": 857,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "get_real_time_metrics",
+          "line": 861,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        }
+      ],
+      "coverage": 0.8823529411764706
+    },
+    {
+      "file": "/workspace/src/supervisor/dynamic_weighter.py",
+      "total_functions": 59,
+      "functions_without_hints": [
+        {
+          "name": "initialize",
+          "line": 81,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "get_weighting_status",
+          "line": 1231,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "stop",
+          "line": 1507,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        }
+      ],
+      "coverage": 0.9491525423728814
+    },
+    {
+      "file": "/workspace/src/supervisor/enhanced_model_monitor.py",
+      "total_functions": 6,
+      "functions_without_hints": [
+        {
+          "name": "__init__",
+          "line": 105,
+          "has_return_type": false,
+          "has_param_types": true,
+          "params": [
+            "config",
+            "performance_monitor"
+          ]
+        },
+        {
+          "name": "initialize",
+          "line": 174,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        }
+      ],
+      "coverage": 0.6666666666666667
+    },
+    {
+      "file": "/workspace/src/supervisor/exchange_volume_adapter.py",
+      "total_functions": 16,
+      "functions_without_hints": [
+        {
+          "name": "initialize",
+          "line": 95,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "get_adaptation_summary",
+          "line": 416,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "cleanup",
+          "line": 466,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        }
+      ],
+      "coverage": 0.8125
+    },
+    {
+      "file": "/workspace/src/supervisor/main.py",
+      "total_functions": 13,
+      "functions_without_hints": [
+        {
+          "name": "__init__",
+          "line": 27,
+          "has_return_type": false,
+          "has_param_types": true,
+          "params": [
+            "symbol",
+            "exchange_name",
+            "exchange_client",
+            "state_manager",
+            "db_manager"
+          ]
+        },
+        {
+          "name": "start",
+          "line": 150,
+          "has_return_type": false,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "initialize",
+          "line": 337,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "run",
+          "line": 391,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "stop",
+          "line": 425,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "get_status",
+          "line": 434,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        }
+      ],
+      "coverage": 0.5384615384615384
+    },
+    {
+      "file": "/workspace/src/supervisor/risk_allocator.py",
+      "total_functions": 19,
+      "functions_without_hints": [
+        {
+          "name": "initialize",
+          "line": 55,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "run",
+          "line": 109,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "stop",
+          "line": 183,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "get_status",
+          "line": 192,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "get_risk_allocations",
+          "line": 201,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        }
+      ],
+      "coverage": 0.736842105263158
+    },
+    {
+      "file": "/workspace/src/supervisor/pnl_loss_functions.py",
+      "total_functions": 57,
+      "functions_without_hints": [
+        {
+          "name": "create_pnl_aware_loss",
+          "line": 8,
+          "has_return_type": false,
+          "has_param_types": false,
+          "params": [
+            "pnl_multiplier",
+            "liquidation_penalty",
+            "reward_boost"
+          ]
+        },
+        {
+          "name": "pnl_aware_loss",
+          "line": 20,
+          "has_return_type": false,
+          "has_param_types": false,
+          "params": [
+            "y_true",
+            "y_pred"
+          ]
+        },
+        {
+          "name": "initialize",
+          "line": 134,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "get_calculation_status",
+          "line": 1098,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        },
+        {
+          "name": "stop",
+          "line": 1122,
+          "has_return_type": true,
+          "has_param_types": false,
+          "params": []
+        }
+      ],
+      "coverage": 0.9122807017543859
+    }
+  ],
+  "overall_coverage": 0.7514880952380952
+}

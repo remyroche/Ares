@@ -1,0 +1,70 @@
+CODE ANALYSIS SUMMARY
+==================================================
+
+Project: code_quality
+Timestamp: 2025-09-03T15:23:36.539966
+
+MODULES ANALYZED:
+
+enhanced_validator.py:
+  - Lines: 653
+  - Functions: 33
+  - Classes: 6
+
+run_tests_with_mocks.py:
+  - Lines: 84
+  - Functions: 1
+  - Classes: 0
+
+visualize_interactions.py:
+  - Lines: 282
+  - Functions: 3
+  - Classes: 0
+
+run_real_subset_tests.py:
+  - Lines: 352
+  - Functions: 24
+  - Classes: 8
+
+integrated_validator.py:
+  - Lines: 309
+  - Functions: 7
+  - Classes: 1
+
+run_tests_simple.py:
+  - Lines: 71
+  - Functions: 3
+  - Classes: 0
+
+example_usage_extended.py:
+  - Lines: 246
+  - Functions: 6
+  - Classes: 0
+
+function_validator.py:
+  - Lines: 535
+  - Functions: 24
+  - Classes: 6
+
+test_pipeline.py:
+  - Lines: 119
+  - Functions: 2
+  - Classes: 0
+
+verify_test_setup.py:
+  - Lines: 58
+  - Functions: 1
+  - Classes: 0
+
+
+TOP COMPLEX FUNCTIONS:
+  visualize_interactions.py::visualize_code_interactions: complexity=11
+  enhanced_validator.py::_validate_function_call: complexity=8
+  example_usage_extended.py::example_error_reporting: complexity=6
+  enhanced_validator.py::_add_issue: complexity=5
+  enhanced_validator.py::_process_function: complexity=5
+  enhanced_validator.py::_validate_subscript_access: complexity=5
+  enhanced_validator.py::_track_null_checks: complexity=5
+  run_real_subset_tests.py::run_tests: complexity=4
+  integrated_validator.py::_generate_markdown_report: complexity=4
+  run_tests_simple.py::run_tests: complexity=4

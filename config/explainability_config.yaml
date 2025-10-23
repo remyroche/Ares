@@ -1,0 +1,243 @@
+# Explainability Configuration
+# This configuration enables SHAP/LIME explanations for all ML models
+# and provides trade decision traceability
+
+explainability:
+  # Global settings
+  enable_explanations: true
+  enable_decision_tracing: true
+  explanation_timeout: 30  # seconds
+  
+  # Storage paths
+  storage_path: "data/explanations"
+  traces_storage_path: "data/decision_traces"
+  
+  # SHAP settings
+  enable_shap: true
+  max_features: 20
+  
+  # LIME settings
+  enable_lime: true
+  
+  # Model-specific configurations
+  tactician:
+    explain_scenario_predictor: true
+    explain_position_sizer: true
+    explain_leverage_sizer: true
+    
+  sr:
+    explain_level_detection: true
+    explain_breakout_prediction: true
+    explain_level_quality: true
+    explain_strength_calculation: true
+    
+  analyst:
+    explain_regime_classifier: true
+    explain_location_classifier: true
+    explain_ensemble_prediction: true
+    explain_confidence_prediction: true
+  
+  # Integration settings
+  integration:
+    auto_register_models: true
+    auto_trace_decisions: true
+    explanation_timeout: 30
+  
+  # Visualization settings
+  visualization:
+    output_path: "data/visualizations"
+    enable_matplotlib: true
+    enable_plotly: true
+    
+    # Style configuration
+    style:
+      figure_size: [12, 8]
+      dpi: 300
+      colors:
+        positive: "#2E8B57"      # Sea Green
+        negative: "#DC143C"      # Crimson
+        neutral: "#4682B4"       # Steel Blue
+        background: "#F8F8FF"    # Ghost White
+        text: "#2F4F4F"          # Dark Slate Gray
+        tactician: "#FF6B6B"     # Red
+        sr: "#45B7D1"            # Blue
+        analyst: "#96CEB4"       # Green
+        risk: "#FF8C94"          # Light Red
+        opportunity: "#98D8C8"   # Light Green
+
+# Feature groups for better interpretation
+feature_groups:
+  tactician:
+    market_conditions:
+      - volatility
+      - volume
+      - price_momentum
+      - trend_strength
+    technical_indicators:
+      - rsi
+      - macd
+      - bb_position
+      - atr
+      - adx
+    regime_factors:
+      - regime_probability
+      - regime_confidence
+      - regime_transition_prob
+    sr_factors:
+      - sr_proximity
+      - sr_strength
+      - sr_breakout_probability
+    risk_factors:
+      - liquidation_risk
+      - correlation_risk
+      - volatility_risk
+    scenario_factors:
+      - scenario_probability
+      - scenario_confidence
+      - scenario_dominance
+  
+  sr:
+    price_features:
+      - close
+      - open
+      - high
+      - low
+      - price_momentum
+      - price_volatility
+    volume_features:
+      - volume
+      - volume_ratio
+      - volume_momentum
+      - volume_at_level
+    level_features:
+      - level_price
+      - level_age
+      - touch_count
+      - bounce_rate
+      - isolation_score
+    technical_indicators:
+      - rsi
+      - macd
+      - bb_position
+      - atr
+      - adx
+      - stochastic
+    market_structure:
+      - support_levels_count
+      - resistance_levels_count
+      - level_density
+    breakout_features:
+      - breakout_probability
+      - breakout_confidence
+      - time_to_breakout
+    quality_features:
+      - level_strength
+      - level_confidence
+      - level_reliability
+  
+  analyst:
+    price_features:
+      - close
+      - open
+      - high
+      - low
+      - log_returns
+      - price_momentum
+    volume_features:
+      - volume
+      - volume_ratio
+      - volume_momentum
+      - volume_volatility
+    volatility_features:
+      - volatility_20
+      - volatility_5
+      - atr
+      - bb_width
+      - volatility_regime
+    technical_indicators:
+      - rsi
+      - macd
+      - macd_signal
+      - macd_histogram
+      - bb_position
+      - adx
+    regime_features:
+      - regime_probability
+      - regime_confidence
+      - regime_persistence
+    location_features:
+      - location_probability
+      - location_confidence
+      - location_stability
+    ensemble_features:
+      - ensemble_agreement
+      - ensemble_confidence
+      - ensemble_diversity
+    market_health:
+      - market_health_score
+      - liquidation_risk
+      - correlation_risk
+
+# Model types and categories
+model_types:
+  regime_types:
+    - BULL
+    - BEAR
+    - SIDEWAYS
+    - VOLATILE
+    - TRANSITION
+  
+  location_types:
+    - TOP
+    - BOTTOM
+    - MIDDLE
+    - TRANSITION
+  
+  level_types:
+    - support
+    - resistance
+    - dynamic_support
+    - dynamic_resistance
+  
+  decision_types:
+    - entry
+    - exit
+    - position_size
+    - leverage
+    - stop_loss
+    - take_profit
+
+# Performance and monitoring
+monitoring:
+  enable_performance_tracking: true
+  log_explanation_times: true
+  log_decision_trace_times: true
+  cleanup_old_files_days: 30
+  
+  # Metrics to track
+  metrics:
+    - explanation_generation_time
+    - decision_trace_time
+    - model_prediction_time
+    - feature_extraction_time
+    - visualization_generation_time
+
+# Dependencies and requirements
+dependencies:
+  required:
+    - numpy
+    - pandas
+    - scikit-learn
+  
+  optional:
+    - shap
+    - lime
+    - matplotlib
+    - plotly
+    - seaborn
+  
+  # Fallback behavior when optional dependencies are missing
+  fallback_behavior:
+    disable_shap: false
+    disable_lime: false
+    disable_visualization: false

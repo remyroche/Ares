@@ -1,0 +1,84 @@
+{
+  "stage": "data_collection",
+  "sub_pipeline": "data_monitoring",
+  "timestamp": "2025-10-01T18:05:51.690784",
+  "status": "completed",
+  "output_files": [],
+  "metadata": {
+    "mode": "full",
+    "symbol": "ETHUSDT",
+    "exchange": "binance",
+    "timeframe": "1m"
+  },
+  "artifacts": {
+    "monitoring_reports": [],
+    "monitoring_metrics": {
+      "status": "healthy",
+      "uptime": "99.9%",
+      "data_freshness": "current",
+      "file_count": 1009,
+      "total_size_mb": 1129.2844686508179
+    },
+    "alerts": [
+      "Large data size: 1129.28 MB"
+    ]
+  },
+  "config": {
+    "symbol": "ETHUSDT",
+    "exchange": "binance",
+    "timeframe": "1m",
+    "mode": "full",
+    "intensity_percentage": 1.0,
+    "training_mode_config": {
+      "name": "full",
+      "description": "Production mode - Complete training with full dataset",
+      "lookback_days": 1460,
+      "lookback_years": 4,
+      "intensity_percentage": 1.0,
+      "computational_intensity": "high",
+      "estimated_duration_minutes": 240,
+      "max_trials": 200,
+      "n_trials": 100,
+      "monte_carlo_samples": 10000,
+      "ab_test_rounds": 10,
+      "optuna_trials": 200,
+      "optuna_timeout": 3600,
+      "batch_size": 4096,
+      "epochs": 100,
+      "early_stopping_patience": 20,
+      "cross_validation_folds": 5,
+      "enable_parallelization": true,
+      "enable_caching": true,
+      "enable_advanced_features": true,
+      "enable_ensemble_training": true,
+      "enable_multi_timeframe_training": true,
+      "enable_adaptive_training": true
+    }
+  },
+  "next_stage_requirements": {
+    "required_files": [
+      "processed_data.parquet",
+      "data_quality_report.json",
+      "exported_data.parquet"
+    ],
+    "required_artifacts": [
+      "data_metadata",
+      "quality_metrics",
+      "integration_results"
+    ],
+    "data_dependencies": [],
+    "next_stage": "market_analysis",
+    "sub_pipelines": [
+      "data_download",
+      "data_conversion",
+      "data_validation",
+      "data_preparation",
+      "feature_engineering",
+      "data_quality_check",
+      "data_storage",
+      "data_monitoring",
+      "data_integration",
+      "data_export"
+    ]
+  }
+}

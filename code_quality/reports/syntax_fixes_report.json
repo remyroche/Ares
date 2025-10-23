@@ -1,0 +1,9 @@
+{
+  "dry_run": true,
+  "files_with_errors": 176,
+  "error_types": {
+    "invalid syntax": 102,
+    "expected 'except' or 'finally' block": 45,
+    "unexpected indent": 29
+  }
+}

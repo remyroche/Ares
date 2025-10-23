@@ -1,0 +1,243 @@
+# Tactician T1-T4 Model Configuration
+# Configuration for specialized Tactician models (T1-T3 tree-based, T4 sequence-based)
+# Fed on all tabular + regime + Analyst outputs + PatchTST embeddings
+
+# Basic configuration
+tactician_t1_t4_config:
+  model_name: "tactician_t1_t4_ensemble"
+  timeframe: "1m"
+  horizon_h: 1  # Prediction horizon in minutes
+
+  # Input configuration
+  inputs:
+    tabular_features: true
+    regime_features: true
+    analyst_outputs: true
+    patchtst_embeddings: true
+
+  # T1-T3: PatchTST-Enhanced Tree Models
+  tree_models:
+    # T1: PatchTST-Embed + LightGBM (tree, binary/tri-class)
+    t1_lightgbm:
+      model_type: "PatchTSTLightGBM"
+      task: "classification"  # up/down/none or two binaries
+      loss_function: "softmax"  # multi-class or BCE for two-head
+      monotone_constraints: true  # Add monotone constraints for certain features
+      params:
+        n_estimators: 2000
+        learning_rate: 0.05
+        max_depth: 8
+        num_leaves: 63
+        subsample: 0.8
+        colsample_bytree: 0.8
+        random_state: 42
+        monotone_constraints: [1, 1, 1, 0, 0, -1, -1, 1, 0, 0]  # Example: positive for price features, negative for volatility
+        monotone_constraints_method: "advanced"  # Use advanced monotone constraints
+        verbosity: -1
+
+    # T2: PatchTST-Embed + XGBoost LambdaMART (tree, ranking)
+    t2_xgboost_lambdamart:
+      model_type: "PatchTSTXGBoostLambdaMART"
+      task: "ranking"  # pairwise ranking of candidate bars/windows by trade desirability
+      objective: "rank:pairwise"  # LambdaMART for ranking
+      monotone_constraints: true
+      params:
+        n_estimators: 2000
+        learning_rate: 0.05
+        max_depth: 8
+        subsample: 0.8
+        colsample_bytree: 0.8
+        random_state: 42
+        monotone_constraints: [1, 1, 1, 0, 0, -1, -1, 1, 0, 0]  # Example: positive for price features, negative for volatility
+        monotone_constraints_method: "advanced"
+        lambda: 0.1  # LambdaMART regularization
+        alpha: 0.1   # LambdaMART regularization
+        verbosity: 0
+
+    # T3: PatchTST-Embed + CatBoost (tree)
+    t3_catboost:
+      model_type: "PatchTSTCatBoost"
+      task: "binary"  # binary up_hit@H and down_hit@H (two models), or multi-class
+      loss_function: "BCE"  # BCE for two-head binary classification
+      monotone_constraints: true
+      params:
+        iterations: 2000
+        learning_rate: 0.05
+        depth: 8  # 6-8 as specified
+        random_seed: 42
+        verbose: false
+        monotone_constraints: [1, 1, 1, 0, 0, -1, -1, 1, 0, 0]  # Example constraints
+        ordered_boosting: true  # Enable ordered boosting for better convergence
+
+  # T4: Sequence Model (Causal Dilated TCN or TFT-Small)
+  sequence_model:
+    # T4: Causal Dilated TCN (sequence classifier/regressor)
+    t4_tcn:
+      model_type: "CausalDilatedTCN"
+      task: "multi_label"  # P(up_hit@H), P(down_hit@H) or regression for E[ret_H]
+      config:
+        residual_blocks: 8  # 6-8 residual blocks
+        channels: 64
+        kernel_size: 3
+        dilations: [1, 2, 4, 8, 16, 32, 64]  # 1..64 dilations
+        dropout: 0.1
+        use_batch_norm: true
+        activation: "relu"
+
+    # Alternative: TFT-Small
+    t4_tft_small:
+      model_type: "TFTSmall"
+      task: "regression"  # E[ret_H] or ordinal classification
+      config:
+        hidden_size: 64
+        attention_heads: 4
+        dropout: 0.1
+        num_layers: 3
+        use_time_features: true
+        use_static_features: true
+
+  # PatchTST Embedding Configuration
+  patchtst_config:
+    patch_len: 16
+    stride: 8
+    use_transformer_attention: true
+    regime_aware: true
+    attention_dropout: 0.1
+    num_heads: 4
+    sign_dropout_rate: 0.0
+    sign_threshold: 0.2
+    embedding_dim: 128
+
+  # Training configuration
+  training:
+    enable_cross_validation: true
+    cv_folds: 5
+    enable_early_stopping: true
+    early_stopping_patience: 20
+    validation_split: 0.2
+    test_split: 0.1
+
+    # Loss functions
+    loss_functions:
+      classification_softmax: "softmax"  # multi-class classification
+      classification_bce: "binary_crossentropy"  # two-head binary classification
+      ranking_pairwise: "rank:pairwise"  # LambdaMART ranking
+
+  # Feature engineering
+  feature_engineering:
+    enable_cross_timeframe_features: true
+    cross_timeframe_periods: [5, 15, 30, 60]  # minutes
+    enable_regime_features: true
+    enable_technical_indicators: true
+    enable_market_microstructure: true
+    enable_orderbook_features: true
+
+    # Feature selection for tree models
+    tree_feature_selection:
+      method: "lasso"
+      alpha: 0.005
+      max_features: 150
+      enable_recursive_elimination: true
+
+  # Monotone constraints configuration
+  monotone_constraints:
+    # Define which features should have monotone constraints
+    # 1: increasing, -1: decreasing, 0: no constraint
+    feature_monotones:
+      # Price-related features (should increase with price)
+      close_price: 1
+      open_price: 1
+      high_price: 1
+      low_price: 1
+
+      # Volume features (should increase with volume)
+      volume: 1
+      quote_asset_volume: 1
+
+      # Volatility features (should decrease with stability)
+      volatility_10: -1
+      volatility_30: -1
+
+      # Technical indicators
+      rsi: 0  # No constraint
+      macd: 0  # No constraint
+      bollinger_position: 0  # No constraint
+
+    # Advanced monotone constraints method
+    advanced_method: true
+    constraint_strength: 0.8  # How strictly to enforce constraints
+
+  # Model evaluation
+  evaluation:
+    metrics:
+      classification: ["accuracy", "precision", "recall", "f1", "auc"]
+      ranking: ["ndcg", "map", "mrr"]
+      regression: ["mse", "mae", "r2", "mape"]
+
+    # Cross-validation
+    cross_validation:
+      method: "time_series_split"
+      n_splits: 5
+      test_size: 0.2
+
+  # Hardware optimization
+  hardware:
+    enable_gpu_acceleration: true
+    enable_memory_optimization: true
+    enable_parallel_processing: true
+    memory_limit_gb: 8.0
+    max_workers: null
+
+  # Output settings
+  output:
+    save_models: true
+    save_predictions: true
+    generate_reports: true
+    output_dir: "./tactician_t1_t4_models"
+
+# Task-specific configurations
+task_configs:
+  # Classification task (T1, T3)
+  classification:
+    num_classes: 3  # up/down/none or two binaries
+    class_labels: ["down", "none", "up"]
+    binary_heads: ["up_hit", "down_hit"]  # For two-head binary classification
+    threshold: 0.5  # Classification threshold
+
+  # Ranking task (T2)
+  ranking:
+    group_column: "day_asset"  # Form groups by day/asset
+    label_column: "realized_pnl"  # Label by realized payoff
+    ranking_objective: "pairwise"  # Pairwise ranking objective
+
+  # Sequence task (T4)
+  sequence:
+    sequence_length: 100  # Input sequence length
+    prediction_horizon: 1  # H periods ahead
+    output_mode: "multi_label"  # or "regression"
+
+# Integration with existing Analyst system
+analyst_integration:
+  enable_analyst_input: true
+  analyst_model_path: "./analyst_models"
+  analyst_output_names: ["signal_strength", "confidence", "risk_score", "regime_label"]
+  analyst_threshold: 0.6  # Minimum analyst confidence to use outputs
+
+  # Feature integration weights
+  feature_weights:
+    tabular: 0.4
+    regime: 0.2
+    analyst: 0.3
+    patchtst: 0.1
+
+# Performance monitoring
+performance_monitoring:
+  enable_real_time_monitoring: true
+  logging_level: "INFO"
+  metrics_update_interval: 100  # Update metrics every 100 predictions
+
+  # Alert thresholds
+  alert_thresholds:
+    accuracy_drop: 0.05  # Alert if accuracy drops by 5%
+    feature_drift: 0.1    # Alert if feature drift exceeds 10%
+    model_degradation: 0.1  # Alert if model performance degrades by 10%

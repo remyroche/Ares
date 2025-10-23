@@ -1,0 +1,66 @@
+# Cursor Rules - File Protection
+
+## File and Folder Deletion Protection
+
+### IMPORTANT: File Deletion Restrictions
+- **NEVER** delete any files or folders without explicit user permission
+- **ALWAYS** ask for confirmation before deleting any files, even if they appear to be temporary or generated
+- **NEVER** suggest or execute commands that could result in file deletion (rm, del, etc.) without explicit approval
+- **ALWAYS** preserve the existing project structure unless specifically instructed to modify it
+
+### Protected File Types
+- All Python files (*.py)
+- All configuration files (*.yaml, *.yml, *.json, *.toml, *.ini, *.cfg)
+- All documentation files (*.md, *.txt, *.rst)
+- All data files (*.csv, *.parquet, *.json, *.pkl)
+- All log files (*.log)
+- All model files (*.pkl, *.joblib, *.h5, *.onnx)
+- All source code files in any language
+- All project structure directories
+
+### Safe Operations
+- You MAY read files to understand the codebase
+- You MAY create new files when explicitly requested
+- You MAY modify existing files when explicitly requested
+- You MAY suggest file operations but MUST wait for explicit approval
+
+### Required Confirmation
+Before any file deletion operation, you MUST:
+1. Clearly state which files/folders will be deleted
+2. Explain why the deletion is necessary
+3. Wait for explicit user approval
+4. Provide alternative solutions when possible
+
+### Emergency Override
+Only proceed with file deletion if the user explicitly states:
+- "Yes, delete these files"
+- "I approve the deletion"
+- "Go ahead and delete"
+
+### Project-Specific Protections
+- Protect all files in the `src/` directory
+- Protect all configuration files in `config/` directories
+- Protect all model files in `models/` and `test_models/` directories
+- Protect all data files in `data/` and `data_cache/` directories
+- Protect all log files in `log/` directories
+- Protect all documentation in `docs/` directory
+- Protect all files in `data_cache/` directories
+
+### Directory Access Restrictions
+- **ONLY** work within the following directories:
+  - `/Users/remyroche/Documents/Ares`
+  - `/Users/remyroche/Documents/MaisonTruvra`
+- **NEVER** access, modify, or suggest operations on files outside these directories
+- **NEVER** execute commands that could affect files outside the allowed directories
+- **ALWAYS** verify the target directory before performing any file operations
+
+### Code Generation Guidelines
+- When generating code, prefer creating new files over modifying existing ones
+- When modifying existing files, preserve all existing functionality unless explicitly told to remove it
+- Always maintain backward compatibility unless explicitly instructed otherwise
+- Document any changes made to existing files
+
+### Error Handling
+- If you encounter files that appear to be corrupted or problematic, suggest investigation rather than deletion
+- Always provide options for backup before any destructive operations
+- Suggest safe alternatives to deletion (e.g., renaming, archiving, moving to backup location)

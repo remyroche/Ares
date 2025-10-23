@@ -1,0 +1,301 @@
+# Analyst Multi-Output Configuration
+# Configuration for Analyst (5m) multi-output stacking ensemble models
+# Fed on all features + HMM inputs for trading opportunity detection
+
+# Basic configuration
+analyst_config:
+  model_name: "analyst_multi_output"
+  timeframe: "15m"
+  n_outputs: 4
+  output_names: ["signal_strength", "confidence", "risk_score", "regime_label"]
+
+  # Model configuration - Updated for trading opportunity detection
+  base_models:
+    deepscaler:
+      model_type: "DeepScaler"
+      params:
+        n_layers: 4
+        n_units: 64
+        dropout: 0.2
+        l2_regularization: 0.01
+        activation: "relu"
+        batch_size: 32
+        epochs: 100
+        early_stopping_patience: 15
+
+    catboost:
+      model_type: "CatBoostRegressor"
+      params:
+        iterations: 1000
+        learning_rate: 0.1
+        depth: 6
+        l2_leaf_reg: 3.0
+        random_seed: 42
+        verbose: false
+
+    xgboost:
+      model_type: "XGBRegressor"
+      params:
+        n_estimators: 1000
+        learning_rate: 0.1
+        max_depth: 6
+        subsample: 0.8
+        colsample_bytree: 0.8
+        random_state: 42
+        n_jobs: -1
+
+    nbeats:
+      model_type: "NBEATS"
+      params:
+        forecast_length: 1
+        backcast_length: 100
+        stack_types: ["trend", "seasonality"]
+        n_blocks: [3, 3]
+        n_layers: [4, 4]
+        layer_widths: [256, 2048]
+        dropout: 0.1
+        l2_regularization: 0.001
+        batch_size: 64
+        epochs: 100
+        regime_aware_training: true
+        regime_feature_integration: true
+  
+  # Meta model configuration - AdvancedMambaHybrid for multi-timeframe fusion
+  meta_models:
+    signal_strength:
+      model_type: "AdvancedMambaHybrid"
+      params:
+        mamba_layers: 2
+        conv_layers: 4
+        attention_heads: 8
+        hidden_dim: 128
+        state_expansion: 4
+        multi_timeframe_fusion: true
+        dropout: 0.1
+        activation: "GELU"
+        batch_size: 64
+        epochs: 100
+        l2_regularization: 0.01
+        early_stopping_patience: 20
+
+    confidence:
+      model_type: "AdvancedMambaHybrid"
+      params:
+        mamba_layers: 2
+        conv_layers: 4
+        attention_heads: 8
+        hidden_dim: 128
+        state_expansion: 4
+        multi_timeframe_fusion: true
+        dropout: 0.1
+        activation: "GELU"
+        batch_size: 64
+        epochs: 100
+        l2_regularization: 0.01
+        early_stopping_patience: 20
+
+    risk_score:
+      model_type: "AdvancedMambaHybrid"
+      params:
+        mamba_layers: 2
+        conv_layers: 4
+        attention_heads: 8
+        hidden_dim: 128
+        state_expansion: 4
+        multi_timeframe_fusion: true
+        dropout: 0.1
+        activation: "GELU"
+        batch_size: 64
+        epochs: 100
+        l2_regularization: 0.01
+        early_stopping_patience: 20
+
+    regime_label:
+      model_type: "AdvancedMambaHybrid"
+      params:
+        mamba_layers: 2
+        conv_layers: 4
+        attention_heads: 8
+        hidden_dim: 128
+        state_expansion: 4
+        multi_timeframe_fusion: true
+        dropout: 0.1
+        activation: "GELU"
+        batch_size: 64
+        epochs: 100
+        l2_regularization: 0.01
+        early_stopping_patience: 20
+  
+  # Training configuration
+  training:
+    enable_cross_validation: true
+    cv_folds: 5
+    enable_early_stopping: true
+    early_stopping_patience: 10
+    validation_split: 0.2
+    test_split: 0.1
+  
+  # Stacking configuration
+  stacking:
+    method: "blending"
+    enable_meta_learning: true
+    meta_learning_rate: 0.01
+    meta_learning_iterations: 1000
+  
+  # Multi-output specific settings
+  multi_output:
+    output_weights: [0.3, 0.25, 0.25, 0.2]  # signal_strength, confidence, risk_score, regime_label
+    output_loss_weights: [1.0, 1.0, 1.0, 1.0]
+    enable_output_correlation: true
+    correlation_threshold: 0.7
+  
+  # M1 optimization settings
+  hardware:
+    enable_gpu_acceleration: true
+    enable_memory_optimization: true
+    enable_parallel_processing: true
+    memory_limit_gb: 8.0
+    max_workers: null
+  
+  # Performance settings
+  performance:
+    enable_caching: true
+    cache_size_mb: 100
+    enable_profiling: false
+  
+  # Output settings
+  output:
+    save_models: true
+    save_predictions: true
+    generate_reports: true
+    output_dir: "./analyst_models"
+
+# Feature engineering configuration
+feature_engineering:
+  enable_cross_timeframe_features: true
+  cross_timeframe_periods: [1, 5, 15, 30, 60]  # minutes
+  enable_regime_features: true
+  enable_technical_indicators: true
+  enable_market_microstructure: true
+  
+  # Feature selection
+  feature_selection:
+    method: "lasso"
+    alpha: 0.01
+    max_features: 100
+    enable_recursive_elimination: true
+  
+  # Feature scaling
+  scaling:
+    method: "robust"
+    enable_outlier_handling: true
+    outlier_threshold: 3.0
+
+# Data preparation configuration
+data_preparation:
+  # Time series specific
+  time_series:
+    enable_temporal_features: true
+    lookback_window: 100
+    forecast_horizon: 1
+    
+  # Multi-output target generation
+  target_generation:
+    signal_strength:
+      method: "price_momentum"
+      lookback_periods: [5, 10, 20]
+      threshold: 0.02
+    
+    confidence:
+      method: "volatility_based"
+      lookback_periods: [20, 50]
+      confidence_threshold: 0.8
+    
+    risk_score:
+      method: "drawdown_based"
+      lookback_periods: [50, 100]
+      risk_threshold: 0.05
+    
+    regime_label:
+      method: "hmm_based"
+      n_regimes: 3
+      lookback_periods: [100, 200]
+
+# Model evaluation configuration
+evaluation:
+  metrics:
+    regression: ["mse", "mae", "r2", "mape"]
+    classification: ["accuracy", "precision", "recall", "f1"]
+  
+  # Cross-validation
+  cross_validation:
+    method: "time_series_split"
+    n_splits: 5
+    test_size: 0.2
+  
+  # Model comparison
+  comparison:
+    enable_model_ranking: true
+    ranking_metric: "r2"
+    enable_feature_importance: true
+    enable_model_explanations: true
+
+# Confidence calibration configuration
+confidence_calibration:
+  enable_calibration: true
+  methods: ["platt_scaling", "isotonic_regression"]
+  enable_temperature_scaling: true
+  enable_histogram_binning: true
+  enable_bayesian_calibration: true
+  
+  # Calibration parameters
+  platt_scaling:
+    learning_rate: 0.01
+    max_iterations: 1000
+    convergence_threshold: 1e-6
+  
+  isotonic_regression:
+    out_of_bounds: "clip"
+    increasing: true
+  
+  temperature_scaling:
+    temperature_range: [0.1, 10.0]
+    optimization_method: "lbfgs"
+  
+  histogram_binning:
+    bin_count: 10
+    bin_strategy: "uniform"
+  
+  bayesian_calibration:
+    prior_strength: 1.0
+    mcmc_samples: 1000
+    burn_in_samples: 100
+
+# Logging and monitoring configuration
+logging:
+  level: "INFO"
+  enable_detailed_logging: true
+  log_predictions: true
+  log_performance_metrics: true
+  log_feature_importance: true
+  
+  # Logging intervals
+  intervals:
+    training_progress: 100  # log every 100 iterations
+    prediction_summary: 1000  # log every 1000 predictions
+    performance_update: 5000  # log every 5000 samples
+
+# Migration configuration
+migration:
+  enable_legacy_support: true
+  migration_mode: "gradual"  # gradual, immediate, hybrid
+  fallback_to_legacy: true
+  enable_performance_comparison: true
+  
+  # Migration steps
+  steps:
+    - "validate_data_compatibility"
+    - "train_new_models"
+    - "compare_performance"
+    - "gradual_rollout"
+    - "full_migration"

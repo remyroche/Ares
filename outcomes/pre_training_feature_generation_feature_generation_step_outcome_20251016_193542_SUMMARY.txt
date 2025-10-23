@@ -1,0 +1,27 @@
+================================================================================
+  FEATURE GENERATION FEATURE GENERATION STEP - EXECUTION SUMMARY
+================================================================================
+
+📋 CONFIGURATION
+   Symbol:          ETHUSDT
+   Exchange:        binance
+   Timeframe:       15m
+   Mode:            light
+   Direction:       longs
+   Intensity:       0.5
+
+📊 EXECUTION STATUS
+   Status:          failed
+   Timestamp:       2025-10-16T19:35:42.069726
+
+➡️  NEXT STAGE REQUIREMENTS
+   Required Files: labels.parquet, features.parquet
+   Required Artifacts: feature_metadata
+   Sub-pipelines: feature_lookback_optimization, interactive_feature_generation, final_feature_selection
+
+================================================================================
+✅ FEATURE GENERATION FEATURE GENERATION STEP COMPLETED SUCCESSFULLY
+================================================================================
+
+📄 JSON Details: pre_training_feature_generation_feature_generation_step_outcome_20251016_193542.json
+📄 This Summary: pre_training_feature_generation_feature_generation_step_outcome_20251016_193542_SUMMARY.txt

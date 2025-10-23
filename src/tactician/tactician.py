@@ -1,0 +1,660 @@
+from src.core.decorators import handles_errors
+from src.utils.logger import system_logger
+import numpy as np
+import pandas as pd
+
+'Tactician module for trading strategy execution.'
+from datetime import datetime
+from typing import Any, Dict
+from src.utils.warning_symbols import failed, invalid, missing
+import logging
+import time
+
+class Tactician:
+    """
+    Refactored Tactician component with modular architecture and enhanced scenario-based predictions.
+    This module orchestrates the tactics pipeline using specialized managers and integrates
+    fractal scenario analysis with comprehensive technical indicators.
+    """
+
+    def __init__(self, config: dict[str, Any]) -> None:
+        """
+        Initialize refactored tactician with enhanced scenario-based predictions.
+
+        Args:
+            config: Configuration dictionary
+        """
+        self.config: dict[str, Any] = config
+        self.logger = system_logger.getChild('Tactician')
+        self.is_running: bool = False
+        self.status: dict[str, Any] = {}
+        self.history: list[dict[str, Any]] = []
+        self.tactics_results: dict[str, Any] = {}
+        self.tactician_config: dict[str, Any] = self.config.get('tactician', {})
+        self.tactics_interval: int = self.tactician_config.get('tactics_interval', 30)
+        self.max_history: int = self.tactician_config.get('max_history', 100)
+        self.triple_barrier_config: dict[str, Any] = self.tactician_config.get('triple_barrier', {})
+        self.profit_take_multiplier: float = self.triple_barrier_config.get('profit_take_multiplier', 0.002)
+        self.stop_loss_multiplier: float = self.triple_barrier_config.get('stop_loss_multiplier', 0.001)
+        self.confidence_threshold: float = self.triple_barrier_config.get('confidence_threshold', 0.6)
+        self.tactics_orchestrator = None
+        self.position_sizer = None
+        self.leverage_sizer = None
+        self.position_division_strategy = None
+        self.scenario_predictor = None
+        self.enable_enhanced_predictions: bool = self.tactician_config.get('enable_enhanced_predictions', True)
+        step17_config = config.get('step17_optimization', {})
+        tactician_config = step17_config.get('fully_migrated_tactician', {})
+        self.decision_thresholds = {'entry_profit_threshold': tactician_config.get('entry_profit_threshold', 0.6), 'entry_risk_threshold': tactician_config.get('entry_risk_threshold', 0.2), 'entry_confidence_threshold': tactician_config.get('entry_confidence_threshold', 0.7), 'entry_profit_risk_ratio': tactician_config.get('entry_profit_risk_ratio', 2.0), 'entry_scenario_dominance': tactician_config.get('entry_scenario_dominance', 0.4), 'exit_risk_threshold': tactician_config.get('exit_risk_threshold', 0.5), 'exit_confidence_drop': tactician_config.get('exit_confidence_drop', 0.2), 'position_size_multiplier': tactician_config.get('position_size_multiplier', 1.0), 'leverage_multiplier': tactician_config.get('leverage_multiplier', 1.0)}
+        self.risk_management = {'max_position_size': tactician_config.get('max_position_size', 0.1), 'max_leverage': tactician_config.get('max_leverage', 3.0), 'max_drawdown': tactician_config.get('max_drawdown', 0.05), 'correlation_threshold': tactician_config.get('correlation_threshold', 0.8)}
+        self.performance_metrics = {'total_trades': 0, 'winning_trades': 0, 'losing_trades': 0, 'total_profit': 0.0, 'total_loss': 0.0, 'max_drawdown': 0.0, 'sharpe_ratio': 0.0, 'profit_factor': 0.0, 'win_rate': 0.0}
+        self.is_initialized = False
+        self.current_position = None
+        self.position_history = []
+
+    @handles_errors(error_handlers={ValueError: (False, 'Invalid tactician configuration'), AttributeError: (False, 'Missing required tactician parameters'), KeyError: (False, 'Missing configuration keys')}, default_return = False, context='tactician initialization')
+    async def initialize(self) -> bool:
+        """
+        Initialize tactician and all component managers.
+
+        Returns:
+            bool: True if initialization successful, False otherwise
+        """
+        try:
+            self.logger.info('Initializing Refactored Tactician...')
+            await self._initialize_component_managers()
+            if not self._validate_configuration():
+                self.logger.error(invalid('Invalid configuration for tactician'))
+                return False
+            self.is_initialized = True
+            self.logger.info('✅ Refactored Tactician initialized successfully')
+            return True
+        except Exception as e:
+            self.logger.error(failed(f'❌ Refactored Tactician initialization failed: {e}'))
+            return False
+
+    @handles_errors(exceptions=(ValueError, AttributeError), default_return = False, context='configuration validation')
+    def _validate_configuration(self) -> bool:
+        """
+        Validate tactician configuration.
+
+        Returns:
+            bool: True if configuration is valid, False otherwise
+        """
+        try:
+            required_sections = ['tactician', 'tactics_orchestrator']
+            for section in required_sections:
+                if section not in self.config:
+                    self.logger.error(f'Missing required configuration section: {section}')
+                    return False
+            if self.tactics_interval <= 0:
+                self.logger.error(invalid('Invalid tactics_interval configuration'))
+                return False
+            if self.max_history <= 0:
+                self.logger.error(invalid('Invalid max_history configuration'))
+                return False
+            return True
+        except Exception as e:
+            self.logger.error(failed(f'Configuration validation failed: {e}'))
+            return False
+
+    @handles_errors(exceptions=(ValueError, AttributeError), default_return = None, context='component managers initialization')
+    async def _initialize_component_managers(self) -> None:
+        """Initialize all component managers."""
+        try:
+            from src.tactician.tactics_orchestrator import TacticsOrchestrator
+            self.tactics_orchestrator = TacticsOrchestrator(self.config)
+            await self.tactics_orchestrator.initialize()
+            from src.tactician.position_sizer import PositionSizer
+            self.position_sizer = PositionSizer(self.config)
+            await self.position_sizer.initialize()
+            from src.tactician.leverage_sizer import LeverageSizer
+            self.leverage_sizer = LeverageSizer(self.config)
+            await self.leverage_sizer.initialize()
+            from src.tactician.position_division_strategy import PositionDivisionStrategy
+            self.position_division_strategy = PositionDivisionStrategy(self.config)
+            await self.position_division_strategy.initialize()
+            if self.enable_enhanced_predictions:
+                try:
+                    from src.tactician.enhanced_scenario_based_predictor import EnhancedScenarioBasedPredictor
+
+                    self.scenario_predictor = EnhancedScenarioBasedPredictor(self.config)
+                    success = await self.scenario_predictor.initialize()
+                    if not success:
+                        self.logger.warning('Failed to initialize enhanced scenario predictor, continuing without it')
+                        self.scenario_predictor = None
+                except ImportError:
+                    self.logger.warning('EnhancedScenarioBasedPredictor not available, continuing without it')
+                    self.scenario_predictor = None
+            self.logger.info('✅ All component managers initialized')
+        except Exception as e:
+            self.logger.error(failed(f'❌ Failed to initialize component managers: {e}'))
+            raise
+
+    @handles_errors(error_handlers={ValueError: (False, 'Invalid tactics parameters'), AttributeError: (False, 'Missing tactics components'), KeyError: (False, 'Missing required tactics data')}, default_return = False, context='tactics execution')
+    async def execute_tactics(self, tactics_input: dict[str, Any]) -> bool:
+        """
+        Execute the complete tactics pipeline.
+
+        Args:
+            tactics_input: Tactics input parameters
+
+        Returns:
+            bool: True if tactics successful, False otherwise
+        """
+        try:
+            self.logger.info('🚀 Starting tactics pipeline execution...')
+            if not self._validate_tactics_input(tactics_input):
+                return False
+            success = await self.tactics_orchestrator.execute_tactics(tactics_input)
+            if success:
+                self.logger.info('✅ Tactics pipeline completed successfully')
+                await self._store_tactics_results(tactics_input)
+            else:
+                self.logger.error(failed('❌ Tactics pipeline failed'))
+            return success
+        except Exception as e:
+            self.logger.error(failed(f'❌ Tactics execution failed: {e}'))
+            return False
+
+    @handles_errors(exceptions=(ValueError, AttributeError), default_return = False, context='tactics input validation')
+    def _validate_tactics_input(self, tactics_input: dict[str, Any]) -> bool:
+        """
+        Validate tactics input parameters.
+
+        Args:
+            tactics_input: Tactics input parameters
+
+        Returns:
+            bool: True if input is valid, False otherwise
+        """
+        try:
+            required_fields = ['symbol', 'exchange', 'timeframe', 'current_price']
+            for field in required_fields:
+                if field not in tactics_input:
+                    self.logger.error(missing(f'Missing required tactics input field: {field}'))
+                    return False
+            if tactics_input.get('current_price', 0) <= 0:
+                self.logger.error(invalid('Invalid current_price value'))
+                return False
+            return True
+        except Exception as e:
+            self.logger.error(failed(f'Tactics input validation failed: {e}'))
+            return False
+
+    @handles_errors(exceptions=(ValueError, AttributeError), default_return = None, context='tactics results storage')
+    async def _store_tactics_results(self, tactics_input: dict[str, Any]) -> None:
+        """
+        Store tactics results for later retrieval.
+
+        Args:
+            tactics_input: Tactics input parameters
+        """
+        try:
+            self.tactics_results = self.tactics_orchestrator.get_tactics_results()
+            history_entry = {'timestamp': datetime.now(), 'tactics_input': tactics_input, 'tactics_results': self.tactics_results.copy()}
+            self.history.append(history_entry)
+            if len(self.history) > self.max_history:
+                self.history = self.history[-self.max_history:]
+            self.logger.info(f'📁 Stored tactics results (history: {len(self.history)} entries)')
+        except Exception as e:
+            self.logger.error(failed(f'❌ Failed to store tactics results: {e}'))
+
+    @handles_errors(error_handlers={Exception: (False, 'Tactician run failed')}, default_return = False, context='tactician run')
+    async def run(self) -> bool:
+        """
+        Run the tactician.
+
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        try:
+            self.logger.info('🚀 Starting Tactician...')
+            self.is_running = True
+            self.status = {'is_running': True, 'start_time': datetime.now(), 'component_count': 5}
+            self.logger.info('✅ Tactician run completed successfully')
+            return True
+        except Exception as e:
+            self.logger.error(failed(f'❌ Tactician run failed: {e}'))
+            return False
+
+    def get_status(self) -> dict[str, Any]:
+        """
+        Get tactician status.
+
+        Returns:
+            dict: Tactician status
+        """
+        return {'is_running': self.is_running, 'status': self.status, 'history_count': len(self.history), 'has_results': bool(self.tactics_results)}
+
+    def get_history(self, limit: int | None = None) -> list[dict[str, Any]]:
+        """
+        Get tactician history.
+
+        Args:
+            limit: Maximum number of history entries to return
+
+        Returns:
+            list: Tactician history
+        """
+        history = self.history.copy()
+        if limit:
+            history = history[-limit:]
+        return history
+
+    def get_tactics_results(self) -> dict[str, Any]:
+        """
+        Get the latest tactics results.
+
+        Returns:
+            dict: Tactics results
+        """
+        return self.tactics_results.copy()
+
+    def _normalize_tactician_probabilities(self, upside_probabilities: dict[str, float], downside_probabilities: dict[str, float]) -> dict[str, dict[str, float]]:
+        """
+        Normalize probabilities to ensure they sum to 1 across both directions.
+        Same logic as Analyst for consistency.
+
+        Args:
+            upside_probabilities: Upside price target confidences
+            downside_probabilities: Downside risk confidences
+
+        Returns:
+            dict: Normalized probabilities for upside and downside
+        """
+        try:
+            all_probabilities = {}
+            all_probabilities.update(upside_probabilities)
+            all_probabilities.update(downside_probabilities)
+            if not all_probabilities:
+                return {'upside': {}, 'downside': {}}
+            total_prob = sum(all_probabilities.values())
+            if total_prob <= 0:
+                n_targets = len(upside_probabilities)
+                n_risks = len(downside_probabilities)
+                total_items = n_targets + n_risks
+                if total_items > 0:
+                    equal_prob = 1.0 / total_items
+                    normalized_upside = {k: equal_prob for k in upside_probabilities.keys()}
+                    normalized_downside = {k: equal_prob for k in downside_probabilities.keys()}
+                else:
+                    normalized_upside = {}
+                    normalized_downside = {}
+            else:
+                normalized_upside = {k: v / total_prob for k, v in upside_probabilities.items()}
+                normalized_downside = {k: v / total_prob for k, v in downside_probabilities.items()}
+            return {'upside': normalized_upside, 'downside': normalized_downside}
+        except Exception as e:
+            self.logger.error(f'Error normalizing tactician probabilities: {e}')
+            return {'upside': {}, 'downside': {}}
+
+    def _calculate_tactician_triple_barrier_analysis(self, upside_probabilities: dict[str, float], downside_probabilities: dict[str, float]) -> dict[str, Any]:
+        """
+        Calculate triple barrier analysis for tactician green light decision.
+        Uses the same logic as Analyst for consistency.
+
+        Args:
+            upside_probabilities: Normalized upside probabilities
+            downside_probabilities: Normalized downside probabilities
+
+        Returns:
+            dict: Triple barrier analysis results
+        """
+        try:
+            upper_barrier_pct = f'{self.profit_take_multiplier * 100:.1f}%'
+            lower_barrier_pct = f'{self.stop_loss_multiplier * 100:.1f}%'
+            cumulative_upper_confidence = 0.0
+            upper_barrier_targets = []
+            for target, prob in upside_probabilities.items():
+                target_value = float(target.replace('%', ''))
+                upper_barrier_value = self.profit_take_multiplier * 100
+                if target_value >= upper_barrier_value:
+                    cumulative_upper_confidence += prob
+                    upper_barrier_targets.append({'target': target, 'probability': prob, 'contribution': prob})
+            cumulative_lower_confidence = 0.0
+            lower_barrier_targets = []
+            for target, prob in downside_probabilities.items():
+                target_value = float(target.replace('%', ''))
+                lower_barrier_value = self.stop_loss_multiplier * 100
+                if target_value >= lower_barrier_value:
+                    cumulative_lower_confidence += prob
+                    lower_barrier_targets.append({'target': target, 'probability': prob, 'contribution': prob})
+            threshold_met = cumulative_upper_confidence >= self.confidence_threshold
+            green_light = threshold_met and cumulative_upper_confidence > cumulative_lower_confidence and (cumulative_upper_confidence > 0.5)
+            risk_reward_ratio = cumulative_upper_confidence / cumulative_lower_confidence if cumulative_lower_confidence > 0 else float('inf')
+            return {'upper_barrier_threshold': upper_barrier_pct, 'lower_barrier_threshold': lower_barrier_pct, 'confidence_threshold': self.confidence_threshold, 'cumulative_upper_confidence': float(cumulative_upper_confidence), 'cumulative_lower_confidence': float(cumulative_lower_confidence), 'threshold_met': threshold_met, 'green_light': green_light, 'risk_reward_ratio': float(risk_reward_ratio), 'upper_barrier_targets': upper_barrier_targets, 'lower_barrier_targets': lower_barrier_targets, 'decision_reasoning': self._get_tactician_decision_reasoning(cumulative_upper_confidence, cumulative_lower_confidence, threshold_met, green_light)}
+        except Exception as e:
+            self.logger.error(f'Error calculating tactician triple barrier analysis: {e}')
+            return {'upper_barrier_threshold': f'{self.profit_take_multiplier * 100:.1f}%', 'lower_barrier_threshold': f'{self.stop_loss_multiplier * 100:.1f}%', 'confidence_threshold': self.confidence_threshold, 'cumulative_upper_confidence': 0.0, 'cumulative_lower_confidence': 0.0, 'threshold_met': False, 'green_light': False, 'risk_reward_ratio': 0.0, 'upper_barrier_targets': [], 'lower_barrier_targets': [], 'decision_reasoning': f'Error in calculation: {str(e)}'}
+
+    def _get_tactician_decision_reasoning(self, cumulative_upper_confidence: float, cumulative_lower_confidence: float, threshold_met: bool, green_light: bool) -> str:
+        """
+        Generate human-readable decision reasoning for tactician.
+
+        Args:
+            cumulative_upper_confidence: Cumulative confidence for upper barrier
+            cumulative_lower_confidence: Cumulative confidence for lower barrier
+            threshold_met: Whether confidence threshold is met
+            green_light: Whether green light decision is made
+
+        Returns:
+            str: Decision reasoning
+        """
+        if green_light:
+            return f'TACTICIAN GREEN LIGHT: Upper barrier confidence ({cumulative_upper_confidence:.1%}) exceeds threshold ({self.confidence_threshold:.1%}) and is higher than lower barrier confidence ({cumulative_lower_confidence:.1%})'
+        elif threshold_met:
+            return f'TACTICIAN THRESHOLD MET but NO GREEN LIGHT: Upper barrier confidence ({cumulative_upper_confidence:.1%}) meets threshold but lower barrier confidence ({cumulative_lower_confidence:.1%}) is too high'
+        else:
+            return f'TACTICIAN NO GREEN LIGHT: Upper barrier confidence ({cumulative_upper_confidence:.1%}) below threshold ({self.confidence_threshold:.1%})'
+
+    def get_tactics_modules(self) -> dict[str, Any]:
+        """
+        Get tactics modules information.
+
+        Returns:
+            dict: Tactics modules information
+        """
+        return {'tactics_orchestrator': self.tactics_orchestrator is not None, 'position_sizer': self.position_sizer is not None, 'leverage_sizer': self.leverage_sizer is not None, 'position_division_strategy': self.position_division_strategy is not None, 'scenario_predictor': self.scenario_predictor is not None}
+
+    @handles_errors(error_handlers={ValueError: (None, 'Invalid prediction parameters'), AttributeError: (None, 'Missing prediction components'), KeyError: (None, 'Missing required prediction data')}, default_return = None, context='enhanced predictions generation')
+    async def generate_enhanced_predictions(self, market_data: pd.DataFrame, analyst_barriers: Dict[str, float], symbol: str, timeframe: str, analyst_confidence: float = 0.5) -> Dict[str, Any]:
+        """
+        Generate enhanced predictions using scenario-based analysis.
+
+        Args:
+            market_data: Market data with OHLCV
+            analyst_barriers: Analyst's barrier values (for reference)
+            symbol: Trading symbol
+            timeframe: Current timeframe
+            analyst_confidence: Analyst's confidence score
+
+        Returns:
+            dict: Enhanced predictions and decisions
+        """
+        try:
+            if not self.is_initialized:
+                self.logger.error('Tactician not initialized')
+                return self._generate_error_predictions(symbol, timeframe)
+            if not self.scenario_predictor:
+                self.logger.warning('Scenario predictor not available, using default predictions')
+                return self._generate_default_predictions(symbol, timeframe)
+            features = self.scenario_predictor.extract_comprehensive_features(market_data)
+            features = features.reshape(1, -1)
+            scenario_predictions = await self.scenario_predictor.predict_scenarios(features, market_data)
+            trading_decisions = self._make_trading_decisions(scenario_predictions, analyst_confidence, market_data)
+            position_management = self._calculate_position_management(scenario_predictions, trading_decisions, analyst_barriers)
+            result = {'scenario_predictions': scenario_predictions, 'trading_decisions': trading_decisions, 'position_management': position_management, 'metadata': {'symbol': symbol, 'timeframe': timeframe, 'generation_timestamp': datetime.now().isoformat(), 'model_type': 'enhanced_tactician', 'analyst_confidence': analyst_confidence, 'n_scenarios': len(self.scenario_predictor.scenarios)}}
+            self.logger.info(f'Generated enhanced predictions for {symbol}')
+            return result
+        except Exception as e:
+            self.logger.error(f'❌ Enhanced prediction generation failed: {e}')
+            return self._generate_error_predictions(symbol, timeframe)
+
+    def _make_trading_decisions(self, scenario_predictions: Dict[str, Any], analyst_confidence: float, market_data: pd.DataFrame) -> Dict[str, Any]:
+        """
+        Make trading decisions based on scenario analysis.
+
+        Args:
+            scenario_predictions: Scenario predictions
+            analyst_confidence: Analyst's confidence score
+            market_data: Market data
+
+        Returns:
+            dict: Trading decisions
+        """
+        try:
+            scenario_analysis = scenario_predictions.get('scenario_analysis', {})
+            confidence = scenario_predictions.get('confidence', 0.0)
+            profit_zone_prob = scenario_analysis.get('profit_zone_probability', 0.0)
+            risk_zone_prob = scenario_analysis.get('risk_zone_probability', 0.0)
+            risk_reward_ratio = scenario_analysis.get('risk_reward_ratio', 0.0)
+            scenario_dominance = scenario_analysis.get('scenario_dominance', 0.0)
+            dominant_zone = scenario_analysis.get('dominant_zone', 'neutral')
+            entry_conditions = [profit_zone_prob > self.decision_thresholds['entry_profit_threshold'], risk_zone_prob < self.decision_thresholds['entry_risk_threshold'], confidence > self.decision_thresholds['entry_confidence_threshold'], risk_reward_ratio > self.decision_thresholds['entry_profit_risk_ratio'], scenario_dominance > self.decision_thresholds['entry_scenario_dominance'], dominant_zone == 'profit', analyst_confidence > 0.5]
+            entry_signal = all(entry_conditions)
+            exit_signal = False
+            if self.current_position:
+                exit_conditions = [risk_zone_prob > self.decision_thresholds['exit_risk_threshold'], confidence < self.current_position.get('entry_confidence', 0.0) - self.decision_thresholds['exit_confidence_drop'], dominant_zone == 'risk']
+                exit_signal = any(exit_conditions)
+            direction = 'LONG' if entry_signal and dominant_zone == 'profit' else 'NEUTRAL'
+            if exit_signal:
+                direction = 'EXIT'
+            decision_confidence = self._calculate_decision_confidence(scenario_analysis, confidence, analyst_confidence)
+            reasoning = self._generate_decision_reasoning(entry_signal, exit_signal, scenario_analysis, confidence, analyst_confidence)
+            return {'entry_signal': entry_signal, 'exit_signal': exit_signal, 'direction': direction, 'confidence': decision_confidence, 'reasoning': reasoning, 'scenario_metrics': {'profit_zone_probability': profit_zone_prob, 'risk_zone_probability': risk_zone_prob, 'risk_reward_ratio': risk_reward_ratio, 'scenario_dominance': scenario_dominance, 'dominant_zone': dominant_zone, 'predicted_scenario': scenario_predictions.get('predicted_scenario', 16), 'scenario_name': scenario_predictions.get('scenario_name', 'Neutral')}}
+        except Exception as e:
+            self.logger.error(f'❌ Trading decision making failed: {e}')
+            return {'entry_signal': False, 'exit_signal': False, 'direction': 'NEUTRAL', 'confidence': 0.0, 'reasoning': f'Error in decision making: {e}', 'scenario_metrics': {}}
+
+    def _calculate_position_management(self, scenario_predictions: Dict[str, Any], trading_decisions: Dict[str, Any], analyst_barriers: Dict[str, float]) -> Dict[str, Any]:
+        """
+        Calculate position sizing and leverage based on scenario analysis.
+
+        Args:
+            scenario_predictions: Scenario predictions
+            trading_decisions: Trading decisions
+            analyst_barriers: Analyst's barrier values
+
+        Returns:
+            dict: Position management parameters
+        """
+        try:
+            scenario_analysis = scenario_predictions.get('scenario_analysis', {})
+            confidence = scenario_predictions.get('confidence', 0.0)
+            base_position_size = confidence * self.risk_management['max_position_size']
+            scenario_dominance = scenario_analysis.get('scenario_dominance', 0.0)
+            dominance_multiplier = 1.0 + (scenario_dominance - 0.5) * 0.5
+            risk_reward_ratio = scenario_analysis.get('risk_reward_ratio', 1.0)
+            ratio_multiplier = min(risk_reward_ratio / 2.0, 1.5)
+            position_size = base_position_size * dominance_multiplier * ratio_multiplier
+            position_size = min(position_size, self.risk_management['max_position_size'])
+            base_leverage = 1.0 + (confidence - 0.5) * 2.0
+            leverage = min(base_leverage, self.risk_management['max_leverage'])
+            analyst_upper = analyst_barriers.get('upper_barrier', 0.02)
+            analyst_lower = analyst_barriers.get('lower_barrier', -0.01)
+            stop_loss = analyst_lower
+            take_profit = analyst_upper
+            return {'position_size': position_size, 'leverage': leverage, 'stop_loss': stop_loss, 'take_profit': take_profit, 'risk_metrics': {'max_drawdown': self.risk_management['max_drawdown'], 'correlation_threshold': self.risk_management['correlation_threshold'], 'dominance_multiplier': dominance_multiplier, 'ratio_multiplier': ratio_multiplier}}
+        except Exception as e:
+            self.logger.error(f'❌ Position management calculation failed: {e}')
+            return {'position_size': 0.0, 'leverage': 1.0, 'stop_loss': -0.01, 'take_profit': 0.02, 'risk_metrics': {}}
+
+    def _calculate_decision_confidence(self, scenario_analysis: Dict[str, Any], model_confidence: float, analyst_confidence: float) -> float:
+        """
+        Calculate decision confidence combining scenario analysis and analyst confidence.
+
+        Args:
+            scenario_analysis: Scenario analysis results
+            model_confidence: Model confidence
+            analyst_confidence: Analyst confidence
+
+        Returns:
+            float: Combined decision confidence
+        """
+        try:
+            base_confidence = model_confidence
+            scenario_dominance = scenario_analysis.get('scenario_dominance', 0.0)
+            dominance_boost = scenario_dominance * 0.2
+            risk_reward_ratio = scenario_analysis.get('risk_reward_ratio', 1.0)
+            ratio_boost = min((risk_reward_ratio - 1.0) * 0.1, 0.2)
+            analyst_boost = analyst_confidence * 0.1
+            final_confidence = base_confidence + dominance_boost + ratio_boost + analyst_boost
+            return np.clip(final_confidence, 0.0, 1.0)
+        except Exception as e:
+            self.logger.error(f'❌ Decision confidence calculation failed: {e}')
+            return 0.5
+
+    def _generate_decision_reasoning(self, entry_signal: bool, exit_signal: bool, scenario_analysis: Dict[str, Any], model_confidence: float, analyst_confidence: float) -> str:
+        """
+        Generate human-readable reasoning for decisions.
+
+        Args:
+            entry_signal: Entry signal
+            exit_signal: Exit signal
+            scenario_analysis: Scenario analysis results
+            model_confidence: Model confidence
+            analyst_confidence: Analyst confidence
+
+        Returns:
+            str: Decision reasoning
+        """
+        try:
+            reasoning_parts = []
+            if entry_signal:
+                reasoning_parts.append('ENTRY SIGNAL: Strong scenario analysis indicates favorable conditions')
+            profit_prob = scenario_analysis.get('profit_zone_probability', 0.0)
+            risk_prob = scenario_analysis.get('risk_zone_probability', 0.0)
+            risk_reward = scenario_analysis.get('risk_reward_ratio', 0.0)
+            dominance = scenario_analysis.get('scenario_dominance', 0.0)
+            reasoning_parts.append(f'Profit probability: {profit_prob:.1%}')
+            reasoning_parts.append(f'Risk probability: {risk_prob:.1%}')
+            reasoning_parts.append(f'Risk-reward ratio: {risk_reward:.2f}')
+            reasoning_parts.append(f'Scenario dominance: {dominance:.1%}')
+            reasoning_parts.append(f'Model confidence: {model_confidence:.1%}')
+            reasoning_parts.append(f'Analyst confidence: {analyst_confidence:.1%}')
+            if exit_signal:
+                reasoning_parts.append('EXIT SIGNAL: Risk conditions detected')
+                risk_prob = scenario_analysis.get('risk_zone_probability', 0.0)
+                reasoning_parts.append(f'Risk probability: {risk_prob:.1%}')
+            elif not entry_signal:
+                reasoning_parts.append('NO SIGNAL: Conditions not favorable for entry')
+                dominant_zone = scenario_analysis.get('dominant_zone', 'neutral')
+                reasoning_parts.append(f'Dominant zone: {dominant_zone}')
+            return ' | '.join(reasoning_parts)
+        except Exception as e:
+            self.logger.error(f'❌ Decision reasoning generation failed: {e}')
+            return f'Error generating reasoning: {e}'
+
+    def _generate_error_predictions(self, symbol: str, timeframe: str) -> Dict[str, Any]:
+        """
+        Generate error predictions when something goes wrong.
+
+        Args:
+            symbol: Trading symbol
+            timeframe: Timeframe
+
+        Returns:
+            dict: Error predictions
+        """
+        return {'scenario_predictions': {'probabilities': {i: 1.0 / 17 for i in range(17)}, 'predicted_scenario': 16, 'scenario_name': 'Neutral', 'confidence': 0.0, 'scenario_analysis': {'profit_zone_probability': 0.0, 'risk_zone_probability': 0.0, 'neutral_probability': 1.0, 'dominant_zone': 'neutral', 'risk_reward_ratio': 0.0, 'scenario_dominance': 0.0}, 'metadata': {'model_type': 'enhanced_tactician_error', 'generation_timestamp': datetime.now().isoformat(), 'is_trained': False}}, 'trading_decisions': {'entry_signal': False, 'exit_signal': False, 'direction': 'NEUTRAL', 'confidence': 0.0, 'reasoning': 'Error in prediction generation', 'scenario_metrics': {}}, 'position_management': {'position_size': 0.0, 'leverage': 1.0, 'stop_loss': -0.01, 'take_profit': 0.02, 'risk_metrics': {}}, 'metadata': {'symbol': symbol, 'timeframe': timeframe, 'generation_timestamp': datetime.now().isoformat(), 'model_type': 'enhanced_tactician_error', 'analyst_confidence': 0.0, 'n_scenarios': 17}}
+
+    def update_position(self, position_data: Dict[str, Any]) -> None:
+        """
+        Update current position information.
+
+        Args:
+            position_data: Position data
+        """
+        try:
+            self.current_position = position_data
+            self.position_history.append({**position_data, 'timestamp': datetime.now().isoformat()})
+            if len(self.position_history) > 100:
+                self.position_history = self.position_history[-100:]
+        except Exception as e:
+            self.logger.error(f'❌ Position update failed: {e}')
+
+    def update_performance_metrics(self, trade_result: Dict[str, Any]) -> None:
+        """
+        Update performance metrics with trade result.
+
+        Args:
+            trade_result: Trade result data
+        """
+        try:
+            self.performance_metrics['total_trades'] += 1
+            if trade_result.get('profit', 0) > 0:
+                self.performance_metrics['winning_trades'] += 1
+                self.performance_metrics['total_profit'] += trade_result['profit']
+            else:
+                self.performance_metrics['losing_trades'] += 1
+                self.performance_metrics['total_loss'] += abs(trade_result.get('profit', 0))
+            win_rate = self.performance_metrics['winning_trades'] / max(self.performance_metrics['total_trades'], 1)
+            profit_factor = self.performance_metrics['total_profit'] / max(self.performance_metrics['total_loss'], 0.001)
+            self.performance_metrics['win_rate'] = win_rate
+            self.performance_metrics['profit_factor'] = profit_factor
+        except Exception as e:
+            self.logger.error(f'❌ Performance metrics update failed: {e}')
+
+    def get_performance_summary(self) -> Dict[str, Any]:
+        """
+        Get performance summary.
+
+        Returns:
+            dict: Performance summary
+        """
+        return {'performance_metrics': self.performance_metrics, 'current_position': self.current_position, 'position_history_count': len(self.position_history), 'is_initialized': self.is_initialized, 'scenario_predictor_status': {'is_trained': self.scenario_predictor.is_trained if self.scenario_predictor else False, 'n_scenarios': len(self.scenario_predictor.scenarios) if self.scenario_predictor else 0, 'last_training_time': self.scenario_predictor.last_training_time.isoformat() if self.scenario_predictor and self.scenario_predictor.last_training_time else None}}
+
+    def get_configuration_summary(self) -> Dict[str, Any]:
+        """
+        Get configuration summary for step17 optimization.
+
+        Returns:
+            dict: Configuration summary
+        """
+        return {'decision_thresholds': self.decision_thresholds, 'risk_management': self.risk_management, 'scenario_predictor_config': self.scenario_predictor.get_enhanced_configuration_summary() if self.scenario_predictor else {}, 'is_initialized': self.is_initialized}
+
+    @handles_errors(exceptions=(Exception,), default_return = None, context='tactician stop')
+    async def stop(self) -> None:
+        """Stop the tactician and cleanup resources."""
+        try:
+            self.logger.info('🛑 Stopping Tactician...')
+            if self.tactics_orchestrator:
+                await self.tactics_orchestrator.stop()
+            if self.position_sizer:
+                await self.position_sizer.stop()
+            if self.leverage_sizer:
+                await self.leverage_sizer.stop()
+            if self.position_division_strategy:
+                await self.position_division_strategy.stop()
+        except Exception as e:
+            self.logger.error(failed(f'Error stopping component managers: {e}'))
+            if self.scenario_predictor:
+                await self.scenario_predictor.stop()
+            self.is_running = False
+            self.logger.info('✅ Tactician stopped successfully')
+        except Exception as e:
+            self.logger.error(failed(f'❌ Failed to stop Tactician: {e}'))
+
+    @handles_errors(exceptions=(Exception,), default_return = None, context='tactician cleanup')
+    async def cleanup(self) -> None:
+        """Cleanup tactician resources."""
+        try:
+            self.logger.info('Cleaning up Tactician...')
+            await self.stop()
+            if self.tactics_orchestrator:
+                await self.tactics_orchestrator.cleanup()
+            if self.position_sizer:
+                await self.position_sizer.cleanup()
+            if self.leverage_sizer:
+                await self.leverage_sizer.cleanup()
+            if self.position_division_strategy:
+                await self.position_division_strategy.cleanup()
+            if self.scenario_predictor:
+                await self.scenario_predictor.cleanup()
+            self.history.clear()
+            self.tactics_results.clear()
+            self.status.clear()
+            self.logger.info('✅ Tactician cleanup completed')
+        except Exception as e:
+            self.logger.error(failed(f'❌ Failed to cleanup Tactician: {e}'))
+
+@handles_errors(exceptions=(Exception,), default_return = None, context='tactician setup')
+async def setup_tactician(config: dict[str, Any] | None = None) -> Tactician | None:
+    """
+    Setup and return a configured Tactician instance.
+
+    Args:
+        config: Configuration dictionary
+
+    Returns:
+        Tactician: Configured tactician instance
+    """
+    try:
+        tactician = Tactician(config or {})
+        if await tactician.initialize():
+            return tactician
+        return None
+    except Exception as e:
+        system_logger.exception(f'Failed to setup tactician: {e}')
+        return None

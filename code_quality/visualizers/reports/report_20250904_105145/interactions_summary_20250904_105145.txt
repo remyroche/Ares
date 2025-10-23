@@ -1,0 +1,74 @@
+CODE INTERACTION MAPPING SUMMARY
+================================================================================
+
+MODULE DEPENDENCIES
+----------------------------------------
+
+
+FUNCTION CALL RELATIONSHIPS
+----------------------------------------
+
+
+ARCHITECTURAL COMPONENTS
+----------------------------------------
+
+
+IMPORT RELATIONSHIPS
+----------------------------------------
+
+
+DEAD CODE ANALYSIS
+----------------------------------------
+Total Dead Code Issues: 153439
+Deprecated Code Issues: 2343
+Potential Lines Removed: 8
+
+High Impact Issues (8):
+  • /workspace/comprehensive_fix.py:51 - Syntax error: cannot assign to function call (<unknown>, line 51)
+  • /workspace/cleanup_script.py:105 - Syntax error: invalid syntax (<unknown>, line 105)
+  • /workspace/code_quality/tests/test_common_operations.py:25 - Syntax error: invalid syntax (<unknown>, line 25)
+  • /workspace/src/pipelines/components/monitoring_manager.py:14 - Syntax error: unexpected indent (<unknown>, line 14)
+  • /workspace/src/training/training_manager.py:346 - Syntax error: unterminated string literal (detected at line 346) (<unknown>, line 346)
+  • /workspace/src/exchange/binance.py:626 - Syntax error: invalid syntax (<unknown>, line 626)
+  • /workspace/src/core/dependency_injection.py:7 - Syntax error: invalid syntax (<unknown>, line 7)
+  • /workspace/src/utils/model_manager.py:510 - Syntax error: invalid syntax (<unknown>, line 510)
+
+Deprecated Code (2343):
+  • /workspace/step_formatter.py:85 - Function 'replace_step' is defined but never called
+    Reason: Function is defined but never called anywhere in the codebase
+    Alternative: Consider removing if truly unused, or add usage if needed
+  • /workspace/comprehensive_analysis_demo.py:529 - Function 'BasicStyleAnalyzer' is defined but never called
+    Reason: Function is defined but never called anywhere in the codebase
+    Alternative: Consider removing if truly unused, or add usage if needed
+  • /workspace/test_data_quality_and_formatting.py:82 - Function 'test_data_validation' is defined but never called
+    Reason: Function is defined but never called anywhere in the codebase
+    Alternative: Consider removing if truly unused, or add usage if needed
+  • /workspace/test_data_quality_and_formatting.py:106 - Function 'test_data_formatting' is defined but never called
+    Reason: Function is defined but never called anywhere in the codebase
+    Alternative: Consider removing if truly unused, or add usage if needed
+  • /workspace/test_data_quality_and_formatting.py:134 - Function 'test_data_cleaning' is defined but never called
+    Reason: Function is defined but never called anywhere in the codebase
+    Alternative: Consider removing if truly unused, or add usage if needed
+  • /workspace/test_data_quality_and_formatting.py:164 - Function 'test_data_profiling' is defined but never called
+    Reason: Function is defined but never called anywhere in the codebase
+    Alternative: Consider removing if truly unused, or add usage if needed
+  • /workspace/test_data_quality_and_formatting.py:193 - Function 'test_quality_scoring' is defined but never called
+    Reason: Function is defined but never called anywhere in the codebase
+    Alternative: Consider removing if truly unused, or add usage if needed
+  • /workspace/test_data_quality_and_formatting.py:224 - Function 'test_format_validation' is defined but never called
+    Reason: Function is defined but never called anywhere in the codebase
+    Alternative: Consider removing if truly unused, or add usage if needed
+  • /workspace/test_data_quality_and_formatting.py:255 - Function 'test_timestamp_normalization' is defined but never called
+    Reason: Function is defined but never called anywhere in the codebase
+    Alternative: Consider removing if truly unused, or add usage if needed
+  • /workspace/test_data_quality_and_formatting.py:281 - Function 'test_missing_value_handling' is defined but never called
+    Reason: Function is defined but never called anywhere in the codebase
+    Alternative: Consider removing if truly unused, or add usage if needed
+
+Removal Plan:
+  Estimated Time Savings: 0.8 hours
+  Removal Phases: 3
+  Risk Assessment:
+    High Risk: 436
+    Medium Risk: 0
+    Recommended Approach: incremental

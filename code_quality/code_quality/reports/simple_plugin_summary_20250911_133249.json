@@ -1,0 +1,757 @@
+{
+  "pipeline": "simple_plugin",
+  "timestamp": "2025-09-11T13:32:49.971839",
+  "project_root": "/workspace/code_quality",
+  "summary": {
+    "total_plugins": 24,
+    "fixers": 0,
+    "analyzers": 0,
+    "unknown": 24,
+    "plugin_categories": {
+      "fixers": [],
+      "analyzers": [],
+      "unknown": [
+        {
+          "name": "flynt_fixer",
+          "file_path": "/workspace/code_quality/plugins/flynt_fixer.py",
+          "class_names": [
+            "FlyntFixer"
+          ],
+          "plugin_type": "fixer",
+          "description": "",
+          "size_bytes": 2288
+        },
+        {
+          "name": "autoflake_fixer",
+          "file_path": "/workspace/code_quality/plugins/autoflake_fixer.py",
+          "class_names": [
+            "AutoflakeFixer"
+          ],
+          "plugin_type": "fixer",
+          "description": "",
+          "size_bytes": 3638
+        },
+        {
+          "name": "docformatter_fixer",
+          "file_path": "/workspace/code_quality/plugins/docformatter_fixer.py",
+          "class_names": [
+            "DocformatterFixer"
+          ],
+          "plugin_type": "fixer",
+          "description": "",
+          "size_bytes": 3198
+        },
+        {
+          "name": "isort_fixer",
+          "file_path": "/workspace/code_quality/plugins/isort_fixer.py",
+          "class_names": [
+            "IsortFixer"
+          ],
+          "plugin_type": "fixer",
+          "description": "",
+          "size_bytes": 3393
+        },
+        {
+          "name": "unify_fixer",
+          "file_path": "/workspace/code_quality/plugins/unify_fixer.py",
+          "class_names": [
+            "UnifyFixer"
+          ],
+          "plugin_type": "fixer",
+          "description": "",
+          "size_bytes": 3064
+        },
+        {
+          "name": "plugin_registry",
+          "file_path": "/workspace/code_quality/plugins/plugin_registry.py",
+          "class_names": [],
+          "plugin_type": "unknown",
+          "description": "",
+          "size_bytes": 13719
+        },
+        {
+          "name": "attribute_checker_analyzer",
+          "file_path": "/workspace/code_quality/plugins/attribute_checker_analyzer.py",
+          "class_names": [
+            "AttributeCheckerAnalyzer"
+          ],
+          "plugin_type": "analyzer",
+          "description": "",
+          "size_bytes": 7707
+        },
+        {
+          "name": "base_plugin",
+          "file_path": "/workspace/code_quality/plugins/base_plugin.py",
+          "class_names": [
+            "PluginCategory",
+            "PluginPriority",
+            "BasePlugin",
+            "FileProcessorPlugin",
+            "DirectoryProcessorPlugin"
+          ],
+          "plugin_type": "unknown",
+          "description": "",
+          "size_bytes": 12337
+        },
+        {
+          "name": "import_hygiene_fixer",
+          "file_path": "/workspace/code_quality/plugins/import_hygiene_fixer.py",
+          "class_names": [
+            "ImportHygieneFixer",
+            "TypeOnlyVisitor"
+          ],
+          "plugin_type": "fixer",
+          "description": "",
+          "size_bytes": 3417
+        },
+        {
+          "name": "ruff_analyzer",
+          "file_path": "/workspace/code_quality/plugins/ruff_analyzer.py",
+          "class_names": [
+            "RuffAnalyzer"
+          ],
+          "plugin_type": "analyzer",
+          "description": "",
+          "size_bytes": 3226
+        },
+        {
+          "name": "fawltydeps_analyzer",
+          "file_path": "/workspace/code_quality/plugins/fawltydeps_analyzer.py",
+          "class_names": [
+            "FawltyDepsAnalyzer"
+          ],
+          "plugin_type": "analyzer",
+          "description": "",
+          "size_bytes": 9258
+        },
+        {
+          "name": "pyupgrade_fixer",
+          "file_path": "/workspace/code_quality/plugins/pyupgrade_fixer.py",
+          "class_names": [
+            "PyupgradeFixer"
+          ],
+          "plugin_type": "fixer",
+          "description": "",
+          "size_bytes": 2301
+        },
+        {
+          "name": "pyre_analyzer",
+          "file_path": "/workspace/code_quality/plugins/pyre_analyzer.py",
+          "class_names": [
+            "PyreAnalyzer"
+          ],
+          "plugin_type": "analyzer",
+          "description": "",
+          "size_bytes": 3637
+        },
+        {
+          "name": "ruff_fixer",
+          "file_path": "/workspace/code_quality/plugins/ruff_fixer.py",
+          "class_names": [
+            "RuffFixer"
+          ],
+          "plugin_type": "fixer",
+          "description": "",
+          "size_bytes": 2811
+        },
+        {
+          "name": "black_fixer",
+          "file_path": "/workspace/code_quality/plugins/black_fixer.py",
+          "class_names": [
+            "BlackFixer"
+          ],
+          "plugin_type": "fixer",
+          "description": "",
+          "size_bytes": 4671
+        },
+        {
+          "name": "yesqa_fixer",
+          "file_path": "/workspace/code_quality/plugins/yesqa_fixer.py",
+          "class_names": [
+            "YesqaFixer"
+          ],
+          "plugin_type": "fixer",
+          "description": "",
+          "size_bytes": 2160
+        },
+        {
+          "name": "plugin_manager",
+          "file_path": "/workspace/code_quality/plugins/plugin_manager.py",
+          "class_names": [],
+          "plugin_type": "unknown",
+          "description": "",
+          "size_bytes": 17540
+        },
+        {
+          "name": "creosote_analyzer",
+          "file_path": "/workspace/code_quality/plugins/creosote_analyzer.py",
+          "class_names": [
+            "CreosoteAnalyzer"
+          ],
+          "plugin_type": "analyzer",
+          "description": "",
+          "size_bytes": 8988
+        },
+        {
+          "name": "flake8_analyzer",
+          "file_path": "/workspace/code_quality/plugins/flake8_analyzer.py",
+          "class_names": [
+            "Flake8Analyzer"
+          ],
+          "plugin_type": "analyzer",
+          "description": "",
+          "size_bytes": 6323
+        },
+        {
+          "name": "yapf_fixer",
+          "file_path": "/workspace/code_quality/plugins/yapf_fixer.py",
+          "class_names": [
+            "YapfFixer"
+          ],
+          "plugin_type": "fixer",
+          "description": "",
+          "size_bytes": 3006
+        },
+        {
+          "name": "future_annotations_fixer",
+          "file_path": "/workspace/code_quality/plugins/future_annotations_fixer.py",
+          "class_names": [
+            "FutureAnnotationsFixer"
+          ],
+          "plugin_type": "fixer",
+          "description": "",
+          "size_bytes": 2448
+        },
+        {
+          "name": "__init__",
+          "file_path": "/workspace/code_quality/plugins/__init__.py",
+          "class_names": [],
+          "plugin_type": "unknown",
+          "description": "",
+          "size_bytes": 1042
+        },
+        {
+          "name": "exceptions",
+          "file_path": "/workspace/code_quality/plugins/exceptions.py",
+          "class_names": [
+            "PluginError",
+            "PluginNotFoundError",
+            "PluginDependencyError",
+            "PluginExecutionError",
+            "PluginConfigurationError",
+            "PluginTimeoutError"
+          ],
+          "plugin_type": "unknown",
+          "description": "",
+          "size_bytes": 2280
+        },
+        {
+          "name": "autopep8_fixer",
+          "file_path": "/workspace/code_quality/plugins/autopep8_fixer.py",
+          "class_names": [
+            "Autopep8Fixer"
+          ],
+          "plugin_type": "fixer",
+          "description": "",
+          "size_bytes": 3262
+        }
+      ]
+    }
+  },
+  "discovered_plugins": [
+    {
+      "name": "flynt_fixer",
+      "file_path": "/workspace/code_quality/plugins/flynt_fixer.py",
+      "class_names": [
+        "FlyntFixer"
+      ],
+      "plugin_type": "fixer",
+      "description": "",
+      "size_bytes": 2288
+    },
+    {
+      "name": "autoflake_fixer",
+      "file_path": "/workspace/code_quality/plugins/autoflake_fixer.py",
+      "class_names": [
+        "AutoflakeFixer"
+      ],
+      "plugin_type": "fixer",
+      "description": "",
+      "size_bytes": 3638
+    },
+    {
+      "name": "docformatter_fixer",
+      "file_path": "/workspace/code_quality/plugins/docformatter_fixer.py",
+      "class_names": [
+        "DocformatterFixer"
+      ],
+      "plugin_type": "fixer",
+      "description": "",
+      "size_bytes": 3198
+    },
+    {
+      "name": "isort_fixer",
+      "file_path": "/workspace/code_quality/plugins/isort_fixer.py",
+      "class_names": [
+        "IsortFixer"
+      ],
+      "plugin_type": "fixer",
+      "description": "",
+      "size_bytes": 3393
+    },
+    {
+      "name": "unify_fixer",
+      "file_path": "/workspace/code_quality/plugins/unify_fixer.py",
+      "class_names": [
+        "UnifyFixer"
+      ],
+      "plugin_type": "fixer",
+      "description": "",
+      "size_bytes": 3064
+    },
+    {
+      "name": "plugin_registry",
+      "file_path": "/workspace/code_quality/plugins/plugin_registry.py",
+      "class_names": [],
+      "plugin_type": "unknown",
+      "description": "",
+      "size_bytes": 13719
+    },
+    {
+      "name": "attribute_checker_analyzer",
+      "file_path": "/workspace/code_quality/plugins/attribute_checker_analyzer.py",
+      "class_names": [
+        "AttributeCheckerAnalyzer"
+      ],
+      "plugin_type": "analyzer",
+      "description": "",
+      "size_bytes": 7707
+    },
+    {
+      "name": "base_plugin",
+      "file_path": "/workspace/code_quality/plugins/base_plugin.py",
+      "class_names": [
+        "PluginCategory",
+        "PluginPriority",
+        "BasePlugin",
+        "FileProcessorPlugin",
+        "DirectoryProcessorPlugin"
+      ],
+      "plugin_type": "unknown",
+      "description": "",
+      "size_bytes": 12337
+    },
+    {
+      "name": "import_hygiene_fixer",
+      "file_path": "/workspace/code_quality/plugins/import_hygiene_fixer.py",
+      "class_names": [
+        "ImportHygieneFixer",
+        "TypeOnlyVisitor"
+      ],
+      "plugin_type": "fixer",
+      "description": "",
+      "size_bytes": 3417
+    },
+    {
+      "name": "ruff_analyzer",
+      "file_path": "/workspace/code_quality/plugins/ruff_analyzer.py",
+      "class_names": [
+        "RuffAnalyzer"
+      ],
+      "plugin_type": "analyzer",
+      "description": "",
+      "size_bytes": 3226
+    },
+    {
+      "name": "fawltydeps_analyzer",
+      "file_path": "/workspace/code_quality/plugins/fawltydeps_analyzer.py",
+      "class_names": [
+        "FawltyDepsAnalyzer"
+      ],
+      "plugin_type": "analyzer",
+      "description": "",
+      "size_bytes": 9258
+    },
+    {
+      "name": "pyupgrade_fixer",
+      "file_path": "/workspace/code_quality/plugins/pyupgrade_fixer.py",
+      "class_names": [
+        "PyupgradeFixer"
+      ],
+      "plugin_type": "fixer",
+      "description": "",
+      "size_bytes": 2301
+    },
+    {
+      "name": "pyre_analyzer",
+      "file_path": "/workspace/code_quality/plugins/pyre_analyzer.py",
+      "class_names": [
+        "PyreAnalyzer"
+      ],
+      "plugin_type": "analyzer",
+      "description": "",
+      "size_bytes": 3637
+    },
+    {
+      "name": "ruff_fixer",
+      "file_path": "/workspace/code_quality/plugins/ruff_fixer.py",
+      "class_names": [
+        "RuffFixer"
+      ],
+      "plugin_type": "fixer",
+      "description": "",
+      "size_bytes": 2811
+    },
+    {
+      "name": "black_fixer",
+      "file_path": "/workspace/code_quality/plugins/black_fixer.py",
+      "class_names": [
+        "BlackFixer"
+      ],
+      "plugin_type": "fixer",
+      "description": "",
+      "size_bytes": 4671
+    },
+    {
+      "name": "yesqa_fixer",
+      "file_path": "/workspace/code_quality/plugins/yesqa_fixer.py",
+      "class_names": [
+        "YesqaFixer"
+      ],
+      "plugin_type": "fixer",
+      "description": "",
+      "size_bytes": 2160
+    },
+    {
+      "name": "plugin_manager",
+      "file_path": "/workspace/code_quality/plugins/plugin_manager.py",
+      "class_names": [],
+      "plugin_type": "unknown",
+      "description": "",
+      "size_bytes": 17540
+    },
+    {
+      "name": "creosote_analyzer",
+      "file_path": "/workspace/code_quality/plugins/creosote_analyzer.py",
+      "class_names": [
+        "CreosoteAnalyzer"
+      ],
+      "plugin_type": "analyzer",
+      "description": "",
+      "size_bytes": 8988
+    },
+    {
+      "name": "flake8_analyzer",
+      "file_path": "/workspace/code_quality/plugins/flake8_analyzer.py",
+      "class_names": [
+        "Flake8Analyzer"
+      ],
+      "plugin_type": "analyzer",
+      "description": "",
+      "size_bytes": 6323
+    },
+    {
+      "name": "yapf_fixer",
+      "file_path": "/workspace/code_quality/plugins/yapf_fixer.py",
+      "class_names": [
+        "YapfFixer"
+      ],
+      "plugin_type": "fixer",
+      "description": "",
+      "size_bytes": 3006
+    },
+    {
+      "name": "future_annotations_fixer",
+      "file_path": "/workspace/code_quality/plugins/future_annotations_fixer.py",
+      "class_names": [
+        "FutureAnnotationsFixer"
+      ],
+      "plugin_type": "fixer",
+      "description": "",
+      "size_bytes": 2448
+    },
+    {
+      "name": "__init__",
+      "file_path": "/workspace/code_quality/plugins/__init__.py",
+      "class_names": [],
+      "plugin_type": "unknown",
+      "description": "",
+      "size_bytes": 1042
+    },
+    {
+      "name": "exceptions",
+      "file_path": "/workspace/code_quality/plugins/exceptions.py",
+      "class_names": [
+        "PluginError",
+        "PluginNotFoundError",
+        "PluginDependencyError",
+        "PluginExecutionError",
+        "PluginConfigurationError",
+        "PluginTimeoutError"
+      ],
+      "plugin_type": "unknown",
+      "description": "",
+      "size_bytes": 2280
+    },
+    {
+      "name": "autopep8_fixer",
+      "file_path": "/workspace/code_quality/plugins/autopep8_fixer.py",
+      "class_names": [
+        "Autopep8Fixer"
+      ],
+      "plugin_type": "fixer",
+      "description": "",
+      "size_bytes": 3262
+    }
+  ],
+  "plugin_categories": {
+    "fixers": [],
+    "analyzers": [],
+    "unknown": [
+      {
+        "name": "flynt_fixer",
+        "file_path": "/workspace/code_quality/plugins/flynt_fixer.py",
+        "class_names": [
+          "FlyntFixer"
+        ],
+        "plugin_type": "fixer",
+        "description": "",
+        "size_bytes": 2288
+      },
+      {
+        "name": "autoflake_fixer",
+        "file_path": "/workspace/code_quality/plugins/autoflake_fixer.py",
+        "class_names": [
+          "AutoflakeFixer"
+        ],
+        "plugin_type": "fixer",
+        "description": "",
+        "size_bytes": 3638
+      },
+      {
+        "name": "docformatter_fixer",
+        "file_path": "/workspace/code_quality/plugins/docformatter_fixer.py",
+        "class_names": [
+          "DocformatterFixer"
+        ],
+        "plugin_type": "fixer",
+        "description": "",
+        "size_bytes": 3198
+      },
+      {
+        "name": "isort_fixer",
+        "file_path": "/workspace/code_quality/plugins/isort_fixer.py",
+        "class_names": [
+          "IsortFixer"
+        ],
+        "plugin_type": "fixer",
+        "description": "",
+        "size_bytes": 3393
+      },
+      {
+        "name": "unify_fixer",
+        "file_path": "/workspace/code_quality/plugins/unify_fixer.py",
+        "class_names": [
+          "UnifyFixer"
+        ],
+        "plugin_type": "fixer",
+        "description": "",
+        "size_bytes": 3064
+      },
+      {
+        "name": "plugin_registry",
+        "file_path": "/workspace/code_quality/plugins/plugin_registry.py",
+        "class_names": [],
+        "plugin_type": "unknown",
+        "description": "",
+        "size_bytes": 13719
+      },
+      {
+        "name": "attribute_checker_analyzer",
+        "file_path": "/workspace/code_quality/plugins/attribute_checker_analyzer.py",
+        "class_names": [
+          "AttributeCheckerAnalyzer"
+        ],
+        "plugin_type": "analyzer",
+        "description": "",
+        "size_bytes": 7707
+      },
+      {
+        "name": "base_plugin",
+        "file_path": "/workspace/code_quality/plugins/base_plugin.py",
+        "class_names": [
+          "PluginCategory",
+          "PluginPriority",
+          "BasePlugin",
+          "FileProcessorPlugin",
+          "DirectoryProcessorPlugin"
+        ],
+        "plugin_type": "unknown",
+        "description": "",
+        "size_bytes": 12337
+      },
+      {
+        "name": "import_hygiene_fixer",
+        "file_path": "/workspace/code_quality/plugins/import_hygiene_fixer.py",
+        "class_names": [
+          "ImportHygieneFixer",
+          "TypeOnlyVisitor"
+        ],
+        "plugin_type": "fixer",
+        "description": "",
+        "size_bytes": 3417
+      },
+      {
+        "name": "ruff_analyzer",
+        "file_path": "/workspace/code_quality/plugins/ruff_analyzer.py",
+        "class_names": [
+          "RuffAnalyzer"
+        ],
+        "plugin_type": "analyzer",
+        "description": "",
+        "size_bytes": 3226
+      },
+      {
+        "name": "fawltydeps_analyzer",
+        "file_path": "/workspace/code_quality/plugins/fawltydeps_analyzer.py",
+        "class_names": [
+          "FawltyDepsAnalyzer"
+        ],
+        "plugin_type": "analyzer",
+        "description": "",
+        "size_bytes": 9258
+      },
+      {
+        "name": "pyupgrade_fixer",
+        "file_path": "/workspace/code_quality/plugins/pyupgrade_fixer.py",
+        "class_names": [
+          "PyupgradeFixer"
+        ],
+        "plugin_type": "fixer",
+        "description": "",
+        "size_bytes": 2301
+      },
+      {
+        "name": "pyre_analyzer",
+        "file_path": "/workspace/code_quality/plugins/pyre_analyzer.py",
+        "class_names": [
+          "PyreAnalyzer"
+        ],
+        "plugin_type": "analyzer",
+        "description": "",
+        "size_bytes": 3637
+      },
+      {
+        "name": "ruff_fixer",
+        "file_path": "/workspace/code_quality/plugins/ruff_fixer.py",
+        "class_names": [
+          "RuffFixer"
+        ],
+        "plugin_type": "fixer",
+        "description": "",
+        "size_bytes": 2811
+      },
+      {
+        "name": "black_fixer",
+        "file_path": "/workspace/code_quality/plugins/black_fixer.py",
+        "class_names": [
+          "BlackFixer"
+        ],
+        "plugin_type": "fixer",
+        "description": "",
+        "size_bytes": 4671
+      },
+      {
+        "name": "yesqa_fixer",
+        "file_path": "/workspace/code_quality/plugins/yesqa_fixer.py",
+        "class_names": [
+          "YesqaFixer"
+        ],
+        "plugin_type": "fixer",
+        "description": "",
+        "size_bytes": 2160
+      },
+      {
+        "name": "plugin_manager",
+        "file_path": "/workspace/code_quality/plugins/plugin_manager.py",
+        "class_names": [],
+        "plugin_type": "unknown",
+        "description": "",
+        "size_bytes": 17540
+      },
+      {
+        "name": "creosote_analyzer",
+        "file_path": "/workspace/code_quality/plugins/creosote_analyzer.py",
+        "class_names": [
+          "CreosoteAnalyzer"
+        ],
+        "plugin_type": "analyzer",
+        "description": "",
+        "size_bytes": 8988
+      },
+      {
+        "name": "flake8_analyzer",
+        "file_path": "/workspace/code_quality/plugins/flake8_analyzer.py",
+        "class_names": [
+          "Flake8Analyzer"
+        ],
+        "plugin_type": "analyzer",
+        "description": "",
+        "size_bytes": 6323
+      },
+      {
+        "name": "yapf_fixer",
+        "file_path": "/workspace/code_quality/plugins/yapf_fixer.py",
+        "class_names": [
+          "YapfFixer"
+        ],
+        "plugin_type": "fixer",
+        "description": "",
+        "size_bytes": 3006
+      },
+      {
+        "name": "future_annotations_fixer",
+        "file_path": "/workspace/code_quality/plugins/future_annotations_fixer.py",
+        "class_names": [
+          "FutureAnnotationsFixer"
+        ],
+        "plugin_type": "fixer",
+        "description": "",
+        "size_bytes": 2448
+      },
+      {
+        "name": "__init__",
+        "file_path": "/workspace/code_quality/plugins/__init__.py",
+        "class_names": [],
+        "plugin_type": "unknown",
+        "description": "",
+        "size_bytes": 1042
+      },
+      {
+        "name": "exceptions",
+        "file_path": "/workspace/code_quality/plugins/exceptions.py",
+        "class_names": [
+          "PluginError",
+          "PluginNotFoundError",
+          "PluginDependencyError",
+          "PluginExecutionError",
+          "PluginConfigurationError",
+          "PluginTimeoutError"
+        ],
+        "plugin_type": "unknown",
+        "description": "",
+        "size_bytes": 2280
+      },
+      {
+        "name": "autopep8_fixer",
+        "file_path": "/workspace/code_quality/plugins/autopep8_fixer.py",
+        "class_names": [
+          "Autopep8Fixer"
+        ],
+        "plugin_type": "fixer",
+        "description": "",
+        "size_bytes": 3262
+      }
+    ]
+  }
+}

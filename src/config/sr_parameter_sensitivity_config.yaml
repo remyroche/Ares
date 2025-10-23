@@ -1,0 +1,97 @@
+# S/R Parameter Sensitivity Analysis Configuration
+# This file configures parameter sensitivity analysis and interdependence monitoring
+
+parameter_sensitivity_analysis:
+  # Sensitivity analysis settings
+  sensitivity_test:
+    enabled: true
+    parameter_step_size: 0.1  # 10% step size for sensitivity testing
+    confidence_intervals: [0.05, 0.95]  # 90% confidence interval
+    minimum_sample_size: 1000
+    statistical_significance_level: 0.05
+
+  # Parameter interdependence monitoring
+  interdependence_monitoring:
+    enabled: true
+    correlation_analysis:
+      pearson_threshold: 0.7  # Flag correlations above 0.7
+      spearman_threshold: 0.6  # Flag rank correlations above 0.6
+      partial_correlation: true  # Control for confounding variables
+
+    # Known parameter relationships
+    parameter_relationships:
+      touch_proximity_dbscan:
+        primary: "touch_proximity_threshold"
+        secondary: "dbscan_eps"
+        expected_correlation: 0.8
+        relationship_type: "direct"
+
+      volume_timeframe:
+        primary: "volume_spike_threshold"
+        secondary: "timeframe"
+        expected_correlation: -0.6
+        relationship_type: "inverse"
+
+      fractal_pivot_periods:
+        primary: "fractal_period"
+        secondary: "pivot_period"
+        expected_correlation: 0.5
+        relationship_type: "direct"
+
+  # Parameter stability monitoring
+  stability_monitoring:
+    enabled: true
+    stability_window: 50  # Check stability over last 50 optimization runs
+    parameter_drift_threshold: 0.15  # Flag if parameter changes > 15%
+    stability_score_threshold: 0.8  # Minimum stability score required
+
+  # Automated parameter adjustment
+  automated_adjustment:
+    enabled: true
+    adjustment_frequency: "daily"  # daily, weekly, monthly
+    adjustment_method: "gradient_descent"  # gradient_descent, evolutionary, bayesian
+    learning_rate: 0.01
+    max_adjustment_per_step: 0.05  # Maximum 5% adjustment per step
+
+  # Risk management for parameter changes
+  risk_management:
+    parameter_change_limits:
+      touch_threshold: 0.5  # Max 50% change from baseline
+      volume_threshold: 0.3  # Max 30% change from baseline
+      dbscan_eps: 0.4  # Max 40% change from baseline
+
+    rollback_triggers:
+      - performance_drop: 0.1  # Rollback if performance drops > 10%
+      - stability_score_drop: 0.2  # Rollback if stability drops > 20%
+      - correlation_violation: true  # Rollback if expected correlations break
+
+# Parameter baseline values (for drift detection)
+parameter_baselines:
+  "30m":
+    touch_threshold: 0.002
+    bounce_threshold: 0.008
+    breakout_threshold: 0.015
+    volume_spike_threshold: 1.5
+    fractal_period: 5
+    pivot_period: 15
+
+  "15m":
+    touch_threshold: 0.0015
+    bounce_threshold: 0.005
+    breakout_threshold: 0.01
+    volume_spike_threshold: 1.5
+    fractal_period: 5
+    pivot_period: 12
+
+# Performance monitoring thresholds
+performance_monitoring:
+  minimum_performance_metrics:
+    precision: 0.6
+    recall: 0.5
+    f1_score: 0.55
+    stability_score: 0.7
+
+  alert_thresholds:
+    performance_degradation: 0.1  # Alert if performance drops > 10%
+    parameter_instability: 0.2   # Alert if parameter variance > 20%
+    correlation_breakdown: 0.3   # Alert if expected correlations drop > 30%

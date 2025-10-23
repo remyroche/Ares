@@ -1,0 +1,387 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Code Interaction Mapping Report</title>
+    <style>
+        :root {
+            --primary-color: #007acc;
+            --secondary-color: #6c757d;
+            --success-color: #28a745;
+            --warning-color: #ffc107;
+            --danger-color: #dc3545;
+            --light-color: #f8f9fa;
+            --dark-color: #343a40;
+        }
+
+        .theme-light {
+            --bg-color: #ffffff;
+            --text-color: #333333;
+            --card-bg: #f8f9fa;
+            --border-color: #dee2e6;
+        }
+
+        .theme-dark {
+            --bg-color: #1a1a1a;
+            --text-color: #ffffff;
+            --card-bg: #2d2d2d;
+            --border-color: #404040;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .report-header {
+            text-align: center;
+            margin-bottom: 30px;
+            padding: 20px;
+            background: var(--card-bg);
+            border-radius: 8px;
+        }
+
+        .report-nav ul {
+            list-style: none;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .report-nav a {
+            text-decoration: none;
+            color: var(--primary-color);
+            padding: 10px 20px;
+            border-radius: 5px;
+            transition: background-color 0.3s;
+        }
+
+        .report-nav a:hover {
+            background-color: var(--light-color);
+        }
+
+        .report-section {
+            margin-bottom: 40px;
+            padding: 20px;
+            background: var(--card-bg);
+            border-radius: 8px;
+        }
+
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+
+        .metric-card {
+            text-align: center;
+            padding: 20px;
+            background: var(--bg-color);
+            border-radius: 5px;
+            border: 1px solid var(--border-color);
+        }
+
+        .metric-value {
+            font-size: 2em;
+            font-weight: bold;
+            color: var(--primary-color);
+        }
+
+        .metric-value.critical {
+            color: var(--danger-color);
+        }
+
+        .table-container {
+            margin-top: 20px;
+        }
+
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+
+        .data-table th,
+        .data-table td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .data-table th {
+            background-color: var(--primary-color);
+            color: white;
+            font-weight: bold;
+        }
+
+        .charts-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+
+        .chart-container {
+            background: var(--bg-color);
+            padding: 20px;
+            border-radius: 5px;
+            border: 1px solid var(--border-color);
+        }
+
+        .export-buttons {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+            margin-top: 20px;
+        }
+
+        .export-buttons button {
+            padding: 12px 24px;
+            background-color: var(--primary-color);
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: background-color 0.3s;
+        }
+
+        .export-buttons button:hover {
+            background-color: #0056b3;
+        }
+
+        @media (max-width: 768px) {
+            .metrics-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .charts-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .report-nav ul {
+                flex-direction: column;
+                align-items: center;
+            }
+        }
+</style>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+        function initializeCharts() {
+            // Issues by category chart
+            const issuesCtx = document.getElementById('issuesChart');
+            if (issuesCtx) {
+                new Chart(issuesCtx, {
+                    type: 'doughnut',
+                    data: {
+                        labels: ['Errors', 'Warnings', 'Info'],
+                        datasets: [{
+                            data: [12, 19, 3],
+                            backgroundColor: ['#dc3545', '#ffc107', '#17a2b8']
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        plugins: {
+                            title: {
+                                display: true,
+                                text: 'Issues Distribution'
+                            }
+                        }
+                    }
+                });
+            }
+
+            // Severity chart
+            const severityCtx = document.getElementById('severityChart');
+            if (severityCtx) {
+                new Chart(severityCtx, {
+                    type: 'bar',
+                    data: {
+                        labels: ['Critical', 'High', 'Medium', 'Low'],
+                        datasets: [{
+                            label: 'Issue Count',
+                            data: [5, 12, 8, 3],
+                            backgroundColor: ['#dc3545', '#fd7e14', '#ffc107', '#28a745']
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        plugins: {
+                            title: {
+                                display: true,
+                                text: 'Issues by Severity'
+                            }
+                        }
+                    }
+                });
+            }
+        }
+
+        function exportToJSON() {
+            const data = getReportData();
+            const blob = new Blob([JSON.stringify(data, null, 2)], {type: 'application/json'});
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'code_quality_report.json';
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+
+        function exportToCSV() {
+            const data = getReportData();
+            const csv = convertToCSV(data);
+            const blob = new Blob([csv], {type: 'text/csv'});
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'code_quality_report.csv';
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+
+        function printReport() {
+            window.print();
+        }
+
+        function getReportData() {
+            // This would be populated with actual report data
+            return {
+                summary: {
+                    total_issues: 28,
+                    total_files: 15,
+                    quality_score: 85
+                },
+                timestamp: new Date().toISOString()
+            };
+        }
+
+        function convertToCSV(data) {
+            // Simple CSV conversion
+            const rows = [];
+            for (const [key, value] of Object.entries(data)) {
+                rows.push(`${key},${value}`);
+            }
+            return rows.join('\n');
+        }
+</script>
+</head>
+<body class="theme-light">
+    <div class="container">
+        <header class="report-header">
+            <h1>Code Interaction Mapping Report</h1>
+            <p class="timestamp">Generated: 2025-09-04 13:18:34</p>
+        </header>
+
+        <nav class="report-nav">
+            <ul>
+                <li><a href="#summary">Summary</a></li>
+                <li><a href="#details">Details</a></li>
+                <li><a href="#charts">Charts</a></li>
+                <li><a href="#export">Export</a></li>
+            </ul>
+        </nav>
+
+        <section id="summary" class="report-section">
+            <h2>Summary</h2>
+            <div class="metrics-grid">
+                <div class="metric-card">
+                    <h3>Total Issues</h3>
+                    <div class="metric-value">5110</div>
+                </div>
+                <div class="metric-card">
+                    <h3>Files Analyzed</h3>
+                    <div class="metric-value">0</div>
+                </div>
+                <div class="metric-card">
+                    <h3>Critical Issues</h3>
+                    <div class="metric-value critical">0</div>
+                </div>
+                <div class="metric-card">
+                    <h3>Quality Score</h3>
+                    <div class="metric-value">0</div>
+                </div>
+            </div>
+        </section>
+
+        <section id="details" class="report-section">
+            <h2>Detailed Analysis</h2>
+        
+            <div class="table-container">
+                <h3>Issues by Category</h3>
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Category</th>
+                            <th>Count</th>
+                            <th>Severity</th>
+                            <th>Files Affected</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="table-container">
+                <h3>Issues by File</h3>
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>File</th>
+                            <th>Errors</th>
+                            <th>Warnings</th>
+                            <th>Score</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+
+                    </tbody>
+                </table>
+            </div>
+
+        </section>
+
+        <section id="charts" class="report-section">
+            <h2>Charts & Visualizations</h2>
+            <div class="charts-grid">
+                <div class="chart-container">
+                    <canvas id="issuesChart"></canvas>
+                </div>
+                <div class="chart-container">
+                    <canvas id="severityChart"></canvas>
+                </div>
+            </div>
+            <script>
+                // Initialize charts with data
+                initializeCharts();
+            </script>
+        </section>
+
+        <section id="export" class="report-section">
+            <h2>Export Options</h2>
+            <div class="export-buttons">
+                <button onclick="exportToJSON()">Export JSON</button>
+                <button onclick="exportToCSV()">Export CSV</button>
+                <button onclick="printReport()">Print Report</button>
+            </div>
+        </section>
+    </div>
+</body>
+</html>

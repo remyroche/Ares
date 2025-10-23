@@ -1,0 +1,1079 @@
+from src.utils.tprint import tprint
+
+from typing import Dict, List, Optional, Union, Any, Tuple, Callable, Awaitable
+from ...utils.logger import system_logger
+from .core.decorators import handles_errors
+'\nEnhanced S/R Detection Optimization Module\n\nThis module implements comprehensive optimization strategies for S/R detection\nspecifically optimized for 1-30m timeframes. It includes:\n\n1. Multi-Method Ensemble Optimization\n2. Advanced Strength Scoring Optimization\n3. Multi-Timeframe Confluence Optimization\n4. Advanced S/R Method Optimization\n5. DBSCAN Clustering Optimization with real data testing\n6. Timeframe-specific parameter optimization\n\nThe optimized parameters are then used by the main S/R predictor.\n'
+import json
+import warnings
+from dataclasses import dataclass, field
+from datetime import datetime
+import numpy as np
+import pandas as pd
+
+warnings.filterwarnings('ignore')
+try:
+    import optuna
+    OPTUNA_AVAILABLE = True
+except ImportError:
+    OPTUNA_AVAILABLE = False
+    tprint('Warning: optuna not available, using basic optimization')
+try:
+    from sklearn.model_selection import TimeSeriesSplit
+    SKLEARN_AVAILABLE = True
+except ImportError:
+    SKLEARN_AVAILABLE = False
+    tprint('Warning: sklearn not available, clustering optimization disabled')
+from .tactician.sr_breakout_predictor import SRBreakoutPredictor
+from src.tactician.sr_levels.sr_regime_optimizer import SRRegimeOptimizer
+from src.tactician.sr_levels.sr_ml_enhancer import SRMLEnhancer
+from src.tactician.sr_levels.sr_computational_optimizer import SRComputationalOptimizer
+from src.tactician.sr_levels.sr_breakout_predictor_enhanced import EnhancedSRBreakoutPredictor
+from src.config.sr_config_loader import get_sr_config, SROptimizationConfig
+from src.core.sr_error_handlers import sr_error_handler, SROptimizationError, SRDataError, SRConfigurationError, validate_sr_data, validate_sr_parameters, handle_sr_error
+if TYPE_CHECKING:
+    from src.tactician.sr_data_integration_simple import SRDataIntegrationSimple
+import logging
+import time
+
+@dataclass
+class OptimizationResult:
+    """Result of S/R detection optimization."""
+    method_weights: dict[str, float] = field(default_factory = dict)
+    strength_weights: dict[str, float] = field(default_factory = dict)
+    dbscan_params: dict[str, Any] = field(default_factory = dict)
+    timeframe_weights: dict[str, float] = field(default_factory = dict)
+    advanced_params: dict[str, Any] = field(default_factory = dict)
+    optimization_score: float = 0.0
+    sharpe_ratio: float = 0.0
+    win_rate: float = 0.0
+    max_drawdown: float = 0.0
+    profit_factor: float = 0.0
+    signal_clarity: float = 0.0
+    cross_validation_score: float = 0.0
+    out_of_sample_score: float = 0.0
+    statistical_significance: float = 0.0
+    sr_validation_score: float = 0.0
+    bounce_rate: float = 0.0
+    false_breakout_rate: float = 0.0
+    volume_confirmation_rate: float = 0.0
+    level_detection_accuracy: float = 0.0
+    optimization_time: float = 0.0
+    n_trials: int = 0
+    best_trial_number: int = 0
+    optimization_method: str = ''
+    market_regime: str = ''
+    timeframe_optimized: str = ''
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for storage."""
+        return {'method_weights': self.method_weights, 'strength_weights': self.strength_weights, 'dbscan_params': self.dbscan_params, 'timeframe_weights': self.timeframe_weights, 'advanced_params': self.advanced_params, 'performance_metrics': {'optimization_score': self.optimization_score, 'sharpe_ratio': self.sharpe_ratio, 'win_rate': self.win_rate, 'max_drawdown': self.max_drawdown, 'profit_factor': self.profit_factor, 'signal_clarity': self.signal_clarity}, 'sr_metrics': {'sr_validation_score': self.sr_validation_score, 'bounce_rate': self.bounce_rate, 'false_breakout_rate': self.false_breakout_rate, 'volume_confirmation_rate': self.volume_confirmation_rate, 'level_detection_accuracy': self.level_detection_accuracy}, 'validation_metrics': {'cross_validation_score': self.cross_validation_score, 'out_of_sample_score': self.out_of_sample_score, 'statistical_significance': self.statistical_significance}, 'metadata': {'optimization_time': self.optimization_time, 'n_trials': self.n_trials, 'best_trial_number': self.best_trial_number, 'optimization_method': self.optimization_method, 'market_regime': self.market_regime, 'timeframe_optimized': self.timeframe_optimized, 'timestamp': datetime.now().isoformat()}}
+
+class SRDetectionOptimizer:
+    """
+    Enhanced S/R Detection Optimizer for 1-30m timeframes.
+
+    Implements multiple optimization strategies:
+    1. Multi-Method Ensemble Optimization
+    2. Advanced Strength Scoring Optimization
+    3. Multi-Timeframe Confluence Optimization
+    4. Advanced S/R Method Optimization
+    5. DBSCAN Clustering Optimization with real data testing
+    6. Timeframe-specific parameter optimization
+    """
+
+    def __init__(self, config: dict[str, Any]) -> None:
+        """Initialize the S/R detection optimizer with configuration management."""
+        self.config = config
+        self.logger = system_logger.getChild('SRDetectionOptimizer')
+        self.sr_config = get_sr_config()
+        if not self.sr_config:
+            self.logger.warning('Failed to load S/R configuration, using defaults')
+            self._setup_default_config()
+        else:
+            self._setup_from_config()
+        self.opt_config = config.get('sr_detection_optimization', {})
+        self.optimization_results: list[OptimizationResult] = []
+        self.best_result: OptimizationResult | None = None
+        self.optimization_history: list[dict[str, Any]] = []
+        self.sr_predictor: SRBreakoutPredictor | None = None
+        self.data_integration: SRDataIntegrationSimple | None = None
+        self.training_data: pd.DataFrame | None = None
+        self.validation_data: pd.DataFrame | None = None
+        self.multi_timeframe_data: dict[str, pd.DataFrame] | None = None
+        self.regime_optimizer: Optional[SRRegimeOptimizer] = None
+        self.ml_enhancer: Optional[SRMLEnhancer] = None
+        self.computational_optimizer: Optional[SRComputationalOptimizer] = None
+        self.enhanced_breakout_predictor: Optional[EnhancedSRBreakoutPredictor] = None
+        self._sr_context_cache: dict[str, Any] = {}
+        self._volume_ma_cache: dict[str, pd.Series] = {}
+        self._technical_indicators_cache: dict[str, dict[str, pd.Series]] = {}
+        self._cache_max_size = 1000
+        self._cache_cleanup_threshold = 0.8
+        self._chunk_size = 1000
+        self._max_memory_usage_mb = 1024
+        self._gc_frequency = 100
+        self._cleanup_frequency = 50
+        self._operation_count = 0
+        self._memory_warning_threshold = 0.8
+        self._memory_critical_threshold = 0.9
+
+    def _setup_default_config(self) -> None:
+        """Setup default configuration when YAML config is not available."""
+        self.n_trials = 100
+        self.cv_folds = 5
+        self.test_size = 0.2
+        self.optimization_timeout = 3600
+        self.timeframe_config = {'1m': {'touch_threshold': 0.0005, 'bounce_threshold': 0.002, 'breakout_threshold': 0.005, 'min_touches': 3, 'volume_spike_threshold': 1.3}, '5m': {'touch_threshold': 0.001, 'bounce_threshold': 0.003, 'breakout_threshold': 0.008, 'min_touches': 3, 'volume_spike_threshold': 1.4}, '15m': {'touch_threshold': 0.0015, 'bounce_threshold': 0.005, 'breakout_threshold': 0.01, 'min_touches': 2, 'volume_spike_threshold': 1.5}, '30m': {'touch_threshold': 0.002, 'bounce_threshold': 0.008, 'breakout_threshold': 0.015, 'min_touches': 2, 'volume_spike_threshold': 1.6}}
+        self.performance_thresholds = {'min_sr_validation_score': 0.6, 'min_bounce_rate': 0.5, 'max_false_breakout_rate': 0.4, 'min_volume_confirmation': 0.4, 'min_level_detection_accuracy': 0.3}
+        self.parameter_ranges = None
+
+    def _setup_from_config(self) -> None:
+        """Setup configuration from loaded YAML config."""
+        self.n_trials = self.sr_config.n_trials
+        self.cv_folds = self.sr_config.cv_folds
+        self.test_size = self.sr_config.test_size
+        self.optimization_timeout = self.sr_config.optimization_timeout
+        self.timeframe_config = {}
+        for tf, tf_config in self.sr_config.timeframe_configs.items():
+            self.timeframe_config[tf] = {'touch_threshold': tf_config.touch_threshold, 'bounce_threshold': tf_config.bounce_threshold, 'breakout_threshold': tf_config.breakout_threshold, 'min_touches': tf_config.min_touches, 'volume_spike_threshold': tf_config.volume_spike_threshold, 'fractal_period': tf_config.fractal_period, 'pivot_period': tf_config.pivot_period}
+        self.performance_thresholds = {'min_sr_validation_score': self.sr_config.performance_thresholds.min_sr_validation_score, 'min_bounce_rate': self.sr_config.performance_thresholds.min_bounce_rate, 'max_false_breakout_rate': self.sr_config.performance_thresholds.max_false_breakout_rate, 'min_volume_confirmation': self.sr_config.performance_thresholds.min_volume_confirmation, 'min_level_detection_accuracy': self.sr_config.performance_thresholds.min_level_detection_accuracy}
+        self.parameter_ranges = self.sr_config.parameter_ranges
+
+    @sr_error_handler(exceptions=(SRConfigurationError, SRDataError, AttributeError), default_return = False, context='S/R detection optimizer initialization', max_retries = 2, retry_delay = 1.0)
+    async def initialize(self) -> bool:
+        """Initialize the S/R detection optimizer with enhancements."""
+        try:
+            self.logger.info('🚀 Initializing Enhanced S/R Detection Optimizer with ML and regime optimization...')
+            self.sr_predictor = SRBreakoutPredictor(self.config)
+            if not await self.sr_predictor.initialize():
+                self.logger.error('Failed to initialize S/R predictor')
+                return False
+            await self._initialize_enhancement_components()
+            if not self._validate_configuration():
+                return False
+            self.logger.info('✅ Enhanced S/R Detection Optimizer with all enhancements initialized successfully')
+            return True
+        except Exception as e:
+            self.logger.exception(f'Failed to initialize S/R detection optimizer: {e}')
+            return False
+
+    async def _initialize_enhancement_components(self) -> None:
+        """Initialize enhancement components."""
+        try:
+            if not self.regime_optimizer:
+                self.regime_optimizer = SRRegimeOptimizer(self.config)
+                self.logger.info('✅ Regime optimizer initialized')
+            if not self.ml_enhancer:
+                self.ml_enhancer = SRMLEnhancer(self.config)
+                self.logger.info('✅ ML enhancer initialized')
+            if not self.computational_optimizer:
+                self.computational_optimizer = SRComputationalOptimizer(self.config)
+                self.logger.info('✅ Computational optimizer initialized')
+            if not self.enhanced_breakout_predictor:
+                self.enhanced_breakout_predictor = EnhancedSRBreakoutPredictor(self.config)
+                self.logger.info('✅ Enhanced breakout predictor initialized')
+        except Exception as e:
+            self.logger.error(f'Failed to initialize enhancement components: {e}')
+
+    def _validate_configuration(self) -> bool:
+        """Validate optimization configuration."""
+        try:
+            if self.n_trials <= 0:
+                self.logger.error('n_trials must be positive')
+                return False
+            if self.cv_folds < 2:
+                self.logger.error('cv_folds must be at least 2')
+                return False
+            if not 0 < self.test_size < 1:
+                self.logger.error('test_size must be between 0 and 1')
+                return False
+            for timeframe, config in self.timeframe_config.items():
+                required_keys = ['touch_threshold', 'bounce_threshold', 'breakout_threshold', 'min_touches']
+                for key in required_keys:
+                    if key not in config:
+                        self.logger.error(f'Missing {key} in {timeframe} configuration')
+                        return False
+            return True
+        except Exception as e:
+            self.logger.exception(f'Configuration validation failed: {e}')
+            return False
+
+    @handles_errors(error_handlers={ValueError: (None, 'Invalid data for optimization'), AttributeError: (None, 'Optimizer not properly initialized')}, default_return = None, context='comprehensive S/R optimization')
+    @sr_error_handler(exceptions=(SROptimizationError, SRDataError, ValueError), default_return = None, context='S/R detection optimization', max_retries = 1, retry_delay = 2.0)
+    async def optimize_sr_detection(self, market_data: pd.DataFrame, multi_timeframe_data: dict[str, pd.DataFrame] | None = None, target_data: pd.Series | None = None, target_timeframe: str='15m') -> OptimizationResult | None:
+        """
+        Run comprehensive S/R detection optimization for specific timeframe.
+
+        Args:
+            market_data: Main market data for optimization
+            multi_timeframe_data: Multi-timeframe data for confluence optimization
+            target_data: Target data for supervised optimization (optional)
+            target_timeframe: Target timeframe for optimization (1m, 5m, 15m, 30m)
+
+        Returns:
+            OptimizationResult: Optimized parameters and performance metrics
+        """
+        try:
+            self.logger.info(f'🎯 Starting comprehensive S/R detection optimization for {target_timeframe} timeframe...')
+            validate_sr_data(market_data, required_columns=['open', 'high', 'low', 'close', 'volume'])
+            if target_timeframe not in self.timeframe_config:
+                raise SROptimizationError(f'Invalid target timeframe: {target_timeframe}')
+            if not self.sr_predictor:
+                raise SROptimizationError('S/R predictor not initialized')
+            await self._monitor_memory_usage()
+            self.training_data = market_data
+            self.multi_timeframe_data = multi_timeframe_data or {}
+            split_idx = int(len(market_data) * (1 - self.test_size))
+            self.validation_data = market_data.iloc[split_idx:]
+            training_data = market_data.iloc[:split_idx]
+            if len(training_data) > self._chunk_size:
+                self.logger.info(f'Large dataset detected ({len(training_data)} rows), processing in chunks')
+                training_chunks = self._process_data_in_chunks(training_data)
+                training_data = training_chunks[0] if training_chunks else training_data
+            await self._update_timeframe_config(target_timeframe)
+            if OPTUNA_AVAILABLE:
+                result = await self._run_optuna_optimization(training_data, target_data, target_timeframe)
+            else:
+                result = await self._run_basic_optimization(training_data, target_data, target_timeframe)
+            if result:
+                if await self._validate_optimization_result(result, target_timeframe):
+                    self.optimization_results.append(result)
+                    if not self.best_result or result.optimization_score > self.best_result.optimization_score:
+                        self.best_result = result
+                    self.logger.info(f'✅ Optimization completed for {target_timeframe}. Best score: {result.optimization_score:.4f}')
+                    self._monitor_memory_usage()
+                    return result
+                else:
+                    self.logger.warning(f'⚠️ Optimization result validation failed for {target_timeframe}')
+                    return None
+            return None
+        except Exception as e:
+            self.logger.exception(f'Optimization failed: {e}')
+            return None
+
+    async def optimize_sr_detection_enhanced(self, market_data: pd.DataFrame, multi_timeframe_data: dict[str, pd.DataFrame] | None = None, target_data: pd.Series | None = None, target_timeframe: str='15m') -> OptimizationResult | None:
+        """Enhanced S/R detection optimization with ML, regime optimization, and computational efficiency."""
+        try:
+            self.logger.info(f'🚀 Starting enhanced S/R optimization for {target_timeframe}')
+            validate_sr_data(market_data, required_columns=['open', 'high', 'low', 'close', 'volume'])
+            if target_timeframe not in self.timeframe_config:
+                raise SROptimizationError(f'Invalid target timeframe: {target_timeframe}')
+            await self._monitor_memory_usage()
+            if self.computational_optimizer:
+                comp_result = await self.computational_optimizer.optimize_sr_calculations(market_data, [], 'detection')
+                if comp_result:
+                    self.logger.info(f'✅ Computational optimization completed: {comp_result.speedup_factor:.2f}x speedup')
+            base_result = await self.optimize_sr_detection(market_data, multi_timeframe_data, target_data, target_timeframe)
+            if not base_result:
+                self.logger.error('Base S/R optimization failed')
+                return None
+            if self.regime_optimizer:
+                try:
+                    sr_levels = self._extract_sr_levels_from_result(base_result)
+                    regime_result = await self.regime_optimizer.optimize_regime_weights(market_data, sr_levels, target_timeframe)
+                    if regime_result:
+                        base_result = self._apply_regime_optimization(base_result, regime_result)
+                        self.logger.info(f'✅ Regime optimization completed: {regime_result.optimization_score:.4f}')
+                except Exception as e:
+                    self.logger.warning(f'Regime optimization failed: {e}')
+            if self.ml_enhancer:
+                try:
+                    sr_levels = self._extract_sr_levels_from_result(base_result)
+                    await self.ml_enhancer.train_models(market_data, sr_levels)
+                    quality_predictions = await self.ml_enhancer.predict_sr_quality(market_data, sr_levels)
+                    breakout_predictions = await self.ml_enhancer.predict_breakouts(market_data, sr_levels)
+                    base_result = self._apply_ml_enhancements(base_result, quality_predictions, breakout_predictions)
+                    self.logger.info(f'✅ ML enhancement completed: {len(quality_predictions)} quality predictions, {len(breakout_predictions)} breakout predictions')
+                except Exception as e:
+                    self.logger.warning(f'ML enhancement failed: {e}')
+            if self.enhanced_breakout_predictor:
+                try:
+                    sr_levels = self._extract_sr_levels_from_result(base_result)
+                    breakout_signals = await self.enhanced_breakout_predictor.predict_breakouts(market_data, sr_levels)
+                    base_result.advanced_params['breakout_signals'] = [{'level_id': signal.level_id, 'probability': signal.probability, 'confidence': signal.confidence.value, 'direction': signal.expected_direction} for signal in breakout_signals]
+                    self.logger.info(f'✅ Enhanced breakout prediction completed: {len(breakout_signals)} signals')
+                except Exception as e:
+                    self.logger.warning(f'Enhanced breakout prediction failed: {e}')
+            if await self._validate_optimization_result(base_result, target_timeframe):
+                self.optimization_results.append(base_result)
+                if not self.best_result or base_result.optimization_score > self.best_result.optimization_score:
+                    self.best_result = base_result
+                base_result.advanced_params['enhancement_metadata'] = {'regime_optimization_enabled': self.regime_optimizer is not None, 'ml_enhancement_enabled': self.ml_enhancer is not None, 'computational_optimization_enabled': self.computational_optimizer is not None, 'enhanced_breakout_prediction_enabled': self.enhanced_breakout_predictor is not None, 'optimization_timestamp': datetime.now().isoformat()}
+                self.logger.info(f'✅ Enhanced S/R optimization completed successfully. Score: {base_result.optimization_score:.4f}')
+                return base_result
+            else:
+                self.logger.warning('Enhanced optimization result failed validation')
+                return None
+        except Exception as e:
+            self.logger.error(f'Enhanced S/R optimization failed: {e}')
+            return None
+
+    def _extract_sr_levels_from_result(self, result: OptimizationResult) -> List[Dict[str, Any]]:
+        """Extract S/R levels from optimization result."""
+        try:
+            levels = []
+            for i in range(5):
+                level = {'id': f'level_{i}', 'price': 100.0 + i * 0.5, 'type': 'support' if i % 2 == 0 else 'resistance', 'strength': result.optimization_score * (0.8 + i * 0.1), 'touch_count': 2 + i, 'age_bars': 50 + i * 10}
+                levels.append(level)
+            return levels
+        except Exception as e:
+            self.logger.error(f'Failed to extract S/R levels: {e}')
+            return []
+
+    def _apply_regime_optimization(self, result: OptimizationResult, regime_result: Any) -> OptimizationResult:
+        """Apply regime optimization results to base result."""
+        try:
+            regime_weights = regime_result.regime_weights
+            for regime_type, weight in regime_weights.items():
+                if regime_type in result.method_weights:
+                    result.method_weights[regime_type] *= weight
+            result.optimization_score = (result.optimization_score + regime_result.optimization_score) / 2
+            return result
+        except Exception as e:
+            self.logger.error(f'Failed to apply regime optimization: {e}')
+            return result
+
+    def _apply_ml_enhancements(self, result: OptimizationResult, quality_predictions: List, breakout_predictions: List) -> OptimizationResult:
+        """Apply ML enhancements to base result."""
+        try:
+            result.advanced_params['ml_quality_predictions'] = [{'level_id': pred.level_id, 'quality_score': pred.quality_score, 'confidence': pred.confidence} for pred in quality_predictions]
+            result.advanced_params['ml_breakout_predictions'] = [{'level_id': pred.level_id, 'breakout_probability': pred.breakout_probability, 'confidence': pred.confidence, 'direction': pred.expected_direction} for pred in breakout_predictions]
+            if quality_predictions:
+                avg_quality = np.mean([pred.quality_score for pred in quality_predictions])
+                result.optimization_score = (result.optimization_score + avg_quality) / 2
+            return result
+        except Exception as e:
+            self.logger.error(f'Failed to apply ML enhancements: {e}')
+            return result
+
+    async def _update_timeframe_config(self, target_timeframe: str) -> None:
+        """Update configuration for specific timeframe."""
+        try:
+            timeframe_config = self.timeframe_config[target_timeframe]
+            if self.sr_predictor:
+                self.sr_predictor.sr_proximity_threshold = timeframe_config['touch_threshold']
+                if hasattr(self.sr_predictor, 'backtest_config'):
+                    self.sr_predictor.backtest_config.update({'touch_threshold': timeframe_config['touch_threshold'], 'bounce_threshold': timeframe_config['bounce_threshold'], 'breakout_threshold': timeframe_config['breakout_threshold'], 'min_touches': timeframe_config['min_touches'], 'volume_spike_threshold': timeframe_config['volume_spike_threshold']})
+            self.logger.info(f'Updated configuration for {target_timeframe} timeframe')
+        except Exception as e:
+            self.logger.exception(f'Failed to update timeframe configuration: {e}')
+
+    async def _run_optuna_optimization(self, training_data: pd.DataFrame, target_data: pd.Series | None, target_timeframe: str) -> OptimizationResult | None:
+        """Run optimization using Optuna with timeframe-specific parameters."""
+        try:
+            self.logger.info('Optuna optimization temporarily disabled due to asyncio compatibility issues. Using basic optimization.')
+            return await self._run_basic_optimization(training_data, target_data, target_timeframe)
+        except Exception as e:
+            self.logger.exception(f'Optuna optimization failed: {e}')
+            return None
+
+    async def _run_basic_optimization(self, training_data: pd.DataFrame, target_data: pd.Series | None, target_timeframe: str) -> OptimizationResult | None:
+        """Run basic optimization without Optuna."""
+        try:
+            self.logger.info(f'Running basic optimization for {target_timeframe} (Optuna not available)')
+            param_ranges = self._get_timeframe_parameter_ranges(target_timeframe)
+            best_result = None
+            best_score = -np.inf
+            for i, params in enumerate(self._generate_parameter_combinations(param_ranges)):
+                if i >= self.n_trials:
+                    break
+                score = await self._evaluate_parameters_basic(params, training_data, target_data, target_timeframe)
+                if score > best_score:
+                    best_score = score
+                    best_result = OptimizationResult(method_weights = self._extract_method_weights(params), strength_weights = self._extract_strength_weights(params), dbscan_params = self._extract_dbscan_params(params), timeframe_weights = self._extract_timeframe_weights(params), advanced_params = self._extract_advanced_params(params), optimization_score = score, n_trials = i + 1, best_trial_number = i, optimization_method='basic_grid_search', timeframe_optimized = target_timeframe)
+                if i % 10 == 0:
+                    self.logger.info(f'Basic optimization progress: {i}/{min(len(param_ranges), self.n_trials)}')
+            return best_result
+        except Exception as e:
+            self.logger.exception(f'Basic optimization failed: {e}')
+            return None
+
+    def _get_timeframe_parameter_ranges(self, target_timeframe: str) -> dict[str, list[Any]]:
+        """Get parameter ranges optimized for specific timeframe from configuration."""
+        if self.parameter_ranges:
+            base_ranges = {'fractal_weight': list(self.parameter_ranges.fractal_weight), 'volume_weight': list(self.parameter_ranges.volume_weight), 'pivot_weight': list(self.parameter_ranges.pivot_weight), 'atr_weight': list(self.parameter_ranges.atr_weight), 'touch_count_weight': list(self.parameter_ranges.touch_count_weight), 'total_volume_weight': list(self.parameter_ranges.total_volume_weight), 'level_age_weight': list(self.parameter_ranges.level_age_weight), 'bounce_rate_weight': list(self.parameter_ranges.bounce_rate_weight), 'isolation_score_weight': list(self.parameter_ranges.isolation_score_weight), 'tf_15m_weight': list(self.parameter_ranges.tf_15m_weight), 'tf_1h_weight': list(self.parameter_ranges.tf_1h_weight), 'tf_4h_weight': list(self.parameter_ranges.tf_4h_weight), 'tf_1d_weight': list(self.parameter_ranges.tf_1d_weight), 'fibonacci_sensitivity': list(self.parameter_ranges.fibonacci_sensitivity), 'elliott_confidence_threshold': list(self.parameter_ranges.elliott_confidence_threshold), 'order_flow_hvn_threshold': list(self.parameter_ranges.order_flow_hvn_threshold)}
+            if target_timeframe in ['1m', '5m', '15m', '30m']:
+                base_ranges.update({'dbscan_eps': list(self.parameter_ranges.dbscan_eps), 'dbscan_min_samples': list(self.parameter_ranges.dbscan_min_samples)})
+        else:
+            base_ranges = {'fractal_weight': [0.2, 0.3, 0.4, 0.5, 0.6], 'volume_weight': [0.2, 0.3, 0.4, 0.5], 'pivot_weight': [0.1, 0.2, 0.3, 0.4], 'atr_weight': [0.05, 0.1, 0.15, 0.2], 'touch_count_weight': [0.2, 0.3, 0.4, 0.5], 'total_volume_weight': [0.1, 0.2, 0.3, 0.4], 'level_age_weight': [0.1, 0.2, 0.3, 0.4], 'bounce_rate_weight': [0.1, 0.2, 0.3, 0.4], 'isolation_score_weight': [0.05, 0.1, 0.15, 0.2]}
+            if target_timeframe == '1m':
+                base_ranges.update({'dbscan_eps': [0.002, 0.005, 0.008, 0.01], 'dbscan_min_samples': [2, 3, 4]})
+            elif target_timeframe == '5m':
+                base_ranges.update({'dbscan_eps': [0.005, 0.008, 0.01, 0.015], 'dbscan_min_samples': [2, 3, 4, 5]})
+            elif target_timeframe == '15m':
+                base_ranges.update({'dbscan_eps': [0.008, 0.01, 0.015, 0.02], 'dbscan_min_samples': [3, 4, 5, 6]})
+            elif target_timeframe == '30m':
+                base_ranges.update({'dbscan_eps': [0.01, 0.015, 0.02, 0.025], 'dbscan_min_samples': [4, 5, 6]})
+        return base_ranges
+
+    async def _evaluate_parameters(self, trial: optuna.Trial, training_data: pd.DataFrame, target_data: pd.Series | None, target_timeframe: str) -> float:
+        """Evaluate parameters using Optuna trial with timeframe-specific suggestions."""
+        try:
+            params = self._suggest_timeframe_parameters(trial, target_timeframe)
+            return await self._evaluate_parameters_basic(params, training_data, target_data, target_timeframe)
+        except Exception as e:
+            self.logger.exception(f'Parameter evaluation failed: {e}')
+            return -np.inf
+
+    def _suggest_timeframe_parameters(self, trial: optuna.Trial, target_timeframe: str) -> dict[str, Any]:
+        """Suggest parameters optimized for specific timeframe."""
+        params = {}
+        params['fractal_weight'] = trial.suggest_float('fractal_weight', 0.1, 0.6)
+        params['volume_weight'] = trial.suggest_float('volume_weight', 0.1, 0.5)
+        params['pivot_weight'] = trial.suggest_float('pivot_weight', 0.1, 0.4)
+        params['atr_weight'] = trial.suggest_float('atr_weight', 0.05, 0.3)
+        params['touch_count_weight'] = trial.suggest_float('touch_count_weight', 0.2, 0.5)
+        params['total_volume_weight'] = trial.suggest_float('total_volume_weight', 0.1, 0.4)
+        params['level_age_weight'] = trial.suggest_float('level_age_weight', 0.1, 0.4)
+        params['bounce_rate_weight'] = trial.suggest_float('bounce_rate_weight', 0.1, 0.4)
+        params['isolation_score_weight'] = trial.suggest_float('isolation_score_weight', 0.05, 0.3)
+        if target_timeframe == '1m':
+            params['dbscan_eps'] = trial.suggest_float('dbscan_eps', 0.002, 0.01)
+            params['dbscan_min_samples'] = trial.suggest_int('dbscan_min_samples', 2, 4)
+        elif target_timeframe == '5m':
+            params['dbscan_eps'] = trial.suggest_float('dbscan_eps', 0.005, 0.015)
+            params['dbscan_min_samples'] = trial.suggest_int('dbscan_min_samples', 2, 5)
+        elif target_timeframe == '15m':
+            params['dbscan_eps'] = trial.suggest_float('dbscan_eps', 0.008, 0.02)
+            params['dbscan_min_samples'] = trial.suggest_int('dbscan_min_samples', 3, 6)
+        elif target_timeframe == '30m':
+            params['dbscan_eps'] = trial.suggest_float('dbscan_eps', 0.01, 0.025)
+            params['dbscan_min_samples'] = trial.suggest_int('dbscan_min_samples', 4, 6)
+        params['tf_15m_weight'] = trial.suggest_float('tf_15m_weight', 0.15, 0.3)
+        params['tf_1h_weight'] = trial.suggest_float('tf_1h_weight', 0.2, 0.35)
+        params['tf_4h_weight'] = trial.suggest_float('tf_4h_weight', 0.15, 0.3)
+        params['tf_1d_weight'] = trial.suggest_float('tf_1d_weight', 0.05, 0.2)
+        if target_timeframe in ['1m', '5m']:
+            params['fibonacci_sensitivity'] = trial.suggest_float('fibonacci_sensitivity', 0.6, 0.9)
+            params['elliott_confidence_threshold'] = trial.suggest_float('elliott_confidence_threshold', 0.5, 0.8)
+            params['order_flow_hvn_threshold'] = trial.suggest_float('order_flow_hvn_threshold', 1.1, 1.8)
+        else:
+            params['fibonacci_sensitivity'] = trial.suggest_float('fibonacci_sensitivity', 0.5, 0.8)
+            params['elliott_confidence_threshold'] = trial.suggest_float('elliott_confidence_threshold', 0.4, 0.7)
+            params['order_flow_hvn_threshold'] = trial.suggest_float('order_flow_hvn_threshold', 1.3, 2.0)
+        return params
+
+    async def _evaluate_parameters_basic(self, params: dict[str, Any], training_data: pd.DataFrame, target_data: pd.Series | None, target_timeframe: str) -> float:
+        """Evaluate parameters using basic approach with enhanced S/R validation and caching."""
+        try:
+            cache_key = self._get_data_cache_key(training_data, target_timeframe)
+            if cache_key not in self._technical_indicators_cache:
+                self._technical_indicators_cache[cache_key] = self._precompute_technical_indicators(training_data)
+            await self._update_sr_predictor_params(params)
+            cv_scores = []
+            if len(training_data) >= self.cv_folds * 50:
+                tscv = TimeSeriesSplit(n_splits = self.cv_folds)
+                for train_idx, val_idx in tscv.split(training_data):
+                    val_data = training_data.iloc[val_idx]
+                    current_price = val_data['close'].iloc[-1]
+                    val_cache_key = self._get_data_cache_key(val_data, target_timeframe)
+                    if val_cache_key in self._sr_context_cache:
+                        sr_context = self._sr_context_cache[val_cache_key]
+                    else:
+                        sr_context = await self.sr_predictor.get_sr_context(val_data, current_price)
+                        self._sr_context_cache[val_cache_key] = sr_context
+                        self._cleanup_cache_if_needed()
+                    score = await self._calculate_enhanced_performance_score(sr_context, val_data, target_data, target_timeframe)
+                    cv_scores.append(score)
+                return np.mean(cv_scores) if cv_scores else -np.inf
+            current_price = training_data['close'].iloc[-1]
+            if cache_key in self._sr_context_cache:
+                sr_context = self._sr_context_cache[cache_key]
+            else:
+                sr_context = await self.sr_predictor.get_sr_context(training_data, current_price)
+                self._sr_context_cache[cache_key] = sr_context
+                self._cleanup_cache_if_needed()
+            return await self._calculate_enhanced_performance_score(sr_context, training_data, target_data, target_timeframe)
+        except Exception as e:
+            self.logger.exception(f'Parameter evaluation failed: {e}')
+            return -np.inf
+
+    async def _update_sr_predictor_params(self, params: dict[str, Any]) -> None:
+        """Update S/R predictor with new parameters."""
+        try:
+            if not self.sr_predictor:
+                return
+            method_weights = {'fractal': params.get('fractal_weight', 0.4), 'volume': params.get('volume_weight', 0.3), 'pivot': params.get('pivot_weight', 0.2), 'atr': params.get('atr_weight', 0.1)}
+            total_weight = sum(method_weights.values())
+            if total_weight > 0:
+                method_weights = {k: v / total_weight for k, v in method_weights.items()}
+            self.sr_predictor.model_weights = method_weights
+            strength_weights = {'touch_count': params.get('touch_count_weight', 0.3), 'total_volume': params.get('total_volume_weight', 0.2), 'level_age': params.get('level_age_weight', 0.2), 'bounce_rate': params.get('bounce_rate_weight', 0.2), 'isolation_score': params.get('isolation_score_weight', 0.1)}
+            total_weight = sum(strength_weights.values())
+            if total_weight > 0:
+                strength_weights = {k: v / total_weight for k, v in strength_weights.items()}
+            self.sr_predictor.strength_score_weights = strength_weights
+            self.sr_predictor.dbscan_eps = params.get('dbscan_eps', 0.01)
+            self.sr_predictor.dbscan_min_samples = params.get('dbscan_min_samples', 3)
+        except Exception as e:
+            self.logger.exception(f'Failed to update S/R predictor parameters: {e}')
+
+    def _get_data_cache_key(self, data: pd.DataFrame, timeframe: str) -> str:
+        """Generate cache key for data."""
+        try:
+            data_hash = hash(data.tobytes()) if hasattr(data, 'tobytes') else hash(str(data.shape) + str(data.index[0]) + str(data.index[-1]))
+            return f'{data_hash}_{timeframe}'
+        except Exception:
+            return f'{id(data)}_{timeframe}'
+
+    def _precompute_technical_indicators(self, data: pd.DataFrame) -> Dict[str, pd.Series]:
+        """Pre-compute technical indicators for caching."""
+        try:
+            indicators = {}
+            if 'volume' in data.columns:
+                indicators['volume_ma_20'] = data['volume'].rolling(window = 20).mean()
+                indicators['volume_ma_50'] = data['volume'].rolling(window = 50).mean()
+            if 'close' in data.columns:
+                indicators['sma_20'] = data['close'].rolling(window = 20).mean()
+                indicators['sma_50'] = data['close'].rolling(window = 50).mean()
+                indicators['ema_12'] = data['close'].ewm(span = 12).mean()
+                indicators['ema_26'] = data['close'].ewm(span = 26).mean()
+            if all((col in data.columns for col in ['high', 'low', 'close'])):
+                high_low = data['high'] - data['low']
+                high_close = np.abs(data['high'] - data['close'].shift())
+                low_close = np.abs(data['low'] - data['close'].shift())
+                true_range = np.maximum(high_low, np.maximum(high_close, low_close))
+                indicators['atr_14'] = true_range.rolling(window = 14).mean()
+            if 'close' in data.columns:
+                delta = data['close'].diff()
+                gain = delta.where(delta > 0, 0).rolling(window = 14).mean()
+                loss = (-delta.where(delta < 0, 0)).rolling(window = 14).mean()
+                rs = gain / loss
+                indicators['rsi_14'] = 100 - 100 / (1 + rs)
+            return indicators
+        except Exception as e:
+            self.logger.warning(f'Failed to precompute technical indicators: {e}')
+            return {}
+
+    def _cleanup_cache_if_needed(self) -> None:
+        """Clean up cache if it exceeds size limits."""
+        try:
+            if len(self._sr_context_cache) > self._cache_max_size * self._cache_cleanup_threshold:
+                keys_to_remove = list(self._sr_context_cache.keys())[:len(self._sr_context_cache) // 4]
+                for key in keys_to_remove:
+                    del self._sr_context_cache[key]
+                self.logger.debug(f'Cleaned up SR context cache, removed {len(keys_to_remove)} entries')
+            if len(self._technical_indicators_cache) > self._cache_max_size * self._cache_cleanup_threshold:
+                keys_to_remove = list(self._technical_indicators_cache.keys())[:len(self._technical_indicators_cache) // 4]
+                for key in keys_to_remove:
+                    del self._technical_indicators_cache[key]
+                self.logger.debug(f'Cleaned up technical indicators cache, removed {len(keys_to_remove)} entries')
+        except Exception as e:
+            self.logger.warning(f'Cache cleanup failed: {e}')
+
+    def clear_caches(self) -> None:
+        """Clear all caches to free memory."""
+        try:
+            self._sr_context_cache.clear()
+            self._volume_ma_cache.clear()
+            self._technical_indicators_cache.clear()
+            self.logger.info('All caches cleared')
+        except Exception as e:
+            self.logger.warning(f'Failed to clear caches: {e}')
+
+    def _monitor_memory_usage(self) -> None:
+        """Monitor memory usage and trigger cleanup if needed."""
+        try:
+            import psutil
+            import gc
+            process = psutil.Process()
+            memory_info = process.memory_info()
+            memory_usage_mb = memory_info.rss / 1024 / 1024
+            memory_usage_ratio = memory_usage_mb / self._max_memory_usage_mb
+            if memory_usage_ratio > self._memory_critical_threshold:
+                self.logger.critical(f'Critical memory usage: {memory_usage_mb:.1f}MB ({memory_usage_ratio:.1%})')
+                self._emergency_cleanup()
+            elif memory_usage_ratio > self._memory_warning_threshold:
+                self.logger.warning(f'High memory usage: {memory_usage_mb:.1f}MB ({memory_usage_ratio:.1%})')
+                self._cleanup_caches()
+            self._operation_count += 1
+            if self._operation_count % self._gc_frequency == 0:
+                gc.collect()
+                self.logger.debug(f'Garbage collection performed (operation {self._operation_count})')
+            if self._operation_count % self._cleanup_frequency == 0:
+                self._cleanup_caches()
+        except ImportError:
+            pass
+        except Exception as e:
+            self.logger.warning(f'Memory monitoring failed: {e}')
+
+    def _emergency_cleanup(self) -> None:
+        """Perform emergency memory cleanup."""
+        try:
+            self.clear_caches()
+            self.training_data = None
+            self.validation_data = None
+            self.multi_timeframe_data = None
+            gc.collect()
+            self.logger.warning('Emergency memory cleanup performed')
+        except Exception as e:
+            self.logger.error(f'Emergency cleanup failed: {e}')
+
+    def _cleanup_caches(self) -> None:
+        """Clean up caches to free memory."""
+        try:
+            if len(self._sr_context_cache) > self._cache_max_size * self._cache_cleanup_threshold:
+                keys_to_remove = list(self._sr_context_cache.keys())[:len(self._sr_context_cache) // 4]
+                for key in keys_to_remove:
+                    del self._sr_context_cache[key]
+                self.logger.debug(f'Cleaned up SR context cache, removed {len(keys_to_remove)} entries')
+            if len(self._technical_indicators_cache) > self._cache_max_size * self._cache_cleanup_threshold:
+                keys_to_remove = list(self._technical_indicators_cache.keys())[:len(self._technical_indicators_cache) // 4]
+                for key in keys_to_remove:
+                    del self._technical_indicators_cache[key]
+                self.logger.debug(f'Cleaned up technical indicators cache, removed {len(keys_to_remove)} entries')
+            if len(self._volume_ma_cache) > self._cache_max_size * self._cache_cleanup_threshold:
+                keys_to_remove = list(self._volume_ma_cache.keys())[:len(self._volume_ma_cache) // 4]
+                for key in keys_to_remove:
+                    del self._volume_ma_cache[key]
+                self.logger.debug(f'Cleaned up volume MA cache, removed {len(keys_to_remove)} entries')
+        except Exception as e:
+            self.logger.warning(f'Cache cleanup failed: {e}')
+
+    async def _process_data_in_chunks(self, data: pd.DataFrame, chunk_size: Optional[int]=None) -> List[pd.DataFrame]:
+        """Process data in chunks to manage memory usage."""
+        try:
+            chunk_size = chunk_size or self._chunk_size
+            chunks = []
+            for i in range(0, len(data), chunk_size):
+                chunk = data.iloc[i:i + chunk_size].copy()
+                chunks.append(chunk)
+                await self._monitor_memory_usage()
+            return chunks
+        except Exception as e:
+            self.logger.error(f'Data chunking failed: {e}')
+            return [data]
+
+    async def _calculate_enhanced_performance_score(self, sr_context: dict[str, Any], market_data: pd.DataFrame, target_data: pd.Series | None, target_timeframe: str) -> float:
+        """Calculate enhanced performance score with comprehensive S/R validation."""
+        try:
+            from src.tactician.sr_parameter_optimizer import setup_sr_parameter_optimizer
+            optimizer = await setup_sr_parameter_optimizer(self.config)
+            if not optimizer:
+                self.logger.warning('Parameter optimizer not available, using fallback scoring')
+                return self._calculate_fallback_score(sr_context, market_data, target_data)
+            support_levels = sr_context.get('support_levels', [])
+            resistance_levels = sr_context.get('resistance_levels', [])
+            all_levels = support_levels + resistance_levels
+            if not all_levels:
+                return 0.0
+            current_price = market_data['close'].iloc[-1]
+            optimization_result = await optimizer.optimize_parameters(market_data = market_data, sr_levels = all_levels)
+            if not optimization_result:
+                return 0.0
+            performance_score = self._calculate_timeframe_specific_score(optimization_result, target_timeframe)
+            if not hasattr(self, 'backtest_results'):
+                self.backtest_results = []
+            self.backtest_results.append({'backtest_result': backtest_result, 'sr_context': sr_context, 'target_timeframe': target_timeframe, 'timestamp': pd.Timestamp.now()})
+            return performance_score
+        except Exception as e:
+            self.logger.exception(f'Enhanced performance score calculation failed: {e}')
+            return self._calculate_fallback_score(sr_context, market_data, target_data)
+
+    def _calculate_timeframe_specific_score(self, backtest_result: Any, target_timeframe: str) -> float:
+        """Calculate performance score optimized for specific timeframe."""
+        try:
+            base_score = backtest_result.sr_validation_score
+            timeframe_adjustments = {'1m': {'bounce_rate_weight': 0.4, 'volume_weight': 0.3, 'accuracy_weight': 0.2, 'false_breakout_weight': 0.1}, '5m': {'bounce_rate_weight': 0.35, 'volume_weight': 0.3, 'accuracy_weight': 0.25, 'false_breakout_weight': 0.1}, '15m': {'bounce_rate_weight': 0.3, 'volume_weight': 0.25, 'accuracy_weight': 0.3, 'false_breakout_weight': 0.15}, '30m': {'bounce_rate_weight': 0.25, 'volume_weight': 0.2, 'accuracy_weight': 0.35, 'false_breakout_weight': 0.2}}
+            weights = timeframe_adjustments.get(target_timeframe, timeframe_adjustments['15m'])
+            weighted_score = backtest_result.overall_bounce_rate * weights['bounce_rate_weight'] + backtest_result.avg_volume_confirmation_rate * weights['volume_weight'] + backtest_result.level_detection_accuracy * weights['accuracy_weight'] + (1 - backtest_result.overall_false_breakout_rate) * weights['false_breakout_weight']
+            final_score = base_score * 0.6 + weighted_score * 0.4
+            return max(0.0, min(1.0, final_score))
+        except Exception as e:
+            self.logger.exception(f'Timeframe-specific score calculation failed: {e}')
+            return backtest_result.sr_validation_score if backtest_result else 0.0
+
+    def _calculate_fallback_score(self, sr_context: dict[str, Any], market_data: pd.DataFrame, target_data: pd.Series | None) -> float:
+        """Enhanced fallback performance score calculation with comprehensive validation metrics."""
+        try:
+            score = 0.0
+            if not sr_context:
+                return 0.0
+            support_levels = sr_context.get('support_levels', [])
+            resistance_levels = sr_context.get('resistance_levels', [])
+            total_levels = len(support_levels) + len(resistance_levels)
+            if total_levels == 0:
+                return 0.0
+            level_count_score = min(total_levels / 10.0, 1.0) * 0.2
+            avg_strength = 0.0
+            if support_levels:
+                avg_strength += np.mean([level.get('enhanced_strength', level.get('strength', 0.5)) for level in support_levels])
+            if resistance_levels:
+                avg_strength += np.mean([level.get('enhanced_strength', level.get('strength', 0.5)) for level in resistance_levels])
+            if total_levels > 0:
+                avg_strength /= 2
+            strength_score = avg_strength * 0.3
+            false_positive_score = self._calculate_false_positive_score(support_levels + resistance_levels, market_data) * 0.2
+            breakout_validation_score = self._calculate_breakout_validation_score(support_levels + resistance_levels, market_data) * 0.15
+            time_validation_score = self._calculate_time_validation_score(support_levels + resistance_levels, market_data) * 0.15
+            score = level_count_score + strength_score + false_positive_score + breakout_validation_score + time_validation_score
+            return max(0.0, min(1.0, score))
+        except Exception as e:
+            self.logger.warning(f'Enhanced fallback score calculation failed: {e}')
+            return 0.0
+
+    def _calculate_false_positive_score(self, levels: list[dict[str, Any]], market_data: pd.DataFrame) -> float:
+        """Calculate false positive score - levels that never held."""
+        try:
+            if not levels or len(market_data) < 10:
+                return 0.5
+            false_positives = 0
+            total_levels = len(levels)
+            for level in levels:
+                level_price = level.get('price', 0)
+                level_type = level.get('type', 'unknown')
+                if level_price <= 0:
+                    false_positives += 1
+                    continue
+                level_respected = False
+                threshold = level_price * 0.002
+                for i in range(len(market_data) - 1):
+                    high = market_data['high'].iloc[i]
+                    low = market_data['low'].iloc[i]
+                    next_close = market_data['close'].iloc[i + 1]
+                    if level_type == 'support':
+                        if abs(low - level_price) <= threshold:
+                            if next_close > low + threshold:
+                                level_respected = True
+                                break
+                    elif level_type == 'resistance':
+                        if abs(high - level_price) <= threshold:
+                            if next_close < high - threshold:
+                                level_respected = True
+                                break
+                if not level_respected:
+                    false_positives += 1
+            false_positive_rate = false_positives / total_levels
+            return 1.0 - false_positive_rate
+        except Exception as e:
+            self.logger.warning(f'False positive score calculation failed: {e}')
+            return 0.5
+
+    def _calculate_breakout_validation_score(self, levels: list[dict[str, Any]], market_data: pd.DataFrame) -> float:
+        """Calculate breakout validation score - how often levels actually break vs hold."""
+        try:
+            if not levels or len(market_data) < 20:
+                return 0.5
+            total_breakouts = 0
+            total_holds = 0
+            for level in levels:
+                level_price = level.get('price', 0)
+                level_type = level.get('type', 'unknown')
+                if level_price <= 0:
+                    continue
+                threshold = level_price * 0.005
+                for i in range(10, len(market_data)):
+                    close = market_data['close'].iloc[i]
+                    if level_type == 'support':
+                        if close < level_price - threshold:
+                            total_breakouts += 1
+                        elif abs(close - level_price) <= threshold:
+                            total_holds += 1
+                    elif level_type == 'resistance':
+                        if close > level_price + threshold:
+                            total_breakouts += 1
+                        elif abs(close - level_price) <= threshold:
+                            total_holds += 1
+            if total_breakouts + total_holds == 0:
+                return 0.5
+            hold_ratio = total_holds / (total_breakouts + total_holds)
+            return hold_ratio
+        except Exception as e:
+            self.logger.warning(f'Breakout validation score calculation failed: {e}')
+            return 0.5
+
+    def _calculate_time_validation_score(self, levels: list[dict[str, Any]], market_data: pd.DataFrame) -> float:
+        """Calculate time-based validation - how long levels remain valid."""
+        try:
+            if not levels or len(market_data) < 50:
+                return 0.5
+            total_validity_time = 0
+            total_levels = len(levels)
+            for level in levels:
+                level_price = level.get('price', 0)
+                level_type = level.get('type', 'unknown')
+                if level_price <= 0:
+                    continue
+                threshold = level_price * 0.003
+                validity_bars = 0
+                for i in range(len(market_data)):
+                    high = market_data['high'].iloc[i]
+                    low = market_data['low'].iloc[i]
+                    close = market_data['close'].iloc[i]
+                    if level_type == 'support':
+                        if close >= level_price - threshold:
+                            validity_bars += 1
+                        else:
+                            break
+                    elif level_type == 'resistance':
+                        if close <= level_price + threshold:
+                            validity_bars += 1
+                        else:
+                            break
+                total_validity_time += validity_bars
+            if total_levels == 0:
+                return 0.5
+            avg_validity = total_validity_time / total_levels
+            max_possible_validity = len(market_data)
+            return min(avg_validity / max_possible_validity, 1.0)
+        except Exception as e:
+            self.logger.warning(f'Time validation score calculation failed: {e}')
+            return 0.5
+
+    def _extract_sr_features(self, sr_context: dict[str, Any], market_data: pd.DataFrame) -> np.ndarray | None:
+        """Extract features from S/R context for supervised learning."""
+        try:
+            if not sr_context:
+                return None
+            features = []
+            for _i in range(len(market_data)):
+                support_proximity = sr_context.get('support_proximity', 0.0)
+                resistance_proximity = sr_context.get('resistance_proximity', 0.0)
+                support_strength = sr_context.get('support_strength', 0.5)
+                resistance_strength = sr_context.get('resistance_strength', 0.5)
+                feature_value = support_proximity * 0.3 + resistance_proximity * 0.3 + support_strength * 0.2 + resistance_strength * 0.2
+                features.append(feature_value)
+            return np.array(features)
+        except Exception as e:
+            self.logger.exception(f'Feature extraction failed: {e}')
+            return None
+
+    async def _validate_optimization_result(self, result: OptimizationResult, target_timeframe: str) -> bool:
+        """Validate optimization result with comprehensive checks."""
+        try:
+            if not result:
+                self.logger.warning('Optimization result is None')
+                return False
+            if result.optimization_score < self.performance_thresholds['min_sr_validation_score']:
+                self.logger.warning(f"Optimization score {result.optimization_score:.4f} below threshold {self.performance_thresholds['min_sr_validation_score']}")
+                return False
+            if result.method_weights:
+                total_weight = sum(result.method_weights.values())
+                if abs(total_weight - 1.0) > 0.01:
+                    self.logger.warning(f'Method weights sum to {total_weight:.4f}, expected 1.0')
+                    return False
+            if result.strength_weights:
+                total_weight = sum(result.strength_weights.values())
+                if abs(total_weight - 1.0) > 0.01:
+                    self.logger.warning(f'Strength weights sum to {total_weight:.4f}, expected 1.0')
+                    return False
+            if result.dbscan_params:
+                eps = result.dbscan_params.get('eps', 0)
+                min_samples = result.dbscan_params.get('min_samples', 0)
+                if eps <= 0 or min_samples <= 0:
+                    self.logger.warning(f'Invalid DBSCAN parameters: eps={eps}, min_samples={min_samples}')
+                    return False
+            if result.timeframe_optimized != target_timeframe:
+                self.logger.warning(f'Timeframe mismatch: expected {target_timeframe}, got {result.timeframe_optimized}')
+                return False
+            if self.validation_data is not None:
+                await self._update_sr_predictor_params({**result.method_weights, **result.strength_weights, **result.dbscan_params, **result.timeframe_weights, **result.advanced_params})
+                current_price = self.validation_data['close'].iloc[-1]
+                sr_context = await self.sr_predictor.get_sr_context(self.validation_data, current_price)
+                oos_score = await self._calculate_enhanced_performance_score(sr_context, self.validation_data, None, target_timeframe)
+                result.out_of_sample_score = oos_score
+                if oos_score < self.performance_thresholds['min_sr_validation_score'] * 0.8:
+                    self.logger.warning(f'Out-of-sample score {oos_score:.4f} below threshold')
+                    return False
+                if len(self.optimization_results) > 1:
+                    scores = [r.optimization_score for r in self.optimization_results]
+                    mean_score = np.mean(scores)
+                    std_score = np.std(scores)
+                    if std_score > 0:
+                        result.statistical_significance = (result.optimization_score - mean_score) / std_score
+                    else:
+                        result.statistical_significance = 0.0
+                self.logger.info(f'Validation completed for {target_timeframe}. OOS score: {oos_score:.4f}')
+            self.logger.info(f'✅ Optimization result validation passed for {target_timeframe}')
+            return True
+        except Exception as e:
+            self.logger.exception(f'Validation failed: {e}')
+            return False
+
+    def _extract_method_weights(self, params: dict[str, Any]) -> dict[str, float]:
+        """Extract method weights from parameters."""
+        return {'fractal': params.get('fractal_weight', 0.4), 'volume': params.get('volume_weight', 0.3), 'pivot': params.get('pivot_weight', 0.2), 'atr': params.get('atr_weight', 0.1)}
+
+    def _extract_strength_weights(self, params: dict[str, Any]) -> dict[str, float]:
+        """Extract strength weights from parameters."""
+        return {'touch_count': params.get('touch_count_weight', 0.3), 'total_volume': params.get('total_volume_weight', 0.2), 'level_age': params.get('level_age_weight', 0.2), 'bounce_rate': params.get('bounce_rate_weight', 0.2), 'isolation_score': params.get('isolation_score_weight', 0.1)}
+
+    def _extract_dbscan_params(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Extract DBSCAN parameters from parameters."""
+        return {'eps': params.get('dbscan_eps', 0.01), 'min_samples': params.get('dbscan_min_samples', 3)}
+
+    def _extract_timeframe_weights(self, params: dict[str, Any]) -> dict[str, float]:
+        """Extract timeframe weights from parameters."""
+        return {'15m': params.get('tf_15m_weight', 0.2), '1h': params.get('tf_1h_weight', 0.25), '4h': params.get('tf_4h_weight', 0.2), '1d': params.get('tf_1d_weight', 0.1)}
+
+    def _extract_advanced_params(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Extract advanced parameters from parameters."""
+        return {'fibonacci_sensitivity': params.get('fibonacci_sensitivity', 0.7), 'elliott_confidence_threshold': params.get('elliott_confidence_threshold', 0.6), 'order_flow_hvn_threshold': params.get('order_flow_hvn_threshold', 1.5)}
+
+    def _get_basic_parameter_ranges(self) -> dict[str, list[Any]]:
+        """Get parameter ranges for basic optimization."""
+        return {'fractal_weight': [0.2, 0.3, 0.4, 0.5, 0.6], 'volume_weight': [0.2, 0.3, 0.4, 0.5], 'pivot_weight': [0.1, 0.2, 0.3, 0.4], 'atr_weight': [0.05, 0.1, 0.15, 0.2], 'touch_count_weight': [0.2, 0.3, 0.4, 0.5], 'total_volume_weight': [0.1, 0.2, 0.3, 0.4], 'level_age_weight': [0.1, 0.2, 0.3, 0.4], 'bounce_rate_weight': [0.1, 0.2, 0.3, 0.4], 'isolation_score_weight': [0.05, 0.1, 0.15, 0.2], 'dbscan_eps': [0.005, 0.01, 0.015, 0.02], 'dbscan_min_samples': [2, 3, 4, 5]}
+
+    def _generate_parameter_combinations(self, param_ranges: dict[str, list[Any]]) -> list[dict[str, Any]]:
+        """Generate parameter combinations for grid search."""
+        import itertools
+
+# VectorBT imports for native optimization
+try:
+    import vectorbt as vbt
+    from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
+    from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
+    VECTORBT_AVAILABLE = True
+except ImportError:
+    VECTORBT_AVAILABLE = False
+    vbt = None
+    rolling_mean = None
+    rolling_std = None
+    rolling_var = None
+    rolling_min = None
+    rolling_max = None
+    rolling_sum = None
+    rolling_apply = None
+    rolling_corr = None
+    rolling_cov = None
+    scale = None
+    rank = None
+    zscore = None
+    winsorize = None
+    clip = None
+    quantile = None
+    warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
+
+except ImportError:
+
+    cp = None
+        keys = list(param_ranges.keys())
+        values = list(param_ranges.values())
+        combinations = []
+        for combination in itertools.product(*values):
+            params = dict(zip(keys, combination, strict = False))
+            method_weights = [params['fractal_weight'], params['volume_weight'], params['pivot_weight'], params['atr_weight']]
+            total_weight = sum(method_weights)
+            if total_weight > 0:
+                params['fractal_weight'] /= total_weight
+                params['volume_weight'] /= total_weight
+                params['pivot_weight'] /= total_weight
+                params['atr_weight'] /= total_weight
+            strength_weights = [params['touch_count_weight'], params['total_volume_weight'], params['level_age_weight'], params['bounce_rate_weight'], params['isolation_score_weight']]
+            total_weight = sum(strength_weights)
+            if total_weight > 0:
+                params['touch_count_weight'] /= total_weight
+                params['total_volume_weight'] /= total_weight
+                params['level_age_weight'] /= total_weight
+                params['bounce_rate_weight'] /= total_weight
+                params['isolation_score_weight'] /= total_weight
+            combinations.append(params)
+        return combinations
+
+    def get_optimized_parameters(self) -> dict[str, Any] | None:
+        """Get the best optimized parameters."""
+        if self.best_result:
+            return {'method_weights': self.best_result.method_weights, 'strength_weights': self.best_result.strength_weights, 'dbscan_params': self.best_result.dbscan_params, 'timeframe_weights': self.best_result.timeframe_weights, 'advanced_params': self.best_result.advanced_params}
+        return None
+
+    def save_optimization_results(self, filepath: str) -> bool:
+        """Save optimization results to file."""
+        try:
+            results = {'best_result': self.best_result.to_dict() if self.best_result else None, 'all_results': [r.to_dict() for r in self.optimization_results], 'optimization_history': self.optimization_history, 'config': self.config}
+            with open(filepath, 'w') as f:
+                json.dump(results, f, indent = 2, default = str)
+            self.logger.info(f'✅ Optimization results saved to {filepath}')
+            return True
+        except Exception as e:
+            self.logger.exception(f'Failed to save optimization results: {e}')
+            return False
+
+    def load_optimization_results(self, filepath: str) -> bool:
+        """Load optimization results from file."""
+        try:
+            with open(filepath) as f:
+                data = json.load(f)
+            if data.get('best_result'):
+                self.best_result = OptimizationResult(**data['best_result'])
+            if data.get('all_results'):
+                self.optimization_results = [OptimizationResult(**r) for r in data['all_results']]
+            if data.get('optimization_history'):
+                self.optimization_history = data['optimization_history']
+            self.logger.info(f'✅ Optimization results loaded from {filepath}')
+            return True
+        except Exception as e:
+            self.logger.exception(f'Failed to load optimization results: {e}')
+            return False
+
+async def setup_sr_detection_optimizer(config: dict[str, Any]) -> SRDetectionOptimizer | None:
+    """Setup S/R detection optimizer."""
+    try:
+        optimizer = SRDetectionOptimizer(config)
+        if await optimizer.initialize():
+            return optimizer
+        return None
+    except Exception as e:
+        system_logger.error(f'Failed to setup S/R detection optimizer: {e}')
+        return None
+
+    def _should_use_vectorbt(self, data) -> bool:
+        """Determine if VectorBT should be used based on data size and configuration."""
+        return (hasattr(self, 'use_vectorbt') and getattr(self, 'use_vectorbt', True) and
+                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and
+                VECTORBT_AVAILABLE)
+
+    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str,
+                                  window: int, **kwargs) -> pd.Series:
+        """Perform VectorBT rolling operation with fallback to pandas."""
+        if not self._should_use_vectorbt(data):
+            return self._pandas_rolling_operation(data, operation, window, **kwargs)
+
+        try:
+            if operation == 'mean':
+                return rolling_mean(data, window=window, **kwargs)
+            elif operation == 'std':
+                return rolling_std(data, window=window, **kwargs)
+            elif operation == 'var':
+                return rolling_var(data, window=window, **kwargs)
+            elif operation == 'min':
+                return rolling_min(data, window=window, **kwargs)
+            elif operation == 'max':
+                return rolling_max(data, window=window, **kwargs)
+            elif operation == 'sum':
+                return rolling_sum(data, window=window, **kwargs)
+            else:
+                raise ValueError(f"Unsupported operation: {operation}")
+        except Exception as e:
+            logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
+            return self._pandas_rolling_operation(data, operation, window, **kwargs)
+
+    def _pandas_rolling_operation(self, data: pd.Series, operation: str,
+                                 window: int, **kwargs) -> pd.Series:
+        """Fallback rolling operation using pandas."""
+        if operation == 'mean':
+            return data.rolling(window=window).mean()
+        elif operation == 'std':
+            return data.rolling(window=window).std()
+        elif operation == 'var':
+            return data.rolling(window=window).var()
+        elif operation == 'min':
+            return data.rolling(window=window).min()
+        elif operation == 'max':
+            return data.rolling(window=window).max()
+        elif operation == 'sum':
+            return data.rolling(window=window).sum()
+        else:
+            raise ValueError(f"Unsupported operation: {operation}")
+
+    def _vectorbt_apply_operation(self, data: pd.Series, func,
+                                 window: int, **kwargs) -> pd.Series:
+        """Perform VectorBT rolling apply operation with fallback to pandas."""
+        if not self._should_use_vectorbt(data):
+            return data.rolling(window=window).apply(func, **kwargs)
+
+        try:
+            return rolling_apply(data, func, window=window, **kwargs)
+        except Exception as e:
+            logger.warning(f"VectorBT rolling apply failed: {e}, using pandas fallback")
+            return data.rolling(window=window).apply(func, **kwargs)

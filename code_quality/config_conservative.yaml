@@ -1,0 +1,120 @@
+# Conservative Code Quality Configuration
+# This configuration prioritizes safety over aggressive fixes
+
+auto_fix:
+  enabled: true
+  # Use a balanced set of reliable formatters
+  tools:
+    - "isort"      # Import sorting - very safe
+    - "autoflake"  # Remove unused imports/variables - mostly safe
+    - "pyupgrade"  # Upgrade Python syntax - fairly safe
+    - "yesqa"      # Remove unnecessary noqa comments - safe
+    # Optionally enable these more moderate tools:
+    # - "autopep8"  # More conservative formatter (enable after installing)
+    # - "ruff"      # Fast linter/formatter (enable after installing)
+    
+    # Aggressive tools - NOT recommended:
+    # - "black"     # Can be too aggressive with formatting
+    # - "yapf"      # Another aggressive formatter
+    # - "docformatter"  # Can break docstrings
+    # - "flynt"     # f-string conversion can be risky
+    # - "unify"     # Quote changes can be problematic
+  
+  # Conservative settings
+  max_line_length: 120  # More permissive line length
+  aggressive: false  # Never use aggressive mode
+  
+  # Skip certain error types that might break code
+  skip_errors:
+    - "E501"  # Line too long (don't force line breaks)
+    - "W503"  # Line break before binary operator
+    - "W504"  # Line break after binary operator
+    - "E203"  # Whitespace before ':'
+    - "E402"  # Module level import not at top of file
+    - "E731"  # Do not assign a lambda expression
+  
+  # Tool-specific conservative settings
+  tool_config:
+    isort:
+      # Safe isort settings
+      profile: "black"
+      line_length: 120
+      multi_line_output: 3
+      include_trailing_comma: true
+      force_grid_wrap: 0
+      use_parentheses: true
+      ensure_newline_before_comments: true
+      # Don't modify certain imports
+      skip_glob:
+        - "**/migrations/*"
+        - "**/tests/*"
+      known_first_party: ["src"]
+      sections: ["FUTURE", "STDLIB", "THIRDPARTY", "FIRSTPARTY", "LOCALFOLDER"]
+      # Safety settings
+      honor_noqa: true  # Respect # noqa comments
+      float_to_top: false  # Don't float imports to top
+      force_sort_within_sections: false
+      lexicographical: false
+      ignore_whitespace: true
+      
+    black:
+      # Conservative black settings (when enabled)
+      line_length: 120
+      target_version: ["py39", "py310", "py311"]
+      skip_string_normalization: true  # Don't change quotes
+      skip_magic_trailing_comma: true  # Respect trailing commas
+      preview: false  # Don't use experimental features
+      
+    autopep8:
+      # Conservative autopep8 settings (when available)
+      max_line_length: 120
+      aggressive: 0  # No aggressive fixes
+      experimental: false
+      ignore:
+        - "E501"  # Line too long
+        - "W503"  # Line break before binary operator
+        - "E402"  # Module import not at top
+        - "E731"  # Lambda assignment
+      select: []  # Fix all except ignored
+
+analysis:
+  linters:
+    - "flake8"
+    - "pylint"
+    - "mypy"
+  complexity_threshold: 15  # More permissive
+  security_checks: true
+  dead_code_detection: true
+  dependency_analysis: true
+  exclude_patterns:
+    - "__pycache__"
+    - "*.pyc"
+    - ".git"
+    - "venv"
+    - ".venv"
+    - "build"
+    - "dist"
+    - "*.egg-info"
+    - ".tox"
+    - ".mypy_cache"
+    - ".pytest_cache"
+    - "migrations"
+
+reporting:
+  output_format:
+    - "terminal"
+    - "html"
+    - "json"
+  include_metrics: true
+  save_reports: true
+  report_dir: "code_quality_reports"
+  verbose: true  # More detailed output for safety
+
+# Safety features
+safety:
+  always_backup: true  # Always create backups
+  validate_after_fix: true  # Always validate syntax after fixes
+  restore_on_error: true  # Restore from backup if validation fails
+  dry_run: false  # Set to true to preview changes without applying
+  max_file_size_mb: 10  # Skip very large files
+  skip_files_with_syntax_errors: true  # Don't try to fix already broken files

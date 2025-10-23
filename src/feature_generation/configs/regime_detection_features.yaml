@@ -1,0 +1,190 @@
+# Regime Detection Feature Configuration
+# This configuration defines features appropriate for market regime identification
+# vs trading signal generation
+
+regime_detection_features:
+  # Core volatility regime features
+  volatility_features:
+    - realized_volatility
+    - parkinson_volatility
+    - garman_klass_volatility
+    - vol_persistence
+    - vol_regime_strength
+    - vol_clustering
+    - vol_consistency
+    - vol_of_vol
+    - vol_uncertainty
+    - vol_stability
+    - vol_regime_change
+    - vol_transition_prob
+    - regime_persistence
+
+  # Trend and structural regime features
+  structural_features:
+    - structural_persistence
+    - trend_direction_consistency
+    - trend_regime_persistence
+    - structural_trend_strength
+    - trend_acceleration
+    - trend_intensity
+    - market_structure_strength
+    - support_resistance_strength
+    - market_structure_consistency
+    - trend_regime_change
+    - trend_transition_prob
+    - structural_trend_momentum
+    - trend_stability
+    - trend_persistence_score
+    - trend_entropy
+
+  # Volume regime features
+  volume_regime_features:
+    - vol_mean
+    - vol_std
+    - vol_regime_strength
+    - vol_consistency
+    - vol_clustering
+    - vol_patterns
+    - vol_intensity
+    - vol_price_corr
+    - vol_weighted_price
+    - vol_price_impact
+    - vol_regime_change
+    - vol_transition_prob
+    - vol_momentum
+    - vol_stability
+    - vol_persistence_score
+    - vol_entropy
+
+  # Enhanced technical indicators for regime identification
+  enhanced_technical_features:
+    - ADX  # Trend strength
+    - ATR  # Volatility measure
+    - SMA_9
+    - SMA_21
+    - SMA_50
+    - EMA_12
+    - EMA_26
+    - OBV  # Volume regime
+    - VWAP  # Volume-weighted average price
+
+  # Momentum indicators for regime identification (re-enabled for better regime separation)
+  momentum_regime_features:
+    - RSI_14  # Overbought/oversold conditions
+    - RSI_9   # Faster RSI for short-term regimes
+    - RSI_21  # Slower RSI for trend regimes
+    - MACD_12_26_9  # Trend momentum
+    - MACD_8_21_5   # Faster MACD for volatile regimes
+    - STOCHk_14_3_3  # Stochastic oscillator
+    - STOCHd_14_3_3  # Stochastic signal line
+
+  # Volume-price divergence features for regime identification
+  volume_price_divergence_features:
+    - volume_price_correlation_20  # Volume-price relationship
+    - volume_price_divergence_10   # Price-volume divergence
+    - volume_price_divergence_20   # Longer-term divergence
+    - price_volume_oscillator     # Volume-price oscillator
+
+  # Enhanced statistical regime features for better clustering
+  statistical_features:
+    - autocorrelation_5
+    - autocorrelation_20
+    - cross_timeframe_correlation
+    - returns_skewness
+    - returns_kurtosis
+    - skewness_persistence
+    - kurtosis_persistence
+    - distribution_normality
+    - statistical_persistence
+    - distribution_stability
+    - statistical_strength
+    # NEW: Advanced regime-specific statistical features
+    - regime_entropy_10
+    - regime_entropy_20
+    - regime_complexity_5
+    - regime_complexity_10
+    - regime_fractal_dimension
+    - regime_hurst_exponent
+    - regime_memory_strength
+    - regime_nonlinearity
+    - regime_chaos_indicators
+    - regime_phase_transitions
+
+  # Cross-timeframe correlation features (basic regime relationships)
+  cross_timeframe_regime_features:
+    - corr_1m_5m_5
+    - corr_1m_5m_20
+    - corr_1m_15m_5
+    - corr_1m_15m_20
+    - corr_5m_15m_5
+    - corr_5m_15m_20
+    - momentum_correlation_1m_5m_5
+    - momentum_correlation_1m_5m_10
+    - momentum_correlation_1m_15m_5
+    - momentum_correlation_1m_15m_10
+    - momentum_correlation_5m_15m_5
+    - momentum_correlation_5m_15m_10
+
+# Features that should NOT be used for regime detection
+excluded_trading_features:
+  # Order flow and microstructure features (exclude for regime detection)
+  microstructure_features:
+    - taker_buy_ratio
+    - taker_sell_ratio
+    - market_aggression_index
+    - order_flow_imbalance
+    - buy_sell_pressure_ratio
+    - kyle_lambda
+    - amihud_illiquidity
+    - liquidity_regime
+    - nearest_bid_wall_dist_pct
+    - orderbook_pressure
+    - spread_liquidity
+    - price_impact
+    - tick_volatility
+
+  # Advanced trading indicators (exclude for regime detection)
+  advanced_trading_indicators:
+    - SuperTrend_10_2.0
+    - Parabolic_SAR
+    - Williams_R_14
+    - CCI_14
+    - MFI_14
+    - ROC_10
+    - BBP_20_2.0
+
+  # Feature engineering artifacts (exclude for regime detection)
+  engineered_features:
+    - "*_z_score"
+    - "*_change"
+    - "*_pct_change"
+    - "*_bounded"
+    - "poly_*"
+    - "cross_*"
+
+# Enhanced configuration for regime detection with advanced features
+regime_detection_config:
+  max_features: 120  # Increased to accommodate advanced features
+  feature_selection_method: "regime_relevant"
+  exclude_trading_features: true
+  focus_on_volatility_regimes: true
+  focus_on_trend_regimes: true
+  focus_on_volume_regimes: true
+  include_cross_timeframe_correlations: true
+  exclude_microstructure_features: true
+  exclude_order_flow_features: true
+  # NEW: Advanced regime detection settings
+  enable_entropy_features: true
+  enable_fractal_features: true
+  enable_chaos_features: true
+  enable_phase_transition_features: true
+  enable_regime_complexity_features: true
+  enable_memory_strength_features: true
+
+# Validation rules
+validation_rules:
+  - "No trading signal features in regime detection"
+  - "No microstructure features in regime detection"
+  - "No time-of-day features in regime detection"
+  - "Focus on volatility, trend, and volume regime identification"
+  - "Limit to 50-80 core regime features maximum"

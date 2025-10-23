@@ -1,0 +1,283 @@
+# Training Modes Configuration
+# Centralizes training parameters for different execution modes
+# All modes include ALL features and ML models, but with different computational intensity
+# Timeframes: 1m, 5m, 15m, 30m, 1h (removed 4h & 1d for efficiency)
+
+training_modes:
+  # Full Production Mode - Complete training with all data
+  # Note: Lookback period is now centralized in src/config/pipeline_modes.py
+  full:
+    description: "Production mode - Complete training with full dataset"
+    training_mode: "full"
+    enable_blank_training_mode: false
+    enable_light_training_mode: false
+    enable_full_training_mode: true
+
+    # Data Collection Parameters
+    data_collection:
+      enable_all_exchanges: true
+      enable_aggtrades: true
+      enable_futures: true
+      data_quality_checks: true
+
+    # Feature Engineering Parameters
+    feature_engineering:
+      enable_all_features: true
+      enable_advanced_features: true
+      enable_autoencoder_features: true
+      enable_microstructure_features: true
+      enable_multi_timeframe: true
+      timeframes: ["1m", "5m", "15m", "30m", "1h", "4h"]  # Added 30m and 4h for regime detection
+      max_interactions: 100
+      correlation_threshold: 0.8
+      max_features: null  # Use all features
+      feature_selection_samples: 100000
+      feature_selection_method: "full"  # Use all available features
+
+    # Model Training Parameters
+    model_training:
+      enable_all_models: true
+      max_trials: 200
+      n_trials: 100
+      enable_early_stopping: true
+      enable_parallelization: true
+      enable_caching: true
+      batch_size: 4096
+      epochs: 100
+      early_stopping_patience: 20
+      learning_rate: 0.001
+      validation_split: 0.2
+      cross_validation_folds: 5
+      # Neural Network Parameters
+      nn_hidden_layers: [512, 256, 128]
+      nn_dropout: 0.3
+      nn_batch_norm: true
+      # Ensemble Parameters
+      ensemble_models: 10
+      ensemble_method: "weighted"
+      # Gradient Boosting Parameters
+      gb_max_depth: 8
+      gb_n_estimators: 200
+      # Random Forest Parameters
+      rf_max_depth: 20
+      rf_n_estimators: 100
+
+    # Validation Parameters
+    validation:
+      enable_walk_forward: true
+      enable_monte_carlo: true
+      enable_ab_testing: true
+      validation_splits: 5
+      monte_carlo_samples: 10000  # Full baseline
+      ab_test_rounds: 10          # Full baseline
+
+    # Optimization Parameters
+    optimization:
+      enable_hyperparameter_optimization: true
+      enable_feature_selection: true
+      enable_model_selection: true
+      max_optimization_time: 3600  # 1 hour
+      optuna_trials: 200
+      optuna_timeout: 3600
+      optuna_n_jobs: 4
+      feature_selection_method: "recursive"
+      feature_importance_threshold: 0.01
+
+  # Blank Mode - Quick testing with reduced data but all features/models
+  blank:
+    description: "Quick testing mode - All features/models with shorter lookback"
+    lookback_days: 180  # 6 months
+    training_mode: "blank"
+    enable_blank_training_mode: true
+    enable_light_training_mode: false
+    enable_full_training_mode: false
+
+    # Data Collection Parameters (reduced scope)
+    data_collection:
+      enable_all_exchanges: false  # Focus on primary exchange
+      enable_aggtrades: true
+      enable_futures: false  # Skip futures for speed
+      data_quality_checks: true
+
+    # Feature Engineering Parameters (all features, optimized computation)
+    feature_engineering:
+      enable_all_features: true
+      enable_advanced_features: true
+      enable_autoencoder_features: true
+      enable_microstructure_features: true
+      enable_multi_timeframe: true
+      timeframes: ["1m", "5m", "15m", "30m", "1h", "4h"]  # Same timeframes, reduced computation
+      max_interactions: 50  # Reduced for speed
+      correlation_threshold: 0.8
+      max_features: null  # Use all features
+      feature_selection_samples: 50000  # Reduced samples for speed
+      feature_selection_method: "full"  # Use all available features
+
+    # Model Training Parameters (reduced trials)
+    model_training:
+      enable_all_models: true  # All models still enabled
+      max_trials: 50  # Reduced trials
+      n_trials: 25   # Reduced trials
+      enable_early_stopping: true
+      enable_parallelization: true
+      enable_caching: true
+      batch_size: 2048  # Reduced from 4096
+      epochs: 50  # Reduced from 100
+      early_stopping_patience: 10  # Reduced from 20
+      learning_rate: 0.001
+      validation_split: 0.2
+      cross_validation_folds: 3  # Reduced from 5
+      # Neural Network Parameters (lighter)
+      nn_hidden_layers: [256, 128, 64]  # Reduced from [512, 256, 128]
+      nn_dropout: 0.3
+      nn_batch_norm: true
+      # Ensemble Parameters (lighter)
+      ensemble_models: 5  # Reduced from 10
+      ensemble_method: "weighted"
+      # Gradient Boosting Parameters (lighter)
+      gb_max_depth: 6  # Reduced from 8
+      gb_n_estimators: 100  # Reduced from 200
+      # Random Forest Parameters (lighter)
+      rf_max_depth: 15  # Reduced from 20
+      rf_n_estimators: 50  # Reduced from 100
+
+    # Validation Parameters (reduced computational intensity, not skipped)
+    validation:
+      enable_walk_forward: true
+      enable_monte_carlo: true   # Reduced samples instead of disabled
+      enable_ab_testing: true    # Reduced rounds instead of disabled
+      validation_splits: 3
+      monte_carlo_samples: 1000  # Reduced from full 10000
+      ab_test_rounds: 3          # Reduced from full 10
+
+    # Optimization Parameters (reduced scope)
+    optimization:
+      enable_hyperparameter_optimization: true
+      enable_feature_selection: true
+      enable_model_selection: true
+      max_optimization_time: 900  # 15 minutes
+      optuna_trials: 50  # Reduced from 200
+      optuna_timeout: 900  # Reduced from 3600
+      optuna_n_jobs: 2  # Reduced from 4
+      feature_selection_method: "recursive"
+      feature_importance_threshold: 0.01
+
+  # Light Mode - Development with minimal data but all features/models
+  light:
+    description: "Development mode - Minimal data with all features/models"
+    lookback_days: 10   # 10 days
+    training_mode: "light"
+    enable_blank_training_mode: false
+    enable_light_training_mode: true
+    enable_full_training_mode: false
+
+    # Data Collection Parameters (minimal but complete)
+    data_collection:
+      enable_all_exchanges: false
+      enable_aggtrades: false  # Skip aggtrades for speed
+      enable_futures: false
+      data_quality_checks: true  # Keep quality checks but fast
+
+    # Feature Engineering Parameters (all features, minimal computation)
+    feature_engineering:
+      enable_all_features: true
+      enable_advanced_features: true
+      enable_autoencoder_features: true  # Keep but minimal computation
+      enable_microstructure_features: true  # Keep but minimal computation
+      enable_multi_timeframe: true  # Keep but minimal computation
+      timeframes: ["1m", "5m", "15m", "30m", "1h", "4h"]  # Same timeframes, minimal computation
+      max_interactions: 10  # Minimal interactions for speed
+      correlation_threshold: 0.8
+      max_features: null  # Use all features
+      feature_selection_samples: 10000  # Very reduced samples for speed
+      feature_selection_method: "full"  # Use all available features
+
+    # Model Training Parameters (minimal trials)
+    model_training:
+      enable_all_models: true  # All models still enabled
+      max_trials: 10  # Very few trials
+      n_trials: 5    # Very few trials
+      enable_early_stopping: true
+      enable_parallelization: false  # Disable parallelization
+      enable_caching: true
+      batch_size: 512  # Very reduced from 4096
+      epochs: 10  # Very reduced from 100
+      early_stopping_patience: 5  # Very reduced from 20
+      learning_rate: 0.001
+      validation_split: 0.2
+      cross_validation_folds: 2  # Very reduced from 5
+      # Neural Network Parameters (lightest)
+      nn_hidden_layers: [64, 32]  # Very reduced from [512, 256, 128]
+      nn_dropout: 0.3
+      nn_batch_norm: false  # Disabled for speed
+      # Ensemble Parameters (lightest)
+      ensemble_models: 3  # Very reduced from 10
+      ensemble_method: "weighted"
+      # Gradient Boosting Parameters (lightest)
+      gb_max_depth: 4  # Very reduced from 8
+      gb_n_estimators: 50  # Very reduced from 200
+      # Random Forest Parameters (lightest)
+      rf_max_depth: 8  # Very reduced from 20
+      rf_n_estimators: 25  # Very reduced from 100
+
+    # Validation Parameters (all enabled, minimal computational intensity)
+    validation:
+      enable_walk_forward: true    # Keep but minimal
+      enable_monte_carlo: true     # Keep but minimal
+      enable_ab_testing: true      # Keep but minimal
+      validation_splits: 2
+      monte_carlo_samples: 100     # Very reduced from full 10000
+      ab_test_rounds: 2            # Very reduced from full 10
+
+    # Optimization Parameters (all enabled, minimal scope)
+    optimization:
+      enable_hyperparameter_optimization: true  # Keep but minimal
+      enable_feature_selection: true  # Keep but minimal
+      enable_model_selection: true
+      max_optimization_time: 300  # 5 minutes
+      optuna_trials: 10  # Very reduced from 200
+      optuna_timeout: 300  # Very reduced from 3600
+      optuna_n_jobs: 1  # Very reduced from 4
+      feature_selection_method: "recursive"
+      feature_importance_threshold: 0.01
+
+# Global Training Configuration
+global_training_config:
+  # Common settings across all modes
+  enable_comprehensive_logging: true
+  enable_progress_tracking: true
+  enable_checkpointing: true
+
+  # Memory management
+  memory_management:
+    enable_memory_optimization: true
+    enable_garbage_collection: true
+    max_memory_usage: 0.8  # 80% of available memory
+
+  # Error handling
+  error_handling:
+    enable_error_recovery: true
+    max_retries: 3
+    retry_delay: 60  # seconds
+
+  # Performance monitoring
+  performance_monitoring:
+    enable_step_timing: true
+    enable_resource_monitoring: true
+    enable_bottleneck_detection: true
+
+# Environment Variable Mappings
+# Maps training modes to environment variables
+environment_mappings:
+  full:
+    BLANK_TRAINING_MODE: "0"
+    LIGHT_TRAINING_MODE: "0"
+    FULL_TRAINING_MODE: "1"
+  blank:
+    BLANK_TRAINING_MODE: "1"
+    LIGHT_TRAINING_MODE: "0"
+    FULL_TRAINING_MODE: "0"
+  light:
+    BLANK_TRAINING_MODE: "0"
+    LIGHT_TRAINING_MODE: "1"
+    FULL_TRAINING_MODE: "0"

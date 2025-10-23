@@ -1,0 +1,170 @@
+{
+  "title": "Feature Generation Period + Lookback Optimization Report",
+  "timestamp": "2025-10-18T22:56:17.512380",
+  "artifact_storage_path": "artifacts/pre_training/artifact_store/period_lookback_optimization/optimization_report.pkl",
+  "execution_summary": {
+    "status": "completed",
+    "data_rows": 1162368,
+    "data_columns": 26,
+    "data_memory_usage": "1026.49 MB"
+  },
+  "optimization_results": {
+    "optimized_periods": 30,
+    "optimized_lookbacks": 20,
+    "optimization_method": "consolidated_pipeline"
+  },
+  "configuration": {
+    "symbol": "ETHUSDT",
+    "timeframe": "15m",
+    "direction": "DirectionType.LONGS",
+    "min_periods": 2,
+    "correlation_threshold": 0.85,
+    "no_recency_bias": true,
+    "top_1_trading": true,
+    "top_3_interactions": true
+  },
+  "step_summaries": {
+    "data_preparation": {
+      "step_name": "Data Preparation & Validation",
+      "description": "Data loading, cleaning, and validation for optimization",
+      "details": {
+        "data_source": "Consolidated parquet files",
+        "data_rows": 1162368,
+        "data_columns": 26,
+        "memory_usage_mb": "1026.49",
+        "data_quality_checks": [
+          "Non-finite value detection and correction",
+          "Data completeness validation",
+          "Memory usage optimization"
+        ],
+        "validation_rules": {
+          "min_rows": 100,
+          "required_columns": [
+            "open",
+            "high",
+            "low",
+            "close"
+          ],
+          "data_types": "pandas.DataFrame"
+        }
+      },
+      "status": "completed",
+      "duration_estimate": "~0.5s"
+    },
+    "period_optimization": {
+      "step_name": "Period Optimization",
+      "description": "Optimization of feature generation periods for maximum historical context",
+      "details": {
+        "optimized_value": 30,
+        "optimization_method": "consolidated_pipeline",
+        "constraints": {
+          "min_periods": 2,
+          "correlation_threshold": 0.85,
+          "no_recency_bias": true
+        },
+        "optimization_criteria": [
+          "Sufficient historical context",
+          "Feature stability across periods",
+          "Correlation threshold compliance",
+          "Recency bias prevention"
+        ],
+        "result_analysis": "Period length of 30 provides excellent historical context"
+      },
+      "status": "completed",
+      "duration_estimate": "~0.8s"
+    },
+    "lookback_optimization": {
+      "step_name": "Lookback Window Optimization",
+      "description": "Optimization of lookback windows for feature computation stability",
+      "details": {
+        "optimized_value": 20,
+        "optimization_method": "consolidated_pipeline",
+        "constraints": {
+          "min_lookback": 5,
+          "max_lookback": 252,
+          "stability_requirement": true
+        },
+        "optimization_criteria": [
+          "Feature computation stability",
+          "Sufficient data for rolling calculations",
+          "Memory efficiency",
+          "Computational performance"
+        ],
+        "result_analysis": "Lookback window of 20 provides excellent computation stability"
+      },
+      "status": "completed",
+      "duration_estimate": "~0.5s"
+    },
+    "feature_selection_analysis": {
+      "step_name": "Feature Selection Analysis",
+      "description": "Analysis of feature selection criteria and constraints",
+      "details": {
+        "selection_criteria": {
+          "top_1_trading": true,
+          "top_3_interactions": true,
+          "correlation_threshold": 0.85
+        },
+        "feature_diversity": {
+          "correlation_threshold": "0.85 (prevents highly correlated features)",
+          "interaction_features": "Top 3 interactions enabled",
+          "trading_features": "Top 1 trading features prioritized"
+        },
+        "quality_metrics": [
+          "Feature diversity maintenance",
+          "Correlation reduction",
+          "Interaction feature inclusion",
+          "Trading signal prioritization"
+        ]
+      },
+      "status": "completed",
+      "duration_estimate": "~0.2s"
+    },
+    "artifact_storage": {
+      "step_name": "Artifact Storage & Persistence",
+      "description": "Storage of optimization results and metadata for future use",
+      "details": {
+        "storage_path": "artifacts/pre_training/artifact_store/period_lookback_optimization",
+        "stored_artifacts": [
+          "optimized_periods.pkl",
+          "optimized_lookbacks.pkl",
+          "optimization_metadata.pkl",
+          "optimization_report.pkl",
+          "metadata.json"
+        ],
+        "persistence_method": "Disk + Memory (hybrid storage)",
+        "retrieval_method": "Automatic fallback (memory → disk)",
+        "metadata_included": [
+          "Optimization parameters",
+          "Configuration settings",
+          "CMI diagnostics",
+          "Execution timestamps",
+          "Data quality metrics"
+        ]
+      },
+      "status": "completed",
+      "duration_estimate": "~0.1s"
+    }
+  },
+  "cmi_analysis": {
+    "cmi_enabled": false,
+    "reason": "Not in Tactician mode or CMI unavailable"
+  },
+  "recommendations": [
+    "✅ Good period length - provides sufficient historical context",
+    "✅ Adequate lookback window for feature computation",
+    "📊 Standard optimization used (CMI complementarity not available)",
+    "✅ Recency bias prevention enabled",
+    "✅ Appropriate correlation threshold for feature diversity"
+  ],
+  "feature_level_analysis": {
+    "status": "unavailable",
+    "reason": "no_selected_features_found",
+    "message": "No selected features found in feature_generation_feature_selection_step artifacts. Please run the feature selection step first."
+  },
+  "next_steps": [
+    "Use optimized periods and lookbacks in feature generation",
+    "Validate results with cross-validation",
+    "Monitor performance in production",
+    "Consider re-optimization if market conditions change significantly"
+  ]
+}

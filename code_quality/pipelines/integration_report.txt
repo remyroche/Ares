@@ -1,0 +1,308 @@
+================================================================================
+SCRIPT INTEGRATION REPORT
+================================================================================
+Generated: 2025-09-05 08:05:23
+
+SUMMARY:
+  Total scripts: 181
+  Integrated: 103 (56.9%)
+  Partially integrated: 63 (34.8%)
+  Not integrated: 5 (2.8%)
+  Needs review: 10 (5.5%)
+
+CATEGORY BREAKDOWN:
+
+VALIDATORS:
+  Total: 8
+  Integrated: 2
+  Partially integrated: 5
+  Not integrated: 0
+  Needs review: 1
+
+FIXERS:
+  Total: 21
+  Integrated: 4
+  Partially integrated: 12
+  Not integrated: 0
+  Needs review: 5
+
+VISUALIZERS:
+  Total: 7
+  Integrated: 2
+  Partially integrated: 5
+  Not integrated: 0
+  Needs review: 0
+
+ANALYZERS:
+  Total: 46
+  Integrated: 38
+  Partially integrated: 8
+  Not integrated: 0
+  Needs review: 0
+
+UTILITIES:
+  Total: 80
+  Integrated: 45
+  Partially integrated: 29
+  Not integrated: 2
+  Needs review: 4
+
+STANDALONE:
+  Total: 2
+  Integrated: 1
+  Partially integrated: 1
+  Not integrated: 0
+  Needs review: 0
+
+REPORTERS:
+  Total: 6
+  Integrated: 2
+  Partially integrated: 1
+  Not integrated: 3
+  Needs review: 0
+
+INTEGRATION:
+  Total: 11
+  Integrated: 9
+  Partially integrated: 2
+  Not integrated: 0
+  Needs review: 0
+
+================================================================================
+DETAILED INTEGRATION STATUS
+================================================================================
+
+VALIDATORS:
+  ✅ INTEGRATED:
+    - /workspace/code_quality/enhanced_validator.py
+    - /workspace/code_quality/simple_import_undefined_checker.py
+  ⚠️  PARTIALLY INTEGRATED:
+    - /workspace/code_quality/integrated_validator.py
+    - /workspace/code_quality/function_validator.py
+    - /workspace/code_quality/import_and_undefined_checker.py
+    - /workspace/code_quality/check_undefined_names.py
+    - /workspace/code_quality/function_validator_wrapper.py
+  🔍 NEEDS REVIEW:
+    - /workspace/code_quality/check_undefined_names_standalone.py
+
+FIXERS:
+  ✅ INTEGRATED:
+    - /workspace/code_quality/pipelines/sequential_code_fixer.py
+    - /workspace/code_quality/fixers/conservative_auto_fixer.py
+    - /workspace/code_quality/fixers/sequential_fixer.py
+    - /workspace/code_quality/fixers/auto_fixer.py
+  ⚠️  PARTIALLY INTEGRATED:
+    - /workspace/code_quality/auto_fix_dead_code.py
+    - /workspace/code_quality/fix_top_undefined_names.py
+    - /workspace/code_quality/fix_import_issues.py
+    - /workspace/code_quality/fix_common_imports_final.py
+    - /workspace/code_quality/targeted_import_fixer.py
+    - /workspace/code_quality/fix_remaining_imports.py
+    - /workspace/code_quality/fix_parameter_undefined_names.py
+    - /workspace/code_quality/fix_undefined_names.py
+    - /workspace/code_quality/comprehensive_import_fixer.py
+    - /workspace/code_quality/pipelines/pipeline_unified_standalone_fixed.py
+    - /workspace/code_quality/pipelines/pipeline_unified_enhanced_fixed.py
+    - /workspace/code_quality/fixers/sequential_fixer_fixed.py
+  🔍 NEEDS REVIEW:
+    - /workspace/code_quality/fix_missing_imports_only.py
+    - /workspace/code_quality/fix_common_undefined_names.py
+    - /workspace/code_quality/fix_simple_undefined_names.py
+    - /workspace/code_quality/fix_missing_imports_targeted.py
+    - /workspace/code_quality/fix_remaining_imports_final.py
+
+VISUALIZERS:
+  ✅ INTEGRATED:
+    - /workspace/code_quality/visualize_interactions.py
+    - /workspace/code_quality/visualizers/dashboard_generator.py
+  ⚠️  PARTIALLY INTEGRATED:
+    - /workspace/code_quality/visualizers/interaction_network.py
+    - /workspace/code_quality/visualizers/complexity_heatmap.py
+    - /workspace/code_quality/visualizers/code_visualizer.py
+    - /workspace/code_quality/visualizers/dependency_graph.py
+    - /workspace/code_quality/visualizers/__init__.py
+
+ANALYZERS:
+  ✅ INTEGRATED:
+    - /workspace/code_quality/standalone_enhanced_analyzer.py
+    - /workspace/code_quality/dead_code_analysis.py
+    - /workspace/code_quality/improved_dead_code_analyzer.py
+    - /workspace/code_quality/pipelines/dead_code_analyzer.py
+    - /workspace/code_quality/pipelines/enhanced_import_analyzer_plugin.py
+    - /workspace/code_quality/pipelines/enhanced_import_analysis.py
+    - /workspace/code_quality/pipelines/pipeline_analysis.py
+    - /workspace/code_quality/analyzers/documentation_analyzer.py
+    - /workspace/code_quality/analyzers/type_checker.py
+    - /workspace/code_quality/analyzers/error_handling_analyzer.py
+    - /workspace/code_quality/analyzers/data_flow_analyzer.py
+    - /workspace/code_quality/analyzers/improved_signature_analyzer.py
+    - /workspace/code_quality/analyzers/call_graph_analyzer.py
+    - /workspace/code_quality/analyzers/dead_code_analyzer.py
+    - /workspace/code_quality/analyzers/code_duplication_analyzer.py
+    - /workspace/code_quality/analyzers/architecture_analyzer.py
+    - /workspace/code_quality/analyzers/complexity_analyzer.py
+    - /workspace/code_quality/analyzers/import_analyzer.py
+    - /workspace/code_quality/analyzers/performance_analyzer.py
+    - /workspace/code_quality/analyzers/enhanced_dead_code_analyzer.py
+    - /workspace/code_quality/analyzers/simplified_enhanced_analyzer.py
+    - /workspace/code_quality/analyzers/ast_analysis_analyzer.py
+    - /workspace/code_quality/analyzers/undefined_names_analyzer.py
+    - /workspace/code_quality/analyzers/signature_analyzer.py
+    - /workspace/code_quality/analyzers/improved_dead_code_analyzer.py
+    - /workspace/code_quality/analyzers/static_analysis_analyzer.py
+    - /workspace/code_quality/analyzers/configuration_analyzer.py
+    - /workspace/code_quality/analyzers/concurrency_analyzer.py
+    - /workspace/code_quality/analyzers/__init__.py
+    - /workspace/code_quality/analyzers/metrics_analyzer.py
+    - /workspace/code_quality/analyzers/linter_analyzer.py
+    - /workspace/code_quality/analyzers/dependency_analyzer.py
+    - /workspace/code_quality/code_complexity/analyzers/xenon_analyzer.py
+    - /workspace/code_quality/code_complexity/analyzers/pandas_analyzer.py
+    - /workspace/code_quality/code_complexity/analyzers/radon_analyzer.py
+    - /workspace/code_quality/code_complexity/analyzers/wily_analyzer.py
+    - /workspace/code_quality/code_complexity/analyzers/pyexamine_analyzer.py
+    - /workspace/code_quality/code_complexity/analyzers/__init__.py
+  ⚠️  PARTIALLY INTEGRATED:
+    - /workspace/code_quality/run_enhanced_import_analysis.py
+    - /workspace/code_quality/run_simple_import_analysis.py
+    - /workspace/code_quality/debug_analyzer.py
+    - /workspace/code_quality/run_enhanced_analysis.py
+    - /workspace/code_quality/analyzers/syntax_validator.py
+    - /workspace/code_quality/analyzers/code_smell_detector.py
+    - /workspace/code_quality/analyzers/enhanced_dependency_analyzer.py
+    - /workspace/code_quality/analyzers/advanced_ast_analyzer.py
+
+UTILITIES:
+  ✅ INTEGRATED:
+    - /workspace/code_quality/enhanced_map_code_interactions.py
+    - /workspace/code_quality/cli.py
+    - /workspace/code_quality/map_code_interactions.py
+    - /workspace/code_quality/__init__.py
+    - /workspace/code_quality/scripts/fix_async_await.py
+    - /workspace/code_quality/scripts/apply_all_fixes.py
+    - /workspace/code_quality/scripts/master_code_quality.py
+    - /workspace/code_quality/scripts/final_code_fixes.py
+    - /workspace/code_quality/scripts/add_type_hints.py
+    - /workspace/code_quality/scripts/robust_async_fixer.py
+    - /workspace/code_quality/scripts/detect_circular_imports.py
+    - /workspace/code_quality/scripts/advanced_syntax_fixer.py
+    - /workspace/code_quality/scripts/enhanced_type_hints.py
+    - /workspace/code_quality/scripts/fix_missing_imports.py
+    - /workspace/code_quality/pipelines/complexity_cli.py
+    - /workspace/code_quality/pipelines/code_interaction_mapper.py
+    - /workspace/code_quality/pipelines/__init__.py
+    - /workspace/code_quality/plugins/flynt_fixer.py
+    - /workspace/code_quality/plugins/autoflake_fixer.py
+    - /workspace/code_quality/plugins/docformatter_fixer.py
+    - /workspace/code_quality/plugins/isort_fixer.py
+    - /workspace/code_quality/plugins/unify_fixer.py
+    - /workspace/code_quality/plugins/plugin_registry.py
+    - /workspace/code_quality/plugins/base_plugin.py
+    - /workspace/code_quality/plugins/ruff_analyzer.py
+    - /workspace/code_quality/plugins/pyupgrade_fixer.py
+    - /workspace/code_quality/plugins/ruff_fixer.py
+    - /workspace/code_quality/plugins/black_fixer.py
+    - /workspace/code_quality/plugins/yesqa_fixer.py
+    - /workspace/code_quality/plugins/plugin_manager.py
+    - /workspace/code_quality/plugins/flake8_analyzer.py
+    - /workspace/code_quality/plugins/yapf_fixer.py
+    - /workspace/code_quality/plugins/future_annotations_fixer.py
+    - /workspace/code_quality/plugins/__init__.py
+    - /workspace/code_quality/plugins/autopep8_fixer.py
+    - /workspace/code_quality/code_complexity/cli.py
+    - /workspace/code_quality/code_complexity/__init__.py
+    - /workspace/code_quality/core/plugins.py
+    - /workspace/code_quality/plugins/production/dead_code_fixer.py
+    - /workspace/code_quality/plugins/production/security_scanner.py
+    - /workspace/code_quality/plugins/production/syntax_fixer.py
+    - /workspace/code_quality/plugins/production/import_fixer.py
+    - /workspace/code_quality/plugins/production/__init__.py
+    - /workspace/code_quality/plugins/production/linter_runner.py
+    - /workspace/code_quality/plugins/examples/__init__.py
+  ⚠️  PARTIALLY INTEGRATED:
+    - /workspace/code_quality/example_usage_extended.py
+    - /workspace/code_quality/merge_conflict_detector.py
+    - /workspace/code_quality/comprehensive_code_review.py
+    - /workspace/code_quality/example_validation_usage.py
+    - /workspace/code_quality/example_usage.py
+    - /workspace/code_quality/scripts/extract_interactions.py
+    - /workspace/code_quality/scripts/bulk_syntax_cleanup.py
+    - /workspace/code_quality/scripts/simple_interaction_mapper.py
+    - /workspace/code_quality/pipelines/script_integration_manager.py
+    - /workspace/code_quality/plugins/import_hygiene_fixer.py
+    - /workspace/code_quality/plugins/fawltydeps_analyzer.py
+    - /workspace/code_quality/plugins/pyre_analyzer.py
+    - /workspace/code_quality/plugins/creosote_analyzer.py
+    - /workspace/code_quality/plugins/exceptions.py
+    - /workspace/code_quality/examples/enhanced_visualization_demo.py
+    - /workspace/code_quality/examples/enhanced_dead_code_demo.py
+    - /workspace/code_quality/core/config.py
+    - /workspace/code_quality/core/__init__.py
+    - /workspace/code_quality/utils/dependency_manager.py
+    - /workspace/code_quality/utils/file_utils.py
+    - /workspace/code_quality/utils/__init__.py
+    - /workspace/code_quality/code_complexity/config/complexity_config.py
+    - /workspace/code_quality/code_complexity/config/__init__.py
+    - /workspace/code_quality/code_complexity/utils/file_utils.py
+    - /workspace/code_quality/code_complexity/utils/__init__.py
+    - /workspace/code_quality/plugins/examples/linter_plugin.py
+    - /workspace/code_quality/plugins/examples/import_plugin.py
+    - /workspace/code_quality/plugins/examples/security_plugin.py
+    - /workspace/code_quality/plugins/examples/syntax_plugin.py
+  ❌ NOT INTEGRATED:
+    - /workspace/code_quality/scripts/interaction_summary.py
+    - /workspace/code_quality/utils/progress.py
+  🔍 NEEDS REVIEW:
+    - /workspace/code_quality/quick_start.py
+    - /workspace/code_quality/analyze_undefined_names.py
+    - /workspace/code_quality/scripts/fix_common_syntax_patterns.py
+    - /workspace/code_quality/examples/visual_mapping_demo.py
+
+STANDALONE:
+  ✅ INTEGRATED:
+    - /workspace/code_quality/run_full_pipeline.py
+  ⚠️  PARTIALLY INTEGRATED:
+    - /workspace/code_quality/run_validation.py
+
+REPORTERS:
+  ✅ INTEGRATED:
+    - /workspace/code_quality/reporters/html_reporter.py
+    - /workspace/code_quality/utils/report_aggregator.py
+  ⚠️  PARTIALLY INTEGRATED:
+    - /workspace/code_quality/reporters/quality_reporter.py
+  ❌ NOT INTEGRATED:
+    - /workspace/code_quality/reporters/trend_reporter.py
+    - /workspace/code_quality/reporters/error_reporter.py
+    - /workspace/code_quality/code_complexity/utils/report_generator.py
+
+INTEGRATION:
+  ✅ INTEGRATED:
+    - /workspace/code_quality/pipelines/pipeline_unified_standalone.py
+    - /workspace/code_quality/pipelines/pipeline_syntax_imports_enhanced.py
+    - /workspace/code_quality/pipelines/pipeline_async_types.py
+    - /workspace/code_quality/pipelines/pipeline_unified_integrated.py
+    - /workspace/code_quality/pipelines/pipeline_unified_enhanced.py
+    - /workspace/code_quality/pipelines/pipeline_syntax_imports.py
+    - /workspace/code_quality/pipelines/unified_enhanced_pipeline.py
+    - /workspace/code_quality/pipelines/base_pipeline.py
+    - /workspace/code_quality/code_complexity/complexity_pipeline.py
+  ⚠️  PARTIALLY INTEGRATED:
+    - /workspace/code_quality/pipelines/unified_standalone_pipeline.py
+    - /workspace/code_quality/pipelines/pipeline_unified_enhanced_standalone.py
+
+================================================================================
+RECOMMENDATIONS
+================================================================================
+
+1. Integrate 5 scripts that are not integrated:
+   - utilities: 2 scripts
+   - reporters: 3 scripts
+
+2. Complete integration for 63 partially integrated scripts
+
+3. Review 10 scripts that need manual review
+
+4. Consider creating specialized pipelines for:
+   - Standalone utilities
+   - Testing and validation scripts
+   - Reporting and visualization tools

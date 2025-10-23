@@ -1,0 +1,40 @@
+{
+  "step07_enhanced_matrix_operations": {
+    "output_dir": "data/matrix_operations",
+    "target_features": 200,
+    "removal_fraction": 0.33,
+    "enable_regime_selection": true,
+    "enable_shap_filtering": true
+  },
+  "step08_advanced_feature_selection": {
+    "output_dir": "data/selected_features",
+    "phase1_target_features": 150,
+    "enable_mrmr": true,
+    "enable_rf_importance": true,
+    "phase2_targets": [
+      100,
+      80,
+      60
+    ],
+    "boruta_max_iter": 100,
+    "boruta_alpha": 0.05,
+    "n_splits_ts": 5,
+    "min_regime_samples": 100,
+    "enable_shap": true,
+    "enable_lime": true,
+    "n_lime_samples": 10,
+    "enable_redundancy_analysis": true,
+    "min_redundancy_correlation": 0.7,
+    "redundancy_groups_per_concept": 2,
+    "feature_concept_patterns": {
+      "momentum": ["rsi", "macd", "momentum", "roc"],
+      "volatility": ["bb_", "atr", "volatility", "std"],
+      "volume": ["volume", "vwap", "obv", "mfi"],
+      "trend": ["ema", "sma", "trend", "adx"],
+      "microstructure": ["spread", "imbalance", "flow", "tick"],
+      "regime": ["regime", "cluster", "state"],
+      "sr_features": ["support", "resistance", "pivot", "level"]
+    },
+    "n_jobs": -1
+  }
+}

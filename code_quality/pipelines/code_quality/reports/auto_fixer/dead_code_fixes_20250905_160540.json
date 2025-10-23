@@ -1,0 +1,12 @@
+{
+  "timestamp": "20250905_160540",
+  "analysis_type": "dead_code_fixes",
+  "project_root": "pipelines",
+  "fixes_applied": 0,
+  "files_modified": 0,
+  "fixes_failed": 0,
+  "results": {
+    "fixes_applied": 0,
+    "status": "not_implemented"
+  }
+}

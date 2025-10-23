@@ -1,0 +1,288 @@
+{
+  "total_modules": 1104,
+  "total_imports": 2801,
+  "circular_imports": {
+    "count": 0,
+    "cycles": []
+  },
+  "import_depths": {
+    "max_depth": 12,
+    "average_depth": 2.859663191659984,
+    "deep_modules": [
+      {
+        "module": "test_simple_logging",
+        "depth": 12,
+        "file": "/Users/remyroche/Documents/Ares/test_simple_logging.py"
+      },
+      {
+        "module": "src.tasks",
+        "depth": 12,
+        "file": "/Users/remyroche/Documents/Ares/src/tasks.py"
+      },
+      {
+        "module": "src.core.di_integration",
+        "depth": 12,
+        "file": "/Users/remyroche/Documents/Ares/src/core/di_integration.py"
+      },
+      {
+        "module": "src.core.di_launcher",
+        "depth": 12,
+        "file": "/Users/remyroche/Documents/Ares/src/core/di_launcher.py"
+      },
+      {
+        "module": "src.training.steps.run_all_pipelines",
+        "depth": 12,
+        "file": "/Users/remyroche/Documents/Ares/src/training/steps/run_all_pipelines.py"
+      },
+      {
+        "module": "src.training.steps.model_training.step09_model_training_main",
+        "depth": 12,
+        "file": "/Users/remyroche/Documents/Ares/src/training/steps/model_training/step09_model_training_main.py"
+      },
+      {
+        "module": "src.training.steps.market_analysis.enhanced_market_analysis_orchestrator",
+        "depth": 11,
+        "file": "/Users/remyroche/Documents/Ares/src/training/steps/market_analysis/enhanced_market_analysis_orchestrator.py"
+      },
+      {
+        "module": "src.ares_pipeline",
+        "depth": 11,
+        "file": "/Users/remyroche/Documents/Ares/src/ares_pipeline.py"
+      },
+      {
+        "module": "src.strategist.strategist_backup",
+        "depth": 11,
+        "file": "/Users/remyroche/Documents/Ares/src/strategist/strategist_backup.py"
+      },
+      {
+        "module": "src.analyst",
+        "depth": 11,
+        "file": "/Users/remyroche/Documents/Ares/src/analyst/__init__.py"
+      }
+    ]
+  },
+  "highly_imported": [
+    {
+      "module": "src.utils.logger",
+      "imported_by_count": 489,
+      "imported_by": [
+        "src.training.enhanced_lm_optimizer",
+        "src.utils.config_loader",
+        "src.training.steps.model_training.matrix_components",
+        "src.training.core.training_manager",
+        "src.analyst.autoencoder_feature_generator"
+      ]
+    },
+    {
+      "module": "src.core.decorators",
+      "imported_by_count": 271,
+      "imported_by": [
+        "src.training.steps.market_analysis.step07_enhanced_matrix_operations",
+        "src.analyst.enhanced_regime_predictor",
+        "src.training.steps.backtesting.step18_walk_forward_validation_per_regime",
+        "src.utils.data_access_protection",
+        "src.monitoring.performance_monitor"
+      ]
+    },
+    {
+      "module": "src.core.decorators.errors",
+      "imported_by_count": 210,
+      "imported_by": [
+        "src.training.steps.market_analysis.step07_enhanced_matrix_operations",
+        "src.analyst.enhanced_regime_predictor",
+        "src.training.steps.backtesting.step18_walk_forward_validation_per_regime",
+        "src.utils.config_loader",
+        "src.monitoring.performance_monitor"
+      ]
+    },
+    {
+      "module": "src.utils.warning_symbols",
+      "imported_by_count": 132,
+      "imported_by": [
+        "src.utils.config_loader",
+        "src.analyst.autoencoder_feature_generator",
+        "src.database.efficient_features_database",
+        "src.sentinel.sentinel",
+        "src.tactician.ml_target_validator"
+      ]
+    },
+    {
+      "module": "src.utils.common_operations",
+      "imported_by_count": 94,
+      "imported_by": [
+        "src.training.steps.market_analysis.step07_enhanced_matrix_operations",
+        "src.utils.data_access_protection",
+        "src.training.steps.model_training.step04_5_triple_barrier_method",
+        "src.monitoring.trading_integration",
+        "src.training.steps.model_training.step10_unified_regime_intelligence"
+      ]
+    },
+    {
+      "module": "src.core.decorators.logging",
+      "imported_by_count": 79,
+      "imported_by": [
+        "src.training.steps.market_analysis.step07_enhanced_matrix_operations",
+        "src.training.steps.market_analysis.step17_final_parameters_optimization.advanced_optimization_engine",
+        "src.training.simplified_architecture.enhanced_interfaces",
+        "src.core.domain.decorators",
+        "src.training.steps.market_analysis.step17_final_parameters_optimization.step17_probabilistic_bayesian_optimization"
+      ]
+    },
+    {
+      "module": "src.core.domain",
+      "imported_by_count": 74,
+      "imported_by": [
+        "src.paper_trader",
+        "src.analyst.enhanced_regime_predictor",
+        "src.monitoring.performance_monitor",
+        "src.training.steps.market_analysis.step1.enhanced_data_quality_manager",
+        "src.supervisor.monitoring"
+      ]
+    },
+    {
+      "module": "src.utils.pipeline_standards",
+      "imported_by_count": 68,
+      "imported_by": [
+        "src.training.steps.market_analysis.step07_enhanced_matrix_operations",
+        "src.training.steps.data_collection.data_preparation_components.quality_metrics_calculator",
+        "src.training.steps.backtesting.step18_walk_forward_validation_per_regime",
+        "src.training.steps.model_training.step11_analyst_creation",
+        "src.training.steps.backtesting.step21_saving"
+      ]
+    },
+    {
+      "module": "src.config",
+      "imported_by_count": 46,
+      "imported_by": [
+        "src.analyst.predictive_ensembles.ensemble_orchestrator",
+        "GUI.api_server",
+        "src.analyst.autoencoder_feature_generator",
+        "src.database.efficient_features_database",
+        "src.training.steps.model_training.step11_analyst_creation"
+      ]
+    },
+    {
+      "module": "src.utils.enhanced_mlflow_integration",
+      "imported_by_count": 19,
+      "imported_by": [
+        "src.training.data_quality_monitor",
+        "src.training.steps.model_training.step11_analyst_creation",
+        "src.training.steps.model_training.validation.step19_monte_carlo_validation",
+        "src.training.steps.model_training.step04_5_triple_barrier_method",
+        "src.training.steps.data_collection.enhanced_api_agnostic_data_collector"
+      ]
+    }
+  ],
+  "highly_importing": [
+    {
+      "module": "src.training.steps.model_training",
+      "imports_count": 38,
+      "imports": [
+        "src.training.steps.model_training.update_steps_for_unified_data",
+        "src.training.steps.model_training.sr_outcome_model_trainer",
+        "src.training.steps.model_training.step11_analyst_creation",
+        "src.training.steps.model_training.per_regime_pipeline_config",
+        "src.training.steps.model_training.step09_5_multi_timeframe_hmm_ensemble_validator"
+      ]
+    },
+    {
+      "module": "ares_launcher",
+      "imports_count": 21,
+      "imports": [
+        "src.utils.common_operations",
+        "src.database.sqlite_manager",
+        "src.config.constants",
+        "src.training.steps.backtesting.enhanced_logging",
+        "src.utils.data_quality_framework"
+      ]
+    },
+    {
+      "module": "src.ares_pipeline",
+      "imports_count": 21,
+      "imports": [
+        "src.monitoring.performance_monitor",
+        "src.interfaces.base_interfaces",
+        "src.database.sqlite_manager",
+        "src.monitoring.performance_dashboard",
+        "exchange.factory"
+      ]
+    },
+    {
+      "module": "src.training.enhanced_training_manager",
+      "imports_count": 20,
+      "imports": [
+        "src.training.optimization.computational_optimization_manager",
+        "src.utils.common_operations",
+        "src.training.steps.step15_tactician_specialist_training",
+        "src.training.steps.step01_5_data_converter",
+        "src.utils.cross_step_validation"
+      ]
+    },
+    {
+      "module": "src.training.steps.market_analysis.enhanced_market_analysis_orchestrator",
+      "imports_count": 20,
+      "imports": [
+        "src.training.steps.market_analysis.step07_enhanced_matrix_operations",
+        "src.training.steps.market_analysis.progress_monitor",
+        "src.training.steps.market_analysis.enhanced_logging_metrics",
+        "src.training.steps.market_analysis.step04_regime_data_splitting_validator",
+        "src.utils.common_operations"
+      ]
+    },
+    {
+      "module": "src.training.steps_1_7_comprehensive_executor",
+      "imports_count": 19,
+      "imports": [
+        "src.training.steps.hmm_clustering.step03_enhanced_hmm_regime_discovery",
+        "src.training.steps.data_preparation.step02_data_reading",
+        "src.training.steps.step01_5_data_converter",
+        "src.training.steps.feature_engineering.step06_feature_engineering",
+        "src.training.steps.step04_regime_data_splitting_validator"
+      ]
+    },
+    {
+      "module": "src.training.steps.run_all_pipelines",
+      "imports_count": 17,
+      "imports": [
+        "src.utils.validator_orchestrator",
+        "src.utils.data_formatting_framework",
+        "src.training.steps.model_training",
+        "src.core.domain",
+        "src.training.steps.backtesting"
+      ]
+    },
+    {
+      "module": "code_quality.fixers.auto_fixer",
+      "imports_count": 16,
+      "imports": [
+        "code_quality.plugins.unify_fixer",
+        "code_quality.plugins.import_hygiene_fixer",
+        "code_quality.plugins.yapf_fixer",
+        "code_quality.plugins.black_fixer",
+        "code_quality.plugins.yesqa_fixer"
+      ]
+    },
+    {
+      "module": "src.training.steps.backtesting",
+      "imports_count": 16,
+      "imports": [
+        "src.training.steps.backtesting.enhanced_logging",
+        "src.training.steps.backtesting.step18_walk_forward_validation_per_regime",
+        "src.core.decorators.logging",
+        "src.training.steps.backtesting.step19_monte_carlo_validation_validator",
+        "src.training.steps.backtesting.comprehensive_reporting"
+      ]
+    },
+    {
+      "module": "src.monitoring",
+      "imports_count": 15,
+      "imports": [
+        "src.monitoring.advanced_tracer",
+        "src.monitoring.enhanced_ml_monitoring",
+        "src.monitoring.ml_monitor",
+        "src.monitoring.csv_export_manager",
+        "src.monitoring.correlation_manager"
+      ]
+    }
+  ]
+}

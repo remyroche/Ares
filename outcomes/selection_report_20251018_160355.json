@@ -1,0 +1,18 @@
+{
+  "selection_metrics": {
+    "total_features_analyzed": 15,
+    "features_selected": 0,
+    "selection_ratio": 0.0,
+    "average_ic": 0,
+    "average_stability": 0,
+    "average_oof_ic": 0,
+    "execution_time": 44.99882507324219
+  },
+  "selected_features": [],
+  "config": {
+    "max_features": 60,
+    "min_ic_threshold": 0.01,
+    "min_stability_threshold": 0.6,
+    "max_correlation_threshold": 0.85
+  }
+}

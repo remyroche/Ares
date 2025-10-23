@@ -1,0 +1,753 @@
+{
+  "timestamp": "2025-09-03T15:23:36.539966",
+  "project": "code_quality",
+  "modules": {
+    "enhanced_validator.py": {
+      "lines": 653,
+      "functions": [
+        "generate_report",
+        "main",
+        "__init__",
+        "validate_project",
+        "_find_python_files",
+        "_collect_signatures",
+        "_validate_file",
+        "_add_issue",
+        "_generate_report",
+        "_issue_to_dict",
+        "_signature_to_dict",
+        "_summarize_data_access",
+        "__init__",
+        "visit_ClassDef",
+        "visit_FunctionDef",
+        "visit_AsyncFunctionDef",
+        "_process_function",
+        "__init__",
+        "visit_ClassDef",
+        "visit_FunctionDef",
+        "visit_AsyncFunctionDef",
+        "visit_Call",
+        "visit_Attribute",
+        "visit_Subscript",
+        "visit_If",
+        "visit_Assign",
+        "_validate_function_call",
+        "_validate_attribute_access",
+        "_validate_subscript_access",
+        "_track_null_checks",
+        "_get_function_name",
+        "_find_method_signature",
+        "_is_safe_access"
+      ],
+      "classes": [
+        "ValidationIssue",
+        "DataAccess",
+        "FunctionSignature",
+        "EnhancedValidator",
+        "SignatureCollector",
+        "ArgumentAndAccessValidator"
+      ],
+      "imports": []
+    },
+    "run_tests_with_mocks.py": {
+      "lines": 84,
+      "functions": [
+        "run_mocked_tests"
+      ],
+      "classes": [],
+      "imports": []
+    },
+    "visualize_interactions.py": {
+      "lines": 282,
+      "functions": [
+        "visualize_code_interactions",
+        "create_sample_visualizations",
+        "main"
+      ],
+      "classes": [],
+      "imports": []
+    },
+    "run_real_subset_tests.py": {
+      "lines": 352,
+      "functions": [
+        "run_tests",
+        "test_get_current_datetime",
+        "test_get_today",
+        "test_format_datetime",
+        "test_parse_datetime",
+        "setUp",
+        "tearDown",
+        "test_ensure_directory",
+        "test_safe_file_exists",
+        "test_safe_json_operations",
+        "test_safe_lower",
+        "test_safe_upper",
+        "test_safe_join",
+        "test_safe_float",
+        "test_safe_int",
+        "test_generate_hash",
+        "test_generate_cache_key",
+        "test_safe_append",
+        "test_safe_dict_get",
+        "test_format_bytes",
+        "test_chunked_iterable",
+        "test_validate_numeric_range",
+        "test_safe_sleep",
+        "test_create_async_task"
+      ],
+      "classes": [
+        "TestRealDateTimeOperations",
+        "TestRealFileOperations",
+        "TestRealStringOperations",
+        "TestRealTypeConversions",
+        "TestRealHashingOperations",
+        "TestRealCollectionOperations",
+        "TestRealUtilityOperations",
+        "TestRealAsyncOperations"
+      ],
+      "imports": []
+    },
+    "integrated_validator.py": {
+      "lines": 309,
+      "functions": [
+        "main",
+        "__init__",
+        "validate_project",
+        "_combine_reports",
+        "generate_report",
+        "_generate_summary_report",
+        "_generate_markdown_report"
+      ],
+      "classes": [
+        "IntegratedValidator"
+      ],
+      "imports": []
+    },
+    "run_tests_simple.py": {
+      "lines": 71,
+      "functions": [
+        "check_dependencies",
+        "install_dependencies",
+        "run_tests"
+      ],
+      "classes": [],
+      "imports": []
+    },
+    "example_usage_extended.py": {
+      "lines": 246,
+      "functions": [
+        "example_complexity_analysis",
+        "example_dead_code_analysis",
+        "example_error_reporting",
+        "example_html_reporting",
+        "example_trend_tracking",
+        "main"
+      ],
+      "classes": [],
+      "imports": []
+    },
+    "function_validator.py": {
+      "lines": 535,
+      "functions": [
+        "main",
+        "__init__",
+        "validate_project",
+        "_find_python_files",
+        "_analyze_file",
+        "_analyze_ast",
+        "_cross_file_analysis",
+        "_check_function_existence",
+        "_check_async_await_usage",
+        "_check_parameter_validation",
+        "_check_import_consistency",
+        "_add_issue",
+        "_issue_to_dict",
+        "generate_report",
+        "_generate_summary_report",
+        "__init__",
+        "visit_Import",
+        "visit_ImportFrom",
+        "visit_FunctionDef",
+        "visit_AsyncFunctionDef",
+        "visit_ClassDef",
+        "visit_Call",
+        "_has_await_parent",
+        "_add_issue"
+      ],
+      "classes": [
+        "FunctionIssue",
+        "FunctionCall",
+        "FunctionDefinition",
+        "ImportInfo",
+        "FunctionValidator",
+        "FunctionValidatorVisitor"
+      ],
+      "imports": []
+    },
+    "test_pipeline.py": {
+      "lines": 119,
+      "functions": [
+        "test_pipeline",
+        "test_visualization_only"
+      ],
+      "classes": [],
+      "imports": []
+    },
+    "verify_test_setup.py": {
+      "lines": 58,
+      "functions": [
+        "verify_structure"
+      ],
+      "classes": [],
+      "imports": []
+    }
+  },
+  "functions": {
+    "enhanced_validator.py::generate_report": {
+      "complexity": 3,
+      "lines": 46
+    },
+    "enhanced_validator.py::main": {
+      "complexity": 2,
+      "lines": 37
+    },
+    "enhanced_validator.py::__init__": {
+      "complexity": 1,
+      "lines": 9
+    },
+    "enhanced_validator.py::validate_project": {
+      "complexity": 1,
+      "lines": 29
+    },
+    "enhanced_validator.py::_find_python_files": {
+      "complexity": 3,
+      "lines": 21
+    },
+    "enhanced_validator.py::_collect_signatures": {
+      "complexity": 1,
+      "lines": 12
+    },
+    "enhanced_validator.py::_validate_file": {
+      "complexity": 1,
+      "lines": 15
+    },
+    "enhanced_validator.py::_add_issue": {
+      "complexity": 5,
+      "lines": 25
+    },
+    "enhanced_validator.py::_generate_report": {
+      "complexity": 1,
+      "lines": 19
+    },
+    "enhanced_validator.py::_issue_to_dict": {
+      "complexity": 1,
+      "lines": 12
+    },
+    "enhanced_validator.py::_signature_to_dict": {
+      "complexity": 1,
+      "lines": 14
+    },
+    "enhanced_validator.py::_summarize_data_access": {
+      "complexity": 1,
+      "lines": 16
+    },
+    "enhanced_validator.py::visit_ClassDef": {
+      "complexity": 1,
+      "lines": 6
+    },
+    "enhanced_validator.py::visit_FunctionDef": {
+      "complexity": 1,
+      "lines": 12
+    },
+    "enhanced_validator.py::visit_AsyncFunctionDef": {
+      "complexity": 1,
+      "lines": 3
+    },
+    "enhanced_validator.py::_process_function": {
+      "complexity": 5,
+      "lines": 45
+    },
+    "enhanced_validator.py::visit_Call": {
+      "complexity": 1,
+      "lines": 4
+    },
+    "enhanced_validator.py::visit_Attribute": {
+      "complexity": 1,
+      "lines": 4
+    },
+    "enhanced_validator.py::visit_Subscript": {
+      "complexity": 1,
+      "lines": 4
+    },
+    "enhanced_validator.py::visit_If": {
+      "complexity": 2,
+      "lines": 7
+    },
+    "enhanced_validator.py::visit_Assign": {
+      "complexity": 2,
+      "lines": 7
+    },
+    "enhanced_validator.py::_validate_function_call": {
+      "complexity": 8,
+      "lines": 50
+    },
+    "enhanced_validator.py::_validate_attribute_access": {
+      "complexity": 3,
+      "lines": 27
+    },
+    "enhanced_validator.py::_validate_subscript_access": {
+      "complexity": 5,
+      "lines": 39
+    },
+    "enhanced_validator.py::_track_null_checks": {
+      "complexity": 5,
+      "lines": 11
+    },
+    "enhanced_validator.py::_get_function_name": {
+      "complexity": 3,
+      "lines": 8
+    },
+    "enhanced_validator.py::_find_method_signature": {
+      "complexity": 2,
+      "lines": 6
+    },
+    "enhanced_validator.py::_is_safe_access": {
+      "complexity": 3,
+      "lines": 12
+    },
+    "run_tests_with_mocks.py::run_mocked_tests": {
+      "complexity": 2,
+      "lines": 43
+    },
+    "visualize_interactions.py::visualize_code_interactions": {
+      "complexity": 11,
+      "lines": 156
+    },
+    "visualize_interactions.py::create_sample_visualizations": {
+      "complexity": 1,
+      "lines": 57
+    },
+    "visualize_interactions.py::main": {
+      "complexity": 3,
+      "lines": 36
+    },
+    "run_real_subset_tests.py::run_tests": {
+      "complexity": 4,
+      "lines": 70
+    },
+    "run_real_subset_tests.py::test_get_current_datetime": {
+      "complexity": 1,
+      "lines": 6
+    },
+    "run_real_subset_tests.py::test_get_today": {
+      "complexity": 1,
+      "lines": 5
+    },
+    "run_real_subset_tests.py::test_format_datetime": {
+      "complexity": 1,
+      "lines": 9
+    },
+    "run_real_subset_tests.py::test_parse_datetime": {
+      "complexity": 1,
+      "lines": 8
+    },
+    "run_real_subset_tests.py::setUp": {
+      "complexity": 1,
+      "lines": 3
+    },
+    "run_real_subset_tests.py::tearDown": {
+      "complexity": 1,
+      "lines": 3
+    },
+    "run_real_subset_tests.py::test_ensure_directory": {
+      "complexity": 1,
+      "lines": 8
+    },
+    "run_real_subset_tests.py::test_safe_file_exists": {
+      "complexity": 1,
+      "lines": 8
+    },
+    "run_real_subset_tests.py::test_safe_json_operations": {
+      "complexity": 1,
+      "lines": 15
+    },
+    "run_real_subset_tests.py::test_safe_lower": {
+      "complexity": 1,
+      "lines": 5
+    },
+    "run_real_subset_tests.py::test_safe_upper": {
+      "complexity": 1,
+      "lines": 5
+    },
+    "run_real_subset_tests.py::test_safe_join": {
+      "complexity": 1,
+      "lines": 4
+    },
+    "run_real_subset_tests.py::test_safe_float": {
+      "complexity": 1,
+      "lines": 6
+    },
+    "run_real_subset_tests.py::test_safe_int": {
+      "complexity": 1,
+      "lines": 5
+    },
+    "run_real_subset_tests.py::test_generate_hash": {
+      "complexity": 1,
+      "lines": 10
+    },
+    "run_real_subset_tests.py::test_generate_cache_key": {
+      "complexity": 1,
+      "lines": 7
+    },
+    "run_real_subset_tests.py::test_safe_append": {
+      "complexity": 1,
+      "lines": 7
+    },
+    "run_real_subset_tests.py::test_safe_dict_get": {
+      "complexity": 1,
+      "lines": 8
+    },
+    "run_real_subset_tests.py::test_format_bytes": {
+      "complexity": 1,
+      "lines": 5
+    },
+    "run_real_subset_tests.py::test_chunked_iterable": {
+      "complexity": 1,
+      "lines": 7
+    },
+    "run_real_subset_tests.py::test_validate_numeric_range": {
+      "complexity": 1,
+      "lines": 4
+    },
+    "run_real_subset_tests.py::test_safe_sleep": {
+      "complexity": 1,
+      "lines": 10
+    },
+    "run_real_subset_tests.py::test_create_async_task": {
+      "complexity": 1,
+      "lines": 13
+    },
+    "integrated_validator.py::main": {
+      "complexity": 3,
+      "lines": 33
+    },
+    "integrated_validator.py::__init__": {
+      "complexity": 1,
+      "lines": 10
+    },
+    "integrated_validator.py::validate_project": {
+      "complexity": 1,
+      "lines": 14
+    },
+    "integrated_validator.py::_combine_reports": {
+      "complexity": 1,
+      "lines": 58
+    },
+    "integrated_validator.py::generate_report": {
+      "complexity": 2,
+      "lines": 29
+    },
+    "integrated_validator.py::_generate_summary_report": {
+      "complexity": 3,
+      "lines": 47
+    },
+    "integrated_validator.py::_generate_markdown_report": {
+      "complexity": 4,
+      "lines": 75
+    },
+    "run_tests_simple.py::check_dependencies": {
+      "complexity": 1,
+      "lines": 15
+    },
+    "run_tests_simple.py::install_dependencies": {
+      "complexity": 1,
+      "lines": 13
+    },
+    "run_tests_simple.py::run_tests": {
+      "complexity": 4,
+      "lines": 28
+    },
+    "example_usage_extended.py::example_complexity_analysis": {
+      "complexity": 2,
+      "lines": 32
+    },
+    "example_usage_extended.py::example_dead_code_analysis": {
+      "complexity": 2,
+      "lines": 29
+    },
+    "example_usage_extended.py::example_error_reporting": {
+      "complexity": 6,
+      "lines": 54
+    },
+    "example_usage_extended.py::example_html_reporting": {
+      "complexity": 1,
+      "lines": 27
+    },
+    "example_usage_extended.py::example_trend_tracking": {
+      "complexity": 1,
+      "lines": 29
+    },
+    "example_usage_extended.py::main": {
+      "complexity": 2,
+      "lines": 36
+    },
+    "function_validator.py::main": {
+      "complexity": 2,
+      "lines": 28
+    },
+    "function_validator.py::__init__": {
+      "complexity": 1,
+      "lines": 15
+    },
+    "function_validator.py::validate_project": {
+      "complexity": 1,
+      "lines": 47
+    },
+    "function_validator.py::_find_python_files": {
+      "complexity": 3,
+      "lines": 21
+    },
+    "function_validator.py::_analyze_file": {
+      "complexity": 1,
+      "lines": 21
+    },
+    "function_validator.py::_analyze_ast": {
+      "complexity": 1,
+      "lines": 10
+    },
+    "function_validator.py::_cross_file_analysis": {
+      "complexity": 1,
+      "lines": 6
+    },
+    "function_validator.py::_check_function_existence": {
+      "complexity": 3,
+      "lines": 24
+    },
+    "function_validator.py::_check_async_await_usage": {
+      "complexity": 2,
+      "lines": 10
+    },
+    "function_validator.py::_check_parameter_validation": {
+      "complexity": 1,
+      "lines": 2
+    },
+    "function_validator.py::_check_import_consistency": {
+      "complexity": 3,
+      "lines": 19
+    },
+    "function_validator.py::_add_issue": {
+      "complexity": 1,
+      "lines": 11
+    },
+    "function_validator.py::_issue_to_dict": {
+      "complexity": 1,
+      "lines": 11
+    },
+    "function_validator.py::generate_report": {
+      "complexity": 2,
+      "lines": 15
+    },
+    "function_validator.py::_generate_summary_report": {
+      "complexity": 2,
+      "lines": 29
+    },
+    "function_validator.py::visit_Import": {
+      "complexity": 1,
+      "lines": 12
+    },
+    "function_validator.py::visit_ImportFrom": {
+      "complexity": 2,
+      "lines": 13
+    },
+    "function_validator.py::visit_FunctionDef": {
+      "complexity": 4,
+      "lines": 36
+    },
+    "function_validator.py::visit_AsyncFunctionDef": {
+      "complexity": 1,
+      "lines": 3
+    },
+    "function_validator.py::visit_ClassDef": {
+      "complexity": 2,
+      "lines": 12
+    },
+    "function_validator.py::visit_Call": {
+      "complexity": 3,
+      "lines": 29
+    },
+    "function_validator.py::_has_await_parent": {
+      "complexity": 1,
+      "lines": 5
+    },
+    "test_pipeline.py::test_pipeline": {
+      "complexity": 4,
+      "lines": 55
+    },
+    "test_pipeline.py::test_visualization_only": {
+      "complexity": 1,
+      "lines": 19
+    },
+    "verify_test_setup.py::verify_structure": {
+      "complexity": 1,
+      "lines": 42
+    }
+  },
+  "complexity": {
+    "enhanced_validator.py": {
+      "functions": 33,
+      "classes": 6,
+      "imports": 9,
+      "lines": 653
+    },
+    "run_tests_with_mocks.py": {
+      "functions": 1,
+      "classes": 0,
+      "imports": 7,
+      "lines": 84
+    },
+    "visualize_interactions.py": {
+      "functions": 3,
+      "classes": 0,
+      "imports": 7,
+      "lines": 282
+    },
+    "run_real_subset_tests.py": {
+      "functions": 24,
+      "classes": 8,
+      "imports": 11,
+      "lines": 352
+    },
+    "integrated_validator.py": {
+      "functions": 7,
+      "classes": 1,
+      "imports": 10,
+      "lines": 309
+    },
+    "run_tests_simple.py": {
+      "functions": 3,
+      "classes": 0,
+      "imports": 5,
+      "lines": 71
+    },
+    "example_usage_extended.py": {
+      "functions": 6,
+      "classes": 0,
+      "imports": 2,
+      "lines": 246
+    },
+    "function_validator.py": {
+      "functions": 24,
+      "classes": 6,
+      "imports": 11,
+      "lines": 535
+    },
+    "test_pipeline.py": {
+      "functions": 2,
+      "classes": 0,
+      "imports": 8,
+      "lines": 119
+    },
+    "verify_test_setup.py": {
+      "functions": 1,
+      "classes": 0,
+      "imports": 4,
+      "lines": 58
+    }
+  },
+  "imports": {
+    "enhanced_validator.py": [
+      "ast",
+      "json",
+      "logging",
+      "os",
+      "collections",
+      "dataclasses",
+      "pathlib",
+      "typing",
+      "argparse"
+    ],
+    "run_tests_with_mocks.py": [
+      "sys",
+      "types",
+      "unittest",
+      "pathlib",
+      "unittest.mock",
+      "tests",
+      "traceback"
+    ],
+    "visualize_interactions.py": [
+      "sys",
+      "argparse",
+      "pathlib",
+      "datetime",
+      "typing",
+      "visualizers",
+      "json"
+    ],
+    "run_real_subset_tests.py": [
+      "asyncio",
+      "shutil",
+      "sys",
+      "tempfile",
+      "types",
+      "unittest",
+      "datetime",
+      "pathlib",
+      "unittest.mock",
+      "pytest",
+      "src.utils.common_operations"
+    ],
+    "integrated_validator.py": [
+      "json",
+      "logging",
+      "os",
+      "datetime",
+      "pathlib",
+      "typing",
+      "enhanced_validator",
+      "function_validator",
+      "argparse",
+      "collections"
+    ],
+    "run_tests_simple.py": [
+      "subprocess",
+      "sys",
+      "pathlib",
+      "numpy",
+      "pandas"
+    ],
+    "example_usage_extended.py": [
+      "tempfile",
+      "code_quality"
+    ],
+    "function_validator.py": [
+      "ast",
+      "json",
+      "logging",
+      "os",
+      "re",
+      "time",
+      "collections",
+      "dataclasses",
+      "pathlib",
+      "typing",
+      "argparse"
+    ],
+    "test_pipeline.py": [
+      "sys",
+      "json",
+      "pathlib",
+      "datetime",
+      "map_code_interactions",
+      "visualize_interactions",
+      "traceback",
+      "traceback"
+    ],
+    "verify_test_setup.py": [
+      "sys",
+      "pathlib",
+      "src.utils",
+      "tests"
+    ]
+  }
+}

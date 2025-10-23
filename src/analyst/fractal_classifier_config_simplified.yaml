@@ -1,0 +1,48 @@
+# Simplified Configuration for Fractal Location Classifier
+
+analyst:
+  unified_regime_classifier:
+    # Distance normalization method
+    distance_normalization: "percentage"  # Options: "percentage" or "atr"
+    
+    # Minimum strength threshold for valid S/R levels
+    min_strength_threshold: 0.3  # Levels below this strength are ignored
+    
+    # Maximum relevant distance from S/R levels
+    max_relevant_distance: 0.05  # 5% - Levels beyond this distance are not considered
+    
+    # Fractal timeframes for multi-timeframe S/R analysis
+    # Weights determine contribution to final strength calculation
+    fractal_timeframes:
+      - name: "1m"
+        periods: 60      # 60 1m candles = 1 hour
+        weight: 0.1      # 10% weight - micro structure
+      - name: "5m"
+        periods: 12      # 12 5m candles = 1 hour
+        weight: 0.15     # 15% weight - short-term structure
+      - name: "15m"
+        periods: 4       # 4 15m candles = 1 hour  
+        weight: 0.2      # 20% weight - medium-term structure
+      - name: "1h"
+        periods: 1       # Base timeframe
+        weight: 0.25     # 25% weight - primary timeframe
+      - name: "4h"
+        periods: 0.25    # 1/4 of 4h candle
+        weight: 0.2      # 20% weight - macro structure
+      - name: "1d"
+        periods: 0.042   # ~1 hour of daily candle
+        weight: 0.1      # 10% weight - daily structure
+    
+    # S/R detection enhancement
+    enable_sr_integration: true  # Use SRBreakoutPredictor for enhanced S/R detection
+    
+    # Clustering parameters
+    cluster_threshold: 0.002  # 0.2% - Levels within this range are clustered together
+    
+    # Output interpretation:
+    # - support_distance: How far above nearest support (normalized)
+    # - resistance_distance: How far below nearest resistance (normalized)
+    # - support_strength: How strong the support is (0-1)
+    # - resistance_strength: How strong the resistance is (0-1)
+    # - combined_location_score: Overall position (-1=at support, 0=neutral, 1=at resistance)
+    # - location_quality: Quality of S/R structure (0-1)

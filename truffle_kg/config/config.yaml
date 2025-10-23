@@ -1,0 +1,204 @@
+# Truffle Knowledge Graph and Simulation System Configuration
+
+# Database Configuration
+databases:
+  neo4j:
+    uri: "bolt://localhost:7687"
+    user: "neo4j"
+    password: "password"
+    database: "truffle_kg"
+  
+  rdf:
+    endpoint: "http://localhost:3030/truffle"
+    repository: "truffle_kg"
+    username: "admin"
+    password: "admin"
+  
+  postgresql:
+    host: "localhost"
+    port: 5432
+    database: "truffle_kg"
+    username: "truffle_user"
+    password: "truffle_password"
+
+# API Configuration
+api:
+  graphql:
+    host: "0.0.0.0"
+    port: 8000
+    debug: true
+  
+  sparql:
+    host: "0.0.0.0"
+    port: 5000
+    debug: true
+  
+  rest:
+    host: "0.0.0.0"
+    port: 3000
+    debug: true
+
+# Simulation Configuration
+simulation:
+  pde:
+    domain_size: [1.0, 1.0, 0.5]  # x, y, z in meters
+    grid_resolution: [50, 50, 25]  # nx, ny, nz
+    time_step: 0.01  # seconds
+    max_time: 3600.0  # seconds
+  
+  abm:
+    domain_size: [100, 100, 50]  # width, height, depth in grid units
+    time_step: 0.1  # seconds
+    max_tips: 10000
+    branching_rate: 0.05
+    anastomosis_distance: 3.0
+  
+  mpc:
+    prediction_horizon: 20
+    control_horizon: 10
+    time_step: 1.0  # seconds
+    max_iterations: 100
+
+# Data Ingestion Configuration
+ingestion:
+  input_directories:
+    papers: "/workspace/truffle_kg/data/input/papers"
+    lab_data: "/workspace/truffle_kg/data/input/lab_data"
+    sensor_data: "/workspace/truffle_kg/data/input/sensor_data"
+    images: "/workspace/truffle_kg/data/input/images"
+  
+  output_directories:
+    rdf: "/workspace/truffle_kg/data/output/rdf"
+    neo4j: "/workspace/truffle_kg/data/output/neo4j"
+    processed: "/workspace/truffle_kg/data/output/processed"
+  
+  file_formats:
+    supported_papers: [".pdf", ".docx", ".txt"]
+    supported_data: [".csv", ".json", ".xlsx", ".parquet"]
+    supported_images: [".jpg", ".png", ".tiff", ".bmp"]
+
+# ML Model Configuration
+ml_models:
+  nlp:
+    spacy_model: "en_core_sci_sm"
+    bert_model: "allenai/scibert_scivocab_uncased"
+    max_sequence_length: 512
+  
+  surrogate:
+    model_type: "neural_network"  # neural_network, random_forest, gaussian_process
+    hidden_layers: [64, 32, 16]
+    learning_rate: 0.001
+    epochs: 100
+    batch_size: 32
+  
+  parameter_inference:
+    method: "bayesian"  # bayesian, mcmc, optimization
+    n_samples: 1000
+    n_chains: 4
+    burn_in: 200
+
+# Visualization Configuration
+visualization:
+  dashboard:
+    host: "0.0.0.0"
+    port: 8080
+    theme: "dark"
+    auto_refresh: 30  # seconds
+  
+  plots:
+    figure_size: [12, 8]
+    dpi: 100
+    style: "seaborn-v0_8"
+    color_palette: "viridis"
+  
+  neo4j_browser:
+    host: "localhost"
+    port: 7474
+    username: "neo4j"
+    password: "password"
+
+# Logging Configuration
+logging:
+  level: "INFO"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  file: "/workspace/truffle_kg/logs/truffle_kg.log"
+  max_size: "10MB"
+  backup_count: 5
+
+# Security Configuration
+security:
+  api_key_required: false
+  cors_origins: ["*"]
+  rate_limiting:
+    enabled: true
+    requests_per_minute: 100
+  
+  authentication:
+    enabled: false
+    jwt_secret: "your-secret-key"
+    token_expiry: 3600  # seconds
+
+# Performance Configuration
+performance:
+  cache:
+    enabled: true
+    backend: "redis"  # redis, memory
+    ttl: 3600  # seconds
+  
+  parallel_processing:
+    enabled: true
+    max_workers: 4
+    chunk_size: 100
+  
+  memory:
+    max_memory_usage: "8GB"
+    gc_threshold: 0.8
+
+# Monitoring Configuration
+monitoring:
+  metrics:
+    enabled: true
+    endpoint: "/metrics"
+    port: 9090
+  
+  health_checks:
+    enabled: true
+    interval: 30  # seconds
+    timeout: 5  # seconds
+  
+  alerts:
+    enabled: false
+    email: "admin@truffle-kg.com"
+    webhook: "https://hooks.slack.com/your-webhook"
+
+# Development Configuration
+development:
+  debug_mode: true
+  hot_reload: true
+  mock_data: true
+  test_data_path: "/workspace/truffle_kg/data/test"
+  
+  testing:
+    unit_tests: true
+    integration_tests: true
+    coverage_threshold: 80
+    test_timeout: 300  # seconds
+
+# Production Configuration
+production:
+  debug_mode: false
+  hot_reload: false
+  mock_data: false
+  
+  scaling:
+    horizontal: true
+    min_instances: 2
+    max_instances: 10
+    cpu_threshold: 70
+    memory_threshold: 80
+  
+  backup:
+    enabled: true
+    schedule: "0 2 * * *"  # Daily at 2 AM
+    retention_days: 30
+    storage_path: "/workspace/truffle_kg/backups"

@@ -1,0 +1,140 @@
+# Analytical Process Timeframes and Frequencies Configuration
+# This file defines the timeframes and execution frequencies for the three main analytical components
+
+analytical_process:
+  # Regime Detection Configuration
+  regime_detection:
+    timeframe: "4h"           # Regime detection operates on 4-hour timeframe
+    run_frequency: "1h"       # Runs every 1 hour
+    description: "Market regime detection using 4h timeframe data, executed every hour"
+    data_requirements:
+      min_bars: 24            # Minimum 24 bars (6 days) for regime detection
+      lookback_days: 30       # 30 days of historical data
+    model_types:
+      - "nas_regime_detector"
+      - "tas_regime_detector" 
+      - "hybrid_regime_detector"
+    
+  # Analyst Configuration  
+  analyst:
+    timeframe: "15m"          # Analyst operates on 15-minute timeframe
+    run_frequency: "15m"      # Runs every 15 minutes
+    description: "Strategic decision making (IF we trade) using 15m timeframe data, executed every 15 minutes"
+    data_requirements:
+      min_bars: 48            # Minimum 48 bars (12 hours) for analyst decisions
+      lookback_days: 7        # 7 days of historical data
+    model_types:
+      - "elastic_net"
+      - "random_forest"
+      - "nas_analyst"
+      - "tas_analyst"
+      - "n_beats"
+    confidence_threshold: 0.4  # Minimum confidence for green signals
+    
+  # Tactician Configuration
+  tactician:
+    timeframe: "15m"          # Tactician operates on 15-minute timeframe
+    run_frequency: "3m"       # Runs every 3 minutes
+    description: "Tactical execution timing (WHEN we trade) using 15m timeframe data, executed every 3 minutes"
+    data_requirements:
+      min_bars: 20            # Minimum 20 bars (5 hours) for tactical decisions
+      lookback_days: 3        # 3 days of historical data
+    model_types:
+      - "random_survival_forest"
+      - "xgboost"
+      - "nas_tactician"
+      - "tas_tactician"
+    analyst_filtering: true   # Requires analyst green signals (>0.4% confidence)
+
+# Execution Schedule Configuration
+execution_schedule:
+  # Regime Detection Schedule
+  regime_detection:
+    cron_expression: "0 * * * *"  # Every hour at minute 0
+    timezone: "UTC"
+    max_execution_time: "30m"     # Maximum 30 minutes per execution
+    retry_attempts: 3
+    retry_delay: "5m"
+    
+  # Analyst Schedule  
+  analyst:
+    cron_expression: "0,15,30,45 * * * *"  # Every 15 minutes
+    timezone: "UTC"
+    max_execution_time: "10m"     # Maximum 10 minutes per execution
+    retry_attempts: 2
+    retry_delay: "2m"
+    
+  # Tactician Schedule
+  tactician:
+    cron_expression: "0,3,6,9,12,15,18,21,24,27,30,33,36,39,42,45,48,51,54,57 * * * *"  # Every 3 minutes
+    timezone: "UTC"
+    max_execution_time: "5m"      # Maximum 5 minutes per execution
+    retry_attempts: 2
+    retry_delay: "1m"
+
+# Data Pipeline Configuration
+data_pipeline:
+  # Data collection frequencies
+  data_collection:
+    regime_detection_data: "4h"   # Collect 4h data for regime detection
+    analyst_data: "15m"           # Collect 15m data for analyst
+    tactician_data: "15m"         # Collect 15m data for tactician
+    
+  # Feature engineering timeframes
+  feature_engineering:
+    regime_detection:
+      base_timeframe: "4h"
+      additional_timeframes: ["1h", "1d"]  # Additional timeframes for context
+    analyst:
+      base_timeframe: "15m" 
+      additional_timeframes: ["5m", "1h", "4h"]  # Additional timeframes for context
+    tactician:
+      base_timeframe: "15m"
+      additional_timeframes: ["5m", "1h"]   # Additional timeframes for context
+
+# Model Training Configuration
+model_training:
+  # Regime detection models
+  regime_detection:
+    training_timeframe: "4h"
+    retrain_frequency: "24h"      # Retrain every 24 hours
+    validation_split: 0.2
+    cross_validation_folds: 5
+    
+  # Analyst models  
+  analyst:
+    training_timeframe: "15m"
+    retrain_frequency: "12h"      # Retrain every 12 hours
+    validation_split: 0.2
+    cross_validation_folds: 5
+    
+  # Tactician models
+  tactician:
+    training_timeframe: "15m"
+    retrain_frequency: "6h"       # Retrain every 6 hours
+    validation_split: 0.2
+    cross_validation_folds: 5
+
+# Monitoring and Alerting
+monitoring:
+  # Performance thresholds
+  performance_thresholds:
+    regime_detection:
+      accuracy_threshold: 0.75
+      latency_threshold: "30s"
+      memory_threshold: "2GB"
+    analyst:
+      accuracy_threshold: 0.70
+      latency_threshold: "10s" 
+      memory_threshold: "1GB"
+    tactician:
+      accuracy_threshold: 0.65
+      latency_threshold: "5s"
+      memory_threshold: "512MB"
+      
+  # Alerting configuration
+  alerts:
+    enable_email_alerts: true
+    enable_slack_alerts: true
+    alert_cooldown: "15m"
+    critical_threshold: 0.5  # Alert if accuracy drops below 50%

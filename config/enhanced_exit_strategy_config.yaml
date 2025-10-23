@@ -1,0 +1,151 @@
+# Enhanced Exit Strategy Configuration
+# This configuration demonstrates the improved exit strategy with confidence-based exits and profit-taking
+
+position_monitor:
+  monitoring_interval: 10  # seconds
+  
+  # Confidence-based exit thresholds
+  confidence_thresholds:
+    very_low: 0.2      # Exit immediately (emergency)
+    low: 0.4           # Scale down or exit (risk management)
+    medium: 0.6        # Hold position (normal operation)
+    high: 0.8          # Consider profit taking (opportunity)
+  
+  # PnL-based exit thresholds
+  pnl_thresholds:
+    stop_loss: -0.05   # -5% stop loss (critical exit)
+    profit_target: 0.04  # 4% base profit target
+    scaling_levels: [0.25, 0.5, 0.75]  # Tiered profit taking levels
+  
+  # Profit-taking configuration with confidence-based scaling
+  profit_taking:
+    confidence_scaling: true                    # Enable confidence-based profit scaling
+    min_confidence_for_profit: 0.6            # Minimum confidence to take profit
+    confidence_profit_multiplier: 0.5         # How much confidence affects profit taking
+    tiered_profit_taking: true                 # Enable tiered profit taking
+    trailing_stop_enabled: true               # Enable trailing stops
+    trailing_stop_atr_multiplier: 1.5         # ATR multiplier for trailing stops
+
+exit_strategy:
+  # Profit buffer and trailing base settings
+  profit_buffer_atr_multiplier: 0.6
+  profit_buffer_min_fraction: 0.001
+  trail_base_atr_multiplier: 0.8
+
+  # Breakeven and trailing activation thresholds (in ATR units)
+  breakeven_activation_atr: 1.0
+  trail_activation_atr: 1.0
+
+  # Trailing profit activation
+  tp_trail_activation_atr: 2.0
+  tp_trail_trigger_atr: 2.5
+  partial_take_fraction: 0.5
+
+  # Drawdown management
+  drawdown_tighten_atr: 0.8
+  tighten_trail_atr: 0.5
+  drawdown_exit_atr: 1.2
+
+  # Volatility regime adjustments
+  volatility_tighten_threshold: 0.7
+  volatility_tighten_adjustment: 0.3
+  volatility_loosen_threshold: 1.3
+  volatility_loosen_adjustment: 0.2
+
+  # Time-based decay
+  time_decay_bars: 8
+  time_decay_threshold_atr: 0.3
+  bar_duration_seconds: 900
+
+  # ML-driven adjustments
+  ml_confidence_tighten_threshold: 0.3
+  ml_confidence_tighten_atr: 0.3
+  ml_regime_partial_fraction: 0.5
+
+  # Regime-specific ATR bands
+  regime_bands:
+    low:
+      sl_atr: 1.2
+      tp_atr: 2.0
+      trail_atr: 0.8
+      tp_trail: 2.2
+    normal:
+      sl_atr: 1.5
+      tp_atr: 2.5
+      trail_atr: 1.0
+      tp_trail: 2.5
+    high:
+      sl_atr: 1.8
+      tp_atr: 3.0
+      trail_atr: 1.2
+      tp_trail: 3.0
+
+# Example usage scenarios:
+# 
+# Scenario 1: High Confidence (0.9) + 3% Profit
+# - Confidence scaling: 3% * (1.0 - (0.9 - 0.5) * 0.5) = 3% * 0.8 = 2.4% target
+# - Result: Take profit at 2.4% instead of 4% (hold longer for bigger gains)
+#
+# Scenario 2: Medium Confidence (0.6) + 3% Profit  
+# - Confidence scaling: 3% * (1.0 - (0.6 - 0.5) * 0.5) = 3% * 0.95 = 2.85% target
+# - Result: Take profit at 2.85% (slightly lower than base 4%)
+#
+# Scenario 3: Low Confidence (0.3) + Any Profit
+# - Result: No profit taking (confidence too low)
+#
+# Scenario 4: Very Low Confidence (0.1) + Any PnL
+# - Result: Full exit (emergency exit)
+
+# Tiered Profit Taking Example:
+# Base profit target: 4%
+# Tier 1 (25%): 1% profit -> Take 25% of position
+# Tier 2 (50%): 2% profit -> Take 50% of position  
+# Tier 3 (75%): 3% profit -> Take 75% of position
+# Full target: 4% profit -> Take 100% of position
+
+# Confidence-Based Scaling Logic:
+# Higher confidence = Lower profit targets (hold longer for bigger gains)
+# Lower confidence = Higher profit targets (take profit sooner)
+# This creates an adaptive system that balances risk and reward based on model confidence
+
+stop_loss:
+  trailing_stop_config:
+    profit_buffer: 0.001
+    trail_activation_thresholds:
+      activate_at_0_5_atr: 0.5
+      trail_tighten_at_0_8_atr: 0.8
+      hard_stop_at_1_2_atr: 1.2
+    regime_bands:
+      bull_trend: 0.9
+      bear_trend: 1.1
+      sideways_range: 1.0
+    time_decay_modifiers:
+      enabled: true
+      time_decay_schedule:
+        - minutes: 0
+          modifier: 1.0
+        - minutes: 45
+          modifier: 0.95
+        - minutes: 90
+          modifier: 0.9
+
+take_profit:
+  dynamic_take_profit_config:
+    profit_buffer: 0.0025
+    trail_activation_thresholds:
+      activate_at_0_5_atr: 0.55
+      trail_tighten_at_0_8_atr: 0.95
+      hard_stop_at_1_2_atr: 1.4
+    regime_bands:
+      bull_trend: 1.1
+      bear_trend: 0.9
+      sideways_range: 1.0
+    time_decay_modifiers:
+      enabled: true
+      time_decay_schedule:
+        - minutes: 0
+          modifier: 1.0
+        - minutes: 90
+          modifier: 0.9
+        - minutes: 180
+          modifier: 0.85

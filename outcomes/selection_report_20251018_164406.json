@@ -1,0 +1,75 @@
+{
+  "selection_metrics": {
+    "total_features_analyzed": 15,
+    "features_selected": 7,
+    "selection_ratio": 0.4666666666666667,
+    "average_ic": 0.14694386310323274,
+    "average_stability": 0.9852411815223484,
+    "average_oof_ic": 0.12181441031681488,
+    "execution_time": 55.89020371437073
+  },
+  "selected_features": [
+    {
+      "name": "close_return",
+      "ic_score": 0.9999999317990732,
+      "stability_score": 0.9999999997183022,
+      "composite_score": 0.93999997263512,
+      "oof_ic": 0.9999999991111915,
+      "oof_sharpe": 0.001356797095987741
+    },
+    {
+      "name": "volume_return",
+      "ic_score": 0.009317263642027455,
+      "stability_score": 0.9931209023584553,
+      "composite_score": 0.5416631761643476,
+      "oof_ic": -0.013152613560324738,
+      "oof_sharpe": 0.001356797095987741
+    },
+    {
+      "name": "volume_log_return",
+      "ic_score": 0.009319970325092157,
+      "stability_score": 0.9928954368620978,
+      "composite_score": 0.5415966191886663,
+      "oof_ic": -0.013427885355874636,
+      "oof_sharpe": 0.001356797095987741
+    },
+    {
+      "name": "quote_volume",
+      "ic_score": 0.0031027070045404944,
+      "stability_score": 0.9832300963150916,
+      "composite_score": 0.5362101116963437,
+      "oof_ic": -0.031874457203674655,
+      "oof_sharpe": 0.001356797095987741
+    },
+    {
+      "name": "body_size_pct",
+      "ic_score": 0.002073892658435703,
+      "stability_score": 0.9727567595768253,
+      "composite_score": 0.5326565849364219,
+      "oof_ic": -0.02854844253275468,
+      "oof_sharpe": 0.001356797095987741
+    },
+    {
+      "name": "price_range_pct",
+      "ic_score": 0.0008125818969699327,
+      "stability_score": 0.9737757872592425,
+      "composite_score": 0.5324577689365607,
+      "oof_ic": -0.035501886520634754,
+      "oof_sharpe": 0.001356797095987741
+    },
+    {
+      "name": "trades",
+      "ic_score": 0.003980694396490489,
+      "stability_score": 0.9809092885664232,
+      "composite_score": 0.48358424150565993,
+      "oof_ic": -0.024793841720223832,
+      "oof_sharpe": 0.001356797095987741
+    }
+  ],
+  "config": {
+    "max_features": 60,
+    "min_ic_threshold": 0.01,
+    "min_stability_threshold": 0.6,
+    "max_correlation_threshold": 0.85
+  }
+}

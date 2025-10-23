@@ -1,0 +1,348 @@
+# Tactician Multi-Output Configuration
+# Configuration for Tactician (1m) multi-output stacking ensemble models
+# Fed on all features + HMM inputs + Analyst inputs for optimal entry timing
+
+# Basic configuration
+tactician_config:
+  model_name: "tactician_multi_output"
+  timeframe: "5m"
+  n_outputs: 4
+  output_names: ["entry_timing", "position_size", "stop_loss", "take_profit"]
+
+  # Model configuration - Updated for 5m precision entry timing
+  base_models:
+    xgboost:
+      model_type: "XGBRegressor"
+      params:
+        n_estimators: 2000
+        learning_rate: 0.05
+        max_depth: 6
+        subsample: 0.8
+        colsample_bytree: 0.8
+        random_state: 42
+        n_jobs: -1
+
+    lightgbm:
+      model_type: "LGBMRegressor"
+      params:
+        n_estimators: 2000
+        learning_rate: 0.05
+        max_depth: -1
+        num_leaves: 63
+        random_state: 42
+        verbosity: -1
+
+    deepscaler_1m:
+      model_type: "DeepScaler1m"
+      params:
+        n_layers: 6
+        n_units: 128
+        dropout: 0.1
+        l2_regularization: 0.005
+        activation: "relu"
+        learning_rate: 0.0005
+        batch_size: 64
+        epochs: 200
+        early_stopping_patience: 30
+        precision_focused: true
+        micro_timing_aware: true
+
+    financial_resnet:
+      model_type: "FinancialResNet"
+      params:
+        blocks: [32, 64, 128]
+        temporal_conv_layers: 3
+        attention_heads: 4
+        dropout: 0.15
+        regime_aware: true
+        input_features: 100
+        output_classes: 20
+        batch_size: 128
+        epochs: 150
+        learning_rate: 0.001
+        early_stopping_patience: 25
+        l2_regularization: 0.01
+  
+  # Meta model configuration - AdvancedMambaHybrid for 1m precision timing
+  meta_models:
+    entry_timing:
+      model_type: "AdvancedMambaHybrid"
+      params:
+        mamba_layers: 3
+        conv_layers: 4
+        attention_heads: 6
+        hidden_dim: 128
+        state_expansion: 5
+        execution_optimization: true
+        micro_timing_attention: true
+        latency_aware: true
+        dropout: 0.1
+        activation: "GELU"
+        batch_size: 64
+        epochs: 100
+        learning_rate: 0.001
+        early_stopping_patience: 20
+        l2_regularization: 0.01
+
+    position_size:
+      model_type: "AdvancedMambaHybrid"
+      params:
+        mamba_layers: 3
+        conv_layers: 4
+        attention_heads: 6
+        hidden_dim: 128
+        state_expansion: 5
+        execution_optimization: true
+        micro_timing_attention: true
+        latency_aware: true
+        dropout: 0.1
+        activation: "GELU"
+        batch_size: 64
+        epochs: 100
+        learning_rate: 0.001
+        early_stopping_patience: 20
+        l2_regularization: 0.01
+
+    stop_loss:
+      model_type: "AdvancedMambaHybrid"
+      params:
+        mamba_layers: 3
+        conv_layers: 4
+        attention_heads: 6
+        hidden_dim: 128
+        state_expansion: 5
+        execution_optimization: true
+        micro_timing_attention: true
+        latency_aware: true
+        dropout: 0.1
+        activation: "GELU"
+        batch_size: 64
+        epochs: 100
+        learning_rate: 0.001
+        early_stopping_patience: 20
+        l2_regularization: 0.01
+
+    take_profit:
+      model_type: "AdvancedMambaHybrid"
+      params:
+        mamba_layers: 3
+        conv_layers: 4
+        attention_heads: 6
+        hidden_dim: 128
+        state_expansion: 5
+        execution_optimization: true
+        micro_timing_attention: true
+        latency_aware: true
+        dropout: 0.1
+        activation: "GELU"
+        batch_size: 64
+        epochs: 100
+        learning_rate: 0.001
+        early_stopping_patience: 20
+        l2_regularization: 0.01
+  
+  # Training configuration
+  training:
+    enable_cross_validation: true
+    cv_folds: 5
+    enable_early_stopping: true
+    early_stopping_patience: 15
+    validation_split: 0.2
+    test_split: 0.1
+  
+  # Stacking configuration
+  stacking:
+    method: "blending"
+    enable_meta_learning: true
+    meta_learning_rate: 0.005
+    meta_learning_iterations: 2000
+  
+  # Multi-output specific settings
+  multi_output:
+    output_weights: [0.3, 0.3, 0.2, 0.2]  # entry_timing, position_size, stop_loss, take_profit
+    output_loss_weights: [1.0, 1.0, 1.0, 1.0]
+    enable_output_correlation: true
+    correlation_threshold: 0.6
+  
+  # M1 optimization settings
+  hardware:
+    enable_gpu_acceleration: true
+    enable_memory_optimization: true
+    enable_parallel_processing: true
+    memory_limit_gb: 8.0
+    max_workers: null
+  
+  # Performance settings
+  performance:
+    enable_caching: true
+    cache_size_mb: 200
+    enable_profiling: false
+  
+  # Output settings
+  output:
+    save_models: true
+    save_predictions: true
+    generate_reports: true
+    output_dir: "./tactician_models"
+
+# Feature engineering configuration
+feature_engineering:
+  enable_cross_timeframe_features: true
+  cross_timeframe_periods: [5, 15, 30, 60]  # minutes
+  enable_regime_features: true
+  enable_technical_indicators: true
+  enable_market_microstructure: true
+  enable_orderbook_features: true
+  
+  # Feature selection
+  feature_selection:
+    method: "lasso"
+    alpha: 0.005
+    max_features: 150
+    enable_recursive_elimination: true
+  
+  # Feature scaling
+  scaling:
+    method: "robust"
+    enable_outlier_handling: true
+    outlier_threshold: 2.5
+
+# Data preparation configuration
+data_preparation:
+  # Time series specific
+  time_series:
+    enable_temporal_features: true
+    lookback_window: 200
+    forecast_horizon: 1
+    
+  # Multi-output target generation
+  target_generation:
+    entry_timing:
+      method: "momentum_based"
+      lookback_periods: [5, 10, 20]
+      momentum_threshold: 0.01
+    
+    position_size:
+      method: "kelly_criterion"
+      lookback_periods: [50, 100]
+      max_position_size: 0.1
+    
+    stop_loss:
+      method: "atr_based"
+      lookback_periods: [20, 50]
+      atr_multiplier: 2.0
+    
+    take_profit:
+      method: "risk_reward_ratio"
+      lookback_periods: [20, 50]
+      risk_reward_ratio: 2.0
+
+# Model evaluation configuration
+evaluation:
+  metrics:
+    regression: ["mse", "mae", "r2", "mape"]
+    classification: ["accuracy", "precision", "recall", "f1"]
+  
+  # Cross-validation
+  cross_validation:
+    method: "time_series_split"
+    n_splits: 5
+    test_size: 0.2
+  
+  # Model comparison
+  comparison:
+    enable_model_ranking: true
+    ranking_metric: "r2"
+    enable_feature_importance: true
+    enable_model_explanations: true
+
+# Confidence calibration configuration
+confidence_calibration:
+  enable_calibration: true
+  methods: ["platt_scaling", "isotonic_regression"]
+  enable_temperature_scaling: true
+  enable_histogram_binning: true
+  enable_bayesian_calibration: true
+  
+  # Calibration parameters
+  platt_scaling:
+    learning_rate: 0.005
+    max_iterations: 2000
+    convergence_threshold: 1e-6
+  
+  isotonic_regression:
+    out_of_bounds: "clip"
+    increasing: true
+  
+  temperature_scaling:
+    temperature_range: [0.1, 10.0]
+    optimization_method: "lbfgs"
+  
+  histogram_binning:
+    bin_count: 15
+    bin_strategy: "uniform"
+  
+  bayesian_calibration:
+    prior_strength: 1.0
+    mcmc_samples: 2000
+    burn_in_samples: 200
+
+# Risk management configuration
+risk_management:
+  enable_position_sizing: true
+  max_position_size: 0.1
+  enable_stop_loss: true
+  enable_take_profit: true
+  enable_portfolio_limits: true
+  
+  # Risk limits
+  limits:
+    max_drawdown: 0.05
+    max_daily_loss: 0.02
+    max_position_concentration: 0.3
+  
+  # Risk monitoring
+  monitoring:
+    enable_real_time_monitoring: true
+    alert_thresholds:
+      drawdown: 0.03
+      daily_loss: 0.01
+      position_size: 0.08
+
+# Logging and monitoring configuration
+logging:
+  level: "INFO"
+  enable_detailed_logging: true
+  log_predictions: true
+  log_performance_metrics: true
+  log_feature_importance: true
+  log_risk_metrics: true
+  
+  # Logging intervals
+  intervals:
+    training_progress: 50  # log every 50 iterations
+    prediction_summary: 500  # log every 500 predictions
+    performance_update: 2000  # log every 2000 samples
+    risk_monitoring: 100  # log every 100 samples
+
+# Migration configuration
+migration:
+  enable_legacy_support: true
+  migration_mode: "gradual"  # gradual, immediate, hybrid
+  fallback_to_legacy: true
+  enable_performance_comparison: true
+  
+  # Migration steps
+  steps:
+    - "validate_data_compatibility"
+    - "train_new_models"
+    - "compare_performance"
+    - "gradual_rollout"
+    - "full_migration"
+  
+  # Analyst dependency
+  analyst_dependency:
+    enable_analyst_input: true
+    analyst_model_path: "./analyst_models"
+    analyst_output_names: ["signal_strength", "confidence", "risk_score", "regime_label"]
+    analyst_threshold: 0.6  # minimum analyst confidence to proceed

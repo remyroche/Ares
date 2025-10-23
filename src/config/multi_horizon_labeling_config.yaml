@@ -1,0 +1,249 @@
+# Multi-Horizon Profit Labeling Configuration
+# Replaces triple barrier method with enhanced probability-based labeling
+
+multi_horizon_labeling:
+  # Core Configuration - SHORT-TERM FOCUSED
+  profit_targets:
+    micro: 0.003      # 0.3% (net: 0.20% after 0.10% fees) - High leverage makes this significant
+    small: 0.005      # 0.5% (net: 0.42% after fees) - Good short-term target
+    medium: 0.007     # 0.7% (net: 0.62% after fees) - Strong move target
+    good: 0.010       # 1.0% (net: 0.92% after fees) - Excellent move target
+  
+  # Time Horizons - ULTRA SHORT-TERM for regular reassessment
+  time_horizons:
+    immediate: 2      # 10 minutes (2 * 5m periods) - Capture quick moves
+    short: 4          # 20 minutes (4 * 5m periods) - Capture short-term moves
+  
+  # Fee and Cost Management
+  transaction_cost: 0.001         # 0.10% transaction cost (entry + exit)
+  slippage_allowance: 0.0002      # 0.02% slippage allowance
+  
+  # Quality Scoring Configuration
+  enable_quality_scoring: true
+  speed_weight: 0.3               # 30% weight on speed to target
+  risk_weight: 0.4                # 40% weight on risk management (max adverse excursion)
+  profitability_weight: 0.3       # 30% weight on net profitability
+  
+  # High-Leverage Optimization
+  leverage_aware: true
+  small_move_emphasis: 0.6        # 60% emphasis on smaller moves (high leverage makes them valuable)
+  
+  # Reversal Capture Configuration (NEW)
+  enable_reversal_capture: true
+  reversal_speed_weight: 0.4      # 40% weight on speed for reversals
+  reversal_clean_move_weight: 0.3 # 30% weight on clean moves (low adverse excursion)
+  reversal_ratio_weight: 0.3      # 30% weight on immediate vs short ratio
+  
+  # Reassessment Configuration (NEW)
+  enable_dynamic_reassessment: true
+  min_reassessment_frequency: 1.0 # Minimum 1 minute between reassessments
+  max_reassessment_frequency: 10.0 # Maximum 10 minutes between reassessments
+  high_probability_frequency_boost: 0.8 # 20% more frequent for high probabilities
+  
+  # Model Integration
+  output_format: "probability_distribution"  # vs "binary_classification"
+  target_count: 26                # 8 long + 8 short probability targets + 10 composite scores
+  
+  # ENHANCED: Directional Analysis Configuration
+  enable_directional_analysis: true
+  directional_confidence_threshold: 0.05    # Minimum difference to declare directional bias
+  adaptive_threshold: true                  # Use adaptive threshold based on overall opportunity
+  immediate_horizon_weight: 0.7             # Weight for immediate vs short-term in directional scoring
+  
+  # Directional Quality Scoring
+  enable_directional_quality_scoring: true
+  long_speed_bonus: 1.1                     # Bonus multiplier for fast long moves
+  long_adverse_penalty: 0.9                 # Penalty for adverse excursion in longs
+  short_sustained_bonus: 1.05               # Bonus for sustained short moves
+  short_adverse_penalty: 0.85               # Penalty for adverse excursion in shorts (more strict)
+  
+  # Validation and Quality Control
+  min_samples_for_labeling: 50    # Minimum samples needed
+  max_missing_data_ratio: 0.05    # Maximum 5% missing data allowed
+  enable_data_quality_checks: true
+  
+  # Performance Optimization
+  enable_vectorization: true
+  batch_size: 1000               # Process 1000 samples at a time
+  parallel_processing: true
+  max_workers: 4
+
+# Integration with Feature Lookback Optimization
+feature_lookback_optimization:
+  # Multi-horizon specific optimization
+  optimize_time_horizons: true
+  time_horizon_optimization:
+    immediate_range: [1, 4, 1]    # 5-20 minutes, step 5 minutes
+    short_range: [3, 8, 1]        # 15-40 minutes, step 5 minutes
+  
+  # Profit target optimization (optional)
+  optimize_profit_targets: false  # Keep fixed for now
+  
+  # Directional optimization (NEW)
+  enable_directional_optimization: true  # Differentiate between long and short signals
+  directional_optimization:
+    min_samples_per_direction: 50        # Minimum samples needed for each direction
+    enable_directional_comparison: true   # Generate comparison metrics
+    prefer_better_direction: true         # Use better performing direction for each feature
+    fallback_to_unified: true            # Fall back to unified optimization if directional fails
+    
+    # Intelligent feature selection (prevents naive feature doubling)
+    intelligent_feature_selection:
+      enabled: true                      # Enable intelligent feature selection
+      max_features: 50                   # Maximum total features to select
+      significance_threshold: 0.1        # Min performance difference for directional split
+      lookback_diff_threshold: 5         # Min lookback difference for directional split
+      create_meta_features: true         # Create directional meta-features
+      priority_order: ["directional", "unified", "meta"]  # Feature selection priority
+    
+    # Multi-target optimization (NEW)
+    multi_target_optimization:
+      enabled: true                      # Enable optimization against multiple multi-horizon targets
+      max_targets: 6                     # Maximum targets to optimize against simultaneously
+      target_priority:                   # Priority order for target selection
+        - "leverage_adjusted_score"      # Primary composite target
+        - "overall_opportunity"          # Secondary composite target
+        - "immediate_opportunity"        # Short-term focused target
+        - "long_overall_opportunity"     # Long directional target
+        - "short_overall_opportunity"    # Short directional target
+        - "micro_immediate_long_prob"    # High-frequency long probability
+        - "micro_immediate_short_prob"   # High-frequency short probability
+      consensus_method: "weighted"       # How to combine multi-target results
+      quality_threshold: 0.4             # Minimum quality score for consensus acceptance
+  
+  # Integration settings
+  use_multi_horizon_metrics: true
+  primary_optimization_metric: "leverage_adjusted_score"
+  secondary_metrics: 
+    - "overall_opportunity"
+    - "immediate_opportunity"
+    - "reversal_capture_score"
+
+# Integration with Interactive Feature Generation
+interactive_feature_generation:
+  # Multi-horizon compatibility with ENHANCED directional support
+  target_columns:
+    # LONG direction targets
+    - "micro_immediate_long_prob"
+    - "small_immediate_long_prob"
+    - "medium_immediate_long_prob"
+    - "good_immediate_long_prob"
+    - "micro_short_long_prob"
+    - "small_short_long_prob"
+    - "medium_short_long_prob"
+    - "good_short_long_prob"
+    
+    # SHORT direction targets
+    - "micro_immediate_short_prob"
+    - "small_immediate_short_prob"
+    - "medium_immediate_short_prob"
+    - "good_immediate_short_prob"
+    - "micro_short_short_prob"
+    - "small_short_short_prob"
+    - "medium_short_short_prob"
+    - "good_short_short_prob"
+    
+    # Composite opportunity scores
+    - "long_overall_opportunity"
+    - "short_overall_opportunity"
+    - "overall_opportunity"  # Backward compatibility
+    - "leverage_adjusted_score"
+    - "reversal_capture_score"
+    
+    # NEW: Directional analysis targets
+    - "directional_bias"
+    - "directional_confidence"
+    - "opportunity_asymmetry"
+    - "long_directional_strength"
+    - "short_directional_strength"
+    - "long_momentum"
+    - "short_momentum"
+  
+  # Feature engineering for probability targets
+  interaction_features: true
+  polynomial_features: true
+  cross_timeframe_features: true
+  
+  # PID parameters optimized for probability prediction
+  pid_tuning_for_probabilities: true
+  probability_aware_interactions: true
+
+# Trading Strategy Configuration
+trading_strategy:
+  # High-leverage parameters
+  leverage_multiplier: 50.0
+  max_account_risk_per_trade: 0.02  # 2% max account risk
+  
+  # Entry thresholds (ENHANCED with directional support)
+  entry_thresholds:
+    # LONG direction thresholds
+    micro_immediate_long_prob: 0.75      # 75% for micro long moves (10 min)
+    small_immediate_long_prob: 0.70      # 70% for small long moves (10 min)
+    medium_immediate_long_prob: 0.65     # 65% for medium long moves (10 min)
+    good_immediate_long_prob: 0.60       # 60% for good long moves (10 min)
+    
+    # SHORT direction thresholds (slightly higher due to market bias)
+    micro_immediate_short_prob: 0.78     # 78% for micro short moves (10 min)
+    small_immediate_short_prob: 0.73     # 73% for small short moves (10 min)
+    medium_immediate_short_prob: 0.68    # 68% for medium short moves (10 min)
+    good_immediate_short_prob: 0.63      # 63% for good short moves (10 min)
+    
+    # Directional strength thresholds
+    long_directional_strength: 0.55      # 55% long directional strength
+    short_directional_strength: 0.58     # 58% short directional strength (higher bar)
+    
+    # Legacy thresholds (backward compatibility)
+    overall_opportunity: 0.60            # 60% overall (lower for more trades)
+    reversal_capture_score: 0.60         # 60% reversal capture
+    
+    # NEW: Directional bias requirements
+    directional_confidence: 0.10         # Minimum 10% confidence in direction
+    opportunity_asymmetry_threshold: 0.05 # Minimum 5% asymmetry for directional trades
+  
+  # Exit thresholds
+  exit_thresholds:
+    profit_protection: 0.50         # Protect 50% of gains
+    opportunity_decline: 0.40       # Exit if opportunity drops to 40%
+    time_based_exit: 0.30          # Exit if probability drops to 30%
+    reversal_signal: 0.35          # Exit if reversal signal above 35%
+  
+  # Position sizing
+  position_sizing:
+    base_size: 0.01                # 1% base position
+    confidence_multiplier: 2.0     # Scale by confidence
+    max_position_size: 0.05        # 5% maximum
+    min_position_size: 0.002       # 0.2% minimum
+  
+  # Timing parameters
+  max_position_duration: 25        # 25 minutes max hold
+  reassessment_frequency: 3        # Every 3 minutes
+  entry_delay_seconds: 2          # 2 second delay for execution
+  
+# Monitoring and Logging
+monitoring:
+  enable_detailed_logging: true
+  log_probability_distributions: true
+  log_reversal_capture_events: true
+  log_reassessment_decisions: true
+  
+  # Performance tracking
+  track_success_rate_by_target: true
+  track_time_to_target_accuracy: true
+  track_reversal_capture_effectiveness: true
+  track_reassessment_frequency_optimization: true
+  
+  # Alerts
+  alert_on_low_opportunity_periods: true
+  alert_on_high_reversal_activity: true
+  alert_on_suboptimal_reassessment_timing: true
+
+# Backward Compatibility
+backward_compatibility:
+  maintain_triple_barrier_interface: true
+  provide_binary_classification_output: true
+  legacy_metric_calculation: true
+  
+  # Migration settings
+  gradual_migration: true
+  parallel_execution: false       # Don't run both systems simultaneously
+  fallback_to_triple_barrier: false # Don't fallback to old system

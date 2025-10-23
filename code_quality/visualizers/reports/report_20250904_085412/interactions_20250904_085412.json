@@ -1,0 +1,113 @@
+{
+  "timestamp": "20250904_085412",
+  "workspace": "/workspace",
+  "analysis_type": "enhanced_dead_code_analysis",
+  "summary": {
+    "total_issues": 12,
+    "deprecated_items": 0,
+    "high_priority": 0
+  },
+  "issues": [
+    {
+      "issue_type": "unused_import",
+      "file_path": "/workspace/step_formatter.py",
+      "line_number": 23,
+      "description": "Potentially unused import: from pathlib import Path",
+      "confidence": 70,
+      "severity": "medium"
+    },
+    {
+      "issue_type": "unused_import",
+      "file_path": "/workspace/simple_test_analysis.py",
+      "line_number": 8,
+      "description": "Potentially unused import: from pathlib import Path",
+      "confidence": 70,
+      "severity": "medium"
+    },
+    {
+      "issue_type": "unused_import",
+      "file_path": "/workspace/simple_test_analysis.py",
+      "line_number": 24,
+      "description": "Potentially unused import: import numpy as np",
+      "confidence": 70,
+      "severity": "medium"
+    },
+    {
+      "issue_type": "unused_import",
+      "file_path": "/workspace/check_trade_data.py",
+      "line_number": 3,
+      "description": "Potentially unused import: import pandas as pd",
+      "confidence": 70,
+      "severity": "medium"
+    },
+    {
+      "issue_type": "unused_import",
+      "file_path": "/workspace/create_regime_splits.py",
+      "line_number": 9,
+      "description": "Potentially unused import: import pandas as pd",
+      "confidence": 70,
+      "severity": "medium"
+    },
+    {
+      "issue_type": "unused_import",
+      "file_path": "/workspace/create_30m_hmm_artifacts.py",
+      "line_number": 10,
+      "description": "Potentially unused import: from pathlib import Path",
+      "confidence": 70,
+      "severity": "medium"
+    },
+    {
+      "issue_type": "unused_import",
+      "file_path": "/workspace/comprehensive_analysis_core.py",
+      "line_number": 25,
+      "description": "Potentially unused import: from collections import Counter, defaultdict",
+      "confidence": 70,
+      "severity": "medium"
+    },
+    {
+      "issue_type": "unused_import",
+      "file_path": "/workspace/comprehensive_analysis_core.py",
+      "line_number": 27,
+      "description": "Potentially unused import: from pathlib import Path",
+      "confidence": 70,
+      "severity": "medium"
+    },
+    {
+      "issue_type": "unused_import",
+      "file_path": "/workspace/comprehensive_analysis_core.py",
+      "line_number": 28,
+      "description": "Potentially unused import: from typing import Any",
+      "confidence": 70,
+      "severity": "medium"
+    },
+    {
+      "issue_type": "unused_import",
+      "file_path": "/workspace/comprehensive_analysis_core.py",
+      "line_number": 31,
+      "description": "Potentially unused import: from minimal_config import get_default_config as get_default_config_minimal_config",
+      "confidence": 70,
+      "severity": "medium"
+    },
+    {
+      "issue_type": "unused_import",
+      "file_path": "/workspace/fix_metadata_and_naming.py",
+      "line_number": 7,
+      "description": "Potentially unused import: from pathlib import Path",
+      "confidence": 70,
+      "severity": "medium"
+    },
+    {
+      "issue_type": "unused_import",
+      "file_path": "/workspace/complete_remaining_steps_integration.py",
+      "line_number": 10,
+      "description": "Potentially unused import: from pathlib import Path",
+      "confidence": 70,
+      "severity": "medium"
+    }
+  ],
+  "deprecated": [],
+  "files_generated": [
+    "code_quality/visualizers/reports/report_20250904_085412/enhanced_interactions_20250904_085412.html",
+    "code_quality/visualizers/reports/report_20250904_085412/function_usage_map_20250904_085412.png"
+  ]
+}

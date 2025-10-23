@@ -1,0 +1,2452 @@
+{
+  "timestamp": "20250905_152042",
+  "analysis_type": "enhanced_import_fixes",
+  "project_root": "/workspace/code_quality",
+  "auto_detection_fixes": 1,
+  "auto_detection_failures": 137,
+  "traditional_import_fixes": 0,
+  "import_placement_fixes": 0,
+  "circular_imports_found": 0,
+  "module_breakdown": {},
+  "files_analyzed": 138,
+  "files_fixed": [
+    "/workspace/code_quality/scripts/comprehensive_syntax_validator.py"
+  ],
+  "results": {
+    "syntax_validation": {
+      "total_files": 138,
+      "syntax_errors": [],
+      "indentation_errors": [],
+      "import_errors": [
+        {
+          "file_path": "/workspace/code_quality/cli.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": false,
+          "error_type": "import_error",
+          "error_message": "Import error: cannot import name 'load_config' from 'core.config' (/workspace/code_quality/core/config.py)",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "import_error"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/quick_start.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": false,
+          "error_type": "name_error",
+          "error_message": "Name error: name 'basestring' is not defined",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "name_error"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/__init__.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": false,
+          "error_type": "import_error",
+          "error_message": "Import error: No module named 'test_module'",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "import_error"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/reporters/trend_reporter.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": false,
+          "error_type": "import_error",
+          "error_message": "Import error: cannot import name 'ReportingConfig' from 'core.config' (/workspace/code_quality/core/config.py)",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "import_error"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/reporters/error_reporter.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": false,
+          "error_type": "import_error",
+          "error_message": "Import error: cannot import name 'ReportingConfig' from 'core.config' (/workspace/code_quality/core/config.py)",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "import_error"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/reporters/quality_reporter.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": false,
+          "error_type": "import_error",
+          "error_message": "Import error: cannot import name 'get_directory_stats' from 'utils.file_utils' (/workspace/code_quality/utils/file_utils.py)",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "import_error"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/reporters/__init__.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": false,
+          "error_type": "import_error",
+          "error_message": "Import error: No module named 'test_module'",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "import_error"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/pipelines/pipeline_unified_enhanced.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": false,
+          "error_type": "import_error",
+          "error_message": "Import error: cannot import name 'get_directory_stats' from 'utils.file_utils' (/workspace/code_quality/utils/file_utils.py)",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "import_error"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/pipelines/overall_pipeline.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": false,
+          "error_type": "import_error",
+          "error_message": "Import error: cannot import name 'get_directory_stats' from 'utils.file_utils' (/workspace/code_quality/utils/file_utils.py)",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "import_error"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/plugins/flynt_fixer.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": false,
+          "error_type": "import_error",
+          "error_message": "Import error: attempted relative import with no known parent package",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "import_error"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/plugins/autoflake_fixer.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": false,
+          "error_type": "import_error",
+          "error_message": "Import error: attempted relative import with no known parent package",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "import_error"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/plugins/docformatter_fixer.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": false,
+          "error_type": "import_error",
+          "error_message": "Import error: attempted relative import with no known parent package",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "import_error"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/plugins/isort_fixer.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": false,
+          "error_type": "import_error",
+          "error_message": "Import error: attempted relative import with no known parent package",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "import_error"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/plugins/unify_fixer.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": false,
+          "error_type": "import_error",
+          "error_message": "Import error: attempted relative import with no known parent package",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "import_error"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/plugins/plugin_registry.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": false,
+          "error_type": "import_error",
+          "error_message": "Import error: attempted relative import with no known parent package",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "import_error"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/plugins/import_hygiene_fixer.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": false,
+          "error_type": "import_error",
+          "error_message": "Import error: attempted relative import with no known parent package",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "import_error"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/plugins/ruff_analyzer.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": false,
+          "error_type": "import_error",
+          "error_message": "Import error: No module named 'code_quality.core'",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "import_error"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/plugins/fawltydeps_analyzer.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": false,
+          "error_type": "import_error",
+          "error_message": "Import error: attempted relative import with no known parent package",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "import_error"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/plugins/pyupgrade_fixer.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": false,
+          "error_type": "import_error",
+          "error_message": "Import error: attempted relative import with no known parent package",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "import_error"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/plugins/pyre_analyzer.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": false,
+          "error_type": "import_error",
+          "error_message": "Import error: No module named 'code_quality.core'",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "import_error"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/plugins/ruff_fixer.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": false,
+          "error_type": "import_error",
+          "error_message": "Import error: attempted relative import with no known parent package",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "import_error"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/plugins/black_fixer.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": false,
+          "error_type": "import_error",
+          "error_message": "Import error: attempted relative import with no known parent package",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "import_error"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/plugins/yesqa_fixer.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": false,
+          "error_type": "import_error",
+          "error_message": "Import error: attempted relative import with no known parent package",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "import_error"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/plugins/plugin_manager.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": false,
+          "error_type": "import_error",
+          "error_message": "Import error: attempted relative import with no known parent package",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "import_error"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/plugins/creosote_analyzer.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": false,
+          "error_type": "import_error",
+          "error_message": "Import error: attempted relative import with no known parent package",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "import_error"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/plugins/flake8_analyzer.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": false,
+          "error_type": "import_error",
+          "error_message": "Import error: No module named 'code_quality.core'",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "import_error"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/plugins/yapf_fixer.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": false,
+          "error_type": "import_error",
+          "error_message": "Import error: attempted relative import with no known parent package",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "import_error"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/plugins/future_annotations_fixer.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": false,
+          "error_type": "import_error",
+          "error_message": "Import error: attempted relative import with no known parent package",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "import_error"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/plugins/__init__.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": false,
+          "error_type": "import_error",
+          "error_message": "Import error: No module named 'test_module'",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "import_error"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/plugins/autopep8_fixer.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": false,
+          "error_type": "import_error",
+          "error_message": "Import error: attempted relative import with no known parent package",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "import_error"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/mappers/visualize_interactions.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": false,
+          "error_type": "import_error",
+          "error_message": "Import error: cannot import name 'DependencyGraphVisualizer' from 'visualizers' (/workspace/code_quality/visualizers/__init__.py)",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "import_error"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/mappers/__init__.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": false,
+          "error_type": "import_error",
+          "error_message": "Import error: No module named 'test_module'",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "import_error"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/tests/test_enhanced_pipelines.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": false,
+          "error_type": "import_error",
+          "error_message": "Import error: cannot import name 'StaticAnalysisConfig' from 'core.config' (/workspace/code_quality/core/config.py)",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "import_error"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/analyzers/call_graph_analyzer.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": false,
+          "error_type": "import_error",
+          "error_message": "Import error: attempted relative import with no known parent package",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "import_error"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/analyzers/complexity_analyzer.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": false,
+          "error_type": "import_error",
+          "error_message": "Import error: attempted relative import with no known parent package",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "import_error"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/analyzers/import_analyzer.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": false,
+          "error_type": "import_error",
+          "error_message": "Import error: attempted relative import with no known parent package",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "import_error"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/analyzers/dependency_analyzer.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": false,
+          "error_type": "import_error",
+          "error_message": "Import error: attempted relative import with no known parent package",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "import_error"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/visualizers/interaction_network.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": false,
+          "error_type": "import_error",
+          "error_message": "Import error: attempted relative import with no known parent package",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "import_error"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/visualizers/complexity_heatmap.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": false,
+          "error_type": "import_error",
+          "error_message": "Import error: attempted relative import with no known parent package",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "import_error"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/visualizers/dependency_graph.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": false,
+          "error_type": "import_error",
+          "error_message": "Import error: attempted relative import with no known parent package",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "import_error"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/examples/example_usage_extended.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": false,
+          "error_type": "import_error",
+          "error_message": "Import error: cannot import name 'ComplexityAnalyzer' from 'code_quality' (/home/ubuntu/.local/lib/python3.13/site-packages/code_quality/__init__.py)",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "import_error"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/examples/visual_mapping_demo.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": false,
+          "error_type": "import_error",
+          "error_message": "Import error: cannot import name 'DependencyGraphVisualizer' from 'visualizers' (/workspace/code_quality/visualizers/__init__.py)",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "import_error"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/examples/enhanced_dead_code_demo.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": false,
+          "error_type": "import_error",
+          "error_message": "Import error: No module named 'analyzers.dead_code_analyzer'",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "import_error"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/examples/example_validation_usage.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": false,
+          "error_type": "import_error",
+          "error_message": "Import error: No module named 'enhanced_validator'",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "import_error"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/examples/example_usage.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": false,
+          "error_type": "import_error",
+          "error_message": "Import error: cannot import name 'AutoFixer' from 'code_quality' (/home/ubuntu/.local/lib/python3.13/site-packages/code_quality/__init__.py)",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "import_error"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/validators/integrated_validator.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": false,
+          "error_type": "import_error",
+          "error_message": "Import error: attempted relative import with no known parent package",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "import_error"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/validators/__init__.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": false,
+          "error_type": "import_error",
+          "error_message": "Import error: No module named 'test_module'",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "import_error"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/core/__init__.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": false,
+          "error_type": "import_error",
+          "error_message": "Import error: No module named 'test_module'",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "import_error"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/utils/file_utils.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": false,
+          "error_type": "import_error",
+          "error_message": "Import error: attempted relative import with no known parent package",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "import_error"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/utils/__init__.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": false,
+          "error_type": "import_error",
+          "error_message": "Import error: No module named 'test_module'",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "import_error"
+          }
+        }
+      ],
+      "runtime_errors": [
+        {
+          "file_path": "/workspace/code_quality/tests/test_common_operations.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": false,
+          "error_type": "runtime_error",
+          "error_message": "Runtime error: expected an indented block after 'try' statement on line 26 (common_operations.py, line 27)",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "runtime_error"
+          }
+        }
+      ],
+      "valid_files": [
+        {
+          "file_path": "/workspace/code_quality/test_pipeline_basic.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": true,
+          "error_type": "valid",
+          "error_message": "File is valid",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "success"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/run_full_pipeline.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": true,
+          "error_type": "valid",
+          "error_message": "File is valid",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "success"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/simple_analysis.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": true,
+          "error_type": "valid",
+          "error_message": "File is valid",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "success"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/comprehensive_code_review.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": true,
+          "error_type": "valid",
+          "error_message": "File is valid",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "success"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/test_pipelines.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": true,
+          "error_type": "valid",
+          "error_message": "File is valid",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "success"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/scripts/fix_async_await.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": true,
+          "error_type": "valid",
+          "error_message": "File is valid",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "success"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/scripts/extract_interactions.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": true,
+          "error_type": "valid",
+          "error_message": "File is valid",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "success"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/scripts/master_code_quality.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": true,
+          "error_type": "valid",
+          "error_message": "File is valid",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "success"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/scripts/comprehensive_syntax_validator.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": true,
+          "error_type": "valid",
+          "error_message": "File is valid",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "success"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/scripts/robust_async_fixer.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": true,
+          "error_type": "valid",
+          "error_message": "File is valid",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "success"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/scripts/detect_circular_imports.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": true,
+          "error_type": "valid",
+          "error_message": "File is valid",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "success"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/scripts/advanced_syntax_fixer.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": true,
+          "error_type": "valid",
+          "error_message": "File is valid",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "success"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/scripts/enhanced_type_hints.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": true,
+          "error_type": "valid",
+          "error_message": "File is valid",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "success"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/scripts/safe_indentation_fixer.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": true,
+          "error_type": "valid",
+          "error_message": "File is valid",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "success"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/scripts/auto_dependency_installer.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": true,
+          "error_type": "valid",
+          "error_message": "File is valid",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "success"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/scripts/fix_missing_imports.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": true,
+          "error_type": "valid",
+          "error_message": "File is valid",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "success"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/scripts/__init__.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": true,
+          "error_type": "valid",
+          "error_message": "File is valid",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "success"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/scripts/fix_incorrect_imports.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": true,
+          "error_type": "valid",
+          "error_message": "File is valid",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "success"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/scripts/interaction_summary.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": true,
+          "error_type": "valid",
+          "error_message": "File is valid",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "success"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/reporters/text_reporter.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": true,
+          "error_type": "valid",
+          "error_message": "File is valid",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "success"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/reporters/html_reporter.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": true,
+          "error_type": "valid",
+          "error_message": "File is valid",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "success"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/pipelines/auto_fixer_pipeline.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": true,
+          "error_type": "valid",
+          "error_message": "File is valid",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "success"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/pipelines/dead_code_pipeline.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": true,
+          "error_type": "valid",
+          "error_message": "File is valid",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "success"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/pipelines/complexity_pipeline.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": true,
+          "error_type": "valid",
+          "error_message": "File is valid",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "success"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/pipelines/import_free_analysis_pipeline.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": true,
+          "error_type": "valid",
+          "error_message": "File is valid",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "success"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/pipelines/base_pipeline.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": true,
+          "error_type": "valid",
+          "error_message": "File is valid",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "success"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/pipelines/__init__.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": true,
+          "error_type": "valid",
+          "error_message": "File is valid",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "success"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/pipelines/interaction_mapping_pipeline.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": true,
+          "error_type": "valid",
+          "error_message": "File is valid",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "success"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/plugins/base_plugin.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": true,
+          "error_type": "valid",
+          "error_message": "File is valid",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "success"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/plugins/exceptions.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": true,
+          "error_type": "valid",
+          "error_message": "File is valid",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "success"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/mappers/enhanced_map_code_interactions.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": true,
+          "error_type": "valid",
+          "error_message": "File is valid",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "success"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/mappers/map_code_interactions_simplified.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": true,
+          "error_type": "valid",
+          "error_message": "File is valid",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "success"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/mappers/map_code_interactions.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": true,
+          "error_type": "valid",
+          "error_message": "File is valid",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "success"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/fixers/conservative_auto_fixer.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": true,
+          "error_type": "valid",
+          "error_message": "File is valid",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "success"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/fixers/sequential_fixer_fixed.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": true,
+          "error_type": "valid",
+          "error_message": "File is valid",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "success"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/fixers/auto_fixer.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": true,
+          "error_type": "valid",
+          "error_message": "File is valid",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "success"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/tests/run_all_step_tests.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": true,
+          "error_type": "valid",
+          "error_message": "File is valid",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "success"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/tests/verify_test_structure.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": true,
+          "error_type": "valid",
+          "error_message": "File is valid",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "success"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/tests/__init__.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": true,
+          "error_type": "valid",
+          "error_message": "File is valid",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "success"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/analyzers/base_analyzer.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": true,
+          "error_type": "valid",
+          "error_message": "File is valid",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "success"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/analyzers/documentation_analyzer.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": true,
+          "error_type": "valid",
+          "error_message": "File is valid",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "success"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/analyzers/type_checker.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": true,
+          "error_type": "valid",
+          "error_message": "File is valid",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "success"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/analyzers/intelligent_import_fixer.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": true,
+          "error_type": "valid",
+          "error_message": "File is valid",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "success"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/analyzers/enhanced_fallback_detector.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": true,
+          "error_type": "valid",
+          "error_message": "File is valid",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "success"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/analyzers/syntax_validator.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": true,
+          "error_type": "valid",
+          "error_message": "File is valid",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "success"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/analyzers/error_handling_analyzer.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": true,
+          "error_type": "valid",
+          "error_message": "File is valid",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "success"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/analyzers/data_flow_analyzer.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": true,
+          "error_type": "valid",
+          "error_message": "File is valid",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "success"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/analyzers/improved_signature_analyzer.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": true,
+          "error_type": "valid",
+          "error_message": "File is valid",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "success"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/analyzers/code_smell_detector.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": true,
+          "error_type": "valid",
+          "error_message": "File is valid",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "success"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/analyzers/enhanced_dependency_analyzer.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": true,
+          "error_type": "valid",
+          "error_message": "File is valid",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "success"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/analyzers/enhanced_security_analyzer.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": true,
+          "error_type": "valid",
+          "error_message": "File is valid",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "success"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/analyzers/code_duplication_analyzer.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": true,
+          "error_type": "valid",
+          "error_message": "File is valid",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "success"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/analyzers/architecture_analyzer.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": true,
+          "error_type": "valid",
+          "error_message": "File is valid",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "success"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/analyzers/advanced_ast_analyzer.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": true,
+          "error_type": "valid",
+          "error_message": "File is valid",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "success"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/analyzers/performance_analyzer.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": true,
+          "error_type": "valid",
+          "error_message": "File is valid",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "success"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/analyzers/enhanced_dead_code_analyzer.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": true,
+          "error_type": "valid",
+          "error_message": "File is valid",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "success"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/analyzers/simple_complexity_analyzer.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": true,
+          "error_type": "valid",
+          "error_message": "File is valid",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "success"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/analyzers/ast_analysis_analyzer.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": true,
+          "error_type": "valid",
+          "error_message": "File is valid",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "success"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/analyzers/undefined_names_analyzer.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": true,
+          "error_type": "valid",
+          "error_message": "File is valid",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "success"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/analyzers/enhanced_import_analysis.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": true,
+          "error_type": "valid",
+          "error_message": "File is valid",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "success"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/analyzers/test_coverage_analyzer.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": true,
+          "error_type": "valid",
+          "error_message": "File is valid",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "success"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/analyzers/static_analysis_analyzer.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": true,
+          "error_type": "valid",
+          "error_message": "File is valid",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "success"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/analyzers/configuration_analyzer.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": true,
+          "error_type": "valid",
+          "error_message": "File is valid",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "success"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/analyzers/enhanced_dynamic_import_analyzer.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": true,
+          "error_type": "valid",
+          "error_message": "File is valid",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "success"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/analyzers/concurrency_analyzer.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": true,
+          "error_type": "valid",
+          "error_message": "File is valid",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "success"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/analyzers/enhanced_function_analyzer.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": true,
+          "error_type": "valid",
+          "error_message": "File is valid",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "success"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/analyzers/__init__.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": true,
+          "error_type": "valid",
+          "error_message": "File is valid",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "success"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/analyzers/metrics_analyzer.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": true,
+          "error_type": "valid",
+          "error_message": "File is valid",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "success"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/analyzers/secrets_analyzer.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": true,
+          "error_type": "valid",
+          "error_message": "File is valid",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "success"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/analyzers/stub_object_analyzer.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": true,
+          "error_type": "valid",
+          "error_message": "File is valid",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "success"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/analyzers/linter_analyzer.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": true,
+          "error_type": "valid",
+          "error_message": "File is valid",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "success"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/visualizers/dashboard_generator.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": true,
+          "error_type": "valid",
+          "error_message": "File is valid",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "success"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/visualizers/chart_generator.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": true,
+          "error_type": "valid",
+          "error_message": "File is valid",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "success"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/visualizers/code_visualizer.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": true,
+          "error_type": "valid",
+          "error_message": "File is valid",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "success"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/visualizers/__init__.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": true,
+          "error_type": "valid",
+          "error_message": "File is valid",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "success"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/examples/enhanced_visualization_demo.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": true,
+          "error_type": "valid",
+          "error_message": "File is valid",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "success"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/validators/enhanced_validator.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": true,
+          "error_type": "valid",
+          "error_message": "File is valid",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "success"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/validators/function_validator.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": true,
+          "error_type": "valid",
+          "error_message": "File is valid",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "success"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/core/plugins.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": true,
+          "error_type": "valid",
+          "error_message": "File is valid",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "success"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/core/config.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": true,
+          "error_type": "valid",
+          "error_message": "File is valid",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "success"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/utils/progress.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": true,
+          "error_type": "valid",
+          "error_message": "File is valid",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "success"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/utils/gitignore_parser.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": true,
+          "error_type": "valid",
+          "error_message": "File is valid",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "success"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/utils/dependency_manager.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": true,
+          "error_type": "valid",
+          "error_message": "File is valid",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "success"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/utils/dependency_utils.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": true,
+          "error_type": "valid",
+          "error_message": "File is valid",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "success"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/utils/report_aggregator.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": true,
+          "error_type": "valid",
+          "error_message": "File is valid",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "success"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/fixers/import_fixers/comprehensive_import_fixer.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": true,
+          "error_type": "valid",
+          "error_message": "File is valid",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "success"
+          }
+        },
+        {
+          "file_path": "/workspace/code_quality/fixers/undefined_names_fixers/fix_undefined_names.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": true,
+          "error_type": "valid",
+          "error_message": "File is valid",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "success"
+          }
+        }
+      ],
+      "file_not_found": [],
+      "permission_errors": [],
+      "error_counts": {
+        "syntax_errors": 0,
+        "indentation_errors": 0,
+        "import_errors": 50,
+        "runtime_errors": 1,
+        "valid_files": 87,
+        "file_not_found": 0,
+        "permission_errors": 0
+      }
+    },
+    "dependency_installation": {
+      "status": "completed",
+      "installed": [
+        "argparse",
+        "quick_start",
+        "importlib",
+        "html_reporter",
+        "plugin_manager"
+      ],
+      "failed": [
+        "plugin_registry",
+        "yaml",
+        "map_code_interactions",
+        "exceptions",
+        "plugins",
+        "dependency_visualizer",
+        "fixers",
+        "chart_generator",
+        "base_analyzer",
+        "hashlib",
+        "text_reporter",
+        "comprehensive_code_review",
+        "concurrent",
+        "tokenize",
+        "mappers",
+        "py_compile",
+        "code_visualizer",
+        "visualize_interactions",
+        "core",
+        "base_plugin",
+        "run_full_pipeline",
+        "time",
+        "compileall",
+        "reporters",
+        "ast",
+        "cli",
+        "subprocess",
+        "src",
+        "enhanced_validator",
+        "integrated_validator",
+        "builtins",
+        "io",
+        "enhanced_map_code_interactions"
+      ],
+      "total_missing": 38
+    },
+    "auto_detection_fixes": {
+      "fixed": 1,
+      "failed": 137,
+      "fixed_files": [
+        "/workspace/code_quality/scripts/comprehensive_syntax_validator.py"
+      ],
+      "failed_files": [
+        "/workspace/code_quality/test_pipeline_basic.py",
+        "/workspace/code_quality/run_full_pipeline.py",
+        "/workspace/code_quality/simple_analysis.py",
+        "/workspace/code_quality/cli.py",
+        "/workspace/code_quality/comprehensive_code_review.py",
+        "/workspace/code_quality/quick_start.py",
+        "/workspace/code_quality/__init__.py",
+        "/workspace/code_quality/test_pipelines.py",
+        "/workspace/code_quality/scripts/fix_async_await.py",
+        "/workspace/code_quality/scripts/extract_interactions.py",
+        "/workspace/code_quality/scripts/master_code_quality.py",
+        "/workspace/code_quality/scripts/robust_async_fixer.py",
+        "/workspace/code_quality/scripts/detect_circular_imports.py",
+        "/workspace/code_quality/scripts/advanced_syntax_fixer.py",
+        "/workspace/code_quality/scripts/enhanced_type_hints.py",
+        "/workspace/code_quality/scripts/safe_indentation_fixer.py",
+        "/workspace/code_quality/scripts/auto_dependency_installer.py",
+        "/workspace/code_quality/scripts/fix_missing_imports.py",
+        "/workspace/code_quality/scripts/__init__.py",
+        "/workspace/code_quality/scripts/fix_incorrect_imports.py",
+        "/workspace/code_quality/scripts/interaction_summary.py",
+        "/workspace/code_quality/reporters/text_reporter.py",
+        "/workspace/code_quality/reporters/trend_reporter.py",
+        "/workspace/code_quality/reporters/error_reporter.py",
+        "/workspace/code_quality/reporters/quality_reporter.py",
+        "/workspace/code_quality/reporters/html_reporter.py",
+        "/workspace/code_quality/reporters/__init__.py",
+        "/workspace/code_quality/pipelines/auto_fixer_pipeline.py",
+        "/workspace/code_quality/pipelines/dead_code_pipeline.py",
+        "/workspace/code_quality/pipelines/pipeline_unified_enhanced.py",
+        "/workspace/code_quality/pipelines/complexity_pipeline.py",
+        "/workspace/code_quality/pipelines/overall_pipeline.py",
+        "/workspace/code_quality/pipelines/import_free_analysis_pipeline.py",
+        "/workspace/code_quality/pipelines/base_pipeline.py",
+        "/workspace/code_quality/pipelines/__init__.py",
+        "/workspace/code_quality/pipelines/interaction_mapping_pipeline.py",
+        "/workspace/code_quality/plugins/flynt_fixer.py",
+        "/workspace/code_quality/plugins/autoflake_fixer.py",
+        "/workspace/code_quality/plugins/docformatter_fixer.py",
+        "/workspace/code_quality/plugins/isort_fixer.py",
+        "/workspace/code_quality/plugins/unify_fixer.py",
+        "/workspace/code_quality/plugins/plugin_registry.py",
+        "/workspace/code_quality/plugins/base_plugin.py",
+        "/workspace/code_quality/plugins/import_hygiene_fixer.py",
+        "/workspace/code_quality/plugins/ruff_analyzer.py",
+        "/workspace/code_quality/plugins/fawltydeps_analyzer.py",
+        "/workspace/code_quality/plugins/pyupgrade_fixer.py",
+        "/workspace/code_quality/plugins/pyre_analyzer.py",
+        "/workspace/code_quality/plugins/ruff_fixer.py",
+        "/workspace/code_quality/plugins/black_fixer.py",
+        "/workspace/code_quality/plugins/yesqa_fixer.py",
+        "/workspace/code_quality/plugins/plugin_manager.py",
+        "/workspace/code_quality/plugins/creosote_analyzer.py",
+        "/workspace/code_quality/plugins/flake8_analyzer.py",
+        "/workspace/code_quality/plugins/yapf_fixer.py",
+        "/workspace/code_quality/plugins/future_annotations_fixer.py",
+        "/workspace/code_quality/plugins/__init__.py",
+        "/workspace/code_quality/plugins/exceptions.py",
+        "/workspace/code_quality/plugins/autopep8_fixer.py",
+        "/workspace/code_quality/mappers/visualize_interactions.py",
+        "/workspace/code_quality/mappers/enhanced_map_code_interactions.py",
+        "/workspace/code_quality/mappers/map_code_interactions_simplified.py",
+        "/workspace/code_quality/mappers/map_code_interactions.py",
+        "/workspace/code_quality/mappers/__init__.py",
+        "/workspace/code_quality/fixers/conservative_auto_fixer.py",
+        "/workspace/code_quality/fixers/sequential_fixer_fixed.py",
+        "/workspace/code_quality/fixers/auto_fixer.py",
+        "/workspace/code_quality/tests/run_all_step_tests.py",
+        "/workspace/code_quality/tests/test_enhanced_pipelines.py",
+        "/workspace/code_quality/tests/verify_test_structure.py",
+        "/workspace/code_quality/tests/__init__.py",
+        "/workspace/code_quality/tests/test_common_operations.py",
+        "/workspace/code_quality/analyzers/base_analyzer.py",
+        "/workspace/code_quality/analyzers/documentation_analyzer.py",
+        "/workspace/code_quality/analyzers/type_checker.py",
+        "/workspace/code_quality/analyzers/intelligent_import_fixer.py",
+        "/workspace/code_quality/analyzers/enhanced_fallback_detector.py",
+        "/workspace/code_quality/analyzers/syntax_validator.py",
+        "/workspace/code_quality/analyzers/error_handling_analyzer.py",
+        "/workspace/code_quality/analyzers/data_flow_analyzer.py",
+        "/workspace/code_quality/analyzers/improved_signature_analyzer.py",
+        "/workspace/code_quality/analyzers/code_smell_detector.py",
+        "/workspace/code_quality/analyzers/call_graph_analyzer.py",
+        "/workspace/code_quality/analyzers/enhanced_dependency_analyzer.py",
+        "/workspace/code_quality/analyzers/enhanced_security_analyzer.py",
+        "/workspace/code_quality/analyzers/code_duplication_analyzer.py",
+        "/workspace/code_quality/analyzers/architecture_analyzer.py",
+        "/workspace/code_quality/analyzers/complexity_analyzer.py",
+        "/workspace/code_quality/analyzers/advanced_ast_analyzer.py",
+        "/workspace/code_quality/analyzers/import_analyzer.py",
+        "/workspace/code_quality/analyzers/performance_analyzer.py",
+        "/workspace/code_quality/analyzers/enhanced_dead_code_analyzer.py",
+        "/workspace/code_quality/analyzers/simple_complexity_analyzer.py",
+        "/workspace/code_quality/analyzers/ast_analysis_analyzer.py",
+        "/workspace/code_quality/analyzers/undefined_names_analyzer.py",
+        "/workspace/code_quality/analyzers/enhanced_import_analysis.py",
+        "/workspace/code_quality/analyzers/test_coverage_analyzer.py",
+        "/workspace/code_quality/analyzers/static_analysis_analyzer.py",
+        "/workspace/code_quality/analyzers/configuration_analyzer.py",
+        "/workspace/code_quality/analyzers/enhanced_dynamic_import_analyzer.py",
+        "/workspace/code_quality/analyzers/concurrency_analyzer.py",
+        "/workspace/code_quality/analyzers/enhanced_function_analyzer.py",
+        "/workspace/code_quality/analyzers/__init__.py",
+        "/workspace/code_quality/analyzers/metrics_analyzer.py",
+        "/workspace/code_quality/analyzers/secrets_analyzer.py",
+        "/workspace/code_quality/analyzers/stub_object_analyzer.py",
+        "/workspace/code_quality/analyzers/linter_analyzer.py",
+        "/workspace/code_quality/analyzers/dependency_analyzer.py",
+        "/workspace/code_quality/visualizers/dashboard_generator.py",
+        "/workspace/code_quality/visualizers/interaction_network.py",
+        "/workspace/code_quality/visualizers/chart_generator.py",
+        "/workspace/code_quality/visualizers/complexity_heatmap.py",
+        "/workspace/code_quality/visualizers/code_visualizer.py",
+        "/workspace/code_quality/visualizers/dependency_graph.py",
+        "/workspace/code_quality/visualizers/__init__.py",
+        "/workspace/code_quality/examples/example_usage_extended.py",
+        "/workspace/code_quality/examples/enhanced_visualization_demo.py",
+        "/workspace/code_quality/examples/visual_mapping_demo.py",
+        "/workspace/code_quality/examples/enhanced_dead_code_demo.py",
+        "/workspace/code_quality/examples/example_validation_usage.py",
+        "/workspace/code_quality/examples/example_usage.py",
+        "/workspace/code_quality/validators/enhanced_validator.py",
+        "/workspace/code_quality/validators/integrated_validator.py",
+        "/workspace/code_quality/validators/function_validator.py",
+        "/workspace/code_quality/validators/__init__.py",
+        "/workspace/code_quality/core/plugins.py",
+        "/workspace/code_quality/core/config.py",
+        "/workspace/code_quality/core/__init__.py",
+        "/workspace/code_quality/utils/progress.py",
+        "/workspace/code_quality/utils/gitignore_parser.py",
+        "/workspace/code_quality/utils/dependency_manager.py",
+        "/workspace/code_quality/utils/dependency_utils.py",
+        "/workspace/code_quality/utils/file_utils.py",
+        "/workspace/code_quality/utils/report_aggregator.py",
+        "/workspace/code_quality/utils/__init__.py",
+        "/workspace/code_quality/fixers/import_fixers/comprehensive_import_fixer.py",
+        "/workspace/code_quality/fixers/undefined_names_fixers/fix_undefined_names.py"
+      ]
+    },
+    "traditional_import_fixes": {
+      "status": "skipped",
+      "reason": "auto_detection_successful"
+    },
+    "import_placement_fixes": {
+      "files_with_incorrect_placement": 0,
+      "files_fixed": 0,
+      "status": "success"
+    },
+    "circular_import_fixes": {
+      "circular_imports_found": 0,
+      "cycles": []
+    }
+  }
+}

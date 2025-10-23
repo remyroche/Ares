@@ -1,0 +1,1318 @@
+{
+  "import_status": {
+    "/workspace/code_quality/test_pipeline_basic.py": {
+      "is_imported": false,
+      "imported_by": [],
+      "import_count": 0,
+      "module_name": "test_pipeline_basic"
+    },
+    "/workspace/code_quality/run_full_pipeline.py": {
+      "is_imported": true,
+      "imported_by": [
+        "/workspace/code_quality/pipelines/overall_pipeline.py"
+      ],
+      "import_count": 1,
+      "module_name": "run_full_pipeline"
+    },
+    "/workspace/code_quality/simple_analysis.py": {
+      "is_imported": false,
+      "imported_by": [],
+      "import_count": 0,
+      "module_name": "simple_analysis"
+    },
+    "/workspace/code_quality/cli.py": {
+      "is_imported": true,
+      "imported_by": [
+        "/workspace/code_quality/pipelines/overall_pipeline.py"
+      ],
+      "import_count": 1,
+      "module_name": "cli"
+    },
+    "/workspace/code_quality/comprehensive_code_review.py": {
+      "is_imported": false,
+      "imported_by": [],
+      "import_count": 0,
+      "module_name": "comprehensive_code_review"
+    },
+    "/workspace/code_quality/quick_start.py": {
+      "is_imported": true,
+      "imported_by": [
+        "/workspace/code_quality/pipelines/overall_pipeline.py"
+      ],
+      "import_count": 1,
+      "module_name": "quick_start"
+    },
+    "/workspace/code_quality/__init__.py": {
+      "is_imported": false,
+      "imported_by": [],
+      "import_count": 0,
+      "module_name": "__init__"
+    },
+    "/workspace/code_quality/test_pipelines.py": {
+      "is_imported": false,
+      "imported_by": [],
+      "import_count": 0,
+      "module_name": "test_pipelines"
+    },
+    "/workspace/code_quality/scripts/fix_async_await.py": {
+      "is_imported": false,
+      "imported_by": [],
+      "import_count": 0,
+      "module_name": "scripts.fix_async_await"
+    },
+    "/workspace/code_quality/scripts/extract_interactions.py": {
+      "is_imported": true,
+      "imported_by": [
+        "/workspace/code_quality/pipelines/interaction_mapping_pipeline.py",
+        "/workspace/code_quality/pipelines/enhanced_interaction_mapping_pipeline.py"
+      ],
+      "import_count": 2,
+      "module_name": "scripts.extract_interactions"
+    },
+    "/workspace/code_quality/scripts/master_code_quality.py": {
+      "is_imported": false,
+      "imported_by": [],
+      "import_count": 0,
+      "module_name": "scripts.master_code_quality"
+    },
+    "/workspace/code_quality/scripts/comprehensive_syntax_validator.py": {
+      "is_imported": true,
+      "imported_by": [
+        "/workspace/code_quality/pipelines/auto_fixer_pipeline.py"
+      ],
+      "import_count": 1,
+      "module_name": "scripts.comprehensive_syntax_validator"
+    },
+    "/workspace/code_quality/scripts/robust_async_fixer.py": {
+      "is_imported": true,
+      "imported_by": [
+        "/workspace/code_quality/pipelines/pipeline_simplified.py"
+      ],
+      "import_count": 1,
+      "module_name": "scripts.robust_async_fixer"
+    },
+    "/workspace/code_quality/scripts/detect_circular_imports.py": {
+      "is_imported": true,
+      "imported_by": [
+        "/workspace/code_quality/pipelines/import_free_analysis_pipeline.py"
+      ],
+      "import_count": 1,
+      "module_name": "scripts.detect_circular_imports"
+    },
+    "/workspace/code_quality/scripts/advanced_syntax_fixer.py": {
+      "is_imported": true,
+      "imported_by": [
+        "/workspace/code_quality/pipelines/pipeline_simplified.py"
+      ],
+      "import_count": 1,
+      "module_name": "scripts.advanced_syntax_fixer"
+    },
+    "/workspace/code_quality/scripts/enhanced_type_hints.py": {
+      "is_imported": true,
+      "imported_by": [
+        "/workspace/code_quality/pipelines/pipeline_simplified.py"
+      ],
+      "import_count": 1,
+      "module_name": "scripts.enhanced_type_hints"
+    },
+    "/workspace/code_quality/scripts/safe_indentation_fixer.py": {
+      "is_imported": false,
+      "imported_by": [],
+      "import_count": 0,
+      "module_name": "scripts.safe_indentation_fixer"
+    },
+    "/workspace/code_quality/scripts/auto_dependency_installer.py": {
+      "is_imported": true,
+      "imported_by": [
+        "/workspace/code_quality/pipelines/auto_fixer_pipeline.py"
+      ],
+      "import_count": 1,
+      "module_name": "scripts.auto_dependency_installer"
+    },
+    "/workspace/code_quality/scripts/fix_missing_imports.py": {
+      "is_imported": true,
+      "imported_by": [
+        "/workspace/code_quality/pipelines/pipeline_simplified.py"
+      ],
+      "import_count": 1,
+      "module_name": "scripts.fix_missing_imports"
+    },
+    "/workspace/code_quality/scripts/__init__.py": {
+      "is_imported": false,
+      "imported_by": [],
+      "import_count": 0,
+      "module_name": "scripts.__init__"
+    },
+    "/workspace/code_quality/scripts/fix_incorrect_imports.py": {
+      "is_imported": true,
+      "imported_by": [
+        "/workspace/code_quality/pipelines/auto_fixer_pipeline.py"
+      ],
+      "import_count": 1,
+      "module_name": "scripts.fix_incorrect_imports"
+    },
+    "/workspace/code_quality/scripts/interaction_summary.py": {
+      "is_imported": true,
+      "imported_by": [
+        "/workspace/code_quality/pipelines/interaction_mapping_pipeline.py",
+        "/workspace/code_quality/pipelines/enhanced_interaction_mapping_pipeline.py"
+      ],
+      "import_count": 2,
+      "module_name": "scripts.interaction_summary"
+    },
+    "/workspace/code_quality/reporters/text_reporter.py": {
+      "is_imported": true,
+      "imported_by": [
+        "/workspace/code_quality/reporters/__init__.py",
+        "/workspace/code_quality/mappers/map_code_interactions_simplified.py"
+      ],
+      "import_count": 2,
+      "module_name": "reporters.text_reporter"
+    },
+    "/workspace/code_quality/reporters/trend_reporter.py": {
+      "is_imported": false,
+      "imported_by": [],
+      "import_count": 0,
+      "module_name": "reporters.trend_reporter"
+    },
+    "/workspace/code_quality/reporters/error_reporter.py": {
+      "is_imported": false,
+      "imported_by": [],
+      "import_count": 0,
+      "module_name": "reporters.error_reporter"
+    },
+    "/workspace/code_quality/reporters/quality_reporter.py": {
+      "is_imported": true,
+      "imported_by": [
+        "/workspace/code_quality/cli.py",
+        "/workspace/code_quality/test_pipelines.py"
+      ],
+      "import_count": 2,
+      "module_name": "reporters.quality_reporter"
+    },
+    "/workspace/code_quality/reporters/html_reporter.py": {
+      "is_imported": true,
+      "imported_by": [
+        "/workspace/code_quality/reporters/__init__.py",
+        "/workspace/code_quality/mappers/map_code_interactions_simplified.py"
+      ],
+      "import_count": 2,
+      "module_name": "reporters.html_reporter"
+    },
+    "/workspace/code_quality/reporters/__init__.py": {
+      "is_imported": false,
+      "imported_by": [],
+      "import_count": 0,
+      "module_name": "reporters.__init__"
+    },
+    "/workspace/code_quality/pipelines/pipeline_simplified.py": {
+      "is_imported": false,
+      "imported_by": [],
+      "import_count": 0,
+      "module_name": "pipelines.pipeline_simplified"
+    },
+    "/workspace/code_quality/pipelines/simple_enhanced_dead_code_pipeline.py": {
+      "is_imported": false,
+      "imported_by": [],
+      "import_count": 0,
+      "module_name": "pipelines.simple_enhanced_dead_code_pipeline"
+    },
+    "/workspace/code_quality/pipelines/auto_fixer_pipeline.py": {
+      "is_imported": false,
+      "imported_by": [],
+      "import_count": 0,
+      "module_name": "pipelines.auto_fixer_pipeline"
+    },
+    "/workspace/code_quality/pipelines/attribute_checker_pipeline.py": {
+      "is_imported": false,
+      "imported_by": [],
+      "import_count": 0,
+      "module_name": "pipelines.attribute_checker_pipeline"
+    },
+    "/workspace/code_quality/pipelines/dead_code_pipeline.py": {
+      "is_imported": false,
+      "imported_by": [],
+      "import_count": 0,
+      "module_name": "pipelines.dead_code_pipeline"
+    },
+    "/workspace/code_quality/pipelines/pipeline_unified_enhanced.py": {
+      "is_imported": true,
+      "imported_by": [
+        "/workspace/code_quality/tests/test_enhanced_pipelines.py"
+      ],
+      "import_count": 1,
+      "module_name": "pipelines.pipeline_unified_enhanced"
+    },
+    "/workspace/code_quality/pipelines/complexity_pipeline.py": {
+      "is_imported": false,
+      "imported_by": [],
+      "import_count": 0,
+      "module_name": "pipelines.complexity_pipeline"
+    },
+    "/workspace/code_quality/pipelines/overall_pipeline.py": {
+      "is_imported": false,
+      "imported_by": [],
+      "import_count": 0,
+      "module_name": "pipelines.overall_pipeline"
+    },
+    "/workspace/code_quality/pipelines/truly_enhanced_dead_code_pipeline.py": {
+      "is_imported": false,
+      "imported_by": [],
+      "import_count": 0,
+      "module_name": "pipelines.truly_enhanced_dead_code_pipeline"
+    },
+    "/workspace/code_quality/pipelines/import_free_analysis_pipeline.py": {
+      "is_imported": false,
+      "imported_by": [],
+      "import_count": 0,
+      "module_name": "pipelines.import_free_analysis_pipeline"
+    },
+    "/workspace/code_quality/pipelines/base_pipeline.py": {
+      "is_imported": true,
+      "imported_by": [
+        "/workspace/code_quality/pipelines/auto_fixer_pipeline.py",
+        "/workspace/code_quality/pipelines/dead_code_pipeline.py",
+        "/workspace/code_quality/pipelines/import_free_analysis_pipeline.py",
+        "/workspace/code_quality/pipelines/import_verifier_pipeline.py",
+        "/workspace/code_quality/fixers/sequential_fixer_fixed.py"
+      ],
+      "import_count": 5,
+      "module_name": "pipelines.base_pipeline"
+    },
+    "/workspace/code_quality/pipelines/__init__.py": {
+      "is_imported": false,
+      "imported_by": [],
+      "import_count": 0,
+      "module_name": "pipelines.__init__"
+    },
+    "/workspace/code_quality/pipelines/interaction_mapping_pipeline.py": {
+      "is_imported": false,
+      "imported_by": [],
+      "import_count": 0,
+      "module_name": "pipelines.interaction_mapping_pipeline"
+    },
+    "/workspace/code_quality/pipelines/enhanced_interaction_mapping_pipeline.py": {
+      "is_imported": false,
+      "imported_by": [],
+      "import_count": 0,
+      "module_name": "pipelines.enhanced_interaction_mapping_pipeline"
+    },
+    "/workspace/code_quality/pipelines/import_verifier_pipeline.py": {
+      "is_imported": false,
+      "imported_by": [],
+      "import_count": 0,
+      "module_name": "pipelines.import_verifier_pipeline"
+    },
+    "/workspace/code_quality/plugins/flynt_fixer.py": {
+      "is_imported": true,
+      "imported_by": [
+        "/workspace/code_quality/pipelines/auto_fixer_pipeline.py",
+        "/workspace/code_quality/pipelines/base_pipeline.py"
+      ],
+      "import_count": 2,
+      "module_name": "plugins.flynt_fixer"
+    },
+    "/workspace/code_quality/plugins/autoflake_fixer.py": {
+      "is_imported": true,
+      "imported_by": [
+        "/workspace/code_quality/pipelines/auto_fixer_pipeline.py",
+        "/workspace/code_quality/pipelines/dead_code_pipeline.py",
+        "/workspace/code_quality/pipelines/base_pipeline.py"
+      ],
+      "import_count": 3,
+      "module_name": "plugins.autoflake_fixer"
+    },
+    "/workspace/code_quality/plugins/docformatter_fixer.py": {
+      "is_imported": true,
+      "imported_by": [
+        "/workspace/code_quality/pipelines/auto_fixer_pipeline.py",
+        "/workspace/code_quality/pipelines/base_pipeline.py"
+      ],
+      "import_count": 2,
+      "module_name": "plugins.docformatter_fixer"
+    },
+    "/workspace/code_quality/plugins/isort_fixer.py": {
+      "is_imported": true,
+      "imported_by": [
+        "/workspace/code_quality/pipelines/auto_fixer_pipeline.py",
+        "/workspace/code_quality/pipelines/base_pipeline.py"
+      ],
+      "import_count": 2,
+      "module_name": "plugins.isort_fixer"
+    },
+    "/workspace/code_quality/plugins/unify_fixer.py": {
+      "is_imported": true,
+      "imported_by": [
+        "/workspace/code_quality/pipelines/auto_fixer_pipeline.py",
+        "/workspace/code_quality/pipelines/base_pipeline.py"
+      ],
+      "import_count": 2,
+      "module_name": "plugins.unify_fixer"
+    },
+    "/workspace/code_quality/plugins/plugin_registry.py": {
+      "is_imported": true,
+      "imported_by": [
+        "/workspace/code_quality/pipelines/overall_pipeline.py",
+        "/workspace/code_quality/pipelines/base_pipeline.py",
+        "/workspace/code_quality/pipelines/interaction_mapping_pipeline.py",
+        "/workspace/code_quality/pipelines/enhanced_interaction_mapping_pipeline.py",
+        "/workspace/code_quality/plugins/plugin_manager.py",
+        "/workspace/code_quality/plugins/__init__.py"
+      ],
+      "import_count": 6,
+      "module_name": "plugins.plugin_registry"
+    },
+    "/workspace/code_quality/plugins/attribute_checker_analyzer.py": {
+      "is_imported": true,
+      "imported_by": [
+        "/workspace/code_quality/pipelines/attribute_checker_pipeline.py",
+        "/workspace/code_quality/pipelines/base_pipeline.py"
+      ],
+      "import_count": 2,
+      "module_name": "plugins.attribute_checker_analyzer"
+    },
+    "/workspace/code_quality/plugins/base_plugin.py": {
+      "is_imported": true,
+      "imported_by": [
+        "/workspace/code_quality/pipelines/complexity_pipeline.py",
+        "/workspace/code_quality/pipelines/overall_pipeline.py",
+        "/workspace/code_quality/pipelines/base_pipeline.py",
+        "/workspace/code_quality/pipelines/interaction_mapping_pipeline.py",
+        "/workspace/code_quality/plugins/flynt_fixer.py",
+        "/workspace/code_quality/plugins/autoflake_fixer.py",
+        "/workspace/code_quality/plugins/docformatter_fixer.py",
+        "/workspace/code_quality/plugins/isort_fixer.py",
+        "/workspace/code_quality/plugins/unify_fixer.py",
+        "/workspace/code_quality/plugins/plugin_registry.py",
+        "/workspace/code_quality/plugins/attribute_checker_analyzer.py",
+        "/workspace/code_quality/plugins/import_hygiene_fixer.py",
+        "/workspace/code_quality/plugins/fawltydeps_analyzer.py",
+        "/workspace/code_quality/plugins/pyupgrade_fixer.py",
+        "/workspace/code_quality/plugins/ruff_fixer.py",
+        "/workspace/code_quality/plugins/black_fixer.py",
+        "/workspace/code_quality/plugins/yesqa_fixer.py",
+        "/workspace/code_quality/plugins/plugin_manager.py",
+        "/workspace/code_quality/plugins/creosote_analyzer.py",
+        "/workspace/code_quality/plugins/flake8_analyzer.py",
+        "/workspace/code_quality/plugins/yapf_fixer.py",
+        "/workspace/code_quality/plugins/future_annotations_fixer.py",
+        "/workspace/code_quality/plugins/__init__.py",
+        "/workspace/code_quality/plugins/autopep8_fixer.py",
+        "/workspace/code_quality/analyzers/enhanced_dependency_analyzer.py"
+      ],
+      "import_count": 25,
+      "module_name": "plugins.base_plugin"
+    },
+    "/workspace/code_quality/plugins/import_hygiene_fixer.py": {
+      "is_imported": true,
+      "imported_by": [
+        "/workspace/code_quality/pipelines/auto_fixer_pipeline.py",
+        "/workspace/code_quality/pipelines/base_pipeline.py"
+      ],
+      "import_count": 2,
+      "module_name": "plugins.import_hygiene_fixer"
+    },
+    "/workspace/code_quality/plugins/ruff_analyzer.py": {
+      "is_imported": true,
+      "imported_by": [
+        "/workspace/code_quality/pipelines/base_pipeline.py"
+      ],
+      "import_count": 1,
+      "module_name": "plugins.ruff_analyzer"
+    },
+    "/workspace/code_quality/plugins/fawltydeps_analyzer.py": {
+      "is_imported": true,
+      "imported_by": [
+        "/workspace/code_quality/pipelines/dead_code_pipeline.py",
+        "/workspace/code_quality/pipelines/base_pipeline.py",
+        "/workspace/code_quality/pipelines/interaction_mapping_pipeline.py",
+        "/workspace/code_quality/analyzers/enhanced_dependency_analyzer.py"
+      ],
+      "import_count": 4,
+      "module_name": "plugins.fawltydeps_analyzer"
+    },
+    "/workspace/code_quality/plugins/pyupgrade_fixer.py": {
+      "is_imported": true,
+      "imported_by": [
+        "/workspace/code_quality/pipelines/auto_fixer_pipeline.py",
+        "/workspace/code_quality/pipelines/base_pipeline.py"
+      ],
+      "import_count": 2,
+      "module_name": "plugins.pyupgrade_fixer"
+    },
+    "/workspace/code_quality/plugins/pyre_analyzer.py": {
+      "is_imported": true,
+      "imported_by": [
+        "/workspace/code_quality/pipelines/base_pipeline.py"
+      ],
+      "import_count": 1,
+      "module_name": "plugins.pyre_analyzer"
+    },
+    "/workspace/code_quality/plugins/ruff_fixer.py": {
+      "is_imported": true,
+      "imported_by": [
+        "/workspace/code_quality/pipelines/base_pipeline.py"
+      ],
+      "import_count": 1,
+      "module_name": "plugins.ruff_fixer"
+    },
+    "/workspace/code_quality/plugins/black_fixer.py": {
+      "is_imported": true,
+      "imported_by": [
+        "/workspace/code_quality/pipelines/auto_fixer_pipeline.py",
+        "/workspace/code_quality/pipelines/base_pipeline.py"
+      ],
+      "import_count": 2,
+      "module_name": "plugins.black_fixer"
+    },
+    "/workspace/code_quality/plugins/yesqa_fixer.py": {
+      "is_imported": true,
+      "imported_by": [
+        "/workspace/code_quality/pipelines/auto_fixer_pipeline.py",
+        "/workspace/code_quality/pipelines/base_pipeline.py"
+      ],
+      "import_count": 2,
+      "module_name": "plugins.yesqa_fixer"
+    },
+    "/workspace/code_quality/plugins/plugin_manager.py": {
+      "is_imported": true,
+      "imported_by": [
+        "/workspace/code_quality/pipelines/overall_pipeline.py",
+        "/workspace/code_quality/pipelines/base_pipeline.py",
+        "/workspace/code_quality/pipelines/interaction_mapping_pipeline.py",
+        "/workspace/code_quality/pipelines/enhanced_interaction_mapping_pipeline.py",
+        "/workspace/code_quality/plugins/__init__.py"
+      ],
+      "import_count": 5,
+      "module_name": "plugins.plugin_manager"
+    },
+    "/workspace/code_quality/plugins/creosote_analyzer.py": {
+      "is_imported": true,
+      "imported_by": [
+        "/workspace/code_quality/pipelines/dead_code_pipeline.py",
+        "/workspace/code_quality/pipelines/complexity_pipeline.py",
+        "/workspace/code_quality/pipelines/base_pipeline.py",
+        "/workspace/code_quality/pipelines/interaction_mapping_pipeline.py",
+        "/workspace/code_quality/analyzers/enhanced_dependency_analyzer.py"
+      ],
+      "import_count": 5,
+      "module_name": "plugins.creosote_analyzer"
+    },
+    "/workspace/code_quality/plugins/flake8_analyzer.py": {
+      "is_imported": true,
+      "imported_by": [
+        "/workspace/code_quality/pipelines/attribute_checker_pipeline.py",
+        "/workspace/code_quality/pipelines/complexity_pipeline.py",
+        "/workspace/code_quality/pipelines/base_pipeline.py"
+      ],
+      "import_count": 3,
+      "module_name": "plugins.flake8_analyzer"
+    },
+    "/workspace/code_quality/plugins/yapf_fixer.py": {
+      "is_imported": true,
+      "imported_by": [
+        "/workspace/code_quality/pipelines/auto_fixer_pipeline.py",
+        "/workspace/code_quality/pipelines/base_pipeline.py"
+      ],
+      "import_count": 2,
+      "module_name": "plugins.yapf_fixer"
+    },
+    "/workspace/code_quality/plugins/future_annotations_fixer.py": {
+      "is_imported": true,
+      "imported_by": [
+        "/workspace/code_quality/pipelines/auto_fixer_pipeline.py",
+        "/workspace/code_quality/pipelines/base_pipeline.py"
+      ],
+      "import_count": 2,
+      "module_name": "plugins.future_annotations_fixer"
+    },
+    "/workspace/code_quality/plugins/__init__.py": {
+      "is_imported": true,
+      "imported_by": [
+        "/workspace/code_quality/pipelines/base_pipeline.py"
+      ],
+      "import_count": 1,
+      "module_name": "plugins.__init__"
+    },
+    "/workspace/code_quality/plugins/exceptions.py": {
+      "is_imported": true,
+      "imported_by": [
+        "/workspace/code_quality/pipelines/base_pipeline.py",
+        "/workspace/code_quality/plugins/plugin_registry.py",
+        "/workspace/code_quality/plugins/plugin_manager.py",
+        "/workspace/code_quality/plugins/__init__.py"
+      ],
+      "import_count": 4,
+      "module_name": "plugins.exceptions"
+    },
+    "/workspace/code_quality/plugins/autopep8_fixer.py": {
+      "is_imported": true,
+      "imported_by": [
+        "/workspace/code_quality/pipelines/auto_fixer_pipeline.py",
+        "/workspace/code_quality/pipelines/base_pipeline.py"
+      ],
+      "import_count": 2,
+      "module_name": "plugins.autopep8_fixer"
+    },
+    "/workspace/code_quality/mappers/visualize_interactions.py": {
+      "is_imported": false,
+      "imported_by": [],
+      "import_count": 0,
+      "module_name": "mappers.visualize_interactions"
+    },
+    "/workspace/code_quality/mappers/enhanced_map_code_interactions.py": {
+      "is_imported": true,
+      "imported_by": [
+        "/workspace/code_quality/pipelines/interaction_mapping_pipeline.py",
+        "/workspace/code_quality/pipelines/enhanced_interaction_mapping_pipeline.py",
+        "/workspace/code_quality/mappers/__init__.py"
+      ],
+      "import_count": 3,
+      "module_name": "mappers.enhanced_map_code_interactions"
+    },
+    "/workspace/code_quality/mappers/map_code_interactions_simplified.py": {
+      "is_imported": false,
+      "imported_by": [],
+      "import_count": 0,
+      "module_name": "mappers.map_code_interactions_simplified"
+    },
+    "/workspace/code_quality/mappers/map_code_interactions.py": {
+      "is_imported": true,
+      "imported_by": [
+        "/workspace/code_quality/pipelines/dead_code_pipeline.py",
+        "/workspace/code_quality/pipelines/interaction_mapping_pipeline.py",
+        "/workspace/code_quality/pipelines/enhanced_interaction_mapping_pipeline.py",
+        "/workspace/code_quality/mappers/__init__.py"
+      ],
+      "import_count": 4,
+      "module_name": "mappers.map_code_interactions"
+    },
+    "/workspace/code_quality/mappers/__init__.py": {
+      "is_imported": false,
+      "imported_by": [],
+      "import_count": 0,
+      "module_name": "mappers.__init__"
+    },
+    "/workspace/code_quality/fixers/conservative_auto_fixer.py": {
+      "is_imported": false,
+      "imported_by": [],
+      "import_count": 0,
+      "module_name": "fixers.conservative_auto_fixer"
+    },
+    "/workspace/code_quality/fixers/conservative_fixer.py": {
+      "is_imported": false,
+      "imported_by": [],
+      "import_count": 0,
+      "module_name": "fixers.conservative_fixer"
+    },
+    "/workspace/code_quality/fixers/sequential_fixer_fixed.py": {
+      "is_imported": true,
+      "imported_by": [
+        "/workspace/code_quality/cli.py"
+      ],
+      "import_count": 1,
+      "module_name": "fixers.sequential_fixer_fixed"
+    },
+    "/workspace/code_quality/fixers/auto_fixer.py": {
+      "is_imported": true,
+      "imported_by": [
+        "/workspace/code_quality/cli.py",
+        "/workspace/code_quality/reporters/quality_reporter.py"
+      ],
+      "import_count": 2,
+      "module_name": "fixers.auto_fixer"
+    },
+    "/workspace/code_quality/tests/run_all_step_tests.py": {
+      "is_imported": false,
+      "imported_by": [],
+      "import_count": 0,
+      "module_name": "tests.run_all_step_tests"
+    },
+    "/workspace/code_quality/tests/test_enhanced_pipelines.py": {
+      "is_imported": false,
+      "imported_by": [],
+      "import_count": 0,
+      "module_name": "tests.test_enhanced_pipelines"
+    },
+    "/workspace/code_quality/tests/verify_test_structure.py": {
+      "is_imported": false,
+      "imported_by": [],
+      "import_count": 0,
+      "module_name": "tests.verify_test_structure"
+    },
+    "/workspace/code_quality/tests/__init__.py": {
+      "is_imported": false,
+      "imported_by": [],
+      "import_count": 0,
+      "module_name": "tests.__init__"
+    },
+    "/workspace/code_quality/tests/test_common_operations.py": {
+      "is_imported": false,
+      "imported_by": [],
+      "import_count": 0,
+      "module_name": "tests.test_common_operations"
+    },
+    "/workspace/code_quality/analyzers/base_analyzer.py": {
+      "is_imported": true,
+      "imported_by": [
+        "/workspace/code_quality/analyzers/call_graph_analyzer.py",
+        "/workspace/code_quality/analyzers/complexity_analyzer.py",
+        "/workspace/code_quality/analyzers/import_analyzer.py",
+        "/workspace/code_quality/analyzers/import_verifier_analyzer.py",
+        "/workspace/code_quality/analyzers/dependency_analyzer.py"
+      ],
+      "import_count": 5,
+      "module_name": "analyzers.base_analyzer"
+    },
+    "/workspace/code_quality/analyzers/documentation_analyzer.py": {
+      "is_imported": true,
+      "imported_by": [
+        "/workspace/code_quality/pipelines/pipeline_simplified.py"
+      ],
+      "import_count": 1,
+      "module_name": "analyzers.documentation_analyzer"
+    },
+    "/workspace/code_quality/analyzers/type_checker.py": {
+      "is_imported": true,
+      "imported_by": [
+        "/workspace/code_quality/pipelines/pipeline_simplified.py",
+        "/workspace/code_quality/pipelines/import_free_analysis_pipeline.py"
+      ],
+      "import_count": 2,
+      "module_name": "analyzers.type_checker"
+    },
+    "/workspace/code_quality/analyzers/intelligent_import_fixer.py": {
+      "is_imported": false,
+      "imported_by": [],
+      "import_count": 0,
+      "module_name": "analyzers.intelligent_import_fixer"
+    },
+    "/workspace/code_quality/analyzers/enhanced_fallback_detector.py": {
+      "is_imported": false,
+      "imported_by": [],
+      "import_count": 0,
+      "module_name": "analyzers.enhanced_fallback_detector"
+    },
+    "/workspace/code_quality/analyzers/syntax_validator.py": {
+      "is_imported": true,
+      "imported_by": [
+        "/workspace/code_quality/cli.py",
+        "/workspace/code_quality/reporters/quality_reporter.py",
+        "/workspace/code_quality/pipelines/pipeline_simplified.py",
+        "/workspace/code_quality/pipelines/import_free_analysis_pipeline.py"
+      ],
+      "import_count": 4,
+      "module_name": "analyzers.syntax_validator"
+    },
+    "/workspace/code_quality/analyzers/error_handling_analyzer.py": {
+      "is_imported": true,
+      "imported_by": [
+        "/workspace/code_quality/pipelines/pipeline_simplified.py"
+      ],
+      "import_count": 1,
+      "module_name": "analyzers.error_handling_analyzer"
+    },
+    "/workspace/code_quality/analyzers/data_flow_analyzer.py": {
+      "is_imported": true,
+      "imported_by": [
+        "/workspace/code_quality/pipelines/pipeline_simplified.py",
+        "/workspace/code_quality/pipelines/interaction_mapping_pipeline.py",
+        "/workspace/code_quality/pipelines/enhanced_interaction_mapping_pipeline.py"
+      ],
+      "import_count": 3,
+      "module_name": "analyzers.data_flow_analyzer"
+    },
+    "/workspace/code_quality/analyzers/truly_enhanced_dead_code_analyzer.py": {
+      "is_imported": true,
+      "imported_by": [
+        "/workspace/code_quality/pipelines/truly_enhanced_dead_code_pipeline.py"
+      ],
+      "import_count": 1,
+      "module_name": "analyzers.truly_enhanced_dead_code_analyzer"
+    },
+    "/workspace/code_quality/analyzers/improved_signature_analyzer.py": {
+      "is_imported": true,
+      "imported_by": [
+        "/workspace/code_quality/pipelines/pipeline_simplified.py"
+      ],
+      "import_count": 1,
+      "module_name": "analyzers.improved_signature_analyzer"
+    },
+    "/workspace/code_quality/analyzers/code_smell_detector.py": {
+      "is_imported": true,
+      "imported_by": [
+        "/workspace/code_quality/pipelines/pipeline_simplified.py"
+      ],
+      "import_count": 1,
+      "module_name": "analyzers.code_smell_detector"
+    },
+    "/workspace/code_quality/analyzers/call_graph_analyzer.py": {
+      "is_imported": true,
+      "imported_by": [
+        "/workspace/code_quality/cli.py",
+        "/workspace/code_quality/reporters/quality_reporter.py",
+        "/workspace/code_quality/pipelines/pipeline_simplified.py",
+        "/workspace/code_quality/pipelines/dead_code_pipeline.py",
+        "/workspace/code_quality/pipelines/complexity_pipeline.py",
+        "/workspace/code_quality/pipelines/interaction_mapping_pipeline.py",
+        "/workspace/code_quality/pipelines/enhanced_interaction_mapping_pipeline.py",
+        "/workspace/code_quality/mappers/enhanced_map_code_interactions.py",
+        "/workspace/code_quality/mappers/map_code_interactions_simplified.py",
+        "/workspace/code_quality/mappers/map_code_interactions.py"
+      ],
+      "import_count": 10,
+      "module_name": "analyzers.call_graph_analyzer"
+    },
+    "/workspace/code_quality/analyzers/enhanced_dependency_analyzer.py": {
+      "is_imported": true,
+      "imported_by": [
+        "/workspace/code_quality/pipelines/interaction_mapping_pipeline.py",
+        "/workspace/code_quality/pipelines/enhanced_interaction_mapping_pipeline.py"
+      ],
+      "import_count": 2,
+      "module_name": "analyzers.enhanced_dependency_analyzer"
+    },
+    "/workspace/code_quality/analyzers/enhanced_security_analyzer.py": {
+      "is_imported": false,
+      "imported_by": [],
+      "import_count": 0,
+      "module_name": "analyzers.enhanced_security_analyzer"
+    },
+    "/workspace/code_quality/analyzers/code_duplication_analyzer.py": {
+      "is_imported": true,
+      "imported_by": [
+        "/workspace/code_quality/pipelines/pipeline_simplified.py"
+      ],
+      "import_count": 1,
+      "module_name": "analyzers.code_duplication_analyzer"
+    },
+    "/workspace/code_quality/analyzers/architecture_analyzer.py": {
+      "is_imported": true,
+      "imported_by": [
+        "/workspace/code_quality/pipelines/pipeline_simplified.py",
+        "/workspace/code_quality/pipelines/complexity_pipeline.py",
+        "/workspace/code_quality/pipelines/interaction_mapping_pipeline.py",
+        "/workspace/code_quality/pipelines/enhanced_interaction_mapping_pipeline.py",
+        "/workspace/code_quality/mappers/enhanced_map_code_interactions.py",
+        "/workspace/code_quality/mappers/map_code_interactions_simplified.py",
+        "/workspace/code_quality/mappers/map_code_interactions.py"
+      ],
+      "import_count": 7,
+      "module_name": "analyzers.architecture_analyzer"
+    },
+    "/workspace/code_quality/analyzers/complexity_analyzer.py": {
+      "is_imported": true,
+      "imported_by": [
+        "/workspace/code_quality/test_pipeline_basic.py",
+        "/workspace/code_quality/test_pipelines.py",
+        "/workspace/code_quality/pipelines/pipeline_simplified.py",
+        "/workspace/code_quality/mappers/map_code_interactions_simplified.py"
+      ],
+      "import_count": 4,
+      "module_name": "analyzers.complexity_analyzer"
+    },
+    "/workspace/code_quality/analyzers/advanced_ast_analyzer.py": {
+      "is_imported": true,
+      "imported_by": [
+        "/workspace/code_quality/pipelines/import_free_analysis_pipeline.py"
+      ],
+      "import_count": 1,
+      "module_name": "analyzers.advanced_ast_analyzer"
+    },
+    "/workspace/code_quality/analyzers/import_analyzer.py": {
+      "is_imported": true,
+      "imported_by": [
+        "/workspace/code_quality/mappers/map_code_interactions_simplified.py"
+      ],
+      "import_count": 1,
+      "module_name": "analyzers.import_analyzer"
+    },
+    "/workspace/code_quality/analyzers/performance_analyzer.py": {
+      "is_imported": true,
+      "imported_by": [
+        "/workspace/code_quality/pipelines/pipeline_simplified.py"
+      ],
+      "import_count": 1,
+      "module_name": "analyzers.performance_analyzer"
+    },
+    "/workspace/code_quality/analyzers/enhanced_dead_code_analyzer.py": {
+      "is_imported": true,
+      "imported_by": [
+        "/workspace/code_quality/test_pipeline_basic.py",
+        "/workspace/code_quality/test_pipelines.py",
+        "/workspace/code_quality/pipelines/pipeline_simplified.py",
+        "/workspace/code_quality/pipelines/dead_code_pipeline.py",
+        "/workspace/code_quality/mappers/enhanced_map_code_interactions.py",
+        "/workspace/code_quality/mappers/map_code_interactions_simplified.py",
+        "/workspace/code_quality/mappers/map_code_interactions.py"
+      ],
+      "import_count": 7,
+      "module_name": "analyzers.enhanced_dead_code_analyzer"
+    },
+    "/workspace/code_quality/analyzers/simple_complexity_analyzer.py": {
+      "is_imported": true,
+      "imported_by": [
+        "/workspace/code_quality/pipelines/complexity_pipeline.py"
+      ],
+      "import_count": 1,
+      "module_name": "analyzers.simple_complexity_analyzer"
+    },
+    "/workspace/code_quality/analyzers/ast_analysis_analyzer.py": {
+      "is_imported": true,
+      "imported_by": [
+        "/workspace/code_quality/pipelines/pipeline_simplified.py",
+        "/workspace/code_quality/pipelines/import_free_analysis_pipeline.py",
+        "/workspace/code_quality/tests/test_enhanced_pipelines.py"
+      ],
+      "import_count": 3,
+      "module_name": "analyzers.ast_analysis_analyzer"
+    },
+    "/workspace/code_quality/analyzers/undefined_names_analyzer.py": {
+      "is_imported": true,
+      "imported_by": [
+        "/workspace/code_quality/pipelines/pipeline_simplified.py",
+        "/workspace/code_quality/pipelines/dead_code_pipeline.py"
+      ],
+      "import_count": 2,
+      "module_name": "analyzers.undefined_names_analyzer"
+    },
+    "/workspace/code_quality/analyzers/enhanced_import_analysis.py": {
+      "is_imported": true,
+      "imported_by": [
+        "/workspace/code_quality/test_pipelines.py",
+        "/workspace/code_quality/pipelines/dead_code_pipeline.py"
+      ],
+      "import_count": 2,
+      "module_name": "analyzers.enhanced_import_analysis"
+    },
+    "/workspace/code_quality/analyzers/test_coverage_analyzer.py": {
+      "is_imported": true,
+      "imported_by": [
+        "/workspace/code_quality/pipelines/pipeline_simplified.py"
+      ],
+      "import_count": 1,
+      "module_name": "analyzers.test_coverage_analyzer"
+    },
+    "/workspace/code_quality/analyzers/import_verifier_analyzer.py": {
+      "is_imported": true,
+      "imported_by": [
+        "/workspace/code_quality/pipelines/import_verifier_pipeline.py"
+      ],
+      "import_count": 1,
+      "module_name": "analyzers.import_verifier_analyzer"
+    },
+    "/workspace/code_quality/analyzers/static_analysis_analyzer.py": {
+      "is_imported": true,
+      "imported_by": [
+        "/workspace/code_quality/pipelines/pipeline_simplified.py",
+        "/workspace/code_quality/pipelines/import_free_analysis_pipeline.py",
+        "/workspace/code_quality/tests/test_enhanced_pipelines.py"
+      ],
+      "import_count": 3,
+      "module_name": "analyzers.static_analysis_analyzer"
+    },
+    "/workspace/code_quality/analyzers/configuration_analyzer.py": {
+      "is_imported": true,
+      "imported_by": [
+        "/workspace/code_quality/pipelines/pipeline_simplified.py"
+      ],
+      "import_count": 1,
+      "module_name": "analyzers.configuration_analyzer"
+    },
+    "/workspace/code_quality/analyzers/enhanced_dynamic_import_analyzer.py": {
+      "is_imported": false,
+      "imported_by": [],
+      "import_count": 0,
+      "module_name": "analyzers.enhanced_dynamic_import_analyzer"
+    },
+    "/workspace/code_quality/analyzers/concurrency_analyzer.py": {
+      "is_imported": true,
+      "imported_by": [
+        "/workspace/code_quality/pipelines/pipeline_simplified.py"
+      ],
+      "import_count": 1,
+      "module_name": "analyzers.concurrency_analyzer"
+    },
+    "/workspace/code_quality/analyzers/enhanced_function_analyzer.py": {
+      "is_imported": false,
+      "imported_by": [],
+      "import_count": 0,
+      "module_name": "analyzers.enhanced_function_analyzer"
+    },
+    "/workspace/code_quality/analyzers/__init__.py": {
+      "is_imported": false,
+      "imported_by": [],
+      "import_count": 0,
+      "module_name": "analyzers.__init__"
+    },
+    "/workspace/code_quality/analyzers/metrics_analyzer.py": {
+      "is_imported": true,
+      "imported_by": [
+        "/workspace/code_quality/pipelines/pipeline_simplified.py",
+        "/workspace/code_quality/pipelines/complexity_pipeline.py"
+      ],
+      "import_count": 2,
+      "module_name": "analyzers.metrics_analyzer"
+    },
+    "/workspace/code_quality/analyzers/secrets_analyzer.py": {
+      "is_imported": false,
+      "imported_by": [],
+      "import_count": 0,
+      "module_name": "analyzers.secrets_analyzer"
+    },
+    "/workspace/code_quality/analyzers/stub_object_analyzer.py": {
+      "is_imported": false,
+      "imported_by": [],
+      "import_count": 0,
+      "module_name": "analyzers.stub_object_analyzer"
+    },
+    "/workspace/code_quality/analyzers/linter_analyzer.py": {
+      "is_imported": true,
+      "imported_by": [
+        "/workspace/code_quality/cli.py",
+        "/workspace/code_quality/reporters/quality_reporter.py",
+        "/workspace/code_quality/pipelines/pipeline_simplified.py",
+        "/workspace/code_quality/pipelines/import_free_analysis_pipeline.py"
+      ],
+      "import_count": 4,
+      "module_name": "analyzers.linter_analyzer"
+    },
+    "/workspace/code_quality/analyzers/dependency_analyzer.py": {
+      "is_imported": true,
+      "imported_by": [
+        "/workspace/code_quality/cli.py",
+        "/workspace/code_quality/reporters/quality_reporter.py",
+        "/workspace/code_quality/pipelines/pipeline_simplified.py",
+        "/workspace/code_quality/pipelines/dead_code_pipeline.py",
+        "/workspace/code_quality/pipelines/interaction_mapping_pipeline.py",
+        "/workspace/code_quality/pipelines/enhanced_interaction_mapping_pipeline.py",
+        "/workspace/code_quality/mappers/enhanced_map_code_interactions.py",
+        "/workspace/code_quality/mappers/map_code_interactions_simplified.py",
+        "/workspace/code_quality/mappers/map_code_interactions.py"
+      ],
+      "import_count": 9,
+      "module_name": "analyzers.dependency_analyzer"
+    },
+    "/workspace/code_quality/visualizers/dashboard_generator.py": {
+      "is_imported": true,
+      "imported_by": [
+        "/workspace/code_quality/pipelines/interaction_mapping_pipeline.py",
+        "/workspace/code_quality/pipelines/enhanced_interaction_mapping_pipeline.py",
+        "/workspace/code_quality/mappers/visualize_interactions.py",
+        "/workspace/code_quality/mappers/map_code_interactions.py",
+        "/workspace/code_quality/examples/visual_mapping_demo.py"
+      ],
+      "import_count": 5,
+      "module_name": "visualizers.dashboard_generator"
+    },
+    "/workspace/code_quality/visualizers/interaction_network.py": {
+      "is_imported": true,
+      "imported_by": [
+        "/workspace/code_quality/pipelines/interaction_mapping_pipeline.py",
+        "/workspace/code_quality/pipelines/enhanced_interaction_mapping_pipeline.py",
+        "/workspace/code_quality/mappers/visualize_interactions.py",
+        "/workspace/code_quality/mappers/map_code_interactions.py",
+        "/workspace/code_quality/examples/visual_mapping_demo.py"
+      ],
+      "import_count": 5,
+      "module_name": "visualizers.interaction_network"
+    },
+    "/workspace/code_quality/visualizers/chart_generator.py": {
+      "is_imported": true,
+      "imported_by": [
+        "/workspace/code_quality/mappers/visualize_interactions.py",
+        "/workspace/code_quality/mappers/map_code_interactions_simplified.py",
+        "/workspace/code_quality/mappers/map_code_interactions.py",
+        "/workspace/code_quality/visualizers/__init__.py",
+        "/workspace/code_quality/examples/visual_mapping_demo.py"
+      ],
+      "import_count": 5,
+      "module_name": "visualizers.chart_generator"
+    },
+    "/workspace/code_quality/visualizers/complexity_heatmap.py": {
+      "is_imported": true,
+      "imported_by": [
+        "/workspace/code_quality/mappers/visualize_interactions.py",
+        "/workspace/code_quality/mappers/map_code_interactions.py",
+        "/workspace/code_quality/examples/visual_mapping_demo.py"
+      ],
+      "import_count": 3,
+      "module_name": "visualizers.complexity_heatmap"
+    },
+    "/workspace/code_quality/visualizers/code_visualizer.py": {
+      "is_imported": true,
+      "imported_by": [
+        "/workspace/code_quality/mappers/visualize_interactions.py",
+        "/workspace/code_quality/mappers/map_code_interactions.py",
+        "/workspace/code_quality/visualizers/interaction_network.py",
+        "/workspace/code_quality/visualizers/complexity_heatmap.py",
+        "/workspace/code_quality/visualizers/dependency_graph.py",
+        "/workspace/code_quality/examples/visual_mapping_demo.py"
+      ],
+      "import_count": 6,
+      "module_name": "visualizers.code_visualizer"
+    },
+    "/workspace/code_quality/visualizers/dependency_graph.py": {
+      "is_imported": true,
+      "imported_by": [
+        "/workspace/code_quality/pipelines/interaction_mapping_pipeline.py",
+        "/workspace/code_quality/pipelines/enhanced_interaction_mapping_pipeline.py",
+        "/workspace/code_quality/mappers/visualize_interactions.py",
+        "/workspace/code_quality/mappers/map_code_interactions.py",
+        "/workspace/code_quality/examples/visual_mapping_demo.py"
+      ],
+      "import_count": 5,
+      "module_name": "visualizers.dependency_graph"
+    },
+    "/workspace/code_quality/visualizers/__init__.py": {
+      "is_imported": true,
+      "imported_by": [
+        "/workspace/code_quality/mappers/visualize_interactions.py",
+        "/workspace/code_quality/mappers/map_code_interactions.py",
+        "/workspace/code_quality/examples/visual_mapping_demo.py"
+      ],
+      "import_count": 3,
+      "module_name": "visualizers.__init__"
+    },
+    "/workspace/code_quality/examples/example_usage_extended.py": {
+      "is_imported": false,
+      "imported_by": [],
+      "import_count": 0,
+      "module_name": "examples.example_usage_extended"
+    },
+    "/workspace/code_quality/examples/enhanced_visualization_demo.py": {
+      "is_imported": false,
+      "imported_by": [],
+      "import_count": 0,
+      "module_name": "examples.enhanced_visualization_demo"
+    },
+    "/workspace/code_quality/examples/visual_mapping_demo.py": {
+      "is_imported": false,
+      "imported_by": [],
+      "import_count": 0,
+      "module_name": "examples.visual_mapping_demo"
+    },
+    "/workspace/code_quality/examples/enhanced_dead_code_demo.py": {
+      "is_imported": false,
+      "imported_by": [],
+      "import_count": 0,
+      "module_name": "examples.enhanced_dead_code_demo"
+    },
+    "/workspace/code_quality/examples/example_validation_usage.py": {
+      "is_imported": false,
+      "imported_by": [],
+      "import_count": 0,
+      "module_name": "examples.example_validation_usage"
+    },
+    "/workspace/code_quality/examples/example_usage.py": {
+      "is_imported": false,
+      "imported_by": [],
+      "import_count": 0,
+      "module_name": "examples.example_usage"
+    },
+    "/workspace/code_quality/validators/enhanced_validator.py": {
+      "is_imported": true,
+      "imported_by": [
+        "/workspace/code_quality/pipelines/pipeline_simplified.py",
+        "/workspace/code_quality/validators/integrated_validator.py",
+        "/workspace/code_quality/validators/__init__.py"
+      ],
+      "import_count": 3,
+      "module_name": "validators.enhanced_validator"
+    },
+    "/workspace/code_quality/validators/integrated_validator.py": {
+      "is_imported": true,
+      "imported_by": [
+        "/workspace/code_quality/validators/__init__.py"
+      ],
+      "import_count": 1,
+      "module_name": "validators.integrated_validator"
+    },
+    "/workspace/code_quality/validators/function_validator.py": {
+      "is_imported": true,
+      "imported_by": [
+        "/workspace/code_quality/quick_start.py",
+        "/workspace/code_quality/test_pipelines.py",
+        "/workspace/code_quality/pipelines/pipeline_simplified.py",
+        "/workspace/code_quality/validators/integrated_validator.py",
+        "/workspace/code_quality/validators/__init__.py"
+      ],
+      "import_count": 5,
+      "module_name": "validators.function_validator"
+    },
+    "/workspace/code_quality/validators/__init__.py": {
+      "is_imported": false,
+      "imported_by": [],
+      "import_count": 0,
+      "module_name": "validators.__init__"
+    },
+    "/workspace/code_quality/core/plugins.py": {
+      "is_imported": true,
+      "imported_by": [
+        "/workspace/code_quality/plugins/attribute_checker_analyzer.py",
+        "/workspace/code_quality/fixers/auto_fixer.py"
+      ],
+      "import_count": 2,
+      "module_name": "core.plugins"
+    },
+    "/workspace/code_quality/core/config.py": {
+      "is_imported": true,
+      "imported_by": [
+        "/workspace/code_quality/test_pipeline_basic.py",
+        "/workspace/code_quality/cli.py",
+        "/workspace/code_quality/test_pipelines.py",
+        "/workspace/code_quality/reporters/trend_reporter.py",
+        "/workspace/code_quality/reporters/error_reporter.py",
+        "/workspace/code_quality/reporters/quality_reporter.py",
+        "/workspace/code_quality/pipelines/pipeline_simplified.py",
+        "/workspace/code_quality/pipelines/simple_enhanced_dead_code_pipeline.py",
+        "/workspace/code_quality/pipelines/attribute_checker_pipeline.py",
+        "/workspace/code_quality/pipelines/dead_code_pipeline.py",
+        "/workspace/code_quality/pipelines/complexity_pipeline.py",
+        "/workspace/code_quality/pipelines/overall_pipeline.py",
+        "/workspace/code_quality/pipelines/truly_enhanced_dead_code_pipeline.py",
+        "/workspace/code_quality/pipelines/import_free_analysis_pipeline.py",
+        "/workspace/code_quality/pipelines/interaction_mapping_pipeline.py",
+        "/workspace/code_quality/pipelines/enhanced_interaction_mapping_pipeline.py",
+        "/workspace/code_quality/mappers/enhanced_map_code_interactions.py",
+        "/workspace/code_quality/mappers/map_code_interactions_simplified.py",
+        "/workspace/code_quality/mappers/map_code_interactions.py",
+        "/workspace/code_quality/fixers/conservative_auto_fixer.py",
+        "/workspace/code_quality/fixers/sequential_fixer_fixed.py",
+        "/workspace/code_quality/fixers/auto_fixer.py",
+        "/workspace/code_quality/tests/test_enhanced_pipelines.py",
+        "/workspace/code_quality/analyzers/type_checker.py",
+        "/workspace/code_quality/analyzers/syntax_validator.py",
+        "/workspace/code_quality/analyzers/error_handling_analyzer.py",
+        "/workspace/code_quality/analyzers/truly_enhanced_dead_code_analyzer.py",
+        "/workspace/code_quality/analyzers/improved_signature_analyzer.py",
+        "/workspace/code_quality/analyzers/code_duplication_analyzer.py",
+        "/workspace/code_quality/analyzers/architecture_analyzer.py",
+        "/workspace/code_quality/analyzers/advanced_ast_analyzer.py",
+        "/workspace/code_quality/analyzers/enhanced_dead_code_analyzer.py",
+        "/workspace/code_quality/analyzers/ast_analysis_analyzer.py",
+        "/workspace/code_quality/analyzers/concurrency_analyzer.py",
+        "/workspace/code_quality/analyzers/linter_analyzer.py",
+        "/workspace/code_quality/examples/enhanced_dead_code_demo.py",
+        "/workspace/code_quality/core/__init__.py"
+      ],
+      "import_count": 37,
+      "module_name": "core.config"
+    },
+    "/workspace/code_quality/core/__init__.py": {
+      "is_imported": false,
+      "imported_by": [],
+      "import_count": 0,
+      "module_name": "core.__init__"
+    },
+    "/workspace/code_quality/utils/progress.py": {
+      "is_imported": true,
+      "imported_by": [
+        "/workspace/code_quality/pipelines/overall_pipeline.py",
+        "/workspace/code_quality/fixers/auto_fixer.py"
+      ],
+      "import_count": 2,
+      "module_name": "utils.progress"
+    },
+    "/workspace/code_quality/utils/gitignore_parser.py": {
+      "is_imported": true,
+      "imported_by": [
+        "/workspace/code_quality/pipelines/pipeline_simplified.py",
+        "/workspace/code_quality/utils/file_utils.py"
+      ],
+      "import_count": 2,
+      "module_name": "utils.gitignore_parser"
+    },
+    "/workspace/code_quality/utils/dependency_manager.py": {
+      "is_imported": true,
+      "imported_by": [
+        "/workspace/code_quality/pipelines/overall_pipeline.py",
+        "/workspace/code_quality/fixers/sequential_fixer_fixed.py"
+      ],
+      "import_count": 2,
+      "module_name": "utils.dependency_manager"
+    },
+    "/workspace/code_quality/utils/dependency_utils.py": {
+      "is_imported": false,
+      "imported_by": [],
+      "import_count": 0,
+      "module_name": "utils.dependency_utils"
+    },
+    "/workspace/code_quality/utils/file_utils.py": {
+      "is_imported": true,
+      "imported_by": [
+        "/workspace/code_quality/reporters/quality_reporter.py",
+        "/workspace/code_quality/pipelines/pipeline_simplified.py",
+        "/workspace/code_quality/pipelines/simple_enhanced_dead_code_pipeline.py",
+        "/workspace/code_quality/pipelines/overall_pipeline.py",
+        "/workspace/code_quality/fixers/conservative_auto_fixer.py",
+        "/workspace/code_quality/fixers/sequential_fixer_fixed.py",
+        "/workspace/code_quality/fixers/auto_fixer.py",
+        "/workspace/code_quality/analyzers/type_checker.py",
+        "/workspace/code_quality/analyzers/syntax_validator.py",
+        "/workspace/code_quality/analyzers/error_handling_analyzer.py",
+        "/workspace/code_quality/analyzers/truly_enhanced_dead_code_analyzer.py",
+        "/workspace/code_quality/analyzers/code_duplication_analyzer.py",
+        "/workspace/code_quality/analyzers/architecture_analyzer.py",
+        "/workspace/code_quality/analyzers/advanced_ast_analyzer.py",
+        "/workspace/code_quality/analyzers/enhanced_dead_code_analyzer.py",
+        "/workspace/code_quality/analyzers/linter_analyzer.py",
+        "/workspace/code_quality/utils/__init__.py"
+      ],
+      "import_count": 17,
+      "module_name": "utils.file_utils"
+    },
+    "/workspace/code_quality/utils/report_aggregator.py": {
+      "is_imported": true,
+      "imported_by": [
+        "/workspace/code_quality/pipelines/overall_pipeline.py"
+      ],
+      "import_count": 1,
+      "module_name": "utils.report_aggregator"
+    },
+    "/workspace/code_quality/utils/__init__.py": {
+      "is_imported": false,
+      "imported_by": [],
+      "import_count": 0,
+      "module_name": "utils.__init__"
+    },
+    "/workspace/code_quality/fixers/import_fixers/comprehensive_import_fixer.py": {
+      "is_imported": false,
+      "imported_by": [],
+      "import_count": 0,
+      "module_name": "fixers.import_fixers.comprehensive_import_fixer"
+    },
+    "/workspace/code_quality/fixers/undefined_names_fixers/fix_undefined_names.py": {
+      "is_imported": false,
+      "imported_by": [],
+      "import_count": 0,
+      "module_name": "fixers.undefined_names_fixers.fix_undefined_names"
+    }
+  },
+  "summary": {
+    "total_files": 148,
+    "imported_files": 93,
+    "unimported_files": 55,
+    "import_percentage": 62.83783783783784,
+    "most_imported_file": {
+      "file": "/workspace/code_quality/core/config.py",
+      "import_count": 37
+    },
+    "least_imported_file": {
+      "file": "/workspace/code_quality/test_pipeline_basic.py",
+      "import_count": 0
+    }
+  },
+  "stats": {
+    "files_analyzed": 147,
+    "files_failed": 1,
+    "total_items": 2368
+  },
+  "pipeline_info": {
+    "pipeline_name": "ImportVerifierPipeline",
+    "timestamp": "20250910_121951",
+    "project_root": "/workspace/code_quality",
+    "analysis_directory": "/workspace/code_quality",
+    "analyzer_used": "ImportVerifierAnalyzer"
+  }
+}

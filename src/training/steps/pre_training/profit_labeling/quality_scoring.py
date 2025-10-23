@@ -73,9 +73,9 @@ except ImportError:
     CV_UTILITIES_AVAILABLE = False
     tprint_warning("CV utilities not available")
 
-# Import OOF stacking utilities
+# Import enhanced OOF stacking utilities
 try:
-    from src.utils.ml_common.ensembles.oof_stacking_ensemble_manager import OOFStackingEnsembleManager
+    from src.utils.ml_common.validation.enhanced_consolidated_oof_oos import create_enhanced_oof_generator, OOFStrategy
     OOF_AVAILABLE = True
 except ImportError:
     OOF_AVAILABLE = False
@@ -258,12 +258,18 @@ class LabelQualityScorer(BaseStep):
         else:
             self.cv_validator = None
 
-        # Initialize OOF stacking
+        # Initialize enhanced OOF stacking
         if OOF_AVAILABLE:
-            self.oof_manager = OOFStackingEnsembleManager()
-            self.tprint_info("   → OOF stacking: Available")
+            self.oof_generator = create_enhanced_oof_generator(
+                strategy=OOFStrategy.STACKING,
+                n_folds=5,
+                enable_confidence_intervals=True,
+                enable_diversity_metrics=True,
+                enable_leakage_detection=True
+            )
+            self.tprint_info("   → Enhanced OOF stacking: Available")
         else:
-            self.oof_manager = None
+            self.oof_generator = None
 
         self.tprint_info("📊 Label Quality Scorer initialized")
         self.tprint_info(f"   → Baseline models: {self.config.baseline_models}")

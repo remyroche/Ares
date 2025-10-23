@@ -1301,10 +1301,30 @@ class MultiOutputStackingModel(MultiOutputModel):
             return {'error': str(e)}
 
     def evaluate_oof_performance(self) -> Dict[str, Any]:
-        """Evaluate performance using stored OOF meta predictions if available."""
+        """Evaluate performance using enhanced consolidated OOF utilities."""
         if self._oof_meta_predictions is None or self.y_train is None:
             return {'error': 'OOF predictions not available'}
+        
         try:
+            # Import enhanced consolidated utilities
+            from src.utils.ml_common.validation.enhanced_consolidated_oof_oos import (
+                create_enhanced_oos_validator,
+                OOSValidationType
+            )
+            
+            # Create OOS validator for performance evaluation
+            oos_validator = create_enhanced_oos_validator(
+                validation_type=OOSValidationType.PERFORMANCE_METRICS,
+                metrics=['mse', 'mae', 'r2', 'accuracy']
+            )
+            
+            # Perform OOS validation
+            oos_result = oos_validator.validate_oos(
+                predictions=self._oof_meta_predictions,
+                targets=self.y_train
+            )
+            
+            # Extract results
             y = self.y_train
             y_pred = self._oof_meta_predictions
             # Ensure 2D
@@ -1340,7 +1360,9 @@ class MultiOutputStackingModel(MultiOutputModel):
                 'per_output_metrics': per_output_metrics,
                 'overall_metrics': overall_metrics,
                 'predictions': self._oof_meta_predictions,
-                'targets': self.y_train
+                'targets': self.y_train,
+                'oos_validation': oos_result.validation_scores,
+                'oos_metrics': oos_result.validation_metrics
             }
         except Exception as e:
             self.logger.error(f"❌ OOF evaluation failed: {e}")

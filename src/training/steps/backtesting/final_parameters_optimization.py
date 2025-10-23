@@ -51,7 +51,7 @@ from src.utils.ml_common.optimization.bayesian_tpe_optimizer import (
 
 # ML utilities
 from src.utils.ml_common.cv_utils import TimeSeriesSplitValidator
-from src.utils.ml_common.oof_generator import OOFGenerator
+from src.utils.ml_common.validation.enhanced_consolidated_oof_oos import create_enhanced_oof_generator, OOFStrategy
 from src.utils.ml_common.data_leakage_detector import DataLeakageDetector
 
 # Math and validation utilities
@@ -227,7 +227,13 @@ class FinalParametersOptimizer(BaseStep):
                 test_size=1.0 / self.cv_folds,
                 embargo_pct=config.get('embargo_pct', 0.01)
             )
-            self.oof_generator = OOFGenerator()
+            self.oof_generator = create_enhanced_oof_generator(
+                strategy=OOFStrategy.MEAN,
+                n_folds=5,
+                enable_confidence_intervals=True,
+                enable_diversity_metrics=True,
+                enable_leakage_detection=True
+            )
             self.leakage_detector = DataLeakageDetector()
             tprint("✅ CV utilities initialized", "success")
 

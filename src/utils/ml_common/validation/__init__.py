@@ -88,16 +88,7 @@ from .consolidated_cv import (
     perform_cross_validation
 )
 
-from .consolidated_oof_oos import (
-    ConsolidatedOOFGenerator, ConsolidatedOOSValidator, ConsolidatedConfidenceEstimator,
-    OOFConfig, OOSConfig, ConfidenceConfig,
-    OOFResult, OOSResult, ConfidenceResult,
-    OOFStrategy, OOSValidationType, ConfidenceMethod,
-    create_oof_generator, create_oos_validator, create_confidence_estimator,
-    # Legacy compatibility
-    OOFGenerator, OOSValidator, ConfidenceEstimator,
-    generate_oof_predictions, validate_oos, estimate_confidence_intervals
-)
+# Legacy consolidated OOF/OOS module removed - use enhanced_consolidated_oof_oos instead
 
 from .cv_utils import (
     CrossValidationUtilities,

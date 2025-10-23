@@ -40,7 +40,7 @@ from src.feature_generation.utils.vectorbt_rolling_optimizer import get_vectorbt
 # ML utilities
 from src.utils.ml_common.optimization import HyperparameterOptimizer
 from src.utils.ml_common.cv_utils import TimeSeriesSplitValidator
-from src.utils.ml_common.oof_generator import OOFGenerator
+from src.utils.ml_common.validation.enhanced_consolidated_oof_oos import create_enhanced_oof_generator, OOFStrategy
 from src.utils.ml_common.data_leakage_detector import DataLeakageDetector
 
 # Math validation
@@ -300,7 +300,13 @@ class RealMonteCarloEngine:
                 test_size=1.0 / config.cv_folds,
                 embargo_pct=config.embargo_pct
             )
-            self.oof_generator = OOFGenerator()
+            self.oof_generator = create_enhanced_oof_generator(
+                strategy=OOFStrategy.MEAN,
+                n_folds=5,
+                enable_confidence_intervals=True,
+                enable_diversity_metrics=True,
+                enable_leakage_detection=True
+            )
             tprint("✅ CV utilities initialized", "success")
         else:
             self.cv_validator = None

@@ -80,12 +80,23 @@ from .data_leakage_detector import (
 from .consolidated_cv import (
     ConsolidatedCrossValidator, ConsolidatedCVConfig, FoldValidationResult, ValidationResult,
     PurgeMode, ValidationType,
-    create_consolidated_cv, create_purged_cv, create_walk_forward_cv, 
+    create_consolidated_cv, create_purged_cv, create_walk_forward_cv,
     create_temporal_cv, create_standard_cv,
     # Legacy compatibility
-    PurgedKFoldTime, UniversalTemporalValidator, WalkForwardValidator, 
-    UnifiedCrossValidator, purged_time_series_splits, temporal_cross_validation, 
+    PurgedKFoldTime, UniversalTemporalValidator, WalkForwardValidator,
+    UnifiedCrossValidator, purged_time_series_splits, temporal_cross_validation,
     perform_cross_validation
+)
+
+from .consolidated_oof_oos import (
+    ConsolidatedOOFGenerator, ConsolidatedOOSValidator, ConsolidatedConfidenceEstimator,
+    OOFConfig, OOSConfig, ConfidenceConfig,
+    OOFResult, OOSResult, ConfidenceResult,
+    OOFStrategy, OOSValidationType, ConfidenceMethod,
+    create_oof_generator, create_oos_validator, create_confidence_estimator,
+    # Legacy compatibility
+    OOFGenerator, OOSValidator, ConfidenceEstimator,
+    generate_oof_predictions, validate_oos, estimate_confidence_intervals
 )
 
 from .cv_utils import (

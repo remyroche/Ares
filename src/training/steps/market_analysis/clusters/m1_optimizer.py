@@ -338,11 +338,9 @@ class M1Optimizer:
     def get_optimization_context(self):
         """Get M1 optimization context manager."""
         if not M1_OPTIMIZATION_AVAILABLE or not self.m1_optimizer:
-            # Return dummy context manager
-            class DummyContext:
-                def __enter__(self): return self
-                def __exit__(self, *args): pass
-            return DummyContext()
+            # Return a proper no-op context manager instead of dummy implementation
+            from contextlib import nullcontext
+            return nullcontext()
 
         return self.m1_optimizer.create_m1_optimized_context()
 

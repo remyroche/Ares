@@ -253,8 +253,9 @@ class CSVNormalizer:
                 format_type = self._detect_file_format(infile)
                 if format_type in self.processors:
                     self.processors[format_type](infile, writer)
-        except Exception:
-            pass
+        except Exception as e:
+            tprint_warning(f"⚠️ Error in data processing: {e}")
+            # Continue processing other files even if one fails
     @log_all_calls
 
     def _detect_file_format(self, infile: Any) -> str:

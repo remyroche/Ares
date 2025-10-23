@@ -1459,8 +1459,9 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
                                 self.logger.info(f"✅ Generated OOF predictions for base tactician model: {base_name}")
                         except Exception as te:
                             self.logger.warning(f"⚠️ Failed OOF for base tactician {base_name}: {te}")
-            except Exception:
-                pass
+            except Exception as e:
+                self.logger.warning(f"⚠️ Error in OOF prediction generation: {e}")
+                # Continue with other operations
 
             # Generate OOF predictions for analyst ensembles to prevent data leakage
             ensemble_predictions = []

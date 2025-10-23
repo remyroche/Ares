@@ -54,7 +54,10 @@ class ComprehensiveQualityScorer:
     """Self-contained comprehensive quality scorer."""
     
     def __init__(self):
-        pass
+        """Initialize the quality scorer with default settings."""
+        self.min_rows = 100
+        self.max_missing_ratio = 0.5
+        self.min_std_threshold = 1e-6
     
     def score_dataframe(self, df: pd.DataFrame) -> QualityScore:
         """Score dataframe quality."""
@@ -133,7 +136,10 @@ class QualityAlertSystem:
     """Self-contained quality alert system."""
     
     def __init__(self):
-        pass
+        """Initialize the alert system with default thresholds."""
+        self.critical_threshold = 0.3
+        self.warning_threshold = 0.6
+        self.alert_history = []
     
     def check_alerts(self, quality_score: QualityScore, validation_result: Dict[str, Any]) -> List[str]:
         """Check for quality alerts."""
@@ -159,7 +165,10 @@ class ValidationManager:
     """Self-contained validation manager."""
     
     def __init__(self):
-        pass
+        """Initialize the validation manager with default settings."""
+        self.quality_scorer = ComprehensiveQualityScorer()
+        self.alert_system = QualityAlertSystem()
+        self.validation_rules = []
     
     def validate(self, data: pd.DataFrame, **kwargs) -> ValidationResult:
         """Validate data."""

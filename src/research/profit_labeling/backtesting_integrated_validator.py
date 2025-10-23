@@ -177,7 +177,21 @@ class LabelBasedStrategy:
                         labels: pd.DataFrame,
                         market_data: pd.DataFrame) -> pd.Series:
         """Generate trading signals from labels."""
-        raise NotImplementedError("Subclasses must implement generate_signals")
+        # Default implementation: use the first opportunity column as signal
+        opportunity_cols = [col for col in labels.columns if 'opportunity' in col.lower()]
+        
+        if not opportunity_cols:
+            self.logger.warning("No opportunity columns found in labels, returning zero signals")
+            return pd.Series(0.0, index=labels.index)
+        
+        # Use the first opportunity column as the main signal
+        main_signal = labels[opportunity_cols[0]].fillna(0)
+        
+        # Simple threshold-based signal generation (0.5 threshold)
+        signals = (main_signal > 0.5).astype(float)
+        
+        self.logger.info(f"Generated {signals.sum()} signals from {len(signals)} observations")
+        return signals
 
     def calculate_position_size(self,
                               signal: float,

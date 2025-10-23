@@ -90,32 +90,14 @@ class ModelType(Enum):
     # Neural network models
     TABNET = "TabNetRegressor"
     TABNET_CLASSIFIER = "TabNetClassifier"
-    TABNET_ATTENTION = "TabNetAttention"
-
     # PatchTST-enhanced models
     PATCHTST_LIGHTGBM = "PatchTSTLightGBM"
     PATCHTST_XGBOOST = "PatchTSTXGBoost"
     PATCHTST_XGBOOST_LAMBDAMART = "PatchTSTXGBoostLambdaMART"
     PATCHTST_CATBOOST = "PatchTSTCatBoost"
 
-    # Causal Dilated TCN
-    CAUSAL_DILATED_TCN = "CausalDilatedTCN"
-
-    # TFT variants
-    TFT_SMALL = "TFTSmall"
-    NODE = "NODE"  # Neural Oblivious Decision Ensembles
-    NODE_CLASSIFIER = "NODEClassifier"
     TIME_SERIES_TRANSFORMER = "TimeSeriesTransformer"
-    TEMPORAL_FUSION_TRANSFORMER = "TemporalFusionTransformer"
-    WAVENET = "WaveNet"
-    TCN = "TCN"  # Temporal Convolutional Network
-    LSTM = "LSTM"
-    DEEPSCALER = "DeepScaler"
-    DEEPSCALER_CLASSIFIER = "DeepScalerClassifier"
     NBEATS = "NBEATS"
-    FINANCIAL_RESNET = "FinancialResNet"
-    ADVANCED_MAMBA_HYBRID = "AdvancedMambaHybrid"
-    DEEPSCALER_1M = "DeepScaler1m"
     MULTISCALE_NBEATS = "MultiScaleNBEATS"  # Enhanced NBEATS with multi-timeframe
     NAS = "NAS"  # Neural Architecture Search for regime detection
     NAS_CLASSIFIER = "NASClassifier"  # NAS for classification tasks
@@ -127,8 +109,6 @@ class ModelType(Enum):
     ELASTIC_NET_CLASSIFIER = "ElasticNetClassifier"
     ELASTIC_NET_CV = "ElasticNetCV"
     ELASTIC_NET_CV_CLASSIFIER = "ElasticNetCVClassifier"
-    ELASTIC_NET_QUANTILE = "ElasticNetQuantile"
-    QUANTILE_REGRESSION = "QuantileRegression"
     LOGISTIC_REGRESSION = "LogisticRegression"
     LINEAR_REGRESSION = "LinearRegression"
     HUBER_REGRESSION = "HuberRegression"
@@ -339,40 +319,16 @@ class EnhancedModelFactory:
                 model = self._create_patchtst_xgboost_lambdamart_model(model_config)
             elif model_config.model_type == ModelType.PATCHTST_CATBOOST:
                 model = self._create_patchtst_catboost_model(model_config)
-            elif model_config.model_type == ModelType.CAUSAL_DILATED_TCN:
-                model = self._create_causal_dilated_tcn_model(model_config)
-            elif model_config.model_type == ModelType.TFT_SMALL:
-                model = self._create_tft_small_model(model_config)
             elif model_config.model_type in [ModelType.EXTRA_TREES, ModelType.EXTRA_TREES_CLASSIFIER]:
                 model = self._create_extra_trees_model(model_config)
             elif model_config.model_type in [ModelType.TABNET, ModelType.TABNET_CLASSIFIER]:
                 model = self._create_tabnet_model(model_config)
             elif model_config.model_type == ModelType.TIME_SERIES_TRANSFORMER:
                 model = self._create_time_series_transformer_model(model_config)
-            elif model_config.model_type == ModelType.TCN:
-                model = self._create_tcn_model(model_config)
-            elif model_config.model_type == ModelType.WAVENET:
-                model = self._create_wavenet_model(model_config)
-            elif model_config.model_type == ModelType.TEMPORAL_FUSION_TRANSFORMER:
-                model = self._create_tft_model(model_config)
-            elif model_config.model_type == ModelType.TABNET_ATTENTION:
-                model = self._create_tabnet_attention_model(model_config)
-            elif model_config.model_type == ModelType.LSTM:
-                model = self._create_lstm_model(model_config)
-            elif model_config.model_type in [ModelType.DEEPSCALER, ModelType.DEEPSCALER_CLASSIFIER]:
-                model = self._create_deepscaler_model(model_config)
             elif model_config.model_type == ModelType.NBEATS:
                 model = self._create_nbeats_model(model_config)
-            elif model_config.model_type == ModelType.FINANCIAL_RESNET:
-                model = self._create_financial_resnet_model(model_config)
-            elif model_config.model_type == ModelType.ADVANCED_MAMBA_HYBRID:
-                model = self._create_advanced_mamba_hybrid_model(model_config)
-            elif model_config.model_type == ModelType.DEEPSCALER_1M:
-                model = self._create_deepscaler_1m_model(model_config)
             elif model_config.model_type == ModelType.MULTISCALE_NBEATS:
                 model = self._create_multiscale_nbeats_model(model_config)
-            elif model_config.model_type in [ModelType.NODE, ModelType.NODE_CLASSIFIER]:
-                model = self._create_node_model(model_config)
             elif model_config.model_type in [ModelType.NAS, ModelType.NAS_CLASSIFIER]:
                 model = self._create_nas_model(model_config)
             elif model_config.model_type in [ModelType.RIDGE, ModelType.RIDGE_CLASSIFIER]:
@@ -381,10 +337,6 @@ class EnhancedModelFactory:
                 model = self._create_elastic_net_model(model_config)
             elif model_config.model_type in [ModelType.ELASTIC_NET_CV, ModelType.ELASTIC_NET_CV_CLASSIFIER]:
                 model = self._create_elastic_net_cv_model(model_config)
-            elif model_config.model_type == ModelType.ELASTIC_NET_QUANTILE:
-                model = self._create_elastic_net_quantile_model(model_config)
-            elif model_config.model_type == ModelType.QUANTILE_REGRESSION:
-                model = self._create_quantile_regression_model(model_config)
             elif model_config.model_type == ModelType.HUBER_REGRESSION:
                 model = self._create_huber_regression_model(model_config)
             elif model_config.model_type in [ModelType.LOGISTIC_REGRESSION, ModelType.LINEAR_REGRESSION]:
@@ -441,7 +393,7 @@ class EnhancedModelFactory:
             if not self.dependencies.get('torch', False):
                 raise ValidationError("PyTorch not available")
 
-        if model_config.model_type in [ModelType.DEEPSCALER, ModelType.DEEPSCALER_CLASSIFIER, ModelType.NBEATS, ModelType.FINANCIAL_RESNET, ModelType.ADVANCED_MAMBA_HYBRID, ModelType.DEEPSCALER_1M, ModelType.MULTISCALE_NBEATS]:
+        if model_config.model_type in [ModelType.NBEATS, ModelType.MULTISCALE_NBEATS]:
             if not self.dependencies.get('torch', False):
                 raise ValidationError("❌ PyTorch is required for this model type. Install with: pip install torch torchvision torchaudio")
 
@@ -773,158 +725,6 @@ class EnhancedModelFactory:
 
         return TimeSeriesTransformer(**model_config.model_params)
 
-    def _create_lstm_model(self, model_config: ModelConfig) -> Any:
-        """Create LSTM model."""
-
-        # This is a placeholder implementation
-        # In practice, you would implement a custom LSTM class
-        class LSTM:
-            def __init__(self, **kwargs):
-                self.params = kwargs
-                self.is_fitted = False
-                self.hidden_size = kwargs.get('hidden_size', 128)
-                self.num_layers = kwargs.get('num_layers', 2)
-                self.dropout = kwargs.get('dropout', 0.2)
-                self.bidirectional = kwargs.get('bidirectional', True)
-                self.sequence_length = kwargs.get('sequence_length', 100)
-                self.output_dim = kwargs.get('output_dim', 1)
-                self.activation = kwargs.get('activation', 'tanh')
-                self.recurrent_dropout = kwargs.get('recurrent_dropout', 0.0)
-                self.use_batch_norm = kwargs.get('use_batch_norm', True)
-                self.return_sequences = kwargs.get('return_sequences', False)
-                
-                # Initialize hardware components for optimization
-                self._initialize_hardware_components()
-
-            def fit(self, X, y):
-                """Fit the LSTM model."""
-                try:
-                    # Store training data statistics
-                    if hasattr(X, 'values'):
-                        X_values = X.values
-                    else:
-                        X_values = np.array(X)
-                    
-                    self.feature_means_ = np.mean(X_values, axis=0)
-                    self.feature_stds_ = np.std(X_values, axis=0) + 1e-8  # Avoid division by zero
-                    self.target_mean_ = np.mean(y) if hasattr(y, 'values') else 0.0
-                    self.target_std_ = np.std(y) if hasattr(y, 'values') else 1.0
-                    
-                    # Initialize LSTM-like weights (simplified)
-                    self.weights_ = np.random.normal(0, 0.1, (X_values.shape[1], self.hidden_size))
-                    self.hidden_weights_ = np.random.normal(0, 0.1, (self.hidden_size, self.hidden_size))
-                    self.output_weights_ = np.random.normal(0, 0.1, (self.hidden_size, self.output_dim))
-                    self.bias_ = np.zeros(self.hidden_size)
-                    self.output_bias_ = np.zeros(self.output_dim)
-                    
-                    self.is_fitted = True
-                    self.feature_names_ = getattr(X, 'columns', None) if hasattr(X, 'columns') else None
-                    return self
-                except Exception as e:
-                    # Fallback to simple implementation
-                    self.is_fitted = True
-                    self.feature_names_ = getattr(X, 'columns', None) if hasattr(X, 'columns') else None
-                    return self
-
-            def predict(self, X):
-                """Make predictions using the fitted model."""
-                if not self.is_fitted:
-                    raise ValueError("Model not fitted")
-                
-                try:
-                    if hasattr(X, 'values'):
-                        X_values = X.values
-                    else:
-                        X_values = np.array(X)
-                    
-                    # Normalize features
-                    X_normalized = (X_values - self.feature_means_) / self.feature_stds_
-                    
-                    # Simple LSTM-like computation (simplified)
-                    predictions = []
-                    for i in range(len(X_normalized)):
-                        # Input gate
-                        input_gate = self._sigmoid(np.dot(X_normalized[i], self.weights_) + self.bias_)
-                        
-                        # Forget gate (simplified)
-                        forget_gate = self._sigmoid(np.dot(X_normalized[i], self.weights_) + self.bias_)
-                        
-                        # Cell state (simplified)
-                        cell_state = input_gate * np.tanh(np.dot(X_normalized[i], self.weights_) + self.bias_)
-                        
-                        # Output gate
-                        output_gate = self._sigmoid(np.dot(X_normalized[i], self.weights_) + self.bias_)
-                        
-                        # Hidden state
-                        hidden_state = output_gate * np.tanh(cell_state)
-                        
-                        # Final prediction
-                        prediction = np.dot(hidden_state, self.output_weights_) + self.output_bias_
-                        predictions.append(prediction[0])
-                    
-                    predictions = np.array(predictions)
-                    
-                    # Add some realistic noise
-                    noise = np.random.normal(0, 0.02, len(predictions))
-                    predictions = predictions + noise
-                    
-                    return predictions
-                except Exception:
-                    # Fallback to random predictions
-                    return np.random.normal(0, 0.1, len(X))
-
-            def predict_proba(self, X):
-                """Predict class probabilities."""
-                if not self.is_fitted:
-                    raise ValueError("Model not fitted")
-                
-                try:
-                    # Convert regression predictions to probabilities
-                    predictions = self.predict(X)
-                    
-                    # Apply sigmoid for binary classification
-                    probabilities = self._sigmoid(predictions)
-                    
-                    # Return probabilities for both classes
-                    proba_matrix = np.column_stack([1 - probabilities, probabilities])
-                    return proba_matrix
-                except Exception:
-                    # Fallback to random probabilities
-                    return np.random.dirichlet(np.ones(2), len(X))
-            
-            def _sigmoid(self, x):
-                """Sigmoid activation function."""
-                return 1 / (1 + np.exp(-np.clip(x, -500, 500)))  # Clip to prevent overflow
-
-            def get_params(self, deep=True):
-                """Get model parameters."""
-                return self.params.copy()
-
-            def set_params(self, **params):
-                """Set model parameters."""
-                self.params.update(params)
-                return self
-            
-            def _initialize_hardware_components(self):
-                """Initialize hardware components for model optimization."""
-                try:
-                    from src.utils.hardware.unified_hardware_manager import get_unified_hardware_manager, HardwareConfig, WorkloadType, OptimizationLevel
-                    
-                    # Initialize hardware manager for ML training
-                    hardware_config = HardwareConfig(
-                        cpu_optimization_level=OptimizationLevel.BALANCED,
-                        memory_optimization_level=OptimizationLevel.BALANCED,
-                        enable_adaptive_optimization=True
-                    )
-                    self.hardware_manager = get_unified_hardware_manager(hardware_config)
-                    
-                    # Configure for ML training workload
-                    self.hardware_manager.configure_workload(WorkloadType.ML_TRAINING, OptimizationLevel.BALANCED)
-                    
-                except ImportError:
-                    self.hardware_manager = None
-
-        return LSTM(**model_config.model_params)
 
     def _create_deepscaler_model(self, model_config: ModelConfig) -> Any:
         """Create DeepScaler model with overfitting prevention."""
@@ -1766,341 +1566,10 @@ class EnhancedModelFactory:
 
         return RegimeOptimizedNBEATS(**params)
 
-    def _create_financial_resnet_model(self, model_config: ModelConfig) -> Any:
-        """Create FinancialResNet model optimized for financial time series."""
 
-        # Default parameters optimized for 15m timeframe regime detection
-        default_params = {
-            'blocks': [32, 64, 128],  # Smaller blocks for 15m data
-            'temporal_conv_layers': 3,  # Moderate temporal analysis
-            'attention_heads': 4,  # Efficient attention
-            'dropout': 0.15,  # Good regularization
-            'regime_aware': True,  # Domain optimization
-            'input_features': 100,  # 100 features for comprehensive analysis
-            'output_classes': 20,  # 15-25 regimes
-            'batch_size': 128,
-            'epochs': 150,
-            'learning_rate': 0.001,
-            'early_stopping_patience': 25,
-            'l2_regularization': 0.01,
-            'use_batch_norm': True,
-            'use_layer_norm': True,
-            'residual_connections': True
-        }
 
-        # Merge with user parameters
-        params = {**default_params, **model_config.model_params}
 
-        # This is a placeholder implementation
-        # In practice, you would implement a custom FinancialResNet class
-        class FinancialResNet:
-            def __init__(self, **kwargs):
-                self.params = kwargs
-                self.is_fitted = False
-                self.blocks = kwargs.get('blocks', [32, 64, 128])
-                self.temporal_conv_layers = kwargs.get('temporal_conv_layers', 3)
-                self.attention_heads = kwargs.get('attention_heads', 4)
-                self.dropout = kwargs.get('dropout', 0.15)
-                self.regime_aware = kwargs.get('regime_aware', True)
-                self.output_classes = kwargs.get('output_classes', 20)
-                self.l2_regularization = kwargs.get('l2_regularization', 0.01)
 
-            def fit(self, X, y):
-                """Fit the FinancialResNet model optimized for financial time series."""
-                # Placeholder implementation optimized for financial time series
-                self.is_fitted = True
-                self.feature_names_ = getattr(X, 'columns', None) if hasattr(X, 'columns') else None
-                return self
-
-            def predict(self, X):
-                """Make predictions using the fitted model."""
-                if not self.is_fitted:
-                    raise ValueError("Model not fitted")
-                # Placeholder implementation
-                return np.zeros((len(X), self.output_classes))
-
-            def predict_proba(self, X):
-                """Predict probabilities for regime classification."""
-                if not self.is_fitted:
-                    raise ValueError("Model not fitted")
-                # Placeholder implementation - return regime probabilities
-                return np.random.dirichlet(np.ones(self.output_classes), len(X))
-
-            def get_params(self, deep=True):
-                """Get model parameters."""
-                return self.params.copy()
-
-            def set_params(self, **params):
-                """Set model parameters."""
-                self.params.update(params)
-                return self
-
-        return FinancialResNet(**params)
-
-    def _create_advanced_mamba_hybrid_model(self, model_config: ModelConfig) -> Any:
-        """Create AdvancedMambaHybrid model with multi-timeframe fusion."""
-
-        # Default parameters based on timeframe (5m for Analyst, 1m for Tactician)
-        default_params = {
-            'mamba_layers': 2,  # Efficient temporal modeling
-            'conv_layers': 4,  # Pattern recognition
-            'attention_heads': 8,  # Multi-scale attention
-            'hidden_dim': 128,  # Balanced capacity
-            'state_expansion': 4,  # Efficient state handling
-            'multi_timeframe_fusion': True,  # 15m regime integration
-            'dropout': 0.1,  # Moderate regularization
-            'activation': 'GELU',  # Modern activation
-            'batch_size': 64,
-            'epochs': 100,
-            'learning_rate': 0.001,
-            'early_stopping_patience': 20,
-            'l2_regularization': 0.01,
-            'execution_optimization': False,  # Set to True for Tactician
-            'micro_timing_attention': False,  # Set to True for Tactician
-            'latency_aware': False  # Set to True for Tactician
-        }
-
-        # Merge with user parameters
-        params = {**default_params, **model_config.model_params}
-
-        # This is a placeholder implementation
-        # In practice, you would implement a custom AdvancedMambaHybrid class
-        class AdvancedMambaHybrid:
-            def __init__(self, **kwargs):
-                self.params = kwargs
-                self.is_fitted = False
-                self.mamba_layers = kwargs.get('mamba_layers', 2)
-                self.conv_layers = kwargs.get('conv_layers', 4)
-                self.attention_heads = kwargs.get('attention_heads', 8)
-                self.hidden_dim = kwargs.get('hidden_dim', 128)
-                self.state_expansion = kwargs.get('state_expansion', 4)
-                self.multi_timeframe_fusion = kwargs.get('multi_timeframe_fusion', True)
-                self.dropout = kwargs.get('dropout', 0.1)
-                self.activation = kwargs.get('activation', 'GELU')
-                self.execution_optimization = kwargs.get('execution_optimization', False)
-                self.micro_timing_attention = kwargs.get('micro_timing_attention', False)
-                self.latency_aware = kwargs.get('latency_aware', False)
-
-            def fit(self, X, y, analyst_inputs=None, hmm_inputs=None):
-                """Fit the AdvancedMambaHybrid model with multi-timeframe fusion."""
-                # Placeholder implementation with multi-timeframe fusion
-                self.is_fitted = True
-                self.feature_names_ = getattr(X, 'columns', None) if hasattr(X, 'columns') else None
-                return self
-
-            def predict(self, X, analyst_inputs=None, hmm_inputs=None):
-                """Make predictions using the fitted model."""
-                if not self.is_fitted:
-                    raise ValueError("Model not fitted")
-                # Placeholder implementation
-                return np.zeros(len(X))
-
-            def predict_proba(self, X, analyst_inputs=None, hmm_inputs=None):
-                """Predict class probabilities."""
-                if not self.is_fitted:
-                    raise ValueError("Model not fitted")
-                # Placeholder implementation
-                return np.random.dirichlet(np.ones(2), len(X))
-
-            def get_params(self, deep=True):
-                """Get model parameters."""
-                return self.params.copy()
-
-            def set_params(self, **params):
-                """Set model parameters."""
-                self.params.update(params)
-                return self
-
-        return AdvancedMambaHybrid(**params)
-
-    def _create_deepscaler_1m_model(self, model_config: ModelConfig) -> Any:
-        """Create DeepScaler1m model optimized for 1m timeframe."""
-
-        # Default parameters optimized for 1m timeframe precision
-        default_params = {
-            'n_layers': 6,
-            'n_units': 128,
-            'dropout': 0.1,  # Minimal regularization for precision
-            'l2_regularization': 0.005,
-            'activation': 'relu',
-            'optimizer': 'adam',
-            'learning_rate': 0.0005,  # Lower learning rate for precision
-            'batch_size': 64,
-            'epochs': 200,  # More epochs for fine-tuning
-            'early_stopping_patience': 30,
-            'use_batch_norm': True,
-            'use_residual_connections': True,
-            'precision_focused': True,  # Optimize for precision over speed
-            'micro_timing_aware': True  # 1m specific optimizations
-        }
-
-        # Merge with user parameters
-        params = {**default_params, **model_config.model_params}
-
-        # This is a placeholder implementation
-        # In practice, you would implement a custom DeepScaler1m class
-        class DeepScaler1m:
-            def __init__(self, **kwargs):
-                self.params = kwargs
-                self.is_fitted = False
-                self.n_layers = kwargs.get('n_layers', 6)
-                self.n_units = kwargs.get('n_units', 128)
-                self.dropout = kwargs.get('dropout', 0.1)
-                self.l2_regularization = kwargs.get('l2_regularization', 0.005)
-                self.activation = kwargs.get('activation', 'relu')
-                self.precision_focused = kwargs.get('precision_focused', True)
-                self.micro_timing_aware = kwargs.get('micro_timing_aware', True)
-
-            def fit(self, X, y):
-                # Placeholder implementation optimized for 1m precision
-                self.is_fitted = True
-                return self
-
-            def predict(self, X):
-                if not self.is_fitted:
-                    raise ValueError("Model not fitted")
-                # Placeholder implementation
-                return np.zeros(len(X))
-
-        return DeepScaler1m(**params)
-
-    def _create_tcn_model(self, model_config: ModelConfig) -> Any:
-        """Create TCN model with overfitting prevention."""
-
-        # Default parameters with overfitting prevention
-        default_params = {
-            'num_filters': 64,
-            'kernel_size': 3,
-            'dilations': [1, 2, 4, 8, 16, 32],
-            'dropout': 0.2,           # Dropout for overfitting prevention
-            'l2_regularization': 0.01, # L2 regularization
-            'early_stopping_patience': 15,
-            'batch_size': 32,
-            'epochs': 100,
-            'use_skip_connections': True,
-            'use_batch_norm': True
-        }
-
-        # Merge with user parameters
-        params = {**default_params, **model_config.model_params}
-
-        # This is a placeholder implementation
-        # In practice, you would implement a custom TCN class with proper overfitting prevention
-        class TCN:
-            def __init__(self, **kwargs):
-                self.params = kwargs
-                self.is_fitted = False
-                self.dropout = kwargs.get('dropout', 0.2)
-                self.l2_regularization = kwargs.get('l2_regularization', 0.01)
-                self.early_stopping_patience = kwargs.get('early_stopping_patience', 15)
-                self.num_filters = kwargs.get('num_filters', 64)
-                self.kernel_size = kwargs.get('kernel_size', 3)
-                self.dilations = kwargs.get('dilations', [1, 2, 4, 8, 16, 32])
-                self.use_skip_connections = kwargs.get('use_skip_connections', True)
-                self.use_batch_norm = kwargs.get('use_batch_norm', True)
-
-            def set_params(self, **params):
-                """Set model parameters."""
-                for key, value in params.items():
-                    if hasattr(self, key):
-                        setattr(self, key, value)
-                    self.params[key] = value
-                return self
-
-            def get_params(self, deep=True):
-                """Get model parameters."""
-                return self.params.copy()
-
-            def fit(self, X, y):
-                """Fit the TCN model with overfitting prevention."""
-                # Placeholder implementation with overfitting prevention
-                self.is_fitted = True
-                self.feature_names_ = getattr(X, 'columns', None) if hasattr(X, 'columns') else None
-                return self
-
-            def predict(self, X):
-                """Make predictions using the fitted model."""
-                if not self.is_fitted:
-                    raise ValueError("Model not fitted")
-                # Placeholder implementation
-                return np.zeros(len(X))
-
-            def predict_proba(self, X):
-                """Predict class probabilities."""
-                if not self.is_fitted:
-                    raise ValueError("Model not fitted")
-                # Placeholder implementation
-                return np.random.dirichlet(np.ones(2), len(X))
-
-        return TCN(**params)
-
-    def _create_wavenet_model(self, model_config: ModelConfig) -> Any:
-        """Create WaveNet model with overfitting prevention."""
-
-        # Default parameters with overfitting prevention
-        default_params = {
-            'dilations': [1, 2, 4, 8, 16, 32, 64],
-            'residual_channels': 64,
-            'skip_channels': 64,
-            'kernel_size': 3,
-            'use_gated_activation': True,
-            'dropout': 0.2,
-            'l2_regularization': 0.01,
-            'early_stopping_patience': 15,
-            'batch_size': 32,
-            'epochs': 100
-        }
-
-        # Merge with user parameters
-        params = {**default_params, **model_config.model_params}
-
-        # This is a placeholder implementation
-        class WaveNet:
-            def __init__(self, **kwargs):
-                self.params = kwargs
-                self.is_fitted = False
-                self.dilations = kwargs.get('dilations', [1, 2, 4, 8, 16, 32, 64])
-                self.residual_channels = kwargs.get('residual_channels', 64)
-                self.skip_channels = kwargs.get('skip_channels', 64)
-                self.kernel_size = kwargs.get('kernel_size', 3)
-                self.use_gated_activation = kwargs.get('use_gated_activation', True)
-                self.dropout = kwargs.get('dropout', 0.2)
-                self.l2_regularization = kwargs.get('l2_regularization', 0.01)
-                self.early_stopping_patience = kwargs.get('early_stopping_patience', 15)
-                self.batch_size = kwargs.get('batch_size', 32)
-                self.epochs = kwargs.get('epochs', 100)
-
-            def fit(self, X, y):
-                """Fit the WaveNet model with overfitting prevention."""
-                # Placeholder implementation with overfitting prevention
-                self.is_fitted = True
-                self.feature_names_ = getattr(X, 'columns', None) if hasattr(X, 'columns') else None
-                return self
-
-            def predict(self, X):
-                """Make predictions using the fitted model."""
-                if not self.is_fitted:
-                    raise ValueError("Model not fitted")
-                # Placeholder implementation
-                return np.zeros(len(X))
-
-            def predict_proba(self, X):
-                """Predict class probabilities."""
-                if not self.is_fitted:
-                    raise ValueError("Model not fitted")
-                # Placeholder implementation
-                return np.random.dirichlet(np.ones(2), len(X))
-
-            def get_params(self, deep=True):
-                """Get model parameters."""
-                return self.params.copy()
-
-            def set_params(self, **params):
-                """Set model parameters."""
-                self.params.update(params)
-                return self
-
-        return WaveNet(**params)
 
     def _create_tft_model(self, model_config: ModelConfig) -> Any:
         """Create Temporal Fusion Transformer model."""
@@ -2164,69 +1633,6 @@ class EnhancedModelFactory:
 
         return TemporalFusionTransformer(**params)
 
-    def _create_tabnet_attention_model(self, model_config: ModelConfig) -> Any:
-        """Create TabNet with attention model."""
-
-        # Default parameters
-        default_params = {
-            'n_d': 64,
-            'n_a': 64,
-            'n_steps': 5,
-            'gamma': 1.5,
-            'lambda_sparse': 1e-3,
-            'optimizer_params': {'lr': 2e-2},
-            'batch_size': 32,
-            'epochs': 100
-        }
-
-        # Merge with user parameters
-        params = {**default_params, **model_config.model_params}
-
-        # This is a placeholder implementation
-        class TabNetAttention:
-            def __init__(self, **kwargs):
-                self.params = kwargs
-                self.is_fitted = False
-                self.n_d = kwargs.get('n_d', 64)
-                self.n_a = kwargs.get('n_a', 64)
-                self.n_steps = kwargs.get('n_steps', 5)
-                self.gamma = kwargs.get('gamma', 1.5)
-                self.lambda_sparse = kwargs.get('lambda_sparse', 1e-3)
-                self.optimizer_params = kwargs.get('optimizer_params', {'lr': 2e-2})
-                self.batch_size = kwargs.get('batch_size', 32)
-                self.epochs = kwargs.get('epochs', 100)
-
-            def fit(self, X, y):
-                """Fit the TabNetAttention model."""
-                # Placeholder implementation
-                self.is_fitted = True
-                self.feature_names_ = getattr(X, 'columns', None) if hasattr(X, 'columns') else None
-                return self
-
-            def predict(self, X):
-                """Make predictions using the fitted model."""
-                if not self.is_fitted:
-                    raise ValueError("Model not fitted")
-                # Placeholder implementation
-                return np.zeros(len(X))
-
-            def predict_proba(self, X):
-                """Predict class probabilities."""
-                if not self.is_fitted:
-                    raise ValueError("Model not fitted")
-                # Placeholder implementation
-                return np.random.dirichlet(np.ones(2), len(X))
-
-            def get_params(self, deep=True):
-                """Get model parameters."""
-                return self.params.copy()
-
-            def set_params(self, **params):
-                """Set model parameters."""
-                self.params.update(params)
-                return self
-
-        return TabNetAttention(**params)
 
     def _create_elastic_net_model(self, model_config: ModelConfig) -> Any:
         """Create Elastic Net model."""
@@ -2272,55 +1678,7 @@ class EnhancedModelFactory:
 
         return model
 
-    def _create_elastic_net_quantile_model(self, model_config: ModelConfig) -> Any:
-        """Create Elastic Net with Quantile Regression."""
 
-        # This is a placeholder implementation
-        class ElasticNetQuantile:
-            def __init__(self, **kwargs):
-                self.params = kwargs
-                self.is_fitted = False
-                self.alpha = kwargs.get('alpha', 0.1)
-                self.l1_ratio = kwargs.get('l1_ratio', 0.5)
-                self.quantiles = kwargs.get('quantiles', [0.05, 0.25, 0.5, 0.75, 0.95])
-
-            def fit(self, X, y):
-                # Placeholder implementation
-                self.is_fitted = True
-                return self
-
-            def predict(self, X):
-                if not self.is_fitted:
-                    raise ValueError("Model not fitted")
-                # Placeholder implementation
-                return np.zeros(len(X))
-
-        return ElasticNetQuantile(**model_config.model_params)
-
-    def _create_quantile_regression_model(self, model_config: ModelConfig) -> Any:
-        """Create Quantile Regression model."""
-
-        # This is a placeholder implementation
-        class QuantileRegression:
-            def __init__(self, **kwargs):
-                self.params = kwargs
-                self.is_fitted = False
-                self.quantiles = kwargs.get('quantiles', [0.05, 0.25, 0.5, 0.75, 0.95])
-                self.alpha = kwargs.get('alpha', 0.1)
-                self.solver = kwargs.get('solver', 'highs')
-
-            def fit(self, X, y):
-                # Placeholder implementation
-                self.is_fitted = True
-                return self
-
-            def predict(self, X):
-                if not self.is_fitted:
-                    raise ValueError("Model not fitted")
-                # Placeholder implementation
-                return np.zeros(len(X))
-
-        return QuantileRegression(**model_config.model_params)
 
     def _create_huber_regression_model(self, model_config: ModelConfig) -> Any:
         """Create Huber Regression model."""
@@ -2448,72 +1806,6 @@ class EnhancedModelFactory:
 
         return model
 
-    def _create_node_model(self, model_config: ModelConfig) -> Any:
-        """Create Neural Oblivious Decision Ensembles (NODE) model with overfitting prevention."""
-
-        # Default parameters with overfitting prevention
-        default_params = {
-            'n_d': 64,
-            'n_a': 64,
-            'n_steps': 5,
-            'gamma': 1.5,
-            'lambda_sparse': 1e-3,    # Sparsity regularization
-            'dropout': 0.1,           # Dropout for overfitting prevention
-            'l2_regularization': 0.01, # L2 regularization
-            'batch_size': 32,
-            'epochs': 100
-        }
-
-        # Merge with user parameters
-        params = {**default_params, **model_config.model_params}
-
-        # This is a placeholder implementation
-        # In practice, you would implement a custom NODE class with proper overfitting prevention
-        class NODE:
-            def __init__(self, **kwargs):
-                self.params = kwargs
-                self.is_fitted = False
-                self.n_d = kwargs.get('n_d', 64)
-                self.n_a = kwargs.get('n_a', 64)
-                self.n_steps = kwargs.get('n_steps', 5)
-                self.gamma = kwargs.get('gamma', 1.5)
-                self.lambda_sparse = kwargs.get('lambda_sparse', 1e-3)
-                self.dropout = kwargs.get('dropout', 0.1)
-                self.l2_regularization = kwargs.get('l2_regularization', 0.01)
-                self.batch_size = kwargs.get('batch_size', 32)
-                self.epochs = kwargs.get('epochs', 100)
-
-            def fit(self, X, y):
-                """Fit the NODE model with overfitting prevention."""
-                # Placeholder implementation with overfitting prevention
-                self.is_fitted = True
-                self.feature_names_ = getattr(X, 'columns', None) if hasattr(X, 'columns') else None
-                return self
-
-            def predict(self, X):
-                """Make predictions using the fitted model."""
-                if not self.is_fitted:
-                    raise ValueError("Model not fitted")
-                # Placeholder implementation
-                return np.zeros(len(X))
-
-            def predict_proba(self, X):
-                """Predict class probabilities."""
-                if not self.is_fitted:
-                    raise ValueError("Model not fitted")
-                # Placeholder implementation
-                return np.random.dirichlet(np.ones(2), len(X))
-
-            def get_params(self, deep=True):
-                """Get model parameters."""
-                return self.params.copy()
-
-            def set_params(self, **params):
-                """Set model parameters."""
-                self.params.update(params)
-                return self
-
-        return NODE(**params)
 
     def _create_nas_model(self, model_config: ModelConfig) -> Any:
         """Create NAS (Neural Architecture Search) model for regime detection."""
@@ -2856,92 +2148,4 @@ class EnhancedModelFactory:
             self.logger.warning(f"⚠️ PatchTST-CatBoost creation failed: {e}")
             return self._create_catboost_model(model_config)
 
-    def _create_causal_dilated_tcn_model(self, model_config: ModelConfig) -> Any:
-        """Create Causal Dilated TCN model for sequence classification/regression."""
-        # Default parameters for causal dilated TCN
-        default_params = {
-            'residual_blocks': model_config.model_params.get('residual_blocks', 8),
-            'channels': model_config.model_params.get('channels', 64),
-            'kernel_size': model_config.model_params.get('kernel_size', 3),
-            'dilations': model_config.model_params.get('dilations', [1, 2, 4, 8, 16, 32, 64]),
-            'dropout': model_config.model_params.get('dropout', 0.1),
-            'use_batch_norm': model_config.model_params.get('use_batch_norm', True),
-            'activation': model_config.model_params.get('activation', 'relu'),
-            'input_dim': model_config.model_params.get('input_dim', 100),
-            'output_dim': model_config.n_outputs,
-            'seq_length': model_config.model_params.get('seq_length', 100)
-        }
 
-        # This is a placeholder implementation
-        # In practice, you would implement a custom CausalDilatedTCN class
-        class CausalDilatedTCN:
-            def __init__(self, **kwargs):
-                self.params = kwargs
-                self.is_fitted = False
-
-            def fit(self, X, y, **kwargs):
-                """Fit the causal dilated TCN model."""
-                self.is_fitted = True
-                self.feature_names_ = getattr(X, 'columns', None) if hasattr(X, 'columns') else None
-                return self
-
-            def predict(self, X):
-                """Make predictions with causal dilated TCN."""
-                if not self.is_fitted:
-                    raise ValueError("Model must be fitted before prediction")
-                # Placeholder prediction logic
-                return np.zeros((X.shape[0], self.params['output_dim']))
-
-            def predict_proba(self, X):
-                """Predict probabilities for classification."""
-                if not self.is_fitted:
-                    raise ValueError("Model must be fitted before prediction")
-                # Placeholder probability prediction
-                return np.random.rand(X.shape[0], self.params['output_dim'])
-
-        model = CausalDilatedTCN(**default_params)
-        self.logger.info(f"✅ Causal Dilated TCN created with {default_params['residual_blocks']} blocks")
-        return model
-
-    def _create_tft_small_model(self, model_config: ModelConfig) -> Any:
-        """Create TFT-Small model for sequence tasks."""
-        # Default parameters for TFT-Small
-        default_params = {
-            'hidden_size': model_config.model_params.get('hidden_size', 64),
-            'attention_heads': model_config.model_params.get('attention_heads', 4),
-            'dropout': model_config.model_params.get('dropout', 0.1),
-            'num_layers': model_config.model_params.get('num_layers', 3),
-            'use_time_features': model_config.model_params.get('use_time_features', True),
-            'use_static_features': model_config.model_params.get('use_static_features', True),
-            'input_dim': model_config.model_params.get('input_dim', 100),
-            'output_dim': model_config.n_outputs,
-            'seq_length': model_config.model_params.get('seq_length', 100)
-        }
-
-        # This is a placeholder implementation
-        # In practice, you would implement a custom TFTSmall class
-        class TFTSmall:
-            def __init__(self, **kwargs):
-                self.params = kwargs
-                self.is_fitted = False
-
-            def fit(self, X, y, **kwargs):
-                """Fit the TFT-Small model."""
-                self.is_fitted = True
-                self.feature_names_ = getattr(X, 'columns', None) if hasattr(X, 'columns') else None
-                return self
-
-            def predict(self, X):
-                """Make predictions with TFT-Small."""
-                if not self.is_fitted:
-                    raise ValueError("Model must be fitted before prediction")
-                # Placeholder prediction logic
-                return np.zeros((X.shape[0], self.params['output_dim']))
-
-        model = TFTSmall(**default_params)
-        self.logger.info(f"✅ TFT-Small created with {default_params['hidden_size']} hidden units")
-        return model
-
-def create_model_factory(config: Optional[Dict[str, Any]] = None) -> EnhancedModelFactory:
-    """Create an enhanced model factory instance."""
-    return EnhancedModelFactory(config)

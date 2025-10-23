@@ -65,9 +65,31 @@ def safe_operation(operation_name: str, *args, **kwargs):
         Result of the operation or None if it fails
     """
     try:
-        # This is a placeholder - in a real implementation you'd call the actual operation
         logger.debug(f"Executing safe operation: {operation_name}")
-        return None
+        
+        # Execute the operation with timeout and error handling
+        import signal
+        import time
+        
+        def timeout_handler(signum, frame):
+            raise TimeoutError(f"Operation '{operation_name}' timed out")
+        
+        # Set timeout if specified
+        timeout = kwargs.pop('timeout', 30)  # Default 30 second timeout
+        signal.signal(signal.SIGALRM, timeout_handler)
+        signal.alarm(timeout)
+        
+        try:
+            # Execute the operation
+            result = operation(*args, **kwargs)
+            signal.alarm(0)  # Cancel timeout
+            return result
+        except TimeoutError:
+            logger.warning(f"Operation '{operation_name}' timed out after {timeout} seconds")
+            return None
+        finally:
+            signal.alarm(0)  # Ensure timeout is cancelled
+            
     except Exception as e:
         logger.error(f"Error in safe operation '{operation_name}': {e}")
         return None

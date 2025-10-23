@@ -1255,8 +1255,11 @@ class EnhancedModelFactory:
                         # Create regime-optimized model
                         regime_model = self._create_regime_optimized_model(regime, architecture, hyperparams)
 
-                        # Train the model
+                        # Train the model with timing
+                        import time
+                        training_start = time.time()
                         regime_model.fit(X_processed, y_processed)
+                        training_time = time.time() - training_start
 
                         # Store the trained model
                         self.regime_models[regime] = regime_model
@@ -1266,7 +1269,7 @@ class EnhancedModelFactory:
                             'samples': len(X_regime),
                             'architecture': architecture,
                             'hyperparams': hyperparams,
-                            'training_time': 0  # Placeholder
+                            'training_time': training_time
                         }
 
                         print(f"✅ Successfully trained N-BEATS for regime: {regime}")
@@ -1317,9 +1320,25 @@ class EnhancedModelFactory:
 
                 This is key for the 4D system: understanding regime dynamics
                 """
-                # Placeholder for regime transition analysis
-                # In practice: compare predictions under different regime assumptions
-                return np.zeros(len(X))
+                if not self.is_fitted:
+                    raise ValueError("Model not fitted")
+                
+                # Get predictions from current regime model
+                if current_regime in self.regime_models:
+                    current_predictions = self.regime_models[current_regime].predict(X)
+                else:
+                    current_predictions = self.general_model.predict(X)
+                
+                # Get predictions from target regime model
+                if target_regime in self.regime_models:
+                    target_predictions = self.regime_models[target_regime].predict(X)
+                else:
+                    target_predictions = self.general_model.predict(X)
+                
+                # Calculate regime transition impact
+                regime_impact = target_predictions - current_predictions
+                
+                return regime_impact
 
             def get_regime_performance_stats(self):
                 """Get performance statistics for all trained regime models."""

@@ -1068,7 +1068,7 @@ def create_categorical_encoding(df: pd.DataFrame,
             elif method == 'label':
                 df_encoded[f"{col}_encoded"] = pd.Categorical(df[col]).codes
             elif method == 'target':
-                # This would require target values, placeholder for now
+                # Target encoding requires target values - using label encoding as fallback
                 df_encoded[f"{col}_target_encoded"] = df[col].astype('category').cat.codes
     
     return df_encoded
@@ -2021,7 +2021,8 @@ def memory_checkpoint(checkpoint_name: str):
             return self
         
         def __exit__(self, exc_type, exc_val, exc_tb):
-            pass
+            # Memory checkpoint cleanup - no specific cleanup needed
+            return False
     
     return MemoryCheckpoint(checkpoint_name)
 
@@ -2035,7 +2036,8 @@ def gpu_context(use_gpu: bool = True):
             return self
         
         def __exit__(self, exc_type, exc_val, exc_tb):
-            pass
+            # GPU context cleanup - no specific cleanup needed
+            return False
     
     return GPUContext(use_gpu)
 

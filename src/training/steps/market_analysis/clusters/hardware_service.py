@@ -798,16 +798,12 @@ class HardwareService:
             if self._hardware_modules_available and self.m1_optimizer is not None:
                 return self.m1_optimizer.get_optimization_context()
             else:
-                # Return dummy context manager
-                class DummyContext:
-                    def __enter__(self): return self
-                    def __exit__(self, *args): pass
-                return DummyContext()
+                # Return a proper no-op context manager instead of dummy implementation
+                from contextlib import nullcontext
+                return nullcontext()
 
         except Exception as e:
             tprint(f"❌ Optimization context creation failed: {e}", "ERROR")
-            # Return dummy context manager as fallback
-            class DummyContext:
-                def __enter__(self): return self
-                def __exit__(self, *args): pass
-            return DummyContext()
+            # Return a proper no-op context manager as fallback
+            from contextlib import nullcontext
+            return nullcontext()

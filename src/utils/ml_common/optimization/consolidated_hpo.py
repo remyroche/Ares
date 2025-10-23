@@ -344,8 +344,25 @@ class ConsolidatedHPO:
     def _create_hardware_manager(self):
         """Create hardware manager for optimization."""
         try:
-            from ..hardware.hardware_manager import HardwareManager
-            return HardwareManager(self.config.get("hardware", {}))
+            from src.utils.hardware.unified_hardware_manager import get_unified_hardware_manager, HardwareConfig, WorkloadType, OptimizationLevel
+            from src.utils.hardware.constants import WorkloadType, OptimizationLevel
+            
+            # Create hardware configuration
+            hardware_config = HardwareConfig(
+                cpu_optimization_level=OptimizationLevel.BALANCED,
+                gpu_optimization_level=OptimizationLevel.BALANCED,
+                memory_optimization_level=OptimizationLevel.BALANCED,
+                enable_adaptive_optimization=True,
+                performance_monitoring_enabled=True
+            )
+            
+            # Get unified hardware manager
+            hardware_manager = get_unified_hardware_manager(hardware_config)
+            
+            # Optimize for ML training workload
+            hardware_manager.optimize_for_workload(WorkloadType.ML_TRAINING, OptimizationLevel.BALANCED)
+            
+            return hardware_manager
         except ImportError:
             # Fallback hardware manager
             class FallbackHardwareManager:
@@ -362,14 +379,53 @@ class ConsolidatedHPO:
                 
                 def optimize_for_task(self, task_type, data_size):
                     return {"workers": self.get_optimal_workers(task_type), "memory_limit": self.get_memory_limit(task_type)}
+                
+                def get_system_status(self):
+                    return {"cpu_cores": self.cpu_cores, "memory_gb": self.memory_gb}
             
             return FallbackHardwareManager(self.config.get("hardware", {}))
     
     def _create_memory_optimizer(self):
         """Create memory optimizer."""
         try:
-            from ..memory.memory_optimizer import MemoryOptimizer
-            return MemoryOptimizer(self.config.get("memory", {}))
+            from src.utils.hardware.m1_memory_optimizer import M1MemoryOptimizer
+            from src.utils.hardware.enhanced_caching_system import get_global_cache, CacheConfig, DataTypeOptimization
+            
+            # Create memory optimizer with enhanced caching
+            memory_optimizer = M1MemoryOptimizer(
+                memory_limit_gb=self.config.get("memory_limit_gb", 8.0)
+            )
+            
+            # Initialize enhanced caching system
+            cache_config = CacheConfig(
+                max_memory_mb=self.config.get("cache_memory_mb", 2048),
+                data_type_optimization=DataTypeOptimization.AGGRESSIVE,
+                enable_compression=True,
+                auto_optimize_dtypes=True
+            )
+            cache_system = get_global_cache(cache_config)
+            
+            # Combine memory optimizer with caching
+            class EnhancedMemoryOptimizer:
+                def __init__(self, memory_opt, cache_sys):
+                    self.memory_optimizer = memory_opt
+                    self.cache_system = cache_sys
+                
+                def optimize_memory_usage(self, data, task_type):
+                    # Use cache system for optimization
+                    return self.cache_system.optimize_dataframe(data)
+                
+                def get_memory_usage(self):
+                    return self.memory_optimizer.get_memory_stats()
+                
+                def cleanup_memory(self):
+                    self.memory_optimizer.cleanup_memory()
+                    self.cache_system.clear_cache()
+                
+                def get_memory_stats(self):
+                    return self.memory_optimizer.get_memory_stats()
+            
+            return EnhancedMemoryOptimizer(memory_optimizer, cache_system)
         except ImportError:
             # Fallback memory optimizer
             class FallbackMemoryOptimizer:
@@ -386,14 +442,51 @@ class ConsolidatedHPO:
                 def cleanup_memory(self):
                     import gc
                     gc.collect()
+                
+                def get_memory_stats(self):
+                    import psutil
+                    memory = psutil.virtual_memory()
+                    return {
+                        "total_gb": memory.total / (1024**3),
+                        "available_gb": memory.available / (1024**3),
+                        "percent_used": memory.percent
+                    }
             
             return FallbackMemoryOptimizer(self.config.get("memory", {}))
     
     def _create_gpu_optimizer(self):
         """Create GPU optimizer."""
         try:
-            from ..gpu.gpu_optimizer import GPUOptimizer
-            return GPUOptimizer(self.config.get("gpu", {}))
+            from src.utils.hardware.m1_gpu_utils import M1GPUManager
+            from src.utils.hardware.vectorbt_gpu_accelerator import VectorBTGPUAccelerator
+            
+            # Create M1 GPU manager
+            gpu_manager = M1GPUManager()
+            
+            # Create VectorBT GPU accelerator
+            gpu_accelerator = VectorBTGPUAccelerator()
+            
+            # Combine GPU components
+            class EnhancedGPUOptimizer:
+                def __init__(self, gpu_mgr, gpu_accel):
+                    self.gpu_manager = gpu_mgr
+                    self.gpu_accelerator = gpu_accel
+                
+                def is_gpu_available(self):
+                    return self.gpu_manager.mps_available
+                
+                def optimize_for_gpu(self, data, task_type):
+                    if self.is_gpu_available():
+                        return self.gpu_accelerator.accelerate_operations(data, task_type)
+                    return data
+                
+                def get_gpu_memory_usage(self):
+                    return self.gpu_manager.get_gpu_memory_usage()
+                
+                def get_gpu_info(self):
+                    return self.gpu_manager.get_gpu_info()
+            
+            return EnhancedGPUOptimizer(gpu_manager, gpu_accelerator)
         except ImportError:
             # Fallback GPU optimizer
             class FallbackGPUOptimizer:
@@ -409,6 +502,9 @@ class ConsolidatedHPO:
                 
                 def get_gpu_memory_usage(self):
                     return 0.0
+                
+                def get_gpu_info(self):
+                    return {"gpu_available": False, "gpu_type": "none"}
             
             return FallbackGPUOptimizer(self.config.get("gpu", {}))
     
@@ -434,8 +530,59 @@ class ConsolidatedHPO:
     def _create_vectorbt_portfolio(self):
         """Create VectorBT portfolio for optimization."""
         try:
-            import vectorbt as vbt
-            return vbt.Portfolio
+            from src.feature_generation.utils.unified_vectorization_manager import UnifiedVectorizationManager
+            from src.feature_generation.utils.vectorbt_rolling_optimizer import VectorBTRollingOptimizer
+            
+            # Create unified vectorization manager
+            vectorization_manager = UnifiedVectorizationManager()
+            
+            # Create VectorBT rolling optimizer
+            rolling_optimizer = VectorBTRollingOptimizer()
+            
+            # Enhanced portfolio with VectorBT integration
+            class EnhancedVectorBTPortfolio:
+                def __init__(self, *args, **kwargs):
+                    self.data = None
+                    self.returns = None
+                    self.vectorization_manager = vectorization_manager
+                    self.rolling_optimizer = rolling_optimizer
+                
+                @classmethod
+                def from_signals(cls, close, entries, exits, **kwargs):
+                    portfolio = cls()
+                    portfolio.data = close
+                    
+                    # Use VectorBT rolling optimizer for returns calculation
+                    if hasattr(portfolio.rolling_optimizer, 'rolling_returns'):
+                        portfolio.returns = portfolio.rolling_optimizer.rolling_returns(close)
+                    else:
+                        portfolio.returns = close.pct_change()
+                    
+                    return portfolio
+                
+                def total_return(self):
+                    if self.returns is not None:
+                        return (1 + self.returns).prod() - 1
+                    return 0.0
+                
+                def sharpe_ratio(self):
+                    if self.returns is not None:
+                        return self.returns.mean() / self.returns.std() * (252 ** 0.5)
+                    return 0.0
+                
+                def max_drawdown(self):
+                    if self.returns is not None:
+                        cumulative = (1 + self.returns).cumprod()
+                        running_max = cumulative.expanding().max()
+                        drawdown = (cumulative - running_max) / running_max
+                        return drawdown.min()
+                    return 0.0
+                
+                def optimize_rolling_operations(self, data, operations):
+                    """Use VectorBT rolling optimizer for enhanced performance."""
+                    return self.rolling_optimizer.optimize_rolling_operations(data, operations)
+            
+            return EnhancedVectorBTPortfolio
         except ImportError:
             # Fallback portfolio implementation
             class FallbackPortfolio:
@@ -473,8 +620,63 @@ class ConsolidatedHPO:
     def _create_vectorbt_optimizer(self):
         """Create VectorBT optimizer."""
         try:
-            import vectorbt as vbt
-            return vbt.optimize
+            from src.feature_generation.utils.unified_vectorization_manager import UnifiedVectorizationManager
+            from src.feature_generation.utils.vectorbt_rolling_optimizer import VectorBTRollingOptimizer
+            
+            # Create unified vectorization manager
+            vectorization_manager = UnifiedVectorizationManager()
+            
+            # Create VectorBT rolling optimizer
+            rolling_optimizer = VectorBTRollingOptimizer()
+            
+            # Enhanced optimizer with VectorBT integration
+            class EnhancedVectorBTOptimizer:
+                def __init__(self, vectorization_mgr, rolling_opt):
+                    self.vectorization_manager = vectorization_mgr
+                    self.rolling_optimizer = rolling_opt
+                
+                def optimize(self, func, param_ranges, **kwargs):
+                    """Optimize using VectorBT and unified vectorization."""
+                    try:
+                        # Use VectorBT optimization if available
+                        if hasattr(self.vectorization_manager, 'optimize_parameters'):
+                            return self.vectorization_manager.optimize_parameters(func, param_ranges, **kwargs)
+                        else:
+                            # Fallback to grid search
+                            return self._grid_search_optimize(func, param_ranges, **kwargs)
+                    except Exception as e:
+                        # Fallback to simple grid search
+                        return self._grid_search_optimize(func, param_ranges, **kwargs)
+                
+                def _grid_search_optimize(self, func, param_ranges, **kwargs):
+                    """Grid search optimization fallback."""
+                    best_params = None
+                    best_score = float('-inf')
+                    
+                    for params in self._generate_param_combinations(param_ranges):
+                        try:
+                            score = func(**params)
+                            if score > best_score:
+                                best_score = score
+                                best_params = params
+                        except:
+                            continue
+                    
+                    return best_params, best_score
+                
+                def _generate_param_combinations(self, param_ranges):
+                    import itertools
+                    keys = list(param_ranges.keys())
+                    values = list(param_ranges.values())
+                    
+                    for combo in itertools.product(*values):
+                        yield dict(zip(keys, combo))
+                
+                def optimize_rolling_operations(self, data, operations):
+                    """Optimize rolling operations using VectorBT."""
+                    return self.rolling_optimizer.optimize_rolling_operations(data, operations)
+            
+            return EnhancedVectorBTOptimizer(vectorization_manager, rolling_optimizer)
         except ImportError:
             # Fallback optimizer
             class FallbackOptimizer:

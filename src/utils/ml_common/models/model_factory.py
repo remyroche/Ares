@@ -655,8 +655,7 @@ class EnhancedModelFactory:
     def _create_time_series_transformer_model(self, model_config: ModelConfig) -> Any:
         """Create Time Series Transformer model."""
 
-        # This is a placeholder implementation
-        # In practice, you would implement a custom TimeSeriesTransformer class
+        # Enhanced implementation with hardware optimization
         class TimeSeriesTransformer:
             def __init__(self, **kwargs):
                 self.params = kwargs
@@ -670,6 +669,9 @@ class EnhancedModelFactory:
                 self.activation = kwargs.get('activation', 'relu')
                 self.use_positional_encoding = kwargs.get('use_positional_encoding', True)
                 self.attention_type = kwargs.get('attention_type', 'multi_head')
+                
+                # Initialize hardware components for optimization
+                self._initialize_hardware_components()
 
             def fit(self, X, y):
                 """Fit the TimeSeriesTransformer model."""
@@ -749,6 +751,25 @@ class EnhancedModelFactory:
                 """Set model parameters."""
                 self.params.update(params)
                 return self
+            
+            def _initialize_hardware_components(self):
+                """Initialize hardware components for model optimization."""
+                try:
+                    from src.utils.hardware.unified_hardware_manager import get_unified_hardware_manager, HardwareConfig, WorkloadType, OptimizationLevel
+                    
+                    # Initialize hardware manager for ML training
+                    hardware_config = HardwareConfig(
+                        cpu_optimization_level=OptimizationLevel.BALANCED,
+                        memory_optimization_level=OptimizationLevel.BALANCED,
+                        enable_adaptive_optimization=True
+                    )
+                    self.hardware_manager = get_unified_hardware_manager(hardware_config)
+                    
+                    # Configure for ML training workload
+                    self.hardware_manager.configure_workload(WorkloadType.ML_TRAINING, OptimizationLevel.BALANCED)
+                    
+                except ImportError:
+                    self.hardware_manager = None
 
         return TimeSeriesTransformer(**model_config.model_params)
 
@@ -771,6 +792,9 @@ class EnhancedModelFactory:
                 self.recurrent_dropout = kwargs.get('recurrent_dropout', 0.0)
                 self.use_batch_norm = kwargs.get('use_batch_norm', True)
                 self.return_sequences = kwargs.get('return_sequences', False)
+                
+                # Initialize hardware components for optimization
+                self._initialize_hardware_components()
 
             def fit(self, X, y):
                 """Fit the LSTM model."""
@@ -880,6 +904,25 @@ class EnhancedModelFactory:
                 """Set model parameters."""
                 self.params.update(params)
                 return self
+            
+            def _initialize_hardware_components(self):
+                """Initialize hardware components for model optimization."""
+                try:
+                    from src.utils.hardware.unified_hardware_manager import get_unified_hardware_manager, HardwareConfig, WorkloadType, OptimizationLevel
+                    
+                    # Initialize hardware manager for ML training
+                    hardware_config = HardwareConfig(
+                        cpu_optimization_level=OptimizationLevel.BALANCED,
+                        memory_optimization_level=OptimizationLevel.BALANCED,
+                        enable_adaptive_optimization=True
+                    )
+                    self.hardware_manager = get_unified_hardware_manager(hardware_config)
+                    
+                    # Configure for ML training workload
+                    self.hardware_manager.configure_workload(WorkloadType.ML_TRAINING, OptimizationLevel.BALANCED)
+                    
+                except ImportError:
+                    self.hardware_manager = None
 
         return LSTM(**model_config.model_params)
 

@@ -37,6 +37,9 @@ class MLDynamicTargetPredictor:
         # State
         self.is_initialized = False
         self.model = None
+        
+        # Initialize hardware components
+        self._initialize_hardware_components()
 
     @handles_errors(fallback=False)
     async def initialize(self) -> bool:
@@ -93,6 +96,10 @@ class MLDynamicTargetPredictor:
                 self.logger.error("Predictor not initialized")
                 return None
 
+            # Optimize hardware for ML inference if available
+            if self.hardware_manager:
+                self.hardware_manager.optimize_for_inference()
+            
             # Try ML model prediction first
             ml_prediction = await self._predict_with_ml_model(market_data, position_data)
             
@@ -157,6 +164,25 @@ class MLDynamicTargetPredictor:
             "confidence_threshold": self.confidence_threshold,
             "max_target_age": self.max_target_age,
         }
+    
+    def _initialize_hardware_components(self):
+        """Initialize hardware components for ML model optimization."""
+        try:
+            from src.utils.hardware.unified_hardware_manager import get_unified_hardware_manager, HardwareConfig, WorkloadType, OptimizationLevel
+            
+            # Initialize hardware manager for ML inference
+            hardware_config = HardwareConfig(
+                cpu_optimization_level=OptimizationLevel.BALANCED,
+                memory_optimization_level=OptimizationLevel.BALANCED,
+                enable_adaptive_optimization=True
+            )
+            self.hardware_manager = get_unified_hardware_manager(hardware_config)
+            
+            # Configure for ML inference workload
+            self.hardware_manager.configure_workload(WorkloadType.ML_TRAINING, OptimizationLevel.BALANCED)
+            
+        except ImportError:
+            self.hardware_manager = None
 
     async def _load_ml_model(self, model_path: str) -> Optional[Dict[str, Any]]:
         """

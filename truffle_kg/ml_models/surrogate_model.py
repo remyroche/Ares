@@ -58,21 +58,117 @@ class SurrogateModel:
         
     def fit(self, X: np.ndarray, y: np.ndarray) -> Dict[str, float]:
         """Fit the surrogate model"""
-        raise NotImplementedError
+        if self.model is None:
+            raise ValueError("Model not initialized. Use a specific model class like RandomForestSurrogate.")
+        
+        logger.info(f"Fitting {self.__class__.__name__} surrogate model...")
+        
+        # Validate inputs
+        if len(X) != len(y):
+            raise ValueError(f"X and y must have the same length. Got X: {len(X)}, y: {len(y)}")
+        
+        if len(X) == 0:
+            raise ValueError("Cannot fit model with empty data")
+        
+        # Store feature and target information
+        self.feature_names = [f"feature_{i}" for i in range(X.shape[1])] if self.feature_names is None else self.feature_names
+        self.target_names = [f"target_{i}" for i in range(y.shape[1])] if len(y.shape) > 1 and self.target_names is None else self.target_names
+        
+        # Scale features
+        X_scaled = self.scaler.fit_transform(X)
+        
+        # Split data for validation
+        X_train, X_test, y_train, y_test = train_test_split(
+            X_scaled, y, test_size=self.config.test_size, random_state=self.config.random_state
+        )
+        
+        # Fit the model
+        self.model.fit(X_train, y_train)
+        
+        # Evaluate on test set
+        y_pred = self.model.predict(X_test)
+        
+        # Calculate metrics
+        metrics = {
+            'mse': mean_squared_error(y_test, y_pred),
+            'rmse': np.sqrt(mean_squared_error(y_test, y_pred)),
+            'mae': mean_absolute_error(y_test, y_pred),
+            'r2': r2_score(y_test, y_pred)
+        }
+        
+        self.is_fitted = True
+        logger.info(f"{self.__class__.__name__} fitted successfully. R² = {metrics['r2']:.3f}")
+        
+        return metrics
     
     def predict(self, X: np.ndarray) -> np.ndarray:
         """Make predictions"""
         if not self.is_fitted:
             raise ValueError("Model must be fitted before making predictions")
-        raise NotImplementedError
+        
+        if self.model is None:
+            raise ValueError("Model not initialized. Use a specific model class like RandomForestSurrogate.")
+        
+        # Validate input shape
+        if len(X.shape) != 2:
+            raise ValueError(f"X must be 2D array, got shape {X.shape}")
+        
+        # Scale features using the fitted scaler
+        X_scaled = self.scaler.transform(X)
+        
+        # Make predictions
+        predictions = self.model.predict(X_scaled)
+        
+        logger.debug(f"Made predictions for {len(X)} samples")
+        return predictions
     
     def save(self, filepath: str):
         """Save the model"""
-        raise NotImplementedError
+        if not self.is_fitted:
+            raise ValueError("Model must be fitted before saving")
+        
+        if self.model is None:
+            raise ValueError("Model not initialized. Use a specific model class like RandomForestSurrogate.")
+        
+        # Prepare model data for saving
+        model_data = {
+            'model': self.model,
+            'scaler': self.scaler,
+            'is_fitted': self.is_fitted,
+            'feature_names': self.feature_names,
+            'target_names': self.target_names,
+            'config': self.config,
+            'model_class': self.__class__.__name__
+        }
+        
+        # Save using joblib for most models
+        joblib.dump(model_data, filepath)
+        logger.info(f"{self.__class__.__name__} model saved to {filepath}")
     
     def load(self, filepath: str):
         """Load the model"""
-        raise NotImplementedError
+        if not Path(filepath).exists():
+            raise FileNotFoundError(f"Model file not found: {filepath}")
+        
+        # Load model data
+        model_data = joblib.load(filepath)
+        
+        # Restore model state
+        self.model = model_data['model']
+        self.scaler = model_data['scaler']
+        self.is_fitted = model_data['is_fitted']
+        self.feature_names = model_data['feature_names']
+        self.target_names = model_data['target_names']
+        self.config = model_data['config']
+        
+        logger.info(f"{self.__class__.__name__} model loaded from {filepath}")
+        
+        # Validate loaded model
+        if self.model is None:
+            raise ValueError("Loaded model is None. File may be corrupted.")
+        
+        if not self.is_fitted:
+            logger.warning("Loaded model is not fitted. You may need to retrain it.")
 
 class RandomForestSurrogate(SurrogateModel):
     """Random Forest surrogate model"""

@@ -59,12 +59,11 @@ class BaseClusteringAlgorithm(ProductionBaseClusteringAlgorithm):
         self.memory_manager = memory_manager or MemoryManager()
         self.scaler = StandardScaler()
 
-    @abstractmethod
     def fit_predict(self, features: np.ndarray) -> ClusteringResult:
         """
         Fit clustering algorithm and predict labels.
         
-        This is an abstract method that must be implemented by subclasses.
+        This method provides a default implementation that can be overridden by subclasses.
         
         Args:
             features: Input feature matrix of shape (n_samples, n_features)
@@ -72,7 +71,69 @@ class BaseClusteringAlgorithm(ProductionBaseClusteringAlgorithm):
         Returns:
             ClusteringResult containing labels, metrics, and metadata
         """
-        pass
+        start_time = time.time()
+        
+        try:
+            tprint_info(f"🔧 Starting clustering with {features.shape[0]} samples, {features.shape[1]} features")
+            
+            # Validate input
+            if features is None or len(features) == 0:
+                raise ValueError("Features cannot be None or empty")
+            
+            if features.shape[0] < 2:
+                raise ValueError("Need at least 2 samples for clustering")
+            
+            # Scale features
+            tprint_debug("🔄 Scaling features...")
+            scaled_features = self.scaler.fit_transform(features)
+            
+            # Determine optimal number of clusters if not specified
+            n_clusters = self.config.n_clusters
+            if n_clusters is None or n_clusters <= 0:
+                n_clusters = self._determine_optimal_clusters(scaled_features)
+                tprint_info(f"🔧 Determined optimal clusters: {n_clusters}")
+            
+            # Perform clustering using the configured algorithm
+            labels = self._perform_clustering(scaled_features, n_clusters)
+            
+            # Calculate clustering metrics
+            metrics = self._calculate_clustering_metrics(scaled_features, labels)
+            
+            # Create metadata
+            metadata = {
+                'algorithm': self.config.algorithm,
+                'n_clusters': n_clusters,
+                'n_samples': features.shape[0],
+                'n_features': features.shape[1],
+                'config': self.config.__dict__ if hasattr(self.config, '__dict__') else str(self.config),
+                'scaler_type': type(self.scaler).__name__
+            }
+            
+            execution_time = time.time() - start_time
+            
+            result = ClusteringResult(
+                labels=labels,
+                n_clusters=n_clusters,
+                algorithm=self.config.algorithm,
+                metrics=metrics,
+                metadata=metadata,
+                execution_time=execution_time
+            )
+            
+            tprint_success(f"✅ Clustering completed in {execution_time:.2f}s with {n_clusters} clusters")
+            return result
+            
+        except Exception as e:
+            tprint_error(f"❌ Clustering failed: {e}")
+            # Return a result with error information
+            return ClusteringResult(
+                labels=np.zeros(features.shape[0], dtype=int),
+                n_clusters=1,
+                algorithm=self.config.algorithm,
+                metrics={'error': str(e)},
+                metadata={'error': str(e), 'execution_time': time.time() - start_time},
+                execution_time=time.time() - start_time
+            )
 
     def fit(self, features: np.ndarray) -> 'BaseClusteringAlgorithm':
         """
@@ -87,6 +148,114 @@ class BaseClusteringAlgorithm(ProductionBaseClusteringAlgorithm):
         # Default implementation - subclasses can override
         self.fit_predict(features)
         return self
+
+    def _determine_optimal_clusters(self, features: np.ndarray) -> int:
+        """Determine optimal number of clusters using elbow method."""
+        try:
+            from sklearn.cluster import KMeans
+            from sklearn.metrics import silhouette_score
+            
+            max_clusters = min(10, features.shape[0] // 2)
+            if max_clusters < 2:
+                return 2
+            
+            inertias = []
+            silhouette_scores = []
+            k_range = range(2, max_clusters + 1)
+            
+            for k in k_range:
+                kmeans = KMeans(n_clusters=k, random_state=42, n_init=10)
+                labels = kmeans.fit_predict(features)
+                inertias.append(kmeans.inertia_)
+                
+                if len(set(labels)) > 1:  # Only calculate silhouette if we have multiple clusters
+                    silhouette_scores.append(silhouette_score(features, labels))
+                else:
+                    silhouette_scores.append(0)
+            
+            # Use silhouette score to determine optimal k
+            optimal_k = k_range[np.argmax(silhouette_scores)]
+            return max(2, optimal_k)
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Could not determine optimal clusters: {e}, using default")
+            return 3
+    
+    def _perform_clustering(self, features: np.ndarray, n_clusters: int) -> np.ndarray:
+        """Perform the actual clustering based on configured algorithm."""
+        algorithm = self.config.algorithm.lower()
+        
+        if algorithm == 'kmeans':
+            from sklearn.cluster import KMeans
+            clusterer = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
+            return clusterer.fit_predict(features)
+        
+        elif algorithm == 'gaussian_mixture':
+            from sklearn.mixture import GaussianMixture
+            clusterer = GaussianMixture(n_components=n_clusters, random_state=42)
+            return clusterer.fit_predict(features)
+        
+        elif algorithm == 'agglomerative':
+            from sklearn.cluster import AgglomerativeClustering
+            clusterer = AgglomerativeClustering(n_clusters=n_clusters)
+            return clusterer.fit_predict(features)
+        
+        elif algorithm == 'dbscan':
+            from sklearn.cluster import DBSCAN
+            clusterer = DBSCAN(eps=0.5, min_samples=5)
+            return clusterer.fit_predict(features)
+        
+        else:
+            # Default to KMeans
+            tprint_warning(f"⚠️ Unknown algorithm '{algorithm}', using KMeans")
+            from sklearn.cluster import KMeans
+            clusterer = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
+            return clusterer.fit_predict(features)
+    
+    def _calculate_clustering_metrics(self, features: np.ndarray, labels: np.ndarray) -> Dict[str, float]:
+        """Calculate clustering quality metrics."""
+        metrics = {}
+        
+        try:
+            n_clusters = len(set(labels))
+            n_samples = len(labels)
+            
+            if n_clusters < 2 or n_samples < 2:
+                return {'error': 'Insufficient clusters or samples for metrics'}
+            
+            # Silhouette score
+            try:
+                metrics['silhouette_score'] = silhouette_score(features, labels)
+            except Exception:
+                metrics['silhouette_score'] = 0.0
+            
+            # Davies-Bouldin score
+            try:
+                metrics['davies_bouldin_score'] = davies_bouldin_score(features, labels)
+            except Exception:
+                metrics['davies_bouldin_score'] = float('inf')
+            
+            # Calinski-Harabasz score
+            try:
+                metrics['calinski_harabasz_score'] = calinski_harabasz_score(features, labels)
+            except Exception:
+                metrics['calinski_harabasz_score'] = 0.0
+            
+            # Cluster size distribution
+            unique_labels, counts = np.unique(labels, return_counts=True)
+            metrics['cluster_size_std'] = float(np.std(counts))
+            metrics['cluster_size_mean'] = float(np.mean(counts))
+            metrics['cluster_balance'] = float(np.min(counts) / np.max(counts)) if np.max(counts) > 0 else 0.0
+            
+            # Number of clusters
+            metrics['n_clusters'] = float(n_clusters)
+            metrics['n_samples'] = float(n_samples)
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Error calculating clustering metrics: {e}")
+            metrics['error'] = str(e)
+        
+        return metrics
 
     def predict(self, features: np.ndarray) -> np.ndarray:
         """

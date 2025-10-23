@@ -425,19 +425,9 @@ class MultiOutputModel(ABC):
                 from sklearn.ensemble import RandomForestRegressor
                 return RandomForestRegressor(n_estimators=100, random_state=42, n_jobs=-1)
         except Exception as e:
-            self.logger.warning(f"⚠️ Model creation failed for output {output_index}: {e}. Using LinearRegression fallback")
-            try:
-                from sklearn.linear_model import LinearRegression
-                return LinearRegression()
-            except Exception:
-                class DummyModel:
-                    def fit(self, X, y):
-                        self._mean = float(np.mean(y)) if len(y) else 0.0
-                        return self
-                    def predict(self, X):
-                        n = X.shape[0] if hasattr(X, 'shape') else len(X)
-                        return np.full(n, getattr(self, '_mean', 0.0))
-                return DummyModel()
+            self.logger.error(f"❌ Model creation failed for output {output_index}: {e}")
+            self.logger.error(f"❌ No fallback model available. Fast-failing instead of using dummy model.")
+            raise RuntimeError(f"Failed to create model for output {output_index}: {e}. No fallback available.")
 
     def validate_outputs(self, y: np.ndarray) -> bool:
         """Validate output data format."""

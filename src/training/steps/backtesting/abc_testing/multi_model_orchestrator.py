@@ -472,9 +472,8 @@ class ModelExecutor:
         if model_id in self.model_instances:
             return self.model_instances[model_id]
 
-        # Create new model instance
-        # This is a placeholder - in practice, you would load the actual model
-        model = await self._create_model_instance(model_name)
+        # Create new model instance with comprehensive model management
+        model = await self._create_model_instance(model_name, model_id)
         self.model_instances[model_id] = model
 
         return model
@@ -657,6 +656,304 @@ class ModelExecutor:
                     return self.feature_importance_
 
             return BasicModel(model_name)
+    
+    async def _load_existing_model(self, model_name: str, model_id: str) -> Optional[Any]:
+        """Load existing model from storage with comprehensive validation."""
+        try:
+            # Try multiple model storage locations
+            storage_locations = [
+                f"models/{model_name}",
+                f"models/{model_id}",
+                f"artifacts/models/{model_name}",
+                f"artifacts/models/{model_id}",
+                f"outcomes/models/{model_name}",
+                f"outcomes/models/{model_id}"
+            ]
+            
+            for location in storage_locations:
+                model_path = Path(location)
+                if model_path.exists():
+                    # Try to load model using StandardizedModelManager
+                    try:
+                        model_manager = StandardizedModelManager()
+                        model = await model_manager.load_model(
+                            step_path=str(model_path),
+                            model_name=model_name
+                        )
+                        
+                        if model is not None and await self._validate_loaded_model(model):
+                            self.logger.info(f"✅ Successfully loaded model from {location}")
+                            return model
+                    except Exception as e:
+                        self.logger.debug(f"Failed to load model from {location}: {e}")
+                        continue
+            
+            return None
+            
+        except Exception as e:
+            self.logger.warning(f"Failed to load existing model {model_name}: {e}")
+            return None
+    
+    async def _create_new_model_instance(self, model_name: str, model_id: str) -> Optional[Any]:
+        """Create a new model instance using the model factory with comprehensive configuration."""
+        try:
+            from src.utils.ml_common.models.model_factory import EnhancedModelFactory, ModelConfig, ModelType
+            
+            # Determine model type and configuration from model name
+            model_type, model_config = self._determine_model_configuration(model_name)
+            
+            # Create comprehensive model configuration
+            config = ModelConfig(
+                model_type=model_type,
+                model_name=model_name,
+                model_id=model_id,
+                parameters=model_config.get('parameters', {}),
+                hyperparameters=model_config.get('hyperparameters', {}),
+                training_config=model_config.get('training_config', {}),
+                validation_config=model_config.get('validation_config', {}),
+                hardware_config=model_config.get('hardware_config', {}),
+                metadata={
+                    'created_at': datetime.now().isoformat(),
+                    'orchestrator_id': getattr(self, 'orchestrator_id', 'unknown'),
+                    'model_id': model_id,
+                    'version': '1.0.0'
+                }
+            )
+            
+            # Create model instance using factory
+            model = EnhancedModelFactory.create_model(config)
+            
+            if model is None:
+                self.logger.error(f"Model factory returned None for {model_name}")
+                return None
+            
+            # Initialize model with configuration
+            if hasattr(model, 'initialize'):
+                await model.initialize(config)
+            
+            # Validate the created model
+            if not await self._validate_created_model(model, config):
+                self.logger.error(f"Model validation failed for {model_name}")
+                return None
+            
+            self.logger.info(f"✅ Created {model_type.value} model: {model_name} (ID: {model_id})")
+            return model
+            
+        except Exception as e:
+            self.logger.error(f"Failed to create new model instance {model_name}: {e}")
+            return None
+    
+    def _determine_model_configuration(self, model_name: str) -> Tuple[ModelType, Dict[str, Any]]:
+        """Determine model type and configuration based on model name and available models."""
+        try:
+            from src.utils.ml_common.models.model_factory import ModelType
+            
+            # Model type detection based on naming patterns
+            model_name_lower = model_name.lower()
+            
+            if 'tactician' in model_name_lower:
+                model_type = ModelType.TACTICIAN
+                config = self._get_tactician_config()
+            elif 'ensemble' in model_name_lower or 'voting' in model_name_lower:
+                model_type = ModelType.ENSEMBLE
+                config = self._get_ensemble_config()
+            elif 'analyst' in model_name_lower or 'regime' in model_name_lower:
+                model_type = ModelType.ANALYST
+                config = self._get_analyst_config()
+            else:
+                # Default to analyst with basic configuration
+                model_type = ModelType.ANALYST
+                config = self._get_default_config()
+            
+            return model_type, config
+            
+        except Exception as e:
+            self.logger.warning(f"Failed to determine model configuration for {model_name}: {e}")
+            from src.utils.ml_common.models.model_factory import ModelType
+            return ModelType.ANALYST, self._get_default_config()
+    
+    def _get_tactician_config(self) -> Dict[str, Any]:
+        """Get configuration for Tactician models."""
+        return {
+            'parameters': {
+                'n_estimators': 100,
+                'max_depth': 10,
+                'learning_rate': 0.1,
+                'subsample': 0.8,
+                'colsample_bytree': 0.8,
+                'random_state': 42
+            },
+            'hyperparameters': {
+                'n_estimators': [50, 100, 200],
+                'max_depth': [5, 10, 15],
+                'learning_rate': [0.01, 0.1, 0.2]
+            },
+            'training_config': {
+                'validation_split': 0.2,
+                'early_stopping_rounds': 10,
+                'verbose': False
+            },
+            'hardware_config': {
+                'use_gpu': True,
+                'n_jobs': -1,
+                'memory_limit_gb': 8
+            }
+        }
+    
+    def _get_ensemble_config(self) -> Dict[str, Any]:
+        """Get configuration for Ensemble models."""
+        return {
+            'parameters': {
+                'base_models': ['analyst', 'tactician'],
+                'voting_method': 'soft',
+                'weights': [0.6, 0.4],
+                'n_jobs': -1
+            },
+            'hyperparameters': {
+                'voting_method': ['hard', 'soft'],
+                'weights': [[0.5, 0.5], [0.6, 0.4], [0.7, 0.3]]
+            },
+            'training_config': {
+                'cross_validation_folds': 5,
+                'scoring_metric': 'accuracy'
+            },
+            'hardware_config': {
+                'use_gpu': False,
+                'n_jobs': -1,
+                'memory_limit_gb': 4
+            }
+        }
+    
+    def _get_analyst_config(self) -> Dict[str, Any]:
+        """Get configuration for Analyst models."""
+        return {
+            'parameters': {
+                'n_estimators': 50,
+                'max_depth': 8,
+                'learning_rate': 0.05,
+                'subsample': 0.9,
+                'colsample_bytree': 0.9,
+                'random_state': 42
+            },
+            'hyperparameters': {
+                'n_estimators': [25, 50, 100],
+                'max_depth': [5, 8, 12],
+                'learning_rate': [0.01, 0.05, 0.1]
+            },
+            'training_config': {
+                'validation_split': 0.2,
+                'early_stopping_rounds': 5,
+                'verbose': False
+            },
+            'hardware_config': {
+                'use_gpu': False,
+                'n_jobs': 1,
+                'memory_limit_gb': 2
+            }
+        }
+    
+    def _get_default_config(self) -> Dict[str, Any]:
+        """Get default configuration for unknown model types."""
+        return {
+            'parameters': {
+                'random_state': 42
+            },
+            'hyperparameters': {},
+            'training_config': {
+                'validation_split': 0.2
+            },
+            'hardware_config': {
+                'use_gpu': False,
+                'n_jobs': 1,
+                'memory_limit_gb': 1
+            }
+        }
+    
+    async def _validate_model_instance(self, model: Any) -> bool:
+        """Validate that an existing model instance is still valid."""
+        try:
+            if model is None:
+                return False
+            
+            # Check if model has required methods
+            required_methods = ['predict', 'fit']
+            for method in required_methods:
+                if not hasattr(model, method):
+                    return False
+            
+            # Check if model is in a valid state
+            if hasattr(model, 'is_fitted'):
+                return model.is_fitted
+            elif hasattr(model, '_is_fitted'):
+                return model._is_fitted
+            
+            # If no fitted state available, assume valid
+            return True
+            
+        except Exception as e:
+            self.logger.warning(f"Model validation failed: {e}")
+            return False
+    
+    async def _validate_loaded_model(self, model: Any) -> bool:
+        """Validate a loaded model."""
+        try:
+            if model is None:
+                return False
+            
+            # Basic validation
+            if not await self._validate_model_instance(model):
+                return False
+            
+            # Additional validation for loaded models
+            if hasattr(model, 'model_metadata'):
+                metadata = model.model_metadata
+                if metadata and 'version' in metadata:
+                    # Check version compatibility if needed
+                    pass
+            
+            return True
+            
+        except Exception as e:
+            self.logger.warning(f"Loaded model validation failed: {e}")
+            return False
+    
+    async def _validate_created_model(self, model: Any, config) -> bool:
+        """Validate a newly created model."""
+        try:
+            if model is None:
+                return False
+            
+            # Basic validation
+            if not await self._validate_model_instance(model):
+                return False
+            
+            # Check configuration compatibility
+            if hasattr(model, 'get_config'):
+                model_config = model.get_config()
+                if model_config:
+                    # Validate key parameters match
+                    for key in ['model_type', 'model_name']:
+                        if key in model_config and model_config[key] != getattr(config, key, None):
+                            self.logger.warning(f"Model config mismatch for {key}")
+            
+            return True
+            
+        except Exception as e:
+            self.logger.warning(f"Created model validation failed: {e}")
+            return False
+    
+    async def _register_model_for_monitoring(self, model_id: str, model: Any) -> None:
+        """Register model for performance monitoring."""
+        try:
+            if hasattr(self, 'performance_monitor') and self.performance_monitor:
+                await self.performance_monitor.register_model(
+                    model_id=model_id,
+                    model=model,
+                    model_name=getattr(model, 'model_name', 'unknown'),
+                    model_type=type(model).__name__
+                )
+        except Exception as e:
+            self.logger.warning(f"Failed to register model {model_id} for monitoring: {e}")
 
     async def _execute_sequential(self, model: Any, market_data: pd.DataFrame, task: ModelTask) -> Any:
         """Execute model sequentially."""

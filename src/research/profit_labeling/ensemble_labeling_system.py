@@ -12,6 +12,8 @@ Key Ensemble Components:
 4. Confidence-Based Selection
 5. Performance-Based Adaptation
 6. Diversity Measures and Ensemble Optimization
+
+Now inherits from the production-ready BaseLabelingStrategy in core module.
 """
 
 import numpy as np
@@ -26,6 +28,9 @@ import json
 from datetime import datetime
 import warnings
 from concurrent.futures import ThreadPoolExecutor, as_completed
+
+# Import the production-ready BaseLabelingStrategy
+from src.core.abstract_base_classes import BaseLabelingStrategy as ProductionBaseLabelingStrategy, LabelingResult, LabelingStrategy
 
 # ML imports for ensemble methods
 from sklearn.ensemble import VotingRegressor, BaggingRegressor
@@ -142,7 +147,7 @@ class EnsembleResult:
     metadata: Dict[str, Any]
     timestamp: datetime = field(default_factory=datetime.now)
 
-class BaseLabelingStrategy(ABC):
+class BaseLabelingStrategy(ProductionBaseLabelingStrategy):
     """Base class for labeling strategies."""
 
     @abstractmethod

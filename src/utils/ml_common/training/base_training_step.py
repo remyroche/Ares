@@ -3,6 +3,7 @@ Base Training Step
 
 Base class for all training steps with common functionality.
 Uses existing utilities for maximum efficiency and consistency.
+Now inherits from the production-ready BaseTrainingStep in core module.
 """
 
 import numpy as np
@@ -10,6 +11,9 @@ import pandas as pd
 from typing import Any, Dict, List, Optional, Tuple, Union
 import time
 from abc import ABC, abstractmethod
+
+# Import the production-ready BaseTrainingStep
+from src.core.abstract_base_classes import BaseTrainingStep as ProductionBaseTrainingStep, TrainingResult, TrainingStatus
 
 # Import tprint utilities
 from src.utils.tprint import (
@@ -85,7 +89,7 @@ def _get_training_integration():
 
 logger = system_logger.getChild('BaseTrainingStep')
 
-class BaseTrainingStep(ABC):
+class BaseTrainingStep(ProductionBaseTrainingStep):
     """
     Abstract base class for all training steps with common functionality.
 

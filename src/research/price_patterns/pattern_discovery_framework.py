@@ -15,6 +15,8 @@ A price pattern must be:
 3. Reproducible (same definition across datasets)
 4. Frequent enough for statistical analysis
 5. Economically meaningful (not random noise)
+
+Now inherits from the production-ready BasePatternDiscoverer in core module.
 """
 
 import numpy as np
@@ -27,6 +29,9 @@ from scipy import stats
 from abc import ABC, abstractmethod
 
 from src.utils.logger import system_logger
+
+# Import the production-ready BasePatternDiscoverer
+from src.core.abstract_base_classes import BasePatternDiscoverer as ProductionBasePatternDiscoverer, PatternDiscoveryResult, PatternDefinition, PatternType
 
 class PatternType(Enum):
     """Categories of price patterns."""
@@ -71,7 +76,7 @@ class PatternDiscoveryResult:
             self.noise_ratio < 0.8
         )
 
-class BasePatternDiscoverer(ABC):
+class BasePatternDiscoverer(ProductionBasePatternDiscoverer):
     """Base class for pattern discovery."""
 
     def __init__(self, name: str, pattern_type: PatternType):

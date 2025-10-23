@@ -2,29 +2,44 @@
 Base Validator
 
 This module provides a base validator class for step validation.
+Now inherits from the production-ready BaseValidator in core module.
 """
 
 from abc import ABC, abstractmethod
 from typing import Any, Dict, Optional, List
 import time
 
-class BaseValidator(ABC):
+# Import the production-ready BaseValidator
+from src.core.abstract_base_classes import BaseValidator as ProductionBaseValidator, ValidationResult, ValidationLevel
+
+class BaseValidator(ProductionBaseValidator):
     """
     Base validator class for step validation.
 
     This class provides a common interface for all step validators.
+    Now inherits from the production-ready BaseValidator with enhanced features.
     """
 
-    def __init__(self, step_name: str, config: Optional[Dict[str, Any]] = None):
+    def __init__(self, step_name: str, config: Optional[Dict[str, Any]] = None, 
+                 validation_level: ValidationLevel = ValidationLevel.STANDARD,
+                 enable_logging: bool = True, enable_metrics: bool = True):
         """Initialize the base validator."""
+        # Initialize the production base validator
+        super().__init__(
+            name=step_name,
+            validation_level=validation_level,
+            enable_logging=enable_logging,
+            enable_metrics=enable_metrics
+        )
+        
+        # Maintain backward compatibility
         self.step_name = step_name
         self.config = config or {}
         self.validation_history = []
         self.last_validation_result = None
         self.validation_count = 0
 
-    @abstractmethod
-    async def validate(self, data: Any, context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    async def validate(self, data: Any, context: Optional[Dict[str, Any]] = None) -> ValidationResult:
         """
         Validate the step data.
 
@@ -35,9 +50,9 @@ class BaseValidator(ABC):
         Returns:
             Validation results
         """
-        pass
+        # Call the production validate method
+        return await super().validate(data, context)
 
-    @abstractmethod
     def get_validation_summary(self) -> Dict[str, Any]:
         """
         Get a summary of the validation results.
@@ -45,7 +60,17 @@ class BaseValidator(ABC):
         Returns:
             Summary of validation results
         """
-        pass
+        # Get production summary and add backward compatibility fields
+        summary = super().get_validation_summary()
+        
+        # Add legacy fields for backward compatibility
+        summary.update({
+            'step_name': self.step_name,
+            'validation_count': self.validation_count,
+            'last_validation_result': self.last_validation_result
+        })
+        
+        return summary
     
     def _record_validation(self, result: Dict[str, Any], context: Optional[Dict[str, Any]] = None):
         """Record validation result for tracking."""

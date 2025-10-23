@@ -362,9 +362,15 @@ class HardwareService:
                 # Fallback to CPU implementation
                 neighbors_result = self._compute_neighbors_cpu(data, n_neighbors)
 
-            # Calculate performance metrics
+            # Calculate comprehensive performance metrics
             execution_time = time.time() - start_time
             acceleration_info["accelerated_time"] = execution_time
+            
+            # Calculate data processing metrics
+            data_size_mb = data.nbytes / (1024 * 1024) if hasattr(data, 'nbytes') else 0
+            samples_processed = len(data)
+            samples_per_second = samples_processed / execution_time if execution_time > 0 else 0
+            mb_per_second = data_size_mb / execution_time if execution_time > 0 else 0
 
             # Estimate original time (for comparison)
             if hasattr(neighbors_result, 'execution_time'):
@@ -372,6 +378,18 @@ class HardwareService:
                 acceleration_info["original_time"] = original_time
                 if original_time > 0:
                     acceleration_info["speedup_factor"] = original_time / execution_time
+            else:
+                acceleration_info["speedup_factor"] = 1.0
+
+            # Add comprehensive metrics to acceleration info
+            acceleration_info.update({
+                "data_size_mb": data_size_mb,
+                "samples_processed": samples_processed,
+                "samples_per_second": samples_per_second,
+                "mb_per_second": mb_per_second,
+                "efficiency_score": samples_per_second / max(data_size_mb, 1),  # samples per MB
+                "device_utilization": "high" if samples_per_second > 1000 else "medium" if samples_per_second > 100 else "low"
+            })
 
             # Update performance metrics
             self.performance_metrics["total_optimizations"] += 1
@@ -380,6 +398,14 @@ class HardwareService:
                     (self.performance_metrics["average_speedup"] * (self.performance_metrics["total_optimizations"] - 1) +
                      acceleration_info["speedup_factor"]) / self.performance_metrics["total_optimizations"]
                 )
+            
+            # Update additional performance tracking
+            self.performance_metrics["total_samples_processed"] = self.performance_metrics.get("total_samples_processed", 0) + samples_processed
+            self.performance_metrics["total_data_processed_mb"] = self.performance_metrics.get("total_data_processed_mb", 0) + data_size_mb
+            self.performance_metrics["average_samples_per_second"] = (
+                self.performance_metrics["total_samples_processed"] / 
+                (self.performance_metrics.get("total_execution_time", 0) + execution_time)
+            )
 
             tprint(f"✅ Neighbors computation completed in {execution_time:.3f}s "
                   f"(speedup: {acceleration_info['speedup_factor']:.1f}x)", "SUCCESS")
@@ -394,19 +420,26 @@ class HardwareService:
     def _compute_neighbors_cpu(self, data: np.ndarray, n_neighbors: int):
         """Compute neighbors using CPU (standard sklearn implementation)."""
         try:
+            import time
             from sklearn.neighbors import NearestNeighbors
 
+            # Time the actual computation
+            computation_start_time = time.time()
+            
             nn = NearestNeighbors(n_neighbors=min(n_neighbors + 1, len(data)), metric='euclidean')
             nn.fit(data)
 
             # Return fitted model and sample results
             distances, indices = nn.kneighbors(data[:min(100, len(data))])  # Sample for performance
+            
+            computation_end_time = time.time()
+            execution_time = computation_end_time - computation_start_time
 
             return {
                 "model": nn,
                 "sample_distances": distances,
                 "sample_indices": indices,
-                "execution_time": 0.1,  # Placeholder
+                "execution_time": execution_time,
                 "device": "cpu"
             }
 
@@ -417,13 +450,20 @@ class HardwareService:
     def _compute_neighbors_gpu(self, data: np.ndarray, n_neighbors: int):
         """Compute neighbors using GPU acceleration."""
         try:
+            import time
+            
             # Use M1 GPU manager if available
             if self.gpu_manager and hasattr(self.gpu_manager, 'accelerate_neighbors'):
                 tprint(f"🚀 Using M1 GPU manager for neighbors computation", "INFO")
+                
+                gpu_start_time = time.time()
                 result = self.gpu_manager.accelerate_neighbors(data, n_neighbors)
+                gpu_end_time = time.time()
+                execution_time = gpu_end_time - gpu_start_time
+                
                 return {
                     "model": result,
-                    "execution_time": getattr(result, 'execution_time', 0.05),
+                    "execution_time": execution_time,
                     "device": "gpu"
                 }
 
@@ -432,12 +472,15 @@ class HardwareService:
                 import cuml
                 from cuml.neighbors import NearestNeighbors
 
+                gpu_start_time = time.time()
                 nn = NearestNeighbors(n_neighbors=min(n_neighbors + 1, len(data)))
                 nn.fit(data)
+                gpu_end_time = time.time()
+                execution_time = gpu_end_time - gpu_start_time
 
                 return {
                     "model": nn,
-                    "execution_time": 0.05,  # Placeholder - would be measured
+                    "execution_time": execution_time,
                     "device": "gpu"
                 }
 

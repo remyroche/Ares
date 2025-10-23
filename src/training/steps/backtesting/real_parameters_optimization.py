@@ -1383,33 +1383,356 @@ class RealParametersOptimizer(BaseStep):
             Dictionary of rolling metrics
         """
         try:
-            # This is a placeholder - in practice, you would extract data from parameters
-            # or use a data source to calculate rolling metrics
             results = {}
-
-            # Example: Calculate rolling metrics if data is available in parameters
-            if 'data' in parameters:
-                data = parameters['data']
-                if hasattr(data, 'close'):
-                    close_prices = data['close']
-                    windows = [5, 10, 20, 50, 100]
-
-                    for window in windows:
-                        window_results = {}
-                        window_results['mean'] = rolling_optimizer.rolling_mean(close_prices, window=window)
-                        window_results['std'] = rolling_optimizer.rolling_std(close_prices, window=window)
-                        window_results['min'] = rolling_optimizer.rolling_min(close_prices, window=window)
-                        window_results['max'] = rolling_optimizer.rolling_max(close_prices, window=window)
-                        window_results['skew'] = rolling_optimizer.rolling_skew(close_prices, window=window)
-                        window_results['kurt'] = rolling_optimizer.rolling_kurt(close_prices, window=window)
-
-                        results[f'window_{window}'] = window_results
-
+            
+            # Extract data from parameters with comprehensive validation
+            data = self._extract_data_from_parameters(parameters)
+            if data is None or data.empty:
+                self.logger.warning("No valid data found in parameters for rolling metrics calculation")
+                return self._get_default_rolling_metrics()
+            
+            # Validate rolling optimizer
+            if rolling_optimizer is None:
+                self.logger.warning("Rolling optimizer is None, using fallback calculation")
+                return self._calculate_fallback_rolling_metrics(data)
+            
+            # Define comprehensive window sizes for different analysis horizons
+            windows = {
+                'short_term': [5, 10, 15, 20],
+                'medium_term': [30, 50, 75, 100],
+                'long_term': [150, 200, 250, 300]
+            }
+            
+            # Calculate rolling metrics for each price column
+            price_columns = self._get_price_columns(data)
+            
+            for col in price_columns:
+                if col not in data.columns:
+                    continue
+                    
+                price_data = data[col].dropna()
+                if len(price_data) < 10:  # Need minimum data for meaningful rolling calculations
+                    continue
+                
+                col_results = {}
+                
+                # Calculate rolling metrics for each window category
+                for category, window_list in windows.items():
+                    category_results = {}
+                    
+                    for window in window_list:
+                        if window >= len(price_data):
+                            continue
+                            
+                        try:
+                            window_results = self._calculate_window_metrics(
+                                price_data, window, rolling_optimizer
+                            )
+                            category_results[f'window_{window}'] = window_results
+                        except Exception as e:
+                            self.logger.warning(f"Failed to calculate metrics for {col} window {window}: {e}")
+                            continue
+                    
+                    if category_results:
+                        col_results[category] = category_results
+                
+                if col_results:
+                    results[col] = col_results
+            
+            # Calculate cross-asset rolling metrics if multiple price columns exist
+            if len(price_columns) > 1:
+                results['cross_asset'] = self._calculate_cross_asset_rolling_metrics(
+                    data, price_columns, rolling_optimizer
+                )
+            
+            # Calculate regime-based rolling metrics
+            results['regime_metrics'] = self._calculate_regime_rolling_metrics(
+                data, rolling_optimizer
+            )
+            
+            # Add metadata about the calculation
+            results['metadata'] = {
+                'calculation_timestamp': datetime.now().isoformat(),
+                'data_length': len(data),
+                'price_columns': price_columns,
+                'windows_used': windows,
+                'optimizer_type': type(rolling_optimizer).__name__
+            }
+            
             return results
 
         except Exception as e:
-            self.logger.warning(f"VectorBT rolling metrics calculation failed: {e}")
+            self.logger.error(f"VectorBT rolling metrics calculation failed: {e}")
+            return self._get_default_rolling_metrics()
+    
+    def _extract_data_from_parameters(self, parameters: Dict[str, Any]) -> Optional[pd.DataFrame]:
+        """Extract and validate data from parameters."""
+        try:
+            # Try multiple possible data keys
+            data_keys = ['data', 'df', 'dataframe', 'market_data', 'klines_data']
+            
+            for key in data_keys:
+                if key in parameters and parameters[key] is not None:
+                    data = parameters[key]
+                    
+                    # Convert to DataFrame if needed
+                    if not isinstance(data, pd.DataFrame):
+                        if hasattr(data, 'to_frame'):
+                            data = data.to_frame()
+                        elif isinstance(data, (list, tuple, np.ndarray)):
+                            data = pd.DataFrame(data)
+                        else:
+                            continue
+                    
+                    # Validate DataFrame has required structure
+                    if self._validate_dataframe_structure(data):
+                        return data
+            
+            return None
+            
+        except Exception as e:
+            self.logger.warning(f"Failed to extract data from parameters: {e}")
+            return None
+    
+    def _validate_dataframe_structure(self, df: pd.DataFrame) -> bool:
+        """Validate that DataFrame has required structure for rolling calculations."""
+        try:
+            if df.empty:
+                return False
+            
+            # Check for at least one numeric column
+            numeric_cols = df.select_dtypes(include=[np.number]).columns
+            if len(numeric_cols) == 0:
+                return False
+            
+            # Check for reasonable data length
+            if len(df) < 5:
+                return False
+            
+            return True
+            
+        except Exception:
+            return False
+    
+    def _get_price_columns(self, data: pd.DataFrame) -> List[str]:
+        """Get price-related columns from the data."""
+        price_indicators = ['close', 'open', 'high', 'low', 'price', 'value', 'return']
+        
+        # Find columns that match price indicators
+        price_cols = []
+        for col in data.columns:
+            col_lower = str(col).lower()
+            if any(indicator in col_lower for indicator in price_indicators):
+                price_cols.append(col)
+        
+        # If no specific price columns found, use numeric columns
+        if not price_cols:
+            price_cols = data.select_dtypes(include=[np.number]).columns.tolist()
+        
+        return price_cols[:5]  # Limit to 5 columns for performance
+    
+    def _calculate_window_metrics(self, price_data: pd.Series, window: int, 
+                                 rolling_optimizer) -> Dict[str, Any]:
+        """Calculate comprehensive rolling metrics for a specific window."""
+        try:
+            metrics = {}
+            
+            # Basic rolling statistics
+            metrics['mean'] = rolling_optimizer.rolling_mean(price_data, window=window)
+            metrics['std'] = rolling_optimizer.rolling_std(price_data, window=window)
+            metrics['min'] = rolling_optimizer.rolling_min(price_data, window=window)
+            metrics['max'] = rolling_optimizer.rolling_max(price_data, window=window)
+            
+            # Advanced rolling statistics
+            metrics['skew'] = rolling_optimizer.rolling_skew(price_data, window=window)
+            metrics['kurt'] = rolling_optimizer.rolling_kurt(price_data, window=window)
+            metrics['median'] = rolling_optimizer.rolling_median(price_data, window=window)
+            metrics['quantile_25'] = rolling_optimizer.rolling_quantile(price_data, window=window, q=0.25)
+            metrics['quantile_75'] = rolling_optimizer.rolling_quantile(price_data, window=window, q=0.75)
+            
+            # Volatility metrics
+            metrics['volatility'] = metrics['std'] / (metrics['mean'] + 1e-8)  # Coefficient of variation
+            metrics['range'] = metrics['max'] - metrics['min']
+            metrics['iqr'] = metrics['quantile_75'] - metrics['quantile_25']
+            
+            # Trend metrics
+            price_returns = price_data.pct_change().dropna()
+            if len(price_returns) >= window:
+                metrics['return_mean'] = rolling_optimizer.rolling_mean(price_returns, window=window)
+                metrics['return_std'] = rolling_optimizer.rolling_std(price_returns, window=window)
+                metrics['sharpe_ratio'] = safe_divide(metrics['return_mean'], metrics['return_std'])
+            
+            # Momentum metrics
+            if len(price_data) >= window * 2:
+                current_mean = rolling_optimizer.rolling_mean(price_data, window=window)
+                previous_mean = rolling_optimizer.rolling_mean(price_data.shift(window), window=window)
+                metrics['momentum'] = current_mean - previous_mean
+                metrics['momentum_pct'] = safe_divide(metrics['momentum'], previous_mean + 1e-8)
+            
+            return metrics
+            
+        except Exception as e:
+            self.logger.warning(f"Failed to calculate window metrics for window {window}: {e}")
             return {}
+    
+    def _calculate_cross_asset_rolling_metrics(self, data: pd.DataFrame, 
+                                             price_columns: List[str], 
+                                             rolling_optimizer) -> Dict[str, Any]:
+        """Calculate rolling metrics across multiple assets."""
+        try:
+            cross_metrics = {}
+            
+            if len(price_columns) < 2:
+                return cross_metrics
+            
+            # Calculate rolling correlations
+            for i, col1 in enumerate(price_columns):
+                for col2 in price_columns[i+1:]:
+                    if col1 in data.columns and col2 in data.columns:
+                        try:
+                            corr_series = data[col1].rolling(window=20).corr(data[col2])
+                            cross_metrics[f'{col1}_{col2}_correlation'] = {
+                                'mean': corr_series.mean(),
+                                'std': corr_series.std(),
+                                'min': corr_series.min(),
+                                'max': corr_series.max()
+                            }
+                        except Exception as e:
+                            self.logger.warning(f"Failed to calculate correlation between {col1} and {col2}: {e}")
+            
+            # Calculate portfolio-level metrics
+            if len(price_columns) >= 2:
+                try:
+                    # Equal weight portfolio
+                    portfolio_returns = data[price_columns].pct_change().mean(axis=1)
+                    portfolio_vol = portfolio_returns.rolling(window=20).std()
+                    portfolio_sharpe = safe_divide(portfolio_returns.rolling(window=20).mean(), portfolio_vol)
+                    
+                    cross_metrics['portfolio'] = {
+                        'return_mean': portfolio_returns.mean(),
+                        'volatility': portfolio_vol.mean(),
+                        'sharpe_ratio': portfolio_sharpe.mean()
+                    }
+                except Exception as e:
+                    self.logger.warning(f"Failed to calculate portfolio metrics: {e}")
+            
+            return cross_metrics
+            
+        except Exception as e:
+            self.logger.warning(f"Failed to calculate cross-asset metrics: {e}")
+            return {}
+    
+    def _calculate_regime_rolling_metrics(self, data: pd.DataFrame, 
+                                        rolling_optimizer) -> Dict[str, Any]:
+        """Calculate regime-based rolling metrics."""
+        try:
+            regime_metrics = {}
+            
+            # Look for regime indicators in the data
+            regime_columns = [col for col in data.columns if 'regime' in str(col).lower()]
+            
+            if not regime_columns:
+                return regime_metrics
+            
+            # Calculate rolling metrics for each regime
+            for regime_col in regime_columns:
+                if regime_col not in data.columns:
+                    continue
+                
+                unique_regimes = data[regime_col].dropna().unique()
+                
+                for regime in unique_regimes:
+                    regime_data = data[data[regime_col] == regime]
+                    
+                    if len(regime_data) < 10:
+                        continue
+                    
+                    # Calculate rolling metrics for this regime
+                    regime_rolling = {}
+                    for col in data.select_dtypes(include=[np.number]).columns:
+                        if col != regime_col:
+                            try:
+                                col_data = regime_data[col].dropna()
+                                if len(col_data) >= 20:
+                                    regime_rolling[col] = {
+                                        'mean': col_data.rolling(window=10).mean().mean(),
+                                        'std': col_data.rolling(window=10).std().mean(),
+                                        'volatility': col_data.rolling(window=10).std().mean() / (col_data.rolling(window=10).mean().mean() + 1e-8)
+                                    }
+                            except Exception as e:
+                                self.logger.warning(f"Failed to calculate regime metrics for {col} in regime {regime}: {e}")
+                    
+                    if regime_rolling:
+                        regime_metrics[f'regime_{regime}'] = regime_rolling
+            
+            return regime_metrics
+            
+        except Exception as e:
+            self.logger.warning(f"Failed to calculate regime rolling metrics: {e}")
+            return {}
+    
+    def _get_default_rolling_metrics(self) -> Dict[str, Any]:
+        """Return default rolling metrics when calculation fails."""
+        return {
+            'error': 'Rolling metrics calculation failed',
+            'default_metrics': {
+                'mean': 0.0,
+                'std': 0.0,
+                'min': 0.0,
+                'max': 0.0,
+                'volatility': 0.0
+            },
+            'metadata': {
+                'calculation_timestamp': datetime.now().isoformat(),
+                'status': 'failed',
+                'fallback_used': True
+            }
+        }
+    
+    def _calculate_fallback_rolling_metrics(self, data: pd.DataFrame) -> Dict[str, Any]:
+        """Calculate rolling metrics using pandas fallback when VectorBT is not available."""
+        try:
+            results = {}
+            
+            # Use pandas rolling functions as fallback
+            numeric_cols = data.select_dtypes(include=[np.number]).columns
+            
+            for col in numeric_cols[:3]:  # Limit to 3 columns for performance
+                col_data = data[col].dropna()
+                if len(col_data) < 10:
+                    continue
+                
+                col_results = {}
+                windows = [10, 20, 50]
+                
+                for window in windows:
+                    if window >= len(col_data):
+                        continue
+                    
+                    rolling = col_data.rolling(window=window)
+                    
+                    col_results[f'window_{window}'] = {
+                        'mean': rolling.mean().mean(),
+                        'std': rolling.std().mean(),
+                        'min': rolling.min().min(),
+                        'max': rolling.max().max(),
+                        'volatility': (rolling.std() / (rolling.mean() + 1e-8)).mean()
+                    }
+                
+                if col_results:
+                    results[col] = col_results
+            
+            results['metadata'] = {
+                'calculation_timestamp': datetime.now().isoformat(),
+                'method': 'pandas_fallback',
+                'data_length': len(data)
+            }
+            
+            return results
+            
+        except Exception as e:
+            self.logger.error(f"Fallback rolling metrics calculation failed: {e}")
+            return self._get_default_rolling_metrics()
 
     def get_optimization_report(self) -> Dict[str, Any]:
         """Generate optimization report."""

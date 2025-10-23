@@ -1188,40 +1188,100 @@ class PerRegimeTrainingStep(BaseTrainingStep):
         """
         try:
             import time
-            training_start = time.time()
+            from src.utils.ml_common.models.model_factory import EnhancedModelFactory, ModelConfig, ModelType
             
-            # Extract features and targets from regime data
-            if isinstance(regime_data, dict):
-                X_regime = regime_data.get('features')
-                y_regime = regime_data.get('targets')
-            else:
-                # Assume regime_data is a tuple of (X, y)
-                X_regime, y_regime = regime_data
+            tprint_info(f"🎯 Starting model training for regime {regime_id}")
             
-            if X_regime is None or y_regime is None:
-                raise ValueError("Regime data must contain features and targets")
+            # Extract data for this regime
+            X = regime_data.get('features')
+            y = regime_data.get('targets')
             
-            # Train regime-specific models
-            models_trained = 0
+            if X is None or y is None:
+                raise ValueError(f"Missing features or targets for regime {regime_id}")
             
-            # Train primary model for this regime
-            if hasattr(self, 'model_manager') and self.model_manager:
-                regime_model = self.model_manager.create_model(
-                    model_type='regime_specific',
-                    regime_id=regime_id,
-                    config=self.config
-                )
-                
-                if regime_model:
-                    regime_model.fit(X_regime, y_regime)
-                    models_trained += 1
+            # Initialize model factory
+            model_factory = EnhancedModelFactory()
             
-            # Train ensemble models if configured
-            if hasattr(self.config, 'enable_ensemble') and self.config.enable_ensemble:
-                ensemble_models = self._create_regime_ensemble(regime_id, X_regime, y_regime)
-                models_trained += len(ensemble_models)
+            # Define models to train for this regime
+            models_to_train = [
+                ModelType.LIGHTGBM,
+                ModelType.XGBOOST,
+                ModelType.CATBOOST,
+                ModelType.RANDOM_FOREST,
+                ModelType.ELASTIC_NET
+            ]
             
-            training_time = time.time() - training_start
+            trained_models = {}
+            total_training_time = 0.0
+            successful_models = 0
+            
+            # Train each model type
+            for model_type in models_to_train:
+                try:
+                    tprint_info(f"🔄 Training {model_type.value} for regime {regime_id}")
+                    
+                    # Create model configuration
+                    model_config = ModelConfig(
+                        model_type=model_type,
+                        params={
+                            'random_state': 42,
+                            'n_jobs': -1,
+                            'verbose': 0
+                        }
+                    )
+                    
+                    # Add regime-specific parameters
+                    if model_type in [ModelType.LIGHTGBM, ModelType.XGBOOST, ModelType.CATBOOST]:
+                        model_config.params.update({
+                            'n_estimators': 100,
+                            'learning_rate': 0.1,
+                            'max_depth': 6
+                        })
+                    elif model_type == ModelType.RANDOM_FOREST:
+                        model_config.params.update({
+                            'n_estimators': 100,
+                            'max_depth': 10,
+                            'min_samples_split': 5
+                        })
+                    elif model_type == ModelType.ELASTIC_NET:
+                        model_config.params.update({
+                            'alpha': 0.1,
+                            'l1_ratio': 0.5
+                        })
+                    
+                    # Create and train model
+                    model_start_time = time.time()
+                    model = model_factory.create_model(model_config)
+                    model.fit(X, y)
+                    model_end_time = time.time()
+                    
+                    model_training_time = model_end_time - model_start_time
+                    total_training_time += model_training_time
+                    successful_models += 1
+                    
+                    # Store trained model
+                    trained_models[model_type.value] = {
+                        'model': model,
+                        'training_time': model_training_time,
+                        'config': model_config.params
+                    }
+                    
+                    tprint_success(f"✅ {model_type.value} trained in {model_training_time:.3f}s")
+                    
+                except Exception as model_error:
+                    tprint_warning(f"⚠️ Failed to train {model_type.value} for regime {regime_id}: {model_error}")
+                    continue
+            
+            # Calculate performance metrics
+            performance_metrics = {
+                'total_models_attempted': len(models_to_train),
+                'successful_models': successful_models,
+                'success_rate': successful_models / len(models_to_train) if models_to_train else 0,
+                'total_training_time': total_training_time,
+                'average_training_time': total_training_time / successful_models if successful_models > 0 else 0
+            }
+            
+            tprint_success(f"✅ Regime {regime_id} training completed: {successful_models}/{len(models_to_train)} models trained")
             
             return {
                 'success': True,
@@ -1229,12 +1289,21 @@ class PerRegimeTrainingStep(BaseTrainingStep):
                 'models_trained': models_trained,
                 'training_time': training_time,
                 'samples_processed': len(X_regime)
+                'performance_metrics': performance_metrics,
+                'data_shape': {
+                    'features': X.shape if hasattr(X, 'shape') else len(X),
+                    'targets': y.shape if hasattr(y, 'shape') else len(y)
+                }
             }
+            
         except Exception as e:
+            tprint_error(f"❌ Regime {regime_id} training failed: {e}")
             return {
                 'success': False,
                 'regime_id': regime_id,
-                'error': str(e)
+                'error': str(e),
+                'models_trained': 0,
+                'training_time': 0.0
             }
     
     def _create_regime_ensemble(self, regime_id: str, X_regime, y_regime):

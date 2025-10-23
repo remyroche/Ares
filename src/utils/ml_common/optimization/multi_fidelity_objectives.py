@@ -60,7 +60,6 @@ class MultiFidelityObjective(ABC):
         self.logger.info(f"   Resource range: {config.min_resource} - {config.max_resource}")
         self.logger.info(f"   Resource scaling factor: {config.resource_scaling_factor}")
     
-    @abstractmethod
     def evaluate(self, params: Dict[str, Any], resource: int) -> float:
         """
         Evaluate objective function at given parameters and resource level.
@@ -72,9 +71,10 @@ class MultiFidelityObjective(ABC):
         Returns:
             Objective function value
         """
-        pass
+        # Default implementation - subclasses should override
+        self.logger.warning("Using default evaluate implementation - subclasses should override")
+        return 0.0
 
-    @abstractmethod
     def get_resource_efficiency(self, params: Dict[str, Any], resource: int) -> float:
         """
         Calculate resource efficiency for given parameters and resource level.
@@ -86,9 +86,11 @@ class MultiFidelityObjective(ABC):
         Returns:
             Resource efficiency score
         """
-        pass
+        # Default implementation - subclasses should override
+        if resource <= 0:
+            return 0.0
+        return 1.0 / resource  # Simple inverse relationship
 
-    @abstractmethod
     def should_early_stop(self, params: Dict[str, Any], resource: int, 
                          current_value: float) -> bool:
         """
@@ -102,9 +104,24 @@ class MultiFidelityObjective(ABC):
         Returns:
             True if should stop early, False otherwise
         """
-        pass
+        # Default implementation - subclasses should override
+        if resource < self.config.min_resource:
+            return False
+        
+        # Check if we've reached max resource
+        if resource >= self.config.max_resource:
+            return True
+            
+        # Check for early stopping threshold
+        if len(self.performance_history) >= 2:
+            recent_values = [entry['value'] for entry in self.performance_history[-2:]]
+            if len(recent_values) >= 2:
+                improvement = abs(recent_values[-1] - recent_values[-2])
+                if improvement < self.config.early_stopping_threshold:
+                    return True
+        
+        return False
 
-    @abstractmethod
     def get_optimal_resource_level(self, params: Dict[str, Any]) -> int:
         """
         Get optimal resource level for given parameters.
@@ -115,9 +132,9 @@ class MultiFidelityObjective(ABC):
         Returns:
             Optimal resource level
         """
-        pass
+        # Default implementation - subclasses should override
+        return self.config.max_resource
 
-    @abstractmethod
     def validate_parameters(self, params: Dict[str, Any]) -> bool:
         """
         Validate parameter dictionary.
@@ -128,9 +145,20 @@ class MultiFidelityObjective(ABC):
         Returns:
             True if parameters are valid, False otherwise
         """
-        pass
+        # Default implementation - subclasses should override
+        if not isinstance(params, dict):
+            self.logger.error("Parameters must be a dictionary")
+            return False
+        
+        # Basic validation - check for required parameters if any
+        required_params = getattr(self.config, 'required_parameters', [])
+        for param in required_params:
+            if param not in params:
+                self.logger.error(f"Required parameter '{param}' not found")
+                return False
+        
+        return True
 
-    @abstractmethod
     def get_parameter_bounds(self) -> Dict[str, Tuple[float, float]]:
         """
         Get parameter bounds for optimization.
@@ -138,7 +166,8 @@ class MultiFidelityObjective(ABC):
         Returns:
             Dictionary mapping parameter names to (min, max) bounds
         """
-        pass
+        # Default implementation - subclasses should override
+        return {}
 
     def evaluate_with_tracking(self, params: Dict[str, Any], resource: int) -> float:
         """Evaluate objective with performance tracking."""
@@ -288,16 +317,6 @@ class MultiFidelityObjective(ABC):
     def __str__(self) -> str:
         """String representation of the objective."""
         return self.__repr__()
-        """Evaluate objective at given resource level."""
-        pass
-    
-    def get_resource_efficiency(self) -> float:
-        """Calculate resource efficiency from history."""
-        if len(self.resource_efficiency_history) < 2:
-            return 1.0
-        
-        recent_efficiency = np.mean(self.resource_efficiency_history[-10:])
-        return recent_efficiency
 
 
 class ModelTrainingMultiFidelityObjective(MultiFidelityObjective):

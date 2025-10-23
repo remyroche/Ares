@@ -55,12 +55,12 @@ class BaseClusteringAlgorithm:
         self.memory_manager = memory_manager or MemoryManager()
         self.scaler = StandardScaler()
 
+    @abstractmethod
     def fit_predict(self, features: np.ndarray) -> ClusteringResult:
         """
         Fit clustering algorithm and predict labels.
         
-        This is a concrete implementation that provides a default clustering approach.
-        Subclasses can override this method to provide specific clustering algorithms.
+        This is an abstract method that must be implemented by subclasses.
         
         Args:
             features: Input feature matrix of shape (n_samples, n_features)
@@ -68,52 +68,7 @@ class BaseClusteringAlgorithm:
         Returns:
             ClusteringResult containing labels, metrics, and metadata
         """
-        try:
-            # Preprocess features
-            features_scaled = self.scaler.fit_transform(features)
-            
-            # Use KMeans as default clustering algorithm
-            from sklearn.cluster import KMeans
-            
-            # Determine number of clusters
-            n_clusters = self.config.n_clusters or min(8, len(features) // 10)
-            n_clusters = max(2, min(n_clusters, len(features) - 1))
-            
-            # Fit clustering model
-            kmeans = KMeans(
-                n_clusters=n_clusters,
-                random_state=self.config.random_seed,
-                n_init=10
-            )
-            
-            # Predict labels
-            labels = kmeans.fit_predict(features_scaled)
-            
-            # Calculate metrics
-            metrics = self._calculate_metrics(features_scaled, labels)
-            
-            # Create result
-            return ClusteringResult(
-                labels=labels,
-                metrics=metrics,
-                metadata={
-                    'algorithm': 'KMeans',
-                    'n_clusters': n_clusters,
-                    'n_samples': len(features),
-                    'n_features': features.shape[1],
-                    'config': self.config.__dict__
-                },
-                execution_time=0.0  # Will be set by caller
-            )
-            
-        except Exception as e:
-            # Return error result
-            return ClusteringResult(
-                labels=np.zeros(len(features), dtype=int),
-                metrics={'error': str(e)},
-                metadata={'error': str(e)},
-                execution_time=0.0
-            )
+        pass
 
     def _calculate_metrics(self, features: np.ndarray, labels: np.ndarray) -> Dict[str, float]:
         """Calculate clustering quality metrics."""

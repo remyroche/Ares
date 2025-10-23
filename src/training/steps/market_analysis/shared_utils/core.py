@@ -75,16 +75,79 @@ class BaseConfig:
     """Base configuration class."""
     def __post_init__(self):
         """Validate configuration after initialization."""
-        pass
+        self._validate_config()
+    
+    def _validate_config(self) -> None:
+        """Validate the configuration."""
+        validator = ConfigValidator(verbose=True)
+        if not validator.validate_config(self):
+            raise ValueError("Configuration validation failed")
 
 
 class ConfigValidator:
     """Configuration validator."""
     
-    @staticmethod
-    def validate(config: Dict[str, Any]) -> bool:
-        """Validate configuration."""
-        return True
+    def __init__(self, verbose: bool = False):
+        """Initialize validator."""
+        self.verbose = verbose
+        self.logger = get_logger('ConfigValidator')
+    
+    def validate_config(self, config: Any) -> bool:
+        """Validate configuration object."""
+        try:
+            if hasattr(config, '__dict__'):
+                return self._validate_dict(config.__dict__)
+            elif isinstance(config, dict):
+                return self._validate_dict(config)
+            else:
+                self.logger.error("Invalid config type: must be dict or object with __dict__")
+                return False
+        except Exception as e:
+            self.logger.error(f"Config validation failed: {e}")
+            return False
+    
+    def _validate_dict(self, config_dict: Dict[str, Any]) -> bool:
+        """Validate configuration dictionary."""
+        try:
+            # Check required fields
+            required_fields = ['n_regimes', 'algorithm_type']
+            for field in required_fields:
+                if field not in config_dict:
+                    if self.verbose:
+                        self.logger.error(f"Missing required field: {field}")
+                    return False
+            
+            # Validate n_regimes
+            n_regimes = config_dict.get('n_regimes')
+            if not isinstance(n_regimes, int) or not (2 <= n_regimes <= 25):
+                if self.verbose:
+                    self.logger.error(f"Invalid n_regimes: {n_regimes} (must be int between 2-25)")
+                return False
+            
+            # Validate algorithm_type
+            algorithm_type = config_dict.get('algorithm_type')
+            valid_algorithms = ['gaussian_mixture', 'kmeans', 'agglomerative', 'adaptive_clustering']
+            if algorithm_type not in valid_algorithms:
+                if self.verbose:
+                    self.logger.error(f"Invalid algorithm_type: {algorithm_type} (must be one of {valid_algorithms})")
+                return False
+            
+            # Validate weights if present
+            weight_fields = ['economic_weight', 'volatility_regime_weight', 'volume_regime_weight', 'structural_trend_weight']
+            if all(field in config_dict for field in weight_fields):
+                total_weight = sum(config_dict[field] for field in weight_fields)
+                if not (0.9 <= total_weight <= 1.1):  # Allow some tolerance
+                    if self.verbose:
+                        self.logger.warning(f"Weights sum to {total_weight:.3f}, should be close to 1.0")
+            
+            if self.verbose:
+                self.logger.info("Configuration validation passed")
+            return True
+            
+        except Exception as e:
+            if self.verbose:
+                self.logger.error(f"Validation error: {e}")
+            return False
 
 
 def log_execution(*args, **kwargs):
@@ -334,13 +397,48 @@ def calculate_consensus_metrics(
         n_clusters = len(np.unique(cluster_assignments))
         n_samples = len(cluster_assignments)
         
+        if n_clusters <= 1:
+            return {
+                'n_clusters': n_clusters,
+                'n_samples': n_samples,
+                'consensus_score': 0.0,
+                'stability_score': 0.0
+            }
+        
+        # Calculate consensus score based on cluster size distribution
+        cluster_sizes = [np.sum(cluster_assignments == i) for i in range(n_clusters)]
+        size_std = np.std(cluster_sizes)
+        size_mean = np.mean(cluster_sizes)
+        consensus_score = 1.0 - (size_std / size_mean) if size_mean > 0 else 0.0
+        consensus_score = max(0.0, min(1.0, consensus_score))
+        
+        # Calculate stability score based on cluster separation
+        if hasattr(market_data, 'values'):
+            data_values = market_data.values
+        else:
+            data_values = market_data
+            
+        # Simple stability measure based on within-cluster variance
+        within_cluster_var = 0.0
+        for i in range(n_clusters):
+            cluster_mask = cluster_assignments == i
+            if np.sum(cluster_mask) > 1:
+                cluster_data = data_values[cluster_mask]
+                within_cluster_var += np.var(cluster_data)
+        
+        total_var = np.var(data_values)
+        stability_score = 1.0 - (within_cluster_var / total_var) if total_var > 0 else 0.0
+        stability_score = max(0.0, min(1.0, stability_score))
+        
         return {
             'n_clusters': n_clusters,
             'n_samples': n_samples,
-            'consensus_score': 0.8,  # Production-ready placeholder
-            'stability_score': 0.7   # Production-ready placeholder
+            'consensus_score': consensus_score,
+            'stability_score': stability_score
         }
-    except Exception:
+    except Exception as e:
+        logger = get_logger('consensus_metrics')
+        logger.error(f"Consensus metrics calculation failed: {e}")
         return {'n_clusters': 0, 'n_samples': 0, 'consensus_score': 0.0, 'stability_score': 0.0}
 
 
@@ -350,11 +448,41 @@ def calculate_disagreement_metrics(
 ) -> Dict[str, float]:
     """Calculate disagreement metrics for clustering results."""
     try:
+        n_clusters = len(np.unique(cluster_assignments))
+        n_samples = len(cluster_assignments)
+        
+        if n_clusters <= 1:
+            return {
+                'disagreement_score': 0.0,
+                'uncertainty_score': 0.0
+            }
+        
+        # Calculate disagreement score based on cluster size imbalance
+        cluster_sizes = [np.sum(cluster_assignments == i) for i in range(n_clusters)]
+        max_size = max(cluster_sizes)
+        min_size = min(cluster_sizes)
+        disagreement_score = (max_size - min_size) / n_samples if n_samples > 0 else 0.0
+        disagreement_score = max(0.0, min(1.0, disagreement_score))
+        
+        # Calculate uncertainty score based on cluster boundary ambiguity
+        if hasattr(market_data, 'values'):
+            data_values = market_data.values
+        else:
+            data_values = market_data
+            
+        # Simple uncertainty measure based on data variance
+        data_var = np.var(data_values)
+        data_mean = np.mean(data_values)
+        uncertainty_score = data_var / (data_mean ** 2) if data_mean != 0 else 0.0
+        uncertainty_score = max(0.0, min(1.0, uncertainty_score))
+        
         return {
-            'disagreement_score': 0.2,  # Production-ready placeholder
-            'uncertainty_score': 0.3   # Production-ready placeholder
+            'disagreement_score': disagreement_score,
+            'uncertainty_score': uncertainty_score
         }
-    except Exception:
+    except Exception as e:
+        logger = get_logger('disagreement_metrics')
+        logger.error(f"Disagreement metrics calculation failed: {e}")
         return {'disagreement_score': 0.0, 'uncertainty_score': 0.0}
 
 
@@ -364,11 +492,56 @@ def calculate_economic_scores(
 ) -> Dict[str, float]:
     """Calculate economic scores for clustering results."""
     try:
+        n_clusters = len(np.unique(cluster_assignments))
+        
+        if n_clusters <= 1:
+            return {
+                'economic_score': 0.0,
+                'trading_score': 0.0
+            }
+        
+        # Calculate economic score based on cluster separation and market data
+        if hasattr(market_data, 'values'):
+            data_values = market_data.values
+        else:
+            data_values = market_data
+            
+        # Economic score based on cluster distinctiveness
+        cluster_means = []
+        for i in range(n_clusters):
+            cluster_mask = cluster_assignments == i
+            if np.sum(cluster_mask) > 0:
+                cluster_data = data_values[cluster_mask]
+                cluster_means.append(np.mean(cluster_data))
+        
+        if len(cluster_means) > 1:
+            mean_std = np.std(cluster_means)
+            mean_mean = np.mean(cluster_means)
+            economic_score = mean_std / (mean_mean + 1e-8) if mean_mean != 0 else 0.0
+            economic_score = max(0.0, min(1.0, economic_score))
+        else:
+            economic_score = 0.0
+        
+        # Trading score based on cluster consistency
+        cluster_consistency = []
+        for i in range(n_clusters):
+            cluster_mask = cluster_assignments == i
+            if np.sum(cluster_mask) > 1:
+                cluster_data = data_values[cluster_mask]
+                cluster_std = np.std(cluster_data)
+                cluster_mean = np.mean(cluster_data)
+                consistency = 1.0 - (cluster_std / (cluster_mean + 1e-8)) if cluster_mean != 0 else 0.0
+                cluster_consistency.append(max(0.0, min(1.0, consistency)))
+        
+        trading_score = np.mean(cluster_consistency) if cluster_consistency else 0.0
+        
         return {
-            'economic_score': 0.6,  # Production-ready placeholder
-            'trading_score': 0.5    # Production-ready placeholder
+            'economic_score': economic_score,
+            'trading_score': trading_score
         }
-    except Exception:
+    except Exception as e:
+        logger = get_logger('economic_scores')
+        logger.error(f"Economic scores calculation failed: {e}")
         return {'economic_score': 0.0, 'trading_score': 0.0}
 
 
@@ -378,11 +551,53 @@ def calculate_trading_scores(
 ) -> Dict[str, float]:
     """Calculate trading scores for clustering results."""
     try:
+        n_clusters = len(np.unique(cluster_assignments))
+        
+        if n_clusters <= 1:
+            return {
+                'trading_score': 0.0,
+                'profitability_score': 0.0
+            }
+        
+        # Calculate trading score based on cluster frequency and consistency
+        cluster_sizes = [np.sum(cluster_assignments == i) for i in range(n_clusters)]
+        total_samples = len(cluster_assignments)
+        
+        # Trading score based on cluster frequency distribution
+        cluster_frequencies = [size / total_samples for size in cluster_sizes]
+        frequency_entropy = -sum(f * np.log(f + 1e-8) for f in cluster_frequencies)
+        max_entropy = np.log(n_clusters)
+        trading_score = frequency_entropy / max_entropy if max_entropy > 0 else 0.0
+        trading_score = max(0.0, min(1.0, trading_score))
+        
+        # Profitability score based on cluster value distribution
+        if hasattr(market_data, 'values'):
+            data_values = market_data.values
+        else:
+            data_values = market_data
+            
+        cluster_values = []
+        for i in range(n_clusters):
+            cluster_mask = cluster_assignments == i
+            if np.sum(cluster_mask) > 0:
+                cluster_data = data_values[cluster_mask]
+                cluster_values.append(np.mean(cluster_data))
+        
+        if len(cluster_values) > 1:
+            value_range = max(cluster_values) - min(cluster_values)
+            value_mean = np.mean(cluster_values)
+            profitability_score = value_range / (value_mean + 1e-8) if value_mean != 0 else 0.0
+            profitability_score = max(0.0, min(1.0, profitability_score))
+        else:
+            profitability_score = 0.0
+        
         return {
-            'trading_score': 0.5,  # Production-ready placeholder
-            'profitability_score': 0.4  # Production-ready placeholder
+            'trading_score': trading_score,
+            'profitability_score': profitability_score
         }
-    except Exception:
+    except Exception as e:
+        logger = get_logger('trading_scores')
+        logger.error(f"Trading scores calculation failed: {e}")
         return {'trading_score': 0.0, 'profitability_score': 0.0}
 
 
@@ -392,11 +607,48 @@ def calculate_stability_scores(
 ) -> Dict[str, float]:
     """Calculate stability scores for clustering results."""
     try:
+        n_clusters = len(np.unique(cluster_assignments))
+        
+        if n_clusters <= 1:
+            return {
+                'stability_score': 0.0,
+                'consistency_score': 0.0
+            }
+        
+        # Calculate stability score based on cluster size consistency
+        cluster_sizes = [np.sum(cluster_assignments == i) for i in range(n_clusters)]
+        size_cv = np.std(cluster_sizes) / (np.mean(cluster_sizes) + 1e-8)
+        stability_score = 1.0 - min(1.0, size_cv)
+        stability_score = max(0.0, min(1.0, stability_score))
+        
+        # Calculate consistency score based on within-cluster variance
+        if hasattr(market_data, 'values'):
+            data_values = market_data.values
+        else:
+            data_values = market_data
+            
+        within_cluster_var = 0.0
+        total_var = np.var(data_values)
+        
+        for i in range(n_clusters):
+            cluster_mask = cluster_assignments == i
+            if np.sum(cluster_mask) > 1:
+                cluster_data = data_values[cluster_mask]
+                within_cluster_var += np.var(cluster_data)
+        
+        if total_var > 0:
+            consistency_score = 1.0 - (within_cluster_var / total_var)
+            consistency_score = max(0.0, min(1.0, consistency_score))
+        else:
+            consistency_score = 0.0
+        
         return {
-            'stability_score': 0.7,  # Production-ready placeholder
-            'consistency_score': 0.6  # Production-ready placeholder
+            'stability_score': stability_score,
+            'consistency_score': consistency_score
         }
-    except Exception:
+    except Exception as e:
+        logger = get_logger('stability_scores')
+        logger.error(f"Stability scores calculation failed: {e}")
         return {'stability_score': 0.0, 'consistency_score': 0.0}
 
 

@@ -98,7 +98,6 @@ The klines manager is automatically configured with:
 
 import os
 import logging
-from abc import abstractmethod
 from typing import Dict, Any, Optional, Union, List, TypeVar, Generic, Protocol, runtime_checkable, Literal, Final, ClassVar, cast, overload, Callable, Type, Tuple, Set, FrozenSet, Mapping, MutableMapping, Sequence, MutableSequence, Iterable, Iterator, Generator, Awaitable, Coroutine, AnyStr, Text, BinaryIO, IO
 from datetime import datetime
 import traceback
@@ -1277,7 +1276,7 @@ class BaseStep:
             tprint_info(f"🚀 Executing step: {self.step_name}")
             tprint_debug(f"📋 Configuration: {validated_config}")
             
-            # Execute the step logic - this is a template that subclasses should override
+            # Execute the step logic
             result = await self._execute_step_logic(validated_config)
             
             # Calculate execution time
@@ -1323,6 +1322,7 @@ class BaseStep:
             
             # Base implementation that calls template methods
             # Subclasses can override this method or the individual template methods:
+            # Execute step-specific logic by calling template methods
             
             # 1. Initialize step-specific components
             await self._initialize_step_components(config)
@@ -1355,7 +1355,7 @@ class BaseStep:
     async def _initialize_step_components(self, config: StepConfig) -> None:
         """
         Initialize step-specific components.
-        Subclasses should override this method.
+        Subclasses must override this method.
         
         Args:
             config: Step configuration
@@ -1363,11 +1363,12 @@ class BaseStep:
         tprint_debug("🔧 Initializing step components")
         # This method should be overridden by subclasses
         # No default implementation needed
+        raise NotImplementedError("Subclasses must implement _initialize_step_components")
     
     async def _process_data(self, config: StepConfig) -> Any:
         """
         Process data for the step.
-        Subclasses should override this method.
+        Subclasses must override this method.
         
         Args:
             config: Step configuration
@@ -1379,11 +1380,12 @@ class BaseStep:
         # This method should be overridden by subclasses
         # Return empty dict as default
         return {}
+        raise NotImplementedError("Subclasses must implement _process_data")
     
     async def _generate_artifacts(self, processed_data: Any, config: StepConfig) -> List[str]:
         """
         Generate artifacts from processed data.
-        Subclasses should override this method.
+        Subclasses must override this method.
         
         Args:
             processed_data: Data processed by the step
@@ -1396,11 +1398,12 @@ class BaseStep:
         # This method should be overridden by subclasses
         # Return empty list as default
         return []
+        raise NotImplementedError("Subclasses must implement _generate_artifacts")
     
     async def _calculate_metrics(self, processed_data: Any, config: StepConfig) -> Dict[str, Any]:
         """
         Calculate performance metrics for the step.
-        Subclasses should override this method.
+        Subclasses must override this method.
         
         Args:
             processed_data: Data processed by the step
@@ -1417,6 +1420,7 @@ class BaseStep:
             "data_processed": 0,
             "success_rate": 1.0
         }
+        raise NotImplementedError("Subclasses must implement _calculate_metrics")
     
     def _save_artifact(self, data: Any, artifact_name: str, 
                       artifact_type: str = "data", 

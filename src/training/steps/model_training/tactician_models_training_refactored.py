@@ -613,6 +613,81 @@ class TacticianModelsTrainingStepRefactored(BaseTrainingStep):
             from sklearn.ensemble import RandomForestRegressor
             return RandomForestRegressor(n_estimators=200, random_state=42)
 
+    def _extract_hmm_regime_probabilities(
+        self, 
+        hmm_regime_features: Optional[np.ndarray], 
+        regime_mask: np.ndarray, 
+        current_regime: int
+    ) -> Optional[np.ndarray]:
+        """
+        Extract HMM regime probabilities from hmm_regime_features for the current regime.
+        
+        Args:
+            hmm_regime_features: HMM regime features array (samples x features)
+            regime_mask: Boolean mask for current regime samples
+            current_regime: Current regime identifier
+            
+        Returns:
+            HMM regime probabilities for current regime samples, or None if not available
+        """
+        try:
+            if hmm_regime_features is None:
+                self.logger.debug("No HMM regime features available")
+                return None
+            
+            # Validate input shapes
+            if hmm_regime_features.shape[0] != len(regime_mask):
+                self.logger.warning(f"HMM regime features shape mismatch: {hmm_regime_features.shape[0]} vs {len(regime_mask)}")
+                return None
+            
+            # Extract features for current regime
+            regime_hmm_features = hmm_regime_features[regime_mask]
+            
+            if len(regime_hmm_features) == 0:
+                self.logger.warning(f"No HMM features available for regime {current_regime}")
+                return None
+            
+            # Check for NaN or infinite values
+            nan_count = np.sum(np.isnan(regime_hmm_features))
+            inf_count = np.sum(np.isinf(regime_hmm_features))
+            
+            if nan_count > 0 or inf_count > 0:
+                self.logger.warning(f"HMM regime features contain {nan_count} NaN and {inf_count} infinite values for regime {current_regime}")
+                # Clean the data by replacing NaN and inf with 0
+                regime_hmm_features = np.nan_to_num(regime_hmm_features, nan=0.0, posinf=0.0, neginf=0.0)
+            
+            # If HMM features are probabilities (sum to 1), use them directly
+            if regime_hmm_features.shape[1] > 1:
+                # Check if features sum to approximately 1 (probability distribution)
+                row_sums = np.sum(regime_hmm_features, axis=1)
+                if np.allclose(row_sums, 1.0, atol=1e-6):
+                    self.logger.debug(f"Using HMM regime probabilities directly for regime {current_regime}")
+                    return regime_hmm_features
+                else:
+                    # Convert to probabilities using softmax
+                    from scipy.special import softmax
+                    regime_probs = softmax(regime_hmm_features, axis=1)
+                    self.logger.debug(f"Converted HMM features to probabilities using softmax for regime {current_regime}")
+                    return regime_probs
+            else:
+                # Single feature - convert to probability by normalizing
+                if np.max(regime_hmm_features) > 0:
+                    regime_probs = regime_hmm_features / np.max(regime_hmm_features)
+                    # Ensure it's a 2D array for consistency
+                    regime_probs = regime_probs.reshape(-1, 1)
+                    self.logger.debug(f"Normalized single HMM feature to probability for regime {current_regime}")
+                    return regime_probs
+                else:
+                    # All zeros - return uniform probabilities
+                    n_samples = len(regime_hmm_features)
+                    uniform_probs = np.ones((n_samples, 1)) / 1.0  # Single regime probability
+                    self.logger.debug(f"Using uniform probabilities for regime {current_regime} (all features zero)")
+                    return uniform_probs
+            
+        except Exception as e:
+            self.logger.error(f"Failed to extract HMM regime probabilities for regime {current_regime}: {e}")
+            return None
+
     def _optimize_hyperparameters_with_bohb(
         self,
         model_type: str,
@@ -2662,12 +2737,17 @@ class TacticianModelsTrainingStepRefactored(BaseTrainingStep):
 
                         # Special handling for Random Survival Forest
                         if model_type == "RandomSurvivalForest":
+                            # Extract HMM regime probabilities from hmm_regime_features if available
+                            hmm_regime_probs = self._extract_hmm_regime_probabilities(
+                                hmm_regime_features, regime_mask, regime
+                            )
+                            
                             # Random Survival Forest has its own training method with HPO
                             trained_model = model.fit(
                                 X_regime, y_regime,
                                 feature_names=feature_names,
                                 analyst_signals=analyst_signals[regime_mask] if analyst_signals is not None else None,
-                                hmm_regime_probs=None,  # TODO: Extract from hmm_regime_features if available
+                                hmm_regime_probs=hmm_regime_probs,
                                 enable_hpo=True,
                                 hpo_trials=self.config.hpo_n_trials,
                                 cv_folds=5,

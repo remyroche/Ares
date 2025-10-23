@@ -163,10 +163,8 @@ class AnalystTrainingConfig(BaseTrainingConfig):
     evaluation_metrics: List[str] = field(default_factory=lambda: ["mse", "mae", "r2", "mape", "smape", "directional_accuracy"])
     use_single_model: bool = True
     single_model_name: str = "analyst_unified_model"
-    enable_ensemble_training: bool = True
-    ensemble_method: str = "stacking"
-    meta_model: str = "ElasticNetCV"
-    ensemble_name: str = "analyst_ensemble"
+    # Ensemble training is handled by dedicated ensemble module
+    enable_ensemble_training: bool = False  # Disabled - handled elsewhere
     enable_hpo: bool = True
     save_models: bool = True
     enable_cross_validation: bool = True
@@ -277,10 +275,7 @@ class AnalystModelsTrainingStepRefactored(BaseStep):
                 evaluation_metrics=["mse", "mae", "r2", "mape", "smape", "directional_accuracy"],
                 use_single_model=True,
                 single_model_name="analyst_unified_model",
-                enable_ensemble_training=True,
-                ensemble_method="stacking",
-                meta_model="ElasticNetCV",
-                ensemble_name="analyst_ensemble",
+                enable_ensemble_training=False,  # Handled by dedicated ensemble module
                 enable_hpo=True,
                 save_models=True,
                 enable_cross_validation=True,
@@ -616,7 +611,7 @@ class AnalystModelsTrainingStepRefactored(BaseStep):
             else:
                 hpo_result = training_result
             
-            # Ensemble training phase
+            # Ensemble training phase - delegated to dedicated ensemble module
             if self.config.enable_ensemble_training:
                 self._start_phase(TrainingPhase.ENSEMBLE_TRAINING)
                 ensemble_result = await self._train_ensemble_models(hpo_result, config)
@@ -719,40 +714,283 @@ class AnalystModelsTrainingStepRefactored(BaseStep):
             return {'success': False, 'error': str(e)}
 
     async def _optimize_hyperparameters(self, training_result: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
-        """Optimize hyperparameters for trained models."""
+        """Optimize hyperparameters for trained models using existing ML common tools."""
         try:
-            # This would contain the actual HPO logic
+            tprint_info("🔍 Starting hyperparameter optimization using ML common tools...")
+            
+            # Import the existing optimization tools
+            from src.utils.ml_common.optimization.consolidated_hpo import ConsolidatedHPO
+            from src.utils.ml_common.optimization.auto_tuner import AutoTuner, DatasetCharacteristics
+            from src.utils.ml_common.optimization.concrete_optimization_classes import TradingMultiFidelityObjective
+            
+            # Get training data from the result
+            X = training_result.get('X_train')
+            y = training_result.get('y_train')
+            X_val = training_result.get('X_val')
+            y_val = training_result.get('y_val')
+            
+            if X is None or y is None:
+                tprint_warning("⚠️ No training data available for hyperparameter optimization")
+                return {'success': False, 'error': 'No training data available'}
+            
+            # Analyze dataset characteristics
+            dataset_chars = self._analyze_dataset_characteristics(X, y)
+            
+            # Initialize auto-tuner
+            auto_tuner = AutoTuner(
+                conservative_mode=config.get('conservative_mode', False),
+                enable_adaptive_timeout=config.get('enable_adaptive_timeout', True),
+                enable_resource_monitoring=config.get('enable_resource_monitoring', True)
+            )
+            
             optimized_models = []
-            for model in training_result.get('models', []):
-                optimized_model = model.copy()
-                optimized_model['accuracy'] = min(model['accuracy'] + 0.05, 0.95)  # Simulate improvement
-                optimized_models.append(optimized_model)
+            models = training_result.get('models', [])
+            
+            for model_info in models:
+                model_type = model_info.get('type', 'unknown')
+                tprint_info(f"🔧 Optimizing hyperparameters for {model_type} using ML common tools...")
+                
+                try:
+                    # Get auto-tuned configuration
+                    hpo_config = auto_tuner.auto_tune_hpo_config(
+                        X=X,
+                        y=y,
+                        model_type=model_type.lower(),
+                        available_time_minutes=config.get('optimization_time_minutes', 30.0),
+                        dataset_characteristics=dataset_chars
+                    )
+                    
+                    # Initialize consolidated HPO
+                    hpo = ConsolidatedHPO(
+                        model_type=model_type.lower(),
+                        config=hpo_config,
+                        enable_multi_fidelity=config.get('enable_multi_fidelity', True),
+                        enable_early_stopping=config.get('enable_early_stopping', True)
+                    )
+                    
+                    # Define objective function
+                    def objective_function(params):
+                        try:
+                            # Create model with parameters
+                            model = self._create_model_with_params(model_type, params)
+                            if model is None:
+                                return -np.inf
+                            
+                            # Train and evaluate
+                            model.fit(X, y)
+                            if X_val is not None and y_val is not None:
+                                score = model.score(X_val, y_val)
+                            else:
+                                score = model.score(X, y)
+                            
+                            return score
+                        except Exception:
+                            return -np.inf
+                    
+                    # Run optimization
+                    optimization_result = hpo.optimize(
+                        objective_function=objective_function,
+                        search_space=self._get_ml_common_search_space(model_type),
+                        n_trials=hpo_config.n_trials,
+                        timeout=hpo_config.timeout_seconds
+                    )
+                    
+                    if optimization_result.success:
+                        # Train final model with best parameters
+                        best_params = optimization_result.best_params
+                        optimized_model = self._create_model_with_params(model_type, best_params)
+                        optimized_model.fit(X, y)
+                        
+                        # Evaluate optimized model
+                        val_score = optimized_model.score(X_val, y_val) if X_val is not None else optimized_model.score(X, y)
+                        train_score = optimized_model.score(X, y)
+                        
+                        optimized_models.append({
+                            'type': model_type,
+                            'model': optimized_model,
+                            'accuracy': val_score,
+                            'training_accuracy': train_score,
+                            'best_params': best_params,
+                            'improvement': val_score - model_info.get('accuracy', 0),
+                            'optimization_metadata': {
+                                'n_trials': optimization_result.n_trials,
+                                'best_score': optimization_result.best_score,
+                                'optimization_time': optimization_result.optimization_time
+                            }
+                        })
+                        
+                        tprint_success(f"✅ {model_type} optimized: {val_score:.4f} accuracy (improvement: {val_score - model_info.get('accuracy', 0):.4f})")
+                    else:
+                        tprint_warning(f"⚠️ Optimization failed for {model_type}: {optimization_result.error_message}")
+                        continue
+                        
+                except Exception as e:
+                    tprint_warning(f"⚠️ Failed to optimize {model_type}: {e}")
+                    continue
+            
+            if not optimized_models:
+                return {'success': False, 'error': 'No models could be optimized'}
+            
+            avg_accuracy = sum(m['accuracy'] for m in optimized_models) / len(optimized_models)
+            avg_improvement = sum(m['improvement'] for m in optimized_models) / len(optimized_models)
+            
+            tprint_success(f"✅ Hyperparameter optimization completed using ML common tools. Average accuracy: {avg_accuracy:.4f}, Average improvement: {avg_improvement:.4f}")
             
             return {
                 'success': True,
                 'models': optimized_models,
-                'accuracy': sum(m['accuracy'] for m in optimized_models) / len(optimized_models)
+                'accuracy': avg_accuracy,
+                'improvement': avg_improvement,
+                'optimization_metadata': {
+                    'models_optimized': len(optimized_models),
+                    'avg_improvement': avg_improvement,
+                    'optimization_tool': 'ml_common_consolidated_hpo'
+                }
             }
+            
         except Exception as e:
+            tprint_error(f"❌ Hyperparameter optimization failed: {e}")
             return {'success': False, 'error': str(e)}
+    
+    def _analyze_dataset_characteristics(self, X, y) -> 'DatasetCharacteristics':
+        """Analyze dataset characteristics for auto-tuning."""
+        try:
+            from src.utils.ml_common.optimization.auto_tuner import DatasetCharacteristics
+            import numpy as np
+            
+            n_samples, n_features = X.shape if hasattr(X, 'shape') else (len(X), len(X[0]) if X else 0)
+            
+            # Calculate feature complexity (variance-based)
+            if hasattr(X, 'var'):
+                feature_variance = X.var()
+                feature_complexity = min(1.0, np.mean(feature_variance) / 10.0)  # Normalize
+            else:
+                feature_complexity = 0.5  # Default
+            
+            # Calculate class imbalance (for classification)
+            if hasattr(y, 'value_counts'):
+                class_counts = y.value_counts()
+                class_imbalance = 1.0 - (class_counts.min() / class_counts.max())
+            else:
+                class_imbalance = 0.0  # Assume balanced for regression
+            
+            # Data quality score (based on missing values and outliers)
+            if hasattr(X, 'isnull'):
+                missing_ratio = X.isnull().sum().sum() / (n_samples * n_features)
+                data_quality_score = max(0.0, 1.0 - missing_ratio)
+            else:
+                data_quality_score = 0.9  # Assume good quality
+            
+            # Temporal dependency (assume time series for financial data)
+            temporal_dependency = 0.8  # High for financial data
+            
+            return DatasetCharacteristics(
+                n_samples=n_samples,
+                n_features=n_features,
+                feature_complexity=feature_complexity,
+                class_imbalance=class_imbalance,
+                data_quality_score=data_quality_score,
+                temporal_dependency=temporal_dependency
+            )
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Error analyzing dataset characteristics: {e}")
+            # Return default characteristics
+            from src.utils.ml_common.optimization.auto_tuner import DatasetCharacteristics
+            return DatasetCharacteristics(
+                n_samples=1000,
+                n_features=10,
+                feature_complexity=0.5,
+                class_imbalance=0.0,
+                data_quality_score=0.9,
+                temporal_dependency=0.8
+            )
+    
+    def _get_ml_common_search_space(self, model_type: str) -> Dict[str, Any]:
+        """Get hyperparameter search space compatible with ML common tools."""
+        if model_type.lower() == 'xgboost':
+            return {
+                'n_estimators': (50, 500),
+                'max_depth': (3, 10),
+                'learning_rate': (0.01, 0.3),
+                'subsample': (0.6, 1.0),
+                'colsample_bytree': (0.6, 1.0),
+                'reg_alpha': (0.0, 1.0),
+                'reg_lambda': (0.0, 1.0)
+            }
+        elif model_type.lower() == 'catboost':
+            return {
+                'iterations': (50, 500),
+                'depth': (3, 10),
+                'learning_rate': (0.01, 0.3),
+                'l2_leaf_reg': (1, 10),
+                'border_count': (32, 255),
+                'bagging_temperature': (0.0, 1.0)
+            }
+        elif model_type.lower() == 'lightgbm':
+            return {
+                'n_estimators': (50, 500),
+                'max_depth': (3, 10),
+                'learning_rate': (0.01, 0.3),
+                'subsample': (0.6, 1.0),
+                'colsample_bytree': (0.6, 1.0),
+                'reg_alpha': (0.0, 1.0),
+                'reg_lambda': (0.0, 1.0)
+            }
+        elif model_type.lower() == 'randomforest':
+            return {
+                'n_estimators': (50, 500),
+                'max_depth': (3, 20),
+                'min_samples_split': (2, 20),
+                'min_samples_leaf': (1, 10),
+                'max_features': (0.1, 1.0),
+                'bootstrap': [True, False]
+            }
+        else:
+            return {}
+    
+    def _create_model_with_params(self, model_type: str, params: Dict[str, Any]):
+        """Create model instance with specific parameters."""
+        try:
+            if model_type == 'XGBoost':
+                import xgboost as xgb
+                return xgb.XGBRegressor(**params, random_state=42)
+            elif model_type == 'CatBoost':
+                import catboost as cb
+                return cb.CatBoostRegressor(**params, random_seed=42, verbose=False)
+            elif model_type == 'LightGBM':
+                import lightgbm as lgb
+                return lgb.LGBMRegressor(**params, random_state=42, verbose=-1)
+            elif model_type == 'RandomForest':
+                from sklearn.ensemble import RandomForestRegressor
+                return RandomForestRegressor(**params, random_state=42)
+            else:
+                return None
+        except Exception:
+            return None
 
     async def _train_ensemble_models(self, training_result: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
-        """Train ensemble models."""
+        """Train ensemble models - delegated to dedicated ensemble training module."""
         try:
-            # This would contain the actual ensemble training logic
-            ensemble_models = training_result.get('models', []).copy()
-            ensemble_models.append({
-                'name': 'Analyst_Ensemble',
-                'type': 'Ensemble',
-                'accuracy': min(training_result.get('accuracy', 0.8) + 0.03, 0.95)
-            })
+            tprint_info("🎯 Ensemble training delegated to dedicated ensemble module...")
+            
+            # Return the individual models for ensemble training elsewhere
+            individual_models = training_result.get('models', [])
+            
+            if not individual_models:
+                return {'success': False, 'error': 'No individual models available for ensemble training'}
+            
+            tprint_info(f"📊 {len(individual_models)} individual models ready for ensemble training")
             
             return {
                 'success': True,
-                'models': ensemble_models,
-                'accuracy': sum(m['accuracy'] for m in ensemble_models) / len(ensemble_models)
+                'individual_models': individual_models,
+                'ensemble_ready': True,
+                'delegation_note': 'Ensemble training handled by dedicated ensemble module'
             }
+            
         except Exception as e:
+            tprint_error(f"❌ Ensemble training delegation failed: {e}")
             return {'success': False, 'error': str(e)}
 
     async def _save_trained_models(self, training_result: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
@@ -926,18 +1164,208 @@ class AnalystModelsTrainingStepRefactored(BaseStep):
     async def _evaluate_analyst_models_enhanced(self, training_results: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
         """Evaluate analyst models with enhanced error handling."""
         try:
-            # This would contain the actual evaluation logic
+            tprint_info("📊 Starting comprehensive model evaluation...")
+            
+            # Get models and data
+            models = training_results.get('models', [])
+            X_test = training_results.get('X_test')
+            y_test = training_results.get('y_test')
+            X_val = training_results.get('X_val')
+            y_val = training_results.get('y_val')
+            
+            if not models:
+                return {'success': False, 'error': 'No models available for evaluation'}
+            
+            # Use validation data if test data not available
+            if X_test is None or y_test is None:
+                X_test, y_test = X_val, y_val
+            
+            if X_test is None or y_test is None:
+                return {'success': False, 'error': 'No test data available for evaluation'}
+            
+            evaluation_results = []
+            
+            # Evaluate each model
+            for model_info in models:
+                if 'model' not in model_info:
+                    continue
+                
+                model = model_info['model']
+                model_type = model_info.get('type', 'unknown')
+                
+                tprint_info(f"🔍 Evaluating {model_type} model...")
+                
+                # Get predictions
+                try:
+                    y_pred = model.predict(X_test)
+                    y_pred_proba = None
+                    
+                    # Try to get probability predictions if available
+                    if hasattr(model, 'predict_proba'):
+                        try:
+                            y_pred_proba = model.predict_proba(X_test)
+                        except:
+                            pass
+                    
+                    # Calculate comprehensive metrics
+                    metrics = self._calculate_comprehensive_metrics(y_test, y_pred, y_pred_proba)
+                    
+                    evaluation_results.append({
+                        'model_type': model_type,
+                        'model_name': model_info.get('name', f'{model_type}_model'),
+                        'metrics': metrics,
+                        'predictions': y_pred,
+                        'probabilities': y_pred_proba
+                    })
+                    
+                    tprint_success(f"✅ {model_type} evaluation completed")
+                    
+                except Exception as e:
+                    tprint_warning(f"⚠️ Failed to evaluate {model_type}: {e}")
+                    continue
+            
+            if not evaluation_results:
+                return {'success': False, 'error': 'No models could be evaluated'}
+            
+            # Calculate overall evaluation metrics
+            overall_metrics = self._calculate_overall_metrics(evaluation_results)
+            
+            # Find best model
+            best_model = max(evaluation_results, key=lambda x: x['metrics'].get('accuracy', 0))
+            
+            tprint_success(f"✅ Model evaluation completed. Best model: {best_model['model_name']} with accuracy: {best_model['metrics']['accuracy']:.4f}")
+            
             return {
                 'success': True,
-                'evaluation_metrics': {
-                    'overall_accuracy': training_results.get('accuracy', 0.0),
-                    'directional_accuracy': 0.85,
-                    'confidence_score': 0.78
-                },
+                'evaluation_metrics': overall_metrics,
+                'individual_results': evaluation_results,
+                'best_model': best_model,
+                'evaluation_metadata': {
+                    'models_evaluated': len(evaluation_results),
+                    'test_samples': len(y_test),
+                    'evaluation_timestamp': time.time()
+                }
+            }
                 'model_performance': training_results.get('models', [])
             }
         except Exception as e:
             return {'success': False, 'error': str(e)}
+    
+    def _calculate_comprehensive_metrics(self, y_true, y_pred, y_pred_proba=None):
+        """Calculate comprehensive evaluation metrics."""
+        try:
+            from sklearn.metrics import (
+                accuracy_score, precision_score, recall_score, f1_score,
+                mean_squared_error, mean_absolute_error, r2_score,
+                roc_auc_score, log_loss, confusion_matrix
+            )
+            import numpy as np
+            
+            metrics = {}
+            
+            # Basic regression metrics
+            metrics['mse'] = mean_squared_error(y_true, y_pred)
+            metrics['rmse'] = np.sqrt(metrics['mse'])
+            metrics['mae'] = mean_absolute_error(y_true, y_pred)
+            metrics['r2'] = r2_score(y_true, y_pred)
+            
+            # Accuracy (for classification tasks)
+            if len(np.unique(y_true)) <= 10:  # Likely classification
+                metrics['accuracy'] = accuracy_score(y_true, y_pred)
+                metrics['precision'] = precision_score(y_true, y_pred, average='weighted', zero_division=0)
+                metrics['recall'] = recall_score(y_true, y_pred, average='weighted', zero_division=0)
+                metrics['f1'] = f1_score(y_true, y_pred, average='weighted', zero_division=0)
+                
+                # Confusion matrix
+                cm = confusion_matrix(y_true, y_pred)
+                metrics['confusion_matrix'] = cm.tolist()
+                
+                # ROC AUC if probabilities available
+                if y_pred_proba is not None and len(np.unique(y_true)) == 2:
+                    try:
+                        metrics['roc_auc'] = roc_auc_score(y_true, y_pred_proba[:, 1])
+                    except:
+                        pass
+            else:
+                # For regression, use R² as accuracy proxy
+                metrics['accuracy'] = max(0, metrics['r2'])
+            
+            # Directional accuracy for financial data
+            if len(y_true) > 1:
+                true_direction = np.sign(np.diff(y_true))
+                pred_direction = np.sign(np.diff(y_pred))
+                directional_accuracy = np.mean(true_direction == pred_direction)
+                metrics['directional_accuracy'] = directional_accuracy
+            
+            # Confidence score (based on prediction consistency)
+            if len(y_pred) > 1:
+                pred_std = np.std(y_pred)
+                pred_mean = np.mean(y_pred)
+                if pred_std > 0:
+                    confidence_score = 1.0 / (1.0 + pred_std / abs(pred_mean))
+                else:
+                    confidence_score = 1.0
+                metrics['confidence_score'] = confidence_score
+            
+            # Additional financial metrics
+            if len(y_true) > 1:
+                # Sharpe ratio proxy
+                returns = np.diff(y_pred)
+                if len(returns) > 0 and np.std(returns) > 0:
+                    sharpe_proxy = np.mean(returns) / np.std(returns)
+                    metrics['sharpe_proxy'] = sharpe_proxy
+                
+                # Maximum drawdown proxy
+                cumulative = np.cumsum(returns)
+                running_max = np.maximum.accumulate(cumulative)
+                drawdown = cumulative - running_max
+                max_drawdown = np.min(drawdown)
+                metrics['max_drawdown_proxy'] = max_drawdown
+            
+            return metrics
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Error calculating metrics: {e}")
+            return {
+                'accuracy': 0.0,
+                'mse': float('inf'),
+                'r2': 0.0,
+                'directional_accuracy': 0.0,
+                'confidence_score': 0.0
+            }
+    
+    def _calculate_overall_metrics(self, evaluation_results):
+        """Calculate overall evaluation metrics from individual results."""
+        try:
+            if not evaluation_results:
+                return {}
+            
+            # Aggregate metrics
+            all_accuracies = [r['metrics'].get('accuracy', 0) for r in evaluation_results]
+            all_r2_scores = [r['metrics'].get('r2', 0) for r in evaluation_results]
+            all_directional_acc = [r['metrics'].get('directional_accuracy', 0) for r in evaluation_results]
+            all_confidence = [r['metrics'].get('confidence_score', 0) for r in evaluation_results]
+            
+            return {
+                'overall_accuracy': np.mean(all_accuracies),
+                'accuracy_std': np.std(all_accuracies),
+                'overall_r2': np.mean(all_r2_scores),
+                'r2_std': np.std(all_r2_scores),
+                'directional_accuracy': np.mean(all_directional_acc),
+                'confidence_score': np.mean(all_confidence),
+                'best_accuracy': max(all_accuracies),
+                'worst_accuracy': min(all_accuracies),
+                'model_count': len(evaluation_results)
+            }
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Error calculating overall metrics: {e}")
+            return {
+                'overall_accuracy': 0.0,
+                'directional_accuracy': 0.0,
+                'confidence_score': 0.0,
+                'model_count': len(evaluation_results)
+            }
 
     async def _save_analyst_models_enhanced(self, training_results: Dict[str, Any], evaluation_results: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
         """Save analyst models with enhanced error handling."""

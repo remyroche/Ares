@@ -200,23 +200,27 @@ class AnalystEnsembleTraining(BaseStep):
             tprint_data_format(features, "ensemble_features", level=tprint.LogLevel.DEBUG)
             tprint_data_format(targets, "ensemble_targets", level=tprint.LogLevel.DEBUG)
             
-            # For now, create a simple mock ensemble
-            # In a real implementation, this would train actual models
+            # Train real ensemble models
             ensemble_models = {}
             
             for model_type in self.config.base_models:
                 tprint_info(f"🔧 Training {model_type.value}...")
                 
-                # Mock model training
-                model_result = {
-                    'model_name': model_type.value,
-                    'status': 'trained',
-                    'accuracy': np.random.uniform(0.7, 0.9),  # Mock accuracy
-                    'training_time': np.random.uniform(1.0, 5.0)  # Mock training time
-                }
-                
-                ensemble_models[model_type.value] = model_result
-                tprint_info(f"✅ {model_type.value} trained with accuracy: {model_result['accuracy']:.4f}")
+                try:
+                    # Train actual model
+                    model_result = await self._train_single_model(
+                        model_type, features, targets, self.config
+                    )
+                    
+                    if model_result['success']:
+                        ensemble_models[model_type.value] = model_result
+                        tprint_info(f"✅ {model_type.value} trained with accuracy: {model_result['accuracy']:.4f}")
+                    else:
+                        tprint_warning(f"⚠️ {model_type.value} training failed: {model_result.get('error', 'Unknown error')}")
+                        
+                except Exception as e:
+                    tprint_error(f"❌ {model_type.value} training error: {e}")
+                    # Continue with other models even if one fails
             
             # Create ensemble result
             ensemble_result = {
@@ -251,6 +255,129 @@ class AnalystEnsembleTraining(BaseStep):
             'config': self.config,
             'status': 'completed'
         }
+    
+    async def _train_single_model(
+        self, 
+        model_type: AnalystModelType, 
+        features: pd.DataFrame, 
+        targets: pd.Series, 
+        config: AnalystEnsembleTrainingConfig
+    ) -> Dict[str, Any]:
+        """
+        Train a single model.
+        
+        Args:
+            model_type: Type of model to train
+            features: Training features
+            targets: Training targets
+            config: Training configuration
+            
+        Returns:
+            Dictionary containing model results
+        """
+        start_time = time.time()
+        
+        try:
+            # Create model based on type
+            model = self._create_model(model_type)
+            if model is None:
+                return {
+                    'success': False,
+                    'error': f"Failed to create {model_type.value} model"
+                }
+            
+            # Split data for validation
+            from sklearn.model_selection import train_test_split
+            X_train, X_val, y_train, y_val = train_test_split(
+                features, targets, 
+                test_size=config.validation_split, 
+                random_state=42
+            )
+            
+            # Train model
+            model.fit(X_train, y_train)
+            
+            # Evaluate model
+            train_score = model.score(X_train, y_train)
+            val_score = model.score(X_val, y_val)
+            
+            # Calculate additional metrics
+            y_pred = model.predict(X_val)
+            from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error
+            
+            mse = mean_squared_error(y_val, y_pred)
+            r2 = r2_score(y_val, y_pred)
+            mae = mean_absolute_error(y_val, y_pred)
+            
+            training_time = time.time() - start_time
+            
+            return {
+                'success': True,
+                'model_name': model_type.value,
+                'model': model,
+                'accuracy': val_score,
+                'training_accuracy': train_score,
+                'validation_accuracy': val_score,
+                'mse': mse,
+                'r2_score': r2,
+                'mae': mae,
+                'training_time': training_time,
+                'status': 'trained'
+            }
+            
+        except Exception as e:
+            return {
+                'success': False,
+                'error': str(e),
+                'model_name': model_type.value,
+                'training_time': time.time() - start_time
+            }
+    
+    def _create_model(self, model_type: AnalystModelType):
+        """Create a model instance based on type."""
+        try:
+            if model_type == AnalystModelType.XGBOOST:
+                import xgboost as xgb
+                return xgb.XGBRegressor(
+                    n_estimators=100,
+                    max_depth=6,
+                    learning_rate=0.1,
+                    random_state=42
+                )
+            elif model_type == AnalystModelType.CATBOOST:
+                import catboost as cb
+                return cb.CatBoostRegressor(
+                    iterations=100,
+                    depth=6,
+                    learning_rate=0.1,
+                    random_seed=42,
+                    verbose=False
+                )
+            elif model_type == AnalystModelType.LIGHTGBM:
+                import lightgbm as lgb
+                return lgb.LGBMRegressor(
+                    n_estimators=100,
+                    max_depth=6,
+                    learning_rate=0.1,
+                    random_state=42,
+                    verbose=-1
+                )
+            elif model_type == AnalystModelType.RANDOM_FOREST:
+                from sklearn.ensemble import RandomForestRegressor
+                return RandomForestRegressor(
+                    n_estimators=100,
+                    max_depth=10,
+                    random_state=42
+                )
+            else:
+                raise ValueError(f"Unsupported model type: {model_type}")
+                
+        except ImportError as e:
+            tprint_warning(f"⚠️ {model_type.value} not available: {e}")
+            return None
+        except Exception as e:
+            tprint_error(f"❌ Failed to create {model_type.value} model: {e}")
+            return None
     
     def validate_artifacts(self, artifacts: Dict[str, Any]) -> bool:
         """

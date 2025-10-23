@@ -1364,38 +1364,89 @@ class EnhancedModelFactory:
 
             def _robust_scale(self, X):
                 """Robust scaling for volatile data."""
-                # Implementation of robust scaling
-                return X  # Placeholder
+                from sklearn.preprocessing import RobustScaler
+                import numpy as np
+                
+                if not hasattr(self, '_robust_scaler'):
+                    self._robust_scaler = RobustScaler()
+                    return self._robust_scaler.fit_transform(X)
+                else:
+                    return self._robust_scaler.transform(X)
 
             def _standard_scale(self, X):
                 """Standard scaling."""
-                # Implementation of standard scaling
-                return X  # Placeholder
+                from sklearn.preprocessing import StandardScaler
+                import numpy as np
+                
+                if not hasattr(self, '_standard_scaler'):
+                    self._standard_scaler = StandardScaler()
+                    return self._standard_scaler.fit_transform(X)
+                else:
+                    return self._standard_scaler.transform(X)
 
             def _minmax_scale(self, X):
                 """Min-max scaling."""
-                # Implementation of min-max scaling
-                return X  # Placeholder
+                from sklearn.preprocessing import MinMaxScaler
+                import numpy as np
+                
+                if not hasattr(self, '_minmax_scaler'):
+                    self._minmax_scaler = MinMaxScaler()
+                    return self._minmax_scaler.fit_transform(X)
+                else:
+                    return self._minmax_scaler.transform(X)
 
             def _remove_outliers(self, X):
                 """Remove outliers for volatile regimes."""
-                # Implementation of outlier removal
-                return X  # Placeholder
+                from sklearn.ensemble import IsolationForest
+                import numpy as np
+                
+                if not hasattr(self, '_outlier_detector'):
+                    self._outlier_detector = IsolationForest(contamination=0.1, random_state=42)
+                    outlier_mask = self._outlier_detector.fit_predict(X) == 1
+                    return X[outlier_mask]
+                else:
+                    outlier_mask = self._outlier_detector.predict(X) == 1
+                    return X[outlier_mask]
 
             def _detrend(self, X):
                 """Detrend data for trending regimes."""
-                # Implementation of detrending
-                return X  # Placeholder
+                from scipy import signal
+                import numpy as np
+                
+                if X.ndim == 1:
+                    # 1D data - simple linear detrending
+                    return signal.detrend(X)
+                else:
+                    # 2D data - detrend each column
+                    detrended = np.zeros_like(X)
+                    for i in range(X.shape[1]):
+                        detrended[:, i] = signal.detrend(X[:, i])
+                    return detrended
 
             def _mean_center(self, X):
                 """Mean center data."""
-                # Implementation of mean centering
-                return X  # Placeholder
+                import numpy as np
+                
+                if not hasattr(self, '_mean_values'):
+                    self._mean_values = np.mean(X, axis=0)
+                    return X - self._mean_values
+                else:
+                    return X - self._mean_values
 
             def _smooth(self, X):
                 """Smooth data for low volatility regimes."""
-                # Implementation of smoothing
-                return X  # Placeholder
+                from scipy.ndimage import gaussian_filter1d
+                import numpy as np
+                
+                if X.ndim == 1:
+                    # 1D data - apply Gaussian filter
+                    return gaussian_filter1d(X, sigma=1.0)
+                else:
+                    # 2D data - smooth each column
+                    smoothed = np.zeros_like(X)
+                    for i in range(X.shape[1]):
+                        smoothed[:, i] = gaussian_filter1d(X[:, i], sigma=1.0)
+                    return smoothed
 
             def _encode_regime_features(self, regimes):
                 """Encode 4D regime information into model inputs."""
@@ -1411,8 +1462,10 @@ class EnhancedModelFactory:
                         regime_onehot[self.regime_dimensions[regime]] = 1.0
 
                     # Regime stability/confidence features
-                    regime_confidence = np.random.random()  # Placeholder
-                    regime_duration = np.random.random()   # Placeholder
+                    # Calculate actual regime confidence based on historical stability
+                    regime_confidence = self._calculate_regime_confidence(regime)
+                    # Calculate actual regime duration
+                    regime_duration = self._calculate_regime_duration(regime)
 
                     regime_features.append(np.concatenate([
                         regime_onehot,
@@ -1420,6 +1473,40 @@ class EnhancedModelFactory:
                     ]))
 
                 return np.array(regime_features)
+            
+            def _calculate_regime_confidence(self, regime):
+                """Calculate regime confidence based on historical stability."""
+                import numpy as np
+                
+                # Simple confidence calculation based on regime consistency
+                if hasattr(self, 'regime_history') and len(self.regime_history) > 0:
+                    recent_regimes = self.regime_history[-10:]  # Last 10 observations
+                    regime_count = sum(1 for r in recent_regimes if r == regime)
+                    confidence = regime_count / len(recent_regimes)
+                else:
+                    confidence = 0.5  # Default confidence
+                
+                return min(1.0, max(0.0, confidence))
+            
+            def _calculate_regime_duration(self, regime):
+                """Calculate regime duration as normalized value."""
+                import numpy as np
+                
+                if hasattr(self, 'regime_history') and len(self.regime_history) > 0:
+                    # Count consecutive occurrences of current regime
+                    duration = 1
+                    for i in range(len(self.regime_history) - 1, -1, -1):
+                        if self.regime_history[i] == regime:
+                            duration += 1
+                        else:
+                            break
+                    
+                    # Normalize duration (assuming max duration of 100)
+                    normalized_duration = min(1.0, duration / 100.0)
+                else:
+                    normalized_duration = 0.1  # Default duration
+                
+                return normalized_duration
 
             def _create_regime_optimized_model(self, regime_id, architecture, hyperparams):
                 """Create a regime-optimized N-BEATS model with specific architecture and hyperparameters."""

@@ -42,11 +42,33 @@ class VectorBTMemoryManager:
     
     def get_memory_usage(self) -> Dict[str, Any]:
         """Get current memory usage."""
-        return {
-            'limit_mb': self.memory_limit_mb,
-            'used_mb': 0,  # Placeholder
-            'available_mb': self.memory_limit_mb
-        }
+        import psutil
+        import os
+        
+        try:
+            # Get current process memory usage
+            process = psutil.Process(os.getpid())
+            memory_info = process.memory_info()
+            used_mb = memory_info.rss / 1024 / 1024  # Convert to MB
+            
+            # Calculate available memory (limit - used)
+            available_mb = max(0, self.memory_limit_mb - used_mb)
+            
+            return {
+                'limit_mb': self.memory_limit_mb,
+                'used_mb': round(used_mb, 2),
+                'available_mb': round(available_mb, 2),
+                'usage_percentage': round((used_mb / self.memory_limit_mb) * 100, 2)
+            }
+        except Exception as e:
+            self.logger.error(f"Failed to get memory usage: {e}")
+            return {
+                'limit_mb': self.memory_limit_mb,
+                'used_mb': 0.0,
+                'available_mb': self.memory_limit_mb,
+                'usage_percentage': 0.0,
+                'error': str(e)
+            }
 
 
 def get_vectorbt_memory_manager(memory_limit_mb: int = 1000) -> VectorBTMemoryManager:
@@ -110,11 +132,23 @@ def optimize_memory_usage(data: Any, memory_limit_mb: int = 1000) -> Any:
     try:
         manager = get_memory_manager(memory_limit_mb)
         
-        # Placeholder optimization
+        # Real memory optimization
         if hasattr(data, 'memory_usage'):
             usage_mb = data.memory_usage(deep=True).sum() / 1024 / 1024
             if usage_mb > memory_limit_mb:
                 logger.warning(f"Data size {usage_mb:.2f}MB exceeds limit {memory_limit_mb}MB")
+                
+                # Apply memory optimization strategies
+                if hasattr(data, 'astype'):
+                    # Convert to more memory-efficient dtypes
+                    data = data.astype('float32')
+                    logger.info("Converted data to float32 for memory efficiency")
+                
+                if hasattr(data, 'sample') and len(data) > memory_limit_mb * 1000:
+                    # Sample data if too large
+                    sample_size = int(memory_limit_mb * 1000)
+                    data = data.sample(n=sample_size, random_state=42)
+                    logger.info(f"Sampled data to {sample_size} rows for memory efficiency")
         
         return data
         

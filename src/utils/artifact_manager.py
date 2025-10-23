@@ -79,23 +79,75 @@ except ImportError:
         BALANCED: Final[str] = "BALANCED"
         CONSERVATIVE: Final[str] = "CONSERVATIVE"
     
-    def get_integrated_hardware_manager() -> Optional[Any]: return None
-    def memory_optimized(*args: Any, **kwargs: Any) -> Callable[[T], T]: return lambda f: f
-    def performance_tracked(*args: Any, **kwargs: Any) -> Callable[[T], T]: return lambda f: f
+    def get_integrated_hardware_manager() -> Optional[Any]: 
+        """Get integrated hardware manager with graceful fallback."""
+        tprint_warning("⚠️ Hardware optimization unavailable - using fallback manager")
+        return None
+    
+    def memory_optimized(*args: Any, **kwargs: Any) -> Callable[[T], T]: 
+        """Memory optimization decorator with proper identity function fallback."""
+        def identity_decorator(func: Callable[..., T]) -> Callable[..., T]:
+            """Identity decorator that preserves function signature and metadata."""
+            import functools
+            @functools.wraps(func)
+            def wrapper(*args, **kwargs) -> T:
+                tprint_debug("🔧 Memory optimization unavailable - executing function without optimization")
+                return func(*args, **kwargs)
+            return wrapper
+        return identity_decorator
+    def performance_tracked(*args: Any, **kwargs: Any) -> Callable[[T], T]: 
+        """Performance tracking decorator with fallback."""
+        def identity_decorator(func: Callable[..., T]) -> Callable[..., T]:
+            import functools
+            @functools.wraps(func)
+            def wrapper(*args, **kwargs) -> T:
+                tprint_debug("📊 Performance tracking unavailable - executing function without tracking")
+                return func(*args, **kwargs)
+            return wrapper
+        return identity_decorator
     def force_cleanup() -> None:
-        """Force garbage collection and memory cleanup."""
+        """Force garbage collection and memory cleanup with enhanced fallback."""
         import gc
+        tprint_debug("🧹 Performing fallback cleanup (hardware optimization unavailable)")
         gc.collect()
         try:
             # Try to import and use hardware-specific cleanup if available
             from src.utils.hardware import force_cleanup as hw_force_cleanup
             hw_force_cleanup()
         except ImportError:
-            pass
-    def get_memory_stats() -> Dict[str, Any]: return {}
-    def optimize_dataframe(df: Any) -> Any: return df
-    def optimize_array(arr: Any) -> Any: return arr
-    def cache_result(*args: Any, **kwargs: Any) -> Callable[[T], T]: return lambda f: f
+            tprint_debug("ℹ️ Hardware-specific cleanup not available - using basic cleanup")
+        except Exception as e:
+            tprint_warning(f"⚠️ Hardware cleanup failed: {e}")
+    def get_memory_stats() -> Dict[str, Any]: 
+        """Get memory statistics with fallback."""
+        tprint_debug("📊 Memory stats unavailable - returning empty stats")
+        return {
+            "status": "hardware_optimization_unavailable",
+            "message": "Hardware optimization not available - using fallback mode",
+            "memory_usage_mb": 0.0,
+            "available_memory_mb": 0.0
+        }
+    
+    def optimize_dataframe(df: Any) -> Any: 
+        """DataFrame optimization with fallback."""
+        tprint_debug("🔧 DataFrame optimization unavailable - returning original DataFrame")
+        return df
+    
+    def optimize_array(arr: Any) -> Any: 
+        """Array optimization with fallback."""
+        tprint_debug("🔧 Array optimization unavailable - returning original array")
+        return arr
+    
+    def cache_result(*args: Any, **kwargs: Any) -> Callable[[T], T]: 
+        """Cache result decorator with fallback."""
+        def identity_decorator(func: Callable[..., T]) -> Callable[..., T]:
+            import functools
+            @functools.wraps(func)
+            def wrapper(*args, **kwargs) -> T:
+                tprint_debug("💾 Caching unavailable - executing function without caching")
+                return func(*args, **kwargs)
+            return wrapper
+        return identity_decorator
 
 # Import optional dependencies
 try:
@@ -573,6 +625,13 @@ class ArtifactManager:
         self._memory_profiles: Dict[str, Dict[str, Any]] = {}
         self._total_memory_mb: float = 0.0
         
+        # Check hardware optimization availability and log status
+        if HARDWARE_OPTIMIZATION_AVAILABLE:
+            tprint_success("✅ Hardware optimization available")
+        else:
+            tprint_warning("⚠️ Hardware optimization unavailable - using fallback mode")
+            tprint_info("ℹ️ Some features may be limited without hardware optimization")
+        
         tprint_success("🎉 ArtifactManager initialization completed successfully")
     
     def _lock_context(self) -> Union[threading.RLock, nullcontext]:
@@ -705,6 +764,15 @@ class ArtifactManager:
                 if self._memory and hasattr(data, 'memory_usage'):  # DataFrame
                     tprint_debug(f"🔧 Optimizing DataFrame for artifact: {artifact_name}")
                     data = self._memory.optimize_dataframe(data)
+                elif HARDWARE_OPTIMIZATION_AVAILABLE:
+                    # Try hardware optimization if available
+                    try:
+                        tprint_debug(f"🔧 Applying hardware optimization for artifact: {artifact_name}")
+                        data = optimize_dataframe(data)
+                    except Exception as e:
+                        tprint_warning(f"⚠️ Hardware optimization failed for {artifact_name}: {e}")
+                else:
+                    tprint_debug(f"ℹ️ No optimization available for artifact: {artifact_name}")
                 
                 # Save artifact
                 success = self._storage.save_artifact(
@@ -1761,6 +1829,89 @@ class ArtifactManager:
             Current execution mode
         """
         return self._current_execution_mode
+    
+    def is_hardware_optimization_available(self) -> bool:
+        """Check if hardware optimization is available.
+        
+        Returns:
+            True if hardware optimization is available, False otherwise
+        """
+        return HARDWARE_OPTIMIZATION_AVAILABLE
+    
+    def get_hardware_status(self) -> Dict[str, Any]:
+        """Get hardware optimization status and capabilities.
+        
+        Returns:
+            Dictionary containing hardware status information
+        """
+        status = {
+            "hardware_optimization_available": HARDWARE_OPTIMIZATION_AVAILABLE,
+            "fallback_mode": not HARDWARE_OPTIMIZATION_AVAILABLE,
+            "integrated_hardware_manager": None,
+            "memory_optimization": "fallback" if not HARDWARE_OPTIMIZATION_AVAILABLE else "available",
+            "performance_tracking": "fallback" if not HARDWARE_OPTIMIZATION_AVAILABLE else "available",
+            "caching": "fallback" if not HARDWARE_OPTIMIZATION_AVAILABLE else "available"
+        }
+        
+        if HARDWARE_OPTIMIZATION_AVAILABLE:
+            try:
+                manager = get_integrated_hardware_manager()
+                status["integrated_hardware_manager"] = "available" if manager is not None else "unavailable"
+            except Exception as e:
+                status["integrated_hardware_manager"] = f"error: {str(e)}"
+                status["fallback_mode"] = True
+        
+        return status
+    
+    def diagnose_hardware_issues(self) -> Dict[str, Any]:
+        """Diagnose hardware optimization issues and provide recommendations.
+        
+        Returns:
+            Dictionary containing diagnostic information and recommendations
+        """
+        diagnostics = {
+            "timestamp": datetime.now().isoformat(),
+            "hardware_optimization_available": HARDWARE_OPTIMIZATION_AVAILABLE,
+            "issues": [],
+            "recommendations": [],
+            "status": "healthy"
+        }
+        
+        if not HARDWARE_OPTIMIZATION_AVAILABLE:
+            diagnostics["issues"].append("Hardware optimization module not available")
+            diagnostics["recommendations"].append("Install hardware optimization dependencies")
+            diagnostics["status"] = "degraded"
+        
+        # Check if we can import hardware modules
+        try:
+            from .hardware import get_integrated_hardware_manager
+            manager = get_integrated_hardware_manager()
+            if manager is None:
+                diagnostics["issues"].append("Integrated hardware manager returned None")
+                diagnostics["recommendations"].append("Check hardware manager initialization")
+                diagnostics["status"] = "degraded"
+        except ImportError as e:
+            diagnostics["issues"].append(f"Hardware module import failed: {e}")
+            diagnostics["recommendations"].append("Check hardware module installation")
+            diagnostics["status"] = "error"
+        except Exception as e:
+            diagnostics["issues"].append(f"Hardware manager error: {e}")
+            diagnostics["recommendations"].append("Check hardware configuration")
+            diagnostics["status"] = "error"
+        
+        # Check memory manager status
+        if self._memory is None:
+            diagnostics["issues"].append("Memory manager not initialized")
+            diagnostics["recommendations"].append("Enable memory optimization in configuration")
+            diagnostics["status"] = "degraded"
+        
+        # Check cache manager status
+        if self._cache is None:
+            diagnostics["issues"].append("Cache manager not initialized")
+            diagnostics["recommendations"].append("Enable caching in configuration")
+            diagnostics["status"] = "degraded"
+        
+        return diagnostics
 
 
 def get_analyst_context(config: Dict[str, Any]) -> Dict[str, Any]:
@@ -2073,6 +2224,9 @@ __all__ = [
     'get_training_metrics',
     'log_training_progress',
     'log_training_error',
+    'is_hardware_optimization_available',
+    'get_hardware_status',
+    'diagnose_hardware_issues',
     # Re-export types for better IDE support
     'ArtifactMetadata',
     'OperationMetrics',

@@ -111,7 +111,20 @@ except ImportError as e:
             def inv(self, *args, **kwargs):
                 raise ImportError("numpy not available")
         class LinAlgError(Exception):
-            pass
+            """Exception raised for linear algebra errors."""
+            def __init__(self, message="Linear algebra error occurred", error_code=None, matrix_info=None):
+                super().__init__(message)
+                self.message = message
+                self.error_code = error_code
+                self.matrix_info = matrix_info or {}
+            
+            def __str__(self):
+                base_msg = f"LinAlgError: {self.message}"
+                if self.error_code:
+                    base_msg += f" (Error Code: {self.error_code})"
+                if self.matrix_info:
+                    base_msg += f" (Matrix Info: {self.matrix_info})"
+                return base_msg
     
     pd = PandasFallback()
     np = NumpyFallback()
@@ -317,14 +330,16 @@ def is_m1_available():
                 if result.returncode == 0:
                     brand_string = result.stdout.strip().lower()
                     return 'apple' in brand_string and 'm1' in brand_string
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(f"M1 detection failed: {e}")
+                # Continue with fallback detection
             
             # Fallback: assume ARM64 on macOS is M1
             return True
         
         return False
-    except Exception:
+    except Exception as e:
+        logger.warning(f"M1 availability check failed: {e}")
         return False
 
 def is_mps_available():
@@ -338,7 +353,8 @@ def is_mps_available():
         
         # Check if MPS is available in PyTorch
         return torch.backends.mps.is_available()
-    except Exception:
+    except Exception as e:
+        logger.warning(f"MPS availability check failed: {e}")
         return False
 
 def _chunked_execution(func, args, kwargs, config):
@@ -434,8 +450,9 @@ def get_memory_usage() -> Dict[str, float]:
                 'memory_saved_mb': enhanced_stats.get('memory_saved_mb', 0.0),
                 'available_memory_mb': enhanced_stats.get('available_memory_mb', 0.0)
             }
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning(f"Failed to get enhanced memory stats: {e}")
+        # Continue with fallback stats
     
     # Fallback to basic psutil monitoring
     if PSUTIL_AVAILABLE:
@@ -2545,7 +2562,8 @@ def validate_timestamp_column(df: pd.DataFrame, column: str = 'timestamp') -> bo
         # Try to convert to datetime to validate
         pd.to_datetime(df[column])
         return True
-    except Exception:
+    except Exception as e:
+        logger.warning(f"Date validation failed for column '{column}': {e}")
         return False
 
 def safe_timestamp_conversion(timestamp: Any, format: str = None) -> Optional[pd.Timestamp]:
@@ -2562,7 +2580,34 @@ def safe_timestamp_conversion(timestamp: Any, format: str = None) -> Optional[pd
 
 class MathValidationError(Exception):
     """Custom exception for math validation errors."""
-    pass
+    def __init__(self, message="Math validation error occurred", validation_type=None, 
+                 expected_value=None, actual_value=None, context=None):
+        super().__init__(message)
+        self.message = message
+        self.validation_type = validation_type
+        self.expected_value = expected_value
+        self.actual_value = actual_value
+        self.context = context or {}
+    
+    def __str__(self):
+        base_msg = f"MathValidationError: {self.message}"
+        if self.validation_type:
+            base_msg += f" (Type: {self.validation_type})"
+        if self.expected_value is not None and self.actual_value is not None:
+            base_msg += f" (Expected: {self.expected_value}, Actual: {self.actual_value})"
+        if self.context:
+            base_msg += f" (Context: {self.context})"
+        return base_msg
+    
+    def get_validation_details(self):
+        """Get detailed validation information."""
+        return {
+            'message': self.message,
+            'validation_type': self.validation_type,
+            'expected_value': self.expected_value,
+            'actual_value': self.actual_value,
+            'context': self.context
+        }
 
 def check_disk_space(path: str, required_gb: float = 1.0) -> bool:
     """Check if there's enough disk space at the given path."""

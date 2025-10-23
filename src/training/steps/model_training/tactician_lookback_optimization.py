@@ -350,9 +350,23 @@ class TacticianLookbackOptimizer:
             ensemble_path = Path(self.config.analyst_ensemble_path)
             if ensemble_path.exists():
                 tprint_info("📊 Loading Analyst ensemble model...")
-                # Implementation would load the actual ensemble model
-                # For now, we'll create a placeholder
-                self.analyst_ensemble = {"loaded": True, "path": str(ensemble_path)}
+                try:
+                    # Load the actual ensemble model
+                    import joblib
+                    self.analyst_ensemble = joblib.load(ensemble_path)
+                    tprint_success(f"✅ Loaded Analyst ensemble from {ensemble_path}")
+                except Exception as e:
+                    tprint_warning(f"⚠️ Failed to load ensemble model: {e}")
+                    # Fallback to basic ensemble structure
+                    self.analyst_ensemble = {
+                        "loaded": True, 
+                        "path": str(ensemble_path),
+                        "error": str(e),
+                        "fallback": True
+                    }
+            else:
+                tprint_warning(f"⚠️ Ensemble path not found: {ensemble_path}")
+                self.analyst_ensemble = {"loaded": False, "path": str(ensemble_path)}
 
             # Cache Analyst outputs for optimization
             # This would typically load pre-computed Analyst predictions

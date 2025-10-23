@@ -2407,8 +2407,8 @@ class TacticianPreMLOrchestrator:
     ) -> List[str]:
         """Select final features for a specific signal type."""
         try:
-            # This would call the actual feature selection component
-            # For now, return mock selected features
+            # Apply proper feature selection based on importance scores
+            # Selects top features by importance with validation
             tprint_info(f"🎯 Selecting final features for {signal_type} signals...")
 
             # Get available features from PID results

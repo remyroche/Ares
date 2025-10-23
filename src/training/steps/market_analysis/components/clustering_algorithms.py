@@ -57,8 +57,24 @@ class BaseClusteringAlgorithm(ABC):
 
     @abstractmethod
     def fit_predict(self, features: np.ndarray) -> ClusteringResult:
-        """Fit clustering algorithm and predict labels."""
-        pass
+        """
+        Fit clustering algorithm and predict labels.
+        
+        This method must be implemented by all concrete clustering algorithms.
+        It should:
+        1. Preprocess the input features
+        2. Fit the clustering model
+        3. Predict cluster labels
+        4. Calculate quality metrics
+        5. Return a ClusteringResult object
+        
+        Args:
+            features: Input feature matrix of shape (n_samples, n_features)
+            
+        Returns:
+            ClusteringResult containing labels, metrics, and metadata
+        """
+        raise NotImplementedError("Subclasses must implement fit_predict method")
 
     def _calculate_metrics(self, features: np.ndarray, labels: np.ndarray) -> Dict[str, float]:
         """Calculate clustering quality metrics."""

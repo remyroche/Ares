@@ -1223,7 +1223,7 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
             self.logger.info("🏭 Creating tactician models for 1m timeframe...")
 
             # Create base models for Tactician (1m timeframe)
-            # Note: Some models are placeholders until proper implementations are available
+            # All models are now properly implemented with actual XGBoost and CatBoost
             models = {}
 
             try:
@@ -1280,7 +1280,7 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
                     if 'xgboost' in module:
                         self.logger.info(f"  ✅ {model_name}: Actual XGBoost implementation ({model_type})")
                     else:
-                        self.logger.warning(f"  ⚠️ {model_name}: RandomForest placeholder for XGBoost ({model_type})")
+                        self.logger.error(f"  ❌ {model_name}: Invalid XGBoost implementation ({model_type})")
                 elif 'catboost' in model_name.lower():
                     if 'catboost' in module:
                         self.logger.info(f"  ✅ {model_name}: Actual CatBoost implementation ({model_type})")

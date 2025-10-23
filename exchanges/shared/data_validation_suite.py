@@ -460,18 +460,61 @@ class AdvancedDataValidator:
     
     def _validate_bingx_standards(self, data: pd.DataFrame, result: ValidationResult):
         """BingX-specific validation"""
-        # BingX specific checks
-        pass
+        # BingX typically has different timestamp precision
+        if 'timestamp' in data.columns:
+            timestamps = pd.to_datetime(data['timestamp'])
+            # Check if timestamps have proper millisecond precision
+            if len(data) > 0:
+                # BingX often uses millisecond timestamps
+                first_timestamp = timestamps.iloc[0]
+                if first_timestamp.timestamp() < 1000000000:  # Before year 2001
+                    result.warnings.append("BingX timestamps may need millisecond conversion")
+        
+        # Check for BingX-specific data patterns
+        if 'volume' in data.columns and len(data) > 0:
+            # BingX volume data validation
+            volume_data = data['volume']
+            if volume_data.min() < 0:
+                result.errors.append("BingX volume data contains negative values")
     
     def _validate_okx_standards(self, data: pd.DataFrame, result: ValidationResult):
         """OKX-specific validation"""
-        # OKX specific checks
-        pass
+        # OKX typically has very precise decimal handling
+        if 'close' in data.columns and len(data) > 0:
+            close_prices = data['close']
+            # Check for proper decimal precision (OKX often has 8+ decimal places)
+            decimal_places = close_prices.astype(str).str.split('.').str[1].str.len().max()
+            if decimal_places < 4:
+                result.warnings.append("OKX price data may have insufficient decimal precision")
+        
+        # Check for OKX-specific timestamp format
+        if 'timestamp' in data.columns:
+            timestamps = pd.to_datetime(data['timestamp'])
+            # OKX timestamps should be in UTC
+            if not timestamps.dt.tz:
+                result.warnings.append("OKX timestamps should include timezone information")
     
     def _validate_mexc_standards(self, data: pd.DataFrame, result: ValidationResult):
         """MEXC-specific validation"""
-        # MEXC specific checks
-        pass
+        # MEXC typically has different volume calculation
+        if 'volume' in data.columns and 'close' in data.columns and len(data) > 0:
+            volume_data = data['volume']
+            close_prices = data['close']
+            
+            # Check for reasonable volume-to-price ratio
+            if close_prices.min() > 0:
+                volume_price_ratio = volume_data.mean() / close_prices.mean()
+                if volume_price_ratio > 1000:  # Unusually high ratio
+                    result.warnings.append("MEXC volume-to-price ratio seems unusually high")
+        
+        # Check for MEXC-specific data quality patterns
+        if len(data) > 10:
+            # MEXC data should have consistent intervals
+            if 'timestamp' in data.columns:
+                timestamps = pd.to_datetime(data['timestamp']).sort_values()
+                time_diffs = timestamps.diff().dropna()
+                if time_diffs.std() > time_diffs.mean() * 0.1:  # High variance in intervals
+                    result.warnings.append("MEXC data has inconsistent time intervals")
     
     def _calculate_quality_score(self, result: ValidationResult) -> float:
         """Calculate overall quality score"""

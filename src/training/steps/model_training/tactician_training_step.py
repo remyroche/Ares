@@ -385,6 +385,9 @@ class TacticianTrainingStep:
         selected_features: List[str]
     ) -> Dict[str, Any]:
         """Train multiple base models with unified approach."""
+        # Start timing the entire base model training process
+        training_start_time = time.time()
+        
         try:
             tprint_info("🔧 Training base models...")
 
@@ -410,8 +413,12 @@ class TacticianTrainingStep:
                 "ELASTIC_NET_CV"
             ]
 
+            # Track individual model training times
+            model_training_times = {}
+
             # Train each base model type
             for model_type in base_model_types:
+                model_start_time = time.time()
                 try:
                     tprint_info(f"   🔧 Training {model_type} model...")
 
@@ -439,19 +446,35 @@ class TacticianTrainingStep:
                     if training_result.get('metrics'):
                         all_metrics[f"{model_type.lower()}"] = training_result['metrics']
 
-                    tprint_success(f"   ✅ {model_type} model trained")
+                    # Calculate and store individual model training time
+                    model_training_time = time.time() - model_start_time
+                    model_training_times[model_type] = model_training_time
+
+                    tprint_success(f"   ✅ {model_type} model trained in {model_training_time:.2f}s")
 
                 except Exception as e:
-                    tprint_warning(f"   ⚠️ Failed to train {model_type} model: {e}")
+                    # Still track time even for failed models
+                    model_training_time = time.time() - model_start_time
+                    model_training_times[model_type] = model_training_time
+                    tprint_warning(f"   ⚠️ Failed to train {model_type} model in {model_training_time:.2f}s: {e}")
                     continue
 
             if not all_models:
                 raise ValueError("Failed to train any base models")
 
+            # Calculate total training time
+            total_training_time = time.time() - training_start_time
+
+            # Log training time summary
+            tprint_info(f"📊 Base model training completed in {total_training_time:.2f}s")
+            for model_type, model_time in model_training_times.items():
+                tprint_info(f"   - {model_type}: {model_time:.2f}s")
+
             return {
                 'models': all_models,
                 'metrics': all_metrics,
-                'training_time': 0.0,  # TODO: Track total time
+                'training_time': total_training_time,
+                'model_training_times': model_training_times,
                 'features_used': selected_features,
                 'samples_used': len(training_data),
                 'model_types_trained': base_model_types,
@@ -459,11 +482,14 @@ class TacticianTrainingStep:
             }
 
         except Exception as e:
-            tprint_error(f"❌ Base model training failed: {e}")
+            # Calculate training time even for failed training
+            total_training_time = time.time() - training_start_time
+            tprint_error(f"❌ Base model training failed after {total_training_time:.2f}s: {e}")
             return {
                 'models': {},
                 'metrics': {},
-                'training_time': 0.0,
+                'training_time': total_training_time,
+                'model_training_times': model_training_times if 'model_training_times' in locals() else {},
                 'error': str(e)
             }
 

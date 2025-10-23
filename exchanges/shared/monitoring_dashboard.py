@@ -381,14 +381,46 @@ class MonitoringDashboard:
     
     def _test_exchange_adapter(self, adapter_name: str):
         """Test exchange adapter component"""
-        # This would test the actual adapter if available
-        # For now, just check if the component exists
-        pass
+        try:
+            # Extract exchange name from adapter name (e.g., 'binance_adapter' -> 'binance')
+            exchange_name = adapter_name.replace('_adapter', '')
+            
+            # Check if adapter is registered in exchange manager
+            if hasattr(self.exchange_manager, 'adapters'):
+                # Try to get the adapter
+                from .unified_ohlcv_standardizer import ExchangeType
+                try:
+                    exchange_type = ExchangeType(exchange_name.upper())
+                    if exchange_type in self.exchange_manager.adapters:
+                        adapter = self.exchange_manager.get_adapter(exchange_type)
+                        if adapter is None:
+                            raise Exception(f"Adapter for {exchange_name} is None")
+                    else:
+                        raise Exception(f"Adapter for {exchange_name} not registered")
+                except ValueError:
+                    # Exchange type not found, this is expected for some adapters
+                    pass
+            else:
+                raise Exception("Exchange manager not properly initialized")
+        except Exception as e:
+            raise Exception(f"Exchange adapter test failed: {e}")
     
     def _test_generic_component(self, component_name: str):
         """Generic component health check"""
-        # Basic health check - just verify the component exists
-        pass
+        try:
+            # Check if component exists in the system
+            if component_name in ['unified_ohlcv_standardizer', 'unified_exchange_interface']:
+                # These are modules, check if they can be imported
+                if component_name == 'unified_ohlcv_standardizer':
+                    from .unified_ohlcv_standardizer import ExchangeType, DataQualityLevel
+                elif component_name == 'unified_exchange_interface':
+                    from .unified_exchange_interface import UnifiedExchangeManager
+            else:
+                # For other components, just verify they exist in our component health dict
+                if component_name not in self.component_health:
+                    raise Exception(f"Component {component_name} not found in health tracking")
+        except Exception as e:
+            raise Exception(f"Generic component test failed: {e}")
     
     def _check_exchange_metrics(self):
         """Check metrics for all exchanges"""

@@ -511,14 +511,26 @@ class EnhancedKlinesProcessingPipeline(BaseStep):
     Enhanced klines data processing pipeline with comprehensive type hints,
     exchange-agnostic design, and fast-fail patterns.
 
+    OPTIMIZED GAP-FIRST APPROACH:
+    =============================
+    This pipeline uses an optimized approach that prevents duplicate downloads:
+    1. First analyzes existing data to detect gaps
+    2. Downloads ONLY the missing data periods
+    3. Combines existing and new data
+    4. Standardizes and validates the complete dataset
+
+    This prevents the inefficient pattern of:
+    - Downloading all data → detecting gaps → re-downloading gaps
+
     Features:
     - Uses ExchangeInterface for all exchange calls
     - Integrates KlinesParquetManager for efficient storage
     - Implements data standardizer for consistent formatting
     - Fast fail pattern with no fallbacks or mocks
-    - Comprehensive gap detection and filling
+    - Comprehensive gap detection and filling (OPTIMIZED)
     - Automatic resampling for data older than 3 days
     - Batch-compatible data management
+    - Selective downloading to avoid duplicates
     """
 
     def __init__(
@@ -1040,7 +1052,7 @@ class EnhancedKlinesProcessingPipeline(BaseStep):
         batch_id: Optional[str] = None
     ) -> Dict[str, Any]:
         """
-        Process klines data through the complete pipeline.
+        Process klines data through the complete pipeline with optimized gap-first approach.
 
         Args:
             symbol: Trading symbol (e.g., "ETHUSDT")
@@ -1104,26 +1116,60 @@ class EnhancedKlinesProcessingPipeline(BaseStep):
                 "resampled_intervals": []
             }
 
-            # Step 1: Download data using ExchangeInterface
+            # Step 1: Connect to exchange
             try:
                 await exchange_interface.connect()
             except Exception as e:
                 if self.enable_logging:
                     tprint_warning(f"⚠️ Exchange connection failed: {e}")
+
+            # Step 2: Analyze existing data and detect gaps FIRST (OPTIMIZED APPROACH)
+            if self.enable_logging:
+                tprint_info("🔍 Step 1: Analyzing existing data and detecting gaps")
             
-            download_result = await self._download_data(
-                symbol, interval, years, exchange_interface
+            gap_analysis_result = await self._analyze_existing_data_and_gaps(
+                symbol, interval, years, max_gap_minutes
             )
-            self.processing_results.append(download_result)
+            self.processing_results.append(gap_analysis_result)
 
-            if not download_result.success:
-                raise RuntimeError(f"Data download failed: {download_result.errors}")
+            if not gap_analysis_result.success:
+                raise RuntimeError(f"Gap analysis failed: {gap_analysis_result.errors}")
 
-            results["steps_completed"].append(ProcessingStep.DOWNLOAD.value)
+            results["steps_completed"].append(ProcessingStep.GAP_DETECTION.value)
 
-            # Step 2: Standardize data format using ExchangeDataStandardizer
+            # Step 3: Download only missing data (if gaps found)
+            if gap_analysis_result.metadata.get("download_required", False):
+                if self.enable_logging:
+                    gaps_detected = gap_analysis_result.metadata.get("gaps_detected", 0)
+                    if gaps_detected > 0:
+                        tprint_info(f"📥 Step 2: Downloading {gaps_detected} missing data periods")
+                    else:
+                        tprint_info("📥 Step 2: No existing data found - downloading all data")
+                
+                download_result = await self._download_missing_data(
+                    gap_analysis_result.data, symbol, interval, exchange_interface
+                )
+                self.processing_results.append(download_result)
+
+                if not download_result.success:
+                    raise RuntimeError(f"Missing data download failed: {download_result.errors}")
+
+                results["steps_completed"].append(ProcessingStep.DOWNLOAD.value)
+                if download_result.metadata.get("gaps_filled", 0) > 0:
+                    results["steps_completed"].append(ProcessingStep.GAP_FILLING.value)
+                
+                current_data = download_result.data
+            else:
+                if self.enable_logging:
+                    tprint_success("✅ No gaps found - using existing data")
+                current_data = gap_analysis_result.data
+
+            # Step 4: Standardize data format using ExchangeDataStandardizer
+            if self.enable_logging:
+                tprint_info("🔧 Step 3: Standardizing data format")
+            
             standardize_result = await self._standardize_data(
-                download_result.data, symbol, interval
+                current_data, symbol, interval
             )
             self.processing_results.append(standardize_result)
 
@@ -1132,8 +1178,11 @@ class EnhancedKlinesProcessingPipeline(BaseStep):
 
             results["steps_completed"].append(ProcessingStep.STANDARDIZE.value)
 
-            # Step 3: Validate data quality
+            # Step 5: Validate data quality
             if self.config.enable_quality_validation:
+                if self.enable_logging:
+                    tprint_info("🔍 Step 4: Validating data quality")
+                
                 # Preview data before quality validation
                 tprint_data_preview(standardize_result.data, f"Data before quality validation for {symbol} {interval}", max_rows=3, include_metadata=True)
                 
@@ -1150,22 +1199,6 @@ class EnhancedKlinesProcessingPipeline(BaseStep):
                 current_data = validate_result.data
             else:
                 current_data = standardize_result.data
-
-            # Step 4: Detect and fill gaps (if enabled)
-            if self.config.enable_gap_filling:
-                gap_result = await self._handle_gaps(
-                    current_data, symbol, interval, max_gap_minutes, exchange_interface
-                )
-                self.processing_results.append(gap_result)
-
-                if not gap_result.success:
-                    raise RuntimeError(f"Gap handling failed: {gap_result.errors}")
-
-                results["steps_completed"].append(ProcessingStep.GAP_DETECTION.value)
-                if gap_result.metadata.get("gaps_filled", 0) > 0:
-                    results["steps_completed"].append(ProcessingStep.GAP_FILLING.value)
-
-                current_data = gap_result.data
 
             # Step 5: Handle duplicates (if enabled)
             if self.config.enable_duplicate_handling:
@@ -1261,6 +1294,322 @@ class EnhancedKlinesProcessingPipeline(BaseStep):
             results["total_processing_time"] = (datetime.now() - start_time).total_seconds()
 
             return results
+
+    async def _analyze_existing_data_and_gaps(
+        self,
+        symbol: str,
+        interval: str,
+        years: int,
+        max_gap_minutes: int
+    ) -> ProcessingResult:
+        """
+        Analyze existing data and detect gaps BEFORE downloading anything.
+        This is the optimized approach that prevents duplicate downloads.
+        """
+        start_time = datetime.now()
+        result = ProcessingResult(
+            step=ProcessingStep.GAP_DETECTION,
+            success=False,
+            errors=[],
+            warnings=[]
+        )
+
+        try:
+            if self.enable_logging:
+                tprint_info(f"🔍 Analyzing existing data for {symbol} {interval}")
+
+            # Check if we have existing data
+            data_dir = Path(self.config.data_dir) / "binance" / symbol.lower() / "raw"
+            parquet_files = list(data_dir.glob(f"{symbol.lower()}_{interval}_*.parquet")) if data_dir.exists() else []
+            
+            if not parquet_files:
+                if self.enable_logging:
+                    tprint_info("📁 No existing data found - will download all data")
+                
+                # No existing data - we need to download everything
+                result.metadata = {
+                    "gaps_detected": 1,  # One big gap = all data missing
+                    "gaps_filled": 0,
+                    "existing_records": 0,
+                    "download_required": True,
+                    "date_range": None
+                }
+                result.success = True
+                result.data = pd.DataFrame()  # Empty DataFrame to indicate no existing data
+                return result
+
+            # Load existing data
+            if self.enable_logging:
+                tprint_info(f"📁 Found {len(parquet_files)} existing parquet files")
+
+            all_data = []
+            for file_path in sorted(parquet_files):
+                try:
+                    df = pd.read_parquet(file_path)
+                    if not df.empty:
+                        all_data.append(df)
+                        if self.enable_logging:
+                            tprint_info(f"  📊 Loaded {len(df)} records from {file_path.name}")
+                except Exception as e:
+                    result.warnings.append(f"Failed to load {file_path.name}: {e}")
+
+            if not all_data:
+                if self.enable_logging:
+                    tprint_warning("⚠️ No valid data found in parquet files")
+                result.metadata = {
+                    "gaps_detected": 1,
+                    "gaps_filled": 0,
+                    "existing_records": 0,
+                    "download_required": True,
+                    "date_range": None
+                }
+                result.success = True
+                result.data = pd.DataFrame()
+                return result
+
+            # Combine existing data
+            existing_data = pd.concat(all_data, ignore_index=True)
+            existing_data = existing_data.drop_duplicates().sort_values('timestamp')
+            
+            # Ensure timestamp is datetime
+            if not pd.api.types.is_datetime64_any_dtype(existing_data['timestamp']):
+                existing_data['timestamp'] = pd.to_datetime(existing_data['timestamp'])
+            
+            existing_data.set_index('timestamp', inplace=True)
+
+            if self.enable_logging:
+                tprint_success(f"✅ Loaded {len(existing_data)} existing records")
+                tprint_info(f"📅 Existing data range: {existing_data.index.min()} to {existing_data.index.max()}")
+
+            # Calculate expected date range
+            end_date = datetime.now() - timedelta(days=3)  # 3 days ago
+            start_date = end_date - timedelta(days=years * 365)
+            
+            # Detect gaps in existing data
+            gaps = self._detect_gaps(existing_data, interval, max_gap_minutes)
+            
+            # Check if we need data before existing data starts
+            if existing_data.index.min() > start_date:
+                gap = GapInfo(
+                    start_time=start_date,
+                    end_time=existing_data.index.min(),
+                    duration_minutes=int((existing_data.index.min() - start_date).total_seconds() / 60),
+                    symbol=symbol,
+                    interval=interval,
+                    priority=1
+                )
+                gaps.insert(0, gap)  # Add to beginning
+
+            # Check if we need data after existing data ends
+            if existing_data.index.max() < end_date:
+                gap = GapInfo(
+                    start_time=existing_data.index.max(),
+                    end_time=end_date,
+                    duration_minutes=int((end_date - existing_data.index.max()).total_seconds() / 60),
+                    symbol=symbol,
+                    interval=interval,
+                    priority=1
+                )
+                gaps.append(gap)  # Add to end
+
+            result.metadata = {
+                "gaps_detected": len(gaps),
+                "gaps_filled": 0,
+                "existing_records": len(existing_data),
+                "download_required": len(gaps) > 0,
+                "date_range": {
+                    "start": existing_data.index.min().isoformat() if not existing_data.empty else None,
+                    "end": existing_data.index.max().isoformat() if not existing_data.empty else None
+                },
+                "gaps": [gap.__dict__ for gap in gaps]
+            }
+
+            if self.enable_logging:
+                if len(gaps) > 0:
+                    tprint_warning(f"⚠️ Found {len(gaps)} gaps in existing data")
+                    for i, gap in enumerate(gaps[:3]):  # Show first 3 gaps
+                        tprint_info(f"  Gap {i+1}: {gap.start_time} to {gap.end_time} ({gap.duration_minutes}min)")
+                    if len(gaps) > 3:
+                        tprint_info(f"  ... and {len(gaps) - 3} more gaps")
+                else:
+                    tprint_success("✅ No gaps found in existing data")
+
+            result.success = True
+            result.data = existing_data
+
+        except Exception as e:
+            error_msg = f"Gap analysis failed: {str(e)}"
+            result.errors.append(error_msg)
+            if self.enable_logging:
+                tprint_error(f"❌ {error_msg}")
+
+        result.processing_time = (datetime.now() - start_time).total_seconds()
+        return result
+
+    async def _download_missing_data(
+        self,
+        existing_data: pd.DataFrame,
+        symbol: str,
+        interval: str,
+        exchange_interface: ExchangeInterface
+    ) -> ProcessingResult:
+        """
+        Download only the missing data periods identified by gap analysis.
+        """
+        start_time = datetime.now()
+        result = ProcessingResult(
+            step=ProcessingStep.DOWNLOAD,
+            success=False,
+            errors=[],
+            warnings=[]
+        )
+
+        try:
+            if self.enable_logging:
+                tprint_info(f"📥 Downloading missing data for {symbol} {interval}")
+
+            # Get gaps from the previous analysis
+            gaps = []
+            if not existing_data.empty:
+                gaps = self._detect_gaps(existing_data, interval, self.config.max_gap_minutes)
+                
+                # Add gaps for missing data at start/end
+                end_date = datetime.now() - timedelta(days=3)
+                start_date = end_date - timedelta(days=4 * 365)  # 4 years
+                
+                if existing_data.index.min() > start_date:
+                    gap = GapInfo(
+                        start_time=start_date,
+                        end_time=existing_data.index.min(),
+                        duration_minutes=int((existing_data.index.min() - start_date).total_seconds() / 60),
+                        symbol=symbol,
+                        interval=interval,
+                        priority=1
+                    )
+                    gaps.insert(0, gap)
+
+                if existing_data.index.max() < end_date:
+                    gap = GapInfo(
+                        start_time=existing_data.index.max(),
+                        end_time=end_date,
+                        duration_minutes=int((end_date - existing_data.index.max()).total_seconds() / 60),
+                        symbol=symbol,
+                        interval=interval,
+                        priority=1
+                    )
+                    gaps.append(gap)
+            else:
+                # No existing data - download everything
+                end_date = datetime.now() - timedelta(days=3)
+                start_date = end_date - timedelta(days=4 * 365)
+                gap = GapInfo(
+                    start_time=start_date,
+                    end_time=end_date,
+                    duration_minutes=int((end_date - start_date).total_seconds() / 60),
+                    symbol=symbol,
+                    interval=interval,
+                    priority=1
+                )
+                gaps = [gap]
+
+            if not gaps:
+                if self.enable_logging:
+                    tprint_success("✅ No missing data to download")
+                result.success = True
+                result.data = existing_data
+                result.metadata = {"gaps_filled": 0, "records_downloaded": 0}
+                return result
+
+            # Download data for each gap
+            downloaded_data = []
+            gaps_filled = 0
+
+            for gap in gaps:
+                if gap.priority > 1:  # Skip low priority gaps
+                    continue
+
+                try:
+                    if self.enable_logging:
+                        tprint_info(f"📥 Downloading gap: {gap.start_time} to {gap.end_time}")
+
+                    # Download data for the gap period
+                    gap_klines = await exchange_interface.get_klines(
+                        symbol=symbol,
+                        interval=interval,
+                        start_time=gap.start_time,
+                        end_time=gap.end_time,
+                        limit=1000
+                    )
+
+                    if gap_klines:
+                        # Convert KlineData objects to DataFrame
+                        gap_data = []
+                        for kline in gap_klines:
+                            gap_data.append([
+                                int(kline.timestamp.timestamp() * 1000),  # timestamp
+                                kline.open_price,  # open
+                                kline.high_price,  # high
+                                kline.low_price,   # low
+                                kline.close_price, # close
+                                kline.volume,      # volume
+                                int(kline.close_time.timestamp() * 1000),  # close_time
+                                kline.quote_asset_volume,  # quote_volume
+                                kline.number_of_trades,     # trades
+                                kline.taker_buy_base_asset_volume,  # taker_buy_base
+                                kline.taker_buy_quote_asset_volume   # taker_buy_quote
+                            ])
+
+                        if gap_data:
+                            gap_df = self._klines_to_dataframe(gap_data, symbol, interval)
+                            downloaded_data.append(gap_df)
+                            gaps_filled += 1
+                            
+                            if self.enable_logging:
+                                tprint_success(f"✅ Downloaded {len(gap_df)} records for gap")
+
+                except Exception as e:
+                    error_msg = f"Failed to download gap {gap.start_time} to {gap.end_time}: {e}"
+                    result.warnings.append(error_msg)
+                    if self.enable_logging:
+                        tprint_warning(f"⚠️ {error_msg}")
+
+            # Combine existing data with downloaded data
+            if downloaded_data:
+                if not existing_data.empty:
+                    # Combine existing and new data
+                    all_data = [existing_data] + downloaded_data
+                    combined_data = pd.concat(all_data, ignore_index=False)
+                else:
+                    # Only downloaded data
+                    combined_data = pd.concat(downloaded_data, ignore_index=False)
+                
+                # Remove duplicates and sort
+                combined_data = combined_data.drop_duplicates().sort_index()
+                
+                if self.enable_logging:
+                    tprint_success(f"✅ Combined data: {len(combined_data)} total records")
+                    tprint_info(f"📅 Final range: {combined_data.index.min()} to {combined_data.index.max()}")
+            else:
+                combined_data = existing_data
+                if self.enable_logging:
+                    tprint_warning("⚠️ No data was downloaded")
+
+            result.success = True
+            result.data = combined_data
+            result.metadata = {
+                "gaps_filled": gaps_filled,
+                "records_downloaded": sum(len(df) for df in downloaded_data),
+                "total_records": len(combined_data)
+            }
+
+        except Exception as e:
+            error_msg = f"Missing data download failed: {str(e)}"
+            result.errors.append(error_msg)
+            if self.enable_logging:
+                tprint_error(f"❌ {error_msg}")
+
+        result.processing_time = (datetime.now() - start_time).total_seconds()
+        return result
 
     async def _download_data(
         self,

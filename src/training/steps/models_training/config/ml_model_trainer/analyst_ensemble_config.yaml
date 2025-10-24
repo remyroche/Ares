@@ -13,7 +13,7 @@ models:
     enabled: true
     description: "Stacked ensemble with LightGBM meta-learner and calibration"
     parameters:
-      # Base models (inherited from analyst base)
+      # Base models (inherited from analyst base) - Fixed naming consistency
       base_models:
         - "lgbm_base"
         - "lgbm_patchtst_embeddings"
@@ -56,9 +56,9 @@ models:
       blend_method: "stacking"  # Use stacking instead of weighted average
       validation_split: 0.2
 
-# Base Models for Ensemble
+# Base Models for Ensemble - Fixed naming to match analyst_base_config.yaml
 base_models:
-  - name: "lightgbm"
+  - name: "lgbm_base"
     type: "LIGHTGBM"
     enabled: true
     parameters:
@@ -72,56 +72,63 @@ base_models:
       bagging_freq: 5
       verbose: -1
       random_state: 42
-      n_estimators: 1000
-      early_stopping_rounds: 50
+      n_estimators: 500  # Reduced for efficiency
+      early_stopping_rounds: 30  # Reduced for efficiency
 
-  - name: "catboost"
+  - name: "lgbm_patchtst_embeddings"
+    type: "LIGHTGBM_PATCHTST"
+    enabled: true
+    parameters:
+      objective: "binary"
+      metric: "binary_logloss"
+      boosting_type: "gbdt"
+      num_leaves: 63
+      learning_rate: 0.05
+      feature_fraction: 0.7
+      bagging_fraction: 0.8
+      bagging_freq: 5
+      verbose: -1
+      random_state: 42
+      n_estimators: 600  # Reduced for efficiency
+      early_stopping_rounds: 30
+      patchtst_n_heads: 4
+      patchtst_d_ff: 256
+      patchtst_dropout: 0.1
+
+  - name: "catboost_base"
     type: "CATBOOST"
     enabled: true
     parameters:
       objective: "Logloss"
       eval_metric: "Logloss"
-      iterations: 1000
-      learning_rate: 0.05
+      iterations: 600  # Reduced for efficiency
+      learning_rate: 0.08
       depth: 6
-      l2_leaf_reg: 3
+      l2_leaf_reg: 5
       random_seed: 42
-      early_stopping_rounds: 50
+      early_stopping_rounds: 30  # Reduced for efficiency
       verbose: false
-
-  - name: "xgboost"
-    type: "XGBOOST"
-    enabled: true
-    parameters:
-      objective: "binary:logistic"
-      eval_metric: "logloss"
-      max_depth: 6
-      learning_rate: 0.05
-      n_estimators: 1000
+      min_data_in_leaf: 25
+      bootstrap_type: "Bayesian"
+      bagging_temperature: 0.8
       subsample: 0.8
-      colsample_bytree: 0.9
-      random_state: 42
-      early_stopping_rounds: 50
-      verbosity: 0
-
-  - name: "random_forest"
-    type: "RANDOM_FOREST"
-    enabled: true
-    parameters:
-      n_estimators: 1000
-      max_depth: 10
-      min_samples_split: 5
-      min_samples_leaf: 2
-      max_features: "sqrt"
-      random_state: 42
-      n_jobs: -1
 
 # Target Configuration
 targets:
   primary: "analyst_confidence"  # Calibrated confidence score for position entry/stay (0-1)
+  secondary: "analyst_target"  # Original binary classification target (0/1)
   target_type: "binary_classification"
   confidence_calibration: true
   calibration_method: "isotonic"  # or "platt", "sigmoid"
+  
+  # Target validation
+  target_validation:
+    check_binary_target: true
+    check_confidence_bounds: true
+    confidence_bounds: [0.0, 1.0]
+    binary_target_values: [0, 1]
+    check_temporal_consistency: true
+    check_lookahead_bias: true  # Critical for ensemble models
 
 # Input Configuration
 inputs:
@@ -150,7 +157,7 @@ inputs:
     - "regime_transition_matrix"
     - "regime_volatility_estimates"
   
-  # Previous model outputs (from analyst base models)
+  # Previous model outputs (from analyst base models) - Fixed duplicates
   previous_model_outputs:
     - "analyst_base_predictions"  # From analyst base models
     - "analyst_base_probabilities"  # From analyst base models
@@ -165,11 +172,13 @@ training:
   random_state: 42
   stratify: true
   
-  # Cross-validation strategy
-  cv_strategy: "TimeSeriesSplit"
+  # Cross-validation strategy - Enhanced for financial data
+  cv_strategy: "PurgedTimeSeriesSplit"  # Prevents lookahead bias
   cv_params:
     n_splits: 5
     test_size: 0.2
+    purge_length: 5  # Purge 5 periods to prevent leakage
+    embargo_length: 2  # Embargo 2 periods after test set
   
   # Caching configuration - Uses unified configuration
   caching:
@@ -227,20 +236,27 @@ training:
 
 # Data Quality & Leakage Prevention
 data_quality:
-  # Leakage detection
+  # Leakage detection - Enhanced for financial models
   leakage_detection:
     enabled: true
-    methods: ["temporal_consistency", "feature_correlation", "target_correlation"]
+    methods: ["temporal_consistency", "feature_correlation", "target_correlation", "future_data_detection", "volatility_leakage", "ensemble_leakage"]
     max_correlation_threshold: 0.95
     temporal_window: 5
+    future_data_threshold: 0.01  # Max correlation with future data
+    volatility_lookback: 20  # Volatility calculation lookback window
+    ensemble_purge_length: 3  # Additional purge for ensemble models
   
-  # Data validation
+  # Data validation - Enhanced for financial data
   validation:
     check_missing_values: true
     check_infinite_values: true
     check_duplicate_timestamps: true
     check_data_types: true
     max_missing_percentage: 0.05
+    check_temporal_order: true  # Ensure data is chronologically ordered
+    check_lookahead_bias: true  # Detect potential future data leakage
+    check_stationarity: true  # Check for non-stationary features
+    stationarity_threshold: 0.05
   
   # Outlier detection
   outlier_detection:

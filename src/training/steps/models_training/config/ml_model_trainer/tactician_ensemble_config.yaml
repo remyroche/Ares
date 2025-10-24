@@ -13,7 +13,7 @@ models:
     enabled: true
     description: "Stacked ensemble with LightGBM meta-learner, calibration, and gating mechanism"
     parameters:
-      # Base models (inherited from tactician base)
+      # Base models (inherited from tactician base) - Fixed naming consistency
       base_models:
         - "lgbm_gru_embeddings"
         - "catboost_tactician"
@@ -71,49 +71,79 @@ models:
       blend_method: "stacking"  # Use stacking instead of weighted average
       validation_split: 0.2
 
-# Base Models for Ensemble
+# Base Models for Ensemble - Fixed naming to match tactician_base_config.yaml
 base_models:
-  - name: "lightgbm"
-    type: "LIGHTGBM"
+  - name: "lgbm_gru_embeddings"
+    type: "LIGHTGBM_GRU"
     enabled: true
     parameters:
       objective: "binary"
       metric: "binary_logloss"
       boosting_type: "gbdt"
       num_leaves: 31
-      learning_rate: 0.05
-      feature_fraction: 0.9
+      learning_rate: 0.08
+      feature_fraction: 0.8
       bagging_fraction: 0.8
       bagging_freq: 5
       verbose: -1
       random_state: 42
-      n_estimators: 1000
-      early_stopping_rounds: 50
+      n_estimators: 400  # Reduced for efficiency
+      early_stopping_rounds: 30  # Reduced for efficiency
+      gru_hidden_size: 32
+      gru_num_layers: 2
+      gru_dropout: 0.2
+      gru_bidirectional: false
+      embedding_dim: 16
+      sequence_length: 20
+      gru_learning_rate: 0.002
+      gru_epochs: 30
+      gru_batch_size: 64
 
-  - name: "catboost"
+  - name: "catboost_tactician"
     type: "CATBOOST"
     enabled: true
     parameters:
       objective: "Logloss"
       eval_metric: "Logloss"
-      iterations: 1000
-      learning_rate: 0.05
+      iterations: 400  # Reduced for efficiency
+      learning_rate: 0.08
       depth: 6
-      l2_leaf_reg: 3
+      l2_leaf_reg: 5
       random_seed: 42
-      early_stopping_rounds: 50
+      early_stopping_rounds: 30  # Reduced for efficiency
       verbose: false
+      min_data_in_leaf: 25
+      bootstrap_type: "Bayesian"
+      bagging_temperature: 0.8
+      subsample: 0.8
+      loss_function: "Logloss"
+      custom_metric: ["AUC", "Precision", "Recall"]
+      boosting_type: "Plain"
 
-  - name: "neural_network"
-    type: "NEURAL_NETWORK"
+  - name: "causal_dilated_tcn"
+    type: "CAUSAL_DILATED_TCN"
     enabled: true
     parameters:
-      hidden_layer_sizes: [100, 50, 25]
-      activation: "relu"
-      solver: "adam"
-      alpha: 0.0001
-      batch_size: "auto"
-      learning_rate: "constant"
+      input_channels: 1
+      output_channels: 64
+      num_layers: 4
+      kernel_size: 3
+      dilation_base: 2
+      dropout: 0.1
+      causal_padding: true
+      zero_init_residual: true
+      learning_rate: 0.002
+      batch_size: 64
+      epochs: 40  # Reduced for efficiency
+      early_stopping_patience: 10  # Reduced for efficiency
+      weight_decay: 1e-3
+      sequence_length: 50
+      prediction_horizon: 1
+      optimizer: "adam"
+      scheduler: "cosine"
+      warmup_epochs: 10
+      gradient_clip_norm: 1.0
+      label_smoothing: 0.0
       learning_rate_init: 0.001
       max_iter: 1000
       early_stopping: true
@@ -124,9 +154,19 @@ base_models:
 # Target Configuration
 targets:
   primary: "position_confidence"  # Calibrated confidence score for position entry/stay (0-1)
+  secondary: "position_target"  # Original binary classification target (0/1)
   target_type: "binary_classification"
   confidence_calibration: true
   calibration_method: "isotonic"  # or "platt", "sigmoid"
+  
+  # Target validation
+  target_validation:
+    check_binary_target: true
+    check_confidence_bounds: true
+    confidence_bounds: [0.0, 1.0]
+    binary_target_values: [0, 1]
+    check_temporal_consistency: true
+    check_lookahead_bias: true  # Critical for ensemble models
 
 # Input Configuration
 inputs:
@@ -153,7 +193,6 @@ inputs:
     description: "Outputs from Analyst ensemble model"
     source: "analyst_ensemble_training"
     enabled: true
-    position_features: ["volatility_adjusted", "risk_metrics", "correlation_matrix"]
   
   # Regime model outputs (from previous pipeline steps)
   regime_outputs:
@@ -188,11 +227,13 @@ training:
   random_state: 42
   stratify: true  # Binary classification uses stratification
   
-  # Cross-validation strategy
-  cv_strategy: "TimeSeriesSplit"
+  # Cross-validation strategy - Enhanced for financial data
+  cv_strategy: "PurgedTimeSeriesSplit"  # Prevents lookahead bias
   cv_params:
     n_splits: 5
     test_size: 0.2
+    purge_length: 5  # Purge 5 periods to prevent leakage
+    embargo_length: 2  # Embargo 2 periods after test set
   
   # Caching configuration - Uses unified configuration
   caching:
@@ -229,110 +270,31 @@ training:
     
     # Note: Blending removed - using stacking approach
 
-# Feature Engineering
-feature_engineering:
-  # Entry timing features
-  entry_timing:
-    enabled: true
-    lookback_window: 10
-    features:
-      - "price_momentum"
-      - "volume_momentum"
-      - "volatility_regime"
-      - "market_microstructure"
-      - "order_flow_imbalance"
-      - "bid_ask_spread"
-      - "liquidity_metrics"
-  
-  # Exit timing features
-  exit_timing:
-    enabled: true
-    lookback_window: 5
-    features:
-      - "profit_targets"
-      - "stop_loss_levels"
-      - "trailing_stop_adjustments"
-      - "volatility_adjusted_targets"
-      - "regime_conditional_targets"
-      - "risk_adjusted_exits"
-  
-  # Position sizing features
-  position_sizing:
-    enabled: true
-    lookback_window: 20
-    features:
-      - "volatility_adjusted_sizing"
-      - "risk_metrics"
-      - "correlation_matrix"
-      - "portfolio_heat"
-      - "drawdown_adjusted_sizing"
-      - "regime_conditional_sizing"
-  
-  # Tactician-specific features
-  tactician_specific:
-    # Market microstructure features
-    microstructure:
-      enabled: true
-      features:
-        - "bid_ask_spread"
-        - "order_book_imbalance"
-        - "trade_size_distribution"
-        - "tick_direction"
-        - "volume_weighted_price"
-    
-    # Risk features
-    risk_features:
-      enabled: true
-      features:
-        - "value_at_risk"
-        - "expected_shortfall"
-        - "maximum_drawdown"
-        - "sharpe_ratio"
-        - "calmar_ratio"
-        - "sortino_ratio"
-    
-    # Timing features
-    timing_features:
-      enabled: true
-      features:
-        - "intraday_patterns"
-        - "seasonal_effects"
-        - "market_hours_effects"
-        - "news_impact_timing"
-        - "earnings_announcement_timing"
-  
-  # Ensemble-specific features
-  ensemble_features:
-    # Base model predictions as features
-    include_base_predictions: true
-    include_base_probabilities: true
-    include_base_confidence: true
-    
-    # Feature interactions
-    enable_feature_interactions: true
-    interaction_degree: 2
-    interaction_threshold: 0.1
-    
-    # Tactician-specific ensemble features
-    tactician_ensemble_features:
-      include_entry_timing_predictions: true
 
 # Data Quality & Leakage Prevention
 data_quality:
-  # Leakage detection
+  # Leakage detection - Enhanced for financial models
   leakage_detection:
     enabled: true
-    methods: ["temporal_consistency", "feature_correlation", "target_correlation"]
+    methods: ["temporal_consistency", "feature_correlation", "target_correlation", "future_data_detection", "volatility_leakage", "ensemble_leakage", "tactician_leakage"]
     max_correlation_threshold: 0.95
     temporal_window: 5
+    future_data_threshold: 0.01  # Max correlation with future data
+    volatility_lookback: 20  # Volatility calculation lookback window
+    ensemble_purge_length: 3  # Additional purge for ensemble models
+    tactician_purge_length: 4  # Additional purge for tactician models
   
-  # Data validation
+  # Data validation - Enhanced for financial data
   validation:
     check_missing_values: true
     check_infinite_values: true
     check_duplicate_timestamps: true
     check_data_types: true
     max_missing_percentage: 0.05
+    check_temporal_order: true  # Ensure data is chronologically ordered
+    check_lookahead_bias: true  # Detect potential future data leakage
+    check_stationarity: true  # Check for non-stationary features
+    stationarity_threshold: 0.05
   
   # Outlier detection
   outlier_detection:

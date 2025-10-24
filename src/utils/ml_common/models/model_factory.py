@@ -1274,7 +1274,7 @@ class EnhancedModelFactory:
                             'samples': len(X_regime),
                             'architecture': architecture,
                             'hyperparams': hyperparams,
-                            'training_time': training_time
+                            'training_time': training_time,
                             'samples_per_second': samples_per_second,
                             'memory_usage_mb': memory_usage,
                             'efficiency_score': samples_per_second / max(memory_usage, 1),  # samples per MB

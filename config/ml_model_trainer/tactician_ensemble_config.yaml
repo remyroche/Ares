@@ -1,0 +1,459 @@
+# Tactician Ensemble Models Configuration
+# This config defines ensemble models that combine multiple tactician base models
+
+model_type: "tactician_ensemble"
+timeframe: "15m"
+description: "Tactician ensemble models combining multiple base models for enhanced tactical decisions"
+
+# ML Models to Train
+models:
+  - name: "voting_ensemble"
+    type: "VOTING"
+    enabled: true
+    parameters:
+      voting_type: "soft"  # soft or hard
+      weights: null  # null for equal weights, or list of weights
+      n_jobs: -1
+
+  - name: "averaging_ensemble"
+    type: "AVERAGING"
+    enabled: true
+    parameters:
+      method: "mean"  # mean, median, or weighted
+      weights: null  # null for equal weights, or list of weights
+
+  - name: "stacking_ensemble"
+    type: "STACKING"
+    enabled: true
+    parameters:
+      meta_learner_type: "LIGHTGBM"
+      meta_learner_params:
+        objective: "regression"
+        metric: "rmse"
+        boosting_type: "gbdt"
+        num_leaves: 31
+        learning_rate: 0.05
+        feature_fraction: 0.9
+        bagging_fraction: 0.8
+        bagging_freq: 5
+        verbose: -1
+        random_state: 42
+        n_estimators: 1000
+        early_stopping_rounds: 50
+      cv_folds: 5
+      use_features_in_secondary: true
+      n_jobs: -1
+
+  - name: "blending_ensemble"
+    type: "BLENDING"
+    enabled: true
+    parameters:
+      blend_method: "weighted_average"
+      weights: null  # null for equal weights, or list of weights
+      validation_split: 0.2
+
+# Base Models for Ensemble
+base_models:
+  - name: "lightgbm"
+    type: "LIGHTGBM"
+    enabled: true
+    parameters:
+      objective: "regression"
+      metric: "rmse"
+      boosting_type: "gbdt"
+      num_leaves: 31
+      learning_rate: 0.05
+      feature_fraction: 0.9
+      bagging_fraction: 0.8
+      bagging_freq: 5
+      verbose: -1
+      random_state: 42
+      n_estimators: 1000
+      early_stopping_rounds: 50
+
+  - name: "catboost"
+    type: "CATBOOST"
+    enabled: true
+    parameters:
+      objective: "RMSE"
+      eval_metric: "RMSE"
+      iterations: 1000
+      learning_rate: 0.05
+      depth: 6
+      l2_leaf_reg: 3
+      random_seed: 42
+      early_stopping_rounds: 50
+      verbose: false
+
+  - name: "neural_network"
+    type: "NEURAL_NETWORK"
+    enabled: true
+    parameters:
+      hidden_layer_sizes: [100, 50, 25]
+      activation: "relu"
+      solver: "adam"
+      alpha: 0.0001
+      batch_size: "auto"
+      learning_rate: "constant"
+      learning_rate_init: 0.001
+      max_iter: 1000
+      early_stopping: true
+      validation_fraction: 0.1
+      n_iter_no_change: 10
+      random_state: 42
+
+# Target Configuration
+targets:
+  primary: "entry_timing"  # Entry timing signal (regression)
+  secondary: "exit_timing"  # Exit timing signal (regression)
+  tertiary: "position_sizing"  # Position sizing signal (regression)
+  target_type: "multi_output_regression"
+  target_weights: [0.4, 0.3, 0.3]  # Weights for each target
+
+# Input Configuration
+inputs:
+  # Base features (always included)
+  base_features:
+    - "price_features"
+    - "volume_features"
+    - "technical_indicators"
+    - "market_microstructure"
+    - "order_book_features"
+  
+  # Tactician-specific features
+  tactician_features:
+    enable_entry_timing: true
+    entry_lookback: 10
+    entry_features: ["price_momentum", "volume_profile", "volatility_regime"]
+    
+    enable_exit_timing: true
+    exit_lookback: 5
+    exit_features: ["profit_targets", "stop_loss", "trailing_stops"]
+    
+    enable_position_sizing: true
+    position_sizing_lookback: 20
+    position_features: ["volatility_adjusted", "risk_metrics", "correlation_matrix"]
+  
+  # Regime model outputs (from previous pipeline steps)
+  regime_outputs:
+    - "regime_classification"
+    - "regime_probabilities"
+    - "regime_transition_matrix"
+    - "regime_volatility_estimates"
+    - "regime_correlation_structure"
+  
+  # Analyst model outputs (from analyst base and ensemble models)
+  analyst_outputs:
+    - "analyst_base_predictions"
+    - "analyst_base_confidence"
+    - "analyst_ensemble_predictions"
+    - "analyst_ensemble_confidence"
+    - "analyst_feature_importance"
+    - "analyst_shap_values"
+  
+  # Previous tactician model outputs (from tactician base models)
+  previous_model_outputs:
+    - "tactician_base_predictions"  # From tactician base models
+    - "tactician_base_entry_timing"  # From tactician base models
+    - "tactician_base_exit_timing"  # From tactician base models
+    - "tactician_base_position_sizing"  # From tactician base models
+    - "tactician_base_confidence"  # From tactician base models
+
+# Training Configuration
+training:
+  validation_split: 0.2
+  cv_folds: 5
+  test_split: 0.1
+  random_state: 42
+  stratify: false  # Regression doesn't use stratification
+  
+  # Cross-validation strategy
+  cv_strategy: "TimeSeriesSplit"
+  cv_params:
+    n_splits: 5
+    test_size: 0.2
+  
+  # Early stopping
+  early_stopping:
+    enabled: true
+    patience: 50
+    min_delta: 0.001
+    monitor: "val_loss"
+    mode: "min"
+  
+  # Hyperparameter optimization
+  hyperparameter_optimization:
+    enabled: true
+    method: "optuna"
+    n_trials: 100
+    timeout: 3600  # 1 hour
+    direction: "minimize"
+    metric: "rmse"
+  
+  # Multi-output training
+  multi_output:
+    strategy: "multi_output_regressor"  # or "regressor_chain"
+    chain_order: ["entry_timing", "exit_timing", "position_sizing"]
+    use_previous_outputs: true
+  
+  # Ensemble-specific training
+  ensemble_training:
+    # Stacking training
+    stacking:
+      meta_learner_cv: 5
+      use_features_in_secondary: true
+      meta_learner_early_stopping: true
+      meta_learner_patience: 20
+    
+    # Blending training
+    blending:
+      holdout_split: 0.2
+      blend_method: "weighted_average"
+      weight_optimization: true
+      weight_optimization_method: "grid_search"
+
+# Feature Engineering
+feature_engineering:
+  # Entry timing features
+  entry_timing:
+    enabled: true
+    lookback_window: 10
+    features:
+      - "price_momentum"
+      - "volume_momentum"
+      - "volatility_regime"
+      - "market_microstructure"
+      - "order_flow_imbalance"
+      - "bid_ask_spread"
+      - "liquidity_metrics"
+  
+  # Exit timing features
+  exit_timing:
+    enabled: true
+    lookback_window: 5
+    features:
+      - "profit_targets"
+      - "stop_loss_levels"
+      - "trailing_stop_adjustments"
+      - "volatility_adjusted_targets"
+      - "regime_conditional_targets"
+      - "risk_adjusted_exits"
+  
+  # Position sizing features
+  position_sizing:
+    enabled: true
+    lookback_window: 20
+    features:
+      - "volatility_adjusted_sizing"
+      - "risk_metrics"
+      - "correlation_matrix"
+      - "portfolio_heat"
+      - "drawdown_adjusted_sizing"
+      - "regime_conditional_sizing"
+  
+  # Tactician-specific features
+  tactician_specific:
+    # Market microstructure features
+    microstructure:
+      enabled: true
+      features:
+        - "bid_ask_spread"
+        - "order_book_imbalance"
+        - "trade_size_distribution"
+        - "tick_direction"
+        - "volume_weighted_price"
+    
+    # Risk features
+    risk_features:
+      enabled: true
+      features:
+        - "value_at_risk"
+        - "expected_shortfall"
+        - "maximum_drawdown"
+        - "sharpe_ratio"
+        - "calmar_ratio"
+        - "sortino_ratio"
+    
+    # Timing features
+    timing_features:
+      enabled: true
+      features:
+        - "intraday_patterns"
+        - "seasonal_effects"
+        - "market_hours_effects"
+        - "news_impact_timing"
+        - "earnings_announcement_timing"
+  
+  # Ensemble-specific features
+  ensemble_features:
+    # Base model predictions as features
+    include_base_predictions: true
+    include_base_probabilities: true
+    include_base_confidence: true
+    
+    # Feature interactions
+    enable_feature_interactions: true
+    interaction_degree: 2
+    interaction_threshold: 0.1
+    
+    # Tactician-specific ensemble features
+    tactician_ensemble_features:
+      include_entry_timing_predictions: true
+      include_exit_timing_predictions: true
+      include_position_sizing_predictions: true
+      include_trading_performance_metrics: true
+
+# Data Quality & Leakage Prevention
+data_quality:
+  # Leakage detection
+  leakage_detection:
+    enabled: true
+    methods: ["temporal_consistency", "feature_correlation", "target_correlation"]
+    max_correlation_threshold: 0.95
+    temporal_window: 5
+  
+  # Data validation
+  validation:
+    check_missing_values: true
+    check_infinite_values: true
+    check_duplicate_timestamps: true
+    check_data_types: true
+    max_missing_percentage: 0.05
+  
+  # Outlier detection
+  outlier_detection:
+    enabled: true
+    method: "isolation_forest"
+    contamination: 0.1
+    random_state: 42
+  
+  # Tactician-specific validation
+  tactician_validation:
+    check_target_bounds: true
+    entry_timing_bounds: [-1.0, 1.0]
+    exit_timing_bounds: [-1.0, 1.0]
+    position_sizing_bounds: [0.0, 1.0]
+    check_temporal_consistency: true
+
+# Metrics & Evaluation
+metrics:
+  primary: "rmse"
+  secondary: ["mae", "mape", "r2_score", "explained_variance"]
+  multi_output_metrics: ["multi_output_rmse", "multi_output_mae", "multi_output_r2"]
+  
+  # SHAP analysis
+  shap_analysis:
+    enabled: true
+    sample_size: 1000
+    background_samples: 100
+    explainer_type: "tree"
+  
+  # Feature importance
+  feature_importance:
+    enabled: true
+    methods: ["permutation", "shap", "builtin"]
+    top_n_features: 20
+  
+  # Tactician-specific metrics
+  tactician_metrics:
+    # Trading performance
+    trading_metrics:
+      enabled: true
+      metrics: ["sharpe_ratio", "calmar_ratio", "sortino_ratio", "max_drawdown"]
+    
+    # Timing accuracy
+    timing_accuracy:
+      enabled: true
+      metrics: ["timing_precision", "timing_recall", "timing_f1"]
+    
+    # Position sizing accuracy
+    position_sizing_accuracy:
+      enabled: true
+      metrics: ["sizing_rmse", "sizing_mae", "sizing_correlation"]
+  
+  # Ensemble-specific metrics
+  ensemble_metrics:
+    # Individual model performance
+    track_individual_models: true
+    individual_model_metrics: ["rmse", "mae", "r2_score"]
+    
+    # Ensemble performance
+    ensemble_improvement: true
+    diversity_metrics: true
+    correlation_analysis: true
+    
+    # Tactician ensemble metrics
+    tactician_ensemble_metrics:
+      track_entry_timing_ensemble: true
+      track_exit_timing_ensemble: true
+      track_position_sizing_ensemble: true
+      track_trading_performance_ensemble: true
+
+# Performance Monitoring
+monitoring:
+  # Training monitoring
+  training:
+    log_metrics_every: 10  # epochs
+    save_checkpoints: true
+    checkpoint_frequency: 50  # epochs
+    checkpoint_dir: "checkpoints/tactician_ensemble"
+  
+  # Model performance
+  performance:
+    track_training_time: true
+    track_memory_usage: true
+    track_gpu_usage: true
+    log_predictions: true
+    prediction_sample_size: 1000
+  
+  # Tactician monitoring
+  tactician_monitoring:
+    track_entry_timing: true
+    track_exit_timing: true
+    track_position_sizing: true
+    track_trading_performance: true
+    track_risk_metrics: true
+  
+  # Ensemble monitoring
+  ensemble_monitoring:
+    track_individual_models: true
+    track_ensemble_weights: true
+    track_diversity_metrics: true
+    track_correlation_matrix: true
+    track_tactician_ensemble_performance: true
+
+# Output Configuration
+output:
+  # Model artifacts
+  models:
+    save_format: "joblib"
+    save_path: "models/tactician_ensemble"
+    include_metadata: true
+    include_feature_names: true
+    include_training_history: true
+    include_target_names: true
+    include_ensemble_weights: true
+    include_individual_models: true
+  
+  # Results
+  results:
+    save_predictions: true
+    save_probabilities: true
+    save_feature_importance: true
+    save_shap_values: true
+    save_trading_signals: true
+    save_risk_metrics: true
+    save_ensemble_weights: true
+    save_individual_predictions: true
+    results_path: "results/tactician_ensemble"
+  
+  # Reports
+  reports:
+    generate_report: true
+    report_format: "html"
+    include_plots: true
+    include_tables: true
+    include_trading_analysis: true
+    include_risk_analysis: true
+    include_ensemble_analysis: true
+    report_path: "reports/tactician_ensemble"

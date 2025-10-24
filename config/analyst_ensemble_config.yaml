@@ -1,0 +1,115 @@
+# Analyst Ensemble Configuration
+# This config demonstrates the stacking ensemble setup
+
+targets:
+  target_type: "binary_classification"
+
+metrics:
+  primary: "f1_score"
+  secondary: "auc_roc"
+
+training:
+  cv_strategy: "TimeSeriesSplit"
+  cv_params:
+    n_splits: 5
+    test_size: 0.2
+  early_stopping:
+    enabled: true
+    patience: 50
+  hyperparameter_optimization:
+    direction: "maximize"
+    metric: "f1_score"
+  ensemble_training:
+    stacking:
+      meta_learner_cv: 5
+
+# Base models for the ensemble
+base_models:
+  - name: "lgbm_base"
+    type: "LIGHTGBM"
+    enabled: true
+    parameters:
+      objective: "binary"
+      boosting_type: "gbdt"
+      num_leaves: 31
+      max_depth: 6
+      learning_rate: 0.1
+      n_estimators: 1000
+      feature_fraction: 0.9
+      bagging_fraction: 0.8
+      bagging_freq: 5
+      random_state: 42
+      early_stopping_rounds: 50
+      verbose: -1
+
+  - name: "catboost_base"
+    type: "CATBOOST"
+    enabled: true
+    parameters:
+      iterations: 1000
+      learning_rate: 0.1
+      depth: 6
+      l2_leaf_reg: 3.0
+      bootstrap_type: "Bayesian"
+      subsample: 0.8
+      random_seed: 42
+      early_stopping_rounds: 50
+      verbose: false
+
+  - name: "xgboost_base"
+    type: "XGBOOST"
+    enabled: true
+    parameters:
+      n_estimators: 1000
+      learning_rate: 0.1
+      max_depth: 6
+      min_child_weight: 1
+      subsample: 0.8
+      colsample_bytree: 0.8
+      reg_alpha: 0.1
+      reg_lambda: 0.1
+      random_state: 42
+      early_stopping_rounds: 50
+      verbosity: 0
+
+# Ensemble configuration
+models:
+  - name: "stacking_ensemble"
+    type: "STACKING"
+    enabled: true
+    parameters:
+      meta_learner_type: "LIGHTGBM"
+      meta_learner_params:
+        objective: "binary"
+        boosting_type: "gbdt"
+        num_leaves: 15        # shallow
+        max_depth: 5          # shallow
+        learning_rate: 0.05
+        n_estimators: 300
+        feature_fraction: 0.9
+        bagging_fraction: 0.8
+        bagging_freq: 5
+        random_state: 42
+        early_stopping_rounds: 50
+      cv_folds: 5
+      use_features_in_secondary: true
+      use_proba_as_level1: true   # ensure meta gets probabilities
+      n_jobs: -1
+
+# Feature configuration
+inputs:
+  analyst_features:
+    enable_patchtst_features: false  # Set to true if using PatchTST features
+    enable_regime_features: true     # Regime features defined elsewhere
+    enable_multi_timeframe: false    # Disabled as per requirements
+
+feature_engineering:
+  patchtst:
+    enabled: false  # Set to true if using PatchTST features
+
+# Ensemble-specific metrics
+metrics:
+  ensemble_metrics:
+    track_individual_models: true
+    track_correlation_matrix: true
+    track_diversity_metrics: true

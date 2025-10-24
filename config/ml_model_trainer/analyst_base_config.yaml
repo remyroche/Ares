@@ -1,0 +1,277 @@
+# Analyst Base Models Configuration
+# This config defines which ML models to train, their parameters, targets, and inputs
+
+model_type: "analyst_base"
+timeframe: "15m"
+description: "Analyst base models for market analysis and regime detection"
+
+# ML Models to Train
+models:
+  - name: "lightgbm"
+    type: "LIGHTGBM"
+    enabled: true
+    parameters:
+      objective: "binary"
+      metric: "binary_logloss"
+      boosting_type: "gbdt"
+      num_leaves: 31
+      learning_rate: 0.05
+      feature_fraction: 0.9
+      bagging_fraction: 0.8
+      bagging_freq: 5
+      verbose: -1
+      random_state: 42
+      n_estimators: 1000
+      early_stopping_rounds: 50
+
+  - name: "lightgbm_patchtst"
+    type: "LIGHTGBM_PATCHTST"
+    enabled: true
+    parameters:
+      objective: "binary"
+      metric: "binary_logloss"
+      boosting_type: "gbdt"
+      num_leaves: 31
+      learning_rate: 0.05
+      feature_fraction: 0.9
+      bagging_fraction: 0.8
+      bagging_freq: 5
+      verbose: -1
+      random_state: 42
+      n_estimators: 1000
+      early_stopping_rounds: 50
+
+  - name: "catboost"
+    type: "CATBOOST"
+    enabled: true
+    parameters:
+      objective: "Logloss"
+      eval_metric: "Logloss"
+      iterations: 1000
+      learning_rate: 0.05
+      depth: 6
+      l2_leaf_reg: 3
+      random_seed: 42
+      early_stopping_rounds: 50
+      verbose: false
+
+  - name: "stacker_lgbm_calibrated"
+    type: "STACKER_LGBM_CALIBRATED"
+    enabled: true
+    parameters:
+      base_estimator_params:
+        objective: "binary"
+        metric: "binary_logloss"
+        boosting_type: "gbdt"
+        num_leaves: 31
+        learning_rate: 0.05
+        feature_fraction: 0.9
+        bagging_fraction: 0.8
+        bagging_freq: 5
+        verbose: -1
+        random_state: 42
+        n_estimators: 1000
+        early_stopping_rounds: 50
+      meta_learner_params:
+        objective: "binary"
+        metric: "binary_logloss"
+        boosting_type: "gbdt"
+        num_leaves: 31
+        learning_rate: 0.05
+        feature_fraction: 0.9
+        bagging_fraction: 0.8
+        bagging_freq: 5
+        verbose: -1
+        random_state: 42
+        n_estimators: 1000
+        early_stopping_rounds: 50
+
+# Target Configuration
+targets:
+  primary: "analyst_target"  # Binary classification target
+  secondary: "analyst_confidence"  # Confidence score (regression)
+  target_type: "binary_classification"
+  confidence_weight: 0.3
+
+# Input Configuration
+inputs:
+  # Base features (always included)
+  base_features:
+    - "price_features"
+    - "volume_features"
+    - "technical_indicators"
+    - "market_microstructure"
+  
+  # Analyst-specific features
+  analyst_features:
+    enable_patchtst_features: true
+    patchtst_window_size: 96
+    patchtst_patch_length: 16
+    
+    enable_regime_features: true
+    regime_lookback: 20
+    regime_detection_method: "rolling_quantiles"
+    
+    enable_multi_timeframe: true
+    timeframes: ["5m", "15m", "1h", "4h"]
+    timeframe_weights: [0.1, 0.3, 0.4, 0.2]
+  
+  # Regime model outputs (from previous pipeline steps)
+  regime_outputs:
+    - "regime_classification"
+    - "regime_probabilities"
+    - "regime_transition_matrix"
+    - "regime_volatility_estimates"
+  
+  # Previous model outputs (for ensemble/stacking)
+  previous_model_outputs:
+    - "analyst_base_predictions"  # From previous analyst base models
+    - "analyst_confidence_scores"  # From previous confidence models
+
+# Training Configuration
+training:
+  validation_split: 0.2
+  cv_folds: 5
+  test_split: 0.1
+  random_state: 42
+  stratify: true
+  
+  # Cross-validation strategy
+  cv_strategy: "TimeSeriesSplit"
+  cv_params:
+    n_splits: 5
+    test_size: 0.2
+  
+  # Early stopping
+  early_stopping:
+    enabled: true
+    patience: 50
+    min_delta: 0.001
+    monitor: "val_loss"
+    mode: "min"
+  
+  # Hyperparameter optimization
+  hyperparameter_optimization:
+    enabled: true
+    method: "optuna"
+    n_trials: 100
+    timeout: 3600  # 1 hour
+    direction: "maximize"
+    metric: "f1_score"
+
+# Feature Engineering
+feature_engineering:
+  # PatchTST features
+  patchtst:
+    enabled: true
+    window_size: 96
+    patch_length: 16
+    stride: 1
+    num_patches: 6
+    d_model: 64
+    n_heads: 4
+    d_ff: 256
+    dropout: 0.1
+  
+  # Regime features
+  regime:
+    enabled: true
+    lookback_window: 20
+    detection_method: "rolling_quantiles"
+    quantile_thresholds: [0.25, 0.75]
+    volatility_window: 20
+    regime_states: ["low_vol", "normal", "high_vol"]
+  
+  # Multi-timeframe features
+  multi_timeframe:
+    enabled: true
+    timeframes: ["5m", "15m", "1h", "4h"]
+    feature_types: ["price", "volume", "technical_indicators"]
+    aggregation_methods: ["mean", "std", "min", "max", "last"]
+    lookback_periods: [5, 10, 20, 50]
+
+# Data Quality & Leakage Prevention
+data_quality:
+  # Leakage detection
+  leakage_detection:
+    enabled: true
+    methods: ["temporal_consistency", "feature_correlation", "target_correlation"]
+    max_correlation_threshold: 0.95
+    temporal_window: 5
+  
+  # Data validation
+  validation:
+    check_missing_values: true
+    check_infinite_values: true
+    check_duplicate_timestamps: true
+    check_data_types: true
+    max_missing_percentage: 0.05
+  
+  # Outlier detection
+  outlier_detection:
+    enabled: true
+    method: "isolation_forest"
+    contamination: 0.1
+    random_state: 42
+
+# Metrics & Evaluation
+metrics:
+  primary: "f1_score"
+  secondary: ["precision", "recall", "accuracy", "auc_roc"]
+  regression_metrics: ["mse", "mae", "r2_score"]
+  
+  # SHAP analysis
+  shap_analysis:
+    enabled: true
+    sample_size: 1000
+    background_samples: 100
+    explainer_type: "tree"
+  
+  # Feature importance
+  feature_importance:
+    enabled: true
+    methods: ["permutation", "shap", "builtin"]
+    top_n_features: 20
+
+# Performance Monitoring
+monitoring:
+  # Training monitoring
+  training:
+    log_metrics_every: 10  # epochs
+    save_checkpoints: true
+    checkpoint_frequency: 50  # epochs
+    checkpoint_dir: "checkpoints/analyst_base"
+  
+  # Model performance
+  performance:
+    track_training_time: true
+    track_memory_usage: true
+    track_gpu_usage: true
+    log_predictions: true
+    prediction_sample_size: 1000
+
+# Output Configuration
+output:
+  # Model artifacts
+  models:
+    save_format: "joblib"
+    save_path: "models/analyst_base"
+    include_metadata: true
+    include_feature_names: true
+    include_training_history: true
+  
+  # Results
+  results:
+    save_predictions: true
+    save_probabilities: true
+    save_feature_importance: true
+    save_shap_values: true
+    results_path: "results/analyst_base"
+  
+  # Reports
+  reports:
+    generate_report: true
+    report_format: "html"
+    include_plots: true
+    include_tables: true
+    report_path: "reports/analyst_base"

@@ -55,18 +55,58 @@ from src.training.steps.models_training.core.tactician_ensemble_trainer import (
 
 # Import utilities
 from src.utils.logger import system_logger
-from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success, tprint_debug, tprint_performance
+from src.utils.tprint import (
+    tprint, tprint_info, tprint_warning, tprint_error, tprint_success, 
+    tprint_debug, tprint_performance, tprint_data_preview, tprint_data_format, LogLevel
+)
 from src.core.decorators import handles_errors, traced, log_execution_time
+
+# Import common operations and utilities
+from src.utils.common_operations import safe_dataframe_operation, safe_array_operation
+from src.utils.common_utilities import (
+    validate_dataframe, validate_array, safe_dataframe_operation,
+    memory_managed, MemoryStrategy, get_memory_manager, force_cleanup
+)
+from src.utils.math_validation import (
+    safe_divide, safe_log, safe_sqrt, safe_power, safe_exp,
+    validate_numeric_input, validate_array_input, safe_statistical_operation
+)
+
+# Import hardware optimization
 from src.utils.hardware.integrated_hardware_manager import get_integrated_hardware_manager, WorkloadType
-from src.utils.hardware.optimization_decorators import performance_tracked
-from src.utils.hardware.memory_optimized_decorators import comprehensive_memory_optimization
+from src.utils.hardware.optimization_decorators import (
+    smart_cache, auto_optimize, memory_efficient, performance_tracked
+)
+from src.utils.hardware.memory_optimized_decorators import (
+    memory_optimized, comprehensive_memory_optimization, MemoryOptimizationLevel
+)
+
+# Import ML common utilities
+from src.utils.ml_common.optimization.consolidated_hpo import (
+    ConsolidatedHPO, HPOConfig, OptimizationResult
+)
+from src.utils.ml_common.validation.consolidated_cv import (
+    ConsolidatedCV, CVConfig, PurgedCV, WalkForwardCV, TemporalCV
+)
+from src.utils.ml_common.validation.data_leakage_detector import (
+    DataLeakageDetector, DataLeakageReport
+)
+from src.utils.ml_common.explainability.model_explainability import (
+    ModelExplainabilityManager, ExplanationConfig
+)
+from src.utils.ml_common.explainability.shap_lime_integration import (
+    SHAPLIMEIntegration, ExplanationResult
+)
+from src.utils.ml_common.data_processing.multi_timeframe_training import MultiTimeframeProcessor
+from src.utils.ml_common.ensembles.stacking_ensemble_manager import StackingEnsembleManager
+from src.utils.ml_common.feature_selection import (
+    FeatureSelector, FeatureSelectionConfig, mRMRSelector, LASSOSelector, RFESelector
+)
 
 # Import data quality and analysis tools
 from src.training.steps.pre_training.profit_labeling.enhanced_label_definitions import (
     EnhancedLabelDefinitions, AnalystLabelConfig, TacticianLabelConfig
 )
-from src.utils.ml_common.data_processing.multi_timeframe_training import MultiTimeframeProcessor
-from src.utils.ml_common.ensembles.stacking_ensemble_manager import StackingEnsembleManager
 
 # Import validation and metrics
 from sklearn.model_selection import TimeSeriesSplit, cross_val_score
@@ -74,7 +114,6 @@ from sklearn.metrics import (
     f1_score, precision_score, recall_score, accuracy_score, roc_auc_score,
     mean_squared_error, mean_absolute_error, r2_score, explained_variance_score
 )
-import shap
 from sklearn.preprocessing import StandardScaler, LabelEncoder
 from sklearn.feature_selection import SelectKBest, f_classif, f_regression
 
@@ -190,97 +229,161 @@ class MLModelTrainer:
         self.logger.info(f"Initialized MLModelTrainer for {config.timeframe}")
     
     def _initialize_components(self):
-        """Initialize all pipeline components."""
+        """Initialize all pipeline components using existing utilities."""
+        tprint_info("🔧 Initializing ML Model Trainer components")
+        
         # Initialize hardware manager
         self.hardware_manager = get_integrated_hardware_manager()
+        tprint_data_format("Hardware manager initialized", LogLevel.INFO)
         
-        # Initialize feature engineers
-        self.feature_engineers = {
-            ModelType.ANALYST_BASE: self._create_analyst_feature_engineer(),
-            ModelType.ANALYST_ENSEMBLE: self._create_analyst_feature_engineer(),
-            ModelType.TACTICIAN_BASE: self._create_tactician_feature_engineer(),
-            ModelType.TACTICIAN_ENSEMBLE: self._create_tactician_feature_engineer()
-        }
+        # Initialize memory manager
+        self.memory_manager = get_memory_manager()
+        tprint_data_format("Memory manager initialized", LogLevel.INFO)
         
-        # Initialize target generators
-        self.target_generators = {
-            ModelType.ANALYST_BASE: self._create_analyst_target_generator(),
-            ModelType.ANALYST_ENSEMBLE: self._create_analyst_target_generator(),
-            ModelType.TACTICIAN_BASE: self._create_tactician_target_generator(),
-            ModelType.TACTICIAN_ENSEMBLE: self._create_tactician_target_generator()
-        }
+        # Initialize HPO system
+        self.hpo_system = ConsolidatedHPO(HPOConfig(
+            enable_optuna=OPTUNA_AVAILABLE,
+            max_trials=100,
+            timeout=3600,
+            n_jobs=self.config.max_workers
+        ))
+        tprint_data_format("HPO system initialized", LogLevel.INFO)
         
-        # Initialize data validators
-        self.data_validators = {
-            ModelType.ANALYST_BASE: self._create_data_validator(),
-            ModelType.ANALYST_ENSEMBLE: self._create_data_validator(),
-            ModelType.TACTICIAN_BASE: self._create_data_validator(),
-            ModelType.TACTICIAN_ENSEMBLE: self._create_data_validator()
-        }
+        # Initialize cross-validation system
+        self.cv_system = ConsolidatedCV(CVConfig(
+            enable_purged_cv=True,
+            enable_walk_forward=True,
+            enable_temporal_cv=True,
+            n_splits=self.config.cv_folds
+        ))
+        tprint_data_format("CV system initialized", LogLevel.INFO)
         
-        # Initialize leakage detectors
-        self.leakage_detectors = {
-            ModelType.ANALYST_BASE: self._create_leakage_detector(),
-            ModelType.ANALYST_ENSEMBLE: self._create_leakage_detector(),
-            ModelType.TACTICIAN_BASE: self._create_leakage_detector(),
-            ModelType.TACTICIAN_ENSEMBLE: self._create_leakage_detector()
-        }
+        # Initialize data leakage detector
+        self.leakage_detector = DataLeakageDetector({
+            'temporal_tolerance': 1,
+            'lookahead_tolerance': 24,
+            'feature_contamination_threshold': 0.1,
+            'enable_strict_mode': True,
+            'use_vectorbt_analysis': True,
+            'correlation_threshold': 0.95
+        })
+        tprint_data_format("Data leakage detector initialized", LogLevel.INFO)
         
-        # Initialize metrics calculators
-        self.metrics_calculators = {
-            ModelType.ANALYST_BASE: self._create_metrics_calculator(),
-            ModelType.ANALYST_ENSEMBLE: self._create_metrics_calculator(),
-            ModelType.TACTICIAN_BASE: self._create_metrics_calculator(),
-            ModelType.TACTICIAN_ENSEMBLE: self._create_metrics_calculator()
-        }
+        # Initialize explainability manager
+        self.explainability_manager = ModelExplainabilityManager(ExplanationConfig(
+            enable_shap=True,
+            enable_lime=True,
+            shap_sample_size=100,
+            lime_sample_size=1000
+        ))
+        tprint_data_format("Explainability manager initialized", LogLevel.INFO)
         
-        # Initialize SHAP analyzers
-        self.shap_analyzers = {
-            ModelType.ANALYST_BASE: self._create_shap_analyzer(),
-            ModelType.ANALYST_ENSEMBLE: self._create_shap_analyzer(),
-            ModelType.TACTICIAN_BASE: self._create_shap_analyzer(),
-            ModelType.TACTICIAN_ENSEMBLE: self._create_shap_analyzer()
+        # Initialize feature selectors
+        self.feature_selectors = {
+            ModelType.ANALYST_BASE: FeatureSelector(FeatureSelectionConfig(
+                method='mrmr',
+                max_features=50,
+                enable_correlation_filter=True
+            )),
+            ModelType.ANALYST_ENSEMBLE: FeatureSelector(FeatureSelectionConfig(
+                method='lasso',
+                max_features=100,
+                enable_correlation_filter=True
+            )),
+            ModelType.TACTICIAN_BASE: FeatureSelector(FeatureSelectionConfig(
+                method='rfe',
+                max_features=30,
+                enable_correlation_filter=True
+            )),
+            ModelType.TACTICIAN_ENSEMBLE: FeatureSelector(FeatureSelectionConfig(
+                method='mrmr',
+                max_features=80,
+                enable_correlation_filter=True
+            ))
         }
+        tprint_data_format("Feature selectors initialized", LogLevel.INFO)
+        
+        # Initialize multi-timeframe processor
+        self.multi_timeframe_processor = MultiTimeframeProcessor()
+        tprint_data_format("Multi-timeframe processor initialized", LogLevel.INFO)
+        
+        # Initialize ensemble managers
+        self.ensemble_managers = {
+            ModelType.ANALYST_ENSEMBLE: StackingEnsembleManager(),
+            ModelType.TACTICIAN_ENSEMBLE: StackingEnsembleManager()
+        }
+        tprint_data_format("Ensemble managers initialized", LogLevel.INFO)
+        
+        tprint_success("✅ All components initialized successfully")
     
-    def _create_analyst_feature_engineer(self):
-        """Create analyst feature engineer."""
-        # This would integrate with existing analyst feature engineering
-        return None
+    @memory_managed(MemoryStrategy.MODERATE)
+    def _prepare_features(self, data: Dict[str, Any], model_type: ModelType, config: Dict[str, Any]) -> np.ndarray:
+        """Prepare features using existing utilities."""
+        tprint_info(f"🔄 Preparing features for {model_type.value}")
+        
+        # Extract base features
+        base_features = data.get('features', np.array([]))
+        tprint_data_preview(base_features, f"Base features for {model_type.value}")
+        
+        # Validate input data
+        if not validate_array(base_features):
+            tprint_error("Invalid input features")
+            raise ValueError("Invalid input features")
+        
+        # Apply feature selection
+        feature_selector = self.feature_selectors.get(model_type)
+        if feature_selector:
+            selected_features = feature_selector.fit_transform(base_features)
+            tprint_data_format(f"Feature selection completed: {base_features.shape} -> {selected_features.shape}", LogLevel.INFO)
+        else:
+            selected_features = base_features
+        
+        # Apply multi-timeframe processing if enabled
+        if config.get('inputs', {}).get('analyst_features', {}).get('enable_multi_timeframe', False):
+            selected_features = self.multi_timeframe_processor.process_features(
+                selected_features, 
+                timeframes=config.get('inputs', {}).get('analyst_features', {}).get('timeframes', ['5m', '15m', '1h'])
+            )
+            tprint_data_format(f"Multi-timeframe processing completed: {selected_features.shape}", LogLevel.INFO)
+        
+        # Apply hardware optimization
+        optimized_features = self.hardware_manager.process_data_with_optimization(
+            selected_features, WorkloadType.ML_TRAINING
+        )
+        tprint_data_format(f"Hardware optimization completed: {optimized_features.shape}", LogLevel.INFO)
+        
+        return optimized_features
     
-    def _create_tactician_feature_engineer(self):
-        """Create tactician feature engineer."""
-        # This would integrate with existing tactician feature engineering
-        return None
-    
-    def _create_analyst_target_generator(self):
-        """Create analyst target generator."""
-        # This would integrate with existing analyst target generation
-        return None
-    
-    def _create_tactician_target_generator(self):
-        """Create tactician target generator."""
-        # This would integrate with existing tactician target generation
-        return None
-    
-    def _create_data_validator(self):
-        """Create data validator."""
-        # This would integrate with existing data validation
-        return None
-    
-    def _create_leakage_detector(self):
-        """Create leakage detector."""
-        # This would integrate with existing leakage detection
-        return None
-    
-    def _create_metrics_calculator(self):
-        """Create metrics calculator."""
-        # This would integrate with existing metrics calculation
-        return None
-    
-    def _create_shap_analyzer(self):
-        """Create SHAP analyzer."""
-        # This would integrate with existing SHAP analysis
-        return None
+    @memory_managed(MemoryStrategy.MODERATE)
+    def _prepare_targets(self, data: Dict[str, Any], model_type: ModelType, config: Dict[str, Any]) -> np.ndarray:
+        """Prepare targets using existing utilities."""
+        tprint_info(f"🎯 Preparing targets for {model_type.value}")
+        
+        # Extract targets based on model type
+        if model_type in [ModelType.ANALYST_BASE, ModelType.ANALYST_ENSEMBLE]:
+            targets = data.get('targets', np.array([]))
+            if targets.ndim == 2 and targets.shape[1] >= 2:
+                # Use first two columns for analyst targets
+                targets = targets[:, :2]
+        else:  # Tactician models
+            targets = data.get('targets', np.array([]))
+            if targets.ndim == 2 and targets.shape[1] >= 3:
+                # Use last three columns for tactician targets
+                targets = targets[:, -3:]
+        
+        tprint_data_preview(targets, f"Targets for {model_type.value}")
+        
+        # Validate targets
+        if not validate_array(targets):
+            tprint_error("Invalid target data")
+            raise ValueError("Invalid target data")
+        
+        # Apply safe statistical operations for target validation
+        if targets.ndim == 1:
+            targets = safe_statistical_operation(targets, np.reshape, (targets.shape[0], 1))
+        
+        tprint_data_format(f"Target preparation completed: {targets.shape}", LogLevel.INFO)
+        return targets
     
     @traced
     @log_execution_time
@@ -335,35 +438,114 @@ class MLModelTrainer:
         
         return configs
     
+    @comprehensive_memory_optimization(MemoryOptimizationLevel.AGGRESSIVE)
     async def _preprocess_data(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        """Preprocess input data."""
-        tprint_info("🔄 Preprocessing data")
+        """Preprocess input data using existing utilities."""
+        tprint_info("🔄 Preprocessing data with comprehensive validation")
+        
+        # Validate input data structure
+        if not isinstance(data, dict):
+            tprint_error("Data must be a dictionary")
+            raise ValueError("Data must be a dictionary")
+        
+        # Extract and validate features
+        features = data.get('features', np.array([]))
+        if not validate_array(features):
+            tprint_error("Invalid features data")
+            raise ValueError("Invalid features data")
+        
+        tprint_data_preview(features, "Input features")
+        tprint_data_format(f"Features shape: {features.shape}, dtype: {features.dtype}", LogLevel.INFO)
+        
+        # Extract and validate targets
+        targets = data.get('targets', np.array([]))
+        if not validate_array(targets):
+            tprint_error("Invalid targets data")
+            raise ValueError("Invalid targets data")
+        
+        tprint_data_preview(targets, "Input targets")
+        tprint_data_format(f"Targets shape: {targets.shape}, dtype: {targets.dtype}", LogLevel.INFO)
+        
+        # Apply safe data operations
+        processed_features = safe_array_operation(features, self._clean_data)
+        processed_targets = safe_array_operation(targets, self._clean_data)
+        
+        # Detect data leakage using existing detector
+        leakage_report = self.leakage_detector.detect_leakage(processed_features, processed_targets)
+        if leakage_report.has_leakage:
+            tprint_warning(f"Data leakage detected: {leakage_report.leakage_score:.3f}")
+            tprint_warning(f"Recommendations: {leakage_report.recommendations}")
+        else:
+            tprint_success("No data leakage detected")
         
         # Apply hardware optimization
-        processed_data = self.hardware_manager.process_data_with_optimization(
-            data, WorkloadType.ML_TRAINING
-        )
+        processed_data = {
+            'features': self.hardware_manager.process_data_with_optimization(
+                processed_features, WorkloadType.ML_TRAINING
+            ),
+            'targets': self.hardware_manager.process_data_with_optimization(
+                processed_targets, WorkloadType.ML_TRAINING
+            ),
+            'metadata': data.get('metadata', {}),
+            'leakage_report': leakage_report
+        }
         
-        # Validate data quality
-        for model_type in self.config.model_types:
-            await self._validate_data_quality(processed_data, model_type)
-        
-        # Detect data leakage
-        for model_type in self.config.model_types:
-            await self._detect_data_leakage(processed_data, model_type)
-        
+        tprint_data_format(f"Processed data - Features: {processed_data['features'].shape}, Targets: {processed_data['targets'].shape}", LogLevel.INFO)
         tprint_success("✅ Data preprocessing completed")
+        
         return processed_data
     
-    async def _validate_data_quality(self, data: Dict[str, Any], model_type: ModelType):
-        """Validate data quality for specific model type."""
-        # This would implement comprehensive data quality validation
-        pass
+    def _clean_data(self, data: np.ndarray) -> np.ndarray:
+        """Clean data using safe operations."""
+        # Remove infinite values
+        data = np.where(np.isfinite(data), data, 0.0)
+        
+        # Remove NaN values
+        data = np.nan_to_num(data, nan=0.0, posinf=0.0, neginf=0.0)
+        
+        return data
     
+    @performance_tracked
+    async def _validate_data_quality(self, data: Dict[str, Any], model_type: ModelType):
+        """Validate data quality using existing utilities."""
+        tprint_info(f"🔍 Validating data quality for {model_type.value}")
+        
+        features = data.get('features', np.array([]))
+        targets = data.get('targets', np.array([]))
+        
+        # Use existing validation utilities
+        validation_result = validate_dataframe(pd.DataFrame(features)) if features.size > 0 else None
+        if validation_result and not validation_result.is_valid:
+            tprint_warning(f"Data quality issues detected: {validation_result.errors}")
+        
+        # Check for data consistency
+        if features.size > 0 and targets.size > 0:
+            if len(features) != len(targets):
+                tprint_error(f"Feature-target length mismatch: {len(features)} vs {len(targets)}")
+                raise ValueError("Feature-target length mismatch")
+        
+        tprint_success(f"✅ Data quality validation completed for {model_type.value}")
+    
+    @performance_tracked
     async def _detect_data_leakage(self, data: Dict[str, Any], model_type: ModelType):
-        """Detect data leakage for specific model type."""
-        # This would implement comprehensive leakage detection
-        pass
+        """Detect data leakage using existing detector."""
+        tprint_info(f"🔍 Detecting data leakage for {model_type.value}")
+        
+        features = data.get('features', np.array([]))
+        targets = data.get('targets', np.array([]))
+        
+        if features.size > 0 and targets.size > 0:
+            # Use existing leakage detector
+            leakage_report = self.leakage_detector.detect_leakage(features, targets)
+            
+            if leakage_report.has_leakage:
+                tprint_warning(f"Leakage detected for {model_type.value}: {leakage_report.leakage_score:.3f}")
+                tprint_warning(f"Temporal violations: {leakage_report.temporal_violations}")
+                tprint_warning(f"Feature contamination: {leakage_report.feature_contamination}")
+            else:
+                tprint_success(f"✅ No leakage detected for {model_type.value}")
+        
+        tprint_success(f"✅ Leakage detection completed for {model_type.value}")
     
     async def _train_models_parallel(self, data: Dict[str, Any], configs: Dict[ModelType, Dict[str, Any]]) -> Dict[ModelType, List[TrainingResult]]:
         """Train models in parallel."""
@@ -576,65 +758,367 @@ class MLModelTrainer:
         
         return TacticianEnsembleTrainer(training_config, self.logger)
     
+    @memory_managed(MemoryStrategy.MODERATE)
     async def _prepare_training_data(self, data: Dict[str, Any], model_type: ModelType, config: Dict[str, Any]) -> Tuple[np.ndarray, np.ndarray]:
-        """Prepare training data for specific model type."""
-        # This would implement comprehensive data preparation
-        # including feature engineering, target generation, etc.
+        """Prepare training data using existing utilities."""
+        tprint_info(f"🔄 Preparing training data for {model_type.value}")
         
-        # For now, return placeholder data
-        X = np.random.randn(1000, 50)  # Placeholder features
-        y = np.random.randint(0, 2, 1000)  # Placeholder targets
+        # Prepare features using existing utilities
+        X = self._prepare_features(data, model_type, config)
+        tprint_data_format(f"Features prepared: {X.shape}", LogLevel.INFO)
         
+        # Prepare targets using existing utilities
+        y = self._prepare_targets(data, model_type, config)
+        tprint_data_format(f"Targets prepared: {y.shape}", LogLevel.INFO)
+        
+        # Validate data consistency
+        if len(X) != len(y):
+            tprint_error(f"Feature-target length mismatch: {len(X)} vs {len(y)}")
+            raise ValueError("Feature-target length mismatch")
+        
+        # Apply safe statistical operations for data validation
+        X = safe_statistical_operation(X, np.asarray)
+        y = safe_statistical_operation(y, np.asarray)
+        
+        tprint_data_preview(X, f"Final features for {model_type.value}")
+        tprint_data_preview(y, f"Final targets for {model_type.value}")
+        
+        tprint_success(f"✅ Training data prepared for {model_type.value}")
         return X, y
     
+    @comprehensive_memory_optimization(MemoryOptimizationLevel.AGGRESSIVE)
     async def _train_model(self, trainer, X: np.ndarray, y: np.ndarray, model_config: Dict[str, Any], config: Dict[str, Any]):
-        """Train the model using the trainer."""
-        # This would implement the actual training logic
-        # For now, return a placeholder model
-        from sklearn.ensemble import RandomForestClassifier
-        model = RandomForestClassifier(n_estimators=100, random_state=42)
-        model.fit(X, y)
-        return model
-    
-    async def _evaluate_model(self, model, X: np.ndarray, y: np.ndarray, model_type: ModelType, config: Dict[str, Any]) -> Dict[str, float]:
-        """Evaluate the trained model."""
-        # This would implement comprehensive model evaluation
-        # including cross-validation, various metrics, etc.
+        """Train the model using the trainer with HPO."""
+        tprint_info(f"🚀 Training model: {model_config.get('name', 'unknown')}")
         
-        # For now, return placeholder metrics
+        # Validate inputs
+        if not validate_array(X) or not validate_array(y):
+            tprint_error("Invalid training data")
+            raise ValueError("Invalid training data")
+        
+        tprint_data_format(f"Training data - X: {X.shape}, y: {y.shape}", LogLevel.INFO)
+        
+        # Check if hyperparameter optimization is enabled
+        hpo_config = config.get('training', {}).get('hyperparameter_optimization', {})
+        if hpo_config.get('enabled', False) and OPTUNA_AVAILABLE:
+            tprint_info("🔧 Running hyperparameter optimization")
+            
+            # Define objective function for HPO
+            def objective(trial):
+                # Get hyperparameters from trial
+                params = self._get_hpo_params(trial, model_config)
+                
+                # Create model with trial parameters
+                model = self._create_model_with_params(model_config, params)
+                
+                # Train and evaluate
+                try:
+                    model.fit(X, y)
+                    score = self._evaluate_model_score(model, X, y, config)
+                    return score
+                except Exception as e:
+                    tprint_warning(f"HPO trial failed: {e}")
+                    return float('-inf')
+            
+            # Run HPO
+            best_params = self.hpo_system.optimize(
+                objective=objective,
+                n_trials=hpo_config.get('n_trials', 100),
+                timeout=hpo_config.get('timeout', 3600)
+            )
+            
+            tprint_success(f"✅ HPO completed. Best params: {best_params}")
+            
+            # Create final model with best parameters
+            final_model = self._create_model_with_params(model_config, best_params)
+        else:
+            # Use default parameters
+            final_model = self._create_model_with_params(model_config, model_config.get('parameters', {}))
+        
+        # Train the final model
+        tprint_info("🏋️ Training final model")
+        final_model.fit(X, y)
+        
+        tprint_success(f"✅ Model training completed: {model_config.get('name', 'unknown')}")
+        return final_model
+    
+    def _get_hpo_params(self, trial, model_config: Dict[str, Any]) -> Dict[str, Any]:
+        """Get hyperparameters from Optuna trial."""
+        model_type = model_config.get('type', 'LIGHTGBM').upper()
+        params = {}
+        
+        if model_type == 'LIGHTGBM':
+            params = {
+                'n_estimators': trial.suggest_int('n_estimators', 100, 2000),
+                'learning_rate': trial.suggest_float('learning_rate', 0.01, 0.3),
+                'num_leaves': trial.suggest_int('num_leaves', 10, 100),
+                'max_depth': trial.suggest_int('max_depth', 3, 15),
+                'min_child_samples': trial.suggest_int('min_child_samples', 5, 100),
+                'subsample': trial.suggest_float('subsample', 0.5, 1.0),
+                'colsample_bytree': trial.suggest_float('colsample_bytree', 0.5, 1.0),
+                'reg_alpha': trial.suggest_float('reg_alpha', 0.0, 1.0),
+                'reg_lambda': trial.suggest_float('reg_lambda', 0.0, 1.0)
+            }
+        elif model_type == 'CATBOOST':
+            params = {
+                'iterations': trial.suggest_int('iterations', 100, 2000),
+                'learning_rate': trial.suggest_float('learning_rate', 0.01, 0.3),
+                'depth': trial.suggest_int('depth', 3, 10),
+                'l2_leaf_reg': trial.suggest_float('l2_leaf_reg', 1.0, 10.0),
+                'bootstrap_type': trial.suggest_categorical('bootstrap_type', ['Bayesian', 'Bernoulli']),
+                'subsample': trial.suggest_float('subsample', 0.5, 1.0)
+            }
+        elif model_type == 'XGBOOST':
+            params = {
+                'n_estimators': trial.suggest_int('n_estimators', 100, 2000),
+                'learning_rate': trial.suggest_float('learning_rate', 0.01, 0.3),
+                'max_depth': trial.suggest_int('max_depth', 3, 15),
+                'min_child_weight': trial.suggest_int('min_child_weight', 1, 10),
+                'subsample': trial.suggest_float('subsample', 0.5, 1.0),
+                'colsample_bytree': trial.suggest_float('colsample_bytree', 0.5, 1.0),
+                'reg_alpha': trial.suggest_float('reg_alpha', 0.0, 1.0),
+                'reg_lambda': trial.suggest_float('reg_lambda', 0.0, 1.0)
+            }
+        
+        return params
+    
+    def _create_model_with_params(self, model_config: Dict[str, Any], params: Dict[str, Any]):
+        """Create model with given parameters."""
+        model_type = model_config.get('type', 'LIGHTGBM').upper()
+        
+        if model_type == 'LIGHTGBM':
+            from lightgbm import LGBMClassifier, LGBMRegressor
+            is_classification = model_config.get('parameters', {}).get('objective', 'binary') in ['binary', 'multiclass']
+            ModelClass = LGBMClassifier if is_classification else LGBMRegressor
+            return ModelClass(**params, random_state=42, verbose=-1)
+        elif model_type == 'CATBOOST':
+            from catboost import CatBoostClassifier, CatBoostRegressor
+            is_classification = model_config.get('parameters', {}).get('objective', 'Logloss') in ['Logloss', 'MultiClass']
+            ModelClass = CatBoostClassifier if is_classification else CatBoostRegressor
+            return ModelClass(**params, random_seed=42, verbose=False)
+        elif model_type == 'XGBOOST':
+            from xgboost import XGBClassifier, XGBRegressor
+            is_classification = model_config.get('parameters', {}).get('objective', 'binary:logistic') in ['binary:logistic', 'multi:softmax']
+            ModelClass = XGBClassifier if is_classification else XGBRegressor
+            return ModelClass(**params, random_state=42, verbosity=0)
+        else:
+            # Fallback to RandomForest
+            from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
+            is_classification = 'binary' in str(model_config.get('parameters', {}).get('objective', 'binary'))
+            ModelClass = RandomForestClassifier if is_classification else RandomForestRegressor
+            return ModelClass(**params, random_state=42)
+    
+    def _evaluate_model_score(self, model, X: np.ndarray, y: np.ndarray, config: Dict[str, Any]) -> float:
+        """Evaluate model score for HPO."""
+        try:
+            # Use cross-validation for evaluation
+            cv_scores = self.cv_system.cross_validate(
+                model, X, y, 
+                cv_type='temporal',
+                scoring=config.get('training', {}).get('hyperparameter_optimization', {}).get('metric', 'f1_score')
+            )
+            return cv_scores.mean()
+        except Exception:
+            return float('-inf')
+    
+    @performance_tracked
+    async def _evaluate_model(self, model, X: np.ndarray, y: np.ndarray, model_type: ModelType, config: Dict[str, Any]) -> Dict[str, float]:
+        """Evaluate the trained model using existing utilities."""
+        tprint_info(f"📊 Evaluating model for {model_type.value}")
+        
+        # Validate inputs
+        if not validate_array(X) or not validate_array(y):
+            tprint_error("Invalid evaluation data")
+            raise ValueError("Invalid evaluation data")
+        
+        # Generate predictions
         predictions = model.predict(X)
-        metrics = {
-            'accuracy': accuracy_score(y, predictions),
-            'f1_score': f1_score(y, predictions),
-            'precision': precision_score(y, predictions),
-            'recall': recall_score(y, predictions)
-        }
+        tprint_data_format(f"Predictions generated: {predictions.shape}", LogLevel.INFO)
+        
+        # Calculate basic metrics
+        metrics = {}
+        
+        # Determine if classification or regression
+        is_classification = model_type in [ModelType.ANALYST_BASE, ModelType.ANALYST_ENSEMBLE]
+        
+        if is_classification:
+            # Classification metrics
+            metrics.update({
+                'accuracy': safe_statistical_operation(y, predictions, accuracy_score),
+                'f1_score': safe_statistical_operation(y, predictions, f1_score, average='weighted'),
+                'precision': safe_statistical_operation(y, predictions, precision_score, average='weighted'),
+                'recall': safe_statistical_operation(y, predictions, recall_score, average='weighted')
+            })
+            
+            # Add AUC if binary classification
+            if len(np.unique(y)) == 2:
+                try:
+                    if hasattr(model, 'predict_proba'):
+                        probabilities = model.predict_proba(X)[:, 1]
+                        metrics['auc_roc'] = safe_statistical_operation(y, probabilities, roc_auc_score)
+                except Exception as e:
+                    tprint_warning(f"Could not calculate AUC: {e}")
+        else:
+            # Regression metrics
+            metrics.update({
+                'rmse': safe_statistical_operation(y, predictions, lambda y_true, y_pred: np.sqrt(mean_squared_error(y_true, y_pred))),
+                'mae': safe_statistical_operation(y, predictions, mean_absolute_error),
+                'r2_score': safe_statistical_operation(y, predictions, r2_score),
+                'explained_variance': safe_statistical_operation(y, predictions, explained_variance_score)
+            })
+        
+        # Cross-validation evaluation
+        try:
+            cv_scores = self.cv_system.cross_validate(
+                model, X, y,
+                cv_type='temporal',
+                scoring='f1_score' if is_classification else 'neg_mean_squared_error'
+            )
+            metrics['cv_mean'] = cv_scores.mean()
+            metrics['cv_std'] = cv_scores.std()
+            tprint_data_format(f"CV scores: {cv_scores.mean():.4f} ± {cv_scores.std():.4f}", LogLevel.INFO)
+        except Exception as e:
+            tprint_warning(f"CV evaluation failed: {e}")
+        
+        # Apply safe mathematical operations to metrics
+        for key, value in metrics.items():
+            if isinstance(value, (int, float)) and not np.isfinite(value):
+                metrics[key] = 0.0
+        
+        tprint_data_format(f"Evaluation metrics: {metrics}", LogLevel.INFO)
+        tprint_success(f"✅ Model evaluation completed for {model_type.value}")
         
         return metrics
     
+    @performance_tracked
     async def _calculate_feature_importance(self, model, X: np.ndarray, y: np.ndarray, model_type: ModelType) -> Dict[str, float]:
-        """Calculate feature importance."""
-        # This would implement feature importance calculation
-        # For now, return placeholder importance
-        feature_names = [f"feature_{i}" for i in range(X.shape[1])]
-        importance = np.random.rand(X.shape[1])
-        return dict(zip(feature_names, importance))
+        """Calculate feature importance using existing utilities."""
+        tprint_info(f"🔍 Calculating feature importance for {model_type.value}")
+        
+        # Validate inputs
+        if not validate_array(X) or not validate_array(y):
+            tprint_error("Invalid data for feature importance calculation")
+            return {}
+        
+        feature_importance = {}
+        
+        try:
+            # Try to get built-in feature importance
+            if hasattr(model, 'feature_importances_'):
+                importance_scores = model.feature_importances_
+                feature_names = [f"feature_{i}" for i in range(len(importance_scores))]
+                feature_importance = dict(zip(feature_names, importance_scores))
+                tprint_data_format(f"Built-in feature importance: {len(feature_importance)} features", LogLevel.INFO)
+            
+            # Use feature selector for additional importance
+            feature_selector = self.feature_selectors.get(model_type)
+            if feature_selector:
+                try:
+                    selector_importance = feature_selector.get_feature_importance(X, y)
+                    if selector_importance:
+                        feature_importance.update(selector_importance)
+                        tprint_data_format(f"Feature selector importance: {len(selector_importance)} features", LogLevel.INFO)
+                except Exception as e:
+                    tprint_warning(f"Feature selector importance failed: {e}")
+            
+            # Apply safe mathematical operations
+            for key, value in feature_importance.items():
+                if not np.isfinite(value):
+                    feature_importance[key] = 0.0
+            
+            # Sort by importance
+            feature_importance = dict(sorted(feature_importance.items(), key=lambda x: x[1], reverse=True))
+            
+            tprint_data_format(f"Feature importance calculated: {len(feature_importance)} features", LogLevel.INFO)
+            tprint_success(f"✅ Feature importance calculation completed for {model_type.value}")
+            
+        except Exception as e:
+            tprint_error(f"Feature importance calculation failed: {e}")
+            # Return empty dict on failure
+            feature_importance = {}
+        
+        return feature_importance
     
+    @performance_tracked
     async def _perform_shap_analysis(self, model, X: np.ndarray, y: np.ndarray, model_type: ModelType, config: Dict[str, Any]) -> np.ndarray:
-        """Perform SHAP analysis."""
-        # This would implement SHAP analysis
-        # For now, return placeholder SHAP values
-        return np.random.randn(X.shape[0], X.shape[1])
+        """Perform SHAP analysis using existing utilities."""
+        tprint_info(f"🔍 Performing SHAP analysis for {model_type.value}")
+        
+        # Validate inputs
+        if not validate_array(X) or not validate_array(y):
+            tprint_error("Invalid data for SHAP analysis")
+            return np.array([])
+        
+        try:
+            # Use existing explainability manager
+            explanation_config = ExplanationConfig(
+                enable_shap=True,
+                enable_lime=False,  # Focus on SHAP for now
+                shap_sample_size=min(100, X.shape[0]),
+                shap_max_features=min(50, X.shape[1])
+            )
+            
+            # Generate SHAP explanations
+            shap_values = self.explainability_manager.explain_model(
+                model=model,
+                X=X,
+                y=y,
+                config=explanation_config
+            )
+            
+            if shap_values is not None:
+                tprint_data_format(f"SHAP analysis completed: {shap_values.shape}", LogLevel.INFO)
+                tprint_success(f"✅ SHAP analysis completed for {model_type.value}")
+                return shap_values
+            else:
+                tprint_warning("SHAP analysis returned None")
+                return np.array([])
+                
+        except Exception as e:
+            tprint_error(f"SHAP analysis failed: {e}")
+            # Return empty array on failure
+            return np.array([])
     
+    @performance_tracked
     async def _generate_predictions(self, model, X: np.ndarray, model_type: ModelType) -> np.ndarray:
-        """Generate predictions."""
-        return model.predict(X)
+        """Generate predictions using safe operations."""
+        tprint_info(f"🔮 Generating predictions for {model_type.value}")
+        
+        # Validate inputs
+        if not validate_array(X):
+            tprint_error("Invalid data for prediction generation")
+            return np.array([])
+        
+        try:
+            predictions = model.predict(X)
+            tprint_data_format(f"Predictions generated: {predictions.shape}", LogLevel.INFO)
+            tprint_success(f"✅ Predictions generated for {model_type.value}")
+            return predictions
+        except Exception as e:
+            tprint_error(f"Prediction generation failed: {e}")
+            return np.array([])
     
+    @performance_tracked
     async def _generate_probabilities(self, model, X: np.ndarray, model_type: ModelType) -> np.ndarray:
-        """Generate prediction probabilities."""
-        if hasattr(model, 'predict_proba'):
-            return model.predict_proba(X)
-        else:
+        """Generate prediction probabilities using safe operations."""
+        tprint_info(f"🔮 Generating probabilities for {model_type.value}")
+        
+        # Validate inputs
+        if not validate_array(X):
+            tprint_error("Invalid data for probability generation")
+            return None
+        
+        try:
+            if hasattr(model, 'predict_proba'):
+                probabilities = model.predict_proba(X)
+                tprint_data_format(f"Probabilities generated: {probabilities.shape}", LogLevel.INFO)
+                tprint_success(f"✅ Probabilities generated for {model_type.value}")
+                return probabilities
+            else:
+                tprint_info(f"Model does not support probability prediction for {model_type.value}")
+                return None
+        except Exception as e:
+            tprint_error(f"Probability generation failed: {e}")
             return None
     
     async def _generate_reports(self, results: Dict[ModelType, List[TrainingResult]]):

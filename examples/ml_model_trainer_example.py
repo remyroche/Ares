@@ -16,57 +16,111 @@ sys.path.append(str(Path(__file__).parent.parent / "src"))
 
 from training.ml_model_trainer import MLModelTrainer, MLModelTrainerConfig, ModelType
 from src.utils.logger import system_logger
-from src.utils.tprint import tprint, tprint_info, tprint_success, tprint_error
+from src.utils.tprint import (
+    tprint, tprint_info, tprint_success, tprint_error, tprint_warning,
+    tprint_data_preview, tprint_data_format, LogLevel
+)
+from src.utils.common_operations import safe_dataframe_operation, safe_array_operation
+from src.utils.common_utilities import validate_dataframe, validate_array
+from src.utils.math_validation import safe_statistical_operation, safe_divide, safe_log
 
 
 async def create_sample_data():
-    """Create sample data for demonstration."""
-    tprint_info("📊 Creating sample data")
+    """Create sample data for demonstration using safe operations."""
+    tprint_info("📊 Creating sample data with safe operations")
     
-    # Generate sample features
+    # Generate sample features using safe operations
     np.random.seed(42)
     n_samples = 1000
     n_features = 50
     
-    # Price features
-    price_features = np.random.randn(n_samples, 10)
+    # Price features with safe operations
+    price_features = safe_statistical_operation(
+        np.random.randn(n_samples, 10),
+        lambda x: np.where(np.isfinite(x), x, 0.0)
+    )
     
-    # Volume features
-    volume_features = np.random.exponential(1.0, (n_samples, 10))
+    # Volume features with safe operations
+    volume_features = safe_statistical_operation(
+        np.random.exponential(1.0, (n_samples, 10)),
+        lambda x: np.where(np.isfinite(x), x, 1.0)
+    )
     
-    # Technical indicators
-    technical_features = np.random.randn(n_samples, 20)
+    # Technical indicators with safe operations
+    technical_features = safe_statistical_operation(
+        np.random.randn(n_samples, 20),
+        lambda x: np.where(np.isfinite(x), x, 0.0)
+    )
     
-    # Market microstructure
-    microstructure_features = np.random.randn(n_samples, 10)
+    # Market microstructure with safe operations
+    microstructure_features = safe_statistical_operation(
+        np.random.randn(n_samples, 10),
+        lambda x: np.where(np.isfinite(x), x, 0.0)
+    )
     
-    # Combine all features
-    features = np.hstack([price_features, volume_features, technical_features, microstructure_features])
+    # Combine all features using safe operations
+    features = safe_array_operation(
+        np.array([]),
+        lambda x: np.hstack([price_features, volume_features, technical_features, microstructure_features])
+    )
     
-    # Generate targets
+    # Generate targets with safe operations
     # Analyst targets (binary classification)
-    analyst_targets = np.random.randint(0, 2, n_samples)
-    analyst_confidence = np.random.uniform(0, 1, n_samples)
+    analyst_targets = safe_statistical_operation(
+        np.random.randint(0, 2, n_samples),
+        lambda x: np.where(np.isfinite(x), x, 0)
+    )
+    analyst_confidence = safe_statistical_operation(
+        np.random.uniform(0, 1, n_samples),
+        lambda x: np.where(np.isfinite(x), x, 0.5)
+    )
     
-    # Tactician targets (regression)
-    entry_timing = np.random.uniform(-1, 1, n_samples)
-    exit_timing = np.random.uniform(-1, 1, n_samples)
-    position_sizing = np.random.uniform(0, 1, n_samples)
+    # Tactician targets (regression) with safe operations
+    entry_timing = safe_statistical_operation(
+        np.random.uniform(-1, 1, n_samples),
+        lambda x: np.where(np.isfinite(x), x, 0.0)
+    )
+    exit_timing = safe_statistical_operation(
+        np.random.uniform(-1, 1, n_samples),
+        lambda x: np.where(np.isfinite(x), x, 0.0)
+    )
+    position_sizing = safe_statistical_operation(
+        np.random.uniform(0, 1, n_samples),
+        lambda x: np.where(np.isfinite(x), x, 0.5)
+    )
     
     # Create timestamps
     timestamps = pd.date_range('2023-01-01', periods=n_samples, freq='15min')
     
-    # Create DataFrame
-    data = pd.DataFrame(features, columns=[f'feature_{i}' for i in range(n_features)])
-    data['timestamp'] = timestamps
-    data['analyst_target'] = analyst_targets
-    data['analyst_confidence'] = analyst_confidence
-    data['entry_timing'] = entry_timing
-    data['exit_timing'] = exit_timing
-    data['position_sizing'] = position_sizing
+    # Create DataFrame using safe operations
+    data = safe_dataframe_operation(
+        pd.DataFrame(),
+        lambda df: pd.DataFrame(features, columns=[f'feature_{i}' for i in range(n_features)])
+    )
     
-    # Add regime information
-    data['regime'] = np.random.choice(['low_vol', 'normal', 'high_vol'], n_samples)
+    # Add columns using safe operations
+    data = safe_dataframe_operation(
+        data,
+        lambda df: df.assign(
+            timestamp=timestamps,
+            analyst_target=analyst_targets,
+            analyst_confidence=analyst_confidence,
+            entry_timing=entry_timing,
+            exit_timing=exit_timing,
+            position_sizing=position_sizing,
+            regime=np.random.choice(['low_vol', 'normal', 'high_vol'], n_samples)
+        )
+    )
+    
+    # Validate the created data
+    if not validate_dataframe(data):
+        tprint_error("Invalid sample data created")
+        raise ValueError("Invalid sample data created")
+    
+    tprint_data_preview(features, "Sample features")
+    tprint_data_preview(analyst_targets, "Analyst targets")
+    tprint_data_preview(entry_timing, "Entry timing targets")
+    tprint_data_format(f"Sample data - Features: {features.shape}, Analyst targets: {analyst_targets.shape}, Tactician targets: {entry_timing.shape}", LogLevel.INFO)
     
     tprint_success(f"✅ Created sample data with {n_samples} samples and {n_features} features")
     

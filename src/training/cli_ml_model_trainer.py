@@ -17,7 +17,13 @@ sys.path.append(str(Path(__file__).parent.parent))
 
 from training.ml_model_trainer import MLModelTrainer, MLModelTrainerConfig, ModelType
 from src.utils.logger import system_logger
-from src.utils.tprint import tprint, tprint_info, tprint_error, tprint_success
+from src.utils.tprint import (
+    tprint, tprint_info, tprint_error, tprint_success, tprint_warning,
+    tprint_data_preview, tprint_data_format, LogLevel
+)
+from src.utils.common_operations import safe_dataframe_operation, safe_array_operation
+from src.utils.common_utilities import validate_dataframe, validate_array
+from src.utils.math_validation import safe_statistical_operation
 
 
 def parse_arguments():
@@ -191,39 +197,83 @@ def validate_config_files(config_dir: str, model_types: List[str]) -> Dict[Model
 
 
 def load_data(data_file: str = None):
-    """Load input data."""
+    """Load input data using safe operations."""
     if data_file:
         data_path = Path(data_file)
         if not data_path.exists():
             tprint_error(f"Data file not found: {data_file}")
             sys.exit(1)
         
-        # Load data based on file extension
-        if data_path.suffix == '.csv':
-            import pandas as pd
-            data = pd.read_csv(data_path)
-        elif data_path.suffix == '.parquet':
-            import pandas as pd
-            data = pd.read_parquet(data_path)
-        elif data_path.suffix == '.json':
-            import json
-            with open(data_path, 'r') as f:
-                data = json.load(f)
-        else:
-            tprint_error(f"Unsupported data file format: {data_path.suffix}")
-            sys.exit(1)
+        tprint_info(f"📊 Loading data from {data_file}")
         
-        tprint_info(f"📊 Loaded data from {data_file}")
-        return data
+        try:
+            # Load data based on file extension using safe operations
+            if data_path.suffix == '.csv':
+                import pandas as pd
+                data = safe_dataframe_operation(
+                    pd.DataFrame(), 
+                    lambda df: pd.read_csv(data_path)
+                )
+                tprint_data_preview(data, "Loaded CSV data")
+                tprint_data_format(f"CSV data shape: {data.shape}, columns: {list(data.columns)}", LogLevel.INFO)
+                
+            elif data_path.suffix == '.parquet':
+                import pandas as pd
+                data = safe_dataframe_operation(
+                    pd.DataFrame(), 
+                    lambda df: pd.read_parquet(data_path)
+                )
+                tprint_data_preview(data, "Loaded Parquet data")
+                tprint_data_format(f"Parquet data shape: {data.shape}, columns: {list(data.columns)}", LogLevel.INFO)
+                
+            elif data_path.suffix == '.json':
+                import json
+                with open(data_path, 'r') as f:
+                    data = json.load(f)
+                tprint_data_format(f"JSON data loaded: {len(data)} items", LogLevel.INFO)
+                
+            else:
+                tprint_error(f"Unsupported data file format: {data_path.suffix}")
+                sys.exit(1)
+            
+            # Validate loaded data
+            if isinstance(data, pd.DataFrame):
+                if not validate_dataframe(data):
+                    tprint_error("Invalid data format loaded")
+                    sys.exit(1)
+            
+            tprint_success(f"✅ Data loaded successfully from {data_file}")
+            return data
+            
+        except Exception as e:
+            tprint_error(f"Failed to load data: {e}")
+            sys.exit(1)
     else:
-        # Return placeholder data for demonstration
+        # Return placeholder data for demonstration using safe operations
         import numpy as np
         tprint_info("📊 Using placeholder data for demonstration")
-        return {
-            'features': np.random.randn(1000, 50),
-            'targets': np.random.randint(0, 2, 1000),
+        
+        # Generate safe placeholder data
+        features = safe_statistical_operation(
+            np.random.randn(1000, 50), 
+            lambda x: np.where(np.isfinite(x), x, 0.0)
+        )
+        targets = safe_statistical_operation(
+            np.random.randint(0, 2, 1000),
+            lambda x: np.where(np.isfinite(x), x, 0)
+        )
+        
+        data = {
+            'features': features,
+            'targets': targets,
             'metadata': {'timeframe': '15m', 'n_samples': 1000}
         }
+        
+        tprint_data_preview(features, "Placeholder features")
+        tprint_data_preview(targets, "Placeholder targets")
+        tprint_data_format(f"Placeholder data - Features: {features.shape}, Targets: {targets.shape}", LogLevel.INFO)
+        
+        return data
 
 
 async def main():

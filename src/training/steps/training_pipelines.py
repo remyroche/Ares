@@ -179,6 +179,7 @@ class TrainingPipelineOrchestrator:
             "feature_generation_feature_generation_step",
             "feature_generation_period_lookback_optimization_step",
             "feature_generation_feature_selection_step",
+            "market_analysis",  # Add market analysis step
         ]
         
         # Add model-specific interaction generation step

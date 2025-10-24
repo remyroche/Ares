@@ -23,6 +23,9 @@ from .components.regime_ensemble_training import RegimeEnsembleTrainingStep
 from .components.sr_parameter_optimization import SRParameterOptimizationStep
 from .regime_clustering_step import RegimeClusteringStep
 
+# Import market analysis orchestrator step
+from .market_analysis_step import MarketAnalysisStep
+
 # Register existing components
 step_registry.register("sr_clustering", SRClusteringComponent)
 step_registry.register("sr_detection", SRDetectionComponent)
@@ -36,3 +39,6 @@ step_registry.register("regime_models_training", RegimeModelsTrainingStep)
 step_registry.register("regime_ensemble_training", RegimeEnsembleTrainingStep)
 step_registry.register("sr_parameter_optimization", SRParameterOptimizationStep)
 step_registry.register("regime_clustering", RegimeClusteringStep)
+
+# Register market analysis orchestrator step
+step_registry.register("market_analysis", MarketAnalysisStep)

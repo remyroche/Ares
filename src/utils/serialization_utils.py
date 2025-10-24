@@ -2,24 +2,31 @@
 Serialization Utilities Module
 
 This module provides various serialization utilities for data persistence.
-Uses kline_parquet.py for efficient Parquet operations and uses Parquet instead of Pickle for saving.
+Uses intelligent format selection: JSON for simple data, Parquet for large tabular data, Pickle for complex objects.
 
 Key Features:
-- Automatic format detection using Parquet instead of Pickle for saving
-- Optimized Parquet operations via KlinesParquetManager
-- JSON serialization unchanged
-- Pickle reading maintained for backward compatibility
+- Intelligent format selection based on data characteristics
+- Optimized Parquet operations via KlinesParquetManager for large DataFrames
+- JSON for simple, serializable data
+- Pickle for complex Python objects and small datasets
+- Backward compatibility for all formats
 - Enhanced error handling and logging
 
+Format Selection Logic:
+- JSON: Simple data (strings, numbers, basic lists/dicts)
+- Parquet: Large DataFrames (>1000 rows) or large convertible data
+- Pickle: Complex Python objects, small DataFrames, functions, custom classes
+
 Usage:
-    # Automatic format detection (uses Parquet instead of Pickle)
-    safe_serialize(data, "data.parquet")  # Will use Parquet
-    safe_serialize(data, "data.pkl")      # Will convert to Parquet (.parquet)
-    safe_serialize(data, "data.json")     # Will use JSON
+    # Intelligent format detection
+    safe_serialize(simple_dict, "data.json")      # Will use JSON
+    safe_serialize(large_df, "data.parquet")      # Will use Parquet
+    safe_serialize(complex_obj, "data.pkl")       # Will use Pickle
+    safe_serialize(data, "data")                  # Auto-selects best format
     
     # Direct format specification
     save_data(data, "output.parquet", format="parquet")
-    load_data("input.parquet")  # Can load both .parquet and .pkl files
+    load_data("input.parquet")  # Can load all formats
 """
 
 import json
@@ -187,22 +194,17 @@ class UniversalSerializer:
         }
 
     def save(self, data: Any, filepath: str, format: str = 'auto') -> bool:
-        """Save data with automatic format detection, using Parquet instead of Pickle."""
+        """Save data with intelligent format detection based on data type."""
         if format == 'auto':
             if filepath.endswith('.json'):
                 format = 'json'
             elif filepath.endswith('.parquet'):
                 format = 'parquet'
             elif filepath.endswith('.pkl') or filepath.endswith('.pickle'):
-                # Convert .pkl/.pickle to Parquet for saving
-                format = 'parquet'
-                if not filepath.endswith('.parquet'):
-                    filepath = str(Path(filepath).with_suffix('.parquet'))
+                format = 'pickle'  # Respect explicit .pkl/.pickle extensions
             else:
-                # Use Parquet for all new saves instead of Pickle
-                format = 'parquet'
-                if not filepath.endswith('.parquet'):
-                    filepath = str(Path(filepath).with_suffix('.parquet'))
+                # Intelligent format selection based on data type
+                format = self._select_optimal_format(data, filepath)
 
         serializer = self.serializers.get(format)
         if serializer:
@@ -213,6 +215,71 @@ class UniversalSerializer:
         else:
             logger.error(f"Unsupported format: {format}")
             return False
+
+    def _select_optimal_format(self, data: Any, filepath: str) -> str:
+        """Select the optimal format based on data characteristics."""
+        try:
+            import pandas as pd
+            pandas_available = True
+        except ImportError:
+            pandas_available = False
+        
+        # Always use JSON for simple, serializable data
+        if self._is_json_serializable(data):
+            return 'json'
+        
+        # Use Parquet for DataFrames and large tabular data
+        if pandas_available and isinstance(data, pd.DataFrame):
+            if len(data) > 1000:  # Large datasets benefit from Parquet
+                return 'parquet'
+            else:
+                return 'pickle'  # Small DataFrames are better with Pickle
+        
+        # Use Pickle for complex Python objects
+        if self._is_complex_python_object(data):
+            return 'pickle'
+        
+        # Use Parquet for large data structures that can be converted to DataFrame
+        if self._is_large_convertible_data(data):
+            return 'parquet'
+        
+        # Default to Pickle for everything else
+        return 'pickle'
+    
+    def _is_json_serializable(self, data: Any) -> bool:
+        """Check if data is JSON serializable."""
+        try:
+            json.dumps(data)
+            return True
+        except (TypeError, ValueError):
+            return False
+    
+    def _is_complex_python_object(self, data: Any) -> bool:
+        """Check if data is a complex Python object that should use Pickle."""
+        # Check for complex objects that Pickle handles well
+        if hasattr(data, '__dict__') and not isinstance(data, (str, int, float, bool)):
+            return True
+        if isinstance(data, (list, dict, tuple, set)) and len(str(data)) < 1000:
+            return True
+        if callable(data) or hasattr(data, '__call__'):
+            return True
+        return False
+    
+    def _is_large_convertible_data(self, data: Any) -> bool:
+        """Check if data is large and can be converted to DataFrame."""
+        try:
+            import pandas as pd
+            if isinstance(data, (list, dict)) and len(str(data)) > 1000:
+                # Try to convert to DataFrame to see if it's feasible
+                if isinstance(data, list) and len(data) > 0:
+                    pd.DataFrame(data)
+                    return True
+                elif isinstance(data, dict) and len(data) > 10:
+                    pd.DataFrame([data])
+                    return True
+        except Exception:
+            pass
+        return False
 
     def load(self, filepath: str) -> Optional[Any]:
         """Load data with automatic format detection."""
@@ -230,7 +297,7 @@ class UniversalSerializer:
                 return PickleSerializer.load(filepath)
 
 def safe_serialize(data: Any, filepath: str, format: str = 'auto') -> bool:
-    """Safely serialize data to file with error handling. Uses Parquet instead of Pickle."""
+    """Safely serialize data to file with intelligent format selection."""
     try:
         serializer = UniversalSerializer()
         return serializer.save(data, filepath, format)
@@ -281,7 +348,7 @@ def load_json(filepath: str) -> Optional[Any]:
 
 
 def save_data(data: Any, filepath: str, format: str = 'auto') -> bool:
-    """Save data with automatic format detection, using Parquet instead of Pickle."""
+    """Save data with intelligent format selection based on data characteristics."""
     serializer = UniversalSerializer()
     return serializer.save(data, filepath, format)
 

@@ -803,7 +803,7 @@ class MLModelTrainer:
         tprint_success("✅ All components initialized successfully")
     
     @memory_managed(MemoryStrategy.MODERATE)
-    def _prepare_features(self, data: Dict[str, Any], model_type: ModelType, config: Dict[str, Any]) -> np.ndarray:
+    def _prepare_features(self, data: Dict[str, Any], model_type: ModelType, config: Dict[str, Any], model_config: Dict[str, Any] = None) -> np.ndarray:
         """Prepare features using existing utilities."""
         tprint_info(f"🔄 Preparing features for {model_type.value}")
         
@@ -823,7 +823,7 @@ class MLModelTrainer:
             base_features = base_features.reshape(base_features.shape[0], -1)
         
         # Feature gating for LIGHTGBM_PATCHTST
-        if model_config.get("type", "").upper() == "LIGHTGBM_PATCHTST":
+        if model_config and model_config.get("type", "").upper() == "LIGHTGBM_PATCHTST":
             af = config.get("inputs", {}).get("analyst_features", {})
             fe = config.get("feature_engineering", {}).get("patchtst", {})
             if not (af.get("enable_patchtst_features") and fe.get("enabled")):
@@ -1178,12 +1178,23 @@ class MLModelTrainer:
                 if model_type in [ModelType.ANALYST_ENSEMBLE, ModelType.TACTICIAN_ENSEMBLE]:
                     # Run ensemble training in main process (complex async operations)
                     try:
-                        result = await self._train_ensemble_model(data, model_type, configs[model_type])
-                        results[model_type] = result
+                        ens = await self._train_ensemble_model(data, model_type, configs[model_type])
+                        results[model_type] = [TrainingResult(
+                            model_type=model_type,
+                            model_name=f"{ens['ensemble_type'].lower()}_stacker",
+                            success=True,
+                            model=ens['bundle'],                 # store the bundle
+                            metrics=ens['metrics'],
+                        )]
                         tprint_success(f"✅ Completed ensemble training for {model_type.value}")
                     except Exception as e:
                         tprint_error(f"❌ Ensemble training failed for {model_type.value}: {e}")
-                        results[model_type] = {"error": str(e)}
+                        results[model_type] = [TrainingResult(
+                            model_type=model_type,
+                            model_name="ensemble_error",
+                            success=False,
+                            metrics={"error": str(e)}
+                        )]
                 else:
                     # Run base model training in parallel
                     task = loop.run_in_executor(
@@ -1207,12 +1218,14 @@ class MLModelTrainer:
     
     def _train_model_type_sync(self, data: Dict[str, Any], model_type: ModelType, config: Dict[str, Any]) -> List[TrainingResult]:
         """Synchronous version of model training for ProcessPoolExecutor."""
-        # This is a simplified sync version - in practice you'd need to handle
-        # the async components differently or restructure the code
         try:
-            # For now, return empty results - this would need proper implementation
-            tprint_info(f"Training {model_type.value} (sync)")
-            return []
+            # Reuse the async logic synchronously
+            loop = asyncio.new_event_loop()
+            try:
+                asyncio.set_event_loop(loop)
+                return loop.run_until_complete(self._train_model_type(data, model_type, config))
+            finally:
+                loop.close()
         except Exception as e:
             tprint_error(f"Sync training failed for {model_type.value}: {e}")
             return []
@@ -1408,7 +1421,7 @@ class MLModelTrainer:
         tprint_info(f"🔄 Preparing training data for {model_type.value}")
         
         # Prepare features using existing utilities
-        X = self._prepare_features(data, model_type, config)
+        X = self._prepare_features(data, model_type, config, model_config)
         tprint_data_format(f"Features prepared: {X.shape}", LogLevel.INFO)
         
         # Prepare targets using existing utilities

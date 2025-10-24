@@ -27,17 +27,17 @@ This document describes the improvements made to the HPO (Hyperparameter Optimiz
 ### 2. Ares Launcher Mode Integration
 
 **Execution Modes:**
-- **`light`**: 10% intensity - Quick testing and development
+- **`light`**: 5% intensity - Quick testing and development
 - **`blank`**: 25% intensity - Moderate testing and validation  
 - **`full`**: 100% intensity - Complete optimization
 
 **Mode-Specific Scaling:**
 ```python
-# Light mode (10% intensity)
-n_trials: 100 → 10
+# Light mode (5% intensity)
+n_trials: 100 → 5
 patience: 10 → 5
 threshold: 0.001 → 0.002
-timeout: 60s → 18s
+timeout: 60s → 12s
 
 # Blank mode (25% intensity)  
 n_trials: 100 → 25
@@ -166,7 +166,7 @@ def run(self, config):
 ## Performance Benefits
 
 ### 1. Resource Efficiency
-- **Light mode**: 90% reduction in computation time
+- **Light mode**: 95% reduction in computation time
 - **Blank mode**: 75% reduction in computation time
 - **Full mode**: Complete optimization when needed
 

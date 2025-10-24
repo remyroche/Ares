@@ -365,10 +365,10 @@ class ConsolidatedHPO:
         # Mode-specific parameter adjustments
         mode_adjustments = {
             'light': {
-                'n_trials_multiplier': 0.1,
+                'n_trials_multiplier': 0.05,
                 'patience_multiplier': 0.5,
                 'threshold_multiplier': 2.0,
-                'timeout_multiplier': 0.3,
+                'timeout_multiplier': 0.2,
                 'n_startup_trials_multiplier': 0.5
             },
             'blank': {

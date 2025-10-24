@@ -58,19 +58,19 @@ class AresModeConfig:
     """Configuration for Ares launcher execution modes."""
     
     # Intensity scaling factors
-    light_intensity: float = 0.10    # 10% of full intensity
+    light_intensity: float = 0.05    # 5% of full intensity
     blank_intensity: float = 0.25    # 25% of full intensity  
     full_intensity: float = 1.00     # 100% intensity
     
     # Mode-specific parameter adjustments
     mode_adjustments: Dict[str, Dict[str, Any]] = field(default_factory=lambda: {
         "light": {
-            "n_trials_multiplier": 0.1,
+            "n_trials_multiplier": 0.05,
             "patience_multiplier": 0.5,
             "threshold_multiplier": 2.0,
             "enable_aggressive_pruning": True,
-            "max_trials": 20,
-            "timeout_multiplier": 0.3
+            "max_trials": 10,
+            "timeout_multiplier": 0.2
         },
         "blank": {
             "n_trials_multiplier": 0.25,

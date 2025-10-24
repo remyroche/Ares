@@ -236,3 +236,4 @@ if __name__ == "__main__":
     print("• Better resource utilization for different use cases")
     print("• Seamless integration with existing Ares launcher workflow")
     print("• Detailed pruning statistics and convergence tracking")
+    print("• Light mode: 5% intensity (5 trials, 5 patience, 2x threshold, 20% timeout)")

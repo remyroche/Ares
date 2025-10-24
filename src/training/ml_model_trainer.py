@@ -234,8 +234,91 @@ class MLModelTrainer:
         tprint_info(f"🔧 Initialized MLModelTrainer for {config.timeframe}")
         self.logger.info(f"Initialized MLModelTrainer for {config.timeframe}")
     
+    def _infer_task_type_from_recipe(self, recipe: Dict[str, Any]) -> str:
+        """Infer task type from YAML recipe targets.target_type."""
+        tt = (recipe.get("targets", {}).get("target_type") or "").lower()
+        if tt in {"binary_classification", "multiclass_classification"}:
+            return "classification"
+        if tt in {"regression"}:
+            return "regression"
+        return "classification"  # safe default for Analyst Base
+    
+    def _resolve_scorer(self, recipe: Dict[str, Any], task_type: str) -> Tuple[str, dict]:
+        """Resolve scorer from YAML metrics.primary to sklearn scorer."""
+        SCORER_MAP = {
+            "f1_score": "f1",
+            "precision": "precision", 
+            "recall": "recall",
+            "accuracy": "accuracy",
+            "auc_roc": "roc_auc",
+            "mse": "neg_mean_squared_error",
+            "mae": "neg_mean_absolute_error",
+            "r2_score": "r2",
+        }
+        
+        primary = recipe.get("metrics", {}).get("primary", "f1_score")
+        scorer = SCORER_MAP.get(primary, primary)
+        scorer_kwargs = {}
+        
+        if task_type == "classification" and scorer in {"f1", "precision", "recall"}:
+            scorer_kwargs["average"] = "weighted"
+        
+        return scorer, scorer_kwargs
+    
+    def _make_cv(self, recipe: Dict[str, Any]):
+        """Create CV strategy from YAML training.cv_strategy and cv_params."""
+        name = (recipe.get("training", {}).get("cv_strategy") or "TimeSeriesSplit").lower()
+        params = recipe.get("training", {}).get("cv_params", {})
+        
+        if name == "timeseriessplit":
+            from sklearn.model_selection import TimeSeriesSplit
+            return TimeSeriesSplit(n_splits=params.get("n_splits", 5))
+        elif name == "purgedcv":
+            # Use ConsolidatedCV's purged CV
+            return self.cv_system._create_purged_cv(params)
+        elif name == "walkforward":
+            # Use ConsolidatedCV's walk forward CV
+            return self.cv_system._create_walk_forward_cv(params)
+        else:
+            # Default to TimeSeriesSplit
+            from sklearn.model_selection import TimeSeriesSplit
+            return TimeSeriesSplit(n_splits=5)
+    
+    def _fit_with_early_stopping(self, model, X: np.ndarray, y: np.ndarray, recipe: Dict[str, Any], task_type: str):
+        """Fit model with early stopping using eval_set."""
+        es = recipe.get("training", {}).get("early_stopping", {}).get("enabled", False)
+        if not es:
+            return model.fit(X, y)
+        
+        # Make a small temporal validation split
+        from sklearn.model_selection import TimeSeriesSplit
+        tss = TimeSeriesSplit(n_splits=3)
+        train_idx, val_idx = list(tss.split(X))[-1]
+        X_tr, X_val = X[train_idx], X[val_idx]
+        y_tr, y_val = y[train_idx], y[val_idx]
+        
+        # LightGBM
+        if "LGBM" in type(model).__name__.upper():
+            kwargs = {}
+            # Allow objective/metric already in params; just add eval_set & early stopping
+            kwargs["eval_set"] = [(X_val, y_val)]
+            if hasattr(model, "fit"):
+                return model.fit(X_tr, y_tr, **kwargs)
+        
+        # XGBoost
+        if "XGB" in type(model).__name__.upper():
+            eval_set = [(X_val, y_val)]
+            return model.fit(X_tr, y_tr, eval_set=eval_set, verbose=False)
+        
+        # CatBoost
+        if "CATBOOST" in type(model).__name__.upper():
+            return model.fit(X_tr, y_tr, eval_set=(X_val, y_val), verbose=False)
+        
+        # Fallback
+        return model.fit(X, y)
+    
     def _infer_task_type(self, model_config: Dict[str, Any], y: np.ndarray) -> str:
-        """Infer task type from config or data."""
+        """Infer task type from config or data (legacy method)."""
         t = (model_config.get("task") or "").lower()
         if t in {"classification", "regression"}:
             return t
@@ -256,21 +339,40 @@ class MLModelTrainer:
         self.memory_manager = get_memory_manager()
         tprint_data_format("Memory manager initialized", LogLevel.INFO)
         
-        # Initialize HPO system
+        # Initialize HPO system with mode-based parameters
+        mode = getattr(self.config, 'mode', 'FULL')  # Get mode from config or default to FULL
+        if mode == "LIGHT":
+            max_trials = 10  # 90% reduction
+            timeout = 360  # 90% reduction
+        elif mode == "BLANK":
+            max_trials = 50  # 50% reduction
+            timeout = 1800  # 50% reduction
+        else:
+            max_trials = 100
+            timeout = 3600
+        
         self.hpo_system = ConsolidatedHPO(HPOConfig(
             enable_optuna=OPTUNA_AVAILABLE,
-            max_trials=100,
-            timeout=3600,
+            max_trials=max_trials,
+            timeout=timeout,
             n_jobs=self.config.max_workers
         ))
         tprint_data_format("HPO system initialized", LogLevel.INFO)
         
-        # Initialize cross-validation system
+        # Initialize cross-validation system with mode-based parameters
+        mode = getattr(self.config, 'mode', 'FULL')  # Get mode from config or default to FULL
+        if mode == "LIGHT":
+            cv_folds = max(2, self.config.cv_folds // 10)  # 90% reduction, minimum 2
+        elif mode == "BLANK":
+            cv_folds = max(3, self.config.cv_folds // 2)  # 50% reduction, minimum 3
+        else:
+            cv_folds = self.config.cv_folds
+        
         self.cv_system = ConsolidatedCV(CVConfig(
             enable_purged_cv=True,
             enable_walk_forward=True,
             enable_temporal_cv=True,
-            n_splits=self.config.cv_folds
+            n_splits=cv_folds
         ))
         tprint_data_format("CV system initialized", LogLevel.INFO)
         
@@ -352,6 +454,13 @@ class MLModelTrainer:
         elif base_features.ndim > 2:
             base_features = base_features.reshape(base_features.shape[0], -1)
         
+        # Feature gating for LIGHTGBM_PATCHTST
+        if model_config.get("type", "").upper() == "LIGHTGBM_PATCHTST":
+            af = config.get("inputs", {}).get("analyst_features", {})
+            fe = config.get("feature_engineering", {}).get("patchtst", {})
+            if not (af.get("enable_patchtst_features") and fe.get("enabled")):
+                raise ValueError("LIGHTGBM_PATCHTST selected but PatchTST features are disabled in config.")
+        
         # Apply feature selection
         feature_selector = self.feature_selectors.get(model_type)
         if feature_selector and base_features.shape[1] > 1:
@@ -360,13 +469,13 @@ class MLModelTrainer:
         else:
             selected_features = base_features
         
-        # Apply multi-timeframe processing if enabled
-        if config.get('inputs', {}).get('analyst_features', {}).get('enable_multi_timeframe', False):
-            selected_features = self.multi_timeframe_processor.process_features(
-                selected_features, 
-                timeframes=config.get('inputs', {}).get('analyst_features', {}).get('timeframes', ['5m', '15m', '1h'])
-            )
-            tprint_data_format(f"Multi-timeframe processing completed: {selected_features.shape}", LogLevel.INFO)
+        # Multi-timeframe processing disabled as per requirements
+        # if config.get('inputs', {}).get('analyst_features', {}).get('enable_multi_timeframe', False):
+        #     selected_features = self.multi_timeframe_processor.process_features(
+        #         selected_features, 
+        #         timeframes=config.get('inputs', {}).get('analyst_features', {}).get('timeframes', ['5m', '15m', '1h'])
+        #     )
+        #     tprint_data_format(f"Multi-timeframe processing completed: {selected_features.shape}", LogLevel.INFO)
         
         # Apply hardware optimization
         optimized_features = self.hardware_manager.process_data_with_optimization(
@@ -876,8 +985,11 @@ class MLModelTrainer:
             
             # Define objective function for HPO
             def objective(trial):
+                # Get mode from config
+                mode = getattr(self.config, 'mode', 'FULL')
+                
                 # Get hyperparameters from trial
-                params = self._get_hpo_params(trial, model_config)
+                params = self._get_hpo_params(trial, model_config, mode)
                 
                 # Create model with trial parameters
                 model = self._create_model_with_params(model_config, params, task_type)
@@ -885,8 +997,13 @@ class MLModelTrainer:
                 # Train and evaluate
                 try:
                     model.fit(X, y)
-                    score, direction = self._evaluate_model_score(model, X, y, config, task_type)
-                    return score if direction == "maximize" else -score
+                    score = self._evaluate_model_score(model, X, y, config, task_type)
+                    
+                    # Get direction from config
+                    metric_dir = (config.get('training', {})
+                                      .get('hyperparameter_optimization', {})
+                                      .get('direction', "maximize"))
+                    return score if metric_dir == "maximize" else -score
                 except Exception as e:
                     tprint_warning(f"HPO trial failed: {e}")
                     return float('-inf')
@@ -906,21 +1023,31 @@ class MLModelTrainer:
             # Use default parameters
             final_model = self._create_model_with_params(model_config, model_config.get('parameters', {}))
         
-        # Train the final model
-        tprint_info("🏋️ Training final model")
-        final_model.fit(X, y)
+        # Train the final model with early stopping
+        tprint_info("🏋️ Training final model with early stopping")
+        final_model = self._fit_with_early_stopping(final_model, X, y, config, task_type)
         
         tprint_success(f"✅ Model training completed: {model_config.get('name', 'unknown')}")
         return final_model
     
-    def _get_hpo_params(self, trial, model_config: Dict[str, Any]) -> Dict[str, Any]:
-        """Get hyperparameters from Optuna trial."""
+    def _get_hpo_params(self, trial, model_config: Dict[str, Any], mode: str = "FULL") -> Dict[str, Any]:
+        """Get hyperparameters from Optuna trial with mode-based reduction."""
         model_type = model_config.get('type', 'LIGHTGBM').upper()
+        
+        # Apply mode-based reduction
+        if mode == "LIGHT":
+            reduction_factor = 0.1  # 90% reduction
+        elif mode == "BLANK":
+            reduction_factor = 0.5  # 50% reduction
+        else:
+            reduction_factor = 1.0  # No reduction
+        
         params = {}
         
-        if model_type == 'LIGHTGBM':
+        if model_type in {'LIGHTGBM', 'LIGHTGBM_PATCHTST', 'STACKER_LGBM_CALIBRATED'}:
+            base_estimators = int(1000 * reduction_factor)
             params = {
-                'n_estimators': trial.suggest_int('n_estimators', 100, 2000),
+                'n_estimators': trial.suggest_int('n_estimators', base_estimators//10, base_estimators),
                 'learning_rate': trial.suggest_float('learning_rate', 0.01, 0.3),
                 'num_leaves': trial.suggest_int('num_leaves', 10, 100),
                 'max_depth': trial.suggest_int('max_depth', 3, 15),
@@ -931,8 +1058,9 @@ class MLModelTrainer:
                 'reg_lambda': trial.suggest_float('reg_lambda', 0.0, 1.0)
             }
         elif model_type == 'CATBOOST':
+            base_iterations = int(1000 * reduction_factor)
             params = {
-                'iterations': trial.suggest_int('iterations', 100, 2000),
+                'iterations': trial.suggest_int('iterations', base_iterations//10, base_iterations),
                 'learning_rate': trial.suggest_float('learning_rate', 0.01, 0.3),
                 'depth': trial.suggest_int('depth', 3, 10),
                 'l2_leaf_reg': trial.suggest_float('l2_leaf_reg', 1.0, 10.0),
@@ -940,8 +1068,9 @@ class MLModelTrainer:
                 'subsample': trial.suggest_float('subsample', 0.5, 1.0)
             }
         elif model_type == 'XGBOOST':
+            base_estimators = int(1000 * reduction_factor)
             params = {
-                'n_estimators': trial.suggest_int('n_estimators', 100, 2000),
+                'n_estimators': trial.suggest_int('n_estimators', base_estimators//10, base_estimators),
                 'learning_rate': trial.suggest_float('learning_rate', 0.01, 0.3),
                 'max_depth': trial.suggest_int('max_depth', 3, 15),
                 'min_child_weight': trial.suggest_int('min_child_weight', 1, 10),
@@ -954,57 +1083,51 @@ class MLModelTrainer:
         return params
     
     def _create_model_with_params(self, model_config: Dict[str, Any], params: Dict[str, Any], task_type: str):
-        """Create model with given parameters."""
-        model_type = model_config.get('type', 'LIGHTGBM').upper()
-        
-        # Merge fixed parameters with trial parameters (fixed overrides trial)
-        base = model_config.get('parameters', {})
-        merged = {**params, **base}  # base overrides trial
+        """Create model with given parameters, handling special model types."""
+        model_key = model_config.get('type', 'LIGHTGBM').upper()
+        fixed = model_config.get('parameters', {})
+        merged = {**params, **fixed}  # fixed overrides tuned if both set
         
         # Determine if classification based on task type
         is_classification = (task_type == "classification")
         
-        if model_type == 'LIGHTGBM':
+        if model_key in {"LIGHTGBM", "LIGHTGBM_PATCHTST", "STACKER_LGBM_CALIBRATED"}:
             from lightgbm import LGBMClassifier, LGBMRegressor
-            ModelClass = LGBMClassifier if is_classification else LGBMRegressor
-            return ModelClass(**merged, random_state=42, verbose=-1, n_jobs=1)
-        elif model_type == 'CATBOOST':
+            cls = LGBMClassifier if is_classification else LGBMRegressor
+            return cls(**merged, random_state=42, verbose=-1, n_jobs=1)
+        
+        elif model_key == "CATBOOST":
             from catboost import CatBoostClassifier, CatBoostRegressor
-            ModelClass = CatBoostClassifier if is_classification else CatBoostRegressor
-            return ModelClass(**merged, random_seed=42, verbose=False, thread_count=1)
-        elif model_type == 'XGBOOST':
+            cls = CatBoostClassifier if is_classification else CatBoostRegressor
+            return cls(**merged, random_seed=42, verbose=False, thread_count=1)
+        
+        elif model_key == "XGBOOST":
             from xgboost import XGBClassifier, XGBRegressor
-            ModelClass = XGBClassifier if is_classification else XGBRegressor
-            return ModelClass(**merged, random_state=42, verbosity=0, n_jobs=1)
-        else:
-            # Fallback to RandomForest
-            from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
-            ModelClass = RandomForestClassifier if is_classification else RandomForestRegressor
-            return ModelClass(**merged, random_state=42, n_jobs=1)
+            cls = XGBClassifier if is_classification else XGBRegressor
+            return cls(**merged, random_state=42, verbosity=0, n_jobs=1)
+        
+        # Fallback
+        from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
+        cls = RandomForestClassifier if is_classification else RandomForestRegressor
+        return cls(**merged, random_state=42, n_jobs=1)
     
-    def _evaluate_model_score(self, model, X: np.ndarray, y: np.ndarray, config: Dict[str, Any], task_type: str) -> Tuple[float, str]:
-        """Evaluate model score for HPO."""
+    def _evaluate_model_score(self, model, X: np.ndarray, y: np.ndarray, recipe: Dict[str, Any], task_type: str) -> float:
+        """Evaluate model score for HPO using YAML metrics."""
         try:
-            # Get metric from config or infer from task type
-            metric = config.get('training', {}).get('hyperparameter_optimization', {}).get('metric')
-            if metric is None:
-                metric = "f1" if task_type == "classification" else "neg_mean_squared_error"
-            
-            # Use cross-validation for evaluation
-            cv_scores = self.cv_system.cross_validate(
+            scorer, scorer_kwargs = self._resolve_scorer(recipe, task_type)
+            scores = self.cv_system.cross_validate(
                 model, X, y, 
-                cv_type='temporal',
-                scoring=metric
+                cv_type='temporal', 
+                scoring=scorer, 
+                **scorer_kwargs
             )
-            # sklearn "neg_*" means higher is better
-            direction = "maximize"
-            return float(np.mean(cv_scores)), direction
+            return float(np.mean(scores))
         except Exception:
-            return float('-inf'), "maximize"
+            return float('-inf')
     
     @performance_tracked
     async def _evaluate_model(self, model, X: np.ndarray, y: np.ndarray, model_type: ModelType, config: Dict[str, Any]) -> Dict[str, float]:
-        """Evaluate the trained model using existing utilities."""
+        """Evaluate the trained model using YAML-based metrics."""
         tprint_info(f"📊 Evaluating model for {model_type.value}")
         
         # Validate inputs
@@ -1016,79 +1139,42 @@ class MLModelTrainer:
         predictions = model.predict(X)
         tprint_data_format(f"Predictions generated: {predictions.shape}", LogLevel.INFO)
         
-        # Infer task type from model config
-        task_type = self._infer_task_type(model_config, y)
+        # Infer task type from YAML recipe
+        task_type = self._infer_task_type_from_recipe(config)
         
         # Calculate basic metrics
         metrics = {}
         
         if task_type == "classification":
-            # Classification metrics
-            try:
-                metrics.update({
-                    'accuracy': float(accuracy_score(y, predictions)),
-                    'f1_score': float(f1_score(y, predictions, average='weighted')),
-                    'precision': float(precision_score(y, predictions, average='weighted')),
-                    'recall': float(recall_score(y, predictions, average='weighted'))
-                })
-            except Exception as e:
-                tprint_warning(f"Classification metrics failed: {e}")
-                metrics.update({
-                    'accuracy': 0.0,
-                    'f1_score': 0.0,
-                    'precision': 0.0,
-                    'recall': 0.0
-                })
+            from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score, roc_auc_score
+            metrics["accuracy"] = float(accuracy_score(y, predictions))
+            metrics["f1_score"] = float(f1_score(y, predictions, average="weighted"))
+            metrics["precision"] = float(precision_score(y, predictions, average="weighted"))
+            metrics["recall"] = float(recall_score(y, predictions, average="weighted"))
             
-            # Add AUC if binary classification
-            if task_type == "classification" and np.unique(y).size == 2:
-                try:
-                    if hasattr(model, 'predict_proba'):
-                        probs = model.predict_proba(X)[:, 1]
-                        metrics['auc_roc'] = float(roc_auc_score(y, probs))
-                except Exception as e:
-                    tprint_warning(f"Could not calculate AUC: {e}")
+            if hasattr(model, "predict_proba") and np.unique(y).size == 2:
+                proba = model.predict_proba(X)[:, 1]
+                metrics["auc_roc"] = float(roc_auc_score(y, proba))
         else:
-            # Regression metrics
-            try:
-                metrics.update({
-                    'rmse': float(np.sqrt(mean_squared_error(y, predictions))),
-                    'mae': float(mean_absolute_error(y, predictions)),
-                    'r2': float(r2_score(y, predictions)),
-                    'explained_variance': float(explained_variance_score(y, predictions))
-                })
-            except Exception as e:
-                tprint_warning(f"Regression metrics failed: {e}")
-                metrics.update({
-                    'rmse': float('inf'),
-                    'mae': float('inf'),
-                    'r2': 0.0,
-                    'explained_variance': 0.0
-                })
+            from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score, explained_variance_score
+            rmse = np.sqrt(mean_squared_error(y, predictions))
+            metrics.update({
+                "rmse": float(rmse),
+                "mae": float(mean_absolute_error(y, predictions)),
+                "r2_score": float(r2_score(y, predictions)),
+                "explained_variance": float(explained_variance_score(y, predictions)),
+            })
         
-        # Separate in-sample and CV metrics
-        metrics['in_sample'] = metrics.copy()  # keep in-sample metrics
-        
-        # Cross-validation evaluation
-        try:
-            primary_metric = 'f1' if task_type == "classification" else 'neg_mean_squared_error'
-            cv_scores = self.cv_system.cross_validate(
-                model, X, y,
-                cv_type='temporal',
-                scoring=primary_metric
-            )
-            metrics['cv_mean'] = float(cv_scores.mean())
-            metrics['cv_std'] = float(cv_scores.std())
-            tprint_data_format(f"CV scores: {cv_scores.mean():.4f} ± {cv_scores.std():.4f}", LogLevel.INFO)
-        except Exception as e:
-            tprint_warning(f"CV evaluation failed: {e}")
-            metrics['cv_mean'] = None
-            metrics['cv_std'] = None
-        
-        # Apply safe mathematical operations to metrics
-        for key, value in metrics.items():
-            if isinstance(value, (int, float)) and not np.isfinite(value):
-                metrics[key] = 0.0
+        # CV summary on primary scorer
+        scorer, scorer_kwargs = self._resolve_scorer(config, task_type)
+        cv_scores = self.cv_system.cross_validate(
+            model, X, y, 
+            cv_type='temporal', 
+            scoring=scorer, 
+            **scorer_kwargs
+        )
+        metrics["cv_mean"] = float(np.mean(cv_scores))
+        metrics["cv_std"] = float(np.std(cv_scores))
         
         tprint_data_format(f"Evaluation metrics: {metrics}", LogLevel.INFO)
         tprint_success(f"✅ Model evaluation completed for {model_type.value}")
@@ -1218,7 +1304,7 @@ class MLModelTrainer:
                 proba = model.predict_proba(X)
                 tprint_data_format(f"Probabilities generated: {proba.shape}", LogLevel.INFO)
                 tprint_success(f"✅ Probabilities generated for {model_type.value}")
-                return proba  # shape (n, n_classes); callers can slice if needed
+                return proba  # (n, n_classes) - full matrix
             else:
                 tprint_info(f"Model does not support probability prediction for {model_type.value}")
                 return None

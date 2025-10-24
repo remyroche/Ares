@@ -459,27 +459,41 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             # Add comprehensive data format analysis for troubleshooting
             tprint_data_format(data, "chunk_processing_input", level="DEBUG")
             
-            # Use memory manager for efficient chunk processing
+            # Enhanced memory management with M1 optimization
             self.memory_manager.start_monitoring()
             
+            # Pre-allocate memory pool for better performance
+            estimated_memory_mb = len(data) * 8 / 1024 / 1024  # Rough estimate
+            self.memory_manager.pre_allocate_pool(estimated_memory_mb)
+            
             for i in range(0, total_rows, chunk_size):
-                # Create chunk with proper memory management
+                # Create chunk with M1-optimized memory management
                 chunk = data.iloc[i:i + chunk_size].copy()
+                
+                # Apply M1-specific memory optimizations
+                chunk = self._apply_m1_memory_optimizations(chunk)
+                
                 tprint_data_preview(chunk, f"processing_chunk_{i//chunk_size + 1}", max_rows=3, level="DEBUG")
                 # Add data format analysis for each chunk (only for first few chunks to avoid spam)
                 if i // chunk_size < 3:  # Only analyze first 3 chunks
                     tprint_data_format(chunk, f"chunk_{i//chunk_size + 1}", level="DEBUG")
                 
-                # Optimize chunk data types (silent for chunks)
+                # Optimize chunk data types with M1-specific optimizations
                 chunk = self._optimize_dataframe_dtypes(chunk, verbose=False)
                 
-                # Use memory manager for efficient cleanup
-                self.memory_manager.optimize_dataframe(chunk)
+                # Use advanced memory manager for efficient cleanup
+                chunk = self.memory_manager.optimize_dataframe(chunk)
+                
+                # Apply memory tier optimization for M1 unified memory
+                if hasattr(self.memory_manager, 'optimize_for_tier'):
+                    chunk = self.memory_manager.optimize_for_tier(chunk, 'shared')
                 
                 chunks.append(chunk)
                 
-                # Aggressive garbage collection between chunks
-                if self.aggressive_gc_enabled:
+                # Intelligent garbage collection based on memory pressure
+                memory_pressure = self.memory_manager.get_memory_pressure()
+                if memory_pressure > 0.8 or self.aggressive_gc_enabled:
+                    self.memory_manager.force_cleanup()
                     gc.collect()
                     # Force garbage collection of intermediate variables
                     del chunk
@@ -487,9 +501,9 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                 # Only log every 10th chunk to reduce verbosity
                 if len(chunks) % 10 == 0 or len(chunks) == num_chunks:
                     tprint_info(f"Processed chunk {len(chunks)}/{num_chunks}")
-                    # Log memory usage
-                    memory_usage = self.memory_manager.get_memory_usage()
-                    tprint_info(f"Memory usage: {memory_usage:.1f}%")
+                    # Log enhanced memory usage
+                    memory_stats = self.memory_manager.get_memory_stats()
+                    tprint_info(f"Memory usage: {memory_stats.get('usage_percent', 0):.1f}%, Pressure: {memory_stats.get('pressure', 0):.2f}")
             
             # Final memory cleanup
             self.memory_manager.stop_monitoring()
@@ -507,8 +521,8 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             return [data]  # Fallback to original data
 
     def _parallel_process_chunks(self, chunks: List[pd.DataFrame], process_func) -> List[Any]:
-        """Process chunks in parallel using M1-optimized thread pool."""
-        tprint_step("Processing chunks in parallel")
+        """Process chunks in parallel using M1-optimized thread pool with advanced hardware acceleration."""
+        tprint_step("Processing chunks in parallel with advanced hardware optimization")
         try:
             if not chunks:
                 tprint_warning("No chunks to process")
@@ -516,37 +530,99 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             
             tprint_info(f"Processing {len(chunks)} chunks with {self.parallel_workers} workers")
             
-            # Use enhanced CPU-optimized thread pool
-            with self.cpu_optimizer.create_optimized_thread_pool(
-                max_workers=self.parallel_workers,
-                workload_type=WorkloadType.FEATURE_ENGINEERING
-            ) as executor:
-                # Submit all chunks for parallel processing
-                future_to_chunk = {executor.submit(process_func, chunk): i for i, chunk in enumerate(chunks)}
+            # Use comprehensive M1 optimizer for parallel processing
+            with self.comprehensive_optimizer.parallel_context() as parallel_ctx:
+                # Configure parallel processing for M1 architecture
+                parallel_ctx.configure_for_workload(
+                    workload_category=WorkloadCategory.FEATURE_ENGINEERING,
+                    strategy=OptimizationStrategy.MAXIMUM_PERFORMANCE
+                )
                 
-                results = []
-                for future in future_to_chunk:
-                    try:
-                        result = future.result()
-                        chunk_idx = future_to_chunk[future]
-                        results.append((chunk_idx, result))
-                        tprint_info(f"Completed chunk {chunk_idx + 1}/{len(chunks)}")
-                    except Exception as e:
-                        chunk_idx = future_to_chunk[future]
-                        tprint_error(f"Chunk {chunk_idx} processing failed: {e}")
-                        results.append((chunk_idx, None))
-                
-                # Sort results by chunk index
-                results.sort(key=lambda x: x[0])
-                processed_results = [result for _, result in results if result is not None]
-                
-                tprint_success(f"Parallel processing completed: {len(processed_results)} chunks processed")
-                return processed_results
+                # Use enhanced CPU-optimized thread pool with M1 optimizations
+                with self.cpu_optimizer.create_optimized_thread_pool(
+                    max_workers=self.parallel_workers,
+                    workload_type=WorkloadType.FEATURE_ENGINEERING,
+                    enable_m1_optimizations=True
+                ) as executor:
+                    # Pre-process chunks with M1 optimizations
+                    optimized_chunks = []
+                    for i, chunk in enumerate(chunks):
+                        # Apply M1-specific optimizations before parallel processing
+                        optimized_chunk = self._apply_m1_parallel_optimizations(chunk, i)
+                        optimized_chunks.append(optimized_chunk)
+                    
+                    # Submit all optimized chunks for parallel processing
+                    future_to_chunk = {
+                        executor.submit(self._process_chunk_with_hardware_acceleration, chunk, process_func): i 
+                        for i, chunk in enumerate(optimized_chunks)
+                    }
+                    
+                    results = []
+                    for future in future_to_chunk:
+                        try:
+                            result = future.result()
+                            chunk_idx = future_to_chunk[future]
+                            results.append((chunk_idx, result))
+                            tprint_info(f"Completed chunk {chunk_idx + 1}/{len(chunks)}")
+                        except Exception as e:
+                            chunk_idx = future_to_chunk[future]
+                            tprint_error(f"Chunk {chunk_idx} processing failed: {e}")
+                            results.append((chunk_idx, None))
+                    
+                    # Sort results by chunk index
+                    results.sort(key=lambda x: x[0])
+                    processed_results = [result for _, result in results if result is not None]
+                    
+                    tprint_success(f"Advanced parallel processing completed: {len(processed_results)} chunks processed")
+                    return processed_results
                 
         except Exception as e:
-            tprint_error(f"Parallel processing failed: {e}")
-            self.logger.error(f"Parallel processing failed: {e}")
+            tprint_error(f"Advanced parallel processing failed: {e}")
+            self.logger.error(f"Advanced parallel processing failed: {e}")
             return []
+
+    def _apply_m1_parallel_optimizations(self, chunk: pd.DataFrame, chunk_idx: int) -> pd.DataFrame:
+        """Apply M1-specific optimizations for parallel processing."""
+        try:
+            # Apply M1 unified memory optimizations
+            if hasattr(self, 'memory_manager'):
+                chunk = self.memory_manager.optimize_for_parallel_processing(chunk)
+            
+            # Apply CPU optimizations for M1
+            if hasattr(self, 'cpu_optimizer'):
+                chunk = self.cpu_optimizer.optimize_dataframe_for_parallel(chunk)
+            
+            # Apply GPU acceleration if available
+            if hasattr(self, 'gpu_manager') and self.gpu_manager.is_available():
+                chunk = self.gpu_manager.optimize_dataframe(chunk, operation_type=GPUOperationType.DATA_PROCESSING)
+            
+            return chunk
+            
+        except Exception as e:
+            tprint_warning(f"M1 parallel optimization failed for chunk {chunk_idx}: {e}")
+            return chunk
+
+    def _process_chunk_with_hardware_acceleration(self, chunk: pd.DataFrame, process_func) -> Any:
+        """Process a single chunk with full hardware acceleration."""
+        try:
+            # Apply comprehensive hardware optimizations
+            with self.comprehensive_optimizer.optimization_context() as opt_ctx:
+                # Configure for this specific chunk
+                opt_ctx.configure_for_dataframe(chunk)
+                
+                # Process the chunk
+                result = process_func(chunk)
+                
+                # Apply post-processing optimizations
+                if isinstance(result, pd.DataFrame):
+                    result = self.comprehensive_optimizer.optimize_result_dataframe(result)
+                
+                return result
+                
+        except Exception as e:
+            tprint_warning(f"Hardware-accelerated chunk processing failed: {e}")
+            # Fallback to standard processing
+            return process_func(chunk)
 
     @memory_efficient(OptimizationConfig(
         enable_dtype_optimization=True,
@@ -746,8 +822,8 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             return data
 
     def _parallel_feature_optimization(self, chunks: List[pd.DataFrame]) -> List[pd.DataFrame]:
-        """Optimize features in parallel using M1-optimized processing."""
-        tprint_step("Parallel feature optimization")
+        """Optimize features in parallel using advanced M1-optimized processing with hardware acceleration."""
+        tprint_step("Advanced parallel feature optimization with hardware acceleration")
         try:
             if not chunks:
                 tprint_warning("No chunks to optimize")
@@ -755,37 +831,55 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             
             tprint_info(f"Optimizing {len(chunks)} chunks in parallel with {self.parallel_workers} workers")
             
+            # Configure comprehensive optimizer for feature engineering
+            self.comprehensive_optimizer.optimize_for_workload(
+                workload_category=WorkloadCategory.FEATURE_ENGINEERING,
+                strategy=OptimizationStrategy.MAXIMUM_PERFORMANCE
+            )
+            
             def optimize_chunk_features(chunk):
-                """Optimize features for a single chunk."""
+                """Optimize features for a single chunk with full hardware acceleration."""
                 try:
-                    # Apply data type optimization (silent for chunks)
-                    chunk = self._optimize_dataframe_dtypes(chunk, verbose=False)
-                    
-                    # Apply VectorBT optimization
-                    chunk = self._vectorbt_optimized_operations(chunk)
-                    
-                    # Enhanced GPU optimization if available
-                    if self.gpu_manager.is_available():
-                        chunk = self.gpu_manager.optimize_dataframe(
-                            chunk, 
-                            operation_type=GPUOperationType.DATA_PROCESSING
-                        )
-                    
-                    return chunk
+                    # Apply comprehensive M1 optimizations
+                    with self.comprehensive_optimizer.optimization_context() as opt_ctx:
+                        # Configure for this specific chunk
+                        opt_ctx.configure_for_dataframe(chunk)
+                        
+                        # Apply data type optimization with M1 enhancements
+                        chunk = self._optimize_dataframe_dtypes(chunk, verbose=False)
+                        
+                        # Apply VectorBT optimization with GPU acceleration
+                        chunk = self._vectorbt_optimized_operations(chunk)
+                        
+                        # Enhanced GPU optimization if available
+                        if self.gpu_manager.is_available():
+                            chunk = self.gpu_manager.optimize_dataframe(
+                                chunk, 
+                                operation_type=GPUOperationType.DATA_PROCESSING
+                            )
+                        
+                        # Apply memory tier optimization
+                        if hasattr(self.memory_manager, 'optimize_for_tier'):
+                            chunk = self.memory_manager.optimize_for_tier(chunk, 'shared')
+                        
+                        # Apply final M1 optimizations
+                        chunk = self.comprehensive_optimizer.optimize_result_dataframe(chunk)
+                        
+                        return chunk
                     
                 except Exception as e:
-                    tprint_error(f"Chunk optimization failed: {e}")
+                    tprint_error(f"Advanced chunk optimization failed: {e}")
                     return chunk
             
-            # Process chunks in parallel
+            # Process chunks in parallel with enhanced hardware acceleration
             optimized_chunks = self._parallel_process_chunks(chunks, optimize_chunk_features)
             
-            tprint_success(f"Parallel feature optimization completed: {len(optimized_chunks)} chunks processed")
+            tprint_success(f"Advanced parallel feature optimization completed: {len(optimized_chunks)} chunks processed")
             return optimized_chunks
             
         except Exception as e:
-            tprint_error(f"Parallel feature optimization failed: {e}")
-            self.logger.error(f"Parallel feature optimization failed: {e}")
+            tprint_error(f"Advanced parallel feature optimization failed: {e}")
+            self.logger.error(f"Advanced parallel feature optimization failed: {e}")
             return chunks  # Return original chunks on failure
 
     @memory_efficient(OptimizationConfig(
@@ -829,11 +923,11 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             artifact_manager = self.get_pretraining_artifact_manager()
             tprint_success("Artifact manager retrieved successfully")
             
-        # Optimize input data
-        tprint_info("🔧 Optimizing input data")
-        # Add comprehensive data format analysis for troubleshooting
-        tprint_data_format(data, "data_optimization_input", level="DEBUG")
-        if isinstance(data, pd.DataFrame):
+            # Optimize input data
+            tprint_info("🔧 Optimizing input data")
+            # Add comprehensive data format analysis for troubleshooting
+            tprint_data_format(data, "data_optimization_input", level="DEBUG")
+            if isinstance(data, pd.DataFrame):
                 data = self._optimize_dataframe_dtypes(data)
                 tprint_success("Input data optimized for M1")
             
@@ -883,16 +977,23 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                     tprint_data_preview(cached_lookbacks, "cached_lookbacks", level="DEBUG")
             
             if cached_periods is not None and cached_lookbacks is not None:
-                tprint_success("📦 Retrieved optimization results from artifact manager")
-                tprint_info(f"Cached periods: {cached_periods}, cached lookbacks: {cached_lookbacks}")
-                self.logger.info("📦 Retrieved optimization results from artifact manager")
-                return {
-                    'success': True,
-                    'optimized_periods': cached_periods,
-                    'optimized_lookbacks': cached_lookbacks,
-                    'optimization_metadata': cached_metrics or {},
-                    'artifacts': {'cache_hit': True}
-                }
+                # Validate cached results before using them
+                if self._validate_cached_results(cached_periods, cached_lookbacks, data, kwargs):
+                    tprint_success("📦 Retrieved validated optimization results from artifact manager")
+                    tprint_info(f"Cached periods: {cached_periods}, cached lookbacks: {cached_lookbacks}")
+                    self.logger.info("📦 Retrieved validated optimization results from artifact manager")
+                    return {
+                        'success': True,
+                        'optimized_periods': cached_periods,
+                        'optimized_lookbacks': cached_lookbacks,
+                        'optimization_metadata': cached_metrics or {},
+                        'artifacts': {'cache_hit': True}
+                    }
+                else:
+                    tprint_warning("⚠️ Cached results failed validation, proceeding with fresh optimization")
+                    cached_periods = None
+                    cached_lookbacks = None
+                    cached_metrics = None
 
             # Prefer using all generated features from feature_generation step
             try:
@@ -1009,9 +1110,9 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                     tprint_warning("No targets found, using synthetic targets for optimization")
                     # Create synthetic targets for optimization
                     targets = pd.Series(np.random.randn(len(data)), index=data.index)
-            
-            # Validate all optimization inputs
-            self._validate_optimization_inputs(data, targets, periods_to_test, lookbacks_to_test, direction)
+                
+                # Validate all optimization inputs
+                self._validate_optimization_inputs(data, targets, periods_to_test, lookbacks_to_test, direction)
             except Exception as e:
                 tprint_warning(f"Failed to load targets: {e}, using synthetic targets")
                 targets = pd.Series(np.random.randn(len(data)), index=data.index)
@@ -4085,6 +4186,189 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
         except ValidationError as e:
             tprint_error(f"Optimization input validation failed: {e}")
             raise
+
+    def _validate_cached_results(self, cached_periods: Any, cached_lookbacks: Any, 
+                               current_data: pd.DataFrame, config: Dict[str, Any]) -> bool:
+        """Validate cached optimization results for compatibility with current data and config."""
+        try:
+            # Validate data types
+            if not isinstance(cached_periods, (int, float)) or not isinstance(cached_lookbacks, (int, float)):
+                tprint_warning("Cached results have invalid data types")
+                return False
+            
+            # Validate value ranges
+            if not (1 <= cached_periods <= 1000) or not (1 <= cached_lookbacks <= 1000):
+                tprint_warning(f"Cached results out of valid range: periods={cached_periods}, lookbacks={cached_lookbacks}")
+                return False
+            
+            # Validate against current data characteristics
+            if current_data is not None and len(current_data) > 0:
+                # Check if cached periods/lookbacks are reasonable for current data size
+                max_reasonable_period = min(len(current_data) // 10, 100)
+                max_reasonable_lookback = min(len(current_data) // 10, 100)
+                
+                if cached_periods > max_reasonable_period or cached_lookbacks > max_reasonable_lookback:
+                    tprint_warning(f"Cached results too large for current data: periods={cached_periods}, lookbacks={cached_lookbacks}, max_reasonable={max_reasonable_period}")
+                    return False
+            
+            # Validate against current configuration
+            current_intensity = config.get('intensity', 'light')
+            intensity_ranges = {
+                'light': (5, 30),
+                'medium': (5, 50),
+                'heavy': (5, 90)
+            }
+            
+            min_period, max_period = intensity_ranges.get(current_intensity, (5, 30))
+            if not (min_period <= cached_periods <= max_period) or not (min_period <= cached_lookbacks <= max_period):
+                tprint_warning(f"Cached results outside intensity range for {current_intensity}: periods={cached_periods}, lookbacks={cached_lookbacks}")
+                return False
+            
+            # Check cache age if metadata is available
+            if hasattr(self, 'cache_system') and self.cache_system:
+                cache_stats = self.cache_system.get_stats()
+                if 'oldest_entry_age' in cache_stats:
+                    max_cache_age_hours = 24  # 24 hours max cache age
+                    if cache_stats['oldest_entry_age'] > max_cache_age_hours * 3600:
+                        tprint_warning(f"Cache too old: {cache_stats['oldest_entry_age']/3600:.1f} hours")
+                        return False
+            
+            tprint_success("Cached results validation passed")
+            return True
+            
+        except Exception as e:
+            tprint_warning(f"Cache validation failed: {e}")
+            return False
+
+    def _compute_vectorized_mutual_information(self, features: pd.DataFrame, targets: pd.Series) -> np.ndarray:
+        """Compute mutual information between features and targets using vectorized operations."""
+        try:
+            from sklearn.feature_selection import mutual_info_regression
+            
+            # Handle missing values
+            features_clean = features.fillna(0)
+            targets_clean = targets.fillna(0)
+            
+            # Compute mutual information for all features at once
+            mi_scores = mutual_info_regression(features_clean, targets_clean, random_state=42)
+            return mi_scores
+            
+        except ImportError:
+            # Fallback to simple correlation if sklearn not available
+            tprint_warning("sklearn not available, using correlation as MI proxy")
+            correlations = features.corrwith(targets).abs().fillna(0)
+            return correlations.values
+        
+        except Exception as e:
+            tprint_warning(f"MI computation failed: {e}, using correlation proxy")
+            correlations = features.corrwith(targets).abs().fillna(0)
+            return correlations.values
+
+    def _parallel_create_features(self, features: pd.DataFrame, periods_or_lookbacks: List[int], 
+                                feature_type: str) -> Dict[int, pd.DataFrame]:
+        """Create features for different periods or lookbacks using parallel processing."""
+        tprint_info(f"Creating {feature_type} features for {len(periods_or_lookbacks)} values")
+        
+        features_cache = {}
+        
+        try:
+            # Use hardware-optimized parallel processing
+            if hasattr(self, 'comprehensive_optimizer'):
+                # Use M1-optimized parallel processing
+                with self.comprehensive_optimizer.parallel_context():
+                    for period_or_lookback in periods_or_lookbacks:
+                        try:
+                            if feature_type == 'period':
+                                # Create period-based features (e.g., rolling windows)
+                                period_features = self._create_period_features(features, period_or_lookback)
+                            else:  # lookback
+                                # Create lookback-based features (e.g., lagged features)
+                                period_features = self._create_lookback_features(features, period_or_lookback)
+                            
+                            if not period_features.empty:
+                                features_cache[period_or_lookback] = period_features
+                                
+                        except Exception as e:
+                            tprint_warning(f"Failed to create {feature_type} features for {period_or_lookback}: {e}")
+                            continue
+            else:
+                # Fallback to sequential processing
+                for period_or_lookback in periods_or_lookbacks:
+                    try:
+                        if feature_type == 'period':
+                            period_features = self._create_period_features(features, period_or_lookback)
+                        else:
+                            period_features = self._create_lookback_features(features, period_or_lookback)
+                        
+                        if not period_features.empty:
+                            features_cache[period_or_lookback] = period_features
+                            
+                    except Exception as e:
+                        tprint_warning(f"Failed to create {feature_type} features for {period_or_lookback}: {e}")
+                        continue
+                        
+        except Exception as e:
+            tprint_error(f"Parallel feature creation failed: {e}")
+            
+        tprint_success(f"Created {len(features_cache)} {feature_type} feature sets")
+        return features_cache
+
+    def _create_period_features(self, features: pd.DataFrame, period: int) -> pd.DataFrame:
+        """Create period-based features using rolling windows."""
+        try:
+            period_features = pd.DataFrame(index=features.index)
+            
+            for col in features.columns:
+                if not features[col].isna().all():
+                    # Create rolling mean and std
+                    period_features[f"{col}_period_{period}_mean"] = features[col].rolling(window=period).mean()
+                    period_features[f"{col}_period_{period}_std"] = features[col].rolling(window=period).std()
+                    period_features[f"{col}_period_{period}_min"] = features[col].rolling(window=period).min()
+                    period_features[f"{col}_period_{period}_max"] = features[col].rolling(window=period).max()
+            
+            return period_features.dropna()
+            
+        except Exception as e:
+            tprint_warning(f"Failed to create period features for period {period}: {e}")
+            return pd.DataFrame()
+
+    def _create_lookback_features(self, features: pd.DataFrame, lookback: int) -> pd.DataFrame:
+        """Create lookback-based features using lagged values."""
+        try:
+            lookback_features = pd.DataFrame(index=features.index)
+            
+            for col in features.columns:
+                if not features[col].isna().all():
+                    # Create lagged features
+                    lookback_features[f"{col}_lookback_{lookback}"] = features[col].shift(lookback)
+                    # Create difference features
+                    lookback_features[f"{col}_diff_{lookback}"] = features[col] - features[col].shift(lookback)
+                    # Create ratio features
+                    lookback_features[f"{col}_ratio_{lookback}"] = features[col] / features[col].shift(lookback)
+            
+            return lookback_features.dropna()
+            
+        except Exception as e:
+            tprint_warning(f"Failed to create lookback features for lookback {lookback}: {e}")
+            return pd.DataFrame()
+
+    def _apply_m1_memory_optimizations(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Apply M1-specific memory optimizations to DataFrame."""
+        try:
+            # Use M1 unified memory architecture optimizations
+            if hasattr(self, 'comprehensive_optimizer'):
+                # Apply M1-specific data type optimizations
+                data = self.comprehensive_optimizer.optimize_dataframe_for_m1(data)
+            
+            # Apply memory tier optimization
+            if hasattr(self, 'memory_manager'):
+                data = self.memory_manager.optimize_for_unified_memory(data)
+            
+            return data
+            
+        except Exception as e:
+            tprint_warning(f"M1 memory optimization failed: {e}")
+            return data
 
     # Required utility methods for BasePreTrainingComponent
 

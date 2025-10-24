@@ -37,15 +37,108 @@ os.environ['DATA_PREVIEW_MAX_ROWS'] = '10'  # Show more rows for this complex st
 os.environ['DATA_PREVIEW_MAX_COLS'] = '20'  # Show more columns for feature analysis
 from src.training.steps.base_step import BaseStep
 
-# Import enhanced hardware optimization tools
-from src.utils.hardware import (
-    get_integrated_hardware_manager, IntegratedHardwareConfig,
-    get_comprehensive_optimizer, ComprehensiveConfig, WorkloadCategory,
-    m1_optimized, memory_optimized, comprehensive_memory_optimization,
-    optimize_dataframe, optimize_array, memory_efficient_function,
-    chunked_function, gc_optimized_function, force_cleanup,
-    get_memory_stats, get_optimization_status, OptimizationStrategy
-)
+# ====== Safe shims for optional Apple Silicon utils (async-aware) ======
+try:
+    from src.utils.hardware import (
+        get_integrated_hardware_manager, IntegratedHardwareConfig,
+        get_comprehensive_optimizer, ComprehensiveConfig, WorkloadCategory,
+        m1_optimized, memory_optimized, comprehensive_memory_optimization,
+        optimize_dataframe, optimize_array, memory_efficient_function,
+        chunked_function, gc_optimized_function, force_cleanup,
+        get_memory_stats, get_optimization_status, OptimizationStrategy
+    )
+except Exception:
+    import inspect
+    # Enums/Configs
+    class WorkloadCategory:
+        MACHINE_LEARNING = "MACHINE_LEARNING"
+        FEATURE_ENGINEERING = "FEATURE_ENGINEERING"
+        BACKTESTING = "BACKTESTING"
+
+    class OptimizationStrategy:
+        BALANCED = "BALANCED"
+
+    class IntegratedHardwareConfig:
+        def __init__(self, **kwargs): self.__dict__.update(kwargs)
+
+    class ComprehensiveConfig:
+        def __init__(self, **kwargs): self.__dict__.update(kwargs)
+
+    # Decorators: pass-through, but async-aware
+    def _pass_through_decorator(*dargs, **dkwargs):
+        def _wrap(fn):
+            if inspect.iscoroutinefunction(fn):
+                async def _inner(*a, **k): return await fn(*a, **k)
+                return _inner
+            def _inner(*a, **k): return fn(*a, **k)
+            return _inner
+        return _wrap
+
+    m1_optimized = _pass_through_decorator
+    memory_optimized = _pass_through_decorator
+    comprehensive_memory_optimization = _pass_through_decorator
+
+    # Functions/Managers
+    def optimize_dataframe(df): return df
+    def optimize_array(x): return x
+    def memory_efficient_function(*a, **k):
+        def _wrap(fn): return fn
+        return _wrap
+    def chunked_function(*a, **k):
+        def _wrap(fn): return fn
+        return _wrap
+    def gc_optimized_function(*a, **k):
+        def _wrap(fn): return fn
+        return _wrap
+
+    class _DummyHardwareMgr:
+        def process_data_with_optimization(self, data, *a, **k): return data
+        def optimize_for_workload(self, *a, **k): return None
+        def clear_all_caches(self): return None
+
+    def get_integrated_hardware_manager(*a, **k): return _DummyHardwareMgr()
+
+    class _DummyComprehensive:
+        def optimize_operation(self, *a, **k):
+            # passthrough returning the data arg when present
+            if len(a) >= 2: return a[1]
+            return None
+    def get_comprehensive_optimizer(*a, **k): return _DummyComprehensive()
+
+    def force_cleanup(): 
+        import gc; gc.collect()
+
+    def get_memory_stats(): return {"ok": True}
+    def get_optimization_status(): return {"ok": True}
+# ====== End shims ======
+
+# ====== Safe fallback for tprint_data_format ======
+# If tprint_data_format is missing or fails, provide a fallback that returns a summary when asked
+try:
+    from src.utils.tprint import tprint_data_format
+except Exception:
+    def tprint_data_format(obj, label="data", level="DEBUG", return_summary=False):
+        print(f"[DATA_FORMAT] {label}")
+        if return_summary:
+            try:
+                import pandas as pd, numpy as np
+                if isinstance(obj, pd.DataFrame):
+                    return {
+                        "shape": obj.shape,
+                        "memory_mb": float(obj.memory_usage(deep=True).sum())/1024/1024,
+                        "numeric_cols": int(obj.select_dtypes(include=[np.number]).shape[1]),
+                        "null_cells": int(obj.isnull().sum().sum()),
+                    }
+                if isinstance(obj, pd.Series):
+                    return {
+                        "length": int(len(obj)),
+                        "dtype": str(obj.dtype),
+                        "nulls": int(obj.isnull().sum()),
+                    }
+            except Exception:
+                return {}
+        return {}
+# ====== End tprint fallback ======
 
 # Import missing dependencies
 from src.utils.artifact_manager import get_analyst_context, setup_enhanced_artifact_manager, get_pretraining_artifact_manager
@@ -71,9 +164,11 @@ class FeatureVariantGenerator:
     @memory_optimized(optimization_level='aggressive')
     def generate_variants(self, features_df, **kwargs):
         """Generate feature variants with memory optimization."""
-        return self.hardware_manager.process_data_with_optimization(
-            features_df.copy(), WorkloadCategory.FEATURE_ENGINEERING
-        )
+        if getattr(self, "hardware_manager", None) and hasattr(self.hardware_manager, "process_data_with_optimization"):
+            return self.hardware_manager.process_data_with_optimization(
+                features_df.copy(), WorkloadCategory.FEATURE_ENGINEERING
+            )
+        return optimize_dataframe(features_df.copy())
     
     def _resample_to_timeframe(self, data, timeframe):
         """Resample data to specific timeframe."""
@@ -128,9 +223,11 @@ class FeatureInteractionGenerator:
     @memory_optimized(optimization_level='aggressive')
     def generate_interactions(self, features_df, **kwargs):
         """Generate feature interactions with memory optimization."""
-        return self.hardware_manager.process_data_with_optimization(
-            features_df.copy(), WorkloadCategory.FEATURE_ENGINEERING
-        )
+        if getattr(self, "hardware_manager", None) and hasattr(self.hardware_manager, "process_data_with_optimization"):
+            return self.hardware_manager.process_data_with_optimization(
+                features_df.copy(), WorkloadCategory.FEATURE_ENGINEERING
+            )
+        return optimize_dataframe(features_df.copy())
     
     def generate_interactions_from_centrality(self, features_df, centrality_pairs, max_pairs=50):
         """Generate interactions based on measured SHAP interaction centrality pairs."""
@@ -296,6 +393,12 @@ class SHAPInteractionScorer:
             # Compute SHAP values on validation set only
             explainer = shap.TreeExplainer(model)
             shap_values = explainer.shap_values(X_val)
+            
+            # For regression shap_values is (n, d); for multiclass it's a list of arrays
+            if isinstance(shap_values, list) and len(shap_values) > 0:
+                # average across classes
+                import numpy as np
+                shap_values = np.mean(np.stack(shap_values, axis=0), axis=0)
             
             # Compute SHAP interaction values
             shap_interaction_values = explainer.shap_interaction_values(X_val)
@@ -1120,15 +1223,20 @@ class FeatureGenerationInteractionGenerationStepAnalyst(BaseStep):
             )
             
             selected_features = features_aligned[top_features]
-            # Preview selected features from Phase 1
             tprint_data_preview(selected_features, "phase1_selected_features", level="INFO")
-            tprint(f"📊 Phase 1: Selected {len(selected_features.columns)} features (top {self.phase_config.phase1_selection_ratio*100}%)")
-            
-            # Store metadata
+
+            total_generated = int(len(combined_variants.columns))
+            selected_count = int(len(selected_features.columns))
+            selection_ratio = (selected_count / total_generated) if total_generated else 0.0
+            tprint(f"📊 Phase 1: Selected {selected_count} features (top {selection_ratio*100:.1f}%)")
+
+            # Store the computed ratio in config as well
+            self.phase_config.phase1_selection_ratio = selection_ratio
+
             phase1_metadata = {
-                'total_variants_generated': len(combined_variants.columns),
-                'selected_features_count': len(selected_features.columns),
-                'selection_ratio': self.phase_config.phase1_selection_ratio,
+                'total_variants_generated': total_generated,
+                'selected_features_count': selected_count,
+                'selection_ratio': selection_ratio,
                 'shap_results': {
                     'feature_names': shap_results['feature_names'],
                     'shap_scores': shap_results['shap_scores'].tolist(),
@@ -1433,7 +1541,7 @@ class FeatureGenerationInteractionGenerationStepAnalyst(BaseStep):
             return pd.DataFrame(), {'error': str(e)}
 
     @m1_optimized(operation_type="feature_engineering", workload_category=WorkloadCategory.FEATURE_ENGINEERING)
-    async def execute(self, training_input: Dict[str, Any]) -> Dict[str, Any]:
+    async def execute(self, training_input: Dict[str, Any]) -> InteractionGenerationResult:
         start_time = time.time()
         tprint_info("🚀 [ANALYST] Starting three-phase LGBM+SHAP interaction generation pipeline")
         self.logger.info("🔧 Starting Analyst mode three-phase interaction generation")
@@ -2186,7 +2294,7 @@ async def handle_feature_generation_interaction_generation_step_analyst(
     }
     
     # Execute step
-    result = await step.execute(training_input, {})
+    result = await step.execute(training_input)
     
     tprint(f"✅ Analyst handler completed in {time.time() - start_time:.2f}s")
     return result

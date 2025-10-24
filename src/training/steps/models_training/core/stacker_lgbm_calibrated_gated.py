@@ -27,12 +27,15 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import log_loss, brier_score_loss
 import logging
 
-try:
-    import lightgbm as lgb
-    LIGHTGBM_AVAILABLE = True
-except ImportError:
-    LIGHTGBM_AVAILABLE = False
-    lgb = None
+from .error_handling import (
+    handle_errors, validate_config, validate_data, safe_import,
+    MLModelTrainerError, ConfigurationError, DataValidationError, 
+    ModelTrainingError, PredictionError, ResourceError
+)
+
+# Use safe import with fallback
+lgb = safe_import('lightgbm', 'lightgbm')
+LIGHTGBM_AVAILABLE = lgb is not None
 
 logger = logging.getLogger(__name__)
 
@@ -403,6 +406,7 @@ class StackerLGBMCalibratedGated(BaseEstimator, ClassifierMixin):
             logger.warning(f"Unknown calibration method {self.calibration_method}, using raw probabilities")
             return y_prob
     
+    @handle_errors(error_type=ModelTrainingError, reraise=True)
     def fit(self, X: np.ndarray, y: np.ndarray, 
             sample_weight: Optional[np.ndarray] = None,
             volatility: Optional[np.ndarray] = None,
@@ -411,8 +415,9 @@ class StackerLGBMCalibratedGated(BaseEstimator, ClassifierMixin):
         logger.info("Training StackerLGBMCalibratedGated ensemble")
         
         # Validate inputs
+        validate_data(X, y, min_samples=10, min_features=1)
         if len(self.base_models) == 0:
-            raise ValueError("No base models specified")
+            raise ConfigurationError("No base models specified")
         
         # Store feature info
         self.n_features_in_ = X.shape[1]
@@ -469,12 +474,15 @@ class StackerLGBMCalibratedGated(BaseEstimator, ClassifierMixin):
         
         return self
     
+    @handle_errors(error_type=PredictionError, reraise=True)
     def predict(self, X: np.ndarray, 
                 volatility: Optional[np.ndarray] = None,
                 regime: Optional[np.ndarray] = None) -> np.ndarray:
         """Make predictions."""
         if not self.is_fitted:
-            raise ValueError("Model must be fitted before prediction")
+            raise PredictionError("Model must be fitted before prediction")
+        
+        validate_data(X, min_samples=1, min_features=self.n_features_in_)
         
         # Generate base model predictions
         base_predictions = {}

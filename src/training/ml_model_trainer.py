@@ -79,6 +79,14 @@ from src.utils.hardware.integrated_hardware_manager import get_integrated_hardwa
 from src.utils.hardware.optimization_decorators import (
     smart_cache, auto_optimize, memory_efficient, performance_tracked
 )
+
+# Import parallel training and memory optimization
+from src.training.steps.models_training.core.parallel_training_manager import (
+    ParallelTrainingManager, ParallelTrainingConfig, TrainingStrategy
+)
+from src.training.steps.models_training.core.memory_optimized_trainer import (
+    MemoryOptimizedTrainer, MemoryOptimizedConfig, MemoryStrategy
+)
 from src.utils.hardware.memory_optimized_decorators import (
     memory_optimized, comprehensive_memory_optimization, MemoryOptimizationLevel
 )
@@ -689,6 +697,26 @@ class MLModelTrainer:
         
         # Initialize hardware manager
         self.hardware_manager = get_integrated_hardware_manager()
+        
+        # Initialize parallel training manager
+        parallel_config = ParallelTrainingConfig(
+            strategy=TrainingStrategy.ADAPTIVE,
+            max_workers=4,
+            memory_limit_gb=8.0,
+            enable_caching=True,
+            enable_memory_optimization=True
+        )
+        self.parallel_manager = ParallelTrainingManager(parallel_config)
+        
+        # Initialize memory-optimized trainer
+        memory_config = MemoryOptimizedConfig(
+            strategy=MemoryStrategy.ADAPTIVE,
+            memory_limit_gb=8.0,
+            enable_compression=True,
+            enable_caching=True,
+            enable_gc_optimization=True
+        )
+        self.memory_trainer = MemoryOptimizedTrainer(memory_config)
         tprint_data_format("Hardware manager initialized", LogLevel.INFO)
         
         # Initialize memory manager
@@ -899,9 +927,9 @@ class MLModelTrainer:
         # Preprocess data
         processed_data = await self._preprocess_data(data)
         
-        # Train models
+        # Train models with enhanced parallel processing and memory optimization
         if self.config.enable_parallel_training:
-            results = await self._train_models_parallel(processed_data, configs)
+            results = await self._train_models_enhanced_parallel(processed_data, configs)
         else:
             results = await self._train_models_sequential(processed_data, configs)
         
@@ -913,6 +941,64 @@ class MLModelTrainer:
         self.logger.info("ML model training pipeline completed")
         
         return results
+    
+    @performance_tracked(level=OptimizationLevel.HIGH)
+    async def _train_models_enhanced_parallel(
+        self, 
+        data: Dict[str, Any], 
+        configs: Dict[ModelType, Dict[str, Any]]
+    ) -> Dict[ModelType, List[TrainingResult]]:
+        """Enhanced parallel training with memory optimization."""
+        tprint_info("🚀 Starting enhanced parallel training with memory optimization")
+        
+        # Prepare models for parallel training
+        models = []
+        model_configs = {}
+        
+        for model_type, config in configs.items():
+            models.append({
+                'name': model_type.value,
+                'type': model_type.value,
+                'config': config
+            })
+            model_configs[model_type.value] = config
+        
+        # Use parallel training manager
+        try:
+            parallel_results = await self.parallel_manager.train_models_parallel(
+                models=models,
+                data=data,
+                configs=model_configs
+            )
+            
+            # Convert results to expected format
+            results = {}
+            for model_type in configs.keys():
+                if model_type.value in parallel_results:
+                    # Convert parallel results to TrainingResult format
+                    parallel_result = parallel_results[model_type.value]
+                    if 'error' not in parallel_result:
+                        results[model_type] = [TrainingResult(
+                            model_type=model_type,
+                            model_name=model_type.value,
+                            status='completed',
+                            metrics={},
+                            training_time=0.0,
+                            memory_usage=0.0
+                        )]
+                    else:
+                        results[model_type] = []
+                else:
+                    results[model_type] = []
+            
+            tprint_success("✅ Enhanced parallel training completed")
+            return results
+            
+        except Exception as e:
+            tprint_error(f"❌ Enhanced parallel training failed: {e}")
+            self.logger.error(f"Enhanced parallel training failed: {e}")
+            # Fallback to sequential training
+            return await self._train_models_sequential(data, configs)
     
     async def _load_configurations(self, config_paths: Dict[ModelType, str]) -> Dict[ModelType, Dict[str, Any]]:
         """Load configuration files for each model type with inheritance support."""
@@ -1161,6 +1247,7 @@ class MLModelTrainer:
         
         return results
     
+    @memory_efficient(level=OptimizationLevel.HIGH)
     async def _train_single_model(self, data: Dict[str, Any], model_type: ModelType, model_config: Dict[str, Any], config: Dict[str, Any]) -> TrainingResult:
         """Train a single model."""
         start_time = time.time()

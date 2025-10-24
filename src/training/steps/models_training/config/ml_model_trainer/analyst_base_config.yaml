@@ -122,18 +122,10 @@ training:
     n_splits: 5
     test_size: 0.2
   
-  # Caching configuration
+  # Caching configuration - Uses unified configuration
   caching:
-    enabled: true
-    cache_features: true
-    cache_targets: true
-    cache_cv_splits: true
-    cache_feature_importance: true
-    cache_shap_values: true
-    cache_dir: "cache/analyst_base"
-    cache_ttl_hours: 24  # Cache time-to-live in hours
-    enable_compression: true
-    compression_level: 6
+    config_source: "unified_memory_config.yaml"
+    model_type: "analyst_base"
   
   # Early stopping
   early_stopping:
@@ -218,22 +210,17 @@ metrics:
       enabled: true
       metrics: ["confidence_accuracy", "confidence_precision", "confidence_recall"]
 
-# Memory Optimization
+# Memory Optimization - Uses unified configuration from utils/hardware/
 memory_optimization:
-  enabled: true
-  strategy: "comprehensive"  # basic, intermediate, comprehensive
-  memory_limit_gb: 8  # Maximum memory usage
-  enable_garbage_collection: true
-  gc_frequency: 100  # Garbage collect every N iterations
-  enable_memory_mapping: true
-  chunk_size: 10000  # Process data in chunks
-  enable_compression: true
-  compression_level: 6
-  enable_caching: true
-  cache_size_mb: 512
-  enable_incremental_learning: true
-  batch_processing: true
-  max_batch_size: 1000
+  # Import unified configuration
+  config_source: "unified_memory_config.yaml"
+  model_type: "analyst_base"
+  
+  # Hardware integration
+  use_integrated_hardware_manager: true
+  use_enhanced_caching_system: true
+  use_memory_optimized_decorators: true
+  use_dynamic_memory_allocator: true
 
 # Performance Monitoring
 monitoring:

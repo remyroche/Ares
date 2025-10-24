@@ -1,0 +1,127 @@
+# Unified Memory Optimization Configuration
+# This configuration is shared across all model training configs
+# and integrates with the existing utils/hardware/ infrastructure
+
+# Hardware Integration
+hardware_integration:
+  enabled: true
+  use_integrated_hardware_manager: true
+  use_enhanced_caching_system: true
+  use_memory_optimized_decorators: true
+  use_dynamic_memory_allocator: true
+
+# Memory Optimization Strategy
+memory_optimization:
+  strategy: "comprehensive"  # basic, intermediate, comprehensive
+  memory_limit_gb: 8.0  # Default limit, can be overridden per model type
+  enable_garbage_collection: true
+  gc_frequency: 100  # Garbage collect every N iterations
+  enable_memory_mapping: true
+  chunk_size: 10000  # Process data in chunks
+  enable_compression: true
+  compression_level: 6
+  enable_memory_pooling: true
+  enable_predictive_allocation: true
+
+# Caching Configuration
+caching:
+  enabled: true
+  use_enhanced_caching_system: true
+  cache_features: true
+  cache_targets: true
+  cache_cv_splits: true
+  cache_feature_importance: true
+  cache_shap_values: true
+  cache_base_model_predictions: true  # For ensemble models
+  cache_meta_features: true  # For ensemble models
+  cache_sequence_data: true  # For GRU/TCN models
+  cache_embeddings: true  # For GRU models
+  cache_dir: "cache/ml_models"
+  cache_ttl_hours: 24
+  enable_compression: true
+  compression_level: 6
+  max_cache_size_mb: 2048
+  enable_lru_eviction: true
+  enable_data_type_optimization: true
+
+# Performance Optimization
+performance_optimization:
+  enable_parallel_processing: true
+  max_workers: 4  # Default, can be overridden per model type
+  enable_batch_processing: true
+  max_batch_size: 1000  # Default, can be overridden per model type
+  enable_incremental_learning: true
+  enable_sequence_optimization: true  # For GRU/TCN models
+  sequence_chunk_size: 100
+  enable_ensemble_memory_sharing: true  # For ensemble models
+
+# Hardware-Specific Optimizations
+hardware_optimizations:
+  # CPU Optimization
+  cpu_optimization_level: "balanced"  # basic, balanced, aggressive
+  enable_core_affinity: true
+  enable_thermal_monitoring: true
+  enable_power_management: true
+  
+  # GPU Optimization (if available)
+  gpu_optimization_level: "balanced"
+  enable_mps_acceleration: true
+  enable_gpu_memory_pooling: true
+  enable_batch_operations: true
+  
+  # Memory Optimization
+  memory_optimization_level: "balanced"
+  enable_adaptive_optimization: true
+  enable_learning: true
+  auto_tuning_enabled: true
+  performance_monitoring_enabled: true
+
+# Model-Specific Overrides
+model_specific_overrides:
+  # Analyst Base Models
+  analyst_base:
+    memory_limit_gb: 6.0
+    max_workers: 2
+    max_batch_size: 1500
+    chunk_size: 12000
+    
+  # Analyst Ensemble
+  analyst_ensemble:
+    memory_limit_gb: 10.0
+    max_workers: 4
+    max_batch_size: 800
+    chunk_size: 8000
+    max_cache_size_mb: 1536
+    
+  # Tactician Base Models
+  tactician_base:
+    memory_limit_gb: 8.0
+    max_workers: 3
+    max_batch_size: 1000
+    chunk_size: 10000
+    sequence_chunk_size: 120
+    
+  # Tactician Ensemble
+  tactician_ensemble:
+    memory_limit_gb: 12.0
+    max_workers: 6
+    max_batch_size: 600
+    chunk_size: 6000
+    sequence_chunk_size: 80
+    max_cache_size_mb: 2048
+
+# Monitoring Configuration
+monitoring:
+  enabled: true
+  monitoring_interval: 5.0
+  metrics_retention_hours: 24
+  alert_thresholds:
+    cpu_usage: 85.0
+    memory_usage: 90.0
+    gpu_usage: 80.0
+    temperature: 85.0
+  intensive_thresholds:
+    cpu_usage: 95.0
+    memory_usage: 95.0
+    gpu_usage: 85.0
+    temperature: 90.0

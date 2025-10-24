@@ -6,14 +6,43 @@ This module contains all optimization-related functionality including:
 - Pareto optimization
 - Regime-specific optimization
 - Multi-objective optimization
+
+Refactored for better maintainability and performance while maintaining
+full backward compatibility.
 """
 
-from .consolidated_hpo import (
-    ConsolidatedHPO, HPOConfig, HPOPhaseConfig, HPOResult,
+# Import refactored components
+from .refactored_hpo import (
+    ConsolidatedHPO, HPOConfig, HPOResult,
     # Legacy compatibility
     HyperparameterOptimization, HierarchicalHPO, HierarchicalHPOConfig,
-    optimize_hyperparameters, staged_hpo, bayesian_optimization
+    optimize_hyperparameters, staged_hpo, bayesian_optimization,
+    # Factory functions
+    create_consolidated_hpo, create_bayesian_hpo, create_bohb_hpo,
+    create_grid_hpo, create_random_hpo, create_ares_mode_hpo, create_auto_mode_hpo
 )
+
+# Import new core components
+from .core import (
+    HPOEngine, OptimizationStrategy, BayesianStrategy, GridStrategy, 
+    RandomStrategy, BOHBStrategy, PrunerFactory, OptimizationMonitor, OptimizationCache
+)
+
+# Import validation and exceptions
+from .validation import (
+    HPOConfig, HPOPhaseConfig, PrunerConfig, SearchSpaceParameter,
+    validate_search_space, validate_hpo_config, validate_pruner_config,
+    OptimizationStrategy as StrategyEnum, AresExecutionMode, PrunerStrategy
+)
+from .exceptions import (
+    OptimizationError, ConfigurationError, ModelEvaluationError,
+    HardwareOptimizationError, PruningError, SearchSpaceError,
+    ConvergenceError, TimeoutError, ValidationError, CacheError,
+    MonitoringError, VectorBTError, AresModeError
+)
+
+# Import results
+from .results import HPOResult
 from .pareto import ParetoFront, ParetoFrontAnalyzer, ParetoOptimizer
 from .regime_specific_tpsl_optimizer import RegimeSpecificTPSLOptimizer
 from .grid_utils import build_coarse_grid_from_search_space, build_fine_grid_around_best
@@ -51,12 +80,30 @@ except ImportError:
     LEGACY_HARDWARE_AVAILABLE = False
 
 __all__ = [
-    # Consolidated HPO (main)
+    # Refactored HPO (main)
     'ConsolidatedHPO', 'HPOConfig', 'HPOResult',
     
     # Legacy HPO compatibility
     'HyperparameterOptimization', 'HierarchicalHPO', 'HierarchicalHPOConfig', 'HPOPhaseConfig',
     'optimize_hyperparameters', 'staged_hpo', 'bayesian_optimization',
+    
+    # Factory functions
+    'create_consolidated_hpo', 'create_bayesian_hpo', 'create_bohb_hpo',
+    'create_grid_hpo', 'create_random_hpo', 'create_ares_mode_hpo', 'create_auto_mode_hpo',
+
+    # Core components
+    'HPOEngine', 'OptimizationStrategy', 'BayesianStrategy', 'GridStrategy', 
+    'RandomStrategy', 'BOHBStrategy', 'PrunerFactory', 'OptimizationMonitor', 'OptimizationCache',
+    
+    # Validation and configuration
+    'PrunerConfig', 'SearchSpaceParameter', 'validate_search_space', 'validate_hpo_config', 'validate_pruner_config',
+    'StrategyEnum', 'AresExecutionMode', 'PrunerStrategy',
+    
+    # Exceptions
+    'OptimizationError', 'ConfigurationError', 'ModelEvaluationError',
+    'HardwareOptimizationError', 'PruningError', 'SearchSpaceError',
+    'ConvergenceError', 'TimeoutError', 'ValidationError', 'CacheError',
+    'MonitoringError', 'VectorBTError', 'AresModeError',
 
     # Pareto Optimization
     'ParetoFront', 'ParetoFrontAnalyzer', 'ParetoOptimizer',

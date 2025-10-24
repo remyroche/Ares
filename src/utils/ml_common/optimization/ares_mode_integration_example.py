@@ -16,7 +16,7 @@ import pandas as pd
 from typing import Dict, Any, Callable
 
 # Import the enhanced HPO system
-from .consolidated_hpo import (
+from .refactored_hpo import (
     ConsolidatedHPO, HPOConfig,
     create_ares_mode_hpo, create_auto_mode_hpo,
     create_bayesian_hpo, create_bohb_hpo

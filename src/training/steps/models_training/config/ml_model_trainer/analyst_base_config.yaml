@@ -24,7 +24,7 @@ models:
       verbose: -1
       random_state: 42
       n_estimators: 500  # Reduced for faster training
-      early_stopping_rounds: 30  # More aggressive early stopping
+      early_stopping_rounds: 50  # Consistent early stopping
       min_data_in_leaf: 20
       min_gain_to_split: 0.0
       lambda_l1: 0.1  # Added L1 regularization
@@ -46,7 +46,7 @@ models:
       verbose: -1
       random_state: 42
       n_estimators: 800  # More iterations for complex features
-      early_stopping_rounds: 40
+      early_stopping_rounds: 50
       min_data_in_leaf: 30  # Higher minimum for stability
       min_gain_to_split: 0.0
       lambda_l1: 0.05  # Moderate regularization
@@ -68,7 +68,7 @@ models:
       depth: 6
       l2_leaf_reg: 5  # Increased regularization
       random_seed: 42
-      early_stopping_rounds: 30  # More aggressive early stopping
+      early_stopping_rounds: 50  # Consistent early stopping
       verbose: false
       min_data_in_leaf: 25  # Higher minimum for stability
       bootstrap_type: "Bayesian"
@@ -110,9 +110,9 @@ inputs:
 
 # Training Configuration
 training:
-  validation_split: 0.2
+  validation_split: 0.15
   cv_folds: 5
-  test_split: 0.1
+  test_split: 0.05
   random_state: 42
   stratify: true
   

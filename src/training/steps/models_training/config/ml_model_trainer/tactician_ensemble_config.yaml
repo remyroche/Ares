@@ -182,9 +182,9 @@ inputs:
 
 # Training Configuration
 training:
-  validation_split: 0.2
+  validation_split: 0.15
   cv_folds: 5
-  test_split: 0.1
+  test_split: 0.05
   random_state: 42
   stratify: true  # Binary classification uses stratification
   

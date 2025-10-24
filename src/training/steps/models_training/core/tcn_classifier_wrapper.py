@@ -18,6 +18,11 @@ from sklearn.preprocessing import LabelEncoder
 from sklearn.utils.validation import check_X_y, check_array
 import logging
 
+from .error_handling import (
+    handle_errors, validate_data,
+    MLModelTrainerError, DataValidationError, ModelTrainingError, PredictionError
+)
+
 logger = logging.getLogger(__name__)
 
 class TCNClassifierWrapper(BaseEstimator, ClassifierMixin):
@@ -45,9 +50,11 @@ class TCNClassifierWrapper(BaseEstimator, ClassifierMixin):
         self.classes_ = None
         self.label_encoder_ = None
     
+    @handle_errors(error_type=ModelTrainingError, reraise=True)
     def fit(self, X: np.ndarray, y: np.ndarray, **fit_params) -> 'TCNClassifierWrapper':
         """Fit the TCN classifier wrapper."""
         # Validate inputs
+        validate_data(X, y, min_samples=10, min_features=1)
         X, y = check_X_y(X, y)
         
         # Store feature info
@@ -66,10 +73,13 @@ class TCNClassifierWrapper(BaseEstimator, ClassifierMixin):
         
         return self
     
+    @handle_errors(error_type=PredictionError, reraise=True)
     def predict(self, X: np.ndarray) -> np.ndarray:
         """Make predictions."""
         if not self.is_fitted:
-            raise ValueError("Model must be fitted before prediction")
+            raise PredictionError("Model must be fitted before prediction")
+        
+        validate_data(X, min_samples=1, min_features=self.n_features_in_)
         
         # Get regression predictions
         y_reg = self.tcn_regressor.predict(X)

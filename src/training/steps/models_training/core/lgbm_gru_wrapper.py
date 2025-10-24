@@ -19,26 +19,22 @@ from sklearn.base import BaseEstimator, ClassifierMixin, RegressorMixin
 from sklearn.preprocessing import StandardScaler
 import logging
 
-try:
-    import torch
-    import torch.nn as nn
-    import torch.optim as optim
-    from torch.utils.data import DataLoader, TensorDataset
-    TORCH_AVAILABLE = True
-except ImportError:
-    TORCH_AVAILABLE = False
-    torch = None
-    nn = None
-    optim = None
-    DataLoader = None
-    TensorDataset = None
+from .error_handling import (
+    handle_errors, validate_data, safe_import,
+    MLModelTrainerError, DataValidationError, ModelTrainingError, PredictionError, ResourceError
+)
 
-try:
-    import lightgbm as lgb
-    LIGHTGBM_AVAILABLE = True
-except ImportError:
-    LIGHTGBM_AVAILABLE = False
-    lgb = None
+# Use safe imports with fallbacks
+torch = safe_import('torch', 'torch')
+nn = safe_import('torch.nn', 'torch')
+optim = safe_import('torch.optim', 'torch')
+DataLoader = safe_import('torch.utils.data.DataLoader', 'torch')
+TensorDataset = safe_import('torch.utils.data.TensorDataset', 'torch')
+
+TORCH_AVAILABLE = torch is not None
+
+lgb = safe_import('lightgbm', 'lightgbm')
+LIGHTGBM_AVAILABLE = lgb is not None
 
 logger = logging.getLogger(__name__)
 
@@ -297,11 +293,13 @@ class LGBMGRUWrapper(BaseEstimator):
                 lambda_l2=self.lambda_l2
             )
     
+    @handle_errors(error_type=ModelTrainingError, reraise=True)
     def fit(self, X: np.ndarray, y: np.ndarray, **fit_params) -> 'LGBMGRUWrapper':
         """Fit the LGBM-GRU model."""
         # Validate inputs
+        validate_data(X, y, min_samples=self.sequence_length, min_features=1)
         if len(X) < self.sequence_length:
-            raise ValueError(f"Not enough data for sequence length {self.sequence_length}")
+            raise DataValidationError(f"Not enough data for sequence length {self.sequence_length}")
         
         # Store feature info
         self.n_features_in_ = X.shape[1]
@@ -316,7 +314,7 @@ class LGBMGRUWrapper(BaseEstimator):
         X_seq, y_seq = self._prepare_data(X, y)
         
         if y_seq is None:
-            raise ValueError("Target data is required for training")
+            raise DataValidationError("Target data is required for training")
         
         # Train GRU and get embeddings
         logger.info("Training GRU for embeddings...")
@@ -352,10 +350,13 @@ class LGBMGRUWrapper(BaseEstimator):
         
         return self
     
+    @handle_errors(error_type=PredictionError, reraise=True)
     def predict(self, X: np.ndarray) -> np.ndarray:
         """Make predictions."""
         if not self.is_fitted:
-            raise ValueError("Model must be fitted before prediction")
+            raise PredictionError("Model must be fitted before prediction")
+        
+        validate_data(X, min_samples=1, min_features=self.n_features_in_)
         
         # Prepare data
         X_seq, _ = self._prepare_data(X)

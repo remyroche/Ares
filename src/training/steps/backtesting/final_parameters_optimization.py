@@ -31,6 +31,7 @@ from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_compl
 import multiprocessing as mp
 
 from src.training.steps.base_step import BaseStep
+from src.config.pipeline_modes import get_mode_config, get_mode_lookback_days
 
 # Artifact and version management
 from src.training.steps.pre_training.utils.artifact_manager import PreTrainingArtifactManager
@@ -360,6 +361,9 @@ class FinalParametersOptimizer(BaseStep):
             timeframe = config.get('timeframe', '15m')
             direction = config.get('direction', 'longs')
             execution_mode = config.get('execution_mode', 'light')
+            
+            # Get mode configuration for lookback periods and other parameters
+            mode_config = get_mode_config(execution_mode)
             
             # Data preview for troubleshooting
             tprint_data_preview(config, "optimization_config", level="INFO")

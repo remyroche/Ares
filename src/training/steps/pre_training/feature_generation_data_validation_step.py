@@ -23,6 +23,7 @@ from src.utils.tprint import (
     tprint_warning, tprint_error, tprint_debug, tprint_performance, tprint_structured, 
     tprint_step, tprint_result
 )
+from src.config.pipeline_modes import get_mode_config, get_mode_lookback_days
 
 # Import advanced quality validation components
 # Quality validation components - self-contained implementation
@@ -265,7 +266,11 @@ class FeatureGenerationDataValidationStep(BaseStep):
         tprint_success("✅ Context set for enhanced file naming")
 
         # Extract parameters from config
-        lookback_days = config.get('lookback_days')
+        execution_mode = config.get('execution_mode', 'light')
+        
+        # Get mode configuration for lookback periods and other parameters
+        mode_config = get_mode_config(execution_mode)
+        lookback_days = config.get('lookback_days', mode_config.lookback_days)
         start_date = config.get('start_date')
         end_date = config.get('end_date')
         

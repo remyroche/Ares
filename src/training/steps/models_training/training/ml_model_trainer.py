@@ -290,41 +290,6 @@ class MLModelTrainer:
         tprint_data_format(f"Resolved {len(base_models)} base models: {[name for name, _, _ in base_models]}", LogLevel.INFO)
         return base_models  # list of (name, model, cfg)
     
-    def _oof_predictions(self, base_models: List[Tuple], X: np.ndarray, y: np.ndarray, recipe: Dict[str, Any], task_type: str):
-        """Make OOF predictions once and persist fold assignments."""
-        from sklearn.model_selection import StratifiedKFold, KFold
-        from sklearn.base import clone
-        
-        folds = recipe.get("training", {}).get("ensemble_training", {}).get("stacking", {}).get("meta_learner_cv", 5)
-        splitter = StratifiedKFold(folds, shuffle=False) if task_type == "classification" else KFold(folds, shuffle=False)
-
-        n = X.shape[0]
-        oof = {name: np.zeros((n,)) for name, _, _ in base_models}
-        oof_proba = {name: None for name, _, _ in base_models}
-        fold_idx = np.full(n, -1, dtype=int)
-
-        tprint_info(f"🔄 Generating OOF predictions with {folds} folds")
-        
-        for f, (tr, va) in enumerate(splitter.split(X, y)):
-            fold_idx[va] = f
-            Xtr, Xva, ytr = X[tr], X[va], y[tr]
-            
-            for name, mdl, cfg in base_models:
-                m = clone(mdl)  # Clone the model
-                m = self._fit_with_early_stopping(m, Xtr, ytr, recipe, task_type)
-                
-                # Generate predictions
-                oof[name][va] = m.predict(Xva)
-                
-                # Generate probabilities if available
-                if hasattr(m, "predict_proba"):
-                    pro = m.predict_proba(Xva)
-                    if oof_proba[name] is None:
-                        oof_proba[name] = np.zeros((n, pro.shape[1]))
-                    oof_proba[name][va, :] = pro
-
-        tprint_success(f"✅ OOF predictions generated for {len(base_models)} base models")
-        return oof, oof_proba, fold_idx
     
     def _diversity_metrics(self, oof_dict: Dict[str, np.ndarray]):
         """Calculate diversity and correlation metrics from OOF predictions."""
@@ -576,6 +541,18 @@ class MLModelTrainer:
         """Calculate improvement of ensemble over best individual model."""
         scorer, scorer_kwargs = self._resolve_scorer(config, task_type)
         
+        # Map scorer to metric key
+        metric_key = {
+            "f1": "f1_score",
+            "precision": "precision", 
+            "recall": "recall",
+            "accuracy": "accuracy",
+            "roc_auc": "auc_roc",
+            "neg_mean_squared_error": "rmse",
+            "neg_mean_absolute_error": "mae",
+            "r2": "r2_score"
+        }.get(scorer, scorer)
+        
         # Calculate individual model scores
         individual_scores = {}
         for name, oof_pred in oof.items():
@@ -588,7 +565,7 @@ class MLModelTrainer:
             individual_scores[name] = score
         
         best_individual = max(individual_scores.values())
-        ensemble_score = ensemble_metrics.get(scorer, 0.0)
+        ensemble_score = ensemble_metrics.get(metric_key, 0.0)
         
         return float(ensemble_score - best_individual)
     
@@ -1281,14 +1258,32 @@ class MLModelTrainer:
         tprint_info(f"🔄 Training {model_name} ({model_type.value})")
         
         try:
-            # Create trainer based on model type
-            trainer = self._create_trainer(model_type, model_config, config)
-            
-            # Prepare features and targets
-            X, y = await self._prepare_training_data(data, model_type, config)
-            
-            # Train model
-            model = await self._train_model(trainer, X, y, model_config, config)
+            # Check if this is an ensemble model
+            if model_type in [ModelType.ANALYST_ENSEMBLE, ModelType.TACTICIAN_ENSEMBLE]:
+                # Use ensemble training method
+                ens = await self._train_ensemble_model(data, model_type, config)
+                training_time = time.time() - start_time
+                
+                result = TrainingResult(
+                    model_type=model_type,
+                    model_name=model_config.get('name', 'ensemble'),
+                    success=True,
+                    model=ens['bundle'],
+                    metrics=ens['metrics'],
+                    training_time=training_time
+                )
+                
+                tprint_success(f"✅ Successfully trained ensemble {model_config.get('name', 'ensemble')} in {training_time:.2f}s")
+                return result
+            else:
+                # Create trainer based on model type
+                trainer = self._create_trainer(model_type, model_config, config)
+                
+                # Prepare features and targets
+                X, y = await self._prepare_training_data(data, model_type, config)
+                
+                # Train model
+                model = await self._train_model(trainer, X, y, model_config, config)
             
             # Evaluate model
             metrics = await self._evaluate_model(model, X, y, model_type, config)
@@ -1510,10 +1505,10 @@ class MLModelTrainer:
             tprint_success(f"✅ HPO completed. Best params: {best_params}")
             
             # Create final model with best parameters
-            final_model = self._create_model_with_params(model_config, best_params)
+            final_model = self._create_model_with_params(model_config, best_params, task_type)
         else:
             # Use default parameters
-            final_model = self._create_model_with_params(model_config, model_config.get('parameters', {}))
+            final_model = self._create_model_with_params(model_config, model_config.get('parameters', {}), task_type)
         
         # Train the final model with early stopping
         tprint_info("🏋️ Training final model with early stopping")

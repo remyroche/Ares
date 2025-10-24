@@ -145,246 +145,51 @@ class MLModelTrainerStep(BaseStep):
         return config_paths
     
     def _create_default_config(self, config_path: str, model_type: ModelType):
-        """Create default configuration file for a model type."""
+        """Create default configuration file for a model type by copying from existing YAML configs."""
         config_dir = Path(config_path).parent
         config_dir.mkdir(parents=True, exist_ok=True)
         
-        # Create default config based on model type
-        if model_type == ModelType.ANALYST_BASE:
-            default_config = {
+        # Map model types to existing YAML config files
+        config_mapping = {
+            ModelType.ANALYST_BASE: "config/ml_model_trainer/analyst_base_config.yaml",
+            ModelType.ANALYST_ENSEMBLE: "config/ml_model_trainer/analyst_ensemble_config.yaml",
+            ModelType.TACTICIAN_BASE: "config/ml_model_trainer/tactician_base_config.yaml",
+            ModelType.TACTICIAN_ENSEMBLE: "config/ml_model_trainer/tactician_ensemble_config.yaml"
+        }
+        
+        source_config = config_mapping.get(model_type)
+        if source_config and Path(source_config).exists():
+            # Copy existing YAML config
+            import shutil
+            shutil.copy2(source_config, config_path)
+            self.logger.info(f"Copied existing config from {source_config} to {config_path}")
+        else:
+            # Create minimal config if source doesn't exist
+            minimal_config = {
+                "model_type": model_type.value,
                 "timeframe": self.step_config.timeframe,
+                "description": f"Configuration for {model_type.value} models",
+                "models": [],
                 "targets": {
-                    "target_type": "binary_classification",
-                    "primary_target": "profit_label",
-                    "secondary_target": "risk_label"
+                    "primary": "target",
+                    "target_type": "binary_classification"
                 },
-                "inputs": {
-                    "analyst_features": {
-                        "enable_patchtst_features": True,
-                        "enable_regime_features": True,
-                        "enable_multi_timeframe": True
-                    }
-                },
-                "models": [
-                    {
-                        "name": "LightGBM_Analyst_Base",
-                        "type": "LIGHTGBM",
-                        "enabled": True,
-                        "parameters": {
-                            "n_estimators": 1000,
-                            "learning_rate": 0.1,
-                            "num_leaves": 31,
-                            "max_depth": 6,
-                            "random_state": 42
-                        }
-                    }
-                ],
                 "training": {
                     "validation_split": self.step_config.validation_split,
                     "cv_folds": self.step_config.cv_folds,
-                    "early_stopping": {
-                        "enabled": True,
-                        "patience": 50
-                    },
-                    "hyperparameter_optimization": {
-                        "enabled": False,
-                        "n_trials": 100,
-                        "timeout": 3600
-                    }
+                    "random_state": 42
                 },
                 "metrics": {
                     "primary": "f1_score",
-                    "secondary": ["precision", "recall", "auc_roc"]
+                    "secondary": ["precision", "recall", "accuracy"]
                 }
             }
-        elif model_type == ModelType.ANALYST_ENSEMBLE:
-            default_config = {
-                "timeframe": self.step_config.timeframe,
-                "targets": {
-                    "target_type": "binary_classification",
-                    "primary_target": "profit_label",
-                    "secondary_target": "risk_label"
-                },
-                "inputs": {
-                    "analyst_features": {
-                        "enable_patchtst_features": True,
-                        "enable_regime_features": True,
-                        "enable_multi_timeframe": True
-                    }
-                },
-                "base_models": [
-                    {
-                        "name": "LightGBM_Base",
-                        "type": "LIGHTGBM",
-                        "enabled": True,
-                        "parameters": {
-                            "n_estimators": 1000,
-                            "learning_rate": 0.1,
-                            "random_state": 42
-                        }
-                    },
-                    {
-                        "name": "CatBoost_Base",
-                        "type": "CATBOOST",
-                        "enabled": True,
-                        "parameters": {
-                            "iterations": 1000,
-                            "learning_rate": 0.1,
-                            "random_seed": 42
-                        }
-                    }
-                ],
-                "models": [
-                    {
-                        "name": "Stacking_Ensemble",
-                        "type": "STACKING",
-                        "enabled": True,
-                        "parameters": {
-                            "meta_learner_type": "LIGHTGBM",
-                            "meta_learner_params": {
-                                "n_estimators": 100,
-                                "learning_rate": 0.1,
-                                "random_state": 42
-                            },
-                            "cv_folds": 5,
-                            "use_features_in_secondary": True,
-                            "use_proba_as_level1": True
-                        }
-                    }
-                ],
-                "training": {
-                    "validation_split": self.step_config.validation_split,
-                    "cv_folds": self.step_config.cv_folds,
-                    "ensemble_training": {
-                        "stacking": {
-                            "meta_learner_cv": 5
-                        }
-                    }
-                },
-                "metrics": {
-                    "primary": "f1_score",
-                    "secondary": ["precision", "recall", "auc_roc"]
-                }
-            }
-        elif model_type == ModelType.TACTICIAN_BASE:
-            default_config = {
-                "timeframe": self.step_config.timeframe,
-                "targets": {
-                    "target_type": "regression",
-                    "primary_target": "entry_timing",
-                    "secondary_target": "exit_timing",
-                    "tertiary_target": "position_sizing"
-                },
-                "inputs": {
-                    "tactician_features": {
-                        "enable_entry_timing": True,
-                        "enable_exit_timing": True,
-                        "enable_position_sizing": True
-                    }
-                },
-                "models": [
-                    {
-                        "name": "LightGBM_Tactician_Base",
-                        "type": "LIGHTGBM",
-                        "enabled": True,
-                        "parameters": {
-                            "n_estimators": 1000,
-                            "learning_rate": 0.1,
-                            "num_leaves": 31,
-                            "max_depth": 6,
-                            "random_state": 42
-                        }
-                    }
-                ],
-                "training": {
-                    "validation_split": self.step_config.validation_split,
-                    "cv_folds": self.step_config.cv_folds,
-                    "early_stopping": {
-                        "enabled": True,
-                        "patience": 50
-                    }
-                },
-                "metrics": {
-                    "primary": "r2_score",
-                    "secondary": ["mse", "mae", "explained_variance"]
-                }
-            }
-        elif model_type == ModelType.TACTICIAN_ENSEMBLE:
-            default_config = {
-                "timeframe": self.step_config.timeframe,
-                "targets": {
-                    "target_type": "regression",
-                    "primary_target": "entry_timing",
-                    "secondary_target": "exit_timing",
-                    "tertiary_target": "position_sizing"
-                },
-                "inputs": {
-                    "tactician_features": {
-                        "enable_entry_timing": True,
-                        "enable_exit_timing": True,
-                        "enable_position_sizing": True
-                    }
-                },
-                "base_models": [
-                    {
-                        "name": "LightGBM_Base",
-                        "type": "LIGHTGBM",
-                        "enabled": True,
-                        "parameters": {
-                            "n_estimators": 1000,
-                            "learning_rate": 0.1,
-                            "random_state": 42
-                        }
-                    },
-                    {
-                        "name": "XGBoost_Base",
-                        "type": "XGBOOST",
-                        "enabled": True,
-                        "parameters": {
-                            "n_estimators": 1000,
-                            "learning_rate": 0.1,
-                            "random_state": 42
-                        }
-                    }
-                ],
-                "models": [
-                    {
-                        "name": "Stacking_Ensemble",
-                        "type": "STACKING",
-                        "enabled": True,
-                        "parameters": {
-                            "meta_learner_type": "LIGHTGBM",
-                            "meta_learner_params": {
-                                "n_estimators": 100,
-                                "learning_rate": 0.1,
-                                "random_state": 42
-                            },
-                            "cv_folds": 5,
-                            "use_features_in_secondary": True,
-                            "use_proba_as_level1": False
-                        }
-                    }
-                ],
-                "training": {
-                    "validation_split": self.step_config.validation_split,
-                    "cv_folds": self.step_config.cv_folds,
-                    "ensemble_training": {
-                        "stacking": {
-                            "meta_learner_cv": 5
-                        }
-                    }
-                },
-                "metrics": {
-                    "primary": "r2_score",
-                    "secondary": ["mse", "mae", "explained_variance"]
-                }
-            }
-        
-        # Write config file
-        with open(config_path, 'w') as f:
-            yaml.dump(default_config, f, default_flow_style=False, indent=2)
-        
-        self.logger.info(f"Created default config: {config_path}")
+            
+            with open(config_path, 'w') as f:
+                yaml.dump(minimal_config, f, default_flow_style=False, indent=2)
+            
+            self.logger.warning(f"Created minimal config for {model_type.value} at {config_path}")
+            self.logger.info(f"Please update {config_path} with proper model configurations")
     
     async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """

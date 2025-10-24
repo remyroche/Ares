@@ -277,10 +277,10 @@ class FinalParametersOptimizer(BaseStep):
             tprint(f"📊 Loaded per-regime performance stats from {location}", "info")
             tprint(f"   • Regime performance modifier: {self.regime_performance_modifier:.4f}", "info")
 
-        # Initialize artifact and version managers
-        self.artifact_manager = get_artifact_manager()
-        self.pickup_utils = get_artifact_pickup_utils()
-        self.version_manager = get_version_manager()
+        # Initialize artifact and version managers using BaseStep utilities
+        self.artifact_manager = self.get_artifact_manager()
+        self.pickup_utils = self.get_artifact_pickup_utils()
+        self.version_manager = self.get_version_manager()
 
         tprint("✅ Final Parameters Optimizer initialization complete", "success")
 
@@ -289,8 +289,8 @@ class FinalParametersOptimizer(BaseStep):
         try:
             tprint("🚀 Initializing VectorBT optimization components", "info")
 
-            # Initialize VectorBT rolling optimizer
-            self.rolling_optimizer = get_vectorbt_rolling_optimizer(
+            # Initialize VectorBT rolling optimizer using BaseStep utilities
+            self.rolling_optimizer = self.get_vectorbt_rolling_optimizer(
                 enable_gpu=self.hardware_enabled,
                 enable_parallel=self.enable_parallel,
                 memory_efficient=True,
@@ -1239,10 +1239,10 @@ class FinalParametersOptimizer(BaseStep):
                 combined = np.exp(log_combined)
             elif method == 'harmonic':
                 # Harmonic mean: 1 / (w_t/tact + w_a/analyst)
-                combined = safe_divide(
+                combined = self.safe_divide(
                     np.ones_like(tactician_conf),
-                    safe_divide(tactician_weight, np.maximum(tactician_conf, 0.001)) +
-                    safe_divide(analyst_weight, np.maximum(analyst_conf, 0.001)),
+                    self.safe_divide(tactician_weight, np.maximum(tactician_conf, 0.001)) +
+                    self.safe_divide(analyst_weight, np.maximum(analyst_conf, 0.001)),
                     default=0.5
                 )
             else:  # weighted_average
@@ -5334,6 +5334,40 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
             'optimization_method': 'fallback',
             'error': 'Grid search failed, using default parameters'
         }
+
+    # BaseStep utility methods
+    def get_artifact_manager(self):
+        """Get artifact manager using BaseStep utilities."""
+        return self.get_utility('artifact_manager')
+
+    def get_artifact_pickup_utils(self):
+        """Get artifact pickup utils using BaseStep utilities."""
+        return self.get_utility('artifact_pickup_utils')
+
+    def get_version_manager(self):
+        """Get version manager using BaseStep utilities."""
+        return self.get_utility('version_manager')
+
+    def get_vectorbt_rolling_optimizer(self, **kwargs):
+        """Get VectorBT rolling optimizer using BaseStep utilities."""
+        return self.get_utility('vectorbt_rolling_optimizer', **kwargs)
+
+    # Math validation utilities
+    def safe_divide(self, numerator, denominator, default=0.0):
+        """Safe division using BaseStep utilities."""
+        return self.get_utility('safe_divide', numerator, denominator, default)
+
+    def safe_log(self, value, default=0.0):
+        """Safe logarithm using BaseStep utilities."""
+        return self.get_utility('safe_log', value, default)
+
+    def check_for_nans(self, array):
+        """Check for NaNs using BaseStep utilities."""
+        return self.get_utility('check_for_nans', array)
+
+    def check_for_infs(self, array):
+        """Check for infinities using BaseStep utilities."""
+        return self.get_utility('check_for_infs', array)
 
 # Convenience functions for easy integration
 async def optimize_final_parameters(calibration_results: Dict[str, Any],

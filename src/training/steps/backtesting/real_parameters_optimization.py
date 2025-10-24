@@ -22,7 +22,10 @@ from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 
 from src.training.steps.base_step import BaseStep
 
-# Import existing utilities
+# Import BaseStep for unified utility access
+from src.training.steps.base_step import BaseStep
+
+# Import existing utilities (will be replaced with BaseStep utilities)
 from src.utils.ml_common.optimization import HyperparameterOptimizer
 from src.utils.hardware.m1_gpu_utils import get_m1_gpu_manager
 
@@ -126,17 +129,17 @@ class RealParametersOptimizer(BaseStep):
         self.config = config or RealOptimizationConfig()
         self.logger = logger.getChild('RealParametersOptimizer')
 
-        # Initialize hardware optimizers
-        self.gpu_manager = get_m1_gpu_manager() if config.enable_gpu_acceleration else None
-        self.memory_optimizer = get_m1_memory_optimizer() if config.enable_memory_optimization else None
-        self.cpu_optimizer = get_m1_cpu_optimizer() if config.enable_parallel_processing else None
+        # Initialize hardware optimizers using BaseStep utilities
+        self.gpu_manager = self.get_m1_gpu_manager() if config.enable_gpu_acceleration else None
+        self.memory_optimizer = self.get_m1_memory_optimizer() if config.enable_memory_optimization else None
+        self.cpu_optimizer = self.get_m1_cpu_optimizer() if config.enable_parallel_processing else None
 
-        # Initialize matrix operations
-        self.matrix_ops = get_unified_matrix_operations()
+        # Initialize matrix operations using BaseStep utilities
+        self.matrix_ops = self.get_unified_matrix_operations()
 
-        # Initialize ML utilities
+        # Initialize ML utilities using BaseStep utilities
         self.cv_validator = None  # CVLSAValidator not available
-        self.hpo_optimizer = HyperparameterOptimizer()
+        self.hpo_optimizer = self.get_hyperparameter_optimizer()
 
         # Initialize VectorBT optimization utilities
         try:
@@ -156,8 +159,8 @@ class RealParametersOptimizer(BaseStep):
                 enable_rolling_optimization=True
             )
 
-            self.vectorization_manager = get_unified_vectorization_manager(vectorbt_config)
-            self.rolling_optimizer = get_vectorbt_rolling_optimizer(
+            self.vectorization_manager = self.get_unified_vectorization_manager(vectorbt_config)
+            self.rolling_optimizer = self.get_vectorbt_rolling_optimizer(
                 enable_gpu=config.enable_gpu_acceleration,
                 enable_parallel=config.enable_parallel_processing,
                 memory_efficient=config.enable_memory_optimization,
@@ -1560,14 +1563,14 @@ class RealParametersOptimizer(BaseStep):
             if len(price_returns) >= window:
                 metrics['return_mean'] = rolling_optimizer.rolling_mean(price_returns, window=window)
                 metrics['return_std'] = rolling_optimizer.rolling_std(price_returns, window=window)
-                metrics['sharpe_ratio'] = safe_divide(metrics['return_mean'], metrics['return_std'])
+                metrics['sharpe_ratio'] = self.safe_divide(metrics['return_mean'], metrics['return_std'])
             
             # Momentum metrics
             if len(price_data) >= window * 2:
                 current_mean = rolling_optimizer.rolling_mean(price_data, window=window)
                 previous_mean = rolling_optimizer.rolling_mean(price_data.shift(window), window=window)
                 metrics['momentum'] = current_mean - previous_mean
-                metrics['momentum_pct'] = safe_divide(metrics['momentum'], previous_mean + 1e-8)
+                metrics['momentum_pct'] = self.safe_divide(metrics['momentum'], previous_mean + 1e-8)
             
             return metrics
             
@@ -1606,7 +1609,7 @@ class RealParametersOptimizer(BaseStep):
                     # Equal weight portfolio
                     portfolio_returns = data[price_columns].pct_change().mean(axis=1)
                     portfolio_vol = portfolio_returns.rolling(window=20).std()
-                    portfolio_sharpe = safe_divide(portfolio_returns.rolling(window=20).mean(), portfolio_vol)
+                    portfolio_sharpe = self.safe_divide(portfolio_returns.rolling(window=20).mean(), portfolio_vol)
                     
                     cross_metrics['portfolio'] = {
                         'return_mean': portfolio_returns.mean(),
@@ -1766,6 +1769,65 @@ class RealParametersOptimizer(BaseStep):
         except Exception as e:
             self.logger.error(f"❌ Failed to generate optimization report: {e}")
             return {'error': str(e)}
+
+    # BaseStep utility methods
+    def get_m1_gpu_manager(self):
+        """Get M1 GPU manager using BaseStep utilities."""
+        return self.get_utility('m1_gpu_manager')
+
+    def get_m1_memory_optimizer(self):
+        """Get M1 memory optimizer using BaseStep utilities."""
+        return self.get_utility('m1_memory_optimizer')
+
+    def get_m1_cpu_optimizer(self):
+        """Get M1 CPU optimizer using BaseStep utilities."""
+        return self.get_utility('m1_cpu_optimizer')
+
+    def get_unified_matrix_operations(self):
+        """Get unified matrix operations using BaseStep utilities."""
+        return self.get_utility('unified_matrix_operations')
+
+    def get_hyperparameter_optimizer(self):
+        """Get hyperparameter optimizer using BaseStep utilities."""
+        return self.get_utility('hyperparameter_optimizer')
+
+    def get_unified_vectorization_manager(self, config):
+        """Get unified vectorization manager using BaseStep utilities."""
+        return self.get_utility('unified_vectorization_manager', config)
+
+    def get_vectorbt_rolling_optimizer(self, **kwargs):
+        """Get VectorBT rolling optimizer using BaseStep utilities."""
+        return self.get_utility('vectorbt_rolling_optimizer', **kwargs)
+
+    # Math validation utilities
+    def safe_divide(self, numerator, denominator, default=0.0):
+        """Safe division using BaseStep utilities."""
+        return self.get_utility('safe_divide', numerator, denominator, default)
+
+    def safe_log(self, value, default=0.0):
+        """Safe logarithm using BaseStep utilities."""
+        return self.get_utility('safe_log', value, default)
+
+    def safe_sqrt(self, value, default=0.0):
+        """Safe square root using BaseStep utilities."""
+        return self.get_utility('safe_sqrt', value, default)
+
+    def validate_finite(self, value, default=0.0):
+        """Validate finite value using BaseStep utilities."""
+        return self.get_utility('validate_finite', value, default)
+
+    # Common operations utilities
+    def safe_json_dump(self, data, filepath):
+        """Safe JSON dump using BaseStep utilities."""
+        return self.get_utility('safe_json_dump', data, filepath)
+
+    def safe_json_load(self, filepath):
+        """Safe JSON load using BaseStep utilities."""
+        return self.get_utility('safe_json_load', filepath)
+
+    def ensure_directory(self, path):
+        """Ensure directory exists using BaseStep utilities."""
+        return self.get_utility('ensure_directory', path)
 
 # Convenience functions
 async def optimize_parameters(

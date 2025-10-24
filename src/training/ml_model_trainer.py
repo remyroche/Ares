@@ -265,6 +265,362 @@ class MLModelTrainer:
         
         return scorer, scorer_kwargs
     
+    def _get_base_models(self, recipe: Dict[str, Any], X: np.ndarray, y: np.ndarray, task_type: str):
+        """Resolve base model sources (train or load)."""
+        base_cfgs = [m for m in recipe.get("base_models", []) if m.get("enabled", True)]
+        base_models = []
+        
+        for cfg in base_cfgs:
+            # Create model with parameters from config
+            mdl = self._create_model_with_params(cfg, cfg.get("parameters", {}), task_type)
+            base_models.append((cfg["name"], mdl, cfg))
+        
+        tprint_data_format(f"Resolved {len(base_models)} base models: {[name for name, _, _ in base_models]}", LogLevel.INFO)
+        return base_models  # list of (name, model, cfg)
+    
+    def _oof_predictions(self, base_models: List[Tuple], X: np.ndarray, y: np.ndarray, recipe: Dict[str, Any], task_type: str):
+        """Make OOF predictions once and persist fold assignments."""
+        from sklearn.model_selection import StratifiedKFold, KFold
+        from sklearn.base import clone
+        
+        folds = recipe.get("training", {}).get("ensemble_training", {}).get("stacking", {}).get("meta_learner_cv", 5)
+        splitter = StratifiedKFold(folds, shuffle=False) if task_type == "classification" else KFold(folds, shuffle=False)
+
+        n = X.shape[0]
+        oof = {name: np.zeros((n,)) for name, _, _ in base_models}
+        oof_proba = {name: None for name, _, _ in base_models}
+        fold_idx = np.full(n, -1, dtype=int)
+
+        tprint_info(f"🔄 Generating OOF predictions with {folds} folds")
+        
+        for f, (tr, va) in enumerate(splitter.split(X, y)):
+            fold_idx[va] = f
+            Xtr, Xva, ytr = X[tr], X[va], y[tr]
+            
+            for name, mdl, cfg in base_models:
+                m = clone(mdl)  # Clone the model
+                m = self._fit_with_early_stopping(m, Xtr, ytr, recipe, task_type)
+                
+                # Generate predictions
+                oof[name][va] = m.predict(Xva)
+                
+                # Generate probabilities if available
+                if hasattr(m, "predict_proba"):
+                    pro = m.predict_proba(Xva)
+                    if oof_proba[name] is None:
+                        oof_proba[name] = np.zeros((n, pro.shape[1]))
+                    oof_proba[name][va, :] = pro
+
+        tprint_success(f"✅ OOF predictions generated for {len(base_models)} base models")
+        return oof, oof_proba, fold_idx
+    
+    def _diversity_metrics(self, oof_dict: Dict[str, np.ndarray]):
+        """Calculate diversity and correlation metrics from OOF predictions."""
+        names = list(oof_dict.keys())
+        if len(names) < 2:
+            return {"names": names, "corr": [], "avg_correlation": 0.0}
+        
+        # Create matrix of OOF predictions
+        M = np.column_stack([oof_dict[n] for n in names])  # (n, k)
+        corr = np.corrcoef(M, rowvar=False)  # (k, k)
+        
+        # Calculate average off-diagonal correlation
+        mask = ~np.eye(corr.shape[0], dtype=bool)
+        avg_correlation = float(np.mean(corr[mask]))
+        
+        return {
+            "names": names, 
+            "corr": corr.tolist(),
+            "avg_correlation": avg_correlation
+        }
+    
+    def train_shallow_lgbm_stacker(self, X: np.ndarray, y: np.ndarray, base_models_cfg: List[Dict], 
+                                 meta_cfg: Dict, cv_folds: int = 5, use_features_in_secondary: bool = True, 
+                                 use_proba_as_level1: bool = True):
+        """
+        Train a leakage-safe OOF stacking ensemble with shallow LGBM meta-learner.
+        
+        Returns: dict with fitted base models, fitted meta model, fold indices,
+                OOF matrix (level-1), and feature names.
+        """
+        from sklearn.model_selection import TimeSeriesSplit
+        from sklearn.base import clone
+        
+        tprint_info("🏗️ Training shallow LGBM stacker ensemble")
+        
+        # 1) Instantiate base models
+        base_models = []
+        base_names = []
+        for bm in base_models_cfg:
+            if not bm.get("enabled", True):
+                continue
+            m = self._create_model_with_params(bm, bm.get("parameters", {}), "classification")
+            base_models.append(m)
+            base_names.append(bm["name"])
+
+        n, p = X.shape
+        k = cv_folds
+        tss = TimeSeriesSplit(n_splits=k)
+
+        # 2) OOF container
+        oof_L1 = np.zeros((n, len(base_models)), dtype=float)
+        fold_assign = np.full(n, -1, dtype=int)
+        base_fold_models = [[] for _ in base_models]
+
+        # 3) Build OOF predictions
+        tprint_info(f"🔄 Building OOF predictions with {k} folds")
+        for fold_idx, (tr, va) in enumerate(tss.split(X)):
+            X_tr, y_tr, X_va = X[tr], y[tr], X[va]
+            for j, bm in enumerate(base_models):
+                m = clone(bm)
+                
+                # Enable early stopping if supported
+                name = type(m).__name__.upper()
+                if "LGBM" in name:
+                    m.fit(X_tr, y_tr, eval_set=[(X_va, y[va])], verbose=False)
+                elif "XGB" in name:
+                    m.fit(X_tr, y_tr, eval_set=[(X_va, y[va])], verbose=False)
+                elif "CATBOOST" in name:
+                    m.fit(X_tr, y_tr, eval_set=(X_va, y[va]), verbose=False)
+                else:
+                    m.fit(X_tr, y_tr)
+
+                base_fold_models[j].append(m)
+
+                if use_proba_as_level1 and hasattr(m, "predict_proba"):
+                    proba = m.predict_proba(X_va)
+                    # Binary classification → use column 1
+                    oof_L1[va, j] = proba[:, 1]
+                else:
+                    pred = m.predict(X_va)
+                    oof_L1[va, j] = pred
+
+            fold_assign[va] = fold_idx
+
+        # 4) Meta features (level-2 input)
+        if use_features_in_secondary:
+            X_meta = np.hstack([oof_L1, X])
+            meta_feature_names = [f"oof_{nm}" for nm in base_names] + [f"f{i}" for i in range(p)]
+        else:
+            X_meta = oof_L1
+            meta_feature_names = [f"oof_{nm}" for nm in base_names]
+
+        # 5) Train shallow LGBM meta on OOF with early stopping
+        meta_params = meta_cfg.get("meta_learner_params", {})
+        meta_model = self._create_model_with_params(
+            {"type": meta_cfg.get("meta_learner_type", "LIGHTGBM"), "parameters": meta_params},
+            meta_params,
+            "classification",
+        )
+
+        # Early stopping split: last fold as validation for meta
+        last_fold = (fold_assign == fold_assign.max())
+        tr_idx = ~last_fold
+        X_meta_tr, y_tr = X_meta[tr_idx], y[tr_idx]
+        X_meta_va, y_va = X_meta[last_fold], y[last_fold]
+
+        tprint_info("🎯 Training meta-learner with early stopping")
+        if "LGBM" in type(meta_model).__name__.upper():
+            meta_model.fit(X_meta_tr, y_tr, eval_set=[(X_meta_va, y_va)], verbose=False)
+        else:
+            meta_model.fit(X_meta_tr, y_tr)
+
+        # 6) Refit base models on full data for deployment
+        tprint_info("🔄 Refitting base models on full data")
+        base_models_fitted = []
+        for bm in base_models:
+            m = clone(bm)
+            # No leakage: fit on all data (production-ready)
+            m.fit(X, y)
+            base_models_fitted.append(m)
+
+        # 7) Train final meta on full level-1 built from full-data base preds
+        tprint_info("🎯 Final meta-learner training on full data")
+        if use_proba_as_level1 and hasattr(base_models_fitted[0], "predict_proba"):
+            L1_full = np.column_stack([m.predict_proba(X)[:, 1] for m in base_models_fitted])
+        else:
+            L1_full = np.column_stack([m.predict(X) for m in base_models_fitted])
+
+        X_meta_full = np.hstack([L1_full, X]) if use_features_in_secondary else L1_full
+        meta_model.fit(X_meta_full, y)  # Final fit
+
+        tprint_success("✅ Shallow LGBM stacker training completed")
+        
+        return {
+            "base_names": base_names,
+            "base_models": base_models_fitted,
+            "meta_model": meta_model,
+            "oof_matrix": oof_L1,
+            "fold_assign": fold_assign,
+            "meta_feature_names": meta_feature_names,
+        }
+    
+    def predict_shallow_lgbm_stacker(self, bundle: Dict, X: np.ndarray):
+        """Make predictions using the trained stacker bundle."""
+        base_models = bundle["base_models"]
+        
+        if hasattr(base_models[0], "predict_proba"):
+            L1 = np.column_stack([m.predict_proba(X)[:, 1] for m in base_models])
+        else:
+            L1 = np.column_stack([m.predict(X) for m in base_models])
+        
+        X_meta = np.hstack([L1, X]) if len(bundle["meta_feature_names"]) > L1.shape[1] else L1
+        
+        predictions = bundle["meta_model"].predict(X_meta)
+        probabilities = getattr(bundle["meta_model"], "predict_proba", lambda _: None)(X_meta)
+        
+        return predictions, probabilities
+    
+    @performance_tracked
+    async def _train_ensemble_model(self, data: Dict[str, Any], model_type: ModelType, config: Dict[str, Any]) -> Dict[str, Any]:
+        """Train ensemble model with proper OOF handling."""
+        tprint_info(f"🎯 Training ensemble model: {model_type.value}")
+        
+        # Get base models
+        task_type = self._infer_task_type_from_recipe(config)
+        base_models = self._get_base_models(config, data['features'], data['targets'], task_type)
+        
+        if not base_models:
+            raise ValueError("No enabled base models found for ensemble training")
+        
+        # Generate OOF predictions
+        oof, oof_proba, fold_idx = self._oof_predictions(base_models, data['features'], data['targets'], config, task_type)
+        
+        # Calculate diversity metrics
+        diversity_metrics = self._diversity_metrics(oof)
+        tprint_data_format(f"Diversity metrics: {diversity_metrics}", LogLevel.INFO)
+        
+        # Train stacking ensemble
+        ensemble_config = config.get('models', [{}])[0]  # Get first ensemble config
+        if ensemble_config.get('type') != 'STACKING':
+            raise NotImplementedError(f"Only STACKING ensemble type is supported, got: {ensemble_config.get('type')}")
+        
+        bundle = self.train_shallow_lgbm_stacker(
+            data['features'], data['targets'],
+            base_models_cfg=config.get("base_models", []),
+            meta_cfg=ensemble_config.get("parameters", {}),
+            cv_folds=ensemble_config.get("parameters", {}).get("cv_folds", 5),
+            use_features_in_secondary=ensemble_config.get("parameters", {}).get("use_features_in_secondary", True),
+            use_proba_as_level1=ensemble_config.get("parameters", {}).get("use_proba_as_level1", True),
+        )
+        
+        # Evaluate ensemble
+        predictions, probabilities = self.predict_shallow_lgbm_stacker(bundle, data['features'])
+        
+        # Calculate ensemble metrics
+        ensemble_metrics = self._calculate_ensemble_metrics(
+            data['targets'], predictions, probabilities, oof, task_type, config
+        )
+        
+        # Add diversity metrics to ensemble metrics
+        ensemble_metrics.update({
+            'diversity_metrics': diversity_metrics,
+            'ensemble_improvement': self._calculate_ensemble_improvement(oof, data['targets'], ensemble_metrics, config, task_type)
+        })
+        
+        # Save artifacts
+        await self._save_ensemble_artifacts(bundle, oof, oof_proba, fold_idx, model_type, config)
+        
+        tprint_success(f"✅ Ensemble model training completed: {model_type.value}")
+        
+        return {
+            'model_type': model_type.value,
+            'ensemble_type': 'STACKING',
+            'base_models': [name for name, _, _ in base_models],
+            'metrics': ensemble_metrics,
+            'bundle': bundle  # For prediction use
+        }
+    
+    def _calculate_ensemble_metrics(self, y_true: np.ndarray, y_pred: np.ndarray, y_proba: np.ndarray, 
+                                  oof: Dict[str, np.ndarray], task_type: str, config: Dict[str, Any]) -> Dict[str, float]:
+        """Calculate ensemble-specific metrics."""
+        metrics = {}
+        
+        if task_type == "classification":
+            from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score, roc_auc_score
+            metrics.update({
+                "accuracy": float(accuracy_score(y_true, y_pred)),
+                "f1_score": float(f1_score(y_true, y_pred, average="weighted")),
+                "precision": float(precision_score(y_true, y_pred, average="weighted")),
+                "recall": float(recall_score(y_true, y_pred, average="weighted"))
+            })
+            
+            if y_proba is not None and np.unique(y_true).size == 2:
+                metrics["auc_roc"] = float(roc_auc_score(y_true, y_proba[:, 1]))
+        else:
+            from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score, explained_variance_score
+            metrics.update({
+                "rmse": float(np.sqrt(mean_squared_error(y_true, y_pred))),
+                "mae": float(mean_absolute_error(y_true, y_pred)),
+                "r2_score": float(r2_score(y_true, y_pred)),
+                "explained_variance": float(explained_variance_score(y_true, y_pred))
+            })
+        
+        return metrics
+    
+    def _calculate_ensemble_improvement(self, oof: Dict[str, np.ndarray], y_true: np.ndarray, 
+                                      ensemble_metrics: Dict[str, float], config: Dict[str, Any], 
+                                      task_type: str) -> float:
+        """Calculate improvement of ensemble over best individual model."""
+        scorer, scorer_kwargs = self._resolve_scorer(config, task_type)
+        
+        # Calculate individual model scores
+        individual_scores = {}
+        for name, oof_pred in oof.items():
+            if task_type == "classification":
+                from sklearn.metrics import f1_score
+                score = f1_score(y_true, oof_pred, average="weighted")
+            else:
+                from sklearn.metrics import mean_squared_error
+                score = -mean_squared_error(y_true, oof_pred)  # Negative MSE for maximization
+            individual_scores[name] = score
+        
+        best_individual = max(individual_scores.values())
+        ensemble_score = ensemble_metrics.get(scorer, 0.0)
+        
+        return float(ensemble_score - best_individual)
+    
+    async def _save_ensemble_artifacts(self, bundle: Dict, oof: Dict[str, np.ndarray], 
+                                     oof_proba: Dict[str, np.ndarray], fold_idx: np.ndarray, 
+                                     model_type: ModelType, config: Dict[str, Any]):
+        """Save ensemble artifacts for persistence."""
+        import joblib
+        import json
+        from pathlib import Path
+        
+        # Create artifacts directory
+        artifacts_dir = Path("artifacts") / "ensemble" / model_type.value
+        artifacts_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Save OOF predictions
+        oof_dir = artifacts_dir / "oof"
+        oof_dir.mkdir(exist_ok=True)
+        
+        for name, oof_pred in oof.items():
+            np.save(oof_dir / f"{name}_oof.npy", oof_pred)
+        
+        for name, oof_prob in oof_proba.items():
+            if oof_prob is not None:
+                np.save(oof_dir / f"{name}_oof_proba.npy", oof_prob)
+        
+        np.save(oof_dir / "fold_idx.npy", fold_idx)
+        
+        # Save ensemble bundle
+        joblib.dump(bundle, artifacts_dir / "ensemble_bundle.joblib")
+        
+        # Save metadata
+        metadata = {
+            "base_names": bundle["base_names"],
+            "meta_feature_names": bundle["meta_feature_names"],
+            "ensemble_type": "STACKING",
+            "config_hash": getattr(self, '_config_hash', 'unknown')
+        }
+        
+        with open(artifacts_dir / "metadata.json", 'w') as f:
+            json.dump(metadata, f, indent=2)
+        
+        tprint_success(f"✅ Ensemble artifacts saved to {artifacts_dir}")
+    
     def _make_cv(self, recipe: Dict[str, Any]):
         """Create CV strategy from YAML training.cv_strategy and cv_params."""
         name = (recipe.get("training", {}).get("cv_strategy") or "TimeSeriesSplit").lower()
@@ -719,14 +1075,26 @@ class MLModelTrainer:
         
         for model_type in self.config.model_types:
             if model_type in configs:
-                task = loop.run_in_executor(
-                    self.config._process_pool, 
-                    self._train_model_type_sync, 
-                    data, model_type, configs[model_type]
-                )
-                tasks.append((model_type, task))
+                # Check if this is an ensemble model (run in main process for now)
+                if model_type in [ModelType.ANALYST_ENSEMBLE, ModelType.TACTICIAN_ENSEMBLE]:
+                    # Run ensemble training in main process (complex async operations)
+                    try:
+                        result = await self._train_ensemble_model(data, model_type, configs[model_type])
+                        results[model_type] = result
+                        tprint_success(f"✅ Completed ensemble training for {model_type.value}")
+                    except Exception as e:
+                        tprint_error(f"❌ Ensemble training failed for {model_type.value}: {e}")
+                        results[model_type] = {"error": str(e)}
+                else:
+                    # Run base model training in parallel
+                    task = loop.run_in_executor(
+                        self.config._process_pool, 
+                        self._train_model_type_sync, 
+                        data, model_type, configs[model_type]
+                    )
+                    tasks.append((model_type, task))
         
-        # Wait for all tasks to complete
+        # Wait for all remaining tasks to complete
         for model_type, task in tasks:
             try:
                 result = await task

@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 from src.training.steps.base_step import BaseStep
 
 # Import ML model trainer
-from src.training.ml_model_trainer import (
+from src.training.steps.models_training.training.ml_model_trainer import (
     MLModelTrainer, MLModelTrainerConfig, ModelType, TrainingResult
 )
 
@@ -127,7 +127,7 @@ class MLModelTrainerStep(BaseStep):
     
     def _get_config_paths(self) -> Dict[ModelType, str]:
         """Get configuration file paths for each model type."""
-        base_config_dir = Path("config/ml_model_trainer")
+        base_config_dir = Path("src/training/steps/models_training/config/ml_model_trainer")
         
         config_paths = {
             ModelType.ANALYST_BASE: str(base_config_dir / "analyst_base_config.yaml"),
@@ -151,10 +151,10 @@ class MLModelTrainerStep(BaseStep):
         
         # Map model types to existing YAML config files
         config_mapping = {
-            ModelType.ANALYST_BASE: "config/ml_model_trainer/analyst_base_config.yaml",
-            ModelType.ANALYST_ENSEMBLE: "config/ml_model_trainer/analyst_ensemble_config.yaml",
-            ModelType.TACTICIAN_BASE: "config/ml_model_trainer/tactician_base_config.yaml",
-            ModelType.TACTICIAN_ENSEMBLE: "config/ml_model_trainer/tactician_ensemble_config.yaml"
+            ModelType.ANALYST_BASE: "src/training/steps/models_training/config/ml_model_trainer/analyst_base_config.yaml",
+            ModelType.ANALYST_ENSEMBLE: "src/training/steps/models_training/config/ml_model_trainer/analyst_ensemble_config.yaml",
+            ModelType.TACTICIAN_BASE: "src/training/steps/models_training/config/ml_model_trainer/tactician_base_config.yaml",
+            ModelType.TACTICIAN_ENSEMBLE: "src/training/steps/models_training/config/ml_model_trainer/tactician_ensemble_config.yaml"
         }
         
         source_config = config_mapping.get(model_type)

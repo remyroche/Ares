@@ -167,7 +167,7 @@ python src/training/cli_ml_model_trainer.py --verbose
 
 ```python
 import asyncio
-from src.training.ml_model_trainer import MLModelTrainer, MLModelTrainerConfig, ModelType
+from src.training.steps.models_training.training.ml_model_trainer import MLModelTrainer, MLModelTrainerConfig, ModelType
 
 async def main():
     # Create configuration
@@ -186,8 +186,8 @@ async def main():
     
     # Define config paths
     config_paths = {
-        ModelType.ANALYST_BASE: "config/ml_model_trainer/analyst_base_config.yaml",
-        ModelType.TACTICIAN_BASE: "config/ml_model_trainer/tactician_base_config.yaml"
+        ModelType.ANALYST_BASE: "src/training/steps/models_training/config/ml_model_trainer/analyst_base_config.yaml",
+        ModelType.TACTICIAN_BASE: "src/training/steps/models_training/config/ml_model_trainer/tactician_base_config.yaml"
     }
     
     # Prepare data
@@ -363,10 +363,10 @@ See the `examples/` directory for comprehensive usage examples:
 ## Configuration Reference
 
 For detailed configuration options, see the individual config files:
-- `config/ml_model_trainer/analyst_base_config.yaml`
-- `config/ml_model_trainer/analyst_ensemble_config.yaml`
-- `config/ml_model_trainer/tactician_base_config.yaml`
-- `config/ml_model_trainer/tactician_ensemble_config.yaml`
+- `src/training/steps/models_training/config/ml_model_trainer/analyst_base_config.yaml`
+- `src/training/steps/models_training/config/ml_model_trainer/analyst_ensemble_config.yaml`
+- `src/training/steps/models_training/config/ml_model_trainer/tactician_base_config.yaml`
+- `src/training/steps/models_training/config/ml_model_trainer/tactician_ensemble_config.yaml`
 
 ## Support
 

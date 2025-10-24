@@ -14,7 +14,7 @@ import sys
 # Add src to path
 sys.path.append(str(Path(__file__).parent.parent / "src"))
 
-from training.ml_model_trainer import MLModelTrainer, MLModelTrainerConfig, ModelType
+from training.steps.models_training.training.ml_model_trainer import MLModelTrainer, MLModelTrainerConfig, ModelType
 from src.utils.logger import system_logger
 from src.utils.tprint import (
     tprint, tprint_info, tprint_success, tprint_error, tprint_warning,
@@ -165,7 +165,7 @@ async def run_analyst_base_training():
     
     # Define config path
     config_paths = {
-        ModelType.ANALYST_BASE: "config/ml_model_trainer/analyst_base_config.yaml"
+        ModelType.ANALYST_BASE: "src/training/steps/models_training/config/ml_model_trainer/analyst_base_config.yaml"
     }
     
     # Train models
@@ -227,7 +227,7 @@ async def run_tactician_base_training():
     
     # Define config path
     config_paths = {
-        ModelType.TACTICIAN_BASE: "config/ml_model_trainer/tactician_base_config.yaml"
+        ModelType.TACTICIAN_BASE: "src/training/steps/models_training/config/ml_model_trainer/tactician_base_config.yaml"
     }
     
     # Train models
@@ -296,10 +296,10 @@ async def run_full_pipeline():
     
     # Define config paths
     config_paths = {
-        ModelType.ANALYST_BASE: "config/ml_model_trainer/analyst_base_config.yaml",
-        ModelType.ANALYST_ENSEMBLE: "config/ml_model_trainer/analyst_ensemble_config.yaml",
-        ModelType.TACTICIAN_BASE: "config/ml_model_trainer/tactician_base_config.yaml",
-        ModelType.TACTICIAN_ENSEMBLE: "config/ml_model_trainer/tactician_ensemble_config.yaml"
+        ModelType.ANALYST_BASE: "src/training/steps/models_training/config/ml_model_trainer/analyst_base_config.yaml",
+        ModelType.ANALYST_ENSEMBLE: "src/training/steps/models_training/config/ml_model_trainer/analyst_ensemble_config.yaml",
+        ModelType.TACTICIAN_BASE: "src/training/steps/models_training/config/ml_model_trainer/tactician_base_config.yaml",
+        ModelType.TACTICIAN_ENSEMBLE: "src/training/steps/models_training/config/ml_model_trainer/tactician_ensemble_config.yaml"
     }
     
     # Train models

@@ -30,6 +30,18 @@ from .monitoring import OptimizationMonitor
 from .caching import OptimizationCache
 from .pruner_factory import PrunerFactory
 
+# Import enhanced features
+try:
+    from ..enhanced_early_stopping_integration import EarlyStoppingIntegration, create_early_stopping_integration
+    from ..warm_starting_system import WarmStartManager, create_warm_start_manager
+    from ..multi_objective_optimizer import MultiObjectiveOptimizer, create_multi_objective_optimizer
+    ENHANCED_FEATURES_AVAILABLE = True
+except ImportError:
+    ENHANCED_FEATURES_AVAILABLE = False
+    def create_early_stopping_integration(): return None
+    def create_warm_start_manager(): return None
+    def create_multi_objective_optimizer(): return None
+
 
 @dataclass
 class HardwareManager:
@@ -65,7 +77,10 @@ class HPOEngine:
                  hardware_manager: Optional[HardwareManager] = None,
                  vectorbt_optimizer: Optional[VectorBTOptimizer] = None,
                  monitor: Optional[OptimizationMonitor] = None,
-                 cache: Optional[OptimizationCache] = None):
+                 cache: Optional[OptimizationCache] = None,
+                 early_stopping_integration: Optional[Any] = None,
+                 warm_start_manager: Optional[Any] = None,
+                 multi_objective_optimizer: Optional[Any] = None):
         """
         Initialize HPO engine.
         
@@ -87,6 +102,11 @@ class HPOEngine:
         self.vectorbt_optimizer = vectorbt_optimizer or self._create_default_vectorbt_optimizer()
         self.monitor = monitor or self._create_default_monitor()
         self.cache = cache or self._create_default_cache()
+        
+        # Initialize enhanced components
+        self.early_stopping_integration = early_stopping_integration
+        self.warm_start_manager = warm_start_manager
+        self.multi_objective_optimizer = multi_objective_optimizer
         
         # Initialize strategy
         self.strategy = self._create_strategy()
@@ -209,7 +229,8 @@ class HPOEngine:
         if not strategy_class:
             raise ConfigurationError(f"Unsupported strategy: {self.config.strategy}")
         
-        return strategy_class(self.config)
+        # Pass early stopping integration if available
+        return strategy_class(self.config, self.early_stopping_integration)
     
     def _apply_hardware_optimization(self, context: OptimizationContext) -> None:
         """Apply hardware optimization to the context."""

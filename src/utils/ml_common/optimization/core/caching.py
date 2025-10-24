@@ -107,8 +107,21 @@ class OptimizationCache:
             try:
                 size_bytes = len(pickle.dumps(value))
             except (pickle.PickleError, TypeError):
-                # Fallback for non-picklable objects
-                size_bytes = 1000  # Estimate
+                # Better fallback for non-picklable objects
+                try:
+                    import sys
+                    size_bytes = sys.getsizeof(value)
+                    # Add overhead for complex objects
+                    if hasattr(value, '__dict__'):
+                        size_bytes += sum(sys.getsizeof(v) for v in value.__dict__.values())
+                except:
+                    # Final fallback with better estimation
+                    if isinstance(value, (list, tuple)):
+                        size_bytes = len(value) * 100  # Estimate 100 bytes per item
+                    elif isinstance(value, dict):
+                        size_bytes = len(value) * 200  # Estimate 200 bytes per key-value pair
+                    else:
+                        size_bytes = 1000  # Default estimate
             
             # Check if we need to evict
             while (len(self.cache) >= self.max_size or 
@@ -203,14 +216,29 @@ def create_cache_key(*args, **kwargs) -> str:
         Hash string suitable as cache key
     """
     try:
-        # Create a deterministic string representation
-        key_data = {
-            'args': args,
-            'kwargs': kwargs
-        }
+        # Use more efficient key generation
+        key_parts = []
         
-        # Convert to string and hash
-        key_str = str(sorted(key_data.items()))
+        # Handle positional arguments
+        for arg in args:
+            if hasattr(arg, '__hash__') and not isinstance(arg, (list, dict, set)):
+                key_parts.append(str(arg))
+            elif isinstance(arg, (list, tuple)):
+                key_parts.append(str(sorted(arg) if isinstance(arg, list) else arg))
+            else:
+                key_parts.append(str(hash(str(arg))))
+        
+        # Handle keyword arguments
+        for key, value in sorted(kwargs.items()):
+            if hasattr(value, '__hash__') and not isinstance(value, (list, dict, set)):
+                key_parts.append(f"{key}={value}")
+            elif isinstance(value, (list, tuple)):
+                key_parts.append(f"{key}={sorted(value) if isinstance(value, list) else value}")
+            else:
+                key_parts.append(f"{key}={hash(str(value))}")
+        
+        # Create hash from combined parts
+        key_str = "|".join(key_parts)
         return hashlib.md5(key_str.encode()).hexdigest()
         
     except Exception:

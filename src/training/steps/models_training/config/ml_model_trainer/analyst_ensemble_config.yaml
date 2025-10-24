@@ -171,6 +171,21 @@ training:
     n_splits: 5
     test_size: 0.2
   
+  # Caching configuration
+  caching:
+    enabled: true
+    cache_features: true
+    cache_targets: true
+    cache_cv_splits: true
+    cache_base_model_predictions: true  # Cache base model predictions for stacking
+    cache_meta_features: true  # Cache meta-features for ensemble
+    cache_feature_importance: true
+    cache_shap_values: true
+    cache_dir: "cache/analyst_ensemble"
+    cache_ttl_hours: 24
+    enable_compression: true
+    compression_level: 6
+  
   # Early stopping
   early_stopping:
     enabled: true
@@ -273,6 +288,26 @@ metrics:
     ensemble_improvement: true
     diversity_metrics: true
     correlation_analysis: true
+
+# Memory Optimization
+memory_optimization:
+  enabled: true
+  strategy: "comprehensive"  # basic, intermediate, comprehensive
+  memory_limit_gb: 12  # Higher limit for ensemble
+  enable_garbage_collection: true
+  gc_frequency: 50  # More frequent GC for ensemble
+  enable_memory_mapping: true
+  chunk_size: 8000  # Smaller chunks for ensemble
+  enable_compression: true
+  compression_level: 6
+  enable_caching: true
+  cache_size_mb: 1024  # Larger cache for ensemble
+  enable_incremental_learning: true
+  batch_processing: true
+  max_batch_size: 800  # Smaller batches for ensemble
+  enable_parallel_processing: true
+  max_workers: 4
+  enable_memory_pooling: true
 
 # Performance Monitoring
 monitoring:

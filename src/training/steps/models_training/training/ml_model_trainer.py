@@ -1464,6 +1464,9 @@ class MLModelTrainer:
     
     def _create_analyst_base_trainer(self, model_config: Dict[str, Any], config: Dict[str, Any]):
         """Create analyst base trainer."""
+        # Import the correct configuration class
+        from src.training.steps.model_training.analyst_models_training_refactored import AnalystTrainingConfig
+        
         # Convert config to AnalystTrainingConfig
         training_config = AnalystTrainingConfig(
             timeframe=config.get('timeframe', '15m'),
@@ -1481,6 +1484,10 @@ class MLModelTrainer:
     
     def _create_analyst_ensemble_trainer(self, model_config: Dict[str, Any], config: Dict[str, Any]):
         """Create analyst ensemble trainer."""
+        # Import the correct configuration classes
+        from src.training.steps.model_training.analyst_ensemble_training import AnalystEnsembleTrainingConfig
+        from src.config.config_ensemble import EnsembleMethod
+        
         # Convert config to AnalystEnsembleTrainingConfig
         training_config = AnalystEnsembleTrainingConfig(
             timeframe=config.get('timeframe', '15m'),
@@ -1488,7 +1495,7 @@ class MLModelTrainer:
             enable_regime_features=config.get('inputs', {}).get('analyst_features', {}).get('enable_regime_features', True),
             enable_multi_timeframe=config.get('inputs', {}).get('analyst_features', {}).get('enable_multi_timeframe', True),
             ensemble_method=EnsembleMethod[model_config.get('type', 'STACKING').upper()],
-            base_models=[AnalystModelType[model.get('type', 'LIGHTGBM').upper()] for model in config.get('base_models', [])],
+            base_models=[model.get('type', 'LIGHTGBM').upper() for model in config.get('base_models', [])],
             meta_learner_params=model_config.get('parameters', {}).get('meta_learner_params', {}),
             validation_split=config.get('training', {}).get('validation_split', 0.2),
             cv_folds=config.get('training', {}).get('cv_folds', 5)
@@ -1498,6 +1505,9 @@ class MLModelTrainer:
     
     def _create_tactician_base_trainer(self, model_config: Dict[str, Any], config: Dict[str, Any]):
         """Create tactician base trainer."""
+        # Import the correct configuration class
+        from src.training.steps.model_training.tactician_models_training_refactored import TacticianTrainingConfig
+        
         # Convert config to TacticianTrainingConfig
         training_config = TacticianTrainingConfig(
             timeframe=config.get('timeframe', '15m'),
@@ -1516,14 +1526,18 @@ class MLModelTrainer:
     
     def _create_tactician_ensemble_trainer(self, model_config: Dict[str, Any], config: Dict[str, Any]):
         """Create tactician ensemble trainer."""
+        # Import the correct configuration class
+        from src.training.steps.model_training.tactician_ensemble_training import TacticianEnsembleTrainingConfig
+        from src.config.config_ensemble import EnsembleMethod
+        
         # Convert config to TacticianEnsembleTrainingConfig
         training_config = TacticianEnsembleTrainingConfig(
             timeframe=config.get('timeframe', '15m'),
             enable_entry_timing=config.get('inputs', {}).get('tactician_features', {}).get('enable_entry_timing', True),
             enable_exit_timing=config.get('inputs', {}).get('tactician_features', {}).get('enable_exit_timing', True),
             enable_position_sizing=config.get('inputs', {}).get('tactician_features', {}).get('enable_position_sizing', True),
-            ensemble_method=TacticianEnsembleMethod[model_config.get('type', 'STACKING').upper()],
-            base_models=[TacticianModelType[model.get('type', 'LIGHTGBM').upper()] for model in config.get('base_models', [])],
+            ensemble_method=EnsembleMethod[model_config.get('type', 'STACKING').upper()],
+            base_models=[model.get('type', 'LIGHTGBM').upper() for model in config.get('base_models', [])],
             meta_learner_params=model_config.get('parameters', {}).get('meta_learner_params', {}),
             validation_split=config.get('training', {}).get('validation_split', 0.2),
             cv_folds=config.get('training', {}).get('cv_folds', 5)
@@ -1719,7 +1733,7 @@ class MLModelTrainer:
             base_cls = LGBMClassifier if is_classification else LGBMRegressor
             base_model = base_cls(**merged, random_state=42, verbose=-1)
             # Extract PatchTST-specific parameters
-            patchtst_params = {k: v for k, v in merged.items() if k.startswith(('patch_', 'stride_', 'use_transformer_'))}
+            patchtst_params = {k: v for k, v in merged.items() if k.startswith(('patchtst_', 'patch_', 'stride_', 'use_transformer_', 'regime_aware', 'attention_', 'sign_'))}
             return PatchTSTWrapper(base_model, **patchtst_params)
         
         elif model_key == "CAUSAL_DILATED_TCN":

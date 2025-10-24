@@ -49,16 +49,16 @@ models:
     parameters:
       objective: "Logloss"
       eval_metric: "Logloss"
-      iterations: 1000
-      learning_rate: 0.05
+      iterations: 600  # Reduced for faster training
+      learning_rate: 0.08  # Higher learning rate
       depth: 6
-      l2_leaf_reg: 3
+      l2_leaf_reg: 5  # Increased regularization
       random_seed: 42
-      early_stopping_rounds: 50
+      early_stopping_rounds: 30  # More aggressive early stopping
       verbose: false
-      min_data_in_leaf: 20
+      min_data_in_leaf: 25  # Higher minimum for stability
       bootstrap_type: "Bayesian"
-      bagging_temperature: 1.0
+      bagging_temperature: 0.8  # Reduced for more conservative sampling
       subsample: 0.8
       # Confidence-specific parameters
       loss_function: "Logloss"
@@ -83,11 +83,11 @@ models:
       zero_init_residual: true
       
       # Training parameters
-      learning_rate: 0.001
+      learning_rate: 0.002  # Higher learning rate
       batch_size: 64
-      epochs: 100
-      early_stopping_patience: 20
-      weight_decay: 1e-4
+      epochs: 60  # Reduced epochs
+      early_stopping_patience: 15  # More aggressive early stopping
+      weight_decay: 1e-3  # Increased weight decay
       
       # Sequence parameters
       sequence_length: 50
@@ -124,6 +124,22 @@ targets:
   target_type: "binary_classification"
   confidence_calibration: true
   calibration_method: "isotonic"  # or "platt", "sigmoid"
+  
+  # Adaptive confidence configuration
+  adaptive_confidence:
+    enabled: true
+    base_threshold: 0.7
+    volatility_adjustment: true
+    volatility_window: 20
+    min_threshold: 0.5
+    max_threshold: 0.9
+    volatility_threshold: 0.02
+    adjustment_factor: 0.1
+    regime_aware: true  # Adjust based on market regime
+    regime_weights:
+      low_volatility: 0.8
+      medium_volatility: 0.7
+      high_volatility: 0.6
 
 # Input Configuration
 inputs:
@@ -176,6 +192,21 @@ training:
   cv_params:
     n_splits: 5
     test_size: 0.2
+  
+  # Caching configuration
+  caching:
+    enabled: true
+    cache_features: true
+    cache_targets: true
+    cache_cv_splits: true
+    cache_sequence_data: true  # Cache sequence data for GRU/TCN
+    cache_embeddings: true  # Cache GRU embeddings
+    cache_feature_importance: true
+    cache_shap_values: true
+    cache_dir: "cache/tactician_base"
+    cache_ttl_hours: 24
+    enable_compression: true
+    compression_level: 6
   
   # Early stopping
   early_stopping:
@@ -267,6 +298,25 @@ metrics:
     confidence_quality:
       enabled: true
       metrics: ["confidence_accuracy", "confidence_precision", "confidence_recall"]
+
+# Memory Optimization
+memory_optimization:
+  enabled: true
+  strategy: "comprehensive"  # basic, intermediate, comprehensive
+  memory_limit_gb: 10  # Higher limit for tactician models
+  enable_garbage_collection: true
+  gc_frequency: 75  # Moderate GC frequency
+  enable_memory_mapping: true
+  chunk_size: 9000  # Moderate chunk size
+  enable_compression: true
+  compression_level: 6
+  enable_caching: true
+  cache_size_mb: 768  # Moderate cache size
+  enable_incremental_learning: true
+  batch_processing: true
+  max_batch_size: 900  # Moderate batch size
+  enable_sequence_optimization: true  # For GRU/TCN models
+  sequence_chunk_size: 100
 
 # Performance Monitoring
 monitoring:

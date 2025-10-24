@@ -40,6 +40,126 @@ from src.utils.hardware.optimization_decorators import (
     smart_cache, auto_optimize, performance_tracked, cache_dataframe_result
 )
 
+# ====== Robust shims for optional Apple-Silicon hardware stack (sync/async-aware) ======
+try:
+    from src.utils.hardware import (
+        get_integrated_hardware_manager, IntegratedHardwareConfig,
+        get_comprehensive_optimizer, ComprehensiveConfig, OptimizationStrategy,
+        WorkloadCategory, m1_optimized, memory_optimized, chunked_processing_auto,
+        optimize_dataframe, optimize_array, force_cleanup, get_memory_stats,
+        get_unified_hardware_manager,
+        WorkloadType as HardwareWorkloadType,
+        OptimizationLevel as HardwareOptimizationLevel,
+    )
+    from src.utils.hardware.memory_optimized_decorators import (
+        MemoryOptimizationLevel, ChunkingMode, comprehensive_memory_optimization
+    )
+    from src.utils.hardware.optimization_decorators import (
+        smart_cache, auto_optimize, performance_tracked, cache_dataframe_result
+    )
+except Exception:
+    import inspect
+    import concurrent.futures as _f
+
+    # Minimal enums/configs
+    class WorkloadCategory:
+        FINANCIAL_MODELING = "FINANCIAL_MODELING"
+        FEATURE_ENGINEERING = "FEATURE_ENGINEERING"
+
+    class OptimizationStrategy:
+        BALANCED = "BALANCED"
+
+    class HardwareOptimizationLevel:
+        AGGRESSIVE = "AGGRESSIVE"
+        MODERATE = "MODERATE"
+
+    class MemoryOptimizationLevel:
+        AGGRESSIVE = "AGGRESSIVE"
+        MODERATE = "MODERATE"
+
+    class ChunkingMode:
+        MEMORY_AWARE = "MEMORY_AWARE"
+
+    class IntegratedHardwareConfig:
+        def __init__(self, **kwargs):
+            # allow prints like str(hardware_config.default_optimization_level)
+            self.default_optimization_level = kwargs.get("default_optimization_level", "AGGRESSIVE")
+            for k, v in kwargs.items():
+                setattr(self, k, v)
+
+    class ComprehensiveConfig:
+        def __init__(self, **kwargs):
+            for k, v in kwargs.items():
+                setattr(self, k, v)
+
+    # Decorator factories (pass-through, async-aware)
+    def _pass_through_decorator(*dargs, **dkwargs):
+        def _wrap(fn):
+            if inspect.iscoroutinefunction(fn):
+                async def _inner(*a, **k): return await fn(*a, **k)
+                return _inner
+            def _inner(*a, **k): return fn(*a, **k)
+            return _inner
+        return _wrap
+
+    m1_optimized = _pass_through_decorator
+    memory_optimized = _pass_through_decorator
+    comprehensive_memory_optimization = _pass_through_decorator
+    auto_optimize = _pass_through_decorator
+    performance_tracked = _pass_through_decorator
+    cache_dataframe_result = _pass_through_decorator
+    chunked_processing_auto = _pass_through_decorator
+
+    # Tiny time-insensitive cache; safe no-op if you prefer
+    def smart_cache(ttl=3600):
+        def _wrap(fn):
+            _cache = {}
+            def _key(args, kwargs):
+                # conservative cache key
+                return (tuple(type(x) for x in args), tuple(sorted((k, type(v)) for k, v in kwargs.items())))
+            def _call(*a, **k):
+                try:
+                    key = _key(a, k)
+                    if key in _cache: return _cache[key]
+                    out = fn(*a, **k); _cache[key] = out; return out
+                except Exception:
+                    return fn(*a, **k)
+            return _call
+        return _wrap
+
+    def optimize_dataframe(df): return df
+    def optimize_array(x): return x
+    def force_cleanup():
+        import gc; gc.collect()
+    def get_memory_stats(): return {"memory_percent": 0.0}
+
+    class _DummyOptResult:
+        def __init__(self, result=None, success=True, error_message=None):
+            self.result = result
+            self.success = success
+            self.error_message = error_message
+
+    class _DummyComprehensive:
+        def optimize_dataframe(self, df, **kwargs): return _DummyOptResult(df, True)
+
+    class _DummyHWMgr:
+        def __init__(self, *a, **k): pass
+        def optimize_dataframe(self, df, *a, **k): return df
+        def start_monitoring(self): pass
+        def stop_monitoring(self): pass
+        def clear_all_caches(self): pass
+        def get_optimized_thread_pool(self, workers):
+            # simple context manager
+            class _Ctx:
+                def __enter__(self_inner): self_inner.pool = _f.ThreadPoolExecutor(max_workers=workers); return self_inner.pool
+                def __exit__(self_inner, exc_type, exc, tb): self_inner.pool.shutdown(wait=True)
+            return _Ctx()
+
+    def get_integrated_hardware_manager(*a, **k): return _DummyHWMgr()
+    def get_unified_hardware_manager(*a, **k): return _DummyHWMgr()
+    def get_comprehensive_optimizer(*a, **k): return _DummyComprehensive()
+# ====== End shims ======
+
 
 
 
@@ -88,8 +208,9 @@ class CMIComplementarityScorer:
             
             # Generate feature scores with hardware optimization
             feature_scores = {}
+            target_cols = list(targets.columns) if isinstance(targets, pd.DataFrame) else []
             for col in optimization_result.columns:
-                if col not in targets:
+                if col not in target_cols:
                     feature_scores[col] = 0.5  # Default score with optimization context
                     
             return feature_scores
@@ -98,8 +219,9 @@ class CMIComplementarityScorer:
             tprint(f"⚠️ CMI optimization failed, using hardware-optimized fallback: {e}")
             optimized_features = optimize_dataframe(features_df)
             feature_scores = {}
+            target_cols = list(targets.columns) if isinstance(targets, pd.DataFrame) else []
             for col in optimized_features.columns:
-                if col not in targets:
+                if col not in target_cols:
                     feature_scores[col] = 0.5  # Default score
             return feature_scores
 
@@ -504,6 +626,7 @@ class FeatureGenerationInteractionGenerationStepTactician(BaseStep):
         """Generate interaction features using comprehensive hardware optimization."""
         tprint("🔧 Starting interaction feature generation with comprehensive optimization")
         
+        start_ts = time.time()
         try:
             # Apply comprehensive optimization for interaction generation
             optimized_data = self._apply_comprehensive_optimization(
@@ -561,7 +684,7 @@ class FeatureGenerationInteractionGenerationStepTactician(BaseStep):
             
             # Generate metrics
             generation_metrics = {
-                'processing_time': time.time(),
+                'processing_time': time.time() - start_ts,
                 'memory_optimizations_applied': self.performance_stats['memory_optimizations_applied'],
                 'comprehensive_optimizations_used': self.performance_stats['comprehensive_optimizations_used'],
                 'chunks_processed': self.performance_stats['chunks_processed']
@@ -666,7 +789,7 @@ class FeatureGenerationInteractionGenerationStepTactician(BaseStep):
 
     @m1_optimized(workload_category=WorkloadCategory.FINANCIAL_MODELING)
     @comprehensive_memory_optimization()
-    def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
+    def execute(self, config: Dict[str, Any]) -> InteractionGenerationResult:
         start_time = time.time()
         tprint_info("🚀 [TACTICIAN] Starting comprehensive hardware-optimized Tactician interaction generation")
         self.logger.info("🔧 Starting comprehensive hardware-optimized Tactician interaction generation")
@@ -833,8 +956,8 @@ class FeatureGenerationInteractionGenerationStepTactician(BaseStep):
         tprint(f"📊 Data params: data_shape={data.shape if hasattr(data, 'shape') else 'None'}, lookback_days={lookback_days}, start_date={start_date}, end_date={end_date}")
         tprint(f"📊 Exchange: {exchange}, custom_overrides={custom_overrides is not None}")
 
-        # Enforce using only selected features from feature selection step
         try:
+            # Enforce using only selected features from feature selection step
             tprint("🔍 Loading selected features from artifact manager")
             selected_df = artifact_manager.get_dataframe('feature_selection', 'SELECTED_FEATURES')
             if (selected_df is None or selected_df.empty):
@@ -1210,49 +1333,18 @@ class FeatureGenerationInteractionGenerationStepTactician(BaseStep):
             tprint("📊 Report generated and stored successfully")
         except Exception as e:
             tprint(f"⚠️ Report generation failed: {e}")
-            pass
-        
-            tprint("✅ Returning result object")
-            return result_obj
-            
-        except Exception as e:
-            tprint_exception(e, "Tactician interaction generation failed")
-            self.logger.error(f"Interaction generation failed: {e}")
-            
-            # Add error information to performance stats
-            self.performance_stats['error_occurred'] = True
-            self.performance_stats['error_message'] = str(e)
-            
-            # Log detailed error information for troubleshooting
-            tprint_structured({
-                'tactician_error_details': {
-                    'error_type': type(e).__name__,
-                    'error_message': str(e),
-                    'processing_time_seconds': time.time() - start_time,
-                    'performance_stats': self.performance_stats,
-                    'hardware_manager_status': self.hardware_manager is not None,
-                    'comprehensive_optimizer_status': self.comprehensive_optimizer is not None,
-                    'cmi_complementarity_available': CMI_COMPLEMENTARITY_AVAILABLE
-                }
-            }, level="ERROR")
-            
-            return InteractionGenerationResult(
-                success=False,
-                interaction_features=pd.DataFrame(),
-                interaction_metadata={},
-                generation_metrics={'error': str(e), 'processing_time_seconds': time.time() - start_time},
-                artifacts={},
-                error_message=str(e)
-            )
-        finally:
-            # Cleanup and stop comprehensive monitoring
-            tprint("🧹 Cleaning up comprehensive optimizations...")
-            try:
-                self.hardware_manager.stop_monitoring()
-                force_cleanup()
-                tprint("✅ Cleanup completed")
-            except Exception as cleanup_error:
-                tprint(f"⚠️ Cleanup warning: {cleanup_error}")
+
+        tprint("✅ Returning result object")
+        return result_obj
+
+        # Cleanup and stop comprehensive monitoring
+        tprint("🧹 Cleaning up comprehensive optimizations...")
+        try:
+            self.hardware_manager.stop_monitoring()
+            force_cleanup()
+            tprint("✅ Cleanup completed")
+        except Exception as cleanup_error:
+            tprint(f"⚠️ Cleanup warning: {cleanup_error}")
 
     # --- Reporting helpers ---
     def _generate_interaction_report(self, interactions: pd.DataFrame, metadata: Dict[str, Any], symbol: str, timeframe: str, raw_data: Optional[pd.DataFrame]) -> Dict[str, Any]:

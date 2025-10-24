@@ -354,6 +354,65 @@ class TrainingPipelineOrchestrator:
         
         return results
     
+    async def execute_market_analysis_stage(self, config: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Execute the market_analysis stage with market analysis pipeline.
+        
+        Args:
+            config: Configuration dictionary
+            
+        Returns:
+            Execution results
+        """
+        tprint_info("🚀 Starting market_analysis stage")
+        tprint_data_preview(config, "market_analysis_config")
+        
+        # Define the market_analysis step sequence
+        steps = [
+            "sr_parameter_optimization",
+            "sr_detection",
+            "sr_clustering", 
+            "hdbscan_clustering",
+            "regime_clustering",
+            "regime_models_training",
+            "regime_ensemble_training",
+            "regime_data_splitting",
+        ]
+        
+        tprint_structured({
+            "total_steps": len(steps),
+            "step_sequence": steps
+        })
+        
+        results = {}
+        successful_steps = 0
+        
+        for i, step_name in enumerate(steps, 1):
+            tprint_progress(i, len(steps), f"Executing: {step_name}")
+            
+            success, output = await self.execute_step(step_name, config)
+            results[step_name] = {
+                "success": success,
+                "output": output,
+                "step_number": i
+            }
+            
+            if success:
+                successful_steps += 1
+                tprint_success(f"Step {i}/{len(steps)} completed: {step_name}")
+            else:
+                tprint_error(f"Market analysis failed at step: {step_name}")
+                break
+        
+        tprint_structured({
+            "stage": "market_analysis",
+            "successful_steps": successful_steps,
+            "total_steps": len(steps),
+            "success_rate": f"{(successful_steps/len(steps))*100:.1f}%"
+        })
+        
+        return results
+    
     async def execute_stage(self, stage: str, config: Dict[str, Any]) -> Dict[str, Any]:
         """
         Execute a specific stage based on the stage name.
@@ -368,7 +427,8 @@ class TrainingPipelineOrchestrator:
         stage_handlers = {
             "pre_training": self.execute_pre_training_stage,
             "models_training": self.execute_models_training_stage,
-            "backtesting": self.execute_backtesting_stage
+            "backtesting": self.execute_backtesting_stage,
+            "market_analysis": self.execute_market_analysis_stage
         }
         
         if stage not in stage_handlers:
@@ -434,6 +494,9 @@ Examples:
   # Backtesting stage with tactician model
   python training_pipelines.py --stage backtesting --model tactician --direction long --timeframe 15m --mode full --symbol ETHUSDT
   
+  # Market analysis stage (standalone)
+  python training_pipelines.py --stage market_analysis --model analyst --direction long --timeframe 15m --mode full --symbol ETHUSDT
+  
   # Full pipeline execution (all stages)
   python training_pipelines.py --stage all --model tactician --direction long --timeframe 15m --mode full --symbol ETHUSDT
         """
@@ -444,7 +507,7 @@ Examples:
         "--stage", 
         type=str, 
         required=True,
-        choices=["pre_training", "models_training", "backtesting", "all"],
+        choices=["pre_training", "models_training", "backtesting", "market_analysis", "all"],
         help="Stage to execute (required)"
     )
     
@@ -553,7 +616,7 @@ async def main():
         })
         
         if args.stage == "all":
-            stages = ["pre_training", "models_training", "backtesting"]
+            stages = ["pre_training", "models_training", "backtesting", "market_analysis"]
             tprint_info("Stages to execute:")
             for stage in stages:
                 tprint_info(f"  - {stage}")
@@ -567,7 +630,7 @@ async def main():
             tprint_info("Executing all stages in sequence...")
             
             all_results = {}
-            stages = ["pre_training", "models_training", "backtesting"]
+            stages = ["pre_training", "models_training", "backtesting", "market_analysis"]
             
             for stage in stages:
                 tprint_info(f"Executing stage: {stage}")

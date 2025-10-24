@@ -2404,7 +2404,15 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             # If PurgedKFoldTime returns explicit arrays, we’ll use them directly below
             use_pkf = True
         except Exception:
+            # Fallback to proper time-based splits with purging
             use_pkf = False
+            # Create time-based splits with proper purging
+            fold_size = n // outer_folds
+            for i in range(outer_folds):
+                train_end = (i + 1) * fold_size - int(fold_size * 0.01)  # Purge 1%
+                test_start = (i + 1) * fold_size + int(fold_size * 0.01)  # Embargo 1%
+                if test_start < n:
+                    splits.append((train_end, test_start))
 
         # Helper to evaluate Sharpe for given threshold on a given split
         def eval_sharpe(sig_mask: np.ndarray, ret_vals: np.ndarray) -> Tuple[float, int]:
@@ -3806,6 +3814,37 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
         except Exception as e:
             tprint_warning(f"Failed to compute mutual information: {e}")
             return 0.0
+
+    def _analyze_feature_interactions(self, features: pd.DataFrame, targets: pd.Series) -> Dict[str, float]:
+        """Analyze feature interactions using correlation and mutual information."""
+        try:
+            # Calculate feature correlations
+            feature_correlations = features.corr()
+            
+            # Calculate interaction scores
+            interaction_scores = {}
+            
+            # Pairwise mutual information for feature interactions
+            for i, col1 in enumerate(features.columns):
+                for j, col2 in enumerate(features.columns):
+                    if i < j:  # Avoid duplicates
+                        # Calculate interaction as product of individual MIs minus joint MI
+                        mi1 = self._compute_mutual_information(features[col1], targets)
+                        mi2 = self._compute_mutual_information(features[col2], targets)
+                        
+                        # Create interaction feature
+                        interaction_feature = features[col1] * features[col2]
+                        mi_joint = self._compute_mutual_information(interaction_feature, targets)
+                        
+                        # Interaction score (positive means complementary, negative means redundant)
+                        interaction_score = mi_joint - (mi1 + mi2) / 2
+                        interaction_scores[f"{col1}_{col2}"] = interaction_score
+            
+            return interaction_scores
+            
+        except Exception as e:
+            tprint_warning(f"Feature interaction analysis failed: {e}")
+            return {}
 
     def clear_cache(self) -> None:
         """Clear all cached optimization results."""

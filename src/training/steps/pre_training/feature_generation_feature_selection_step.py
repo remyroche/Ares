@@ -1058,6 +1058,21 @@ class FeatureGenerationFeatureSelectionStep(BaseStep):
             tprint_debug(f"🔍 [STAGE1] Available features: {cols1_available}")
             tprint_debug(f"🔍 [STAGE1] Available features count: {len(cols1_available)}")
             
+            # Gate feature protection: Ensure gate features are always included
+            tprint_info("🛡️ [GATE_PROTECTION] Checking for gate features to protect")
+            gate_features = [col for col in data.columns if 'gate' in col.lower()]
+            if gate_features:
+                tprint_info(f"🛡️ [GATE_PROTECTION] Found {len(gate_features)} gate features: {gate_features}")
+                # Add gate features that aren't already selected
+                protected_gate_features = [gf for gf in gate_features if gf not in cols1_available]
+                if protected_gate_features:
+                    tprint_info(f"🛡️ [GATE_PROTECTION] Adding {len(protected_gate_features)} protected gate features: {protected_gate_features}")
+                    cols1_available.extend(protected_gate_features)
+                else:
+                    tprint_info("🛡️ [GATE_PROTECTION] All gate features already selected")
+            else:
+                tprint_info("🛡️ [GATE_PROTECTION] No gate features found in data")
+            
             if len(cols1_available) != len(cols1):
                 missing_features = [c for c in cols1 if c not in data.columns]
                 tprint_warning(f"⚠️ [STAGE1] Missing features in data: {missing_features}")

@@ -1431,6 +1431,26 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             features_50 = self._get_top_k_features(X, y, min(final_k, 50))
             features_40 = self._get_top_k_features(X, y, min(final_k, 40))
             
+            # Gate feature protection: Ensure gate features are always included
+            tprint_info("🛡️ [GATE_PROTECTION] Checking for gate features to protect")
+            gate_features = [col for col in X.columns if 'gate' in col.lower()]
+            if gate_features:
+                tprint_info(f"🛡️ [GATE_PROTECTION] Found {len(gate_features)} gate features: {gate_features}")
+                
+                # Add gate features to all feature sets if not already included
+                for feature_set_name, feature_set in [("features_final", features_final), 
+                                                    ("features_60", features_60), 
+                                                    ("features_50", features_50), 
+                                                    ("features_40", features_40)]:
+                    protected_gate_features = [gf for gf in gate_features if gf not in feature_set]
+                    if protected_gate_features:
+                        tprint_info(f"🛡️ [GATE_PROTECTION] Adding {len(protected_gate_features)} protected gate features to {feature_set_name}: {protected_gate_features}")
+                        feature_set.extend(protected_gate_features)
+                    else:
+                        tprint_info(f"🛡️ [GATE_PROTECTION] All gate features already in {feature_set_name}")
+            else:
+                tprint_info("🛡️ [GATE_PROTECTION] No gate features found in data")
+            
             oos_duration = time.time() - oos_start
             tprint_performance("OOS validation", oos_duration)
             tprint_success(f"✅ OOS validation completed in {oos_duration:.2f}s")

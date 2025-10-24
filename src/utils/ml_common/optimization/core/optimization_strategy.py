@@ -51,6 +51,10 @@ class OptimizationContext:
     model_name: str
     start_time: float
     config: HPOConfig
+    # Hardware optimization attributes
+    max_workers: Optional[int] = None
+    memory_limit: Optional[float] = None
+    batch_size: Optional[int] = None
 
 
 class OptimizationStrategy(ABC):

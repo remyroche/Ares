@@ -117,6 +117,7 @@ class HPOEngine:
         # Optimization tracking
         self.optimization_history = []
         self.active_optimizations = {}
+        self.current_run_id = None
         
         self.logger.info(f"HPO Engine initialized with {self.config.strategy.value} strategy")
     
@@ -161,7 +162,7 @@ class HPOEngine:
             
             # Start monitoring
             if self.monitor:
-                self.monitor.start_optimization(model_name, self.config.strategy.value)
+                self.current_run_id = self.monitor.start_optimization(model_name, self.config.strategy.value)
             
             # Apply hardware optimization
             if self.config.enable_hardware_optimization:
@@ -182,8 +183,8 @@ class HPOEngine:
             self.optimization_history.append(result)
             
             # Stop monitoring
-            if self.monitor:
-                self.monitor.stop_optimization(model_name, result)
+            if self.monitor and self.current_run_id:
+                self.monitor.stop_optimization(self.current_run_id, result)
             
             self.logger.info(f"Optimization completed for {model_name} in {result.optimization_time:.2f}s")
             self.logger.info(f"Best score: {result.best_score:.4f}")
@@ -192,29 +193,50 @@ class HPOEngine:
             
         except Exception as e:
             # Stop monitoring on error
-            if self.monitor:
-                self.monitor.stop_optimization(model_name, None, error=str(e))
+            if self.monitor and self.current_run_id:
+                self.monitor.stop_optimization(self.current_run_id, None, error=str(e))
             
             self.logger.error(f"Optimization failed for {model_name}: {e}")
             raise
     
     def _validate_inputs(self, X: Any, y: Any, search_space: Dict[str, Any]) -> None:
         """Validate input data and search space."""
-        if X is None or len(X) == 0:
+        # Check for None inputs
+        if X is None:
+            raise OptimizationError("Training features X cannot be None")
+        
+        if y is None:
+            raise OptimizationError("Training targets y cannot be None")
+        
+        # Check if inputs have length (handle scalars and non-array inputs)
+        try:
+            x_len = len(X)
+        except (TypeError, AttributeError):
+            raise OptimizationError("Training features X must be array-like or have __len__ method")
+        
+        try:
+            y_len = len(y)
+        except (TypeError, AttributeError):
+            raise OptimizationError("Training targets y must be array-like or have __len__ method")
+        
+        # Check for empty inputs
+        if x_len == 0:
             raise OptimizationError("Training features X cannot be empty")
         
-        if y is None or len(y) == 0:
+        if y_len == 0:
             raise OptimizationError("Training targets y cannot be empty")
         
-        if len(X) != len(y):
-            raise OptimizationError("X and y must have the same length")
+        # Check length mismatch
+        if x_len != y_len:
+            raise OptimizationError(f"X and y must have the same length (X: {x_len}, y: {y_len})")
         
         if not search_space:
             raise OptimizationError("Search space cannot be empty")
         
-        # Check for reasonable data size
-        if len(X) < 10:
-            raise OptimizationError("Dataset too small for optimization (minimum 10 samples)")
+        # Check for reasonable data size (configurable minimum)
+        min_samples = getattr(self.config, 'min_samples', 10)
+        if x_len < min_samples:
+            raise OptimizationError(f"Dataset too small for optimization (minimum {min_samples} samples, got {x_len})")
     
     def _create_strategy(self) -> OptimizationStrategy:
         """Create optimization strategy based on configuration."""
@@ -240,8 +262,29 @@ class HPOEngine:
                     "hyperparameter_optimization", 
                     len(context.X)
                 )
-                # Apply optimization settings to context if needed
-                self.logger.debug(f"Applied hardware optimization: {optimization_config}")
+                
+                # Apply optimization settings to context
+                if optimization_config:
+                    # Update context with hardware optimization settings
+                    if 'workers' in optimization_config:
+                        context.max_workers = optimization_config['workers']
+                        self.logger.info(f"Set max_workers to {context.max_workers}")
+                    
+                    if 'memory_limit' in optimization_config:
+                        context.memory_limit = optimization_config['memory_limit']
+                        self.logger.info(f"Set memory_limit to {context.memory_limit}GB")
+                    
+                    if 'batch_size' in optimization_config:
+                        context.batch_size = optimization_config['batch_size']
+                        self.logger.info(f"Set batch_size to {context.batch_size}")
+                    
+                    # Update engine config if needed
+                    if hasattr(self.config, 'max_workers') and 'workers' in optimization_config:
+                        self.config.max_workers = optimization_config['workers']
+                    
+                    self.logger.info(f"Applied hardware optimization: {optimization_config}")
+                else:
+                    self.logger.warning("Hardware optimization returned no configuration")
         except Exception as e:
             raise HardwareOptimizationError(f"Hardware optimization failed: {e}") from e
     
@@ -249,10 +292,26 @@ class HPOEngine:
         """Apply VectorBT optimization to the context."""
         try:
             if self.vectorbt_optimizer:
-                # Apply VectorBT optimizations if needed
-                self.logger.debug("Applied VectorBT optimization")
+                # Check if VectorBT is actually available
+                try:
+                    import vectorbt as vbt
+                    # Apply VectorBT optimizations if available
+                    if hasattr(self.vectorbt_optimizer, 'optimize_rolling_operations'):
+                        # Apply rolling operations optimization
+                        context.X = self.vectorbt_optimizer.optimize_rolling_operations(
+                            context.X, ['rolling_mean', 'rolling_std']
+                        )
+                        self.logger.info("Applied VectorBT rolling operations optimization")
+                    else:
+                        self.logger.warning("VectorBT optimizer does not implement optimize_rolling_operations")
+                except ImportError:
+                    self.logger.warning("VectorBT is not available - skipping VectorBT optimization")
+                    # Disable VectorBT for this run
+                    context.config.enable_vectorbt = False
         except Exception as e:
-            raise OptimizationError(f"VectorBT optimization failed: {e}") from e
+            self.logger.error(f"VectorBT optimization failed: {e}")
+            # Don't raise error, just disable VectorBT
+            context.config.enable_vectorbt = False
     
     def _create_default_hardware_manager(self) -> HardwareManager:
         """Create default hardware manager."""

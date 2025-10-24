@@ -27,6 +27,12 @@ from src.training.steps.base_step import step_registry
 # Import pipeline mode configuration
 from src.config.pipeline_modes import get_mode_config, get_mode_lookback_days
 
+# Import tprint utilities
+from src.utils.tprint import (
+    tprint, tprint_info, tprint_warning, tprint_error, tprint_success, 
+    tprint_debug, tprint_data_format, tprint_data_preview, LogLevel
+)
+
 
 @dataclass
 class MLModelTrainerStepConfig:
@@ -208,11 +214,13 @@ class MLModelTrainerStep(BaseStep):
             Dictionary containing execution results
         """
         try:
+            tprint_info("🚀 Starting ML Model Trainer Step")
             self.logger.info("🚀 Starting ML Model Trainer Step")
             
             # Get execution mode and validate
             execution_mode = config.get('execution_mode', 'light')
             if execution_mode not in ['full', 'light', 'blank']:
+                tprint_warning(f"Invalid execution mode '{execution_mode}', defaulting to 'light'")
                 self.logger.warning(f"Invalid execution mode '{execution_mode}', defaulting to 'light'")
                 execution_mode = 'light'
             
@@ -220,6 +228,10 @@ class MLModelTrainerStep(BaseStep):
             mode_config = get_mode_config(execution_mode)
             lookback_days = mode_config.lookback_days
             
+            tprint_info(f"📊 Execution Mode: {execution_mode.upper()}")
+            tprint_info(f"📅 Lookback Period: {lookback_days} days ({mode_config.lookback_years} years)")
+            tprint_info(f"⚡ Computational Intensity: {mode_config.computational_intensity}")
+            tprint_info(f"🔄 Max Trials: {mode_config.max_trials}")
             self.logger.info(f"📊 Execution Mode: {execution_mode.upper()}")
             self.logger.info(f"📅 Lookback Period: {lookback_days} days ({mode_config.lookback_years} years)")
             self.logger.info(f"⚡ Computational Intensity: {mode_config.computational_intensity}")
@@ -237,9 +249,12 @@ class MLModelTrainerStep(BaseStep):
             
             # Determine which model types to train
             requested_model_types = config.get('model_types', self.step_config.model_types)
+            tprint_data_format(requested_model_types, "Requested model types", LogLevel.INFO)
             model_types = self._convert_model_types(requested_model_types)
+            tprint_data_format([mt.value for mt in model_types], "Converted model types", LogLevel.INFO)
             
             if not model_types:
+                tprint_error("No valid model types specified")
                 return {
                     'success': False,
                     'error': 'No valid model types specified',
@@ -302,8 +317,10 @@ class MLModelTrainerStep(BaseStep):
             self.ml_trainer = MLModelTrainer(ml_config, self.logger)
             
             # Load training data for each model type
+            tprint_info("Loading training data...")
             training_data = await self._load_training_data(config)
             if not training_data:
+                tprint_error("Failed to load training data")
                 return {
                     'success': False,
                     'error': 'Failed to load training data',
@@ -311,14 +328,19 @@ class MLModelTrainerStep(BaseStep):
                     'metrics': {}
                 }
             
+            tprint_data_format(training_data.get('metadata', {}), "Training data metadata", LogLevel.INFO)
+            
             # Prepare data for ML trainer - combine all features for each model type
             all_features = []
             for model_type_str, features in training_data['model_data'].items():
                 if features is not None:
                     all_features.append(features)
+                    tprint_info(f"Added {features.shape[1]} features for {model_type_str}")
+                    tprint_data_preview(features, f"Features for {model_type_str}")
                     self.logger.info(f"Added {features.shape[1]} features for {model_type_str}")
             
             if not all_features:
+                tprint_error("No features available for training")
                 self.logger.error("No features available for training")
                 return {
                     'success': False,
@@ -330,6 +352,8 @@ class MLModelTrainerStep(BaseStep):
             # Combine all features
             import numpy as np
             combined_features = np.hstack(all_features)
+            tprint_info(f"Combined features shape: {combined_features.shape}")
+            tprint_data_preview(combined_features, "Combined features")
             self.logger.info(f"Combined features shape: {combined_features.shape}")
             
             # Prepare data for ML trainer
@@ -340,6 +364,9 @@ class MLModelTrainerStep(BaseStep):
                 'regime_outputs': training_data['regime_outputs'],
                 'metadata': training_data['metadata']
             }
+            
+            tprint_data_format(data, "Prepared training data", LogLevel.INFO)
+            tprint_data_preview(training_data['targets'], "Training targets")
             
             # Add mode parameters to training data metadata and as separate fields
             data['metadata'].update(mode_params)
@@ -357,10 +384,16 @@ class MLModelTrainerStep(BaseStep):
             }
             
             # Train models
+            tprint_info(f"Training models: {[mt.value for mt in model_types]}")
+            tprint_info(f"Mode: {execution_mode.upper()} | Lookback: {lookback_days} days | CV Folds: {mode_config.cross_validation_folds}")
+            tprint_info(f"Max Trials: {mode_config.max_trials} | Parallel: {mode_config.enable_parallelization}")
             self.logger.info(f"Training models: {[mt.value for mt in model_types]}")
             self.logger.info(f"Mode: {execution_mode.upper()} | Lookback: {lookback_days} days | CV Folds: {mode_config.cross_validation_folds}")
             self.logger.info(f"Max Trials: {mode_config.max_trials} | Parallel: {mode_config.enable_parallelization}")
+            
+            tprint_info("Starting model training...")
             results = await self.ml_trainer.train_models(data, filtered_config_paths)
+            tprint_success("Model training completed")
             
             # Process results and save artifacts
             artifacts = []
@@ -387,6 +420,9 @@ class MLModelTrainerStep(BaseStep):
                 'metrics': metrics
             }, 'ml_training_results')
             
+            tprint_success(f"✅ ML Model Trainer Step completed successfully")
+            tprint_success(f"Trained {len(artifacts)} models")
+            tprint_data_format(metrics, "Training metrics", LogLevel.INFO)
             self.logger.info(f"✅ ML Model Trainer Step completed successfully")
             self.logger.info(f"Trained {len(artifacts)} models")
             
@@ -400,6 +436,7 @@ class MLModelTrainerStep(BaseStep):
             
         except Exception as e:
             error_msg = f"ML Model Trainer Step failed: {str(e)}"
+            tprint_error(error_msg)
             self.logger.error(error_msg)
             return {
                 'success': False,
@@ -414,69 +451,95 @@ class MLModelTrainerStep(BaseStep):
             model_types = config.get('model_types', [])
             direction = config.get('direction', 'longs')
             
+            tprint_info(f"Loading training data for model types: {model_types}, direction: {direction}")
+            
             # Load targets from labeling integration step
             targets = await self._load_targets(config)
             if targets is None:
+                tprint_error("Failed to load targets from labeling integration step")
                 self.logger.error("Failed to load targets from labeling integration step")
                 return None
             
+            tprint_data_preview(targets, "Loaded targets")
+            
             # Load regime model outputs
             regime_outputs = await self._load_regime_outputs(config)
+            if regime_outputs:
+                tprint_info(f"Loaded {len(regime_outputs)} regime outputs")
+                tprint_data_format(regime_outputs, "Regime outputs", LogLevel.DEBUG)
             
             # Load model-specific data
             model_data = {}
             for model_type in model_types:
                 model_type_str = model_type.value if hasattr(model_type, 'value') else str(model_type)
+                tprint_info(f"Loading features for {model_type_str}")
                 model_features = await self._load_model_features(model_type_str, direction, regime_outputs, config)
                 if model_features is not None:
                     model_data[model_type_str] = model_features
+                    tprint_success(f"Loaded features for {model_type_str}: {model_features.shape}")
                 else:
+                    tprint_warning(f"Failed to load features for {model_type_str}")
                     self.logger.warning(f"Failed to load features for {model_type_str}")
             
             if not model_data:
+                tprint_error("Failed to load features for any model type")
                 self.logger.error("Failed to load features for any model type")
                 return None
+            
+            metadata = {
+                'symbol': config.get('symbol'),
+                'exchange': config.get('exchange'),
+                'timeframe': config.get('timeframe'),
+                'direction': direction,
+                'execution_mode': config.get('execution_mode', 'light'),
+                'model_types': [mt.value if hasattr(mt, 'value') else str(mt) for mt in model_types],
+                'target_shape': targets.shape if hasattr(targets, 'shape') else (len(targets),),
+                'data_points': len(targets)
+            }
+            
+            tprint_data_format(metadata, "Training data metadata", LogLevel.INFO)
             
             return {
                 'targets': targets,
                 'model_data': model_data,
                 'regime_outputs': regime_outputs,
-                'metadata': {
-                    'symbol': config.get('symbol'),
-                    'exchange': config.get('exchange'),
-                    'timeframe': config.get('timeframe'),
-                    'direction': direction,
-                    'execution_mode': config.get('execution_mode', 'light'),
-                    'model_types': [mt.value if hasattr(mt, 'value') else str(mt) for mt in model_types],
-                    'target_shape': targets.shape if hasattr(targets, 'shape') else (len(targets),),
-                    'data_points': len(targets)
-                }
+                'metadata': metadata
             }
             
         except Exception as e:
+            tprint_error(f"Failed to load training data: {e}")
             self.logger.error(f"Failed to load training data: {e}")
             return None
 
     async def _load_targets(self, config: Dict[str, Any]) -> Optional[np.ndarray]:
         """Load targets from feature_generation_labeling_integration_step."""
         try:
+            tprint_info("Loading targets from artifacts...")
+            
             # Load targets from labeling integration step
             targets = self._load_dataframe('targets')
             if targets is not None and not targets.empty:
+                tprint_success("Loaded targets from labeling integration step")
+                tprint_data_preview(targets, "Targets from labeling integration")
                 self.logger.info("Loaded targets from labeling integration step")
                 return targets.values if hasattr(targets, 'values') else np.array(targets)
             
             # Fallback: try other target artifacts
             target_artifacts = ['processed_targets', 'final_targets', 'profit_labels', 'risk_labels']
             for artifact_name in target_artifacts:
+                tprint_debug(f"Trying to load targets from artifact: {artifact_name}")
                 targets = self._load_dataframe(artifact_name)
                 if targets is not None and not targets.empty:
+                    tprint_success(f"Loaded targets from artifact: {artifact_name}")
+                    tprint_data_preview(targets, f"Targets from {artifact_name}")
                     self.logger.info(f"Loaded targets from artifact: {artifact_name}")
                     return targets.values if hasattr(targets, 'values') else np.array(targets)
             
+            tprint_warning("No targets found in any artifact")
             return None
             
         except Exception as e:
+            tprint_error(f"Failed to load targets: {e}")
             self.logger.error(f"Failed to load targets: {e}")
             return None
 
@@ -588,11 +651,15 @@ class MLModelTrainerStep(BaseStep):
     async def _load_analyst_features(self, direction: str) -> Optional[np.ndarray]:
         """Load analyst features from feature_generation_final_feature_selection_step."""
         try:
+            tprint_info(f"Loading analyst features for direction: {direction}")
+            
             # Look for analyst features with direction
             artifact_name = f'selected_feature_dataframe_60_analyst_{direction}'
+            tprint_debug(f"Trying to load analyst features from: {artifact_name}")
             features = self._load_dataframe(artifact_name)
             
             if features is None or features.empty:
+                tprint_debug("Primary artifact not found, trying fallback artifacts")
                 # Fallback to general analyst features
                 fallback_artifacts = [
                     f'selected_feature_dataframe_60_analyst',
@@ -601,27 +668,37 @@ class MLModelTrainerStep(BaseStep):
                 ]
                 
                 for fallback_name in fallback_artifacts:
+                    tprint_debug(f"Trying fallback artifact: {fallback_name}")
                     features = self._load_dataframe(fallback_name)
                     if features is not None and not features.empty:
+                        tprint_success(f"Loaded analyst features from fallback: {fallback_name}")
                         break
             
             if features is not None and not features.empty:
+                tprint_success(f"Loaded analyst features: {features.shape}")
+                tprint_data_preview(features, f"Analyst features for {direction}")
                 return features.values if hasattr(features, 'values') else np.array(features)
             
+            tprint_warning("No analyst features found")
             return None
             
         except Exception as e:
+            tprint_error(f"Failed to load analyst features: {e}")
             self.logger.error(f"Failed to load analyst features: {e}")
             return None
 
     async def _load_tactician_features(self, direction: str) -> Optional[np.ndarray]:
         """Load tactician features from feature_generation_final_feature_selection_step."""
         try:
+            tprint_info(f"Loading tactician features for direction: {direction}")
+            
             # Look for tactician features with direction
             artifact_name = f'selected_feature_dataframe_60_tactician_{direction}'
+            tprint_debug(f"Trying to load tactician features from: {artifact_name}")
             features = self._load_dataframe(artifact_name)
             
             if features is None or features.empty:
+                tprint_debug("Primary artifact not found, trying fallback artifacts")
                 # Fallback to general tactician features
                 fallback_artifacts = [
                     f'selected_feature_dataframe_60_tactician',
@@ -630,16 +707,22 @@ class MLModelTrainerStep(BaseStep):
                 ]
                 
                 for fallback_name in fallback_artifacts:
+                    tprint_debug(f"Trying fallback artifact: {fallback_name}")
                     features = self._load_dataframe(fallback_name)
                     if features is not None and not features.empty:
+                        tprint_success(f"Loaded tactician features from fallback: {fallback_name}")
                         break
             
             if features is not None and not features.empty:
+                tprint_success(f"Loaded tactician features: {features.shape}")
+                tprint_data_preview(features, f"Tactician features for {direction}")
                 return features.values if hasattr(features, 'values') else np.array(features)
             
+            tprint_warning("No tactician features found")
             return None
             
         except Exception as e:
+            tprint_error(f"Failed to load tactician features: {e}")
             self.logger.error(f"Failed to load tactician features: {e}")
             return None
 

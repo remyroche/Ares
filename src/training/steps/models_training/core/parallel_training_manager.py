@@ -16,6 +16,12 @@ from enum import Enum
 import numpy as np
 import pandas as pd
 
+# Import tprint utilities
+from src.utils.tprint import (
+    tprint, tprint_info, tprint_warning, tprint_error, tprint_success, 
+    tprint_debug, tprint_data_format, tprint_data_preview, LogLevel
+)
+
 # Hardware optimization imports
 from src.utils.hardware.optimization_decorators import (
     smart_cache, auto_optimize, memory_efficient, performance_tracked,
@@ -104,29 +110,39 @@ class ParallelTrainingManager:
             Dictionary of training results
         """
         with ErrorContext("parallel_training", self._cleanup_training_resources):
+            tprint_info(f"Starting parallel training of {len(models)} models")
             logger.info(f"Starting parallel training of {len(models)} models")
             
             # Determine optimal strategy
             strategy = self._determine_optimal_strategy(models, data)
+            tprint_info(f"Using training strategy: {strategy}")
             logger.info(f"Using training strategy: {strategy}")
             
             # Allocate resources
+            tprint_debug("Allocating training resources")
             await self._allocate_resources(models, data)
             
             # Execute training based on strategy
             if strategy == TrainingStrategy.SEQUENTIAL:
+                tprint_info("Executing sequential training")
                 results = await self._train_sequential(models, data, configs)
             elif strategy == TrainingStrategy.THREAD_PARALLEL:
+                tprint_info("Executing thread-parallel training")
                 results = await self._train_thread_parallel(models, data, configs)
             elif strategy == TrainingStrategy.PROCESS_PARALLEL:
+                tprint_info("Executing process-parallel training")
                 results = await self._train_process_parallel(models, data, configs)
             elif strategy == TrainingStrategy.HYBRID:
+                tprint_info("Executing hybrid training")
                 results = await self._train_hybrid(models, data, configs)
             else:  # ADAPTIVE
+                tprint_info("Executing adaptive training")
                 results = await self._train_adaptive(models, data, configs)
             
             # Cleanup and return results
+            tprint_debug("Cleaning up training resources")
             await self._cleanup_training_resources()
+            tprint_success("Parallel training completed")
             return results
     
     def _determine_optimal_strategy(

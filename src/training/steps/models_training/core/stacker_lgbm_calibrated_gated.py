@@ -27,6 +27,12 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import log_loss, brier_score_loss
 import logging
 
+# Import tprint utilities
+from src.utils.tprint import (
+    tprint, tprint_info, tprint_warning, tprint_error, tprint_success, 
+    tprint_debug, tprint_data_format, tprint_data_preview, LogLevel
+)
+
 from .error_handling import (
     handle_errors, validate_config, validate_data, safe_import,
     MLModelTrainerError, ConfigurationError, DataValidationError, 

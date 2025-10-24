@@ -19,6 +19,12 @@ from sklearn.base import BaseEstimator, ClassifierMixin, RegressorMixin
 from sklearn.preprocessing import StandardScaler
 import logging
 
+# Import tprint utilities
+from src.utils.tprint import (
+    tprint, tprint_info, tprint_warning, tprint_error, tprint_success, 
+    tprint_debug, tprint_data_format, tprint_data_preview, LogLevel
+)
+
 from .error_handling import (
     handle_errors, validate_data, safe_import,
     MLModelTrainerError, DataValidationError, ModelTrainingError, PredictionError, ResourceError
@@ -117,10 +123,14 @@ class LGBMGRUWrapper(BaseEstimator):
         """Initialize LGBM-GRU wrapper."""
         
         if not TORCH_AVAILABLE:
+            tprint_error("PyTorch is required for LGBMGRUWrapper. Install with: pip install torch")
             raise ImportError("PyTorch is required for LGBMGRUWrapper. Install with: pip install torch")
         
         if not LIGHTGBM_AVAILABLE:
+            tprint_error("LightGBM is required for LGBMGRUWrapper. Install with: pip install lightgbm")
             raise ImportError("LightGBM is required for LGBMGRUWrapper. Install with: pip install lightgbm")
+        
+        tprint_info(f"Initializing LGBM-GRU wrapper with GRU hidden size: {gru_hidden_size}, embedding dim: {embedding_dim}")
         
         # GRU parameters
         self.gru_hidden_size = gru_hidden_size
@@ -171,15 +181,21 @@ class LGBMGRUWrapper(BaseEstimator):
     
     def _create_sequences(self, X: np.ndarray) -> np.ndarray:
         """Create sequences from time series data."""
+        tprint_debug(f"Creating sequences with length {self.sequence_length} from data shape {X.shape}")
         sequences = []
         for i in range(len(X) - self.sequence_length + 1):
             sequences.append(X[i:i + self.sequence_length])
-        return np.array(sequences)
+        result = np.array(sequences)
+        tprint_data_format(result, f"Created sequences", LogLevel.DEBUG)
+        return result
     
     def _prepare_data(self, X: np.ndarray, y: Optional[np.ndarray] = None) -> Tuple[np.ndarray, Optional[np.ndarray]]:
         """Prepare data for GRU training."""
+        tprint_debug(f"Preparing data for GRU training - X shape: {X.shape}, y shape: {y.shape if y is not None else None}")
+        
         # Scale features
         X_scaled = self.scaler.fit_transform(X) if not self.is_fitted else self.scaler.transform(X)
+        tprint_data_format(X_scaled, "Scaled features", LogLevel.DEBUG)
         
         # Create sequences
         X_seq = self._create_sequences(X_scaled)
@@ -188,12 +204,15 @@ class LGBMGRUWrapper(BaseEstimator):
         y_seq = None
         if y is not None:
             y_seq = y[self.sequence_length - 1:]
+            tprint_data_format(y_seq, "Aligned target sequence", LogLevel.DEBUG)
         
+        tprint_success(f"Data preparation completed - X_seq shape: {X_seq.shape}, y_seq shape: {y_seq.shape if y_seq is not None else None}")
         return X_seq, y_seq
     
     def _build_gru_model(self, input_size: int) -> GRUEmbeddingLayer:
         """Build GRU model for embeddings."""
-        return GRUEmbeddingLayer(
+        tprint_info(f"Building GRU model - input_size: {input_size}, hidden_size: {self.gru_hidden_size}, embedding_dim: {self.embedding_dim}")
+        model = GRUEmbeddingLayer(
             input_size=input_size,
             hidden_size=self.gru_hidden_size,
             num_layers=self.gru_num_layers,
@@ -201,12 +220,18 @@ class LGBMGRUWrapper(BaseEstimator):
             bidirectional=self.gru_bidirectional,
             embedding_dim=self.embedding_dim
         ).to(self.device)
+        tprint_success(f"GRU model built and moved to device: {self.device}")
+        return model
     
     def _train_gru(self, X_seq: np.ndarray, y: np.ndarray) -> np.ndarray:
         """Train GRU model and extract embeddings."""
+        tprint_info(f"Starting GRU training - epochs: {self.gru_epochs}, batch_size: {self.gru_batch_size}, learning_rate: {self.gru_learning_rate}")
+        
         # Convert to tensors
         X_tensor = torch.FloatTensor(X_seq).to(self.device)
         y_tensor = torch.FloatTensor(y).to(self.device)
+        tprint_data_format(X_tensor.cpu().numpy(), "Input tensor for GRU", LogLevel.DEBUG)
+        tprint_data_format(y_tensor.cpu().numpy(), "Target tensor for GRU", LogLevel.DEBUG)
         
         # Create data loader
         dataset = TensorDataset(X_tensor, y_tensor)
@@ -243,19 +268,25 @@ class LGBMGRUWrapper(BaseEstimator):
                 total_loss += loss.item()
             
             if epoch % 10 == 0:
+                tprint_info(f"GRU Epoch {epoch}, Loss: {total_loss/len(dataloader):.4f}")
                 logger.info(f"GRU Epoch {epoch}, Loss: {total_loss/len(dataloader):.4f}")
         
         # Extract embeddings
+        tprint_debug("Extracting GRU embeddings")
         self.gru_model.eval()
         with torch.no_grad():
             embeddings = self.gru_model(X_tensor).cpu().numpy()
         
+        tprint_data_format(embeddings, "GRU embeddings extracted", LogLevel.DEBUG)
+        tprint_success(f"GRU training completed - embeddings shape: {embeddings.shape}")
         return embeddings
     
     def _build_lgb_model(self, is_classification: bool = True):
         """Build LightGBM model."""
+        tprint_info(f"Building LightGBM model - classification: {is_classification}")
+        
         if is_classification:
-            return lgb.LGBMClassifier(
+            model = lgb.LGBMClassifier(
                 objective=self.objective,
                 metric=self.metric,
                 boosting_type=self.boosting_type,
@@ -274,7 +305,7 @@ class LGBMGRUWrapper(BaseEstimator):
                 lambda_l2=self.lambda_l2
             )
         else:
-            return lgb.LGBMRegressor(
+            model = lgb.LGBMRegressor(
                 objective="regression",
                 metric="rmse",
                 boosting_type=self.boosting_type,
@@ -292,6 +323,9 @@ class LGBMGRUWrapper(BaseEstimator):
                 lambda_l1=self.lambda_l1,
                 lambda_l2=self.lambda_l2
             )
+        
+        tprint_success(f"LightGBM model built - type: {'Classifier' if is_classification else 'Regressor'}")
+        return model
     
     @handle_errors(error_type=ModelTrainingError, reraise=True)
     def fit(self, X: np.ndarray, y: np.ndarray, **fit_params) -> 'LGBMGRUWrapper':
@@ -303,21 +337,25 @@ class LGBMGRUWrapper(BaseEstimator):
         
         # Store feature info
         self.n_features_in_ = X.shape[1]
+        tprint_info(f"Training LGBM-GRU model - features: {self.n_features_in_}, samples: {len(X)}")
         
         # Determine if classification
         is_classification = len(np.unique(y)) <= 10 and np.issubdtype(y.dtype, np.integer)
+        tprint_info(f"Task type: {'Classification' if is_classification else 'Regression'}")
         
         if is_classification:
             self.classes_ = np.unique(y)
+            tprint_data_format(self.classes_, "Classes for classification", LogLevel.DEBUG)
         
         # Prepare data
         X_seq, y_seq = self._prepare_data(X, y)
         
         if y_seq is None:
+            tprint_error("Target data is required for training")
             raise DataValidationError("Target data is required for training")
         
         # Train GRU and get embeddings
-        logger.info("Training GRU for embeddings...")
+        tprint_info("Training GRU for embeddings...")
         gru_embeddings = self._train_gru(X_seq, y_seq)
         
         # Combine original features with GRU embeddings
@@ -326,9 +364,10 @@ class LGBMGRUWrapper(BaseEstimator):
             X[self.sequence_length - 1:],  # Original features
             gru_embeddings  # GRU embeddings
         ])
+        tprint_data_format(X_combined, "Combined features (original + GRU embeddings)", LogLevel.DEBUG)
         
         # Train LightGBM
-        logger.info("Training LightGBM...")
+        tprint_info("Training LightGBM...")
         self.lgb_model = self._build_lgb_model(is_classification)
         
         # Split for validation if needed
@@ -337,15 +376,18 @@ class LGBMGRUWrapper(BaseEstimator):
             X_train, X_val = X_combined[:split_idx], X_combined[split_idx:]
             y_train, y_val = y_seq[:split_idx], y_seq[split_idx:]
             
+            tprint_info(f"Training with validation split - train: {len(X_train)}, val: {len(X_val)}")
             self.lgb_model.fit(
                 X_train, y_train,
                 eval_set=[(X_val, y_val)],
                 callbacks=[lgb.early_stopping(self.early_stopping_rounds, verbose=False)]
             )
         else:
+            tprint_info("Training without validation split")
             self.lgb_model.fit(X_combined, y_seq)
         
         self.is_fitted = True
+        tprint_success("LGBM-GRU model training completed")
         logger.info("LGBM-GRU model training completed")
         
         return self

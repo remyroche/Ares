@@ -45,10 +45,14 @@ from src.utils.hardware.m1_advanced_cpu_optimizer import (
 from src.utils.hardware.m1_enhanced_gpu_manager import (
     M1EnhancedGPUManager, get_enhanced_gpu_manager, GPUOperationType
 )
+from src.utils.hardware.vectorbt_gpu_accelerator import (
+    VectorBTGPUAccelerator, VectorBTOperationType, VectorBTConfig, get_vectorbt_gpu_accelerator
+)
 # Enhanced caching system
 from src.utils.hardware.enhanced_caching_system import (
     EnhancedCachingSystem, CacheConfig, CacheStrategy, DataTypeOptimization
 )
+from functools import lru_cache
 # Bayesian TPE optimizer
 from src.utils.ml_common.optimization.bayesian_tpe_optimizer import (
     BayesianTPEOptimizer, OptimizationConfig as TPEConfig
@@ -241,6 +245,15 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
         )
         self.cache_system = EnhancedCachingSystem(config=cache_config)
         
+        # Initialize VectorBT GPU accelerator
+        tprint_info("🚀 Initializing VectorBT GPU accelerator")
+        vectorbt_config = VectorBTConfig(
+            enable_gpu_acceleration=True,
+            memory_limit_mb=512.0,
+            operation_type=VectorBTOperationType.ROLLING_OPERATIONS
+        )
+        self.vectorbt_gpu = get_vectorbt_gpu_accelerator(config=vectorbt_config)
+        
         # Initialize Bayesian TPE optimizer
         tprint_info("🎯 Initializing Bayesian TPE optimizer")
         tpe_config = TPEConfig(
@@ -301,6 +314,27 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             tprint_info(f"Config parameters: min_periods={self.min_periods}, correlation_threshold={self.correlation_threshold}")
         
         tprint_success("Configuration applied successfully")
+        
+        # Initialize feature caching
+        self._feature_cache = {}
+        self._max_cache_size = 100  # Maximum number of cached feature sets
+
+    def _get_cached_features(self, cache_key: str) -> Optional[pd.DataFrame]:
+        """Get cached features if available."""
+        if cache_key in self._feature_cache:
+            return self._feature_cache[cache_key]
+        return None
+
+    def _cache_features(self, cache_key: str, features: pd.DataFrame) -> None:
+        """Cache features with LRU eviction."""
+        # Remove oldest entries if cache is full
+        if len(self._feature_cache) >= self._max_cache_size:
+            # Remove the first (oldest) item
+            oldest_key = next(iter(self._feature_cache))
+            del self._feature_cache[oldest_key]
+        
+        # Cache the new features
+        self._feature_cache[cache_key] = features.copy()
 
     def _initialize_resources(self) -> bool:
         """Initialize period + lookback optimization resources."""
@@ -425,7 +459,11 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             # Add comprehensive data format analysis for troubleshooting
             tprint_data_format(data, "chunk_processing_input", level="DEBUG")
             
+            # Use memory manager for efficient chunk processing
+            self.memory_manager.start_monitoring()
+            
             for i in range(0, total_rows, chunk_size):
+                # Create chunk with proper memory management
                 chunk = data.iloc[i:i + chunk_size].copy()
                 tprint_data_preview(chunk, f"processing_chunk_{i//chunk_size + 1}", max_rows=3, level="DEBUG")
                 # Add data format analysis for each chunk (only for first few chunks to avoid spam)
@@ -435,14 +473,27 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                 # Optimize chunk data types (silent for chunks)
                 chunk = self._optimize_dataframe_dtypes(chunk, verbose=False)
                 
+                # Use memory manager for efficient cleanup
+                self.memory_manager.optimize_dataframe(chunk)
+                
+                chunks.append(chunk)
+                
                 # Aggressive garbage collection between chunks
                 if self.aggressive_gc_enabled:
                     gc.collect()
+                    # Force garbage collection of intermediate variables
+                    del chunk
                 
-                chunks.append(chunk)
                 # Only log every 10th chunk to reduce verbosity
                 if len(chunks) % 10 == 0 or len(chunks) == num_chunks:
                     tprint_info(f"Processed chunk {len(chunks)}/{num_chunks}")
+                    # Log memory usage
+                    memory_usage = self.memory_manager.get_memory_usage()
+                    tprint_info(f"Memory usage: {memory_usage:.1f}%")
+            
+            # Final memory cleanup
+            self.memory_manager.stop_monitoring()
+            gc.collect()
             
             tprint_success(f"Data chunking completed: {len(chunks)} chunks created")
             return chunks
@@ -450,6 +501,9 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
         except Exception as e:
             tprint_error(f"Chunked processing failed: {e}")
             self.logger.error(f"Chunked processing failed: {e}")
+            # Cleanup on error
+            self.memory_manager.stop_monitoring()
+            gc.collect()
             return [data]  # Fallback to original data
 
     def _parallel_process_chunks(self, chunks: List[pd.DataFrame], process_func) -> List[Any]:
@@ -3013,7 +3067,7 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
         # Align features and targets with proper validation
         tprint_info("Aligning features and targets for optimization")
         
-        # Validate data alignment before joining
+        # Validate data alignment before joining with temporal order validation
         if not features_df.index.equals(targets_series.index):
             tprint_warning("Feature and target indices don't match, attempting alignment")
             # Find common index
@@ -3027,6 +3081,20 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                     'error': 'No common timestamps between features and targets.'
                 }
                 return error_result
+            
+            # Validate temporal order to prevent data leakage
+            if hasattr(common_index, 'is_monotonic_increasing'):
+                if not common_index.is_monotonic_increasing:
+                    tprint_error("Common timestamps are not in temporal order - potential data leakage risk")
+                    error_result = {
+                        'success': False,
+                        'artifacts': [],
+                        'metrics': {},
+                        'error': 'Common timestamps are not in temporal order - potential data leakage risk.'
+                    }
+                    return error_result
+                tprint_success("Temporal order validation passed")
+            
             features_df = features_df.loc[common_index]
             targets_series = targets_series.loc[common_index]
         
@@ -3206,11 +3274,9 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
         tprint_data_format(features, "period_optimization_input", level="DEBUG")
         tprint_data_format(targets, "period_optimization_targets", level="DEBUG")
         
-        # Pre-compute all period features to avoid redundant computation
-        tprint_info("🎯 Pre-computing period features for efficient optimization")
-        period_features_cache = {}
-        for period in periods_to_test:
-            period_features_cache[period] = self._create_period_features(features, period)
+        # Pre-compute all period features using parallel processing
+        tprint_info("🎯 Pre-computing period features for efficient optimization with parallel processing")
+        period_features_cache = self._parallel_create_features(features, periods_to_test, 'period')
         
         # Use TPE optimizer for sophisticated period optimization
         tprint_info("🎯 Using Bayesian TPE optimizer for period optimization")
@@ -3236,12 +3302,8 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                 
                 # Calculate comprehensive risk metrics using all features
                 if len(period_features.columns) > 0:
-                    # Use the first principal component or mean of all features
-                    if len(period_features.columns) == 1:
-                        feature_series = period_features.iloc[:, 0]
-                    else:
-                        # Use mean of all features as a composite signal
-                        feature_series = period_features.mean(axis=1)
+                    # Use intelligent feature aggregation based on feature types
+                    feature_series = self._create_intelligent_composite_signal(period_features)
                 else:
                     feature_series = pd.Series()
                 
@@ -3295,47 +3357,9 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                     if str(period) not in period_scores:
                         period_scores[str(period)] = 0.0
             else:
-                # Fallback to individual calculation if TPE results not available
-                for period in periods_to_test:
-                    try:
-                        period_features = self._create_period_features(features, period)
-                        if period_features.empty:
-                            period_scores[str(period)] = 0.0
-                            continue
-                        
-                        mi_scores = []
-                        for col in period_features.columns:
-                            if not period_features[col].isna().all():
-                                mi = self._compute_mutual_information(period_features[col], targets)
-                                mi_scores.append(mi)
-                        
-                        if not mi_scores:
-                            period_scores[str(period)] = 0.0
-                            continue
-                        
-                        avg_mi = np.mean(mi_scores)
-                        # Use all features for Sharpe calculation
-                        if len(period_features.columns) > 0:
-                            if len(period_features.columns) == 1:
-                                feature_series = period_features.iloc[:, 0]
-                            else:
-                                # Use mean of all features as a composite signal
-                                feature_series = period_features.mean(axis=1)
-                        else:
-                            feature_series = pd.Series()
-                        
-                        sharpe_score = self._compute_oos_sharpe_nested(
-                            feature_series,
-                            targets,
-                            direction
-                        )[0]
-                        
-                        combined_score = 0.7 * avg_mi + 0.3 * sharpe_score
-                        period_scores[str(period)] = combined_score
-                        
-                    except Exception as e:
-                        tprint_warning(f"Failed to score period {period}: {e}")
-                        period_scores[str(period)] = 0.0
+                # Fast fail if TPE optimization fails
+                tprint_error("TPE optimization failed - no fallback available")
+                raise RuntimeError("TPE optimization failed and fallback is disabled for consistency")
                     
         except Exception as e:
             tprint_warning(f"TPE optimization failed, falling back to grid search: {e}")
@@ -3429,11 +3453,9 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
         tprint_data_format(features, "lookback_optimization_input", level="DEBUG")
         tprint_data_format(targets, "lookback_optimization_targets", level="DEBUG")
         
-        # Pre-compute all lookback features to avoid redundant computation
-        tprint_info("🎯 Pre-computing lookback features for efficient optimization")
-        lookback_features_cache = {}
-        for lookback in lookbacks_to_test:
-            lookback_features_cache[lookback] = self._create_lookback_features(features, lookback)
+        # Pre-compute all lookback features using parallel processing
+        tprint_info("🎯 Pre-computing lookback features for efficient optimization with parallel processing")
+        lookback_features_cache = self._parallel_create_features(features, lookbacks_to_test, 'lookback')
         
         # Use TPE optimizer for sophisticated lookback optimization
         tprint_info("🎯 Using Bayesian TPE optimizer for lookback optimization")
@@ -3459,11 +3481,8 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                 
                 # Calculate out-of-sample Sharpe ratio using all features
                 if len(lookback_features.columns) > 0:
-                    if len(lookback_features.columns) == 1:
-                        feature_series = lookback_features.iloc[:, 0]
-                    else:
-                        # Use mean of all features as a composite signal
-                        feature_series = lookback_features.mean(axis=1)
+                    # Use intelligent feature aggregation based on feature types
+                    feature_series = self._create_intelligent_composite_signal(lookback_features)
                 else:
                     feature_series = pd.Series()
                 
@@ -3472,6 +3491,13 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                     targets,
                     direction
                 )[0]
+                
+                # Calculate comprehensive risk metrics
+                risk_metrics = self._compute_comprehensive_risk_metrics(
+                    feature_series,
+                    targets,
+                    direction
+                )
                 
                 # Calculate transaction cost adjusted score
                 transaction_cost = 0.001  # 0.1% total fees
@@ -3515,47 +3541,9 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                     if str(lookback) not in lookback_scores:
                         lookback_scores[str(lookback)] = 0.0
             else:
-                # Fallback to individual calculation if TPE results not available
-                for lookback in lookbacks_to_test:
-                    try:
-                        lookback_features = self._create_lookback_features(features, lookback)
-                        if lookback_features.empty:
-                            lookback_scores[str(lookback)] = 0.0
-                            continue
-                        
-                        mi_scores = []
-                        for col in lookback_features.columns:
-                            if not lookback_features[col].isna().all():
-                                mi = self._compute_mutual_information(lookback_features[col], targets)
-                                mi_scores.append(mi)
-                        
-                        if not mi_scores:
-                            lookback_scores[str(lookback)] = 0.0
-                            continue
-                        
-                        avg_mi = np.mean(mi_scores)
-                        # Use all features for Sharpe calculation
-                        if len(lookback_features.columns) > 0:
-                            if len(lookback_features.columns) == 1:
-                                feature_series = lookback_features.iloc[:, 0]
-                            else:
-                                # Use mean of all features as a composite signal
-                                feature_series = lookback_features.mean(axis=1)
-                        else:
-                            feature_series = pd.Series()
-                        
-                        sharpe_score = self._compute_oos_sharpe_nested(
-                            feature_series,
-                            targets,
-                            direction
-                        )[0]
-                        
-                        combined_score = 0.7 * avg_mi + 0.3 * sharpe_score
-                        lookback_scores[str(lookback)] = combined_score
-                        
-                    except Exception as e:
-                        tprint_warning(f"Failed to score lookback {lookback}: {e}")
-                        lookback_scores[str(lookback)] = 0.0
+                # Fast fail if TPE optimization fails
+                tprint_error("TPE optimization failed - no fallback available")
+                raise RuntimeError("TPE optimization failed and fallback is disabled for consistency")
                     
         except Exception as e:
             tprint_warning(f"TPE optimization failed, falling back to grid search: {e}")
@@ -3621,8 +3609,137 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
         tprint_data_format(lookback_scores, "lookback_optimization_scores", level="INFO")
         return best_lookback, lookback_scores
     
+    def _is_returns_series(self, series: np.ndarray) -> bool:
+        """Determine if a series represents returns or prices based on statistical properties."""
+        if len(series) < 10:
+            return False
+        
+        # Returns typically have mean close to 0 and are more normally distributed
+        mean_val = np.mean(series)
+        std_val = np.std(series)
+        
+        # If mean is close to 0 and std is reasonable for returns, likely returns
+        if abs(mean_val) < 0.01 and 0.001 < std_val < 0.5:
+            return True
+        
+        # If values are mostly between -1 and 1, likely returns
+        if np.all(series >= -1) and np.all(series <= 1):
+            return True
+        
+        # If values are mostly positive and growing, likely prices
+        if np.all(series > 0) and np.mean(np.diff(series)) > 0:
+            return False
+        
+        return False
+
+    def _parallel_create_features(self, features: pd.DataFrame, values_to_test: List[int], feature_type: str) -> Dict[int, pd.DataFrame]:
+        """Create features in parallel for multiple periods/lookbacks."""
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        import threading
+        
+        features_cache = {}
+        lock = threading.Lock()
+        
+        def create_single_feature(value):
+            try:
+                if feature_type == 'period':
+                    result = self._create_period_features(features, value)
+                elif feature_type == 'lookback':
+                    result = self._create_lookback_features(features, value)
+                else:
+                    raise ValueError(f"Unknown feature type: {feature_type}")
+                
+                with lock:
+                    features_cache[value] = result
+                return value, result
+            except Exception as e:
+                tprint_warning(f"Failed to create {feature_type} features for {value}: {e}")
+                with lock:
+                    features_cache[value] = pd.DataFrame()
+                return value, pd.DataFrame()
+        
+        # Use ThreadPoolExecutor for parallel processing
+        max_workers = min(self.parallel_workers, len(values_to_test))
+        tprint_info(f"Creating {feature_type} features in parallel with {max_workers} workers")
+        
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # Submit all tasks
+            future_to_value = {
+                executor.submit(create_single_feature, value): value 
+                for value in values_to_test
+            }
+            
+            # Process completed tasks
+            for future in as_completed(future_to_value):
+                value = future_to_value[future]
+                try:
+                    result_value, result_df = future.result()
+                    if not result_df.empty:
+                        tprint_info(f"Created {feature_type} features for {result_value}: {result_df.shape}")
+                except Exception as e:
+                    tprint_error(f"Error processing {feature_type} {value}: {e}")
+        
+        return features_cache
+
+    def _create_intelligent_composite_signal(self, features: pd.DataFrame) -> pd.Series:
+        """Create intelligent composite signal from multiple features based on their characteristics."""
+        if len(features.columns) == 0:
+            return pd.Series()
+        elif len(features.columns) == 1:
+            return features.iloc[:, 0]
+        
+        # Analyze feature characteristics to determine aggregation method
+        feature_stats = {}
+        for col in features.columns:
+            if not features[col].isna().all():
+                feature_stats[col] = {
+                    'std': features[col].std(),
+                    'mean': features[col].mean(),
+                    'skew': features[col].skew(),
+                    'kurt': features[col].kurtosis()
+                }
+        
+        if not feature_stats:
+            return pd.Series()
+        
+        # Use weighted average based on feature stability (lower std = higher weight)
+        weights = []
+        normalized_features = []
+        
+        for col, stats in feature_stats.items():
+            # Weight inversely proportional to standard deviation (more stable = higher weight)
+            weight = 1.0 / (1.0 + stats['std'])
+            weights.append(weight)
+            # Normalize feature to [0, 1] range
+            feature_vals = features[col].fillna(0)
+            if stats['std'] > 0:
+                normalized_feature = (feature_vals - stats['mean']) / stats['std']
+            else:
+                normalized_feature = feature_vals - stats['mean']
+            normalized_features.append(normalized_feature)
+        
+        # Normalize weights
+        total_weight = sum(weights)
+        if total_weight > 0:
+            weights = [w / total_weight for w in weights]
+        else:
+            weights = [1.0 / len(weights)] * len(weights)
+        
+        # Create weighted composite signal
+        composite_signal = pd.Series(0.0, index=features.index)
+        for i, (weight, feature) in enumerate(zip(weights, normalized_features)):
+            composite_signal += weight * feature
+        
+        return composite_signal
+
     def _create_period_features(self, features: pd.DataFrame, period: int) -> pd.DataFrame:
         """Create period-based features using proper period-based feature engineering."""
+        # Check cache first
+        cache_key = f"period_{period}_{hash(str(features.columns.tolist()))}"
+        cached_features = self._get_cached_features(cache_key)
+        if cached_features is not None:
+            return cached_features
+        
         try:
             if period <= 0 or period >= len(features):
                 tprint_warning(f"Invalid period {period} for data length {len(features)}")
@@ -3634,21 +3751,48 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
         # Create period-based features using proper feature engineering
         period_features = pd.DataFrame(index=features.index)
         
-        for col in features.columns:
-            if features[col].dtype in ['float64', 'float32', 'int64', 'int32']:
-                # Calculate period-based rolling statistics
-                period_features[f"{col}_period_mean"] = features[col].rolling(window=period, min_periods=period//2).mean()
-                period_features[f"{col}_period_std"] = features[col].rolling(window=period, min_periods=period//2).std()
-                period_features[f"{col}_period_max"] = features[col].rolling(window=period, min_periods=period//2).max()
-                period_features[f"{col}_period_min"] = features[col].rolling(window=period, min_periods=period//2).min()
-                period_features[f"{col}_period_median"] = features[col].rolling(window=period, min_periods=period//2).median()
-                
-                # Calculate period-based momentum and volatility
-                period_features[f"{col}_period_momentum"] = features[col] / features[col].shift(period)
-                period_features[f"{col}_period_volatility"] = features[col].rolling(window=period, min_periods=period//2).std() / features[col].rolling(window=period, min_periods=period//2).mean()
+        try:
+            for col in features.columns:
+                if features[col].dtype in ['float64', 'float32', 'int64', 'int32', 'float16', 'int16']:
+                    try:
+                        # Use vectorized rolling operations for better performance
+                        rolling_window = features[col].rolling(window=period, min_periods=period//2)
+                        
+                        # Vectorized calculation of multiple statistics at once
+                        rolling_stats = rolling_window.agg(['mean', 'std', 'max', 'min', 'median'])
+                        
+                        period_features[f"{col}_period_mean"] = rolling_stats['mean']
+                        period_features[f"{col}_period_std"] = rolling_stats['std']
+                        period_features[f"{col}_period_max"] = rolling_stats['max']
+                        period_features[f"{col}_period_min"] = rolling_stats['min']
+                        period_features[f"{col}_period_median"] = rolling_stats['median']
+                        
+                        # Calculate period-based momentum and volatility with error handling
+                        shifted_col = features[col].shift(period)
+                        if not shifted_col.isna().all():
+                            period_features[f"{col}_period_momentum"] = features[col] / shifted_col
+                        
+                        # Volatility calculation with division by zero protection
+                        mean_vals = rolling_window.mean()
+                        std_vals = rolling_window.std()
+                        volatility = std_vals / mean_vals
+                        volatility = volatility.replace([np.inf, -np.inf], np.nan)
+                        period_features[f"{col}_period_volatility"] = volatility
+                        
+                    except Exception as e:
+                        tprint_warning(f"Failed to create period features for column {col}: {e}")
+                        continue
+                        
+        except Exception as e:
+            tprint_error(f"Failed to create period features: {e}")
+            return pd.DataFrame()
         
         # Drop rows with insufficient data
         period_features = period_features.dropna()
+        
+        if period_features.empty:
+            tprint_warning(f"No valid period features created for period {period}")
+            return pd.DataFrame()
         
         # Add data format analysis for period features (only for debugging)
         tprint_data_format(period_features, f"period_features_created_{period}", level="DEBUG")
@@ -3657,10 +3801,20 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
         if len(period_features) < 10:
             return pd.DataFrame()
         
+        # Cache the result
+        if not period_features.empty:
+            self._cache_features(cache_key, period_features)
+        
         return period_features
     
     def _create_lookback_features(self, features: pd.DataFrame, lookback: int) -> pd.DataFrame:
         """Create lookback-based features using comprehensive rolling windows."""
+        # Check cache first
+        cache_key = f"lookback_{lookback}_{hash(str(features.columns.tolist()))}"
+        cached_features = self._get_cached_features(cache_key)
+        if cached_features is not None:
+            return cached_features
+        
         try:
             if lookback <= 0 or lookback >= len(features):
                 tprint_warning(f"Invalid lookback {lookback} for data length {len(features)}")
@@ -3672,22 +3826,49 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
         # Create comprehensive lookback-based features
         lookback_features = pd.DataFrame(index=features.index)
         
-        for col in features.columns:
-            if features[col].dtype in ['float64', 'float32', 'int64', 'int32']:
-                # Basic rolling statistics
-                lookback_features[f"{col}_lookback_mean"] = features[col].rolling(window=lookback, min_periods=lookback//2).mean()
-                lookback_features[f"{col}_lookback_std"] = features[col].rolling(window=lookback, min_periods=lookback//2).std()
-                lookback_features[f"{col}_lookback_max"] = features[col].rolling(window=lookback, min_periods=lookback//2).max()
-                lookback_features[f"{col}_lookback_min"] = features[col].rolling(window=lookback, min_periods=lookback//2).min()
-                lookback_features[f"{col}_lookback_median"] = features[col].rolling(window=lookback, min_periods=lookback//2).median()
-                
-                # Advanced rolling statistics
-                lookback_features[f"{col}_lookback_skew"] = features[col].rolling(window=lookback, min_periods=lookback//2).skew()
-                lookback_features[f"{col}_lookback_kurt"] = features[col].rolling(window=lookback, min_periods=lookback//2).kurt()
-                
-                # Volatility and momentum features
-                lookback_features[f"{col}_lookback_volatility"] = features[col].rolling(window=lookback, min_periods=lookback//2).std() / features[col].rolling(window=lookback, min_periods=lookback//2).mean()
-                lookback_features[f"{col}_lookback_momentum"] = features[col] / features[col].shift(lookback)
+        try:
+            for col in features.columns:
+                if features[col].dtype in ['float64', 'float32', 'int64', 'int32', 'float16', 'int16']:
+                    try:
+                        # Use vectorized rolling operations for better performance
+                        rolling_window = features[col].rolling(window=lookback, min_periods=lookback//2)
+                        
+                        # Vectorized calculation of multiple statistics at once
+                        rolling_stats = rolling_window.agg(['mean', 'std', 'max', 'min', 'median', 'skew', 'kurt'])
+                        
+                        lookback_features[f"{col}_lookback_mean"] = rolling_stats['mean']
+                        lookback_features[f"{col}_lookback_std"] = rolling_stats['std']
+                        lookback_features[f"{col}_lookback_max"] = rolling_stats['max']
+                        lookback_features[f"{col}_lookback_min"] = rolling_stats['min']
+                        lookback_features[f"{col}_lookback_median"] = rolling_stats['median']
+                        lookback_features[f"{col}_lookback_skew"] = rolling_stats['skew']
+                        lookback_features[f"{col}_lookback_kurt"] = rolling_stats['kurt']
+                        
+                        # Volatility and momentum features with error handling
+                        mean_vals = rolling_window.mean()
+                        std_vals = rolling_window.std()
+                        volatility = std_vals / mean_vals
+                        volatility = volatility.replace([np.inf, -np.inf], np.nan)
+                        lookback_features[f"{col}_lookback_volatility"] = volatility
+                        
+                        shifted_col = features[col].shift(lookback)
+                        if not shifted_col.isna().all():
+                            lookback_features[f"{col}_lookback_momentum"] = features[col] / shifted_col
+                        
+                    except Exception as e:
+                        tprint_warning(f"Failed to create lookback features for column {col}: {e}")
+                        continue
+                        
+        except Exception as e:
+            tprint_error(f"Failed to create lookback features: {e}")
+            return pd.DataFrame()
+        
+        # Drop rows with insufficient data
+        lookback_features = lookback_features.dropna()
+        
+        if lookback_features.empty:
+            tprint_warning(f"No valid lookback features created for lookback {lookback}")
+            return pd.DataFrame()
                 
                 # Trend and change features
                 lookback_features[f"{col}_lookback_trend"] = features[col].rolling(window=lookback, min_periods=lookback//2).apply(lambda x: np.polyfit(range(len(x)), x, 1)[0] if len(x) > 1 else 0)
@@ -3706,6 +3887,10 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
         # Ensure we have enough data
         if len(lookback_features) < 10:
             return pd.DataFrame()
+        
+        # Cache the result
+        if not lookback_features.empty:
+            self._cache_features(cache_key, lookback_features)
         
         return lookback_features
     
@@ -3774,8 +3959,12 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             feature_vals = aligned_data.iloc[:, 0].values
             target_vals = aligned_data.iloc[:, 1].values
             
-            # Calculate returns
-            returns = np.diff(target_vals) / target_vals[:-1]
+            # Determine if targets are returns or prices and calculate returns accordingly
+            if self._is_returns_series(target_vals):
+                returns = target_vals
+            else:
+                # Calculate returns from price series
+                returns = np.diff(target_vals) / target_vals[:-1]
             
             if len(returns) == 0 or np.std(returns) == 0:
                 return {'sharpe_ratio': 0.0, 'sortino_ratio': 0.0, 'calmar_ratio': 0.0, 'max_drawdown': 0.0}

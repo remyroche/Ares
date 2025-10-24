@@ -106,9 +106,9 @@ inputs:
     regime_lookback: 20
     regime_detection_method: "rolling_quantiles"
     
-    enable_multi_timeframe: true
-    timeframes: ["5m", "15m", "1h", "4h"]
-    timeframe_weights: [0.1, 0.3, 0.4, 0.2]
+    enable_multi_timeframe: false
+    # timeframes: ["5m", "15m", "1h", "4h"]  # Disabled - value comes from ares_launcher
+    # timeframe_weights: [0.1, 0.3, 0.4, 0.2]  # Disabled - value comes from ares_launcher
   
   # Regime model outputs (from previous pipeline steps)
   regime_outputs:
@@ -185,11 +185,11 @@ feature_engineering:
   
   # Multi-timeframe features
   multi_timeframe:
-    enabled: true
-    timeframes: ["5m", "15m", "1h", "4h"]
-    feature_types: ["price", "volume", "technical_indicators"]
-    aggregation_methods: ["mean", "std", "min", "max", "last"]
-    lookback_periods: [5, 10, 20, 50]
+    enabled: false
+    # timeframes: ["5m", "15m", "1h", "4h"]  # Disabled - value comes from ares_launcher
+    # feature_types: ["price", "volume", "technical_indicators"]  # Disabled - value comes from ares_launcher
+    # aggregation_methods: ["mean", "std", "min", "max", "last"]  # Disabled - value comes from ares_launcher
+    # lookback_periods: [5, 10, 20, 50]  # Disabled - value comes from ares_launcher
 
 # Data Quality & Leakage Prevention
 data_quality:

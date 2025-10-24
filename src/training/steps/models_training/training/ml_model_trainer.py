@@ -148,13 +148,16 @@ class MLModelTrainerConfig:
     ])
     
     # Data configuration
-    timeframe: str = "15m"
+    timeframe: str = "15m"  # Default timeframe, can be overridden by ares_launcher
     random_state: int = 42
     
     # Training configuration
     validation_split: float = 0.2
     test_split: float = 0.1
     cv_folds: int = 5
+    
+    # Mode configuration for parameter scaling
+    mode: str = "FULL"  # LIGHT (10%), BLANK (50%), FULL (100%)
     
     # Performance configuration
     enable_parallel_training: bool = True
@@ -175,6 +178,15 @@ class MLModelTrainerConfig:
     def __post_init__(self):
         """Initialize process pool for CPU-bound training."""
         self._process_pool = ProcessPoolExecutor(max_workers=self.max_workers)
+    
+    def get_mode_scaling_factor(self) -> float:
+        """Get scaling factor based on mode."""
+        if self.mode == "LIGHT":
+            return 0.1  # 10%
+        elif self.mode == "BLANK":
+            return 0.5  # 50%
+        else:  # FULL
+            return 1.0  # 100%
 
 
 @dataclass
@@ -718,9 +730,9 @@ class MLModelTrainer:
         # Initialize cross-validation system with mode-based parameters
         mode = getattr(self.config, 'mode', 'FULL')  # Get mode from config or default to FULL
         if mode == "LIGHT":
-            cv_folds = max(2, self.config.cv_folds // 10)  # 90% reduction, minimum 2
+            cv_folds = max(2, self.config.cv_folds // 10)  # 10% of original, minimum 2
         elif mode == "BLANK":
-            cv_folds = max(3, self.config.cv_folds // 2)  # 50% reduction, minimum 3
+            cv_folds = max(3, self.config.cv_folds // 2)  # 50% of original, minimum 3
         else:
             cv_folds = self.config.cv_folds
         
@@ -942,7 +954,94 @@ class MLModelTrainer:
                 tprint_error(f"❌ Failed to load configuration for {model_type.value}: {e}")
                 raise
         
+        # Apply mode-based parameter scaling
+        for model_type, config in configs.items():
+            configs[model_type] = self._apply_mode_scaling(config)
+        
         return configs
+    
+    def _apply_mode_scaling(self, config: Dict[str, Any]) -> Dict[str, Any]:
+        """Apply mode-based scaling to configuration parameters."""
+        scaling_factor = self.config.get_mode_scaling_factor()
+        
+        # Create a deep copy to avoid modifying the original
+        import copy
+        scaled_config = copy.deepcopy(config)
+        
+        # Scale training parameters
+        if 'training' in scaled_config:
+            training = scaled_config['training']
+            
+            # Scale CV folds
+            if 'cv_folds' in training:
+                original_cv_folds = training['cv_folds']
+                if self.config.mode == "LIGHT":
+                    training['cv_folds'] = max(2, int(original_cv_folds * scaling_factor))
+                elif self.config.mode == "BLANK":
+                    training['cv_folds'] = max(3, int(original_cv_folds * scaling_factor))
+                else:
+                    training['cv_folds'] = original_cv_folds
+            
+            # Scale HPO parameters
+            if 'hyperparameter_optimization' in training:
+                hpo = training['hyperparameter_optimization']
+                if 'n_trials' in hpo:
+                    original_trials = hpo['n_trials']
+                    if self.config.mode == "LIGHT":
+                        hpo['n_trials'] = max(10, int(original_trials * scaling_factor))
+                    elif self.config.mode == "BLANK":
+                        hpo['n_trials'] = max(50, int(original_trials * scaling_factor))
+                    else:
+                        hpo['n_trials'] = original_trials
+        
+        # Scale model-specific parameters
+        if 'models' in scaled_config:
+            for model in scaled_config['models']:
+                if 'parameters' in model:
+                    params = model['parameters']
+                    
+                    # Scale iterations for CatBoost
+                    if 'iterations' in params:
+                        original_iterations = params['iterations']
+                        if self.config.mode == "LIGHT":
+                            params['iterations'] = max(100, int(original_iterations * scaling_factor))
+                        elif self.config.mode == "BLANK":
+                            params['iterations'] = max(500, int(original_iterations * scaling_factor))
+                        else:
+                            params['iterations'] = original_iterations
+                    
+                    # Scale n_estimators for LightGBM
+                    if 'n_estimators' in params:
+                        original_estimators = params['n_estimators']
+                        if self.config.mode == "LIGHT":
+                            params['n_estimators'] = max(100, int(original_estimators * scaling_factor))
+                        elif self.config.mode == "BLANK":
+                            params['n_estimators'] = max(500, int(original_estimators * scaling_factor))
+                        else:
+                            params['n_estimators'] = original_estimators
+                    
+                    # Scale max_iter for neural networks
+                    if 'max_iter' in params:
+                        original_max_iter = params['max_iter']
+                        if self.config.mode == "LIGHT":
+                            params['max_iter'] = max(100, int(original_max_iter * scaling_factor))
+                        elif self.config.mode == "BLANK":
+                            params['max_iter'] = max(500, int(original_max_iter * scaling_factor))
+                        else:
+                            params['max_iter'] = original_max_iter
+                    
+                    # Scale epochs for neural networks
+                    if 'epochs' in params:
+                        original_epochs = params['epochs']
+                        if self.config.mode == "LIGHT":
+                            params['epochs'] = max(10, int(original_epochs * scaling_factor))
+                        elif self.config.mode == "BLANK":
+                            params['epochs'] = max(50, int(original_epochs * scaling_factor))
+                        else:
+                            params['epochs'] = original_epochs
+        
+        tprint_info(f"🔧 Applied {self.config.mode} mode scaling (factor: {scaling_factor:.1%})")
+        return scaled_config
     
     @comprehensive_memory_optimization(MemoryOptimizationLevel.AGGRESSIVE)
     async def _preprocess_data(self, data: Dict[str, Any]) -> Dict[str, Any]:
@@ -1376,11 +1475,23 @@ class MLModelTrainer:
                     tprint_warning(f"HPO trial failed: {e}")
                     return float('-inf')
             
-            # Run HPO
+            # Run HPO with mode-scaled parameters
+            n_trials = hpo_config.get('n_trials', 100)
+            timeout = hpo_config.get('timeout', 3600)
+            
+            # Apply mode scaling to HPO parameters
+            scaling_factor = self.config.get_mode_scaling_factor()
+            if self.config.mode == "LIGHT":
+                n_trials = max(10, int(n_trials * scaling_factor))
+                timeout = max(300, int(timeout * scaling_factor))  # Minimum 5 minutes
+            elif self.config.mode == "BLANK":
+                n_trials = max(50, int(n_trials * scaling_factor))
+                timeout = max(1800, int(timeout * scaling_factor))  # Minimum 30 minutes
+            
             best_params = self.hpo_system.optimize(
                 objective=objective,
-                n_trials=hpo_config.get('n_trials', 100),
-                timeout=hpo_config.get('timeout', 3600)
+                n_trials=n_trials,
+                timeout=timeout
             )
             
             tprint_success(f"✅ HPO completed. Best params: {best_params}")
@@ -1426,7 +1537,14 @@ class MLModelTrainer:
                 'reg_lambda': trial.suggest_float('reg_lambda', 0.0, 1.0)
             }
         elif model_type == 'CATBOOST':
-            base_iterations = int(1000 * reduction_factor)
+            # Use mode-based scaling for base iterations
+            scaling_factor = self.config.get_mode_scaling_factor()
+            base_iterations = int(1000 * scaling_factor)
+            if self.config.mode == "LIGHT":
+                base_iterations = max(100, base_iterations)
+            elif self.config.mode == "BLANK":
+                base_iterations = max(500, base_iterations)
+            
             params = {
                 'iterations': trial.suggest_int('iterations', base_iterations//10, base_iterations),
                 'learning_rate': trial.suggest_float('learning_rate', 0.01, 0.3),

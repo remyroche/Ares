@@ -22,6 +22,25 @@ except ImportError:
             raise ImportError("NumPy is required for optimization functionality")
     np = MockNumpy()
 
+# Import tprint functions
+try:
+    from ...tprint import (
+        tprint, tprint_debug, tprint_info, tprint_warning, tprint_error,
+        tprint_success, tprint_performance, tprint_timer, tprint_data_preview,
+        tprint_data_format, LogLevel, TPrintConfig
+    )
+    TPRINT_AVAILABLE = True
+except ImportError:
+    TPRINT_AVAILABLE = False
+    def tprint_info(*args, **kwargs): pass
+    def tprint_warning(*args, **kwargs): pass
+    def tprint_success(*args, **kwargs): pass
+    def tprint_error(*args, **kwargs): pass
+    def tprint_debug(*args, **kwargs): pass
+    def tprint_performance(*args, **kwargs): pass
+    def tprint_data_preview(*args, **kwargs): pass
+    def tprint_data_format(*args, **kwargs): pass
+
 from ..validation import HPOConfig, validate_search_space, validate_hpo_config
 from ..exceptions import OptimizationError, ConfigurationError, HardwareOptimizationError
 from ..results import HPOResult
@@ -119,7 +138,13 @@ class HPOEngine:
         self.active_optimizations = {}
         self.current_run_id = None
         
-        self.logger.info(f"HPO Engine initialized with {self.config.strategy.value} strategy")
+        if TPRINT_AVAILABLE:
+            tprint_success(f"🚀 HPO Engine initialized with {self.config.strategy.value} strategy")
+            tprint_info(f"📊 Configuration: {self.config.n_trials} trials, timeout: {self.config.timeout}s")
+            tprint_info(f"🔧 Hardware optimization: {'enabled' if self.config.enable_hardware_optimization else 'disabled'}")
+            tprint_info(f"⚡ VectorBT optimization: {'enabled' if self.config.enable_vectorbt else 'disabled'}")
+        else:
+            self.logger.info(f"HPO Engine initialized with {self.config.strategy.value} strategy")
     
     def optimize(self, 
                  model_factory: Callable,
@@ -142,6 +167,12 @@ class HPOEngine:
         """
         start_time = time.time()
         
+        if TPRINT_AVAILABLE:
+            tprint_info(f"🎯 Starting optimization for {model_name}")
+            tprint_data_preview(X, f"{model_name}_features", max_rows=5)
+            tprint_data_preview(y, f"{model_name}_targets", max_rows=5)
+            tprint_data_format(search_space, f"{model_name}_search_space")
+        
         try:
             # Validate inputs
             self._validate_inputs(X, y, search_space)
@@ -163,16 +194,24 @@ class HPOEngine:
             # Start monitoring
             if self.monitor:
                 self.current_run_id = self.monitor.start_optimization(model_name, self.config.strategy.value)
+                if TPRINT_AVAILABLE:
+                    tprint_info(f"📊 Monitoring started for run {self.current_run_id}")
             
             # Apply hardware optimization
             if self.config.enable_hardware_optimization:
+                if TPRINT_AVAILABLE:
+                    tprint_info("🔧 Applying hardware optimization...")
                 self._apply_hardware_optimization(context)
             
             # Apply VectorBT optimization
             if self.config.enable_vectorbt and self.vectorbt_optimizer:
+                if TPRINT_AVAILABLE:
+                    tprint_info("⚡ Applying VectorBT optimization...")
                 self._apply_vectorbt_optimization(context)
             
             # Execute optimization strategy
+            if TPRINT_AVAILABLE:
+                tprint_info(f"🎯 Executing {self.config.strategy.value} optimization strategy...")
             result = self.strategy.optimize(context)
             
             # Update metadata
@@ -186,8 +225,14 @@ class HPOEngine:
             if self.monitor and self.current_run_id:
                 self.monitor.stop_optimization(self.current_run_id, result)
             
-            self.logger.info(f"Optimization completed for {model_name} in {result.optimization_time:.2f}s")
-            self.logger.info(f"Best score: {result.best_score:.4f}")
+            if TPRINT_AVAILABLE:
+                tprint_success(f"✅ Optimization completed for {model_name} in {result.optimization_time:.2f}s")
+                tprint_success(f"🏆 Best score: {result.best_score:.4f}")
+                tprint_info(f"📈 Trials completed: {result.n_trials}")
+                tprint_data_preview(result.best_params, f"{model_name}_best_params")
+            else:
+                self.logger.info(f"Optimization completed for {model_name} in {result.optimization_time:.2f}s")
+                self.logger.info(f"Best score: {result.best_score:.4f}")
             
             return result
             
@@ -196,7 +241,10 @@ class HPOEngine:
             if self.monitor and self.current_run_id:
                 self.monitor.stop_optimization(self.current_run_id, None, error=str(e))
             
-            self.logger.error(f"Optimization failed for {model_name}: {e}")
+            if TPRINT_AVAILABLE:
+                tprint_error(f"❌ Optimization failed for {model_name}: {e}")
+            else:
+                self.logger.error(f"Optimization failed for {model_name}: {e}")
             raise
     
     def _validate_inputs(self, X: Any, y: Any, search_space: Dict[str, Any]) -> None:
@@ -258,6 +306,9 @@ class HPOEngine:
         """Apply hardware optimization to the context."""
         try:
             if self.hardware_manager:
+                if TPRINT_AVAILABLE:
+                    tprint_info(f"🔧 Optimizing hardware for {len(context.X)} samples...")
+                
                 optimization_config = self.hardware_manager.optimize_for_task(
                     "hyperparameter_optimization", 
                     len(context.X)
@@ -268,24 +319,41 @@ class HPOEngine:
                     # Update context with hardware optimization settings
                     if 'workers' in optimization_config:
                         context.max_workers = optimization_config['workers']
-                        self.logger.info(f"Set max_workers to {context.max_workers}")
+                        if TPRINT_AVAILABLE:
+                            tprint_info(f"👥 Set max_workers to {context.max_workers}")
+                        else:
+                            self.logger.info(f"Set max_workers to {context.max_workers}")
                     
                     if 'memory_limit' in optimization_config:
                         context.memory_limit = optimization_config['memory_limit']
-                        self.logger.info(f"Set memory_limit to {context.memory_limit}GB")
+                        if TPRINT_AVAILABLE:
+                            tprint_info(f"💾 Set memory_limit to {context.memory_limit}GB")
+                        else:
+                            self.logger.info(f"Set memory_limit to {context.memory_limit}GB")
                     
                     if 'batch_size' in optimization_config:
                         context.batch_size = optimization_config['batch_size']
-                        self.logger.info(f"Set batch_size to {context.batch_size}")
+                        if TPRINT_AVAILABLE:
+                            tprint_info(f"📦 Set batch_size to {context.batch_size}")
+                        else:
+                            self.logger.info(f"Set batch_size to {context.batch_size}")
                     
                     # Update engine config if needed
                     if hasattr(self.config, 'max_workers') and 'workers' in optimization_config:
                         self.config.max_workers = optimization_config['workers']
                     
-                    self.logger.info(f"Applied hardware optimization: {optimization_config}")
+                    if TPRINT_AVAILABLE:
+                        tprint_success(f"✅ Applied hardware optimization: {optimization_config}")
+                    else:
+                        self.logger.info(f"Applied hardware optimization: {optimization_config}")
                 else:
-                    self.logger.warning("Hardware optimization returned no configuration")
+                    if TPRINT_AVAILABLE:
+                        tprint_warning("⚠️ Hardware optimization returned no configuration")
+                    else:
+                        self.logger.warning("Hardware optimization returned no configuration")
         except Exception as e:
+            if TPRINT_AVAILABLE:
+                tprint_error(f"❌ Hardware optimization failed: {e}")
             raise HardwareOptimizationError(f"Hardware optimization failed: {e}") from e
     
     def _apply_vectorbt_optimization(self, context: OptimizationContext) -> None:
@@ -295,21 +363,36 @@ class HPOEngine:
                 # Check if VectorBT is actually available
                 try:
                     import vectorbt as vbt
+                    if TPRINT_AVAILABLE:
+                        tprint_info("⚡ VectorBT detected, applying optimizations...")
+                    
                     # Apply VectorBT optimizations if available
                     if hasattr(self.vectorbt_optimizer, 'optimize_rolling_operations'):
                         # Apply rolling operations optimization
                         context.X = self.vectorbt_optimizer.optimize_rolling_operations(
                             context.X, ['rolling_mean', 'rolling_std']
                         )
-                        self.logger.info("Applied VectorBT rolling operations optimization")
+                        if TPRINT_AVAILABLE:
+                            tprint_success("✅ Applied VectorBT rolling operations optimization")
+                        else:
+                            self.logger.info("Applied VectorBT rolling operations optimization")
                     else:
-                        self.logger.warning("VectorBT optimizer does not implement optimize_rolling_operations")
+                        if TPRINT_AVAILABLE:
+                            tprint_warning("⚠️ VectorBT optimizer does not implement optimize_rolling_operations")
+                        else:
+                            self.logger.warning("VectorBT optimizer does not implement optimize_rolling_operations")
                 except ImportError:
-                    self.logger.warning("VectorBT is not available - skipping VectorBT optimization")
+                    if TPRINT_AVAILABLE:
+                        tprint_warning("⚠️ VectorBT is not available - skipping VectorBT optimization")
+                    else:
+                        self.logger.warning("VectorBT is not available - skipping VectorBT optimization")
                     # Disable VectorBT for this run
                     context.config.enable_vectorbt = False
         except Exception as e:
-            self.logger.error(f"VectorBT optimization failed: {e}")
+            if TPRINT_AVAILABLE:
+                tprint_error(f"❌ VectorBT optimization failed: {e}")
+            else:
+                self.logger.error(f"VectorBT optimization failed: {e}")
             # Don't raise error, just disable VectorBT
             context.config.enable_vectorbt = False
     

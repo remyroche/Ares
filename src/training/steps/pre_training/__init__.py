@@ -61,6 +61,12 @@ from .feature_generation_final_validation_step import (
     handle_feature_generation_final_validation_step
 )
 
+from .feature_generation_gate_feature_step import (
+    FeatureGenerationGateFeatureStep,
+    GateFeatureGenerationResult,
+    handle_feature_generation_gate_feature_step
+)
+
 from .feature_generation_period_lookback_optimization_step import (
     FeatureGenerationPeriodLookbackOptimizationStep
 )
@@ -80,6 +86,7 @@ step_registry.register("feature_generation_interaction_generation_step_tactician
 step_registry.register("feature_generation_labeling_integration_step", FeatureGenerationLabelingIntegrationStep)
 step_registry.register("feature_generation_final_feature_selection_step", FeatureGenerationFinalFeatureSelectionStep)
 step_registry.register("feature_generation_final_validation_step", FeatureGenerationFinalValidationStep)
+step_registry.register("feature_generation_gate_feature_step", FeatureGenerationGateFeatureStep)
 
 # Export all step classes and handlers
 __all__ = [
@@ -95,6 +102,7 @@ __all__ = [
     "FeatureGenerationLabelingIntegrationStep",
     "FeatureGenerationFinalFeatureSelectionStep",
     "FeatureGenerationFinalValidationStep",
+    "FeatureGenerationGateFeatureStep",
 
     # Result classes
     "DataValidationResult",
@@ -106,6 +114,7 @@ __all__ = [
     "LabelingIntegrationResult",
     "FinalFeatureSelectionResult",
     "FinalValidationResult",
+    "GateFeatureGenerationResult",
 
     # Command handlers
     "handle_feature_generation_data_validation_step",
@@ -117,7 +126,8 @@ __all__ = [
     "handle_feature_generation_interaction_generation_step_tactician",
     "handle_feature_generation_labeling_integration_step",
     "handle_feature_generation_final_feature_selection_step",
-    "handle_feature_generation_final_validation_step"
+    "handle_feature_generation_final_validation_step",
+    "handle_feature_generation_gate_feature_step"
 ]
 
 # Step execution order
@@ -125,6 +135,7 @@ STEP_EXECUTION_ORDER = [
     "feature_generation_data_validation_step",
     "feature_generation_labeling_integration_step",  # Moved to step 2
     "feature_generation_feature_generation_step",
+    "feature_generation_gate_feature_step",  # Gate features after feature generation
     "feature_generation_feature_selection_step",
     "feature_generation_period_lookback_optimization_step",  # Merged period + lookback optimization
     "feature_generation_interaction_generation_step_analyst",
@@ -138,6 +149,7 @@ STEP_DESCRIPTIONS = {
     "feature_generation_data_validation_step": "Data validation and quality assessment",
     "feature_generation_labeling_integration_step": "Independent labeling integration (moved to step 2)",
     "feature_generation_feature_generation_step": "Feature Bank generation (16 categories: momentum, volatility, trend, volume, support/resistance, returns, oscillator, candlestick, entropy, order_flow, acceleration, cross_timeframe, interaction, microstructure, advanced_statistical, spectral_wavelet)",
+    "feature_generation_gate_feature_step": "Gate feature generation for quality protection and monitoring",
     "feature_generation_feature_selection_step": "Intelligent feature selection (4-45 features, -10% early pruning)",
     "feature_generation_period_lookback_optimization_step": "Concurrent period + lookback optimization (min 2 periods per feature, no recency bias)",
     "feature_generation_interaction_generation_step_analyst": "Analyst mode: Three-phase LGBM+SHAP interaction generation (variant generation, refinement, deep discovery)",

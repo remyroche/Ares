@@ -173,6 +173,7 @@ class SimplifiedAresLauncher:
                 'feature_generation_data_validation_step',
                 'feature_generation_labeling_integration_step',
                 'feature_generation_feature_generation_step',
+                'feature_generation_gate_feature_step',
                 'feature_generation_period_lookback_optimization_step',
                 'feature_generation_feature_selection_step',
                 'feature_generation_interaction_generation_step_analyst',

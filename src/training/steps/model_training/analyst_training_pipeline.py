@@ -37,6 +37,7 @@ class AnalystTrainingPipelineConfig:
     ensemble_models: bool = True
     output_directory: str = "generated/analyst_training_pipeline"
     enable_negative_learning: bool = False
+    enable_gate_features: bool = True
     enable_enhanced_validation: bool = True
     timeframe: str = "15m"
     symbol: str = "ETHUSDT"

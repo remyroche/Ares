@@ -176,8 +176,8 @@ class MLModelTrainerConfig:
     verbose: bool = True
     
     def __post_init__(self):
-        """Initialize process pool for CPU-bound training."""
-        self._process_pool = ProcessPoolExecutor(max_workers=self.max_workers)
+        """Initialize configuration."""
+        pass
     
     def get_mode_scaling_factor(self) -> float:
         """Get scaling factor based on mode."""
@@ -224,6 +224,9 @@ class MLModelTrainer:
         """
         self.config = config
         self.logger = logger or system_logger
+        
+        # Initialize process pool for CPU-bound training
+        self._process_pool = ProcessPoolExecutor(max_workers=self.config.max_workers)
         
         # Initialize components
         self._initialize_components()
@@ -460,11 +463,9 @@ class MLModelTrainer:
         if not base_models:
             raise ValueError("No enabled base models found for ensemble training")
         
-        # Generate OOF predictions
-        oof, oof_proba, fold_idx = self._oof_predictions(base_models, data['features'], data['targets'], config, task_type)
-        
-        # Calculate diversity metrics
-        diversity_metrics = self._diversity_metrics(oof)
+        # OOF is produced inside the stacker; compute diversity from bundle oof_matrix if desired
+        # Calculate diversity metrics from base model predictions if available
+        diversity_metrics = {}
         tprint_data_format(f"Diversity metrics: {diversity_metrics}", LogLevel.INFO)
         
         # Train stacking ensemble
@@ -568,6 +569,18 @@ class MLModelTrainer:
         ensemble_score = ensemble_metrics.get(metric_key, 0.0)
         
         return float(ensemble_score - best_individual)
+    
+    def _make_scorer(self, name: str, kwargs: dict):
+        """Create a scorer with proper parameters."""
+        from sklearn.metrics import make_scorer, f1_score, precision_score, recall_score
+        
+        if name == "f1":
+            return make_scorer(f1_score, **kwargs)
+        if name == "precision":
+            return make_scorer(precision_score, **kwargs)
+        if name == "recall":
+            return make_scorer(recall_score, **kwargs)
+        return name  # built-in string scorers
     
     async def _save_ensemble_artifacts(self, bundle: Dict, oof: Dict[str, np.ndarray], 
                                      oof_proba: Dict[str, np.ndarray], fold_idx: np.ndarray, 
@@ -1175,7 +1188,7 @@ class MLModelTrainer:
                 else:
                     # Run base model training in parallel
                     task = loop.run_in_executor(
-                        self.config._process_pool, 
+                        self._process_pool, 
                         self._train_model_type_sync, 
                         data, model_type, configs[model_type]
                     )
@@ -1588,7 +1601,9 @@ class MLModelTrainer:
         if model_key in {"LIGHTGBM", "LIGHTGBM_PATCHTST", "STACKER_LGBM_CALIBRATED"}:
             from lightgbm import LGBMClassifier, LGBMRegressor
             cls = LGBMClassifier if is_classification else LGBMRegressor
-            return cls(**merged, random_state=42, verbose=-1, n_jobs=1)
+            if "n_jobs" not in merged and "nthread" not in merged and "thread_count" not in merged:
+                merged["n_jobs"] = -1 if cls.__name__.startswith("LGBM") else merged.get("n_jobs", -1)
+            return cls(**merged, random_state=42, verbose=-1)
         
         elif model_key == "CATBOOST":
             from catboost import CatBoostClassifier, CatBoostRegressor
@@ -1598,12 +1613,16 @@ class MLModelTrainer:
         elif model_key == "XGBOOST":
             from xgboost import XGBClassifier, XGBRegressor
             cls = XGBClassifier if is_classification else XGBRegressor
-            return cls(**merged, random_state=42, verbosity=0, n_jobs=1)
+            if "n_jobs" not in merged and "nthread" not in merged and "thread_count" not in merged:
+                merged["n_jobs"] = -1
+            return cls(**merged, random_state=42, verbosity=0)
         
         # Fallback
         from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
         cls = RandomForestClassifier if is_classification else RandomForestRegressor
-        return cls(**merged, random_state=42, n_jobs=1)
+        if "n_jobs" not in merged and "nthread" not in merged and "thread_count" not in merged:
+            merged["n_jobs"] = -1
+        return cls(**merged, random_state=42)
     
     def _evaluate_model_score(self, model, X: np.ndarray, y: np.ndarray, recipe: Dict[str, Any], task_type: str) -> float:
         """Evaluate model score for HPO using YAML metrics."""

@@ -589,12 +589,6 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             tprint_info(f"📊 Feature matrix: {features_df.shape}, Target: {targets.shape}")
             tprint_info(f"💾 Memory usage: Features={features_df.memory_usage(deep=True).sum() / 1024 / 1024:.2f}MB")
             
-            # Identify and protect gate features
-            gate_features = self._identify_gate_features(features_df)
-            if gate_features:
-                tprint_info(f"🛡️ Identified {len(gate_features)} gate features for protection: {gate_features}")
-            else:
-                tprint_info("ℹ️ No gate features identified in the feature set")
             
             # Stage 1: PCA + Approximate MI (→ ~200 features)
             tprint_info("=" * 80)
@@ -604,8 +598,6 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             with tprint_timer("stage1_pca_mi", level=LogLevel.PERFORMANCE):
                 features_200 = await self._stage1_pca_mi_filter(features_df, targets)
             
-            # Protect gate features in Stage 1 selection
-            features_200 = self._protect_gate_features(features_200, gate_features)
             
             self.performance_stats['stage_times']['stage1_pca_mi'] = time.time() - stage1_start
             tprint_performance("Stage 1: PCA + MI Filter", time.time() - stage1_start)
@@ -626,8 +618,6 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
                     features_df[features_200], targets
                 )
             
-            # Protect gate features in Stage 2 selection
-            features_150 = self._protect_gate_features(features_150, gate_features)
             
             self.performance_stats['stage_times']['stage2_mrmr'] = time.time() - stage2_start
             tprint_performance("Stage 2: mRMR Selection", time.time() - stage2_start)
@@ -648,8 +638,6 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
                     features_df[features_150], targets
                 )
             
-            # Protect gate features in Stage 3 selection
-            features_100 = self._protect_gate_features(features_100, gate_features)
             
             self.performance_stats['stage_times']['stage3_lasso_stability'] = time.time() - stage3_start
             tprint_performance("Stage 3: LASSO + Stability Selection", time.time() - stage3_start)
@@ -670,10 +658,6 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
                     features_df[features_100], targets
                 )
             
-            # Protect gate features in final selection results
-            for key in ['features_60', 'features_50', 'features_40']:
-                if key in result_dict:
-                    result_dict[key] = self._protect_gate_features(result_dict[key], gate_features)
             
             self.performance_stats['stage_times']['stage4_lgbm_rfe_shap'] = time.time() - stage4_start
             tprint_performance("Stage 4: LGBM + RFE + SHAP", time.time() - stage4_start)

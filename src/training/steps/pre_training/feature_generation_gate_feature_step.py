@@ -35,6 +35,9 @@ from sklearn.tree import DecisionTreeClassifier
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.metrics import log_loss
 import warnings
+import os
+import json
+import time
 
 # VectorBT imports
 from src.vectorbt import (
@@ -1343,8 +1346,20 @@ class FeatureGenerationGateFeatureStep(BaseStep):
                     gate_result['stability_results']
                 )
             
+            # Generate comprehensive report
+            execution_time = time.time() - start_time
+            report_result = self._generate_comprehensive_report(
+                gate_result, features_df, targets_series, execution_time
+            )
+            
+            if report_result['success']:
+                tprint_success(f"✅ Comprehensive report generated: {len(report_result['report_files'])} files")
+            else:
+                tprint_warning(f"⚠️ Report generation failed: {report_result.get('error', 'Unknown error')}")
+            
             tprint_success(f"✅ Gate feature generation completed successfully")
             tprint_result(f"🎯 Generated {len(gate_features_df.columns)} gate features")
+            tprint_performance(f"Execution time: {execution_time:.2f} seconds")
             
             return {
                 'success': True,
@@ -1352,6 +1367,8 @@ class FeatureGenerationGateFeatureStep(BaseStep):
                 'total_gate_features': len(gate_features_df.columns),
                 'selected_gate_features': gate_result['selected_gate_features'],
                 'gate_status': gate_result['gate_status'],
+                'execution_time': execution_time,
+                'report_files': report_result.get('report_files', {}),
                 'step': 'feature_generation_gate_feature_step'
             }
             
@@ -1402,3 +1419,409 @@ async def handle_feature_generation_gate_feature_step(config: Dict[str, Any]) ->
             'error': error_msg,
             'step': 'feature_generation_gate_feature_step'
         }
+    
+    def _generate_comprehensive_report(self, gate_result: Dict[str, Any], 
+                                     features_df: pd.DataFrame, 
+                                     targets_series: pd.Series,
+                                     execution_time: float) -> Dict[str, Any]:
+        """
+        Generate comprehensive report with detailed metrics and analysis.
+        
+        Args:
+            gate_result: Gate feature generation results
+            features_df: Input features DataFrame
+            targets_series: Target values Series
+            execution_time: Total execution time
+            
+        Returns:
+            Dictionary containing report data
+        """
+        tprint_step("📊 Generating comprehensive gate feature report")
+        
+        try:
+            # Get current timestamp for filename
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            
+            # Extract gate features DataFrame
+            gate_features_df = gate_result.get('gate_features_df')
+            gate_rules = gate_result.get('gate_rules', {})
+            stability_results = gate_result.get('stability_results', {})
+            gate_policies = gate_result.get('gate_policies', {})
+            
+            # Calculate comprehensive metrics
+            report_data = {
+                'timestamp': timestamp,
+                'execution_time': execution_time,
+                'input_data': {
+                    'features_shape': features_df.shape,
+                    'features_memory_mb': features_df.memory_usage(deep=True).sum() / 1024 / 1024,
+                    'features_dtypes': features_df.dtypes.value_counts().to_dict(),
+                    'targets_shape': targets_series.shape,
+                    'targets_memory_mb': targets_series.memory_usage(deep=True).sum() / 1024 / 1024,
+                    'targets_stats': {
+                        'mean': float(targets_series.mean()),
+                        'std': float(targets_series.std()),
+                        'min': float(targets_series.min()),
+                        'max': float(targets_series.max()),
+                        'skewness': float(targets_series.skew()),
+                        'kurtosis': float(targets_series.kurtosis())
+                    },
+                    'targets_value_counts': targets_series.value_counts().to_dict()
+                },
+                'gate_features': {
+                    'total_features': len(gate_features_df.columns) if gate_features_df is not None else 0,
+                    'features_shape': gate_features_df.shape if gate_features_df is not None else (0, 0),
+                    'features_memory_mb': gate_features_df.memory_usage(deep=True).sum() / 1024 / 1024 if gate_features_df is not None else 0,
+                    'feature_names': list(gate_features_df.columns) if gate_features_df is not None else [],
+                    'feature_stats': {}
+                },
+                'gate_rules': {
+                    'total_rule_sets': len(gate_rules),
+                    'rule_sets': {}
+                },
+                'stability_analysis': {
+                    'total_methods': len(stability_results),
+                    'methods': {}
+                },
+                'gate_policies': {
+                    'total_policies': len(gate_policies),
+                    'policy_types': list(gate_policies.keys())
+                },
+                'performance_metrics': {
+                    'execution_time_seconds': execution_time,
+                    'features_per_second': len(gate_features_df.columns) / execution_time if gate_features_df is not None and execution_time > 0 else 0,
+                    'memory_efficiency': 'optimized' if hasattr(self, '_memory_optimized') else 'standard'
+                }
+            }
+            
+            # Add detailed gate feature statistics
+            if gate_features_df is not None:
+                for col in gate_features_df.columns:
+                    col_data = gate_features_df[col]
+                    report_data['gate_features']['feature_stats'][col] = {
+                        'dtype': str(col_data.dtype),
+                        'unique_values': int(col_data.nunique()),
+                        'null_count': int(col_data.isnull().sum()),
+                        'null_ratio': float(col_data.isnull().sum() / len(col_data)),
+                        'mean': float(col_data.mean()) if col_data.dtype in ['float64', 'int64'] else None,
+                        'std': float(col_data.std()) if col_data.dtype in ['float64', 'int64'] else None,
+                        'min': float(col_data.min()) if col_data.dtype in ['float64', 'int64'] else None,
+                        'max': float(col_data.max()) if col_data.dtype in ['float64', 'int64'] else None,
+                        'value_counts': col_data.value_counts().to_dict() if col_data.nunique() <= 10 else 'too_many_values'
+                    }
+            
+            # Add gate rules analysis
+            for method, rules in gate_rules.items():
+                report_data['gate_rules']['rule_sets'][method] = {
+                    'total_rules': len(rules),
+                    'rules': []
+                }
+                
+                for i, rule in enumerate(rules):
+                    rule_info = {
+                        'rule_id': i,
+                        'conditions': rule.get('conditions', []),
+                        'prediction': rule.get('prediction', 0),
+                        'samples': rule.get('samples', 0),
+                        'confidence': rule.get('confidence', 0.0),
+                        'stability_ratio': rule.get('stability_ratio', 0.0)
+                    }
+                    report_data['gate_rules']['rule_sets'][method]['rules'].append(rule_info)
+            
+            # Add stability analysis
+            for method, stability in stability_results.items():
+                report_data['stability_analysis']['methods'][method] = {
+                    'total_rules': stability.get('total_rules', 0),
+                    'stable_rules': stability.get('stable_rules', 0),
+                    'stability_ratio': stability.get('stability_ratio', 0.0),
+                    'error': stability.get('error', None)
+                }
+            
+            # Generate markdown report
+            markdown_report = self._generate_markdown_report(report_data)
+            
+            # Generate CSV report
+            csv_data = self._generate_csv_report(report_data, gate_features_df)
+            
+            # Save reports to outcomes directory
+            outcomes_dir = "outcomes"
+            os.makedirs(outcomes_dir, exist_ok=True)
+            
+            # Save markdown report
+            md_filename = f"gate_feature_report_{timestamp}.md"
+            md_path = os.path.join(outcomes_dir, md_filename)
+            with open(md_path, 'w') as f:
+                f.write(markdown_report)
+            
+            # Save CSV report
+            csv_filename = f"gate_feature_metrics_{timestamp}.csv"
+            csv_path = os.path.join(outcomes_dir, csv_filename)
+            csv_data.to_csv(csv_path, index=False)
+            
+            # Save JSON report
+            json_filename = f"gate_feature_data_{timestamp}.json"
+            json_path = os.path.join(outcomes_dir, json_filename)
+            with open(json_path, 'w') as f:
+                json.dump(report_data, f, indent=2, default=str)
+            
+            tprint_success(f"✅ Comprehensive report generated:")
+            tprint_success(f"   📄 Markdown: {md_path}")
+            tprint_success(f"   📊 CSV: {csv_path}")
+            tprint_success(f"   📋 JSON: {json_path}")
+            
+            return {
+                'success': True,
+                'report_files': {
+                    'markdown': md_path,
+                    'csv': csv_path,
+                    'json': json_path
+                },
+                'report_data': report_data
+            }
+            
+        except Exception as e:
+            tprint_error(f"❌ Failed to generate comprehensive report: {e}")
+            return {'success': False, 'error': str(e)}
+    
+    def _generate_markdown_report(self, report_data: Dict[str, Any]) -> str:
+        """Generate markdown report from report data."""
+        
+        md_content = f"""# Gate Feature Generation Report
+
+**Generated:** {report_data['timestamp']}  
+**Execution Time:** {report_data['execution_time']:.2f} seconds
+
+## Executive Summary
+
+This report provides a comprehensive analysis of the gate feature generation process, including detailed metrics, performance statistics, and rule analysis.
+
+### Key Metrics
+- **Total Gate Features Generated:** {report_data['gate_features']['total_features']}
+- **Input Features:** {report_data['input_data']['features_shape'][1]}
+- **Input Samples:** {report_data['input_data']['features_shape'][0]}
+- **Execution Time:** {report_data['execution_time']:.2f} seconds
+- **Features per Second:** {report_data['performance_metrics']['features_per_second']:.2f}
+
+## Input Data Analysis
+
+### Features
+- **Shape:** {report_data['input_data']['features_shape']}
+- **Memory Usage:** {report_data['input_data']['features_memory_mb']:.2f} MB
+- **Data Types:** {report_data['input_data']['features_dtypes']}
+
+### Targets
+- **Shape:** {report_data['input_data']['targets_shape']}
+- **Memory Usage:** {report_data['input_data']['targets_memory_mb']:.2f} MB
+- **Statistics:**
+  - Mean: {report_data['input_data']['targets_stats']['mean']:.4f}
+  - Std: {report_data['input_data']['targets_stats']['std']:.4f}
+  - Min: {report_data['input_data']['targets_stats']['min']:.4f}
+  - Max: {report_data['input_data']['targets_stats']['max']:.4f}
+  - Skewness: {report_data['input_data']['targets_stats']['skewness']:.4f}
+  - Kurtosis: {report_data['input_data']['targets_stats']['kurtosis']:.4f}
+
+## Gate Features Analysis
+
+### Overview
+- **Total Features:** {report_data['gate_features']['total_features']}
+- **Shape:** {report_data['gate_features']['features_shape']}
+- **Memory Usage:** {report_data['gate_features']['features_memory_mb']:.2f} MB
+
+### Feature Details
+"""
+        
+        # Add feature statistics
+        for feature_name, stats in report_data['gate_features']['feature_stats'].items():
+            md_content += f"""
+#### {feature_name}
+- **Data Type:** {stats['dtype']}
+- **Unique Values:** {stats['unique_values']}
+- **Null Count:** {stats['null_count']} ({stats['null_ratio']:.2%})
+"""
+            if stats['mean'] is not None:
+                md_content += f"- **Mean:** {stats['mean']:.4f}\n"
+                md_content += f"- **Std:** {stats['std']:.4f}\n"
+                md_content += f"- **Min:** {stats['min']:.4f}\n"
+                md_content += f"- **Max:** {stats['max']:.4f}\n"
+        
+        # Add gate rules analysis
+        md_content += f"""
+## Gate Rules Analysis
+
+### Overview
+- **Total Rule Sets:** {report_data['gate_rules']['total_rule_sets']}
+- **Rule Set Types:** {', '.join(report_data['gate_rules']['rule_sets'].keys())}
+
+### Rule Sets Details
+"""
+        
+        for method, rule_set in report_data['gate_rules']['rule_sets'].items():
+            md_content += f"""
+#### {method}
+- **Total Rules:** {rule_set['total_rules']}
+
+**Rules:**
+"""
+            for rule in rule_set['rules']:
+                md_content += f"- **Rule {rule['rule_id']}:** {rule['conditions']} → {rule['prediction']} (confidence: {rule['confidence']:.3f}, samples: {rule['samples']})\n"
+        
+        # Add stability analysis
+        md_content += f"""
+## Stability Analysis
+
+### Overview
+- **Total Methods:** {report_data['stability_analysis']['total_methods']}
+- **Methods:** {', '.join(report_data['stability_analysis']['methods'].keys())}
+
+### Method Details
+"""
+        
+        for method, stability in report_data['stability_analysis']['methods'].items():
+            md_content += f"""
+#### {method}
+- **Total Rules:** {stability['total_rules']}
+- **Stable Rules:** {stability['stable_rules']}
+- **Stability Ratio:** {stability['stability_ratio']:.2%}
+"""
+            if stability['error']:
+                md_content += f"- **Error:** {stability['error']}\n"
+        
+        # Add performance metrics
+        md_content += f"""
+## Performance Metrics
+
+- **Execution Time:** {report_data['performance_metrics']['execution_time_seconds']:.2f} seconds
+- **Features per Second:** {report_data['performance_metrics']['features_per_second']:.2f}
+- **Memory Efficiency:** {report_data['performance_metrics']['memory_efficiency']}
+
+## Gate Policies
+
+- **Total Policies:** {report_data['gate_policies']['total_policies']}
+- **Policy Types:** {', '.join(report_data['gate_policies']['policy_types'])}
+
+## Conclusion
+
+The gate feature generation process successfully created {report_data['gate_features']['total_features']} gate features from {report_data['input_data']['features_shape'][1]} input features in {report_data['execution_time']:.2f} seconds. The generated features include both heuristic-based and data-driven approaches, with comprehensive rule extraction and stability validation.
+
+---
+*Report generated by FeatureGenerationGateFeatureStep on {report_data['timestamp']}*
+"""
+        
+        return md_content
+    
+    def _generate_csv_report(self, report_data: Dict[str, Any], gate_features_df: pd.DataFrame) -> pd.DataFrame:
+        """Generate CSV report from report data."""
+        
+        csv_data = []
+        
+        # Add execution summary
+        csv_data.append({
+            'metric_category': 'execution',
+            'metric_name': 'execution_time_seconds',
+            'value': report_data['execution_time'],
+            'description': 'Total execution time in seconds'
+        })
+        
+        csv_data.append({
+            'metric_category': 'execution',
+            'metric_name': 'features_per_second',
+            'value': report_data['performance_metrics']['features_per_second'],
+            'description': 'Features generated per second'
+        })
+        
+        # Add input data metrics
+        csv_data.append({
+            'metric_category': 'input_data',
+            'metric_name': 'input_features_count',
+            'value': report_data['input_data']['features_shape'][1],
+            'description': 'Number of input features'
+        })
+        
+        csv_data.append({
+            'metric_category': 'input_data',
+            'metric_name': 'input_samples_count',
+            'value': report_data['input_data']['features_shape'][0],
+            'description': 'Number of input samples'
+        })
+        
+        csv_data.append({
+            'metric_category': 'input_data',
+            'metric_name': 'input_memory_mb',
+            'value': report_data['input_data']['features_memory_mb'],
+            'description': 'Input features memory usage in MB'
+        })
+        
+        # Add target statistics
+        for stat_name, stat_value in report_data['input_data']['targets_stats'].items():
+            csv_data.append({
+                'metric_category': 'targets',
+                'metric_name': f'target_{stat_name}',
+                'value': stat_value,
+                'description': f'Target {stat_name}'
+            })
+        
+        # Add gate features metrics
+        csv_data.append({
+            'metric_category': 'gate_features',
+            'metric_name': 'total_gate_features',
+            'value': report_data['gate_features']['total_features'],
+            'description': 'Total number of gate features generated'
+        })
+        
+        csv_data.append({
+            'metric_category': 'gate_features',
+            'metric_name': 'gate_features_memory_mb',
+            'value': report_data['gate_features']['features_memory_mb'],
+            'description': 'Gate features memory usage in MB'
+        })
+        
+        # Add individual gate feature statistics
+        for feature_name, stats in report_data['gate_features']['feature_stats'].items():
+            csv_data.append({
+                'metric_category': 'gate_feature_details',
+                'metric_name': f'{feature_name}_unique_values',
+                'value': stats['unique_values'],
+                'description': f'Unique values in {feature_name}'
+            })
+            
+            csv_data.append({
+                'metric_category': 'gate_feature_details',
+                'metric_name': f'{feature_name}_null_ratio',
+                'value': stats['null_ratio'],
+                'description': f'Null ratio in {feature_name}'
+            })
+            
+            if stats['mean'] is not None:
+                csv_data.append({
+                    'metric_category': 'gate_feature_details',
+                    'metric_name': f'{feature_name}_mean',
+                    'value': stats['mean'],
+                    'description': f'Mean value of {feature_name}'
+                })
+        
+        # Add gate rules metrics
+        csv_data.append({
+            'metric_category': 'gate_rules',
+            'metric_name': 'total_rule_sets',
+            'value': report_data['gate_rules']['total_rule_sets'],
+            'description': 'Total number of rule sets'
+        })
+        
+        for method, rule_set in report_data['gate_rules']['rule_sets'].items():
+            csv_data.append({
+                'metric_category': 'gate_rules',
+                'metric_name': f'{method}_rules_count',
+                'value': rule_set['total_rules'],
+                'description': f'Number of rules in {method}'
+            })
+        
+        # Add stability metrics
+        for method, stability in report_data['stability_analysis']['methods'].items():
+            csv_data.append({
+                'metric_category': 'stability',
+                'metric_name': f'{method}_stability_ratio',
+                'value': stability['stability_ratio'],
+                'description': f'Stability ratio for {method}'
+            })
+        
+        return pd.DataFrame(csv_data)

@@ -406,68 +406,6 @@ class FeatureGenerationFinalValidationStep(BaseStep):
         except Exception as e:
             tprint_warning(f"⚠️ Failed to load final features: {e}")
         
-        # Load gate features from feature_generation_gate_feature_step
-        gate_features = None
-        gate_rules = None
-        try:
-            gate_features = artifact_manager.get_dataframe(
-                'feature_generation_gate_feature_step',
-                'GATE_FEATURES'
-            )
-            if gate_features is not None and not gate_features.empty:
-                tprint_data_preview(gate_features, "gate_features_loaded", level="INFO")
-                tprint_data_format(gate_features, "gate_features_format", level="INFO")
-                tprint_success(f"✅ Loaded gate features: {gate_features.shape}")
-            else:
-                tprint_warning("⚠️ No gate features found, trying alternative names")
-                # Try alternative artifact names
-                for alt_name in ['gate_features', 'GATE_FEATURES', 'gate_feature_dataframe']:
-                    gate_features = artifact_manager.get_dataframe(
-                        'feature_generation_gate_feature_step',
-                        alt_name
-                    )
-                    if gate_features is not None and not gate_features.empty:
-                        tprint_data_preview(gate_features, f"gate_features_loaded_from_{alt_name}", level="INFO")
-                        tprint_data_format(gate_features, f"gate_features_format_from_{alt_name}", level="INFO")
-                        tprint_success(f"✅ Loaded gate features from {alt_name}: {gate_features.shape}")
-                        break
-            
-            # Load gate rules if available
-            try:
-                gate_rules = artifact_manager.get_artifact(
-                    'feature_generation_gate_feature_step',
-                    'GATE_RULES'
-                )
-                if gate_rules:
-                    tprint_info(f"✅ Loaded gate rules: {len(gate_rules)} rule sets")
-            except Exception:
-                tprint_debug("No gate rules found (optional)")
-                
-        except Exception as e:
-            tprint_warning(f"⚠️ Failed to load gate features: {e}")
-        
-        # Combine final features with gate features
-        if final_features is not None and gate_features is not None:
-            try:
-                # Ensure both DataFrames have the same index
-                if not final_features.index.equals(gate_features.index):
-                    tprint_warning("⚠️ Index mismatch between final features and gate features, aligning...")
-                    # Align indices
-                    common_index = final_features.index.intersection(gate_features.index)
-                    final_features = final_features.loc[common_index]
-                    gate_features = gate_features.loc[common_index]
-                
-                # Combine features
-                combined_features = pd.concat([final_features, gate_features], axis=1)
-                tprint_success(f"✅ Combined features: {combined_features.shape} (final: {final_features.shape[1]}, gate: {gate_features.shape[1]})")
-                final_features = combined_features
-                
-            except Exception as e:
-                tprint_warning(f"⚠️ Failed to combine features: {e}")
-                tprint_info("Using only final features without gate features")
-        elif gate_features is not None and final_features is None:
-            tprint_warning("⚠️ Only gate features available, using gate features as final features")
-            final_features = gate_features
         
         # Load targets from feature_generation_labeling_integration_step
         targets = None

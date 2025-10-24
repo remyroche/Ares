@@ -7,6 +7,7 @@ This module provides monitoring and diagnostics for the optimization process.
 from typing import Any, Dict, List, Optional
 import time
 import logging
+import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
 
@@ -20,6 +21,7 @@ class OptimizationMetrics:
     model_name: str
     strategy: str
     start_time: float
+    run_id: str = field(default_factory=lambda: str(uuid.uuid4()))
     end_time: Optional[float] = None
     duration: Optional[float] = None
     n_trials: int = 0
@@ -44,32 +46,37 @@ class OptimizationMonitor:
         self.metrics_history: List[OptimizationMetrics] = []
         self.active_optimizations: Dict[str, OptimizationMetrics] = {}
     
-    def start_optimization(self, model_name: str, strategy: str) -> None:
+    def start_optimization(self, model_name: str, strategy: str) -> str:
         """Start monitoring an optimization process."""
         try:
+            run_id = str(uuid.uuid4())
             metrics = OptimizationMetrics(
                 model_name=model_name,
                 strategy=strategy,
-                start_time=time.time()
+                start_time=time.time(),
+                run_id=run_id
             )
             
-            self.active_optimizations[model_name] = metrics
+            # Use run_id as key to prevent collisions
+            self.active_optimizations[run_id] = metrics
             
             if self.enable_detailed_logging:
-                self.logger.info(f"Started monitoring optimization for {model_name} using {strategy}")
+                self.logger.info(f"Started monitoring optimization for {model_name} using {strategy} (run_id: {run_id})")
+            
+            return run_id
                 
         except Exception as e:
             raise MonitoringError(f"Failed to start monitoring: {e}") from e
     
-    def stop_optimization(self, model_name: str, result: Optional[HPOResult] = None, 
+    def stop_optimization(self, run_id: str, result: Optional[HPOResult] = None, 
                          error: Optional[str] = None) -> None:
         """Stop monitoring an optimization process."""
         try:
-            if model_name not in self.active_optimizations:
-                self.logger.warning(f"No active optimization found for {model_name}")
+            if run_id not in self.active_optimizations:
+                self.logger.warning(f"No active optimization found for run_id: {run_id}")
                 return
             
-            metrics = self.active_optimizations[model_name]
+            metrics = self.active_optimizations[run_id]
             metrics.end_time = time.time()
             metrics.duration = metrics.end_time - metrics.start_time
             
@@ -86,11 +93,11 @@ class OptimizationMonitor:
             
             # Move to history
             self.metrics_history.append(metrics)
-            del self.active_optimizations[model_name]
+            del self.active_optimizations[run_id]
             
             if self.enable_detailed_logging:
                 status = "successful" if metrics.success else "failed"
-                self.logger.info(f"Stopped monitoring {model_name}: {status} in {metrics.duration:.2f}s")
+                self.logger.info(f"Stopped monitoring {metrics.model_name} (run_id: {run_id}): {status} in {metrics.duration:.2f}s")
                 
         except Exception as e:
             raise MonitoringError(f"Failed to stop monitoring: {e}") from e

@@ -128,6 +128,7 @@ class HPOConfig(BaseModel):
     n_trials: int = Field(ge=1, le=10000, description="Number of optimization trials")
     timeout: Optional[float] = Field(gt=0, description="Timeout in seconds")
     random_state: Optional[int] = Field(ge=0, description="Random seed for reproducibility")
+    min_samples: int = Field(ge=1, le=1000, default=10, description="Minimum number of samples required for optimization")
     
     # Optimization strategy
     strategy: OptimizationStrategy = Field(default=OptimizationStrategy.BAYESIAN)

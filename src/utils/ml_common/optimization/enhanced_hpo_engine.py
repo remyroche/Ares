@@ -14,7 +14,7 @@ import time
 import logging
 from typing import Dict, Any, List, Optional, Callable, Union, Tuple
 from dataclasses import dataclass
-from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, as_completed
 import json
 from pathlib import Path
 
@@ -301,27 +301,32 @@ class EnhancedHPOEngine:
             }
             tasks.append(task)
         
-        # Choose executor
-        if self.config.concurrent_strategy == 'process':
-            executor = ProcessPoolExecutor(max_workers=self.config.max_concurrent_models)
-        else:
+        # Choose executor - prefer ProcessPoolExecutor for better parallelism with sklearn
+        if self.config.concurrent_strategy == 'thread':
             executor = ThreadPoolExecutor(max_workers=self.config.max_concurrent_models)
+        else:
+            # Default to process-based parallelism for better performance with sklearn
+            executor = ProcessPoolExecutor(max_workers=self.config.max_concurrent_models)
         
-        # Execute optimizations
+        # Execute optimizations with interleaved results
         results = []
         try:
             with executor:
-                futures = []
-                for task in tasks:
-                    future = executor.submit(self._optimize_single_model_task, task, X, y)
-                    futures.append(future)
+                # Submit all tasks
+                future_to_task = {
+                    executor.submit(self._optimize_single_model_task, task, X, y): task
+                    for task in tasks
+                }
                 
-                for future in futures:
+                # Process results as they complete
+                for future in as_completed(future_to_task):
+                    task = future_to_task[future]
                     try:
                         result = future.result()
                         results.append(result)
+                        logger.info(f"Completed optimization for {task['model_name']}")
                     except Exception as e:
-                        logger.error(f"Concurrent optimization failed: {e}")
+                        logger.error(f"Concurrent optimization failed for {task['model_name']}: {e}")
                         results.append(None)
         except Exception as e:
             logger.error(f"Concurrent optimization error: {e}")

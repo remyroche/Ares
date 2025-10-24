@@ -40,8 +40,66 @@ except Exception as e:
 
 logger = logging.getLogger(__name__)
 
+
+class NumericalStability:
+    """Utilities for numerical stability in financial calculations."""
+    
+    @staticmethod
+    def safe_divide(numerator, denominator, default_value=0.0, min_denominator=1e-8):
+        """Safely divide two numbers with numerical stability checks."""
+        try:
+            import numpy as np
+            numerator = np.asarray(numerator, dtype=np.float64)
+            denominator = np.asarray(denominator, dtype=np.float64)
+            
+            # Check for numerical issues
+            if not np.isfinite(numerator) or not np.isfinite(denominator):
+                return default_value
+                
+            if abs(denominator) < min_denominator:
+                return default_value
+                
+            result = numerator / denominator
+            return result if np.isfinite(result) else default_value
+        except Exception:
+            return default_value
+    
+    @staticmethod
+    def safe_log(value, default_value=0.0, min_value=1e-8):
+        """Safely compute logarithm with numerical stability."""
+        try:
+            import numpy as np
+            value = np.asarray(value, dtype=np.float64)
+            
+            if not np.isfinite(value) or value <= min_value:
+                return default_value
+                
+            result = np.log(value)
+            return result if np.isfinite(result) else default_value
+        except Exception:
+            return default_value
+    
+    @staticmethod
+    def safe_sqrt(value, default_value=0.0):
+        """Safely compute square root with numerical stability."""
+        try:
+            import numpy as np
+            value = np.asarray(value, dtype=np.float64)
+            
+            if not np.isfinite(value) or value < 0:
+                return default_value
+                
+            result = np.sqrt(value)
+            return result if np.isfinite(result) else default_value
+        except Exception:
+            return default_value
+
 class HPODiagnostics:
     """Diagnostic utilities for HPO issues."""
+    
+    # Class-level cache for expensive computations
+    _baseline_cache = {}
+    _leakage_cache = {}
 
     @staticmethod
     def check_for_data_leakage(X: np.ndarray, y: np.ndarray,
@@ -136,7 +194,7 @@ class HPODiagnostics:
         diagnostics["stats"]["class_percentages"] = dict(zip(unique_labels.astype(int), class_percentages))
 
         # ✅ USE ML COMMON: Run comprehensive data leakage detection
-        print("🔍 Running ML Common data leakage detection...")
+        logger.info("🔍 Running ML Common data leakage detection...")
         leakage_check = HPODiagnostics.check_for_data_leakage(X, y)
         if leakage_check.get("has_leakage"):
             diagnostics["issues"].append(
@@ -152,27 +210,51 @@ class HPODiagnostics:
         else:
             diagnostics["stats"]["leakage_detected"] = False
 
-        # Check for feature-target correlation (potential signal)
+        # Check for feature-target correlation (potential signal) with caching
         try:
             from sklearn.ensemble import RandomForestClassifier
             from sklearn.model_selection import cross_val_score, TimeSeriesSplit
 
-            # Quick baseline test with default parameters using TimeSeriesSplit for temporal data
-            rf_baseline = RandomForestClassifier(n_estimators=50, random_state=42, max_depth=5)
-            # Use TimeSeriesSplit to maintain temporal order and prevent data leakage
-            tscv = TimeSeriesSplit(n_splits=3)
-            baseline_scores = cross_val_score(rf_baseline, X, y, cv=tscv, scoring='accuracy')
+            # Create cache key for this dataset
+            cache_key = f"{X.shape}_{y.shape}_{hash(str(X.flat[:10]))}_{hash(str(y[:10]))}"
+            
+            if cache_key in HPODiagnostics._baseline_cache:
+                # Use cached results
+                cached_results = HPODiagnostics._baseline_cache[cache_key]
+                diagnostics["stats"].update(cached_results)
+                logger.info("Using cached baseline model results")
+            else:
+                # Quick baseline test with reduced parameters for faster computation
+                rf_baseline = RandomForestClassifier(
+                    n_estimators=20,  # Reduced from 50
+                    random_state=42, 
+                    max_depth=3,  # Reduced from 5
+                    n_jobs=1  # Single thread for consistency
+                )
+                # Use TimeSeriesSplit to maintain temporal order and prevent data leakage
+                tscv = TimeSeriesSplit(n_splits=3)
+                baseline_scores = cross_val_score(rf_baseline, X, y, cv=tscv, scoring='accuracy')
 
-            diagnostics["stats"]["baseline_accuracy_mean"] = float(np.mean(baseline_scores))
-            diagnostics["stats"]["baseline_accuracy_std"] = float(np.std(baseline_scores))
-            diagnostics["stats"]["baseline_scores"] = baseline_scores.tolist()
+                diagnostics["stats"]["baseline_accuracy_mean"] = float(np.mean(baseline_scores))
+                diagnostics["stats"]["baseline_accuracy_std"] = float(np.std(baseline_scores))
+                diagnostics["stats"]["baseline_scores"] = baseline_scores.tolist()
 
-            # Fit model to get feature importances
-            rf_baseline.fit(X, y)
-            feature_importances = rf_baseline.feature_importances_
-            diagnostics["stats"]["max_feature_importance"] = float(np.max(feature_importances))
-            diagnostics["stats"]["mean_feature_importance"] = float(np.mean(feature_importances))
-            diagnostics["stats"]["nonzero_importance_features"] = int(np.sum(feature_importances > 0.01))
+                # Fit model to get feature importances
+                rf_baseline.fit(X, y)
+                feature_importances = rf_baseline.feature_importances_
+                diagnostics["stats"]["max_feature_importance"] = float(np.max(feature_importances))
+                diagnostics["stats"]["mean_feature_importance"] = float(np.mean(feature_importances))
+                diagnostics["stats"]["nonzero_importance_features"] = int(np.sum(feature_importances > 0.01))
+                
+                # Cache the results
+                HPODiagnostics._baseline_cache[cache_key] = {
+                    "baseline_accuracy_mean": diagnostics["stats"]["baseline_accuracy_mean"],
+                    "baseline_accuracy_std": diagnostics["stats"]["baseline_accuracy_std"],
+                    "baseline_scores": diagnostics["stats"]["baseline_scores"],
+                    "max_feature_importance": diagnostics["stats"]["max_feature_importance"],
+                    "mean_feature_importance": diagnostics["stats"]["mean_feature_importance"],
+                    "nonzero_importance_features": diagnostics["stats"]["nonzero_importance_features"]
+                }
 
             # Check if features have signal
             if np.max(feature_importances) < 0.05:
@@ -293,16 +375,16 @@ class HPODiagnostics:
     @staticmethod
     def print_diagnostics(diagnostics: Dict[str, Any]) -> None:
         """Pretty print diagnostics results."""
-        print("\n" + "="*80)
-        print(f"📊 HPO DIAGNOSTICS: {diagnostics['name']}")
-        print("="*80)
+        logger.info("\n" + "="*80)
+        logger.info(f"📊 HPO DIAGNOSTICS: {diagnostics['name']}")
+        logger.info("="*80)
 
         # Print stats
         stats = diagnostics["stats"]
-        print(f"\n📈 Dataset Stats:")
-        print(f"  • Samples: {stats['n_samples']}")
-        print(f"  • Features: {stats['n_features']}")
-        print(f"  • Classes: {stats['n_classes']}")
+        logger.info(f"\n📈 Dataset Stats:")
+        logger.info(f"  • Samples: {stats['n_samples']}")
+        logger.info(f"  • Features: {stats['n_features']}")
+        logger.info(f"  • Classes: {stats['n_classes']}")
 
         # Dataset quality assessment
         n_samples = stats['n_samples']
@@ -310,97 +392,245 @@ class HPODiagnostics:
         n_classes = stats['n_classes']
 
         if n_samples < 500:
-            print(f"\n⚠️  SMALL DATASET WARNING:")
-            print(f"   • Only {n_samples} samples - prone to overfitting")
-            print(f"   • Consider increasing dataset size for reliable results")
+            logger.warning(f"\n⚠️  SMALL DATASET WARNING:")
+            logger.warning(f"   • Only {n_samples} samples - prone to overfitting")
+            logger.warning(f"   • Consider increasing dataset size for reliable results")
         elif n_samples < 1000:
-            print(f"\n⚠️  MODERATE DATASET SIZE:")
-            print(f"   • {n_samples} samples - use caution with complex models")
+            logger.warning(f"\n⚠️  MODERATE DATASET SIZE:")
+            logger.warning(f"   • {n_samples} samples - use caution with complex models")
 
         if n_features > n_samples / 5:
-            print(f"\n⚠️  HIGH DIMENSIONALITY WARNING:")
-            print(f"   • {n_features} features for {n_samples} samples")
-            print(f"   • Feature selection will be applied to reduce to ~200 features")
-            print(f"   • This will improve generalization and model performance")
+            logger.warning(f"\n⚠️  HIGH DIMENSIONALITY WARNING:")
+            logger.warning(f"   • {n_features} features for {n_samples} samples")
+            logger.warning(f"   • Feature selection will be applied to reduce to ~200 features")
+            logger.warning(f"   • This will improve generalization and model performance")
 
         if "class_distribution" in stats:
-            print(f"\n🎯 Class Distribution:")
+            logger.info(f"\n🎯 Class Distribution:")
             for label, count in stats["class_distribution"].items():
                 percentage = stats["class_percentages"][label]
-                print(f"  • Class {label}: {count} samples ({percentage:.1f}%)")
+                logger.info(f"  • Class {label}: {count} samples ({percentage:.1f}%)")
 
         if "zero_variance_features" in stats:
-            print(f"\n🔍 Feature Variance:")
-            print(f"  • Zero variance features: {stats['zero_variance_features']}")
-            print(f"  • Low variance features: {stats['low_variance_features']}")
-            print(f"  • Mean variance: {stats['mean_feature_variance']:.6f}")
+            logger.info(f"\n🔍 Feature Variance:")
+            logger.info(f"  • Zero variance features: {stats['zero_variance_features']}")
+            logger.info(f"  • Low variance features: {stats['low_variance_features']}")
+            logger.info(f"  • Mean variance: {stats['mean_feature_variance']:.6f}")
 
         # Print baseline model performance
         if "baseline_accuracy_mean" in stats:
-            print(f"\n🎯 Baseline Model Performance (RandomForest default params):")
-            print(f"  • Mean CV accuracy: {stats['baseline_accuracy_mean']:.4f}")
-            print(f"  • Std CV accuracy: {stats['baseline_accuracy_std']:.6f}")
-            print(f"  • CV fold scores: {[f'{s:.4f}' for s in stats['baseline_scores']]}")
+            logger.info(f"\n🎯 Baseline Model Performance (RandomForest default params):")
+            logger.info(f"  • Mean CV accuracy: {stats['baseline_accuracy_mean']:.4f}")
+            logger.info(f"  • Std CV accuracy: {stats['baseline_accuracy_std']:.6f}")
+            logger.info(f"  • CV fold scores: {[f'{s:.4f}' for s in stats['baseline_scores']]}")
 
             if stats['baseline_accuracy_std'] < 0.01:
-                print(f"  ⚠️  VERY LOW VARIANCE across folds - potential issue!")
+                logger.warning(f"  ⚠️  VERY LOW VARIANCE across folds - potential issue!")
 
         # Print feature importance stats
         if "max_feature_importance" in stats:
-            print(f"\n🔬 Feature Importance Analysis:")
-            print(f"  • Max feature importance: {stats['max_feature_importance']:.4f}")
-            print(f"  • Mean feature importance: {stats['mean_feature_importance']:.4f}")
-            print(f"  • Features with >1% importance: {stats['nonzero_importance_features']}/{stats['n_features']}")
+            logger.info(f"\n🔬 Feature Importance Analysis:")
+            logger.info(f"  • Max feature importance: {stats['max_feature_importance']:.4f}")
+            logger.info(f"  • Mean feature importance: {stats['mean_feature_importance']:.4f}")
+            logger.info(f"  • Features with >1% importance: {stats['nonzero_importance_features']}/{stats['n_features']}")
 
             if stats['max_feature_importance'] < 0.05:
-                print(f"  ⚠️  ALL features have very low importance - NO SIGNAL!")
+                logger.warning(f"  ⚠️  ALL features have very low importance - NO SIGNAL!")
 
         # Print issues
         if diagnostics["issues"]:
-            print(f"\n🚨 CRITICAL ISSUES ({len(diagnostics['issues'])}):")
+            logger.error(f"\n🚨 CRITICAL ISSUES ({len(diagnostics['issues'])}):")
             for issue in diagnostics["issues"]:
-                print(f"  {issue}")
+                logger.error(f"  {issue}")
 
         # Print warnings
         if diagnostics["warnings"]:
-            print(f"\n⚠️  WARNINGS ({len(diagnostics['warnings'])}):")
+            logger.warning(f"\n⚠️  WARNINGS ({len(diagnostics['warnings'])}):")
             for warning in diagnostics["warnings"]:
-                print(f"  {warning}")
+                logger.warning(f"  {warning}")
 
         # Print validation result
         if diagnostics["is_valid"]:
-            print(f"\n✅ Data validation PASSED - safe to proceed with HPO")
+            logger.info(f"\n✅ Data validation PASSED - safe to proceed with HPO")
         else:
-            print(f"\n❌ Data validation FAILED - FIX ISSUES BEFORE HPO!")
+            logger.error(f"\n❌ Data validation FAILED - FIX ISSUES BEFORE HPO!")
 
         # Print high score recommendations if applicable
         if "suspicious_scores" in diagnostics and diagnostics["suspicious_scores"]:
-            print(f"\n💡 HIGH SCORE RECOMMENDATIONS:")
-            print(f"   • Use stronger regularization (increase alpha in Ridge/Lasso)")
-            print(f"   • Implement feature selection to reduce dimensionality")
-            print(f"   • Increase dataset size through data augmentation or collection")
-            print(f"   • Use ensemble methods for better generalization")
-            print(f"   • Implement early stopping during training")
+            logger.info(f"\n💡 HIGH SCORE RECOMMENDATIONS:")
+            logger.info(f"   • Use stronger regularization (increase alpha in Ridge/Lasso)")
+            logger.info(f"   • Implement feature selection to reduce dimensionality")
+            logger.info(f"   • Increase dataset size through data augmentation or collection")
+            logger.info(f"   • Use ensemble methods for better generalization")
+            logger.info(f"   • Implement early stopping during training")
 
-        print("="*80 + "\n")
+        logger.info("="*80 + "\n")
 
     @staticmethod
-    def recommend_scoring_metric(diagnostics: Dict[str, Any]) -> str:
-        """Recommend appropriate scoring metric based on data characteristics."""
+    def recommend_scoring_metric(diagnostics: Dict[str, Any], task_type: str = "classification") -> str:
+        """
+        Recommend appropriate scoring metric based on data characteristics and task type.
+        
+        Args:
+            diagnostics: Data diagnostics results
+            task_type: Type of task - "classification", "regression", or "financial"
+            
+        Returns:
+            Recommended scoring metric
+        """
         stats = diagnostics["stats"]
-
-        if stats["n_classes"] == 2:
-            # Binary classification
-            class_percentages = list(stats["class_percentages"].values())
-            max_percentage = max(class_percentages)
-
-            if max_percentage > 70:
-                return "balanced_accuracy"  # For imbalanced data
+        
+        if task_type == "regression":
+            # Regression metrics
+            if stats.get("n_samples", 0) < 1000:
+                return "neg_mean_squared_error"  # MSE for small datasets
             else:
-                return "f1"  # For balanced data
+                return "neg_root_mean_squared_error"  # RMSE for larger datasets
+                
+        elif task_type == "financial":
+            # Financial-specific metrics
+            if stats.get("n_classes", 0) == 2:
+                # Binary financial classification (e.g., buy/sell signals)
+                class_percentages = list(stats.get("class_percentages", {}).values())
+                if class_percentages:
+                    max_percentage = max(class_percentages)
+                    if max_percentage > 70:
+                        return "balanced_accuracy"  # For imbalanced financial data
+                    else:
+                        return "f1"  # For balanced financial data
+                else:
+                    return "f1"  # Default for financial binary classification
+            else:
+                # Financial regression (e.g., price prediction, returns)
+                return "neg_mean_squared_error"
+                
         else:
-            # Multiclass
-            return "f1_macro"  # For multi-class
+            # Default classification behavior
+            if stats["n_classes"] == 2:
+                # Binary classification
+                class_percentages = list(stats["class_percentages"].values())
+                max_percentage = max(class_percentages)
+
+                if max_percentage > 70:
+                    return "balanced_accuracy"  # For imbalanced data
+                else:
+                    return "f1"  # For balanced data
+            else:
+                # Multiclass
+                return "f1_macro"  # For multi-class
+
+class FinancialMetrics:
+    """Financial-specific metrics for optimization with numerical stability."""
+    
+    @staticmethod
+    def sharpe_ratio(y_true, y_pred, risk_free_rate=0.02, min_std=1e-8):
+        """Calculate Sharpe ratio for financial predictions with numerical stability."""
+        try:
+            import numpy as np
+            # Use double precision for financial calculations
+            y_true = np.asarray(y_true, dtype=np.float64)
+            y_pred = np.asarray(y_pred, dtype=np.float64)
+            risk_free_rate = np.float64(risk_free_rate)
+            
+            returns = y_pred - y_true
+            excess_returns = returns - risk_free_rate
+            
+            # Use numerical stability for standard deviation
+            std_returns = np.std(excess_returns, ddof=1)  # Use sample std
+            if std_returns < min_std:
+                return 0.0
+            
+            mean_returns = np.mean(excess_returns)
+            # Check for numerical issues
+            if not np.isfinite(mean_returns) or not np.isfinite(std_returns):
+                return 0.0
+                
+            return mean_returns / std_returns
+        except Exception:
+            return 0.0
+    
+    @staticmethod
+    def max_drawdown(y_true, y_pred):
+        """Calculate maximum drawdown with numerical stability."""
+        try:
+            import numpy as np
+            # Use double precision
+            y_true = np.asarray(y_true, dtype=np.float64)
+            y_pred = np.asarray(y_pred, dtype=np.float64)
+            
+            returns = y_pred - y_true
+            # Check for numerical issues
+            if not np.all(np.isfinite(returns)):
+                return 0.0
+                
+            cumulative = np.cumsum(returns)
+            running_max = np.maximum.accumulate(cumulative)
+            drawdown = cumulative - running_max
+            
+            # Return the most negative drawdown
+            max_dd = np.min(drawdown)
+            return max_dd if np.isfinite(max_dd) else 0.0
+        except Exception:
+            return 0.0
+    
+    @staticmethod
+    def profit_factor(y_true, y_pred, min_loss=1e-8):
+        """Calculate profit factor (gross profit / gross loss) with numerical stability."""
+        try:
+            import numpy as np
+            # Use double precision
+            y_true = np.asarray(y_true, dtype=np.float64)
+            y_pred = np.asarray(y_pred, dtype=np.float64)
+            
+            returns = y_pred - y_true
+            # Check for numerical issues
+            if not np.all(np.isfinite(returns)):
+                return 1.0
+                
+            gross_profit = np.sum(returns[returns > 0])
+            gross_loss = abs(np.sum(returns[returns < 0]))
+            
+            # Numerical stability check
+            if gross_loss < min_loss:
+                if gross_profit > min_loss:
+                    return 1000.0  # Cap at reasonable value instead of inf
+                else:
+                    return 1.0
+            
+            pf = gross_profit / gross_loss
+            # Cap at reasonable values
+            return min(max(pf, 0.0), 1000.0) if np.isfinite(pf) else 1.0
+        except Exception:
+            return 1.0
+    
+    @staticmethod
+    def hit_rate(y_true, y_pred, threshold=0.0):
+        """Calculate hit rate (percentage of correct directional predictions) with numerical stability."""
+        try:
+            import numpy as np
+            # Use double precision
+            y_true = np.asarray(y_true, dtype=np.float64)
+            y_pred = np.asarray(y_pred, dtype=np.float64)
+            
+            # Check for numerical issues
+            if not np.all(np.isfinite(y_true)) or not np.all(np.isfinite(y_pred)):
+                return 0.5
+                
+            y_true_direction = np.sign(y_true)
+            y_pred_direction = np.sign(y_pred)
+            
+            # Calculate hit rate with numerical stability
+            hits = np.sum(y_true_direction == y_pred_direction)
+            total = len(y_true_direction)
+            
+            if total == 0:
+                return 0.5
+                
+            hit_rate = hits / total
+            return hit_rate if np.isfinite(hit_rate) else 0.5
+        except Exception:
+            return 0.5
+
 
 class ImprovedHPOConfig:
     """Improved HPO configuration based on diagnostics."""
@@ -443,7 +673,38 @@ class ImprovedHPOConfig:
         return search_space
 
     @staticmethod
-    def get_improved_hpo_params(diagnostics: Dict[str, Any]) -> Dict[str, Any]:
+    def get_improved_financial_search_space(diagnostics: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Get improved search space for financial models.
+        
+        Includes financial-specific parameters and risk-aware settings.
+        """
+        n_samples = diagnostics["stats"]["n_samples"]
+        n_features = diagnostics["stats"]["n_features"]
+
+        # Base search space optimized for financial data
+        search_space = {
+            'n_estimators': {'type': 'int', 'low': 200, 'high': 1000},
+            'max_depth': {'type': 'int', 'low': 3, 'high': 12},  # Shallow trees for financial data
+            'min_samples_split': {'type': 'int', 'low': 5, 'high': 50},  # Higher for stability
+            'min_samples_leaf': {'type': 'int', 'low': 2, 'high': 20},  # Higher for stability
+            'max_features': {'type': 'categorical', 'choices': ['sqrt', 'log2', 0.3, 0.5]},
+            'bootstrap': {'type': 'categorical', 'choices': [True, False]},
+            'class_weight': {'type': 'categorical', 'choices': ['balanced', 'balanced_subsample', None]},
+            'min_impurity_decrease': {'type': 'float', 'low': 0.0, 'high': 0.01},  # Financial stability
+            'ccp_alpha': {'type': 'float', 'low': 0.0, 'high': 0.1}  # Cost complexity pruning
+        }
+
+        # Adjust for small datasets
+        if n_samples < 1000:
+            search_space['n_estimators']['high'] = 500
+            search_space['min_samples_leaf']['low'] = 5
+            search_space['min_samples_split']['low'] = 10
+
+        return search_space
+
+    @staticmethod
+    def get_improved_hpo_params(diagnostics: Dict[str, Any], task_type: str = "classification") -> Dict[str, Any]:
         """
         Get improved HPO parameters.
 
@@ -453,11 +714,12 @@ class ImprovedHPOConfig:
         - Better acquisition function (EI instead of UCB)
         - Added pruning for bad trials
         - ✅ Uses ml_common utilities for better CV
+        - ✅ Supports financial and regression task types
         """
         stats = diagnostics["stats"]
 
-        # Recommend scoring metric
-        scoring = HPODiagnostics.recommend_scoring_metric(diagnostics)
+        # Recommend scoring metric based on task type
+        scoring = HPODiagnostics.recommend_scoring_metric(diagnostics, task_type)
 
         # ✅ USE ML COMMON: Better CV strategy with temporal validation
         if DATA_LEAKAGE_UTILS_AVAILABLE:
@@ -509,22 +771,42 @@ class ImprovedHPOConfig:
 class HPOMonitor:
     """Monitor HPO progress and detect issues in real-time."""
 
-    def __init__(self):
+    def __init__(self, check_window_size: int = 5, low_variance_threshold: int = 2, 
+                 variance_threshold: float = 1e-6):
+        """
+        Initialize HPO monitor with configurable thresholds.
+        
+        Args:
+            check_window_size: Number of recent trials to check for issues
+            low_variance_threshold: Maximum number of unique scores to trigger warning
+            variance_threshold: Minimum variance threshold to trigger warning
+        """
         self.trial_scores = []
         self.trial_params = []
+        self.check_window_size = check_window_size
+        self.low_variance_threshold = low_variance_threshold
+        self.variance_threshold = variance_threshold
 
     def record_trial(self, trial_number: int, score: float, params: Dict[str, Any]) -> None:
         """Record trial result."""
         self.trial_scores.append(score)
         self.trial_params.append(params)
 
-        # Check for issues every 5 trials
-        if len(self.trial_scores) >= 5 and trial_number % 5 == 0:
+        # Check for issues with configurable window size
+        if len(self.trial_scores) >= self.check_window_size and trial_number % self.check_window_size == 0:
             self._check_for_issues()
+        elif len(self.trial_scores) < self.check_window_size and len(self.trial_scores) >= 2:
+            # Check with available trials if we have at least 2
+            self._check_for_issues(len(self.trial_scores))
 
-    def _check_for_issues(self) -> None:
+    def _check_for_issues(self, window_size: Optional[int] = None) -> None:
         """Check for common issues during optimization."""
-        recent_scores = self.trial_scores[-5:]
+        if window_size is None:
+            window_size = self.check_window_size
+        
+        # Use available trials if we have fewer than the window size
+        actual_window = min(window_size, len(self.trial_scores))
+        recent_scores = self.trial_scores[-actual_window:]
 
         # Check for identical scores
         unique_scores = len(set(recent_scores))
@@ -537,9 +819,9 @@ class HPOMonitor:
                 f"   3. Features may have no signal (check feature variance)\n"
                 f"   4. Cross-validation may be broken (check CV strategy)"
             )
-        elif unique_scores <= 2:
+        elif unique_scores <= self.low_variance_threshold:
             logger.warning(
-                f"⚠️  Very low score variance: only {unique_scores} unique scores in last 5 trials"
+                f"⚠️  Very low score variance: only {unique_scores} unique scores in last {actual_window} trials"
             )
 
         # Check for zero scores
@@ -551,14 +833,15 @@ class HPOMonitor:
 
         # Calculate variance
         score_variance = np.var(recent_scores)
-        if score_variance < 1e-6:
+        if score_variance < self.variance_threshold:
             logger.warning(
                 f"⚠️  Score variance extremely low: {score_variance:.10f}\n"
                 f"   HPO is not exploring effectively!"
             )
 
 def apply_hpo_fixes(X: np.ndarray, y: np.ndarray,
-                    model_type: str = "random_forest") -> Tuple[Dict[str, Any], Dict[str, Any]]:
+                    model_type: str = "random_forest", 
+                    task_type: str = "classification") -> Tuple[Dict[str, Any], Dict[str, Any]]:
     """
     Apply all HPO fixes and return improved configuration.
 
@@ -566,6 +849,7 @@ def apply_hpo_fixes(X: np.ndarray, y: np.ndarray,
         X: Feature matrix
         y: Target vector
         model_type: Type of model for search space
+        task_type: Type of task - "classification", "regression", or "financial"
 
     Returns:
         Tuple of (search_space, hpo_params)
@@ -582,16 +866,20 @@ def apply_hpo_fixes(X: np.ndarray, y: np.ndarray,
             "See diagnostic output above for details."
         )
 
-    # Get improved configuration
+    # Get improved configuration based on model and task type
     if model_type == "random_forest":
-        search_space = ImprovedHPOConfig.get_improved_random_forest_search_space(diagnostics)
+        if task_type == "financial":
+            search_space = ImprovedHPOConfig.get_improved_financial_search_space(diagnostics)
+        else:
+            search_space = ImprovedHPOConfig.get_improved_random_forest_search_space(diagnostics)
     else:
         raise ValueError(f"Unsupported model type: {model_type}")
 
-    hpo_params = ImprovedHPOConfig.get_improved_hpo_params(diagnostics)
+    hpo_params = ImprovedHPOConfig.get_improved_hpo_params(diagnostics, task_type)
 
     logger.info(f"✅ Using improved scoring metric: {hpo_params['scoring']}")
     logger.info(f"✅ Using CV strategy: {hpo_params['cv_description']}")
     logger.info(f"✅ Running {hpo_params['n_trials']} trials with early stopping")
+    logger.info(f"✅ Task type: {task_type}")
 
     return search_space, hpo_params

@@ -11,7 +11,7 @@ import hashlib
 import pickle
 import logging
 from dataclasses import dataclass
-from collections import OrderedDict
+from collections import OrderedDict, deque
 
 from ..exceptions import CacheError
 
@@ -52,6 +52,7 @@ class OptimizationCache:
         self.max_memory_bytes = max_memory_mb * 1024 * 1024
         
         self.cache: OrderedDict[Hashable, CacheEntry] = OrderedDict()
+        self.access_order: deque = deque()  # Track access order for O(1) LRU
         self.current_memory_bytes = 0
         
         self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
@@ -87,6 +88,11 @@ class OptimizationCache:
             # Update access count and move to end (LRU)
             entry.access_count += 1
             self.cache.move_to_end(key)
+            
+            # Update access order for O(1) LRU
+            if key in self.access_order:
+                self.access_order.remove(key)
+            self.access_order.append(key)
             
             self.hits += 1
             return entry.value
@@ -155,17 +161,28 @@ class OptimizationCache:
             entry = self.cache[key]
             self.current_memory_bytes -= entry.size_bytes
             del self.cache[key]
+            # Remove from access order if present
+            if key in self.access_order:
+                self.access_order.remove(key)
             self.evictions += 1
     
     def _evict_oldest(self) -> None:
-        """Evict oldest (least recently used) entry."""
-        if self.cache:
+        """Evict oldest (least recently used) entry using O(1) deque operations."""
+        if self.cache and self.access_order:
+            # Get the least recently used key from the front of the deque
+            oldest_key = self.access_order.popleft()
+            # Remove from cache if it still exists
+            if oldest_key in self.cache:
+                self._evict(oldest_key)
+        elif self.cache:
+            # Fallback to OrderedDict method if deque is empty
             oldest_key = next(iter(self.cache))
             self._evict(oldest_key)
     
     def clear(self) -> None:
         """Clear all cache entries."""
         self.cache.clear()
+        self.access_order.clear()
         self.current_memory_bytes = 0
         self.logger.info("Cache cleared")
     
@@ -224,22 +241,32 @@ def create_cache_key(*args, **kwargs) -> str:
             if hasattr(arg, '__hash__') and not isinstance(arg, (list, dict, set)):
                 key_parts.append(str(arg))
             elif isinstance(arg, (list, tuple)):
-                key_parts.append(str(sorted(arg) if isinstance(arg, list) else arg))
+                # Preserve order for lists and tuples - use tuple() to maintain order
+                key_parts.append(str(tuple(arg)))
             else:
-                key_parts.append(str(hash(str(arg))))
+                # Use a more robust hash for complex objects
+                try:
+                    key_parts.append(str(hash(arg)))
+                except TypeError:
+                    # For unhashable objects, use string representation
+                    key_parts.append(str(arg))
         
         # Handle keyword arguments
         for key, value in sorted(kwargs.items()):
             if hasattr(value, '__hash__') and not isinstance(value, (list, dict, set)):
                 key_parts.append(f"{key}={value}")
             elif isinstance(value, (list, tuple)):
-                key_parts.append(f"{key}={sorted(value) if isinstance(value, list) else value}")
+                # Preserve order for lists and tuples
+                key_parts.append(f"{key}={tuple(value)}")
             else:
-                key_parts.append(f"{key}={hash(str(value))}")
+                try:
+                    key_parts.append(f"{key}={hash(value)}")
+                except TypeError:
+                    key_parts.append(f"{key}={str(value)}")
         
-        # Create hash from combined parts
+        # Create hash from combined parts using SHA-256 for better collision resistance
         key_str = "|".join(key_parts)
-        return hashlib.md5(key_str.encode()).hexdigest()
+        return hashlib.sha256(key_str.encode()).hexdigest()
         
     except Exception:
         # Fallback to simple string representation
@@ -274,6 +301,8 @@ class ModelEvaluationCache:
             data_info = {
                 'X_shape': X.shape if hasattr(X, 'shape') else len(X),
                 'y_shape': y.shape if hasattr(y, 'shape') else len(y),
+                'X_dtype': str(X.dtype) if hasattr(X, 'dtype') else str(type(X)),
+                'y_dtype': str(y.dtype) if hasattr(y, 'dtype') else str(type(y)),
                 'X_sample': X.flat[:100].tolist() if hasattr(X, 'flat') else X[:100],
                 'y_sample': y.flat[:100].tolist() if hasattr(y, 'flat') else y[:100]
             }

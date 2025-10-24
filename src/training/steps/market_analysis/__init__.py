@@ -23,16 +23,17 @@ from .components.regime_ensemble_training import RegimeEnsembleTrainingStep
 from .components.sr_parameter_optimization import SRParameterOptimizationStep
 from .regime_clustering_step import RegimeClusteringStep
 
-# Register existing components
-step_registry.register("sr_clustering", SRClusteringComponent)
-step_registry.register("sr_detection", SRDetectionComponent)
-step_registry.register("hdbscan_clustering", HDBSCANRegimeDiscoveryStep)
 
-# Register migrated steps
-step_registry.register("sr_detection_step", SRDetectionStep)
-step_registry.register("model_persistence", ModelPersistenceStep)
-step_registry.register("regime_data_splitting", RegimeDataSplittingStep)
+# Register market analysis steps for pre-training pipeline
+# Note: Individual step files also register themselves, so this is for explicit ordering
+step_registry.register("sr_parameter_optimization", SRParameterOptimizationStep)
+step_registry.register("sr_detection", SRDetectionStep)
+step_registry.register("sr_clustering", SRClusteringComponent)
+step_registry.register("hdbscan_clustering", HDBSCANRegimeDiscoveryStep)
+step_registry.register("regime_clustering", RegimeClusteringStep)
 step_registry.register("regime_models_training", RegimeModelsTrainingStep)
 step_registry.register("regime_ensemble_training", RegimeEnsembleTrainingStep)
-step_registry.register("sr_parameter_optimization", SRParameterOptimizationStep)
-step_registry.register("regime_clustering", RegimeClusteringStep)
+step_registry.register("regime_data_splitting", RegimeDataSplittingStep)
+
+# Register additional steps
+step_registry.register("model_persistence", ModelPersistenceStep)

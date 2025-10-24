@@ -105,20 +105,6 @@ inputs:
     source: "regime_ensemble_training"
     enabled: true
     
-  # Volatility modeling features
-  volatility_features:
-    description: "Volatility and risk features for ETHUSDT"
-    enabled: true
-    features:
-      - "realized_volatility_1h"
-      - "realized_volatility_4h"
-      - "realized_volatility_1d"
-      - "garch_volatility"
-      - "ewma_volatility"
-      - "volatility_regime"
-      - "volatility_percentile"
-      - "volatility_momentum"
-      
   
   # Regime model outputs (from previous pipeline steps)
   regime_outputs:

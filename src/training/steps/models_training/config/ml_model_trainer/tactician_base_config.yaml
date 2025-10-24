@@ -165,21 +165,6 @@ inputs:
     source: "regime_ensemble_training"
     enabled: true
     
-  # Volatility modeling features
-  volatility_features:
-    description: "Volatility and risk features for ETHUSDT"
-    enabled: true
-    features:
-      - "realized_volatility_1h"
-      - "realized_volatility_4h"
-      - "realized_volatility_1d"
-      - "garch_volatility"
-      - "ewma_volatility"
-      - "volatility_regime"
-      - "volatility_percentile"
-      - "volatility_momentum"
-      
-    
   # Analyst ensemble model outputs
   analyst_ensemble_outputs:
     description: "Outputs from Analyst ensemble model"
@@ -203,33 +188,6 @@ inputs:
     - "analyst_feature_importance"
     - "analyst_shap_values"
     
-  # Risk management features
-  risk_management:
-    description: "Risk management and position sizing features"
-    enabled: true
-    features:
-      - "value_at_risk_95"
-      - "expected_shortfall"
-      - "maximum_drawdown"
-      - "sharpe_ratio_rolling"
-      - "calmar_ratio_rolling"
-      - "sortino_ratio_rolling"
-      - "portfolio_heat"
-      - "correlation_risk"
-      - "concentration_risk"
-      - "liquidity_risk"
-      
-  # Position sizing features
-  position_sizing:
-    description: "Position sizing and sizing features"
-    enabled: true
-    features:
-      - "volatility_adjusted_sizing"
-      - "kelly_criterion_sizing"
-      - "risk_parity_sizing"
-      - "momentum_sizing"
-      - "regime_conditional_sizing"
-      - "drawdown_adjusted_sizing"
 
 # Training Configuration
 training:

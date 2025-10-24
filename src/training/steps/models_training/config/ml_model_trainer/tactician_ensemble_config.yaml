@@ -193,7 +193,6 @@ inputs:
     description: "Outputs from Analyst ensemble model"
     source: "analyst_ensemble_training"
     enabled: true
-    position_features: ["volatility_adjusted", "risk_metrics", "correlation_matrix"]
   
   # Regime model outputs (from previous pipeline steps)
   regime_outputs:
@@ -271,80 +270,6 @@ training:
     
     # Note: Blending removed - using stacking approach
 
-# Feature Engineering
-feature_engineering:
-  # Entry timing features
-  entry_timing:
-    enabled: true
-    lookback_window: 10
-    features:
-      - "price_momentum"
-      - "volume_momentum"
-      - "volatility_regime"
-  
-  # Exit timing features
-  exit_timing:
-    enabled: true
-    lookback_window: 5
-    features:
-      - "profit_targets"
-      - "stop_loss_levels"
-      - "trailing_stop_adjustments"
-      - "volatility_adjusted_targets"
-      - "regime_conditional_targets"
-      - "risk_adjusted_exits"
-  
-  # Position sizing features
-  position_sizing:
-    enabled: true
-    lookback_window: 20
-    features:
-      - "volatility_adjusted_sizing"
-      - "risk_metrics"
-      - "correlation_matrix"
-      - "portfolio_heat"
-      - "drawdown_adjusted_sizing"
-      - "regime_conditional_sizing"
-  
-  # Tactician-specific features
-  tactician_specific:
-    
-    # Risk features
-    risk_features:
-      enabled: true
-      features:
-        - "value_at_risk"
-        - "expected_shortfall"
-        - "maximum_drawdown"
-        - "sharpe_ratio"
-        - "calmar_ratio"
-        - "sortino_ratio"
-    
-    # Timing features
-    timing_features:
-      enabled: true
-      features:
-        - "intraday_patterns"
-        - "seasonal_effects"
-        - "market_hours_effects"
-        - "news_impact_timing"
-        - "earnings_announcement_timing"
-  
-  # Ensemble-specific features
-  ensemble_features:
-    # Base model predictions as features
-    include_base_predictions: true
-    include_base_probabilities: true
-    include_base_confidence: true
-    
-    # Feature interactions
-    enable_feature_interactions: true
-    interaction_degree: 2
-    interaction_threshold: 0.1
-    
-    # Tactician-specific ensemble features
-    tactician_ensemble_features:
-      include_entry_timing_predictions: true
 
 # Data Quality & Leakage Prevention
 data_quality:

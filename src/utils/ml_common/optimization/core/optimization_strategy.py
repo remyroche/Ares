@@ -56,10 +56,14 @@ class OptimizationContext:
 class OptimizationStrategy(ABC):
     """Abstract base class for optimization strategies."""
     
-    def __init__(self, config: HPOConfig):
+    def __init__(self, config: HPOConfig, early_stopping_integration=None):
         self.config = config
         self.trial_results = []
         self.optimization_history = []
+        self.early_stopping_integration = early_stopping_integration
+        self.trial_history = []
+        self.early_stopped = False
+        self.early_stopping_reason = None
     
     @abstractmethod
     def optimize(self, context: OptimizationContext) -> HPOResult:
@@ -82,7 +86,27 @@ class OptimizationStrategy(ABC):
         try:
             # This would be implemented by the specific strategy
             # or delegated to a shared evaluation service
-            return self._perform_evaluation(model, X, y)
+            score = self._perform_evaluation(model, X, y)
+            
+            # Update trial history for early stopping
+            if self.early_stopping_integration:
+                self.trial_history.append(score)
+                
+                # Check for early stopping
+                if self.early_stopping_integration.should_stop_early(
+                    self.config.strategy.value, 
+                    self.trial_history, 
+                    trial_number or len(self.trial_history),
+                    self.config.n_trials
+                ):
+                    self.early_stopped = True
+                    self.early_stopping_reason = self.early_stopping_integration._get_stopping_reason(
+                        self.config.strategy.value
+                    )
+                    if TPRINT_AVAILABLE:
+                        tprint_info(f"⏹️ Early stopping triggered at trial {trial_number}")
+            
+            return score
         except Exception as e:
             raise ModelEvaluationError(f"Model evaluation failed: {e}", {
                 'trial_number': trial_number,
@@ -151,6 +175,11 @@ class BayesianStrategy(OptimizationStrategy):
         # Define objective
         def objective(trial):
             self._check_timeout(context.start_time)
+            
+            # Check for early stopping
+            if self.early_stopped:
+                raise optuna.TrialPruned()
+            
             params = self._sample_parameters_from_trial(trial, context.search_space)
             model = context.model_factory(**params)
             return self._evaluate_model(model, context.X, context.y, trial.number)
@@ -439,6 +468,13 @@ class GridStrategy(OptimizationStrategy):
         for i, params in enumerate(param_list):
             try:
                 self._check_timeout(context.start_time)
+                
+                # Check for early stopping
+                if self.early_stopped:
+                    if TPRINT_AVAILABLE:
+                        tprint_info(f"⏹️ Early stopping triggered in {stage_name} stage")
+                    break
+                
                 model = context.model_factory(**params)
                 score = self._evaluate_model(model, context.X, context.y, i)
                 out.append({
@@ -573,6 +609,12 @@ class RandomStrategy(OptimizationStrategy):
             try:
                 self._check_timeout(context.start_time)
                 
+                # Check for early stopping
+                if self.early_stopped:
+                    if TPRINT_AVAILABLE:
+                        tprint_info(f"⏹️ Early stopping triggered at trial {i}")
+                    break
+                
                 # Sample random parameters
                 params = self._sample_parameters(context.search_space)
                 
@@ -662,6 +704,11 @@ class BOHBStrategy(OptimizationStrategy):
         # Define objective with multi-fidelity support
         def objective(trial):
             self._check_timeout(context.start_time)
+            
+            # Check for early stopping
+            if self.early_stopped:
+                raise optuna.TrialPruned()
+            
             params = self._sample_parameters_from_trial(trial, context.search_space)
             
             # Sample budget (fidelity level)

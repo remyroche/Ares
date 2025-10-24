@@ -22,7 +22,7 @@ from src.training.steps.base_step import BaseStep
 from src.utils.tprint import tprint_info, tprint_success, tprint_error, tprint_warning, tprint_data_preview
 
 # Import our custom types
-from ..types import (
+from ..step_types import (
     StepConfig, ExecutionResult, ValidationResult, MetricsDict, DataLoadResult,
     DataFrameType, SeriesType, SignalType, ModelType, DirectionType, ExecutionMode,
     ValidationError, DataLoadError, ConfigurationError, ArtifactError,

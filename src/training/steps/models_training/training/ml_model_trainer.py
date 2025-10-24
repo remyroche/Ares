@@ -530,6 +530,9 @@ class MLModelTrainer:
         # Save artifacts
         await self._save_ensemble_artifacts(bundle, oof, oof_proba, fold_idx, model_type, config)
         
+        # Cleanup intermediate results to free memory
+        self._cleanup_ensemble_memory(oof, oof_proba, fold_idx)
+        
         tprint_success(f"✅ Ensemble model training completed: {model_type.value}")
         
         return {
@@ -667,6 +670,32 @@ class MLModelTrainer:
             json.dump(metadata, f, indent=2)
         
         tprint_success(f"✅ Ensemble artifacts saved to {artifacts_dir}")
+    
+    def _cleanup_ensemble_memory(self, oof: Dict[str, np.ndarray], oof_proba: Dict[str, np.ndarray], fold_idx: np.ndarray):
+        """Cleanup ensemble training memory to prevent memory leaks."""
+        try:
+            # Clear OOF predictions
+            for name in oof:
+                del oof[name]
+            oof.clear()
+            
+            # Clear OOF probabilities
+            for name in oof_proba:
+                if oof_proba[name] is not None:
+                    del oof_proba[name]
+            oof_proba.clear()
+            
+            # Clear fold assignments
+            del fold_idx
+            
+            # Force garbage collection
+            import gc
+            gc.collect()
+            
+            tprint_info("🧹 Ensemble memory cleanup completed")
+            
+        except Exception as e:
+            tprint_warning(f"Memory cleanup failed: {e}")
     
     def _make_cv(self, recipe: Dict[str, Any]):
         """Create CV strategy from YAML training.cv_strategy and cv_params."""
@@ -1083,11 +1112,232 @@ class MLModelTrainer:
             return tactician_base_outputs
         return None
     
+    def _apply_model_specific_memory_optimization(self, features: np.ndarray, model_type: ModelType, config: Dict[str, Any]) -> np.ndarray:
+        """Apply model-specific memory optimization strategies."""
+        try:
+            # Get model-specific memory strategy
+            memory_strategy = self._get_model_memory_strategy(model_type, config)
+            
+            # Apply LightGBM-specific optimizations
+            if model_type in [ModelType.ANALYST_BASE, ModelType.ANALYST_ENSEMBLE]:
+                features = self._optimize_for_lightgbm(features, config)
+            
+            # Apply neural network optimizations
+            elif model_type in [ModelType.TACTICIAN_BASE, ModelType.TACTICIAN_ENSEMBLE]:
+                features = self._optimize_for_neural_networks(features, config)
+            
+            # Apply ensemble-specific optimizations
+            if model_type in [ModelType.ANALYST_ENSEMBLE, ModelType.TACTICIAN_ENSEMBLE]:
+                features = self._optimize_for_ensemble(features, config)
+            
+            # Apply general hardware optimization
+            optimized_features = self.hardware_manager.process_data_with_optimization(
+                features, WorkloadType.ML_TRAINING
+            )
+            
+            return optimized_features
+            
+        except Exception as e:
+            tprint_warning(f"Model-specific memory optimization failed: {e}, using default")
+            return self.hardware_manager.process_data_with_optimization(
+                features, WorkloadType.ML_TRAINING
+            )
+    
+    def _get_model_memory_strategy(self, model_type: ModelType, config: Dict[str, Any]) -> str:
+        """Get memory strategy for specific model type."""
+        # Get memory configuration from unified config
+        memory_config = config.get('memory_optimization', {})
+        
+        if model_type in [ModelType.ANALYST_BASE, ModelType.ANALYST_ENSEMBLE]:
+            return memory_config.get('analyst_strategy', 'balanced')
+        elif model_type in [ModelType.TACTICIAN_BASE, ModelType.TACTICIAN_ENSEMBLE]:
+            return memory_config.get('tactician_strategy', 'aggressive')
+        else:
+            return memory_config.get('default_strategy', 'moderate')
+    
+    def _optimize_for_lightgbm(self, features: np.ndarray, config: Dict[str, Any]) -> np.ndarray:
+        """Apply LightGBM-specific memory optimizations."""
+        try:
+            # Convert to float32 to reduce memory usage
+            if features.dtype == np.float64:
+                features = features.astype(np.float32)
+            
+            # Use categorical features optimization if available
+            categorical_features = config.get('categorical_features', [])
+            if categorical_features:
+                # Convert categorical features to appropriate type
+                for cat_idx in categorical_features:
+                    if cat_idx < features.shape[1]:
+                        features[:, cat_idx] = features[:, cat_idx].astype(np.int32)
+            
+            return features
+            
+        except Exception as e:
+            tprint_warning(f"LightGBM optimization failed: {e}")
+            return features
+    
+    def _optimize_for_neural_networks(self, features: np.ndarray, config: Dict[str, Any]) -> np.ndarray:
+        """Apply neural network-specific memory optimizations."""
+        try:
+            # Use float32 for neural networks
+            if features.dtype == np.float64:
+                features = features.astype(np.float32)
+            
+            # Apply gradient checkpointing if specified
+            if config.get('gradient_checkpointing', False):
+                # This would be handled in the model training, not here
+                pass
+            
+            return features
+            
+        except Exception as e:
+            tprint_warning(f"Neural network optimization failed: {e}")
+            return features
+    
+    def _optimize_for_ensemble(self, features: np.ndarray, config: Dict[str, Any]) -> np.ndarray:
+        """Apply ensemble-specific memory optimizations."""
+        try:
+            # Use model sharing for ensemble models
+            if config.get('enable_model_sharing', True):
+                # This would be handled in the ensemble training
+                pass
+            
+            # Use memory-efficient data types
+            if features.dtype == np.float64:
+                features = features.astype(np.float32)
+            
+            return features
+            
+        except Exception as e:
+            tprint_warning(f"Ensemble optimization failed: {e}")
+            return features
+    
+    def _get_intelligent_cache_key(self, data: Dict[str, Any], model_type: ModelType, config: Dict[str, Any]) -> str:
+        """Generate intelligent cache key based on data and configuration."""
+        import hashlib
+        import json
+        
+        # Create cache key components
+        key_components = {
+            'model_type': model_type.value,
+            'data_shape': data.get('features', np.array([])).shape if 'features' in data else (0, 0),
+            'config_hash': hashlib.md5(json.dumps(config, sort_keys=True).encode()).hexdigest()[:8],
+            'data_hash': hashlib.md5(str(data.get('features', np.array([])).tobytes()).hexdigest()[:8] if 'features' in data else 'empty'
+        }
+        
+        return f"ml_trainer_{model_type.value}_{key_components['data_shape'][0]}_{key_components['config_hash']}_{key_components['data_hash']}"
+    
+    def _should_invalidate_cache(self, cache_key: str, model_type: ModelType) -> bool:
+        """Determine if cache should be invalidated based on intelligent rules."""
+        try:
+            # Check if model configuration has changed
+            # This would check against stored configuration hashes
+            
+            # Check if data has changed significantly
+            # This would check data drift or significant changes
+            
+            # Check if model type requires fresh training
+            if model_type in [ModelType.ANALYST_ENSEMBLE, ModelType.TACTICIAN_ENSEMBLE]:
+                # Ensemble models should be retrained more frequently
+                return True
+            
+            return False
+            
+        except Exception as e:
+            tprint_warning(f"Cache invalidation check failed: {e}")
+            return True  # Invalidate on error for safety
+    
+    def _apply_model_specific_caching(self, data: Dict[str, Any], model_type: ModelType, config: Dict[str, Any]) -> Dict[str, Any]:
+        """Apply model-specific caching strategies."""
+        try:
+            # Get caching configuration
+            cache_config = config.get('caching', {})
+            
+            # Apply different caching strategies based on model type
+            if model_type in [ModelType.ANALYST_BASE, ModelType.ANALYST_ENSEMBLE]:
+                # Analyst models: cache features and targets
+                return self._cache_analyst_data(data, cache_config)
+            elif model_type in [ModelType.TACTICIAN_BASE, ModelType.TACTICIAN_ENSEMBLE]:
+                # Tactician models: cache sequences and embeddings
+                return self._cache_tactician_data(data, cache_config)
+            else:
+                # Default caching
+                return self._cache_default_data(data, cache_config)
+                
+        except Exception as e:
+            tprint_warning(f"Model-specific caching failed: {e}")
+            return data
+    
+    def _cache_analyst_data(self, data: Dict[str, Any], cache_config: Dict[str, Any]) -> Dict[str, Any]:
+        """Apply analyst-specific caching."""
+        try:
+            # Cache features with high TTL
+            if cache_config.get('cache_features', True):
+                features = data.get('features', np.array([]))
+                if features.size > 0:
+                    # Use hardware-optimized caching
+                    cache_key = f"analyst_features_{hash(features.tobytes())}"
+                    cached_features = self.hardware_manager.get_cached_data(cache_key)
+                    if cached_features is not None:
+                        data['features'] = cached_features
+                    else:
+                        self.hardware_manager.cache_data(cache_key, features, ttl=3600)
+            
+            return data
+            
+        except Exception as e:
+            tprint_warning(f"Analyst caching failed: {e}")
+            return data
+    
+    def _cache_tactician_data(self, data: Dict[str, Any], cache_config: Dict[str, Any]) -> Dict[str, Any]:
+        """Apply tactician-specific caching."""
+        try:
+            # Cache sequences with medium TTL
+            if cache_config.get('cache_sequences', True):
+                features = data.get('features', np.array([]))
+                if features.size > 0:
+                    # Use hardware-optimized caching for sequences
+                    cache_key = f"tactician_sequences_{hash(features.tobytes())}"
+                    cached_features = self.hardware_manager.get_cached_data(cache_key)
+                    if cached_features is not None:
+                        data['features'] = cached_features
+                    else:
+                        self.hardware_manager.cache_data(cache_key, features, ttl=1800)
+            
+            return data
+            
+        except Exception as e:
+            tprint_warning(f"Tactician caching failed: {e}")
+            return data
+    
+    def _cache_default_data(self, data: Dict[str, Any], cache_config: Dict[str, Any]) -> Dict[str, Any]:
+        """Apply default caching strategy."""
+        try:
+            # Basic caching for all data
+            if cache_config.get('cache_all', True):
+                for key, value in data.items():
+                    if isinstance(value, np.ndarray) and value.size > 0:
+                        cache_key = f"default_{key}_{hash(value.tobytes())}"
+                        cached_value = self.hardware_manager.get_cached_data(cache_key)
+                        if cached_value is not None:
+                            data[key] = cached_value
+                        else:
+                            self.hardware_manager.cache_data(cache_key, value, ttl=900)
+            
+            return data
+            
+        except Exception as e:
+            tprint_warning(f"Default caching failed: {e}")
+            return data
+    
     @memory_managed(MemoryStrategy.MODERATE)
     @smart_cache
     def _prepare_targets(self, data: Dict[str, Any], model_type: ModelType, config: Dict[str, Any]) -> np.ndarray:
         """Prepare targets using existing utilities."""
         tprint_info(f"🎯 Preparing targets for {model_type.value}")
+        
+        # Get expected target name from config
+        expected_target = config.get('targets', {}).get('primary', 'target')
         
         # Extract targets based on model type
         if model_type in [ModelType.ANALYST_BASE, ModelType.ANALYST_ENSEMBLE]:
@@ -1095,11 +1345,19 @@ class MLModelTrainer:
             if targets.ndim == 2 and targets.shape[1] >= 2:
                 # Use first two columns for analyst targets
                 targets = targets[:, :2]
+            
+            # Validate target name for analyst models
+            if expected_target not in ['analyst_confidence', 'target']:
+                tprint_warning(f"Expected 'analyst_confidence' for analyst models, got '{expected_target}'")
         else:  # Tactician models
             targets = data.get('targets', np.array([]))
             if targets.ndim == 2 and targets.shape[1] >= 3:
                 # Use last three columns for tactician targets
                 targets = targets[:, -3:]
+            
+            # Validate target name for tactician models
+            if expected_target not in ['position_confidence', 'target']:
+                tprint_warning(f"Expected 'position_confidence' for tactician models, got '{expected_target}'")
         
         tprint_data_preview(targets, f"Targets for {model_type.value}")
         
@@ -1108,14 +1366,34 @@ class MLModelTrainer:
             tprint_error("Invalid target data")
             raise ValueError("Invalid target data")
         
-        # Ensure targets are 1D for single-output
-        if targets.ndim > 1 and targets.shape[1] == 1:
-            targets = targets.ravel()
-        elif targets.ndim > 1 and targets.shape[1] > 1:
-            # multi-output supported later; for now pick the first
-            targets = targets[:, 0]
+        # Ensure targets are 1D for single-output with proper validation
+        if targets.ndim > 1:
+            if targets.shape[1] == 1:
+                targets = targets.ravel()
+            elif targets.shape[1] > 1:
+                # multi-output supported later; for now pick the first
+                tprint_info(f"Multi-output targets detected ({targets.shape[1]} outputs), using first output")
+                targets = targets[:, 0]
         else:
             targets = targets.ravel()
+        
+        # Validate target data types and ranges
+        if targets.dtype == np.object_:
+            tprint_warning("Target data type is object, attempting conversion")
+            try:
+                targets = targets.astype(float)
+            except (ValueError, TypeError) as e:
+                tprint_error(f"Failed to convert targets to float: {e}")
+                raise ValueError("Invalid target data type")
+        
+        # Check for valid target values
+        if np.any(np.isnan(targets)):
+            tprint_warning("NaN values found in targets, replacing with 0")
+            targets = np.nan_to_num(targets, nan=0.0)
+        
+        if np.any(np.isinf(targets)):
+            tprint_warning("Infinite values found in targets, clipping to finite range")
+            targets = np.clip(targets, -1e6, 1e6)
         
         tprint_data_format(f"Target preparation completed: {targets.shape}", LogLevel.INFO)
         return targets
@@ -1151,6 +1429,9 @@ class MLModelTrainer:
         # Generate reports
         if self.config.save_reports:
             await self._generate_reports(results)
+        
+        # Final memory cleanup
+        self._final_memory_cleanup()
         
         tprint_success("✅ ML model training pipeline completed")
         self.logger.info("ML model training pipeline completed")
@@ -1190,6 +1471,92 @@ class MLModelTrainer:
             configs[model_type] = self._apply_mode_scaling(config)
         
         return configs
+    
+    async def _load_unified_memory_config(self) -> Dict[str, Any]:
+        """Load unified memory configuration."""
+        try:
+            unified_config_path = Path("src/training/steps/models_training/config/ml_model_trainer/unified_memory_config.yaml")
+            if unified_config_path.exists():
+                with open(unified_config_path, 'r') as f:
+                    return yaml.safe_load(f) or {}
+            else:
+                tprint_warning("Unified memory config not found, using defaults")
+                return {}
+        except Exception as e:
+            tprint_warning(f"Failed to load unified memory config: {e}")
+            return {}
+    
+    def _merge_unified_memory_config(self, config: Dict[str, Any], unified_config: Dict[str, Any], model_type: ModelType) -> Dict[str, Any]:
+        """Merge unified memory configuration with model-specific config."""
+        try:
+            if not unified_config:
+                return config
+            
+            # Get model-specific overrides
+            model_overrides = unified_config.get('model_specific_overrides', {}).get(model_type.value, {})
+            
+            # Merge memory optimization settings
+            if 'memory_optimization' not in config:
+                config['memory_optimization'] = {}
+            
+            # Apply unified memory settings
+            config['memory_optimization'].update(unified_config.get('memory_optimization', {}))
+            
+            # Apply model-specific overrides
+            config['memory_optimization'].update(model_overrides)
+            
+            # Apply caching settings
+            if 'caching' not in config:
+                config['caching'] = {}
+            
+            config['caching'].update(unified_config.get('caching', {}))
+            
+            return config
+            
+        except Exception as e:
+            tprint_warning(f"Failed to merge unified memory config: {e}")
+            return config
+    
+    def _validate_configuration(self, config: Dict[str, Any], model_type: ModelType) -> None:
+        """Validate configuration for completeness and correctness."""
+        try:
+            # Required sections
+            required_sections = ['models', 'targets', 'training', 'metrics']
+            for section in required_sections:
+                if section not in config:
+                    raise ValueError(f"Missing required section: {section}")
+            
+            # Validate models section
+            models = config.get('models', [])
+            if not models:
+                raise ValueError("No models configured")
+            
+            for model in models:
+                if 'name' not in model or 'type' not in model:
+                    raise ValueError("Model missing required fields: name, type")
+            
+            # Validate targets section
+            targets = config.get('targets', {})
+            if 'primary' not in targets:
+                raise ValueError("Missing primary target")
+            
+            # Validate training section
+            training = config.get('training', {})
+            if 'validation_split' not in training:
+                training['validation_split'] = 0.2
+            if 'cv_folds' not in training:
+                training['cv_folds'] = 5
+            
+            # Validate metrics section
+            metrics = config.get('metrics', {})
+            if 'primary' not in metrics:
+                metrics['primary'] = 'f1_score'
+            
+            tprint_success(f"✅ Configuration validation passed for {model_type.value}")
+            
+        except Exception as e:
+            tprint_error(f"❌ Configuration validation failed for {model_type.value}: {e}")
+            raise
     
     def _apply_mode_scaling(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """Apply mode-based scaling to configuration parameters."""
@@ -1376,67 +1743,151 @@ class MLModelTrainer:
     
     
     async def _train_models_parallel(self, data: Dict[str, Any], configs: Dict[ModelType, Dict[str, Any]]) -> Dict[ModelType, List[TrainingResult]]:
-        """Train models in parallel using ProcessPoolExecutor."""
-        tprint_info("🔄 Training models in parallel with ProcessPoolExecutor")
+        """Train models in parallel using hardware-optimized parallelization."""
+        tprint_info("🔄 Training models in parallel with hardware optimization")
+        
+        # Get optimal parallelization strategy from hardware manager
+        workload_type = WorkloadType.ML_TRAINING
+        optimal_strategy = self.hardware_manager.get_optimal_parallelization_strategy(workload_type)
         
         results = {}
-        tasks = []
-        loop = asyncio.get_running_loop()
+        
+        # Separate tasks by type for optimal parallelization
+        ensemble_tasks = []
+        cpu_bound_tasks = []
+        io_bound_tasks = []
         
         for model_type in self.config.model_types:
             if model_type in configs:
-                # Check if this is an ensemble model (run in main process for now)
                 if model_type in [ModelType.ANALYST_ENSEMBLE, ModelType.TACTICIAN_ENSEMBLE]:
-                    # Run ensemble training in main process (complex async operations)
-                    try:
-                        ens = await self._train_ensemble_model(data, model_type, configs[model_type])
-                        results[model_type] = [TrainingResult(
-                            model_type=model_type,
-                            model_name=f"{ens['ensemble_type'].lower()}_stacker",
-                            success=True,
-                            model=ens['bundle'],                 # store the bundle
-                            metrics=ens['metrics'],
-                        )]
-                        tprint_success(f"✅ Completed ensemble training for {model_type.value}")
-                    except Exception as e:
-                        tprint_error(f"❌ Ensemble training failed for {model_type.value}: {e}")
-                        results[model_type] = [TrainingResult(
-                            model_type=model_type,
-                            model_name="ensemble_error",
-                            success=False,
-                            metrics={"error": str(e)}
-                        )]
+                    ensemble_tasks.append((model_type, configs[model_type]))
+                elif model_type in [ModelType.ANALYST_BASE, ModelType.TACTICIAN_BASE]:
+                    # These are CPU-intensive model training tasks
+                    cpu_bound_tasks.append((model_type, configs[model_type]))
                 else:
-                    # Run base model training in parallel
-                    task = loop.run_in_executor(
-                        self._process_pool, 
-                        self._train_model_type_sync, 
-                        data, model_type, configs[model_type]
-                    )
-                    tasks.append((model_type, task))
+                    # Other tasks that might be I/O bound
+                    io_bound_tasks.append((model_type, configs[model_type]))
         
-        # Wait for all remaining tasks to complete using asyncio.gather for better concurrency
-        if tasks:
+        # Process ensemble models in main process (complex async operations)
+        for model_type, config in ensemble_tasks:
             try:
-                task_results = await asyncio.gather(*[task for _, task in tasks], return_exceptions=True)
-                for (model_type, _), result in zip(tasks, task_results):
+                ens = await self._train_ensemble_model(data, model_type, config)
+                results[model_type] = [TrainingResult(
+                    model_type=model_type,
+                    model_name=f"{ens['ensemble_type'].lower()}_stacker",
+                    success=True,
+                    model=ens['bundle'],
+                    metrics=ens['metrics'],
+                )]
+                tprint_success(f"✅ Completed ensemble training for {model_type.value}")
+            except Exception as e:
+                tprint_error(f"❌ Ensemble training failed for {model_type.value}: {e}")
+                results[model_type] = [TrainingResult(
+                    model_type=model_type,
+                    model_name="ensemble_error",
+                    success=False,
+                    metrics={"error": str(e)}
+                )]
+        
+        # Process CPU-bound tasks with optimized ProcessPoolExecutor
+        if cpu_bound_tasks:
+            tprint_info(f"Processing {len(cpu_bound_tasks)} CPU-bound tasks with ProcessPoolExecutor")
+            cpu_results = await self._process_cpu_bound_tasks(data, cpu_bound_tasks)
+            results.update(cpu_results)
+        
+        # Process I/O-bound tasks with ThreadPoolExecutor
+        if io_bound_tasks:
+            tprint_info(f"Processing {len(io_bound_tasks)} I/O-bound tasks with ThreadPoolExecutor")
+            io_results = await self._process_io_bound_tasks(data, io_bound_tasks)
+            results.update(io_results)
+        
+        return results
+    
+    async def _process_cpu_bound_tasks(self, data: Dict[str, Any], tasks: List[Tuple[ModelType, Dict[str, Any]]]) -> Dict[ModelType, List[TrainingResult]]:
+        """Process CPU-bound tasks using ProcessPoolExecutor with hardware optimization."""
+        results = {}
+        loop = asyncio.get_running_loop()
+        
+        # Use hardware-optimized process pool
+        max_workers = self.hardware_manager.get_optimal_worker_count(WorkloadType.ML_TRAINING)
+        
+        # Create tasks
+        async_tasks = []
+        for model_type, config in tasks:
+            task = loop.run_in_executor(
+                self._process_pool,
+                self._train_model_type_sync,
+                data, model_type, config
+            )
+            async_tasks.append((model_type, task))
+        
+        # Execute tasks with hardware monitoring
+        if async_tasks:
+            try:
+                task_results = await asyncio.gather(*[task for _, task in async_tasks], return_exceptions=True)
+                for (model_type, _), result in zip(async_tasks, task_results):
                     if isinstance(result, Exception):
-                        tprint_error(f"❌ Failed training for {model_type.value}: {result}")
+                        tprint_error(f"❌ CPU-bound training failed for {model_type.value}: {result}")
                         results[model_type] = []
                     else:
                         results[model_type] = result
-                        tprint_success(f"✅ Completed training for {model_type.value}")
+                        tprint_success(f"✅ Completed CPU-bound training for {model_type.value}")
             except Exception as e:
-                tprint_error(f"❌ Parallel training failed: {e}")
-                # Fallback to individual task handling
-                for model_type, task in tasks:
+                tprint_error(f"❌ CPU-bound parallel processing failed: {e}")
+                # Fallback to sequential processing
+                for model_type, config in tasks:
                     try:
-                        result = await task
+                        result = self._train_model_type_sync(data, model_type, config)
                         results[model_type] = result
-                        tprint_success(f"✅ Completed training for {model_type.value}")
+                        tprint_success(f"✅ Completed fallback training for {model_type.value}")
                     except Exception as task_e:
-                        tprint_error(f"❌ Failed training for {model_type.value}: {task_e}")
+                        tprint_error(f"❌ Fallback training failed for {model_type.value}: {task_e}")
                         results[model_type] = []
+        
+        return results
+    
+    async def _process_io_bound_tasks(self, data: Dict[str, Any], tasks: List[Tuple[ModelType, Dict[str, Any]]]) -> Dict[ModelType, List[TrainingResult]]:
+        """Process I/O-bound tasks using ThreadPoolExecutor."""
+        results = {}
+        
+        # Use ThreadPoolExecutor for I/O-bound tasks
+        max_workers = min(len(tasks), self.hardware_manager.get_optimal_worker_count(WorkloadType.ML_TRAINING))
+        
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            loop = asyncio.get_running_loop()
+            
+            # Create tasks
+            async_tasks = []
+            for model_type, config in tasks:
+                task = loop.run_in_executor(
+                    executor,
+                    self._train_model_type_sync,
+                    data, model_type, config
+                )
+                async_tasks.append((model_type, task))
+            
+            # Execute tasks
+            if async_tasks:
+                try:
+                    task_results = await asyncio.gather(*[task for _, task in async_tasks], return_exceptions=True)
+                    for (model_type, _), result in zip(async_tasks, task_results):
+                        if isinstance(result, Exception):
+                            tprint_error(f"❌ I/O-bound training failed for {model_type.value}: {result}")
+                            results[model_type] = []
+                        else:
+                            results[model_type] = result
+                            tprint_success(f"✅ Completed I/O-bound training for {model_type.value}")
+                except Exception as e:
+                    tprint_error(f"❌ I/O-bound parallel processing failed: {e}")
+                    # Fallback to sequential processing
+                    for model_type, config in tasks:
+                        try:
+                            result = self._train_model_type_sync(data, model_type, config)
+                            results[model_type] = result
+                            tprint_success(f"✅ Completed fallback training for {model_type.value}")
+                        except Exception as task_e:
+                            tprint_error(f"❌ Fallback training failed for {model_type.value}: {task_e}")
+                            results[model_type] = []
         
         return results
     
@@ -1842,56 +2293,113 @@ class MLModelTrainer:
     
     def _create_model_with_params(self, model_config: Dict[str, Any], params: Dict[str, Any], task_type: str):
         """Create model with given parameters, handling special model types."""
-        model_key = model_config.get('type', 'LIGHTGBM').upper()
-        fixed = model_config.get('parameters', {})
-        merged = {**params, **fixed}  # fixed overrides tuned if both set
-        
-        # Determine if classification based on task type
-        is_classification = (task_type == "classification")
+        try:
+            model_key = model_config.get('type', 'LIGHTGBM').upper()
+            fixed = model_config.get('parameters', {})
+            merged = {**params, **fixed}  # fixed overrides tuned if both set
+            
+            # Validate required parameters
+            if not model_key:
+                raise ValueError("Model type is required")
+            
+            # Determine if classification based on task type
+            is_classification = (task_type == "classification")
+            
+            tprint_info(f"Creating model: {model_key} (classification: {is_classification})")
+            
+        except Exception as e:
+            tprint_error(f"Error in model creation setup: {e}")
+            raise
         
         if model_key in {"LIGHTGBM", "STACKER_LGBM_CALIBRATED"}:
-            from lightgbm import LGBMClassifier, LGBMRegressor
-            cls = LGBMClassifier if is_classification else LGBMRegressor
-            if "n_jobs" not in merged and "nthread" not in merged and "thread_count" not in merged:
-                merged["n_jobs"] = -1 if cls.__name__.startswith("LGBM") else merged.get("n_jobs", -1)
-            return cls(**merged, random_state=42, verbose=-1)
+            try:
+                from lightgbm import LGBMClassifier, LGBMRegressor
+                cls = LGBMClassifier if is_classification else LGBMRegressor
+                if "n_jobs" not in merged and "nthread" not in merged and "thread_count" not in merged:
+                    merged["n_jobs"] = -1 if cls.__name__.startswith("LGBM") else merged.get("n_jobs", -1)
+                return cls(**merged, random_state=42, verbose=-1)
+            except Exception as e:
+                tprint_error(f"Failed to create LightGBM model: {e}")
+                raise
         
         elif model_key == "LIGHTGBM_PATCHTST":
-            from lightgbm import LGBMClassifier, LGBMRegressor
-            from src.training.steps.model_training.patchtst_wrapper import PatchTSTWrapper
-            base_cls = LGBMClassifier if is_classification else LGBMRegressor
-            base_model = base_cls(**merged, random_state=42, verbose=-1)
-            # Extract PatchTST-specific parameters
-            patchtst_params = {k: v for k, v in merged.items() if k.startswith(('patchtst_', 'patch_', 'stride_', 'use_transformer_', 'regime_aware', 'attention_', 'sign_'))}
-            return PatchTSTWrapper(base_model, **patchtst_params)
+            try:
+                from lightgbm import LGBMClassifier, LGBMRegressor
+                from src.training.steps.models_training.core.patchtst_wrapper import PatchTSTWrapper
+                base_cls = LGBMClassifier if is_classification else LGBMRegressor
+                base_model = base_cls(**merged, random_state=42, verbose=-1)
+                # Extract PatchTST-specific parameters
+                patchtst_params = {k: v for k, v in merged.items() if k.startswith(('patchtst_', 'patch_', 'stride_', 'use_transformer_', 'regime_aware', 'attention_', 'sign_'))}
+                return PatchTSTWrapper(base_model, **patchtst_params)
+            except Exception as e:
+                tprint_error(f"Failed to create LIGHTGBM_PATCHTST model: {e}")
+                raise
+        
+        elif model_key == "LIGHTGBM_GRU":
+            try:
+                from src.training.steps.models_training.core.lgbm_gru_wrapper import LGBMGRUWrapper
+                return LGBMGRUWrapper(**merged)
+            except Exception as e:
+                tprint_error(f"Failed to create LIGHTGBM_GRU model: {e}")
+                raise
+        
+        elif model_key == "STACKER_LGBM_CALIBRATED_GATED":
+            try:
+                from src.training.steps.models_training.core.stacker_lgbm_calibrated_gated import StackerLGBMCalibratedGated
+                return StackerLGBMCalibratedGated(**merged)
+            except Exception as e:
+                tprint_error(f"Failed to create STACKER_LGBM_CALIBRATED_GATED model: {e}")
+                raise
         
         elif model_key == "CAUSAL_DILATED_TCN":
-            from src.models.tcn_regressor import TCNRegressor
-            if not is_classification:
-                return TCNRegressor(**merged)
-            else:
-                # For classification, we'll use a wrapper or convert to regression
-                tprint_warning("CAUSAL_DILATED_TCN is regression-only, using TCNRegressor with threshold")
-                return TCNRegressor(**merged)
+            try:
+                from src.models.tcn_regressor import TCNRegressor
+                from src.training.steps.models_training.core.tcn_classifier_wrapper import TCNClassifierWrapper
+                
+                if not is_classification:
+                    return TCNRegressor(**merged)
+                else:
+                    # Use TCN classifier wrapper for classification tasks
+                    tcn_regressor = TCNRegressor(**merged)
+                    return TCNClassifierWrapper(tcn_regressor)
+            except Exception as e:
+                tprint_error(f"Failed to create CAUSAL_DILATED_TCN model: {e}")
+                raise
         
         elif model_key == "CATBOOST":
-            from catboost import CatBoostClassifier, CatBoostRegressor
-            cls = CatBoostClassifier if is_classification else CatBoostRegressor
-            return cls(**merged, random_seed=42, verbose=False, thread_count=1)
+            try:
+                from catboost import CatBoostClassifier, CatBoostRegressor
+                cls = CatBoostClassifier if is_classification else CatBoostRegressor
+                return cls(**merged, random_seed=42, verbose=False, thread_count=1)
+            except Exception as e:
+                tprint_error(f"Failed to create CatBoost model: {e}")
+                raise
         
         elif model_key == "XGBOOST":
-            from xgboost import XGBClassifier, XGBRegressor
-            cls = XGBClassifier if is_classification else XGBRegressor
+            try:
+                from xgboost import XGBClassifier, XGBRegressor
+                cls = XGBClassifier if is_classification else XGBRegressor
+                if "n_jobs" not in merged and "nthread" not in merged and "thread_count" not in merged:
+                    merged["n_jobs"] = -1
+                return cls(**merged, random_state=42, verbosity=0)
+            except Exception as e:
+                tprint_error(f"Failed to create XGBoost model: {e}")
+                raise
+        
+        # Fallback for unknown model types
+        tprint_warning(f"Unknown model type: {model_key}, falling back to RandomForest")
+        try:
+            from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
+            cls = RandomForestClassifier if is_classification else RandomForestRegressor
             if "n_jobs" not in merged and "nthread" not in merged and "thread_count" not in merged:
                 merged["n_jobs"] = -1
-            return cls(**merged, random_state=42, verbosity=0)
-        
-        # Fallback
-        from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
-        cls = RandomForestClassifier if is_classification else RandomForestRegressor
-        if "n_jobs" not in merged and "nthread" not in merged and "thread_count" not in merged:
-            merged["n_jobs"] = -1
-        return cls(**merged, random_state=42)
+            return cls(**merged, random_state=42)
+        except Exception as e:
+            tprint_error(f"Failed to create fallback model: {e}")
+            # Last resort: create a simple dummy model
+            from sklearn.dummy import DummyClassifier, DummyRegressor
+            cls = DummyClassifier if is_classification else DummyRegressor
+            return cls(strategy="most_frequent" if is_classification else "mean")
     
     def _evaluate_model_score(self, model, X: np.ndarray, y: np.ndarray, recipe: Dict[str, Any], task_type: str) -> float:
         """Evaluate model score for HPO using YAML metrics."""
@@ -2106,6 +2614,50 @@ class MLModelTrainer:
         # including HTML reports, plots, tables, etc.
         
         tprint_success("✅ Reports generated")
+    
+    def _final_memory_cleanup(self):
+        """Perform final memory cleanup after training."""
+        try:
+            # Clear training results
+            if hasattr(self, 'training_results'):
+                self.training_results.clear()
+            
+            # Clear feature engineers
+            if hasattr(self, 'feature_engineers'):
+                self.feature_engineers.clear()
+            
+            # Clear target generators
+            if hasattr(self, 'target_generators'):
+                self.target_generators.clear()
+            
+            # Clear data validators
+            if hasattr(self, 'data_validators'):
+                self.data_validators.clear()
+            
+            # Clear leakage detectors
+            if hasattr(self, 'leakage_detectors'):
+                self.leakage_detectors.clear()
+            
+            # Clear metrics calculators
+            if hasattr(self, 'metrics_calculators'):
+                self.metrics_calculators.clear()
+            
+            # Clear SHAP analyzers
+            if hasattr(self, 'shap_analyzers'):
+                self.shap_analyzers.clear()
+            
+            # Force garbage collection
+            import gc
+            gc.collect()
+            
+            # Use hardware manager for final cleanup
+            if hasattr(self, 'hardware_manager'):
+                self.hardware_manager.cleanup()
+            
+            tprint_success("🧹 Final memory cleanup completed")
+            
+        except Exception as e:
+            tprint_warning(f"Final memory cleanup failed: {e}")
 
 
 # Example usage

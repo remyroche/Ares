@@ -35,12 +35,22 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
+# Import tprint utilities for enhanced logging
+from src.utils.tprint import (
+    tprint, tprint_info, tprint_success, tprint_error, tprint_warning, 
+    tprint_debug, tprint_performance, tprint_structured, tprint_data_preview,
+    tprint_data_format, tprint_progress, tprint_timer
+)
+
 # Set up logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger("ares.training_pipelines")
+
+# Initialize tprint with configuration
+tprint_info("🎯 Initializing Training Pipelines Orchestrator")
 
 class TrainingPipelineOrchestrator:
     """
@@ -51,12 +61,17 @@ class TrainingPipelineOrchestrator:
         """Initialize the training pipeline orchestrator."""
         self.logger = logger
         self.ares_launcher_path = project_root / "src" / "launcher" / "ares_launcher.py"
+        tprint_info("TrainingPipelineOrchestrator initialized")
         
     def validate_ares_launcher(self) -> bool:
         """Validate that ares_launcher.py exists and is accessible."""
+        tprint_info("Validating ares_launcher.py availability")
+        
         if not self.ares_launcher_path.exists():
-            self.logger.error(f"ares_launcher.py not found at {self.ares_launcher_path}")
+            tprint_error(f"ares_launcher.py not found at {self.ares_launcher_path}")
             return False
+        
+        tprint_success("ares_launcher.py found and accessible")
         return True
     
     def build_step_command(self, step_name: str, config: Dict[str, Any]) -> List[str]:
@@ -70,6 +85,8 @@ class TrainingPipelineOrchestrator:
         Returns:
             List of command arguments
         """
+        tprint_debug(f"Building command for step: {step_name}")
+        
         cmd = [
             "python3", str(self.ares_launcher_path),
             step_name,
@@ -79,6 +96,13 @@ class TrainingPipelineOrchestrator:
             "--direction", config["direction"],
             "--execution-mode", config["mode"]
         ]
+        
+        # Log command structure for debugging
+        tprint_structured({
+            "step_name": step_name,
+            "command": " ".join(cmd),
+            "config": config
+        })
         
         return cmd
     
@@ -93,42 +117,47 @@ class TrainingPipelineOrchestrator:
         Returns:
             Tuple of (success, output)
         """
-        try:
-            self.logger.info(f"Executing step: {step_name}")
-            
-            cmd = self.build_step_command(step_name, config)
-            self.logger.debug(f"Command: {' '.join(cmd)}")
-            
-            # Execute the command
-            process = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                cwd=str(project_root)
-            )
-            
-            stdout, stderr = await process.communicate()
-            
-            # Decode output
-            stdout_str = stdout.decode('utf-8') if stdout else ""
-            stderr_str = stderr.decode('utf-8') if stderr else ""
-            
-            # Check if execution was successful
-            success = process.returncode == 0
-            
-            if success:
-                self.logger.info(f"✅ Step '{step_name}' completed successfully")
-                self.logger.debug(f"Output: {stdout_str}")
-            else:
-                self.logger.error(f"❌ Step '{step_name}' failed with return code {process.returncode}")
-                self.logger.error(f"Error output: {stderr_str}")
-            
-            return success, stdout_str + stderr_str
-            
-        except Exception as e:
-            error_msg = f"Failed to execute step '{step_name}': {str(e)}"
-            self.logger.error(error_msg)
-            return False, error_msg
+        with tprint_timer(f"Step execution: {step_name}"):
+            try:
+                tprint_info(f"Executing step: {step_name}")
+                
+                cmd = self.build_step_command(step_name, config)
+                tprint_debug(f"Command: {' '.join(cmd)}")
+                
+                # Execute the command
+                process = await asyncio.create_subprocess_exec(
+                    *cmd,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                    cwd=str(project_root)
+                )
+                
+                stdout, stderr = await process.communicate()
+                
+                # Decode output
+                stdout_str = stdout.decode('utf-8') if stdout else ""
+                stderr_str = stderr.decode('utf-8') if stderr else ""
+                
+                # Check if execution was successful
+                success = process.returncode == 0
+                
+                if success:
+                    tprint_success(f"Step '{step_name}' completed successfully")
+                    tprint_debug(f"Output: {stdout_str}")
+                    
+                    # Log data format compatibility if output contains data
+                    if stdout_str and ("data" in stdout_str.lower() or "result" in stdout_str.lower()):
+                        tprint_data_format(stdout_str, f"step_{step_name}_output")
+                else:
+                    tprint_error(f"Step '{step_name}' failed with return code {process.returncode}")
+                    tprint_error(f"Error output: {stderr_str}")
+                
+                return success, stdout_str + stderr_str
+                
+            except Exception as e:
+                error_msg = f"Failed to execute step '{step_name}': {str(e)}"
+                tprint_error(error_msg)
+                return False, error_msg
     
     async def execute_pre_training_stage(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -140,7 +169,8 @@ class TrainingPipelineOrchestrator:
         Returns:
             Execution results
         """
-        self.logger.info("🚀 Starting pre_training stage")
+        tprint_info("🚀 Starting pre_training stage")
+        tprint_data_preview(config, "pre_training_config")
         
         # Define the pre_training step sequence
         steps = [
@@ -154,8 +184,10 @@ class TrainingPipelineOrchestrator:
         # Add model-specific interaction generation step
         if config.get("model", "analyst").lower() == "tactician":
             steps.append("feature_generation_interaction_generation_step_tactician")
+            tprint_info("Using tactician interaction generation step")
         else:
             steps.append("feature_generation_interaction_generation_step_analyst")
+            tprint_info("Using analyst interaction generation step")
         
         # Add final steps
         steps.extend([
@@ -163,11 +195,17 @@ class TrainingPipelineOrchestrator:
             "feature_generation_final_validation_step"
         ])
         
+        tprint_structured({
+            "total_steps": len(steps),
+            "step_sequence": steps,
+            "model_type": config.get("model", "analyst")
+        })
+        
         results = {}
         successful_steps = 0
         
         for i, step_name in enumerate(steps, 1):
-            self.logger.info(f"Step {i}/{len(steps)}: {step_name}")
+            tprint_progress(i, len(steps), f"Executing: {step_name}")
             
             success, output = await self.execute_step(step_name, config)
             results[step_name] = {
@@ -178,11 +216,18 @@ class TrainingPipelineOrchestrator:
             
             if success:
                 successful_steps += 1
+                tprint_success(f"Step {i}/{len(steps)} completed: {step_name}")
             else:
-                self.logger.error(f"Pre-training failed at step: {step_name}")
+                tprint_error(f"Pre-training failed at step: {step_name}")
                 break
         
-        self.logger.info(f"Pre-training stage completed: {successful_steps}/{len(steps)} steps successful")
+        tprint_structured({
+            "stage": "pre_training",
+            "successful_steps": successful_steps,
+            "total_steps": len(steps),
+            "success_rate": f"{(successful_steps/len(steps))*100:.1f}%"
+        })
+        
         return results
     
     async def execute_models_training_stage(self, config: Dict[str, Any]) -> Dict[str, Any]:
@@ -195,7 +240,8 @@ class TrainingPipelineOrchestrator:
         Returns:
             Execution results
         """
-        self.logger.info("🚀 Starting models_training stage")
+        tprint_info("🚀 Starting models_training stage")
+        tprint_data_preview(config, "models_training_config")
         
         # Define the models_training step sequence
         steps = [
@@ -205,11 +251,17 @@ class TrainingPipelineOrchestrator:
             "train_tactician_ensemble"
         ]
         
+        tprint_structured({
+            "total_steps": len(steps),
+            "step_sequence": steps,
+            "model_type": config.get("model", "analyst")
+        })
+        
         results = {}
         successful_steps = 0
         
         for i, step_name in enumerate(steps, 1):
-            self.logger.info(f"Step {i}/{len(steps)}: {step_name}")
+            tprint_progress(i, len(steps), f"Executing: {step_name}")
             
             success, output = await self.execute_step(step_name, config)
             results[step_name] = {
@@ -220,11 +272,18 @@ class TrainingPipelineOrchestrator:
             
             if success:
                 successful_steps += 1
+                tprint_success(f"Step {i}/{len(steps)} completed: {step_name}")
             else:
-                self.logger.error(f"Models training failed at step: {step_name}")
+                tprint_error(f"Models training failed at step: {step_name}")
                 break
         
-        self.logger.info(f"Models training stage completed: {successful_steps}/{len(steps)} steps successful")
+        tprint_structured({
+            "stage": "models_training",
+            "successful_steps": successful_steps,
+            "total_steps": len(steps),
+            "success_rate": f"{(successful_steps/len(steps))*100:.1f}%"
+        })
+        
         return results
     
     async def execute_backtesting_stage(self, config: Dict[str, Any]) -> Dict[str, Any]:
@@ -237,7 +296,8 @@ class TrainingPipelineOrchestrator:
         Returns:
             Execution results
         """
-        self.logger.info("🚀 Starting backtesting stage")
+        tprint_info("🚀 Starting backtesting stage")
+        tprint_data_preview(config, "backtesting_config")
         
         # Define the backtesting step sequence
         steps = [
@@ -250,11 +310,17 @@ class TrainingPipelineOrchestrator:
             "reporting"
         ]
         
+        tprint_structured({
+            "total_steps": len(steps),
+            "step_sequence": steps,
+            "model_type": config.get("model", "analyst")
+        })
+        
         results = {}
         successful_steps = 0
         
         for i, step_name in enumerate(steps, 1):
-            self.logger.info(f"Step {i}/{len(steps)}: {step_name}")
+            tprint_progress(i, len(steps), f"Executing: {step_name}")
             
             success, output = await self.execute_step(step_name, config)
             results[step_name] = {
@@ -265,11 +331,18 @@ class TrainingPipelineOrchestrator:
             
             if success:
                 successful_steps += 1
+                tprint_success(f"Step {i}/{len(steps)} completed: {step_name}")
             else:
-                self.logger.error(f"Backtesting failed at step: {step_name}")
+                tprint_error(f"Backtesting failed at step: {step_name}")
                 break
         
-        self.logger.info(f"Backtesting stage completed: {successful_steps}/{len(steps)} steps successful")
+        tprint_structured({
+            "stage": "backtesting",
+            "successful_steps": successful_steps,
+            "total_steps": len(steps),
+            "success_rate": f"{(successful_steps/len(steps))*100:.1f}%"
+        })
+        
         return results
     
     async def execute_stage(self, stage: str, config: Dict[str, Any]) -> Dict[str, Any]:
@@ -296,7 +369,7 @@ class TrainingPipelineOrchestrator:
     
     def print_summary(self, results: Dict[str, Any], stage: str):
         """
-        Print execution summary.
+        Print execution summary using tprint.
         
         Args:
             results: Execution results
@@ -305,21 +378,35 @@ class TrainingPipelineOrchestrator:
         total_steps = len(results)
         successful_steps = sum(1 for r in results.values() if r.get("success", False))
         
-        print(f"\n{'='*60}")
-        print(f"STAGE EXECUTION SUMMARY: {stage.upper()}")
-        print(f"{'='*60}")
-        print(f"Total steps: {total_steps}")
-        print(f"Successful: {successful_steps}")
-        print(f"Failed: {total_steps - successful_steps}")
-        print(f"Success rate: {(successful_steps/total_steps)*100:.1f}%")
+        # Create summary data structure
+        summary_data = {
+            "stage": stage.upper(),
+            "total_steps": total_steps,
+            "successful_steps": successful_steps,
+            "failed_steps": total_steps - successful_steps,
+            "success_rate": f"{(successful_steps/total_steps)*100:.1f}%",
+            "step_details": []
+        }
         
-        print(f"\nStep Details:")
+        # Add step details
+        for step_name, result in results.items():
+            step_detail = {
+                "step_number": result.get("step_number", "?"),
+                "step_name": step_name,
+                "status": "SUCCESS" if result.get("success", False) else "FAILED",
+                "success": result.get("success", False)
+            }
+            summary_data["step_details"].append(step_detail)
+        
+        # Print structured summary
+        tprint_structured(summary_data)
+        
+        # Print individual step status
+        tprint_info("Step Details:")
         for step_name, result in results.items():
             status = "✅ SUCCESS" if result.get("success", False) else "❌ FAILED"
             step_num = result.get("step_number", "?")
-            print(f"  {step_num:2d}. {step_name:<50} {status}")
-        
-        print(f"{'='*60}\n")
+            tprint_info(f"  {step_num:2d}. {step_name:<50} {status}")
 
 
 def create_cli_parser() -> argparse.ArgumentParser:
@@ -417,7 +504,7 @@ Examples:
 
 async def main():
     """Main entry point."""
-    logger.info("🎯 Starting Training Pipelines Orchestrator...")
+    tprint_info("🎯 Starting Training Pipelines Orchestrator...")
     
     # Create CLI parser
     parser = create_cli_parser()
@@ -426,13 +513,14 @@ async def main():
     # Set up logging level
     if args.verbose:
         logging.getLogger().setLevel(logging.DEBUG)
+        tprint_info("Verbose logging enabled")
     
     # Create orchestrator
     orchestrator = TrainingPipelineOrchestrator()
     
     # Validate ares_launcher
     if not orchestrator.validate_ares_launcher():
-        logger.error("Cannot proceed without ares_launcher.py")
+        tprint_error("Cannot proceed without ares_launcher.py")
         sys.exit(1)
     
     # Build configuration
@@ -445,30 +533,35 @@ async def main():
         "exchange": args.exchange
     }
     
+    tprint_data_preview(config, "execution_config")
+    
     # Handle dry run
     if args.dry_run:
-        print("DRY RUN - Would execute the following:")
-        print(f"Stage: {args.stage}")
-        print(f"Configuration: {config}")
+        tprint_info("DRY RUN - Would execute the following:")
+        tprint_structured({
+            "stage": args.stage,
+            "configuration": config
+        })
         
         if args.stage == "all":
             stages = ["pre_training", "models_training", "backtesting"]
+            tprint_info("Stages to execute:")
             for stage in stages:
-                print(f"  - {stage}")
+                tprint_info(f"  - {stage}")
         else:
-            print(f"  - {args.stage}")
+            tprint_info(f"Stage to execute: {args.stage}")
         return
     
     try:
         if args.stage == "all":
             # Execute all stages in sequence
-            logger.info("Executing all stages in sequence...")
+            tprint_info("Executing all stages in sequence...")
             
             all_results = {}
             stages = ["pre_training", "models_training", "backtesting"]
             
             for stage in stages:
-                logger.info(f"Executing stage: {stage}")
+                tprint_info(f"Executing stage: {stage}")
                 results = await orchestrator.execute_stage(stage, config)
                 all_results[stage] = results
                 orchestrator.print_summary(results, stage)
@@ -477,31 +570,42 @@ async def main():
                 successful = sum(1 for r in results.values() if r.get("success", False))
                 total = len(results)
                 if successful < total:
-                    logger.error(f"Stage '{stage}' had failures. Stopping execution.")
+                    tprint_error(f"Stage '{stage}' had failures. Stopping execution.")
                     break
             
             # Print overall summary
-            print(f"\n{'='*80}")
-            print("OVERALL EXECUTION SUMMARY")
-            print(f"{'='*80}")
+            tprint_info("OVERALL EXECUTION SUMMARY")
+            overall_data = {
+                "summary_type": "overall_execution",
+                "stages": []
+            }
+            
             for stage, results in all_results.items():
                 successful = sum(1 for r in results.values() if r.get("success", False))
                 total = len(results)
-                status = "✅ COMPLETED" if successful == total else "❌ FAILED"
-                print(f"{stage.upper():<20} {successful:2d}/{total:2d} steps {status}")
-            print(f"{'='*80}\n")
+                status = "COMPLETED" if successful == total else "FAILED"
+                stage_summary = {
+                    "stage": stage.upper(),
+                    "successful_steps": successful,
+                    "total_steps": total,
+                    "status": status
+                }
+                overall_data["stages"].append(stage_summary)
+                tprint_info(f"{stage.upper():<20} {successful:2d}/{total:2d} steps {status}")
+            
+            tprint_structured(overall_data)
             
         else:
             # Execute single stage
-            logger.info(f"Executing stage: {args.stage}")
+            tprint_info(f"Executing stage: {args.stage}")
             results = await orchestrator.execute_stage(args.stage, config)
             orchestrator.print_summary(results, args.stage)
             
     except Exception as e:
-        logger.error(f"Execution failed: {e}")
+        tprint_error(f"Execution failed: {e}")
         sys.exit(1)
     
-    logger.info("✅ Training Pipelines Orchestrator completed")
+    tprint_success("✅ Training Pipelines Orchestrator completed")
 
 
 if __name__ == "__main__":

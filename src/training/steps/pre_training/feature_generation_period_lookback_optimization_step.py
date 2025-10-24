@@ -217,18 +217,18 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
         tprint_info("🚀 Initializing enhanced hardware optimization components")
         
         # Initialize unified hardware manager
-        self.hardware_manager = get_unified_hardware_manager()
+        self.hardware_manager = self.get_unified_hardware_manager()
         
         # Initialize comprehensive M1 optimizer
-        self.comprehensive_optimizer = get_comprehensive_optimizer(
+        self.comprehensive_optimizer = self.get_comprehensive_optimizer(
             strategy=OptimizationStrategy.MAXIMUM_PERFORMANCE,
             workload_category=WorkloadCategory.FEATURE_ENGINEERING
         )
         
         # Initialize specialized components
-        self.memory_manager = get_unified_memory_manager()
-        self.cpu_optimizer = get_advanced_cpu_optimizer()
-        self.gpu_manager = get_enhanced_gpu_manager()
+        self.memory_manager = self.get_unified_memory_manager()
+        self.cpu_optimizer = self.get_advanced_cpu_optimizer()
+        self.gpu_manager = self.get_enhanced_gpu_manager()
         
         # Initialize enhanced caching system
         tprint_info("💾 Initializing enhanced caching system")
@@ -772,7 +772,7 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             
             # Get artifact manager first
             tprint_info("Getting pretraining artifact manager")
-            artifact_manager = get_pretraining_artifact_manager()
+            artifact_manager = self.get_pretraining_artifact_manager()
             tprint_success("Artifact manager retrieved successfully")
             
         # Optimize input data
@@ -1041,7 +1041,7 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             tprint_info("Computing per-feature MI-best and Sharpe-centric mRMR selections")
             try:
                 # Fetch targets from artifact manager; fast-fail if missing
-                artifact_manager = get_pretraining_artifact_manager()
+                artifact_manager = self.get_pretraining_artifact_manager()
                 targets = None
                 for step_name in ("feature_generation_labeling_integration_step", "labeling_integration"):
                     tmp = artifact_manager.get_artifact(step_name, ArtifactKeys.TARGETS)
@@ -1292,7 +1292,7 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                 return -1
 
             tprint_info("Getting artifact manager for feature analysis")
-            artifact_manager = get_pretraining_artifact_manager()
+            artifact_manager = self.get_pretraining_artifact_manager()
             
             # Only look for features from feature_generation_feature_generation_step
             tprint_info("🔍 Looking for features from feature_generation_feature_generation_step...")
@@ -3559,3 +3559,28 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             raise
 
     # Required utility methods for BasePreTrainingComponent
+
+    # BaseStep utility methods
+    def get_unified_hardware_manager(self):
+        """Get unified hardware manager using BaseStep utilities."""
+        return self.get_utility('unified_hardware_manager')
+
+    def get_comprehensive_optimizer(self, **kwargs):
+        """Get comprehensive optimizer using BaseStep utilities."""
+        return self.get_utility('comprehensive_optimizer', **kwargs)
+
+    def get_unified_memory_manager(self):
+        """Get unified memory manager using BaseStep utilities."""
+        return self.get_utility('unified_memory_manager')
+
+    def get_advanced_cpu_optimizer(self):
+        """Get advanced CPU optimizer using BaseStep utilities."""
+        return self.get_utility('advanced_cpu_optimizer')
+
+    def get_enhanced_gpu_manager(self):
+        """Get enhanced GPU manager using BaseStep utilities."""
+        return self.get_utility('enhanced_gpu_manager')
+
+    def get_pretraining_artifact_manager(self):
+        """Get pretraining artifact manager using BaseStep utilities."""
+        return self.get_utility('pretraining_artifact_manager')

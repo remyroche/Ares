@@ -65,6 +65,9 @@ try:
 except ImportError:
     BASE_ENGINE_AVAILABLE = False
 
+# Import BaseStep for unified utility access
+from src.training.steps.base_step import BaseStep
+
 # Output utilities
 from src.utils.tprint import tprint, tprint_data_preview
 
@@ -191,7 +194,7 @@ class RealMonteCarloConfig:
     # Custom parameters
     custom_params: Dict[str, Any] = field(default_factory=dict)
 
-class RealMonteCarloEngine:
+class RealMonteCarloEngine(BaseStep):
     """
     Real Monte Carlo simulation engine using existing utilities.
 
@@ -202,18 +205,18 @@ class RealMonteCarloEngine:
     - Risk metrics calculation (VaR, Expected Shortfall, etc.)
     """
 
-    def __init__(self, config: RealMonteCarloConfig):
+    def __init__(self, config: RealMonteCarloConfig, logger: Optional[logging.Logger] = None):
         """Initialize the enhanced Monte Carlo engine with hardware acceleration."""
+        super().__init__("real_monte_carlo_engine", config.__dict__, logger)
         self.config = config
-        self.logger = logger.getChild('RealMonteCarloEngine')
 
         tprint("🚀 Initializing Enhanced Monte Carlo Simulation Engine", "header")
 
-        # Initialize hardware optimizers
+        # Initialize hardware optimizers using BaseStep utilities
         try:
-            self.gpu_manager = get_m1_gpu_manager() if config.enable_gpu_acceleration else None
+            self.gpu_manager = self.get_m1_gpu_manager() if config.enable_gpu_acceleration else None
             if config.enable_gpu_acceleration:
-                self.gpu_accelerator = M1GPUAccelerator()
+                self.gpu_accelerator = self.get_m1_gpu_accelerator()
             else:
                 self.gpu_accelerator = None
         except Exception as e:
@@ -222,9 +225,9 @@ class RealMonteCarloEngine:
             self.gpu_accelerator = None
 
         try:
-            self.memory_optimizer = get_m1_memory_optimizer() if config.enable_memory_optimization else None
+            self.memory_optimizer = self.get_m1_memory_optimizer() if config.enable_memory_optimization else None
             if config.enable_memory_optimization:
-                self.m1_memory_optimizer = M1MemoryOptimizer()
+                self.m1_memory_optimizer = self.get_m1_memory_optimizer_instance()
                 self.m1_memory_optimizer.optimize_memory_for_ml()
             else:
                 self.m1_memory_optimizer = None
@@ -234,9 +237,9 @@ class RealMonteCarloEngine:
             self.m1_memory_optimizer = None
 
         try:
-            self.cpu_optimizer = get_m1_cpu_optimizer() if config.enable_parallel_processing else None
+            self.cpu_optimizer = self.get_m1_cpu_optimizer() if config.enable_parallel_processing else None
             if config.enable_parallel_processing:
-                self.m1_cpu_optimizer = M1CPUOptimizer()
+                self.m1_cpu_optimizer = self.get_m1_cpu_optimizer_instance()
             else:
                 self.m1_cpu_optimizer = None
         except Exception as e:
@@ -244,11 +247,11 @@ class RealMonteCarloEngine:
             self.cpu_optimizer = None
             self.m1_cpu_optimizer = None
 
-        # Initialize matrix operations
+        # Initialize matrix operations using BaseStep utilities
         try:
-            self.matrix_ops = get_unified_matrix_operations()
-            self.matrix_processor = HardwareOptimizedMatrixProcessor()
-            self.batch_processor = BatchMatrixProcessor(
+            self.matrix_ops = self.get_unified_matrix_operations()
+            self.matrix_processor = self.get_hardware_optimized_matrix_processor()
+            self.batch_processor = self.get_batch_matrix_processor(
                 chunk_size_mb=config.chunk_size_mb,
                 enable_gpu=config.enable_gpu_acceleration,
                 enable_parallel=config.enable_parallel_processing,
@@ -278,8 +281,8 @@ class RealMonteCarloEngine:
                 enable_rolling_optimization=True
             )
 
-            self.vectorization_manager = get_unified_vectorization_manager(vectorbt_config)
-            self.rolling_optimizer = get_vectorbt_rolling_optimizer(
+            self.vectorization_manager = self.get_unified_vectorization_manager(vectorbt_config)
+            self.rolling_optimizer = self.get_vectorbt_rolling_optimizer(
                 enable_gpu=config.enable_gpu_acceleration,
                 enable_parallel=config.enable_parallel_processing,
                 memory_efficient=config.enable_memory_optimization,
@@ -293,14 +296,14 @@ class RealMonteCarloEngine:
             self.vectorization_manager = None
             self.rolling_optimizer = None
 
-        # Initialize CV and validation utilities
+        # Initialize CV and validation utilities using BaseStep utilities
         if config.enable_cv_validation:
-            self.cv_validator = TimeSeriesSplitValidator(
+            self.cv_validator = self.get_time_series_split_validator(
                 n_splits=config.cv_folds,
                 test_size=1.0 / config.cv_folds,
                 embargo_pct=config.embargo_pct
             )
-            self.oof_generator = create_enhanced_oof_generator(
+            self.oof_generator = self.create_enhanced_oof_generator(
                 strategy=OOFStrategy.MEAN,
                 n_folds=5,
                 enable_confidence_intervals=True,
@@ -313,14 +316,14 @@ class RealMonteCarloEngine:
             self.oof_generator = None
 
         if config.enable_leakage_detection:
-            self.leakage_detector = DataLeakageDetector()
+            self.leakage_detector = self.get_data_leakage_detector()
             tprint("✅ Data leakage detector initialized", "success")
         else:
             self.leakage_detector = None
 
-        # Initialize ML utilities
+        # Initialize ML utilities using BaseStep utilities
         try:
-            self.hpo_optimizer = HyperparameterOptimizer()
+            self.hpo_optimizer = self.get_hyperparameter_optimizer()
         except Exception:
             self.hpo_optimizer = None
 
@@ -464,10 +467,10 @@ class RealMonteCarloEngine:
             # Preview raw input data
             tprint_data_preview(returns_data, "monte_carlo_raw_input_data", level="DEBUG", include_metadata=True)
 
-            # Convert to array and remove NaN
-            returns = ensure_array(returns_data)
-            returns = returns[~check_for_nans(returns)]
-            returns = returns[~check_for_infs(returns)]
+            # Convert to array and remove NaN using BaseStep utilities
+            returns = self.ensure_array(returns_data)
+            returns = returns[~self.check_for_nans(returns)]
+            returns = returns[~self.check_for_infs(returns)]
             
             # Preview cleaned data
             tprint_data_preview(returns, "monte_carlo_cleaned_returns", level="DEBUG", include_metadata=True)
@@ -478,7 +481,7 @@ class RealMonteCarloEngine:
                     'error': f'Insufficient data: {len(returns)} < {self.config.min_samples}'
                 }
 
-            # Calculate statistics
+            # Calculate statistics using BaseStep utilities
             statistics = {
                 'n_samples': len(returns),
                 'mean': float(np.mean(returns)),
@@ -885,19 +888,19 @@ class RealMonteCarloEngine:
             max_dd = calculate_max_drawdown(cumulative_returns)
             max_dd = validate_finite(max_dd, default=0.0)
 
-            # Performance metrics using common_operations
-            sharpe_ratio = calculate_sharpe_ratio(returns)
-            sortino_ratio = calculate_sortino_ratio(returns)
-            win_rate = calculate_win_rate(returns)
-            profit_factor = calculate_profit_factor(returns)
-            calmar_ratio = calculate_calmar_ratio(returns, max_dd)
+            # Performance metrics using BaseStep utilities
+            sharpe_ratio = self.calculate_sharpe_ratio(returns)
+            sortino_ratio = self.calculate_sortino_ratio(returns)
+            win_rate = self.calculate_win_rate(returns)
+            profit_factor = self.calculate_profit_factor(returns)
+            calmar_ratio = self.calculate_calmar_ratio(returns, max_dd)
 
-            # Validate performance metrics
-            sharpe_ratio = validate_finite(sharpe_ratio, default=0.0)
-            sortino_ratio = validate_finite(sortino_ratio, default=0.0)
-            win_rate = validate_probability(win_rate)
-            profit_factor = validate_positive(profit_factor, default=0.0)
-            calmar_ratio = validate_finite(calmar_ratio, default=0.0)
+            # Validate performance metrics using BaseStep utilities
+            sharpe_ratio = self.validate_finite(sharpe_ratio, default=0.0)
+            sortino_ratio = self.validate_finite(sortino_ratio, default=0.0)
+            win_rate = self.validate_probability(win_rate)
+            profit_factor = self.validate_positive(profit_factor, default=0.0)
+            calmar_ratio = self.validate_finite(calmar_ratio, default=0.0)
 
             # Tail risk metrics
             tail_returns = returns[returns < var_value]
@@ -1065,10 +1068,10 @@ class RealMonteCarloEngine:
                 tprint("⚠️  No simulation results available", "warning")
                 return {'error': 'No simulation results available'}
 
-            # Validate simulation results
-            results_array = ensure_array(self.simulation_results)
-            results_array = results_array[~check_for_nans(results_array)]
-            results_array = results_array[~check_for_infs(results_array)]
+            # Validate simulation results using BaseStep utilities
+            results_array = self.ensure_array(self.simulation_results)
+            results_array = results_array[~self.check_for_nans(results_array)]
+            results_array = results_array[~self.check_for_infs(results_array)]
 
             report = {
                 'simulation_config': {
@@ -1129,6 +1132,117 @@ class RealMonteCarloEngine:
             self.logger.error(f"❌ Failed to generate report: {e}")
             tprint(f"❌ Report generation failed: {e}", "error")
             return {'error': str(e)}
+
+    # BaseStep utility methods
+    def get_m1_gpu_manager(self):
+        """Get M1 GPU manager using BaseStep utilities."""
+        return self.get_utility('m1_gpu_manager')
+
+    def get_m1_gpu_accelerator(self):
+        """Get M1 GPU accelerator using BaseStep utilities."""
+        return self.get_utility('m1_gpu_accelerator')
+
+    def get_m1_memory_optimizer(self):
+        """Get M1 memory optimizer using BaseStep utilities."""
+        return self.get_utility('m1_memory_optimizer')
+
+    def get_m1_memory_optimizer_instance(self):
+        """Get M1 memory optimizer instance using BaseStep utilities."""
+        return self.get_utility('m1_memory_optimizer_instance')
+
+    def get_m1_cpu_optimizer(self):
+        """Get M1 CPU optimizer using BaseStep utilities."""
+        return self.get_utility('m1_cpu_optimizer')
+
+    def get_m1_cpu_optimizer_instance(self):
+        """Get M1 CPU optimizer instance using BaseStep utilities."""
+        return self.get_utility('m1_cpu_optimizer_instance')
+
+    def get_unified_matrix_operations(self):
+        """Get unified matrix operations using BaseStep utilities."""
+        return self.get_utility('unified_matrix_operations')
+
+    def get_hardware_optimized_matrix_processor(self):
+        """Get hardware optimized matrix processor using BaseStep utilities."""
+        return self.get_utility('hardware_optimized_matrix_processor')
+
+    def get_batch_matrix_processor(self, **kwargs):
+        """Get batch matrix processor using BaseStep utilities."""
+        return self.get_utility('batch_matrix_processor', **kwargs)
+
+    def get_unified_vectorization_manager(self, config):
+        """Get unified vectorization manager using BaseStep utilities."""
+        return self.get_utility('unified_vectorization_manager', config)
+
+    def get_vectorbt_rolling_optimizer(self, **kwargs):
+        """Get VectorBT rolling optimizer using BaseStep utilities."""
+        return self.get_utility('vectorbt_rolling_optimizer', **kwargs)
+
+    def get_time_series_split_validator(self, **kwargs):
+        """Get time series split validator using BaseStep utilities."""
+        return self.get_utility('time_series_split_validator', **kwargs)
+
+    def create_enhanced_oof_generator(self, **kwargs):
+        """Create enhanced OOF generator using BaseStep utilities."""
+        return self.get_utility('enhanced_oof_generator', **kwargs)
+
+    def get_data_leakage_detector(self):
+        """Get data leakage detector using BaseStep utilities."""
+        return self.get_utility('data_leakage_detector')
+
+    def get_hyperparameter_optimizer(self):
+        """Get hyperparameter optimizer using BaseStep utilities."""
+        return self.get_utility('hyperparameter_optimizer')
+
+    # Math validation utilities
+    def validate_finite(self, value, default=0.0):
+        """Validate finite value using BaseStep utilities."""
+        return self.get_utility('validate_finite', value, default)
+
+    def validate_probability(self, value, default=0.0):
+        """Validate probability value using BaseStep utilities."""
+        return self.get_utility('validate_probability', value, default)
+
+    def validate_positive(self, value, default=0.0):
+        """Validate positive value using BaseStep utilities."""
+        return self.get_utility('validate_positive', value, default)
+
+    def check_for_nans(self, array):
+        """Check for NaNs using BaseStep utilities."""
+        return self.get_utility('check_for_nans', array)
+
+    def check_for_infs(self, array):
+        """Check for infinities using BaseStep utilities."""
+        return self.get_utility('check_for_infs', array)
+
+    def ensure_array(self, data):
+        """Ensure array format using BaseStep utilities."""
+        return self.get_utility('ensure_array', data)
+
+    # Common operations utilities
+    def calculate_sharpe_ratio(self, returns):
+        """Calculate Sharpe ratio using BaseStep utilities."""
+        return self.get_utility('calculate_sharpe_ratio', returns)
+
+    def calculate_sortino_ratio(self, returns):
+        """Calculate Sortino ratio using BaseStep utilities."""
+        return self.get_utility('calculate_sortino_ratio', returns)
+
+    def calculate_max_drawdown(self, returns):
+        """Calculate max drawdown using BaseStep utilities."""
+        return self.get_utility('calculate_max_drawdown', returns)
+
+    def calculate_win_rate(self, returns):
+        """Calculate win rate using BaseStep utilities."""
+        return self.get_utility('calculate_win_rate', returns)
+
+    def calculate_profit_factor(self, returns):
+        """Calculate profit factor using BaseStep utilities."""
+        return self.get_utility('calculate_profit_factor', returns)
+
+    def calculate_calmar_ratio(self, returns, max_dd):
+        """Calculate Calmar ratio using BaseStep utilities."""
+        return self.get_utility('calculate_calmar_ratio', returns, max_dd)
 
 # Convenience functions
 async def run_monte_carlo_simulation(

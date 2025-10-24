@@ -26,6 +26,9 @@ from enum import Enum
 import numpy as np
 import pandas as pd
 
+# Import BaseStep for unified utility access
+from src.training.steps.base_step import BaseStep
+
 # Import core utilities
 from src.utils.logger import system_logger
 from src.utils.tprint import (
@@ -175,7 +178,7 @@ class TacticianLookbackConfig:
     min_signal_quality: float = 0.5
     max_correlation_threshold: float = 0.8
 
-class TacticianLookbackOptimizer:
+class TacticianLookbackOptimizer(BaseStep):
     """
     Tactician Lookback Optimizer for 1m timeframe with Analyst integration.
 
@@ -187,12 +190,12 @@ class TacticianLookbackOptimizer:
     4. Signal quality in high-frequency context
     """
 
-    def __init__(self, config: TacticianLookbackConfig):
+    def __init__(self, config: TacticianLookbackConfig, logger: Optional[logging.Logger] = None):
         """Initialize Tactician lookback optimizer."""
+        super().__init__("tactician_lookback_optimizer", config.__dict__, logger)
         tprint_info("🚀 Initializing Tactician Lookback Optimizer")
 
         self.config = config
-        self.logger = logger.getChild('TacticianLookbackOptimizer')
         self.start_time = time.time()
 
         # Initialize components consolidated
@@ -1470,9 +1473,9 @@ except ImportError:
                 if features[column].dtype in ['float64', 'int64']:
                     try:
                         # Calculate correlations with different horizons
-                        corr_1min = safe_correlation(features[column], returns_1min)
-                        corr_3min = safe_correlation(features[column], returns_3min)
-                        corr_5min = safe_correlation(features[column], returns_5min)
+                        corr_1min = self.safe_correlation(features[column], returns_1min)
+                        corr_3min = self.safe_correlation(features[column], returns_3min)
+                        corr_5min = self.safe_correlation(features[column], returns_5min)
 
                         # Weight short-term correlations more heavily for 0.4% targets
                         valid_corrs = []
@@ -1529,7 +1532,7 @@ except ImportError:
                 if 'analyst' not in column.lower() and features[column].dtype in ['float64', 'int64']:
                     try:
                         # Calculate correlation with Analyst signals
-                        corr = safe_correlation(features[column], analyst_signal_series)
+                        corr = self.safe_correlation(features[column], analyst_signal_series)
                         if validate_finite(corr):
                             alignment_scores.append(abs(corr))
                     except Exception:
@@ -1543,7 +1546,7 @@ except ImportError:
                     for column in features.columns:
                         if 'analyst' not in column.lower() and features[column].dtype in ['float64', 'int64']:
                             try:
-                                corr = safe_correlation(features[column], output_series)
+                                corr = self.safe_correlation(features[column], output_series)
                                 if validate_finite(corr):
                                     alignment_scores.append(abs(corr))
                             except Exception:
@@ -2259,6 +2262,131 @@ except ImportError:
         except Exception as e:
             tprint_warning(f"⚠️ Failed to generate convergence analysis: {e}")
             return {'error': str(e)}
+
+    # BaseStep utility methods
+    def safe_correlation(self, x, y):
+        """Safe correlation using BaseStep utilities."""
+        return self.get_utility('safe_correlation', x, y)
+
+    def safe_dataframe_operation(self, operation, *args, **kwargs):
+        """Safe dataframe operation using BaseStep utilities."""
+        return self.get_utility('safe_dataframe_operation', operation, *args, **kwargs)
+
+    def validate_dataframe_columns(self, df, required_columns):
+        """Validate dataframe columns using BaseStep utilities."""
+        return self.get_utility('validate_dataframe_columns', df, required_columns)
+
+    def safe_convert_dtypes(self, df, dtype_map):
+        """Safe convert dtypes using BaseStep utilities."""
+        return self.get_utility('safe_convert_dtypes', df, dtype_map)
+
+    def calculate_data_quality_metrics(self, df):
+        """Calculate data quality metrics using BaseStep utilities."""
+        return self.get_utility('calculate_data_quality_metrics', df)
+
+    def safe_merge_dataframes(self, left, right, **kwargs):
+        """Safe merge dataframes using BaseStep utilities."""
+        return self.get_utility('safe_merge_dataframes', left, right, **kwargs)
+
+    def safe_groupby_operation(self, df, groupby_cols, operation):
+        """Safe groupby operation using BaseStep utilities."""
+        return self.get_utility('safe_groupby_operation', df, groupby_cols, operation)
+
+    def safe_apply_function(self, df, func, **kwargs):
+        """Safe apply function using BaseStep utilities."""
+        return self.get_utility('safe_apply_function', df, func, **kwargs)
+
+    def create_summary_statistics(self, df):
+        """Create summary statistics using BaseStep utilities."""
+        return self.get_utility('create_summary_statistics', df)
+
+    def safe_drop_columns(self, df, columns):
+        """Safe drop columns using BaseStep utilities."""
+        return self.get_utility('safe_drop_columns', df, columns)
+
+    def safe_rename_columns(self, df, column_map):
+        """Safe rename columns using BaseStep utilities."""
+        return self.get_utility('safe_rename_columns', df, column_map)
+
+    def validate_timestamp_column(self, df, timestamp_col):
+        """Validate timestamp column using BaseStep utilities."""
+        return self.get_utility('validate_timestamp_column', df, timestamp_col)
+
+    def safe_timestamp_conversion(self, df, timestamp_col):
+        """Safe timestamp conversion using BaseStep utilities."""
+        return self.get_utility('safe_timestamp_conversion', df, timestamp_col)
+
+    def get_dataframe_info(self, df):
+        """Get dataframe info using BaseStep utilities."""
+        return self.get_utility('get_dataframe_info', df)
+
+    def safe_filter_dataframe(self, df, condition):
+        """Safe filter dataframe using BaseStep utilities."""
+        return self.get_utility('safe_filter_dataframe', df, condition)
+
+    def create_data_quality_report(self, df):
+        """Create data quality report using BaseStep utilities."""
+        return self.get_utility('create_data_quality_report', df)
+
+    def optimize_dataframe_dtypes(self, df):
+        """Optimize dataframe dtypes using BaseStep utilities."""
+        return self.get_utility('optimize_dataframe_dtypes', df)
+
+    def safe_fillna(self, df, **kwargs):
+        """Safe fillna using BaseStep utilities."""
+        return self.get_utility('safe_fillna', df, **kwargs)
+
+    def safe_rolling(self, df, window, **kwargs):
+        """Safe rolling using BaseStep utilities."""
+        return self.get_utility('safe_rolling', df, window, **kwargs)
+
+    def safe_to_parquet(self, df, filepath, **kwargs):
+        """Safe to parquet using BaseStep utilities."""
+        return self.get_utility('safe_to_parquet', df, filepath, **kwargs)
+
+    def safe_read_parquet(self, filepath, **kwargs):
+        """Safe read parquet using BaseStep utilities."""
+        return self.get_utility('safe_read_parquet', filepath, **kwargs)
+
+    def validate_dataframe_schema(self, df, schema):
+        """Validate dataframe schema using BaseStep utilities."""
+        return self.get_utility('validate_dataframe_schema', df, schema)
+
+    def guard_dataframe_nulls(self, df):
+        """Guard dataframe nulls using BaseStep utilities."""
+        return self.get_utility('guard_dataframe_nulls', df)
+
+    def memory_checkpoint(self, df):
+        """Memory checkpoint using BaseStep utilities."""
+        return self.get_utility('memory_checkpoint', df)
+
+    def optimize_memory(self, df):
+        """Optimize memory using BaseStep utilities."""
+        return self.get_utility('optimize_memory', df)
+
+    def get_memory_usage(self, df):
+        """Get memory usage using BaseStep utilities."""
+        return self.get_utility('get_memory_usage', df)
+
+    def integrate_with_m1_optimizers(self, df):
+        """Integrate with M1 optimizers using BaseStep utilities."""
+        return self.get_utility('integrate_with_m1_optimizers', df)
+
+    def get_m1_gpu_manager(self):
+        """Get M1 GPU manager using BaseStep utilities."""
+        return self.get_utility('m1_gpu_manager')
+
+    def get_m1_memory_optimizer(self):
+        """Get M1 memory optimizer using BaseStep utilities."""
+        return self.get_utility('m1_memory_optimizer')
+
+    def get_m1_cpu_optimizer(self):
+        """Get M1 CPU optimizer using BaseStep utilities."""
+        return self.get_utility('m1_cpu_optimizer')
+
+    def validate_dataframe(self, df, **kwargs):
+        """Validate dataframe using BaseStep utilities."""
+        return self.get_utility('validate_dataframe', df, **kwargs)
 
 # Convenience functions for integration
 

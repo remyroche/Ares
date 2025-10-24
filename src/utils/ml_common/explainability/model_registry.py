@@ -21,7 +21,7 @@ class ModelType(Enum):
 class ExplainabilityConfig:
     """Configuration for model explainability."""
     model_type: ModelType
-    explainer_type: str = "auto"
+    explainer_type: str = "tree"
     max_evals: int = 100
     background_samples: int = 100
     feature_names: Optional[List[str]] = None
@@ -108,7 +108,7 @@ class ExplainabilityRegistry:
         """Create a default explainability configuration for a model type."""
         return ExplainabilityConfig(
             model_type=model_type,
-            explainer_type=self.get_supported_explainers(model_type)[0] if self.get_supported_explainers(model_type) else "lime"
+            explainer_type=self.get_supported_explainers(model_type)[0] if self.get_supported_explainers(model_type) else "tree"
         )
 
 # Global registry instance

@@ -15,6 +15,7 @@ explainability:
   # SHAP settings
   enable_shap: true
   max_features: 20
+  explainer_type: "tree"  # Use TreeSHAP by default for better performance
   
   # LIME settings
   enable_lime: true

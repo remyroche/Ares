@@ -301,15 +301,45 @@ class MLModelTrainerStep(BaseStep):
             # Initialize ML model trainer
             self.ml_trainer = MLModelTrainer(ml_config, self.logger)
             
-            # Load data from artifacts
-            data = await self._load_training_data(config)
-            if not data:
+            # Load training data for each model type
+            training_data = await self._load_training_data(config)
+            if not training_data:
                 return {
                     'success': False,
                     'error': 'Failed to load training data',
                     'artifacts': [],
                     'metrics': {}
                 }
+            
+            # Prepare data for ML trainer - combine all features for each model type
+            all_features = []
+            for model_type_str, features in training_data['model_data'].items():
+                if features is not None:
+                    all_features.append(features)
+                    self.logger.info(f"Added {features.shape[1]} features for {model_type_str}")
+            
+            if not all_features:
+                self.logger.error("No features available for training")
+                return {
+                    'success': False,
+                    'error': 'No features available for training',
+                    'artifacts': [],
+                    'metrics': {}
+                }
+            
+            # Combine all features
+            import numpy as np
+            combined_features = np.hstack(all_features)
+            self.logger.info(f"Combined features shape: {combined_features.shape}")
+            
+            # Prepare data for ML trainer
+            data = {
+                'features': combined_features,
+                'targets': training_data['targets'],
+                'model_data': training_data['model_data'],
+                'regime_outputs': training_data['regime_outputs'],
+                'metadata': training_data['metadata']
+            }
             
             # Add mode parameters to training data metadata and as separate fields
             data['metadata'].update(mode_params)
@@ -379,71 +409,335 @@ class MLModelTrainerStep(BaseStep):
             }
     
     async def _load_training_data(self, config: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """Load training data from artifacts."""
+        """Load training data from artifacts based on model type and direction."""
         try:
-            # Try to load features and targets from artifacts
-            features = None
-            targets = None
+            model_types = config.get('model_types', [])
+            direction = config.get('direction', 'longs')
             
-            # Look for features in various artifact locations
-            feature_artifacts = [
-                'features', 'processed_features', 'final_features',
-                'analyst_features', 'tactician_features'
-            ]
-            
-            for artifact_name in feature_artifacts:
-                try:
-                    features = self._load_dataframe(artifact_name)
-                    if features is not None and not features.empty:
-                        self.logger.info(f"Loaded features from artifact: {artifact_name}")
-                        break
-                except Exception as e:
-                    self.logger.debug(f"Failed to load {artifact_name}: {e}")
-                    continue
-            
-            # Look for targets in various artifact locations
-            target_artifacts = [
-                'targets', 'processed_targets', 'final_targets',
-                'profit_labels', 'risk_labels', 'entry_labels', 'exit_labels'
-            ]
-            
-            for artifact_name in target_artifacts:
-                try:
-                    targets = self._load_dataframe(artifact_name)
-                    if targets is not None and not targets.empty:
-                        self.logger.info(f"Loaded targets from artifact: {artifact_name}")
-                        break
-                except Exception as e:
-                    self.logger.debug(f"Failed to load {artifact_name}: {e}")
-                    continue
-            
-            if features is None or targets is None:
-                self.logger.error("Failed to load required training data")
+            # Load targets from labeling integration step
+            targets = await self._load_targets(config)
+            if targets is None:
+                self.logger.error("Failed to load targets from labeling integration step")
                 return None
             
-            # Convert to numpy arrays
-            import numpy as np
-            features_array = features.values if hasattr(features, 'values') else np.array(features)
-            targets_array = targets.values if hasattr(targets, 'values') else np.array(targets)
+            # Load regime model outputs
+            regime_outputs = await self._load_regime_outputs(config)
+            
+            # Load model-specific data
+            model_data = {}
+            for model_type in model_types:
+                model_type_str = model_type.value if hasattr(model_type, 'value') else str(model_type)
+                model_features = await self._load_model_features(model_type_str, direction, regime_outputs, config)
+                if model_features is not None:
+                    model_data[model_type_str] = model_features
+                else:
+                    self.logger.warning(f"Failed to load features for {model_type_str}")
+            
+            if not model_data:
+                self.logger.error("Failed to load features for any model type")
+                return None
             
             return {
-                'features': features_array,
-                'targets': targets_array,
+                'targets': targets,
+                'model_data': model_data,
+                'regime_outputs': regime_outputs,
                 'metadata': {
                     'symbol': config.get('symbol'),
                     'exchange': config.get('exchange'),
                     'timeframe': config.get('timeframe'),
-                    'direction': config.get('direction'),
+                    'direction': direction,
                     'execution_mode': config.get('execution_mode', 'light'),
-                    'feature_shape': features_array.shape,
-                    'target_shape': targets_array.shape,
-                    'data_points': len(features_array),
-                    'feature_count': features_array.shape[1] if len(features_array.shape) > 1 else 0
+                    'model_types': [mt.value if hasattr(mt, 'value') else str(mt) for mt in model_types],
+                    'target_shape': targets.shape if hasattr(targets, 'shape') else (len(targets),),
+                    'data_points': len(targets)
                 }
             }
             
         except Exception as e:
             self.logger.error(f"Failed to load training data: {e}")
+            return None
+
+    async def _load_targets(self, config: Dict[str, Any]) -> Optional[np.ndarray]:
+        """Load targets from feature_generation_labeling_integration_step."""
+        try:
+            # Load targets from labeling integration step
+            targets = self._load_dataframe('targets')
+            if targets is not None and not targets.empty:
+                self.logger.info("Loaded targets from labeling integration step")
+                return targets.values if hasattr(targets, 'values') else np.array(targets)
+            
+            # Fallback: try other target artifacts
+            target_artifacts = ['processed_targets', 'final_targets', 'profit_labels', 'risk_labels']
+            for artifact_name in target_artifacts:
+                targets = self._load_dataframe(artifact_name)
+                if targets is not None and not targets.empty:
+                    self.logger.info(f"Loaded targets from artifact: {artifact_name}")
+                    return targets.values if hasattr(targets, 'values') else np.array(targets)
+            
+            return None
+            
+        except Exception as e:
+            self.logger.error(f"Failed to load targets: {e}")
+            return None
+
+    async def _load_regime_outputs(self, config: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Load regime model outputs from regime_data_splitting step."""
+        try:
+            regime_outputs = {}
+            
+            # Load regime data splits
+            regime_artifacts = [
+                'low_vol_data', 'normal_data', 'high_vol_data',
+                'regime_classification', 'regime_probabilities',
+                'regime_transition_matrix', 'regime_volatility_estimates'
+            ]
+            
+            for artifact_name in regime_artifacts:
+                try:
+                    data = self._load_dataframe(artifact_name)
+                    if data is not None and not data.empty:
+                        regime_outputs[artifact_name] = data
+                        self.logger.debug(f"Loaded regime artifact: {artifact_name}")
+                except Exception as e:
+                    self.logger.debug(f"Failed to load regime artifact {artifact_name}: {e}")
+                    continue
+            
+            if regime_outputs:
+                self.logger.info(f"Loaded {len(regime_outputs)} regime outputs")
+            else:
+                self.logger.warning("No regime outputs found")
+            
+            return regime_outputs
+            
+        except Exception as e:
+            self.logger.error(f"Failed to load regime outputs: {e}")
+            return None
+
+    async def _load_model_features(self, model_type: str, direction: str, regime_outputs: Dict[str, Any], config: Dict[str, Any]) -> Optional[np.ndarray]:
+        """Load features specific to each model type."""
+        try:
+            import numpy as np
+            import pandas as pd
+            
+            features_list = []
+            
+            if model_type in ['analyst_base', 'analyst_ensemble']:
+                # Analyst models: use features from feature_generation_final_feature_selection_step for Analyst
+                analyst_features = await self._load_analyst_features(direction)
+                if analyst_features is not None:
+                    features_list.append(analyst_features)
+                    self.logger.info(f"Loaded analyst features for {model_type}")
+                else:
+                    self.logger.warning(f"Failed to load analyst features for {model_type}")
+            
+            if model_type in ['tactician_base', 'tactician_ensemble']:
+                # Tactician models: use features from feature_generation_final_feature_selection_step for Tactician
+                tactician_features = await self._load_tactician_features(direction)
+                if tactician_features is not None:
+                    features_list.append(tactician_features)
+                    self.logger.info(f"Loaded tactician features for {model_type}")
+                else:
+                    self.logger.warning(f"Failed to load tactician features for {model_type}")
+            
+            # Add regime outputs to all models
+            if regime_outputs:
+                regime_features = await self._prepare_regime_features(regime_outputs)
+                if regime_features is not None:
+                    features_list.append(regime_features)
+                    self.logger.info(f"Added regime features to {model_type}")
+            
+            # Add previous model outputs for ensemble models
+            if model_type == 'analyst_ensemble':
+                analyst_base_outputs = await self._load_analyst_base_outputs()
+                if analyst_base_outputs is not None:
+                    features_list.append(analyst_base_outputs)
+                    self.logger.info("Added analyst base outputs to analyst ensemble")
+            
+            if model_type == 'tactician_base':
+                analyst_ensemble_outputs = await self._load_analyst_ensemble_outputs()
+                if analyst_ensemble_outputs is not None:
+                    features_list.append(analyst_ensemble_outputs)
+                    self.logger.info("Added analyst ensemble outputs to tactician base")
+            
+            if model_type == 'tactician_ensemble':
+                analyst_ensemble_outputs = await self._load_analyst_ensemble_outputs()
+                tactician_base_outputs = await self._load_tactician_base_outputs()
+                
+                if analyst_ensemble_outputs is not None:
+                    features_list.append(analyst_ensemble_outputs)
+                    self.logger.info("Added analyst ensemble outputs to tactician ensemble")
+                
+                if tactician_base_outputs is not None:
+                    features_list.append(tactician_base_outputs)
+                    self.logger.info("Added tactician base outputs to tactician ensemble")
+            
+            if not features_list:
+                self.logger.error(f"No features loaded for {model_type}")
+                return None
+            
+            # Combine all features
+            combined_features = np.hstack(features_list)
+            self.logger.info(f"Combined {len(features_list)} feature sets for {model_type}, shape: {combined_features.shape}")
+            
+            return combined_features
+            
+        except Exception as e:
+            self.logger.error(f"Failed to load features for {model_type}: {e}")
+            return None
+
+    async def _load_analyst_features(self, direction: str) -> Optional[np.ndarray]:
+        """Load analyst features from feature_generation_final_feature_selection_step."""
+        try:
+            # Look for analyst features with direction
+            artifact_name = f'selected_feature_dataframe_60_analyst_{direction}'
+            features = self._load_dataframe(artifact_name)
+            
+            if features is None or features.empty:
+                # Fallback to general analyst features
+                fallback_artifacts = [
+                    f'selected_feature_dataframe_60_analyst',
+                    'selected_feature_dataframe_60',
+                    'analyst_features'
+                ]
+                
+                for fallback_name in fallback_artifacts:
+                    features = self._load_dataframe(fallback_name)
+                    if features is not None and not features.empty:
+                        break
+            
+            if features is not None and not features.empty:
+                return features.values if hasattr(features, 'values') else np.array(features)
+            
+            return None
+            
+        except Exception as e:
+            self.logger.error(f"Failed to load analyst features: {e}")
+            return None
+
+    async def _load_tactician_features(self, direction: str) -> Optional[np.ndarray]:
+        """Load tactician features from feature_generation_final_feature_selection_step."""
+        try:
+            # Look for tactician features with direction
+            artifact_name = f'selected_feature_dataframe_60_tactician_{direction}'
+            features = self._load_dataframe(artifact_name)
+            
+            if features is None or features.empty:
+                # Fallback to general tactician features
+                fallback_artifacts = [
+                    f'selected_feature_dataframe_60_tactician',
+                    'selected_feature_dataframe_60',
+                    'tactician_features'
+                ]
+                
+                for fallback_name in fallback_artifacts:
+                    features = self._load_dataframe(fallback_name)
+                    if features is not None and not features.empty:
+                        break
+            
+            if features is not None and not features.empty:
+                return features.values if hasattr(features, 'values') else np.array(features)
+            
+            return None
+            
+        except Exception as e:
+            self.logger.error(f"Failed to load tactician features: {e}")
+            return None
+
+    async def _prepare_regime_features(self, regime_outputs: Dict[str, Any]) -> Optional[np.ndarray]:
+        """Prepare regime features from regime outputs."""
+        try:
+            import numpy as np
+            import pandas as pd
+            
+            regime_features = []
+            
+            # Add regime classification if available
+            if 'regime_classification' in regime_outputs:
+                regime_class = regime_outputs['regime_classification']
+                if hasattr(regime_class, 'values'):
+                    regime_features.append(regime_class.values)
+                else:
+                    regime_features.append(np.array(regime_class))
+            
+            # Add regime probabilities if available
+            if 'regime_probabilities' in regime_outputs:
+                regime_probs = regime_outputs['regime_probabilities']
+                if hasattr(regime_probs, 'values'):
+                    regime_features.append(regime_probs.values)
+                else:
+                    regime_features.append(np.array(regime_probs))
+            
+            if not regime_features:
+                return None
+            
+            # Combine regime features
+            combined_regime = np.hstack(regime_features)
+            return combined_regime
+            
+        except Exception as e:
+            self.logger.error(f"Failed to prepare regime features: {e}")
+            return None
+
+    async def _load_analyst_base_outputs(self) -> Optional[np.ndarray]:
+        """Load analyst base model outputs."""
+        try:
+            # Look for analyst base model outputs
+            output_artifacts = [
+                'analyst_base_predictions',
+                'analyst_base_probabilities',
+                'analyst_base_outputs'
+            ]
+            
+            for artifact_name in output_artifacts:
+                outputs = self._load_dataframe(artifact_name)
+                if outputs is not None and not outputs.empty:
+                    return outputs.values if hasattr(outputs, 'values') else np.array(outputs)
+            
+            return None
+            
+        except Exception as e:
+            self.logger.debug(f"Failed to load analyst base outputs: {e}")
+            return None
+
+    async def _load_analyst_ensemble_outputs(self) -> Optional[np.ndarray]:
+        """Load analyst ensemble model outputs."""
+        try:
+            # Look for analyst ensemble model outputs
+            output_artifacts = [
+                'analyst_ensemble_predictions',
+                'analyst_ensemble_probabilities',
+                'analyst_ensemble_outputs'
+            ]
+            
+            for artifact_name in output_artifacts:
+                outputs = self._load_dataframe(artifact_name)
+                if outputs is not None and not outputs.empty:
+                    return outputs.values if hasattr(outputs, 'values') else np.array(outputs)
+            
+            return None
+            
+        except Exception as e:
+            self.logger.debug(f"Failed to load analyst ensemble outputs: {e}")
+            return None
+
+    async def _load_tactician_base_outputs(self) -> Optional[np.ndarray]:
+        """Load tactician base model outputs."""
+        try:
+            # Look for tactician base model outputs
+            output_artifacts = [
+                'tactician_base_predictions',
+                'tactician_base_outputs'
+            ]
+            
+            for artifact_name in output_artifacts:
+                outputs = self._load_dataframe(artifact_name)
+                if outputs is not None and not outputs.empty:
+                    return outputs.values if hasattr(outputs, 'values') else np.array(outputs)
+            
+            return None
+            
+        except Exception as e:
+            self.logger.debug(f"Failed to load tactician base outputs: {e}")
             return None
 
 

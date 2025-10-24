@@ -118,6 +118,22 @@ except ImportError:
     OPTUNA_AVAILABLE = False
     optuna = None
 
+# Enhanced pruner imports
+try:
+    from .enhanced_pruner_system import (
+        EnhancedPruner, EnhancedPrunerConfig, AresExecutionMode,
+        create_enhanced_pruner, create_auto_mode_pruner, get_ares_mode_from_context
+    )
+    ENHANCED_PRUNER_AVAILABLE = True
+except ImportError:
+    ENHANCED_PRUNER_AVAILABLE = False
+    EnhancedPruner = None
+    EnhancedPrunerConfig = None
+    AresExecutionMode = None
+    create_enhanced_pruner = None
+    create_auto_mode_pruner = None
+    get_ares_mode_from_context = None
+
 # Sklearn imports
 try:
     from sklearn.model_selection import cross_val_score, StratifiedKFold, TimeSeriesSplit, KFold
@@ -150,6 +166,11 @@ class HPOConfig:
     
     # Optimization strategy
     strategy: str = 'bayesian'  # 'bayesian', 'bohb', 'hierarchical', 'grid', 'random'
+    
+    # Ares launcher integration
+    ares_execution_mode: str = 'full'  # 'light', 'blank', 'full'
+    enable_mode_scaling: bool = True
+    auto_detect_mode: bool = True
     
     # Bayesian optimization settings
     n_startup_trials: int = 10
@@ -283,6 +304,18 @@ class ConsolidatedHPO:
         self.config = config or HPOConfig()
         self.logger = logger.getChild('ConsolidatedHPO')
         
+        # Auto-detect Ares execution mode if enabled
+        if self.config.auto_detect_mode and ENHANCED_PRUNER_AVAILABLE:
+            detected_mode = get_ares_mode_from_context()
+            if detected_mode != self.config.ares_execution_mode:
+                self.config.ares_execution_mode = detected_mode
+                if TPRINT_AVAILABLE:
+                    tprint_info(f"🔍 Auto-detected Ares execution mode: {detected_mode}")
+        
+        # Apply mode scaling if enabled
+        if self.config.enable_mode_scaling:
+            self._apply_ares_mode_scaling()
+        
         # Set random seeds for reproducibility
         if self.config.random_state is not None:
             np.random.seed(self.config.random_state)
@@ -321,6 +354,57 @@ class ConsolidatedHPO:
         
         if TPRINT_AVAILABLE:
             tprint_success("✅ Consolidated HPO system initialized")
+    
+    def _apply_ares_mode_scaling(self):
+        """Apply Ares execution mode scaling to HPO parameters."""
+        if not ENHANCED_PRUNER_AVAILABLE:
+            return
+            
+        mode = self.config.ares_execution_mode.lower()
+        
+        # Mode-specific parameter adjustments
+        mode_adjustments = {
+            'light': {
+                'n_trials_multiplier': 0.1,
+                'patience_multiplier': 0.5,
+                'threshold_multiplier': 2.0,
+                'timeout_multiplier': 0.3,
+                'n_startup_trials_multiplier': 0.5
+            },
+            'blank': {
+                'n_trials_multiplier': 0.25,
+                'patience_multiplier': 0.7,
+                'threshold_multiplier': 1.5,
+                'timeout_multiplier': 0.6,
+                'n_startup_trials_multiplier': 0.7
+            },
+            'full': {
+                'n_trials_multiplier': 1.0,
+                'patience_multiplier': 1.0,
+                'threshold_multiplier': 1.0,
+                'timeout_multiplier': 1.0,
+                'n_startup_trials_multiplier': 1.0
+            }
+        }
+        
+        adjustments = mode_adjustments.get(mode, mode_adjustments['full'])
+        
+        # Apply scaling
+        self.config.n_trials = int(self.config.n_trials * adjustments['n_trials_multiplier'])
+        self.config.n_startup_trials = int(self.config.n_startup_trials * adjustments['n_startup_trials_multiplier'])
+        
+        if self.config.timeout is not None:
+            self.config.timeout *= adjustments['timeout_multiplier']
+        
+        # Update early stopping parameters
+        if hasattr(self.config, 'early_stopping_patience'):
+            self.config.early_stopping_patience = int(self.config.early_stopping_patience * adjustments['patience_multiplier'])
+        
+        if hasattr(self.config, 'early_stopping_threshold'):
+            self.config.early_stopping_threshold *= adjustments['threshold_multiplier']
+        
+        if TPRINT_AVAILABLE:
+            tprint_info(f"📊 Applied {mode} mode scaling: {self.config.n_trials} trials, {self.config.n_startup_trials} startup trials")
     
     def _initialize_hardware_optimization(self):
         """Initialize hardware optimization components."""
@@ -905,12 +989,23 @@ class ConsolidatedHPO:
             result.model_name = model_name
             result.strategy = self.config.strategy
             
+            # Add pruning statistics if available
+            if hasattr(self, '_current_pruner') and self._current_pruner:
+                pruning_stats = self._current_pruner.get_pruning_stats()
+                result.convergence_info.update(pruning_stats)
+            
             # Store results
             self.optimization_history.append(result)
             
             if TPRINT_AVAILABLE:
                 tprint_success(f"✅ HPO optimization completed for {model_name} in {result.optimization_time:.2f}s")
                 tprint_info(f"📊 Best score: {result.best_score:.4f}")
+                
+                # Log pruning statistics
+                if hasattr(self, '_current_pruner') and self._current_pruner:
+                    stats = self._current_pruner.get_pruning_stats()
+                    if stats:
+                        tprint_info(f"✂️ Pruning: {stats.get('pruning_rate', 0):.1%} of trials pruned")
             
             return result
             
@@ -931,11 +1026,27 @@ class ConsolidatedHPO:
         if TPRINT_AVAILABLE:
             tprint_info("🎯 Starting Bayesian optimization with TPE")
         
-        # Create study with proper pruner
+        # Create study with enhanced pruner
         pruner = None
         if self.config.enable_monitoring:
-            from optuna.pruners import MedianPruner
-            pruner = MedianPruner(n_startup_trials=5, n_warmup_steps=10)
+            if ENHANCED_PRUNER_AVAILABLE:
+                # Use enhanced pruner with Ares mode integration
+                pruner = create_enhanced_pruner(
+                    ares_mode=self.config.ares_execution_mode,
+                    strategy='adaptive',
+                    base_patience=10,
+                    improvement_threshold=0.001
+                )
+                self._current_pruner = pruner  # Store reference for statistics
+                if TPRINT_AVAILABLE:
+                    tprint_info(f"🎯 Using enhanced pruner for {self.config.ares_execution_mode} mode")
+            else:
+                # Fallback to median pruner
+                from optuna.pruners import MedianPruner
+                pruner = MedianPruner(n_startup_trials=5, n_warmup_steps=10)
+                self._current_pruner = None
+                if TPRINT_AVAILABLE:
+                    tprint_warning("⚠️ Using fallback MedianPruner (enhanced pruner not available)")
         
         study = optuna.create_study(
             direction='maximize',
@@ -992,10 +1103,32 @@ class ConsolidatedHPO:
         if TPRINT_AVAILABLE:
             tprint_info("🎯 Starting BOHB-style multi-fidelity optimization")
         
-        # Use SuccessiveHalvingPruner for better multi-fidelity support
-        from optuna.pruners import SuccessiveHalvingPruner
+        # Use enhanced pruner for multi-fidelity optimization
+        pruner = None
+        if ENHANCED_PRUNER_AVAILABLE:
+            # Use enhanced pruner with multi-fidelity strategy
+            pruner = create_enhanced_pruner(
+                ares_mode=self.config.ares_execution_mode,
+                strategy='multi_fidelity',
+                base_patience=10,
+                improvement_threshold=0.001,
+                min_resource=1,
+                max_resource=100,
+                reduction_factor=self.config.reduction_factor
+            )
+            if TPRINT_AVAILABLE:
+                tprint_info(f"🎯 Using enhanced multi-fidelity pruner for {self.config.ares_execution_mode} mode")
+        else:
+            # Fallback to SuccessiveHalvingPruner
+            from optuna.pruners import SuccessiveHalvingPruner
+            pruner = SuccessiveHalvingPruner(
+                min_resource=1,
+                reduction_factor=int(self.config.reduction_factor)
+            )
+            if TPRINT_AVAILABLE:
+                tprint_warning("⚠️ Using fallback SuccessiveHalvingPruner (enhanced pruner not available)")
         
-        # Create study with SuccessiveHalving pruner
+        # Create study with pruner
         study = optuna.create_study(
             direction='maximize',
             sampler=TPESampler(
@@ -1006,10 +1139,7 @@ class ConsolidatedHPO:
                 gamma=self.config.gamma,
                 seed=self.config.random_state
             ),
-            pruner=SuccessiveHalvingPruner(
-                min_resource=1,
-                reduction_factor=int(self.config.reduction_factor)
-            )
+            pruner=pruner
         )
         
         # Define objective function with multi-fidelity support
@@ -1553,6 +1683,59 @@ def create_random_hpo(n_trials: int = 100) -> ConsolidatedHPO:
     )
     return ConsolidatedHPO(config)
 
+def create_ares_mode_hpo(
+    ares_mode: str = 'full',
+    strategy: str = 'bayesian',
+    n_trials: int = 100,
+    **kwargs
+) -> ConsolidatedHPO:
+    """
+    Create HPO optimized for specific Ares execution mode.
+    
+    Args:
+        ares_mode: Ares execution mode ('light', 'blank', 'full')
+        strategy: Optimization strategy ('bayesian', 'bohb', 'grid', 'random')
+        n_trials: Number of trials (will be scaled by mode)
+        **kwargs: Additional configuration parameters
+        
+    Returns:
+        Configured ConsolidatedHPO instance
+    """
+    config = HPOConfig(
+        strategy=strategy,
+        n_trials=n_trials,
+        ares_execution_mode=ares_mode,
+        enable_mode_scaling=True,
+        auto_detect_mode=False,  # Use provided mode
+        **kwargs
+    )
+    return ConsolidatedHPO(config)
+
+def create_auto_mode_hpo(
+    strategy: str = 'bayesian',
+    n_trials: int = 100,
+    **kwargs
+) -> ConsolidatedHPO:
+    """
+    Create HPO with automatic Ares mode detection.
+    
+    Args:
+        strategy: Optimization strategy ('bayesian', 'bohb', 'grid', 'random')
+        n_trials: Number of trials (will be scaled by detected mode)
+        **kwargs: Additional configuration parameters
+        
+    Returns:
+        Configured ConsolidatedHPO instance with auto-detected mode
+    """
+    config = HPOConfig(
+        strategy=strategy,
+        n_trials=n_trials,
+        auto_detect_mode=True,
+        enable_mode_scaling=True,
+        **kwargs
+    )
+    return ConsolidatedHPO(config)
+
 # ============================================================================
 # BACKWARD COMPATIBILITY ALIASES
 # ============================================================================
@@ -1629,6 +1812,8 @@ __all__ = [
     'create_bohb_hpo',
     'create_grid_hpo',
     'create_random_hpo',
+    'create_ares_mode_hpo',
+    'create_auto_mode_hpo',
     
     # Legacy compatibility
     'HyperparameterOptimization',

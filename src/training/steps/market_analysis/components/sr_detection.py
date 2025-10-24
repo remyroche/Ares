@@ -21,6 +21,7 @@ from src.utils.tprint import (
     tprint_debug, tprint_data_format, tprint_data_preview, tprint_performance,
     tprint_timer, tprint_structured, LogLevel
 )
+from src.config.pipeline_modes import get_mode_config, get_mode_lookback_days
 
 class SRDetectionComponent(BaseStep):
     """
@@ -64,6 +65,10 @@ class SRDetectionComponent(BaseStep):
             timeframe = config.get('timeframe', '15m')
             direction = config.get('direction', 'longs')
             execution_mode = config.get('execution_mode', 'light')
+            
+            # Get mode configuration for lookback periods and other parameters
+            mode_config = get_mode_config(execution_mode)
+            lookback_days = mode_config.lookback_days
             
             # Debug configuration with tprint
             tprint_data_format(config, "sr_detection_config", level=LogLevel.DEBUG)

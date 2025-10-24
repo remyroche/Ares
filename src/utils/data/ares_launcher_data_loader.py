@@ -105,10 +105,14 @@ class AresLauncherDataLoader:
         if end_date:
             return end_date
         
-        # Strategy 3: Fallback to current date (but warn user)
-        tprint_warning("⚠️ [ARES_DATA_LOADER] Could not detect last available data date, using current date")
-        tprint_warning("   → This may result in missing data if the latest data is not available")
-        return datetime.now()
+        # Strategy 3: Fast fail - no data available
+        error_msg = f"❌ [ARES_DATA_LOADER] No data available for lookback calculation"
+        if symbol and interval:
+            error_msg += f" (symbol: {symbol}, interval: {interval})"
+        error_msg += " - Cannot proceed without historical data"
+        
+        tprint_error(error_msg)
+        raise ValueError(error_msg)
 
     def _try_get_last_date_from_symbol(self, symbol: str, interval: str) -> Optional[datetime]:
         """Try to get last date from specific symbol/interval."""
@@ -251,12 +255,13 @@ class AresLauncherDataLoader:
                 tprint_data_format(data, f"ares_loaded_format_{symbol}_{interval}_{mode}", level="DEBUG")
                 return data
             else:
-                tprint_warning(f"⚠️ [ARES_DATA_LOADER] No data found for {symbol} ({interval}) in {mode.upper()} mode")
+                error_msg = f"❌ [ARES_DATA_LOADER] No data found for {symbol} ({interval}) in {mode.upper()} mode"
+                tprint_error(error_msg)
                 tprint_debug(f"   → This could be due to:")
                 tprint_debug(f"     - No data available for the specified date range")
                 tprint_debug(f"     - Symbol/interval combination not found")
                 tprint_debug(f"     - Data type '{data_type}' not available")
-                return None
+                raise ValueError(f"{error_msg} - Cannot proceed without data")
 
         except Exception as e:
             tprint_error(f"❌ [ARES_DATA_LOADER] Failed to load data for {symbol} ({interval}): {e}")
@@ -320,8 +325,9 @@ class AresLauncherDataLoader:
                 tprint_data_format(data, f"ares_async_format_{symbol}_{interval}_{mode}", level="DEBUG")
                 return data
             else:
-                tprint_warning(f"⚠️ No data found for {symbol} ({interval}) in {mode.upper()} mode")
-                return None
+                error_msg = f"❌ [ARES_DATA_LOADER] No data found for {symbol} ({interval}) in {mode.upper()} mode"
+                tprint_error(error_msg)
+                raise ValueError(f"{error_msg} - Cannot proceed without data")
 
         except Exception as e:
             tprint_error(f"❌ Failed to load data for {symbol} ({interval}): {e}")

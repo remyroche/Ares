@@ -20,6 +20,7 @@ import numpy as np
 
 from src.training.steps.base_step import BaseStep
 from src.utils.tprint import tprint_info, tprint_success, tprint_error, tprint_warning, tprint_data_preview
+from src.config.pipeline_modes import get_mode_config, get_mode_lookback_days
 
 # Import our custom types
 from ..step_types import (
@@ -79,6 +80,9 @@ class BasicBacktestingPreStep(BaseStep):
             timeframe = validated_config['timeframe']
             direction = validated_config['direction']
             execution_mode = validated_config['execution_mode']
+            
+            # Get mode configuration for lookback periods and other parameters
+            mode_config = get_mode_config(execution_mode)
             
             # Preview configuration data
             tprint_data_preview(validated_config, "basic_backtesting_pre_config", max_rows=10, level="DEBUG")

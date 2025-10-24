@@ -21,6 +21,7 @@ import numpy as np
 
 from src.training.steps.base_step import BaseStep
 from src.utils.tprint import tprint, tprint_data_preview
+from src.config.pipeline_modes import get_mode_config, get_mode_lookback_days
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +60,9 @@ class BasicBacktestingPostStep(BaseStep):
             timeframe = config.get('timeframe', '15m')
             direction = config.get('direction', 'longs')
             execution_mode = config.get('execution_mode', 'light')
+            
+            # Get mode configuration for lookback periods and other parameters
+            mode_config = get_mode_config(execution_mode)
             
             if not symbol:
                 raise ValueError("Symbol is required for basic backtesting post-processing")

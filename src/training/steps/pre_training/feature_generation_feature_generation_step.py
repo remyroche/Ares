@@ -23,6 +23,7 @@ from dataclasses import dataclass, field
 
 from src.training.steps.base_step import BaseStep
 from src.training.common.component_result import ComponentResult
+from src.config.pipeline_modes import get_mode_config, get_mode_lookback_days
 
 # Hardware optimization imports - using BaseStep utilities
 # Note: Most hardware utilities are now available through BaseStep
@@ -425,7 +426,11 @@ class FeatureGenerationStep(BaseStep):
         timeframe = config.get('timeframe', '15m')
         direction = config.get('direction', 'longs')
         intensity = config.get('intensity')
-        lookback_days = config.get('lookback_days')
+        execution_mode = config.get('execution_mode', 'light')
+        
+        # Get mode configuration for lookback periods and other parameters
+        mode_config = get_mode_config(execution_mode)
+        lookback_days = config.get('lookback_days', mode_config.lookback_days)
         start_date = config.get('start_date')
         end_date = config.get('end_date')
         exchange = config.get('exchange', 'binance')

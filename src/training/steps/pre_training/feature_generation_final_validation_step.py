@@ -408,6 +408,7 @@ class FeatureGenerationFinalValidationStep(BaseStep):
         
         # Load gate features from feature_generation_gate_feature_step
         gate_features = None
+        gate_rules = None
         try:
             gate_features = artifact_manager.get_dataframe(
                 'feature_generation_gate_feature_step',
@@ -430,6 +431,18 @@ class FeatureGenerationFinalValidationStep(BaseStep):
                         tprint_data_format(gate_features, f"gate_features_format_from_{alt_name}", level="INFO")
                         tprint_success(f"✅ Loaded gate features from {alt_name}: {gate_features.shape}")
                         break
+            
+            # Load gate rules if available
+            try:
+                gate_rules = artifact_manager.get_artifact(
+                    'feature_generation_gate_feature_step',
+                    'GATE_RULES'
+                )
+                if gate_rules:
+                    tprint_info(f"✅ Loaded gate rules: {len(gate_rules)} rule sets")
+            except Exception:
+                tprint_debug("No gate rules found (optional)")
+                
         except Exception as e:
             tprint_warning(f"⚠️ Failed to load gate features: {e}")
         

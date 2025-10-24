@@ -798,54 +798,102 @@ class MLModelTrainer:
     
     @memory_managed(MemoryStrategy.MODERATE)
     def _prepare_features(self, data: Dict[str, Any], model_type: ModelType, config: Dict[str, Any], model_config: Dict[str, Any] = None) -> np.ndarray:
-        """Prepare features using existing utilities."""
+        """Prepare features using pre-selected features from upstream feature generation."""
         tprint_info(f"🔄 Preparing features for {model_type.value}")
         
-        # Extract base features
+        # Start with pre-selected features from upstream feature generation
+        # These are specific to model type (tactician/analyst) and direction (shorts/longs)
         base_features = data.get('features', np.array([]))
-        tprint_data_preview(base_features, f"Base features for {model_type.value}")
+        tprint_data_preview(base_features, f"Pre-selected features for {model_type.value}")
         
         # Validate input data
         if not validate_array(base_features):
             tprint_error("Invalid input features")
             raise ValueError("Invalid input features")
         
-        # Ensure features are 2D for feature selection
+        # Ensure features are 2D
         if base_features.ndim == 1:
             base_features = base_features.reshape(1, -1)
         elif base_features.ndim > 2:
             base_features = base_features.reshape(base_features.shape[0], -1)
         
-        # Feature gating for LIGHTGBM_PATCHTST
-        if model_config and model_config.get("type", "").upper() == "LIGHTGBM_PATCHTST":
-            af = config.get("inputs", {}).get("analyst_features", {})
-            fe = config.get("feature_engineering", {}).get("patchtst", {})
-            if not (af.get("enable_patchtst_features") and fe.get("enabled")):
-                raise ValueError("LIGHTGBM_PATCHTST selected but PatchTST features are disabled in config.")
+        # Add regime features for all models (from regime_ensemble_training)
+        regime_features = self._get_regime_features(data, model_type)
+        if regime_features is not None:
+            base_features = np.hstack([base_features, regime_features])
+            tprint_data_format(f"Added regime features: {base_features.shape}", LogLevel.INFO)
         
-        # Apply feature selection
-        feature_selector = self.feature_selectors.get(model_type)
-        if feature_selector and base_features.shape[1] > 1:
-            selected_features = feature_selector.fit_transform(base_features)
-            tprint_data_format(f"Feature selection completed: {base_features.shape} -> {selected_features.shape}", LogLevel.INFO)
-        else:
-            selected_features = base_features
-        
-        # Multi-timeframe processing disabled as per requirements
-        # if config.get('inputs', {}).get('analyst_features', {}).get('enable_multi_timeframe', False):
-        #     selected_features = self.multi_timeframe_processor.process_features(
-        #         selected_features, 
-        #         timeframes=config.get('inputs', {}).get('analyst_features', {}).get('timeframes', ['5m', '15m', '1h'])
-        #     )
-        #     tprint_data_format(f"Multi-timeframe processing completed: {selected_features.shape}", LogLevel.INFO)
+        # Add model-specific features based on model type
+        if model_type == ModelType.ANALYST_ENSEMBLE:
+            # Add outputs from Analyst base models
+            analyst_base_outputs = self._get_analyst_base_outputs(data, model_type)
+            if analyst_base_outputs is not None:
+                base_features = np.hstack([base_features, analyst_base_outputs])
+                tprint_data_format(f"Added Analyst base outputs: {base_features.shape}", LogLevel.INFO)
+                
+        elif model_type == ModelType.TACTICIAN_BASE:
+            # Add outputs from Analyst ensemble model
+            analyst_ensemble_outputs = self._get_analyst_ensemble_outputs(data, model_type)
+            if analyst_ensemble_outputs is not None:
+                base_features = np.hstack([base_features, analyst_ensemble_outputs])
+                tprint_data_format(f"Added Analyst ensemble outputs: {base_features.shape}", LogLevel.INFO)
+                
+        elif model_type == ModelType.TACTICIAN_ENSEMBLE:
+            # Add outputs from Tactician base models + Analyst ensemble output
+            tactician_base_outputs = self._get_tactician_base_outputs(data, model_type)
+            analyst_ensemble_outputs = self._get_analyst_ensemble_outputs(data, model_type)
+            
+            if tactician_base_outputs is not None:
+                base_features = np.hstack([base_features, tactician_base_outputs])
+                tprint_data_format(f"Added Tactician base outputs: {base_features.shape}", LogLevel.INFO)
+                
+            if analyst_ensemble_outputs is not None:
+                base_features = np.hstack([base_features, analyst_ensemble_outputs])
+                tprint_data_format(f"Added Analyst ensemble outputs: {base_features.shape}", LogLevel.INFO)
         
         # Apply hardware optimization
         optimized_features = self.hardware_manager.process_data_with_optimization(
-            selected_features, WorkloadType.ML_TRAINING
+            base_features, WorkloadType.ML_TRAINING
         )
         tprint_data_format(f"Hardware optimization completed: {optimized_features.shape}", LogLevel.INFO)
         
         return optimized_features
+    
+    def _get_regime_features(self, data: Dict[str, Any], model_type: ModelType) -> Optional[np.ndarray]:
+        """Get regime features from regime_ensemble_training/regime_data_splitting."""
+        regime_features = data.get('regime_features', None)
+        if regime_features is not None and validate_array(regime_features):
+            if regime_features.ndim == 1:
+                regime_features = regime_features.reshape(-1, 1)
+            return regime_features
+        return None
+    
+    def _get_analyst_base_outputs(self, data: Dict[str, Any], model_type: ModelType) -> Optional[np.ndarray]:
+        """Get outputs from Analyst base models for Analyst ensemble."""
+        analyst_base_outputs = data.get('analyst_base_outputs', None)
+        if analyst_base_outputs is not None and validate_array(analyst_base_outputs):
+            if analyst_base_outputs.ndim == 1:
+                analyst_base_outputs = analyst_base_outputs.reshape(-1, 1)
+            return analyst_base_outputs
+        return None
+    
+    def _get_analyst_ensemble_outputs(self, data: Dict[str, Any], model_type: ModelType) -> Optional[np.ndarray]:
+        """Get outputs from Analyst ensemble model for Tactician models."""
+        analyst_ensemble_outputs = data.get('analyst_ensemble_outputs', None)
+        if analyst_ensemble_outputs is not None and validate_array(analyst_ensemble_outputs):
+            if analyst_ensemble_outputs.ndim == 1:
+                analyst_ensemble_outputs = analyst_ensemble_outputs.reshape(-1, 1)
+            return analyst_ensemble_outputs
+        return None
+    
+    def _get_tactician_base_outputs(self, data: Dict[str, Any], model_type: ModelType) -> Optional[np.ndarray]:
+        """Get outputs from Tactician base models for Tactician ensemble."""
+        tactician_base_outputs = data.get('tactician_base_outputs', None)
+        if tactician_base_outputs is not None and validate_array(tactician_base_outputs):
+            if tactician_base_outputs.ndim == 1:
+                tactician_base_outputs = tactician_base_outputs.reshape(-1, 1)
+            return tactician_base_outputs
+        return None
     
     @memory_managed(MemoryStrategy.MODERATE)
     def _prepare_targets(self, data: Dict[str, Any], model_type: ModelType, config: Dict[str, Any]) -> np.ndarray:

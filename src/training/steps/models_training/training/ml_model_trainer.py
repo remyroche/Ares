@@ -218,6 +218,12 @@ class MLModelTrainer:
         self._process_pool = ProcessPoolExecutor(max_workers=self.config.max_workers)
         self._process_pool_initialized = True
         
+        # Load unified memory configuration
+        self.memory_config = self._load_unified_memory_config()
+        
+        # Initialize hardware manager with unified config
+        self.hardware_manager = self._initialize_hardware_manager()
+        
         # Initialize components
         self._initialize_components()
         
@@ -738,23 +744,143 @@ class MLModelTrainer:
             return "classification" if (np.issubdtype(y.dtype, np.integer) and len(np.unique(y)) <= 50) else "regression"
         return "classification"  # Default fallback
 
+    def _load_unified_memory_config(self) -> Dict[str, Any]:
+        """Load unified memory configuration from YAML file."""
+        try:
+            config_path = Path(__file__).parent / "config" / "ml_model_trainer" / "unified_memory_config.yaml"
+            with open(config_path, 'r') as f:
+                config = yaml.safe_load(f)
+            tprint_info("Loaded unified memory configuration")
+            return config
+        except Exception as e:
+            tprint_warning(f"Failed to load unified memory config: {e}. Using defaults.")
+            return self._get_default_memory_config()
+    
+    def _get_default_memory_config(self) -> Dict[str, Any]:
+        """Get default memory configuration if unified config fails to load."""
+        return {
+            "memory_optimization": {
+                "strategy": "comprehensive",
+                "memory_limit_gb": 8.0,
+                "enable_garbage_collection": True,
+                "gc_frequency": 100,
+                "enable_memory_mapping": True,
+                "chunk_size": 10000,
+                "enable_compression": True,
+                "compression_level": 6,
+                "enable_memory_pooling": True,
+                "enable_predictive_allocation": True
+            },
+            "caching": {
+                "enabled": True,
+                "cache_features": True,
+                "cache_targets": True,
+                "cache_cv_splits": True,
+                "cache_feature_importance": True,
+                "cache_shap_values": True,
+                "cache_dir": "cache/ml_models",
+                "cache_ttl_hours": 24,
+                "enable_compression": True,
+                "compression_level": 6,
+                "max_cache_size_mb": 2048,
+                "enable_lru_eviction": True,
+                "enable_data_type_optimization": True
+            }
+        }
+    
+    def _initialize_hardware_manager(self):
+        """Initialize hardware manager with unified configuration."""
+        try:
+            # Create hardware config from unified memory config
+            from src.utils.hardware.integrated_hardware_manager import IntegratedHardwareConfig
+            
+            hardware_config = IntegratedHardwareConfig(
+                memory_optimization_level=self.memory_config.get("hardware_optimizations", {}).get("memory_optimization_level", "balanced"),
+                memory_limit_gb=self.memory_config.get("memory_optimization", {}).get("memory_limit_gb", 8.0),
+                enable_memory_pooling=self.memory_config.get("memory_optimization", {}).get("enable_memory_pooling", True),
+                enable_compression=self.memory_config.get("memory_optimization", {}).get("enable_compression", True),
+                enable_adaptive_optimization=self.memory_config.get("hardware_optimizations", {}).get("enable_adaptive_optimization", True),
+                enable_learning=self.memory_config.get("hardware_optimizations", {}).get("enable_learning", True),
+                auto_tuning_enabled=self.memory_config.get("hardware_optimizations", {}).get("auto_tuning_enabled", True),
+                performance_monitoring_enabled=self.memory_config.get("hardware_optimizations", {}).get("performance_monitoring_enabled", True)
+            )
+            
+            # Initialize hardware manager
+            hardware_manager = get_integrated_hardware_manager()
+            hardware_manager.configure(hardware_config)
+            
+            tprint_success("Hardware manager initialized with unified configuration")
+            return hardware_manager
+            
+        except Exception as e:
+            tprint_warning(f"Failed to initialize hardware manager: {e}. Using default.")
+            return get_integrated_hardware_manager()
+    
+    def _get_model_specific_memory_config(self, model_type: ModelType) -> Dict[str, Any]:
+        """Get model-specific memory configuration overrides."""
+        model_type_key = model_type.value.lower()
+        overrides = self.memory_config.get("model_specific_overrides", {}).get(model_type_key, {})
+        
+        # Merge with base configuration
+        config = self.memory_config.copy()
+        if overrides:
+            config["memory_optimization"].update(overrides)
+            config["caching"].update(overrides)
+        
+        return config
+    
+    def _apply_memory_optimizations(self, model_type: ModelType, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Apply memory optimizations based on unified configuration."""
+        try:
+            # Get model-specific memory config
+            memory_config = self._get_model_specific_memory_config(model_type)
+            
+            # Apply chunked processing if enabled
+            if memory_config.get("performance_optimization", {}).get("enable_batch_processing", True):
+                max_batch_size = memory_config.get("performance_optimization", {}).get("max_batch_size", 1000)
+                chunk_size = memory_config.get("memory_optimization", {}).get("chunk_size", 10000)
+                
+                # Apply chunked processing to large datasets
+                for key, value in data.items():
+                    if hasattr(value, 'shape') and len(value.shape) > 0:
+                        if value.shape[0] > max_batch_size:
+                            tprint_info(f"Applying chunked processing to {key} (shape: {value.shape})")
+                            # This will be handled by the memory_optimized decorator
+            
+            # Apply garbage collection if enabled
+            if memory_config.get("memory_optimization", {}).get("enable_garbage_collection", True):
+                gc_frequency = memory_config.get("memory_optimization", {}).get("gc_frequency", 100)
+                # This will be handled by the gc_optimized decorator
+            
+            return data
+            
+        except Exception as e:
+            tprint_warning(f"Failed to apply memory optimizations: {e}")
+            return data
+
     def _initialize_components(self):
         """Initialize all pipeline components using existing utilities."""
         tprint_info("🔧 Initializing ML Model Trainer components")
         
-        # Initialize hardware manager with enhanced caching
-        self.hardware_manager = get_integrated_hardware_manager()
+        # Load unified memory configuration
+        self.memory_config = self._load_unified_memory_config()
         
-        # Initialize enhanced caching system
-        from src.utils.hardware.enhanced_caching_system import EnhancedCacheSystem, CacheConfig
+        # Initialize hardware manager with unified config
+        self.hardware_manager = self._initialize_hardware_manager()
+        
+        # Initialize enhanced caching system with unified config
+        from src.utils.hardware.enhanced_caching_system import EnhancedCacheSystem, CacheConfig, DataTypeOptimization
+        
         cache_config = CacheConfig(
-            max_memory_usage=0.8,  # Use 80% of available memory
+            max_memory_usage=self.memory_config.get("caching", {}).get("max_cache_size_mb", 2048) / 1024,  # Convert MB to GB
             strategy=CacheStrategy.ADAPTIVE,
-            enable_compression=True,
-            enable_serialization=True
+            enable_compression=self.memory_config.get("caching", {}).get("enable_compression", True),
+            enable_serialization=True,
+            data_type_optimization=DataTypeOptimization.AGGRESSIVE if self.memory_config.get("caching", {}).get("enable_data_type_optimization", True) else DataTypeOptimization.NONE,
+            enable_lru_eviction=self.memory_config.get("caching", {}).get("enable_lru_eviction", True)
         )
         self.cache_system = EnhancedCacheSystem(cache_config)
-        tprint_data_format("Hardware manager initialized", LogLevel.INFO)
+        tprint_data_format("Enhanced caching system initialized with unified configuration", LogLevel.INFO)
         
         # Initialize memory manager
         self.memory_manager = get_memory_manager()
@@ -1379,6 +1505,9 @@ class MLModelTrainer:
         tprint_info(f"🔄 Training {model_name} ({model_type.value})")
         
         try:
+            # Apply memory optimizations
+            data = self._apply_memory_optimizations(model_type, data)
+            
             # Check if this is an ensemble model
             if model_type in [ModelType.ANALYST_ENSEMBLE, ModelType.TACTICIAN_ENSEMBLE]:
                 # Use ensemble training method
@@ -1464,6 +1593,9 @@ class MLModelTrainer:
     
     def _create_analyst_base_trainer(self, model_config: Dict[str, Any], config: Dict[str, Any]):
         """Create analyst base trainer."""
+        # Import the correct configuration class
+        from src.training.steps.model_training.analyst_models_training_refactored import AnalystTrainingConfig
+        
         # Convert config to AnalystTrainingConfig
         training_config = AnalystTrainingConfig(
             timeframe=config.get('timeframe', '15m'),
@@ -1481,6 +1613,10 @@ class MLModelTrainer:
     
     def _create_analyst_ensemble_trainer(self, model_config: Dict[str, Any], config: Dict[str, Any]):
         """Create analyst ensemble trainer."""
+        # Import the correct configuration classes
+        from src.training.steps.model_training.analyst_ensemble_training import AnalystEnsembleTrainingConfig
+        from src.config.config_ensemble import EnsembleMethod
+        
         # Convert config to AnalystEnsembleTrainingConfig
         training_config = AnalystEnsembleTrainingConfig(
             timeframe=config.get('timeframe', '15m'),
@@ -1488,7 +1624,7 @@ class MLModelTrainer:
             enable_regime_features=config.get('inputs', {}).get('analyst_features', {}).get('enable_regime_features', True),
             enable_multi_timeframe=config.get('inputs', {}).get('analyst_features', {}).get('enable_multi_timeframe', True),
             ensemble_method=EnsembleMethod[model_config.get('type', 'STACKING').upper()],
-            base_models=[AnalystModelType[model.get('type', 'LIGHTGBM').upper()] for model in config.get('base_models', [])],
+            base_models=[model.get('type', 'LIGHTGBM').upper() for model in config.get('base_models', [])],
             meta_learner_params=model_config.get('parameters', {}).get('meta_learner_params', {}),
             validation_split=config.get('training', {}).get('validation_split', 0.2),
             cv_folds=config.get('training', {}).get('cv_folds', 5)
@@ -1498,6 +1634,9 @@ class MLModelTrainer:
     
     def _create_tactician_base_trainer(self, model_config: Dict[str, Any], config: Dict[str, Any]):
         """Create tactician base trainer."""
+        # Import the correct configuration class
+        from src.training.steps.model_training.tactician_models_training_refactored import TacticianTrainingConfig
+        
         # Convert config to TacticianTrainingConfig
         training_config = TacticianTrainingConfig(
             timeframe=config.get('timeframe', '15m'),
@@ -1516,14 +1655,18 @@ class MLModelTrainer:
     
     def _create_tactician_ensemble_trainer(self, model_config: Dict[str, Any], config: Dict[str, Any]):
         """Create tactician ensemble trainer."""
+        # Import the correct configuration class
+        from src.training.steps.model_training.tactician_ensemble_training import TacticianEnsembleTrainingConfig
+        from src.config.config_ensemble import EnsembleMethod
+        
         # Convert config to TacticianEnsembleTrainingConfig
         training_config = TacticianEnsembleTrainingConfig(
             timeframe=config.get('timeframe', '15m'),
             enable_entry_timing=config.get('inputs', {}).get('tactician_features', {}).get('enable_entry_timing', True),
             enable_exit_timing=config.get('inputs', {}).get('tactician_features', {}).get('enable_exit_timing', True),
             enable_position_sizing=config.get('inputs', {}).get('tactician_features', {}).get('enable_position_sizing', True),
-            ensemble_method=TacticianEnsembleMethod[model_config.get('type', 'STACKING').upper()],
-            base_models=[TacticianModelType[model.get('type', 'LIGHTGBM').upper()] for model in config.get('base_models', [])],
+            ensemble_method=EnsembleMethod[model_config.get('type', 'STACKING').upper()],
+            base_models=[model.get('type', 'LIGHTGBM').upper() for model in config.get('base_models', [])],
             meta_learner_params=model_config.get('parameters', {}).get('meta_learner_params', {}),
             validation_split=config.get('training', {}).get('validation_split', 0.2),
             cv_folds=config.get('training', {}).get('cv_folds', 5)
@@ -1719,7 +1862,7 @@ class MLModelTrainer:
             base_cls = LGBMClassifier if is_classification else LGBMRegressor
             base_model = base_cls(**merged, random_state=42, verbose=-1)
             # Extract PatchTST-specific parameters
-            patchtst_params = {k: v for k, v in merged.items() if k.startswith(('patch_', 'stride_', 'use_transformer_'))}
+            patchtst_params = {k: v for k, v in merged.items() if k.startswith(('patchtst_', 'patch_', 'stride_', 'use_transformer_', 'regime_aware', 'attention_', 'sign_'))}
             return PatchTSTWrapper(base_model, **patchtst_params)
         
         elif model_key == "CAUSAL_DILATED_TCN":

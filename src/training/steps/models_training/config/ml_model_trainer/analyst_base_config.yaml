@@ -17,18 +17,18 @@ models:
       metric: "binary_logloss"
       boosting_type: "gbdt"
       num_leaves: 31
-      learning_rate: 0.05
-      feature_fraction: 0.9
+      learning_rate: 0.1  # Higher learning rate for faster convergence
+      feature_fraction: 0.8  # Reduced to prevent overfitting
       bagging_fraction: 0.8
       bagging_freq: 5
       verbose: -1
       random_state: 42
-      n_estimators: 1000
-      early_stopping_rounds: 50
+      n_estimators: 500  # Reduced for faster training
+      early_stopping_rounds: 30  # More aggressive early stopping
       min_data_in_leaf: 20
       min_gain_to_split: 0.0
-      lambda_l1: 0.0
-      lambda_l2: 0.0
+      lambda_l1: 0.1  # Added L1 regularization
+      lambda_l2: 0.1  # Added L2 regularization
 
   - name: "lgbm_patchtst_embeddings"
     type: "LIGHTGBM_PATCHTST"
@@ -38,19 +38,19 @@ models:
       objective: "binary"
       metric: "binary_logloss"
       boosting_type: "gbdt"
-      num_leaves: 31
-      learning_rate: 0.05
-      feature_fraction: 0.9
+      num_leaves: 63  # More leaves for complex PatchTST features
+      learning_rate: 0.05  # Lower learning rate for complex features
+      feature_fraction: 0.7  # More conservative feature sampling
       bagging_fraction: 0.8
       bagging_freq: 5
       verbose: -1
       random_state: 42
-      n_estimators: 1000
-      early_stopping_rounds: 50
-      min_data_in_leaf: 20
+      n_estimators: 800  # More iterations for complex features
+      early_stopping_rounds: 40
+      min_data_in_leaf: 30  # Higher minimum for stability
       min_gain_to_split: 0.0
-      lambda_l1: 0.0
-      lambda_l2: 0.0
+      lambda_l1: 0.05  # Moderate regularization
+      lambda_l2: 0.05
       # PatchTST specific parameters - handled by upstream feature generation
       patchtst_n_heads: 4
       patchtst_d_ff: 256
@@ -63,16 +63,16 @@ models:
     parameters:
       objective: "Logloss"
       eval_metric: "Logloss"
-      iterations: 1000
-      learning_rate: 0.05
+      iterations: 600  # Reduced for faster training
+      learning_rate: 0.08  # Slightly higher learning rate
       depth: 6
-      l2_leaf_reg: 3
+      l2_leaf_reg: 5  # Increased regularization
       random_seed: 42
-      early_stopping_rounds: 50
+      early_stopping_rounds: 30  # More aggressive early stopping
       verbose: false
-      min_data_in_leaf: 20
+      min_data_in_leaf: 25  # Higher minimum for stability
       bootstrap_type: "Bayesian"
-      bagging_temperature: 1.0
+      bagging_temperature: 0.8  # Reduced for more conservative sampling
       subsample: 0.8
 
 # Target Configuration
@@ -121,6 +121,11 @@ training:
   cv_params:
     n_splits: 5
     test_size: 0.2
+  
+  # Caching configuration - Uses unified configuration
+  caching:
+    config_source: "unified_memory_config.yaml"
+    model_type: "analyst_base"
   
   # Early stopping
   early_stopping:
@@ -204,6 +209,18 @@ metrics:
     confidence_quality:
       enabled: true
       metrics: ["confidence_accuracy", "confidence_precision", "confidence_recall"]
+
+# Memory Optimization - Uses unified configuration from utils/hardware/
+memory_optimization:
+  # Import unified configuration
+  config_source: "unified_memory_config.yaml"
+  model_type: "analyst_base"
+  
+  # Hardware integration
+  use_integrated_hardware_manager: true
+  use_enhanced_caching_system: true
+  use_memory_optimized_decorators: true
+  use_dynamic_memory_allocator: true
 
 # Performance Monitoring
 monitoring:

@@ -297,6 +297,9 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             self.no_recency_bias = self.config.get('no_recency_bias', True)
             self.top_1_trading = self.config.get('top_1_trading', True)
             self.top_3_interactions = self.config.get('top_3_interactions', True)
+            self.transaction_cost = self.config.get('transaction_cost', 0.001)  # 0.1% default
+            self.transaction_cost_per_symbol = self.config.get('transaction_cost_per_symbol', {})
+            self.transaction_cost_per_exchange = self.config.get('transaction_cost_per_exchange', {})
             tprint_info(f"Config parameters: min_periods={self.min_periods}, correlation_threshold={self.correlation_threshold}")
         else:
             tprint_info("Using object-style config")
@@ -1107,15 +1110,14 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                             targets = tmp
                             break
                 if targets is None or targets.empty:
-                    tprint_warning("No targets found, using synthetic targets for optimization")
-                    # Create synthetic targets for optimization
-                    targets = pd.Series(np.random.randn(len(data)), index=data.index)
+                    tprint_error("No targets found for optimization")
+                    raise ValueError("No targets available for period/lookback optimization. Run feature_generation_labeling_integration_step first.")
                 
                 # Validate all optimization inputs
                 self._validate_optimization_inputs(data, targets, periods_to_test, lookbacks_to_test, direction)
             except Exception as e:
-                tprint_warning(f"Failed to load targets: {e}, using synthetic targets")
-                targets = pd.Series(np.random.randn(len(data)), index=data.index)
+                tprint_error(f"Failed to load targets: {e}")
+                raise ValueError(f"Failed to load targets for optimization: {e}")
             
             # Align data and targets
             aligned_data = data.join(targets.rename('target'), how='inner').dropna()
@@ -1126,22 +1128,16 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             aligned_features = aligned_data.drop(columns=['target'])
             aligned_targets = aligned_data['target']
             
-            # Perform real period optimization
-            tprint_info("🎯 Performing period optimization")
-            best_period, period_scores = self._optimize_periods(
+            # Perform concurrent period and lookback optimization
+            tprint_info("🎯 Performing concurrent period and lookback optimization")
+            best_period, best_lookback, period_scores, lookback_scores = self._optimize_periods_and_lookbacks_concurrent(
                 features=aligned_features,
                 targets=aligned_targets,
                 periods_to_test=periods_to_test,
-                direction=direction
-            )
-            
-            # Perform real lookback optimization
-            tprint_info("🎯 Performing lookback optimization")
-            best_lookback, lookback_scores = self._optimize_lookbacks(
-                features=aligned_features,
-                targets=aligned_targets,
                 lookbacks_to_test=lookbacks_to_test,
-                direction=direction
+                direction=direction,
+                symbol=symbol,
+                exchange=exchange
             )
             
             tprint_success(f"✅ Period optimization completed: {best_period} (score: {period_scores.get(str(best_period), 0):.3f})")
@@ -3094,7 +3090,7 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
         # Set context for enhanced file naming
         symbol = config.get('symbol', 'ETHUSDT')
         exchange = config.get('exchange', 'binance')
-        direction = config.get('direction', 'long')
+        direction = config.get('direction', 'longs')
         model = config.get('model', 'Analyst')
         
         self._set_context(symbol=symbol, exchange=exchange, direction=direction, model=model)
@@ -3165,6 +3161,11 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             tprint_data_format(error_result, "no_targets_error", level="ERROR")
             return error_result
         
+        # Validate target consistency
+        if not self._validate_target_consistency(targets_series):
+            tprint_warning("Target validation failed - targets may not be properly formatted as returns")
+            # Continue with warning rather than failing completely
+        
         # Align features and targets with proper validation
         tprint_info("Aligning features and targets for optimization")
         
@@ -3232,10 +3233,10 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
         tprint_data_format(aligned_features, "aligned_features", level="DEBUG")
         tprint_data_format(aligned_targets, "aligned_targets", level="DEBUG")
         
-            # Use aligned data for optimization
-            data = aligned_features
-            # Add comprehensive data format analysis for troubleshooting
-            tprint_data_format(data, "final_optimization_data", level="DEBUG")
+        # Use aligned data for optimization
+        data = aligned_features
+        # Add comprehensive data format analysis for troubleshooting
+        tprint_data_format(data, "final_optimization_data", level="DEBUG")
         
         try:
             # Log optimization configuration
@@ -3355,7 +3356,7 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
     @smart_cache(cache_key_func=lambda self, features, targets, periods_to_test, direction: 
                  f"period_opt_{hash(str(features.shape))}_{hash(str(targets.shape))}_{hash(tuple(periods_to_test))}_{direction}")
     def _optimize_periods(self, features: pd.DataFrame, targets: pd.Series, 
-                         periods_to_test: List[int], direction: str) -> Tuple[int, Dict[str, float]]:
+                         periods_to_test: List[int], direction: str, symbol: str = None, exchange: str = None) -> Tuple[int, Dict[str, float]]:
         """Optimize periods using mutual information and out-of-sample Sharpe ratio."""
         tprint_step("Optimizing periods")
         
@@ -3364,8 +3365,13 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             features = self.validator.validate_dataframe(features, min_rows=50)
             targets = self.validator.validate_series(targets, min_length=50)
             periods_to_test = [self.validator.validate_positive_int(p, f"period_{p}") for p in periods_to_test]
-            if direction not in ['longs', 'shorts']:
-                raise ValidationError(f"Direction must be 'longs' or 'shorts', got {direction}")
+            if direction not in ['longs', 'shorts', 'long', 'short']:
+                raise ValidationError(f"Direction must be 'longs', 'shorts', 'long', or 'short', got {direction}")
+            # Normalize direction to plural form
+            if direction == 'long':
+                direction = 'longs'
+            elif direction == 'short':
+                direction = 'shorts'
         except ValidationError as e:
             tprint_error(f"Period optimization validation failed: {e}")
             raise
@@ -3417,7 +3423,7 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                 sharpe_score = risk_metrics['sharpe_ratio']
                 
                 # Calculate transaction cost adjusted score
-                transaction_cost = 0.001  # 0.1% total fees
+                transaction_cost = self._get_transaction_cost(symbol, exchange)
                 cost_adjusted_sharpe = sharpe_score - transaction_cost
                 
                 # Combined score (weighted average) with transaction cost consideration
@@ -3509,7 +3515,13 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                         direction
                     )[0]
                     
-                    combined_score = 0.7 * avg_mi + 0.3 * sharpe_score
+                    # Compute risk metrics for consistent scoring
+                    risk_metrics = self._compute_comprehensive_risk_metrics(feature_series, targets, direction)
+                    
+                    # Use consistent scoring formula with TPE optimization
+                    transaction_cost = self._get_transaction_cost()
+                    cost_adjusted_sharpe = sharpe_score - transaction_cost
+                    combined_score = 0.5 * avg_mi + 0.3 * cost_adjusted_sharpe + 0.2 * risk_metrics.get('sortino_ratio', 0.0)
                     period_scores[str(period)] = combined_score
                     
                     if combined_score > best_score:
@@ -3534,7 +3546,7 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
     @smart_cache(cache_key_func=lambda self, features, targets, lookbacks_to_test, direction: 
                  f"lookback_opt_{hash(str(features.shape))}_{hash(str(targets.shape))}_{hash(tuple(lookbacks_to_test))}_{direction}")
     def _optimize_lookbacks(self, features: pd.DataFrame, targets: pd.Series, 
-                           lookbacks_to_test: List[int], direction: str) -> Tuple[int, Dict[str, float]]:
+                           lookbacks_to_test: List[int], direction: str, symbol: str = None, exchange: str = None) -> Tuple[int, Dict[str, float]]:
         """Optimize lookbacks using mutual information and out-of-sample Sharpe ratio."""
         tprint_step("Optimizing lookbacks")
         
@@ -3543,8 +3555,13 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             features = self.validator.validate_dataframe(features, min_rows=50)
             targets = self.validator.validate_series(targets, min_length=50)
             lookbacks_to_test = [self.validator.validate_positive_int(l, f"lookback_{l}") for l in lookbacks_to_test]
-            if direction not in ['longs', 'shorts']:
-                raise ValidationError(f"Direction must be 'longs' or 'shorts', got {direction}")
+            if direction not in ['longs', 'shorts', 'long', 'short']:
+                raise ValidationError(f"Direction must be 'longs', 'shorts', 'long', or 'short', got {direction}")
+            # Normalize direction to plural form
+            if direction == 'long':
+                direction = 'longs'
+            elif direction == 'short':
+                direction = 'shorts'
         except ValidationError as e:
             tprint_error(f"Lookback optimization validation failed: {e}")
             raise
@@ -3601,7 +3618,7 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                 )
                 
                 # Calculate transaction cost adjusted score
-                transaction_cost = 0.001  # 0.1% total fees
+                transaction_cost = self._get_transaction_cost(symbol, exchange)
                 cost_adjusted_sharpe = sharpe_score - transaction_cost
                 
                 # Combined score (weighted average) with transaction cost consideration
@@ -3693,7 +3710,13 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                         direction
                     )[0]
                     
-                    combined_score = 0.7 * avg_mi + 0.3 * sharpe_score
+                    # Compute risk metrics for consistent scoring
+                    risk_metrics = self._compute_comprehensive_risk_metrics(feature_series, targets, direction)
+                    
+                    # Use consistent scoring formula with TPE optimization
+                    transaction_cost = self._get_transaction_cost()
+                    cost_adjusted_sharpe = sharpe_score - transaction_cost
+                    combined_score = 0.5 * avg_mi + 0.3 * cost_adjusted_sharpe + 0.2 * risk_metrics.get('sortino_ratio', 0.0)
                     lookback_scores[str(lookback)] = combined_score
                     
                     if combined_score > best_score:
@@ -3836,7 +3859,7 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
     def _create_period_features(self, features: pd.DataFrame, period: int) -> pd.DataFrame:
         """Create period-based features using proper period-based feature engineering."""
         # Check cache first
-        cache_key = f"period_{period}_{hash(str(features.columns.tolist()))}"
+        cache_key = f"period_{period}_{hash(str(features.columns.tolist()))}_{hash(str(features.shape))}_{hash(str(features.values.tobytes()))}"
         cached_features = self._get_cached_features(cache_key)
         if cached_features is not None:
             return cached_features
@@ -3902,6 +3925,17 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
         if len(period_features) < 10:
             return pd.DataFrame()
         
+        # Apply configuration constraints
+        period_features = self._enforce_min_periods_constraint(period_features, period)
+        period_features = self._apply_no_recency_bias(period_features, period)
+        period_features = self._filter_correlated_features(period_features)
+        
+        # Apply top features constraint if enabled
+        if self.top_1_trading or self.top_3_interactions:
+            # Note: We need targets for this, but they're not available in this context
+            # This constraint will be applied during optimization instead
+            pass
+        
         # Cache the result
         if not period_features.empty:
             self._cache_features(cache_key, period_features)
@@ -3911,7 +3945,7 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
     def _create_lookback_features(self, features: pd.DataFrame, lookback: int) -> pd.DataFrame:
         """Create lookback-based features using comprehensive rolling windows."""
         # Check cache first
-        cache_key = f"lookback_{lookback}_{hash(str(features.columns.tolist()))}"
+        cache_key = f"lookback_{lookback}_{hash(str(features.columns.tolist()))}_{hash(str(features.shape))}_{hash(str(features.values.tobytes()))}"
         cached_features = self._get_cached_features(cache_key)
         if cached_features is not None:
             return cached_features
@@ -3970,14 +4004,6 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
         if lookback_features.empty:
             tprint_warning(f"No valid lookback features created for lookback {lookback}")
             return pd.DataFrame()
-                
-                # Trend and change features
-                lookback_features[f"{col}_lookback_trend"] = features[col].rolling(window=lookback, min_periods=lookback//2).apply(lambda x: np.polyfit(range(len(x)), x, 1)[0] if len(x) > 1 else 0)
-                lookback_features[f"{col}_lookback_change"] = features[col].pct_change(lookback)
-                
-                # Range and position features
-                lookback_features[f"{col}_lookback_range"] = features[col].rolling(window=lookback, min_periods=lookback//2).max() - features[col].rolling(window=lookback, min_periods=lookback//2).min()
-                lookback_features[f"{col}_lookback_position"] = (features[col] - features[col].rolling(window=lookback, min_periods=lookback//2).min()) / (features[col].rolling(window=lookback, min_periods=lookback//2).max() - features[col].rolling(window=lookback, min_periods=lookback//2).min())
         
         # Drop rows with insufficient data
         lookback_features = lookback_features.dropna()
@@ -3989,11 +4015,299 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
         if len(lookback_features) < 10:
             return pd.DataFrame()
         
+        # Apply configuration constraints
+        lookback_features = self._enforce_min_periods_constraint(lookback_features, lookback)
+        lookback_features = self._apply_no_recency_bias(lookback_features, lookback)
+        lookback_features = self._filter_correlated_features(lookback_features)
+        
+        # Apply top features constraint if enabled
+        if self.top_1_trading or self.top_3_interactions:
+            # Note: We need targets for this, but they're not available in this context
+            # This constraint will be applied during optimization instead
+            pass
+        
         # Cache the result
         if not lookback_features.empty:
             self._cache_features(cache_key, lookback_features)
         
         return lookback_features
+    
+    def _optimize_periods_and_lookbacks_concurrent(self, features: pd.DataFrame, targets: pd.Series, 
+                                                   periods_to_test: List[int], lookbacks_to_test: List[int], 
+                                                   direction: str, symbol: str = None, exchange: str = None) -> Tuple[int, int, Dict[str, float], Dict[str, float]]:
+        """Perform concurrent period and lookback optimization using joint grid search."""
+        tprint_step("Concurrent period and lookback optimization")
+        
+        # Input validation
+        try:
+            features = self.validator.validate_dataframe(features, min_rows=50)
+            targets = self.validator.validate_series(targets, min_length=50)
+            periods_to_test = [self.validator.validate_positive_int(p, f"period_{p}") for p in periods_to_test]
+            lookbacks_to_test = [self.validator.validate_positive_int(l, f"lookback_{l}") for l in lookbacks_to_test]
+            if direction not in ['longs', 'shorts', 'long', 'short']:
+                raise ValidationError(f"Direction must be 'longs', 'shorts', 'long', or 'short', got {direction}")
+            # Normalize direction to plural form
+            if direction == 'long':
+                direction = 'longs'
+            elif direction == 'short':
+                direction = 'shorts'
+        except ValidationError as e:
+            tprint_error(f"Concurrent optimization validation failed: {e}")
+            raise
+        
+        # Pre-compute all feature combinations
+        tprint_info("🎯 Pre-computing all period and lookback feature combinations")
+        period_features_cache = self._parallel_create_features(features, periods_to_test, 'period')
+        lookback_features_cache = self._parallel_create_features(features, lookbacks_to_test, 'lookback')
+        
+        # Joint optimization using grid search
+        best_score = -np.inf
+        best_period = periods_to_test[0]
+        best_lookback = lookbacks_to_test[0]
+        period_scores = {}
+        lookback_scores = {}
+        
+        tprint_info(f"🔍 Testing {len(periods_to_test)} periods × {len(lookbacks_to_test)} lookbacks = {len(periods_to_test) * len(lookbacks_to_test)} combinations")
+        
+        for period in periods_to_test:
+            period_features = period_features_cache.get(period, pd.DataFrame())
+            if period_features.empty:
+                continue
+                
+            for lookback in lookbacks_to_test:
+                lookback_features = lookback_features_cache.get(lookback, pd.DataFrame())
+                if lookback_features.empty:
+                    continue
+                
+                # Combine period and lookback features
+                try:
+                    combined_features = pd.concat([period_features, lookback_features], axis=1).dropna()
+                    if combined_features.empty:
+                        continue
+                    
+                    # Apply top features constraint if enabled
+                    if self.top_1_trading or self.top_3_interactions:
+                        combined_features = self._apply_top_features_constraint(combined_features, targets, n_top=3)
+                        if combined_features.empty:
+                            continue
+                    
+                    # Compute mutual information for all features
+                    mi_scores = self._compute_vectorized_mutual_information(combined_features, targets)
+                    if len(mi_scores) == 0:
+                        continue
+                    
+                    avg_mi = np.mean(mi_scores)
+                    
+                    # Compute risk metrics for the first feature as a proxy
+                    if len(combined_features.columns) > 0:
+                        risk_metrics = self._compute_comprehensive_risk_metrics(
+                            combined_features.iloc[:, 0], targets, direction
+                        )
+                        sharpe_score = risk_metrics.get('sharpe_ratio', 0.0)
+                    else:
+                        sharpe_score = 0.0
+                    
+                    # Calculate transaction cost adjusted score
+                    transaction_cost = self._get_transaction_cost(symbol, exchange)
+                    cost_adjusted_sharpe = sharpe_score - transaction_cost
+                    
+                    # Combined score (consistent with TPE optimization)
+                    combined_score = 0.5 * avg_mi + 0.3 * cost_adjusted_sharpe + 0.2 * risk_metrics.get('sortino_ratio', 0.0)
+                    
+                    # Track best combination
+                    if combined_score > best_score:
+                        best_score = combined_score
+                        best_period = period
+                        best_lookback = lookback
+                    
+                    # Store scores for reporting
+                    period_scores[str(period)] = combined_score
+                    lookback_scores[str(lookback)] = combined_score
+                    
+                except Exception as e:
+                    tprint_warning(f"Failed to evaluate period {period}, lookback {lookback}: {e}")
+                    continue
+        
+        tprint_success(f"Concurrent optimization completed: best period={best_period}, best lookback={best_lookback}, score={best_score:.4f}")
+        return best_period, best_lookback, period_scores, lookback_scores
+    
+    def _filter_correlated_features(self, features: pd.DataFrame) -> pd.DataFrame:
+        """Filter out highly correlated features based on correlation_threshold."""
+        if features.empty or len(features.columns) <= 1:
+            return features
+            
+        try:
+            # Calculate correlation matrix
+            corr_matrix = features.corr().abs()
+            
+            # Find pairs of highly correlated features
+            high_corr_pairs = []
+            for i in range(len(corr_matrix.columns)):
+                for j in range(i+1, len(corr_matrix.columns)):
+                    if corr_matrix.iloc[i, j] > self.correlation_threshold:
+                        high_corr_pairs.append((corr_matrix.columns[i], corr_matrix.columns[j]))
+            
+            # Remove one feature from each highly correlated pair
+            features_to_remove = set()
+            for feat1, feat2 in high_corr_pairs:
+                # Keep the feature with higher variance (more informative)
+                var1 = features[feat1].var()
+                var2 = features[feat2].var()
+                if var1 >= var2:
+                    features_to_remove.add(feat2)
+                else:
+                    features_to_remove.add(feat1)
+            
+            if features_to_remove:
+                tprint_info(f"Removing {len(features_to_remove)} highly correlated features (threshold: {self.correlation_threshold})")
+                features = features.drop(columns=list(features_to_remove))
+                
+        except Exception as e:
+            tprint_warning(f"Failed to filter correlated features: {e}")
+            
+        return features
+    
+    def _enforce_min_periods_constraint(self, features: pd.DataFrame, period: int) -> pd.DataFrame:
+        """Enforce minimum periods constraint for features."""
+        if period < self.min_periods:
+            tprint_warning(f"Period {period} is less than minimum required periods {self.min_periods}")
+            return pd.DataFrame()
+        return features
+    
+    def _apply_no_recency_bias(self, features: pd.DataFrame, period: int) -> pd.DataFrame:
+        """Apply no recency bias constraint by ensuring features use sufficient historical data."""
+        if self.no_recency_bias and period < 10:  # Minimum lookback to avoid recency bias
+            tprint_warning(f"Period {period} too small for no recency bias constraint")
+            return pd.DataFrame()
+        return features
+    
+    def _get_transaction_cost(self, symbol: str = None, exchange: str = None) -> float:
+        """Get transaction cost based on symbol and exchange."""
+        # Check symbol-specific cost first
+        if symbol and symbol in self.transaction_cost_per_symbol:
+            return self.transaction_cost_per_symbol[symbol]
+        
+        # Check exchange-specific cost
+        if exchange and exchange in self.transaction_cost_per_exchange:
+            return self.transaction_cost_per_exchange[exchange]
+        
+        # Return default cost
+        return self.transaction_cost
+    
+    def _validate_target_consistency(self, targets: pd.Series) -> bool:
+        """Validate that targets are properly formatted as returns."""
+        try:
+            if targets.empty:
+                return False
+            
+            # Check if targets look like returns (mean close to 0, reasonable variance)
+            target_values = targets.dropna()
+            if len(target_values) < 10:
+                return False
+            
+            mean_val = target_values.mean()
+            std_val = target_values.std()
+            
+            # Returns should have mean close to 0 and reasonable variance
+            if abs(mean_val) > 0.1 or std_val < 0.001 or std_val > 10:
+                tprint_warning(f"Targets may not be returns: mean={mean_val:.4f}, std={std_val:.4f}")
+                return False
+            
+            return True
+            
+        except Exception as e:
+            tprint_warning(f"Target validation failed: {e}")
+            return False
+    
+    def _compute_extended_metrics(self, features: pd.Series, targets: pd.Series, direction: str) -> Dict[str, float]:
+        """Compute extended financial metrics for better evaluation."""
+        try:
+            # Align features and targets
+            aligned_data = pd.concat([features, targets], axis=1).dropna()
+            if len(aligned_data) < 50:
+                return {}
+            
+            feature_vals = aligned_data.iloc[:, 0].values
+            target_vals = aligned_data.iloc[:, 1].values
+            
+            # Create portfolio returns
+            if self._is_returns_series(target_vals):
+                target_returns = target_vals
+            else:
+                target_returns = np.diff(target_vals) / target_vals[:-1]
+                feature_vals = feature_vals[1:]
+            
+            if len(target_returns) == 0 or len(feature_vals) == 0:
+                return {}
+            
+            # Create portfolio returns
+            feature_signals = np.tanh(feature_vals)
+            portfolio_returns = feature_signals * target_returns
+            
+            if len(portfolio_returns) == 0:
+                return {}
+            
+            # Calculate extended metrics
+            metrics = {}
+            
+            # Information ratio
+            if np.std(portfolio_returns) > 0:
+                metrics['information_ratio'] = np.mean(portfolio_returns) / np.std(portfolio_returns) * np.sqrt(252)
+            
+            # Win/Loss ratio
+            wins = portfolio_returns[portfolio_returns > 0]
+            losses = portfolio_returns[portfolio_returns < 0]
+            if len(wins) > 0 and len(losses) > 0:
+                metrics['win_loss_ratio'] = len(wins) / len(losses)
+                metrics['avg_win'] = np.mean(wins)
+                metrics['avg_loss'] = np.mean(losses)
+            
+            # Maximum drawdown over different horizons
+            cumulative_returns = np.cumprod(1 + portfolio_returns)
+            running_max = np.maximum.accumulate(cumulative_returns)
+            drawdowns = (cumulative_returns - running_max) / running_max
+            
+            # 1-day, 1-week, 1-month max drawdowns
+            if len(portfolio_returns) >= 252:  # At least 1 year of data
+                metrics['max_drawdown_1d'] = np.min(drawdowns)
+                metrics['max_drawdown_1w'] = np.min([np.min(drawdowns[i:i+5]) for i in range(0, len(drawdowns)-4, 5)])
+                metrics['max_drawdown_1m'] = np.min([np.min(drawdowns[i:i+21]) for i in range(0, len(drawdowns)-20, 21)])
+            
+            return metrics
+            
+        except Exception as e:
+            tprint_warning(f"Extended metrics calculation failed: {e}")
+            return {}
+    
+    def _apply_top_features_constraint(self, features: pd.DataFrame, targets: pd.Series, n_top: int = 3) -> pd.DataFrame:
+        """Apply top features constraint by selecting only the best performing features."""
+        if features.empty or len(features.columns) <= n_top:
+            return features
+        
+        try:
+            # Compute mutual information for all features
+            mi_scores = self._compute_vectorized_mutual_information(features, targets)
+            if len(mi_scores) == 0:
+                return features
+            
+            # Get top N features based on mutual information
+            feature_names = features.columns.tolist()
+            feature_scores = list(zip(feature_names, mi_scores))
+            feature_scores.sort(key=lambda x: x[1], reverse=True)
+            
+            top_features = [name for name, score in feature_scores[:n_top]]
+            
+            if self.top_1_trading and n_top >= 1:
+                top_features = top_features[:1]
+            elif self.top_3_interactions and n_top >= 3:
+                top_features = top_features[:3]
+            
+            tprint_info(f"Selected top {len(top_features)} features from {len(feature_names)} total features")
+            return features[top_features]
+            
+        except Exception as e:
+            tprint_warning(f"Failed to apply top features constraint: {e}")
+            return features
     
     @smart_cache(cache_key_func=lambda self, x, y: f"mi_{hash(str(x.values))}_{hash(str(y.values))}")
     def _compute_mutual_information(self, x: pd.Series, y: pd.Series) -> float:
@@ -4016,6 +4330,10 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             # Compute mutual information
             mi = mutual_info_regression(x_vals, y_vals, random_state=42)[0]
             return float(mi)
+            
+        except Exception as e:
+            tprint_warning(f"Failed to compute mutual information: {e}")
+            return 0.0
     
     def _compute_vectorized_mutual_information(self, features: pd.DataFrame, targets: pd.Series) -> np.ndarray:
         """Compute mutual information for all features vectorized."""
@@ -4050,7 +4368,7 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             return np.array(mi_scores)
     
     def _compute_comprehensive_risk_metrics(self, features: pd.Series, targets: pd.Series, direction: str) -> Dict[str, float]:
-        """Compute comprehensive risk metrics including Sharpe, Sortino, Calmar, and Max Drawdown."""
+        """Compute comprehensive risk metrics using portfolio returns derived from features and targets."""
         try:
             # Align features and targets
             aligned_data = pd.concat([features, targets], axis=1).dropna()
@@ -4060,42 +4378,58 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             feature_vals = aligned_data.iloc[:, 0].values
             target_vals = aligned_data.iloc[:, 1].values
             
-            # Determine if targets are returns or prices and calculate returns accordingly
+            # Create portfolio returns based on feature signals and target returns
+            # This simulates a trading strategy where features generate signals
             if self._is_returns_series(target_vals):
-                returns = target_vals
+                target_returns = target_vals
             else:
                 # Calculate returns from price series
-                returns = np.diff(target_vals) / target_vals[:-1]
+                target_returns = np.diff(target_vals) / target_vals[:-1]
+                feature_vals = feature_vals[1:]  # Align with returns
             
-            if len(returns) == 0 or np.std(returns) == 0:
+            if len(target_returns) == 0 or len(feature_vals) == 0:
+                return {'sharpe_ratio': 0.0, 'sortino_ratio': 0.0, 'calmar_ratio': 0.0, 'max_drawdown': 0.0}
+            
+            # Create portfolio returns: feature signals * target returns
+            # Normalize features to create proper signals
+            feature_signals = np.tanh(feature_vals)  # Normalize to [-1, 1]
+            portfolio_returns = feature_signals * target_returns
+            
+            if len(portfolio_returns) == 0 or np.std(portfolio_returns) == 0:
                 return {'sharpe_ratio': 0.0, 'sortino_ratio': 0.0, 'calmar_ratio': 0.0, 'max_drawdown': 0.0}
             
             # Sharpe ratio
-            sharpe_ratio = np.mean(returns) / np.std(returns) * np.sqrt(252)  # Annualized
+            sharpe_ratio = np.mean(portfolio_returns) / np.std(portfolio_returns) * np.sqrt(252)  # Annualized
             
             # Sortino ratio (downside deviation)
-            downside_returns = returns[returns < 0]
+            downside_returns = portfolio_returns[portfolio_returns < 0]
             if len(downside_returns) > 0:
                 downside_std = np.std(downside_returns)
-                sortino_ratio = np.mean(returns) / downside_std * np.sqrt(252) if downside_std > 0 else 0.0
+                sortino_ratio = np.mean(portfolio_returns) / downside_std * np.sqrt(252) if downside_std > 0 else 0.0
             else:
                 sortino_ratio = sharpe_ratio
             
             # Maximum drawdown
-            cumulative_returns = np.cumprod(1 + returns)
+            cumulative_returns = np.cumprod(1 + portfolio_returns)
             running_max = np.maximum.accumulate(cumulative_returns)
             drawdowns = (cumulative_returns - running_max) / running_max
             max_drawdown = np.min(drawdowns)
             
             # Calmar ratio
-            calmar_ratio = np.mean(returns) * 252 / abs(max_drawdown) if max_drawdown != 0 else 0.0
+            calmar_ratio = np.mean(portfolio_returns) * 252 / abs(max_drawdown) if max_drawdown != 0 else 0.0
             
-            return {
+            # Get extended metrics
+            extended_metrics = self._compute_extended_metrics(features, targets, direction)
+            
+            # Combine basic and extended metrics
+            basic_metrics = {
                 'sharpe_ratio': float(sharpe_ratio),
                 'sortino_ratio': float(sortino_ratio),
                 'calmar_ratio': float(calmar_ratio),
                 'max_drawdown': float(max_drawdown)
             }
+            
+            return {**basic_metrics, **extended_metrics}
             
         except Exception as e:
             tprint_warning(f"Risk metrics calculation failed: {e}")

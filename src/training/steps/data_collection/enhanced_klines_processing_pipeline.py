@@ -235,6 +235,11 @@ from exchanges.shared.unified_ohlcv_standardizer import UnifiedOHLCVStandardizer
 # Import BaseStep for inheritance
 from src.training.steps.base_step import BaseStep
 
+# Import existing data collection components
+from .unified_gap_filler import UnifiedGapFiller
+from .enhanced_api_agnostic_data_collector import DataGapDetector, IncrementalDataDownloader
+from .utils.data_operations_utils import DataFormatter, DataFormat
+
 # Initialize quality utilities at module level
 _lazy_import_quality_utilities()
 
@@ -511,14 +516,27 @@ class EnhancedKlinesProcessingPipeline(BaseStep):
     Enhanced klines data processing pipeline with comprehensive type hints,
     exchange-agnostic design, and fast-fail patterns.
 
+    OPTIMIZED GAP-FIRST APPROACH:
+    =============================
+    This pipeline uses an optimized approach that prevents duplicate downloads:
+    1. First analyzes existing data to detect gaps
+    2. Downloads ONLY the missing data periods (with immediate standardization)
+    3. Combines existing and new data
+    4. Validates and processes the complete dataset
+
+    This prevents the inefficient pattern of:
+    - Downloading all data → detecting gaps → re-downloading gaps
+
     Features:
     - Uses ExchangeInterface for all exchange calls
     - Integrates KlinesParquetManager for efficient storage
     - Implements data standardizer for consistent formatting
-    - Fast fail pattern with no fallbacks or mocks
-    - Comprehensive gap detection and filling
+    - Fast fail pattern with no fallbacks or mocks (connection failures cause immediate failure)
+    - Comprehensive gap detection and filling (OPTIMIZED)
     - Automatic resampling for data older than 3 days
     - Batch-compatible data management
+    - Selective downloading to avoid duplicates
+    - Immediate data standardization during download
     """
 
     def __init__(
@@ -1040,7 +1058,7 @@ class EnhancedKlinesProcessingPipeline(BaseStep):
         batch_id: Optional[str] = None
     ) -> Dict[str, Any]:
         """
-        Process klines data through the complete pipeline.
+        Process klines data through the complete pipeline with optimized gap-first approach.
 
         Args:
             symbol: Trading symbol (e.g., "ETHUSDT")
@@ -1104,26 +1122,62 @@ class EnhancedKlinesProcessingPipeline(BaseStep):
                 "resampled_intervals": []
             }
 
-            # Step 1: Download data using ExchangeInterface
+            # Step 1: Connect to exchange (fast fail)
             try:
                 await exchange_interface.connect()
             except Exception as e:
+                error_msg = f"Exchange connection failed: {e}"
                 if self.enable_logging:
-                    tprint_warning(f"⚠️ Exchange connection failed: {e}")
+                    tprint_error(f"❌ {error_msg}")
+                raise RuntimeError(error_msg)
+
+            # Step 2: Analyze existing data and detect gaps FIRST (OPTIMIZED APPROACH)
+            if self.enable_logging:
+                tprint_info("🔍 Step 1: Analyzing existing data and detecting gaps")
             
-            download_result = await self._download_data(
-                symbol, interval, years, exchange_interface
+            gap_analysis_result = await self._analyze_existing_data_and_gaps(
+                symbol, interval, years, max_gap_minutes
             )
-            self.processing_results.append(download_result)
+            self.processing_results.append(gap_analysis_result)
 
-            if not download_result.success:
-                raise RuntimeError(f"Data download failed: {download_result.errors}")
+            if not gap_analysis_result.success:
+                raise RuntimeError(f"Gap analysis failed: {gap_analysis_result.errors}")
 
-            results["steps_completed"].append(ProcessingStep.DOWNLOAD.value)
+            results["steps_completed"].append(ProcessingStep.GAP_DETECTION.value)
 
-            # Step 2: Standardize data format using ExchangeDataStandardizer
+            # Step 3: Download only missing data (if gaps found)
+            if gap_analysis_result.metadata.get("download_required", False):
+                if self.enable_logging:
+                    gaps_detected = gap_analysis_result.metadata.get("gaps_detected", 0)
+                    if gaps_detected > 0:
+                        tprint_info(f"📥 Step 2: Downloading {gaps_detected} missing data periods")
+                    else:
+                        tprint_info("📥 Step 2: No existing data found - downloading all data")
+                
+                download_result = await self._download_missing_data(
+                    gap_analysis_result.data, symbol, interval, exchange_interface
+                )
+                self.processing_results.append(download_result)
+
+                if not download_result.success:
+                    raise RuntimeError(f"Missing data download failed: {download_result.errors}")
+
+                results["steps_completed"].append(ProcessingStep.DOWNLOAD.value)
+                if download_result.metadata.get("gaps_filled", 0) > 0:
+                    results["steps_completed"].append(ProcessingStep.GAP_FILLING.value)
+                
+                current_data = download_result.data
+            else:
+                if self.enable_logging:
+                    tprint_success("✅ No gaps found - using existing data")
+                current_data = gap_analysis_result.data
+
+            # Step 4: Standardize data format using ExchangeDataStandardizer
+            if self.enable_logging:
+                tprint_info("🔧 Step 3: Standardizing data format")
+            
             standardize_result = await self._standardize_data(
-                download_result.data, symbol, interval
+                current_data, symbol, interval
             )
             self.processing_results.append(standardize_result)
 
@@ -1132,8 +1186,11 @@ class EnhancedKlinesProcessingPipeline(BaseStep):
 
             results["steps_completed"].append(ProcessingStep.STANDARDIZE.value)
 
-            # Step 3: Validate data quality
+            # Step 5: Validate data quality
             if self.config.enable_quality_validation:
+                if self.enable_logging:
+                    tprint_info("🔍 Step 4: Validating data quality")
+                
                 # Preview data before quality validation
                 tprint_data_preview(standardize_result.data, f"Data before quality validation for {symbol} {interval}", max_rows=3, include_metadata=True)
                 
@@ -1151,34 +1208,6 @@ class EnhancedKlinesProcessingPipeline(BaseStep):
             else:
                 current_data = standardize_result.data
 
-            # Step 4: Detect and fill gaps (if enabled)
-            if self.config.enable_gap_filling:
-                gap_result = await self._handle_gaps(
-                    current_data, symbol, interval, max_gap_minutes, exchange_interface
-                )
-                self.processing_results.append(gap_result)
-
-                if not gap_result.success:
-                    raise RuntimeError(f"Gap handling failed: {gap_result.errors}")
-
-                results["steps_completed"].append(ProcessingStep.GAP_DETECTION.value)
-                if gap_result.metadata.get("gaps_filled", 0) > 0:
-                    results["steps_completed"].append(ProcessingStep.GAP_FILLING.value)
-
-                current_data = gap_result.data
-
-            # Step 5: Handle duplicates (if enabled)
-            if self.config.enable_duplicate_handling:
-                duplicate_result = await self._handle_duplicates(
-                    current_data, symbol, interval
-                )
-                self.processing_results.append(duplicate_result)
-
-                if not duplicate_result.success:
-                    raise RuntimeError(f"Duplicate handling failed: {duplicate_result.errors}")
-
-                results["steps_completed"].append(ProcessingStep.DUPLICATE_HANDLING.value)
-                current_data = duplicate_result.data
 
             # Step 6: Store original data using KlinesParquetManager
             store_result = await self._store_original_data(
@@ -1261,6 +1290,218 @@ class EnhancedKlinesProcessingPipeline(BaseStep):
             results["total_processing_time"] = (datetime.now() - start_time).total_seconds()
 
             return results
+
+    async def _analyze_existing_data_and_gaps(
+        self,
+        symbol: str,
+        interval: str,
+        years: int,
+        max_gap_minutes: int
+    ) -> ProcessingResult:
+        """
+        Analyze existing data and detect gaps using UnifiedGapFiller.
+        This is the optimized approach that prevents duplicate downloads.
+        """
+        start_time = datetime.now()
+        result = ProcessingResult(
+            step=ProcessingStep.GAP_DETECTION,
+            success=False,
+            errors=[],
+            warnings=[]
+        )
+
+        try:
+            if self.enable_logging:
+                tprint_info(f"🔍 Analyzing existing data for {symbol} {interval}")
+
+            # Initialize UnifiedGapFiller
+            gap_filler = UnifiedGapFiller(data_cache_path=self.config.data_dir)
+            
+            # Calculate expected date range
+            end_date = datetime.now() - timedelta(days=3)  # 3 days ago
+            start_date = end_date - timedelta(days=years * 365)
+            
+            # Use UnifiedGapFiller to detect gaps
+            gaps = gap_filler.detect_gaps(
+                symbol=symbol,
+                exchange="binance",  # Use config exchange
+                data_type="klines",
+                start_date=start_date,
+                end_date=end_date
+            )
+
+            # Load existing data if available
+            data_dir = Path(self.config.data_dir) / "binance" / symbol.lower() / "raw"
+            parquet_files = list(data_dir.glob(f"{symbol.lower()}_{interval}_*.parquet")) if data_dir.exists() else []
+            
+            existing_data = pd.DataFrame()
+            if parquet_files:
+                if self.enable_logging:
+                    tprint_info(f"📁 Found {len(parquet_files)} existing parquet files")
+
+                all_data = []
+                for file_path in sorted(parquet_files):
+                    try:
+                        df = pd.read_parquet(file_path)
+                        if not df.empty:
+                            all_data.append(df)
+                            if self.enable_logging:
+                                tprint_info(f"  📊 Loaded {len(df)} records from {file_path.name}")
+                    except Exception as e:
+                        result.warnings.append(f"Failed to load {file_path.name}: {e}")
+
+                if all_data:
+                    existing_data = pd.concat(all_data, ignore_index=True)
+                    existing_data = existing_data.drop_duplicates().sort_values('timestamp')
+                    
+                    # Ensure timestamp is datetime
+                    if not pd.api.types.is_datetime64_any_dtype(existing_data['timestamp']):
+                        existing_data['timestamp'] = pd.to_datetime(existing_data['timestamp'])
+                    
+                    existing_data.set_index('timestamp', inplace=True)
+
+                    if self.enable_logging:
+                        tprint_success(f"✅ Loaded {len(existing_data)} existing records")
+                        tprint_info(f"📅 Existing data range: {existing_data.index.min()} to {existing_data.index.max()}")
+            else:
+                if self.enable_logging:
+                    tprint_info("📁 No existing data found - will download all data")
+
+            # Convert UnifiedGapFiller gaps to our GapInfo format
+            gap_info_list = []
+            for gap in gaps:
+                gap_info = GapInfo(
+                    start_time=gap['start_time'],
+                    end_time=gap['end_time'],
+                    duration_minutes=int(gap['gap_minutes']),
+                    symbol=symbol,
+                    interval=interval,
+                    priority=1 if gap['gap_minutes'] > max_gap_minutes else 2
+                )
+                gap_info_list.append(gap_info)
+
+            result.metadata = {
+                "gaps_detected": len(gap_info_list),
+                "gaps_filled": 0,
+                "existing_records": len(existing_data),
+                "download_required": len(gap_info_list) > 0,
+                "date_range": {
+                    "start": existing_data.index.min().isoformat() if not existing_data.empty else None,
+                    "end": existing_data.index.max().isoformat() if not existing_data.empty else None
+                },
+                "gaps": [gap.__dict__ for gap in gap_info_list]
+            }
+
+            if self.enable_logging:
+                if len(gap_info_list) > 0:
+                    tprint_warning(f"⚠️ Found {len(gap_info_list)} gaps in existing data")
+                    for i, gap in enumerate(gap_info_list[:3]):  # Show first 3 gaps
+                        tprint_info(f"  Gap {i+1}: {gap.start_time} to {gap.end_time} ({gap.duration_minutes}min)")
+                    if len(gap_info_list) > 3:
+                        tprint_info(f"  ... and {len(gap_info_list) - 3} more gaps")
+                else:
+                    tprint_success("✅ No gaps found in existing data")
+
+            result.success = True
+            result.data = existing_data
+
+        except Exception as e:
+            error_msg = f"Gap analysis failed: {str(e)}"
+            result.errors.append(error_msg)
+            if self.enable_logging:
+                tprint_error(f"❌ {error_msg}")
+
+        result.processing_time = (datetime.now() - start_time).total_seconds()
+        return result
+
+    async def _download_missing_data(
+        self,
+        existing_data: pd.DataFrame,
+        symbol: str,
+        interval: str,
+        exchange_interface: ExchangeInterface
+    ) -> ProcessingResult:
+        """
+        Download only the missing data periods using IncrementalDataDownloader.
+        """
+        start_time = datetime.now()
+        result = ProcessingResult(
+            step=ProcessingStep.DOWNLOAD,
+            success=False,
+            errors=[],
+            warnings=[]
+        )
+
+        try:
+            if self.enable_logging:
+                tprint_info(f"📥 Downloading missing data for {symbol} {interval}")
+
+            # Initialize IncrementalDataDownloader
+            downloader = IncrementalDataDownloader(
+                exchange="binance",
+                symbol=symbol,
+                timeframe=interval,
+                data_cache_path=self.config.data_dir
+            )
+
+            # Use the downloader's detect_and_fill_gaps method
+            gap_result = await downloader.detect_and_fill_gaps(
+                data_type="klines",
+                start_date=datetime.now() - timedelta(days=4 * 365),
+                end_date=datetime.now() - timedelta(days=3)
+            )
+
+            if not gap_result.get('success', False):
+                raise RuntimeError(f"Gap filling failed: {gap_result.get('error', 'Unknown error')}")
+
+            # Load the updated data
+            updated_data = existing_data.copy()
+            
+            # If gaps were filled, reload the data from files
+            if gap_result.get('gaps_filled', 0) > 0:
+                data_dir = Path(self.config.data_dir) / "binance" / symbol.lower() / "raw"
+                parquet_files = list(data_dir.glob(f"{symbol.lower()}_{interval}_*.parquet")) if data_dir.exists() else []
+                
+                if parquet_files:
+                    all_data = []
+                    for file_path in sorted(parquet_files):
+                        try:
+                            df = pd.read_parquet(file_path)
+                            if not df.empty:
+                                all_data.append(df)
+                        except Exception as e:
+                            result.warnings.append(f"Failed to load {file_path.name}: {e}")
+
+                    if all_data:
+                        updated_data = pd.concat(all_data, ignore_index=True)
+                        updated_data = updated_data.drop_duplicates().sort_values('timestamp')
+                        
+                        # Ensure timestamp is datetime
+                        if not pd.api.types.is_datetime64_any_dtype(updated_data['timestamp']):
+                            updated_data['timestamp'] = pd.to_datetime(updated_data['timestamp'])
+                        
+                        updated_data.set_index('timestamp', inplace=True)
+
+            result.success = True
+            result.data = updated_data
+            result.metadata = {
+                "gaps_filled": gap_result.get('gaps_filled', 0),
+                "records_downloaded": gap_result.get('total_rows_downloaded', 0),
+                "total_records": len(updated_data)
+            }
+
+            if self.enable_logging:
+                tprint_success(f"✅ Downloaded {gap_result.get('gaps_filled', 0)} gaps")
+                tprint_info(f"📊 Total records: {len(updated_data)}")
+
+        except Exception as e:
+            error_msg = f"Missing data download failed: {str(e)}"
+            result.errors.append(error_msg)
+            if self.enable_logging:
+                tprint_error(f"❌ {error_msg}")
+
+        result.processing_time = (datetime.now() - start_time).total_seconds()
+        return result
 
     async def _download_data(
         self,
@@ -1410,6 +1651,58 @@ class EnhancedKlinesProcessingPipeline(BaseStep):
 
         result.processing_time = (datetime.now() - start_time).total_seconds()
         return result
+
+    async def _standardize_dataframe(
+        self,
+        df: pd.DataFrame,
+        symbol: str,
+        interval: str
+    ) -> pd.DataFrame:
+        """
+        Standardize a DataFrame using DataFormatter.
+        """
+        try:
+            # Initialize DataFormatter
+            formatter = DataFormatter()
+            
+            # Ensure proper column names and types
+            required_columns = ['open', 'high', 'low', 'close', 'volume']
+            for col in required_columns:
+                if col not in df.columns:
+                    raise ValueError(f"Missing required column: {col}")
+                # Convert to numeric, coercing errors to NaN
+                df[col] = pd.to_numeric(df[col], errors='coerce')
+            
+            # Ensure timestamp index is datetime
+            if not pd.api.types.is_datetime64_any_dtype(df.index):
+                df.index = pd.to_datetime(df.index)
+            
+            # Add metadata columns
+            df['symbol'] = symbol.upper()
+            df['interval'] = interval
+            df['exchange'] = self.exchange
+            
+            # Use DataFormatter to format klines data
+            format_result = formatter.format_klines_data(
+                data=df,
+                symbol=symbol,
+                interval=interval,
+                exchange=self.exchange
+            )
+            
+            if format_result.get('success', False):
+                return format_result['data']
+            else:
+                if self.enable_logging:
+                    tprint_warning(f"⚠️ DataFormatter failed: {format_result.get('error', 'Unknown error')}")
+                # Fall back to original data
+                return df
+            
+        except Exception as e:
+            if self.enable_logging:
+                tprint_warning(f"⚠️ Data standardization failed: {e}")
+            # Return original data if standardization fails
+            return df
 
     def _klines_to_dataframe(
         self,

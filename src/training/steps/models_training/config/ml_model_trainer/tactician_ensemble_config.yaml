@@ -281,10 +281,6 @@ feature_engineering:
       - "price_momentum"
       - "volume_momentum"
       - "volatility_regime"
-      - "market_microstructure"
-      - "order_flow_imbalance"
-      - "bid_ask_spread"
-      - "liquidity_metrics"
   
   # Exit timing features
   exit_timing:
@@ -312,15 +308,6 @@ feature_engineering:
   
   # Tactician-specific features
   tactician_specific:
-    # Market microstructure features
-    microstructure:
-      enabled: true
-      features:
-        - "bid_ask_spread"
-        - "order_book_imbalance"
-        - "trade_size_distribution"
-        - "tick_direction"
-        - "volume_weighted_price"
     
     # Risk features
     risk_features:

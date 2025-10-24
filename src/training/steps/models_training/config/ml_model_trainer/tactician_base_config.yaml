@@ -179,25 +179,12 @@ inputs:
       - "volatility_percentile"
       - "volatility_momentum"
       
-  # Market microstructure features
-  microstructure_features:
-    description: "ETHUSDT-specific market microstructure features"
-    enabled: true
-    features:
-      - "bid_ask_spread"
-      - "order_book_imbalance"
-      - "trade_size_distribution"
-      - "tick_direction"
-      - "volume_weighted_price"
-      - "liquidity_metrics"
-      - "order_flow_imbalance"
     
   # Analyst ensemble model outputs
   analyst_ensemble_outputs:
     description: "Outputs from Analyst ensemble model"
     source: "analyst_ensemble_training"
     enabled: true
-    sentiment_features: ["order_flow_imbalance", "bid_ask_spread", "liquidity_metrics"]
   
   # Regime model outputs (from previous pipeline steps)
   regime_outputs:

@@ -42,6 +42,9 @@ from .error_handling import (
     handle_errors, ErrorContext,
     MLModelTrainerError, ResourceError, ModelTrainingError
 )
+from .weighted_loss_integration import (
+    WeightedLossIntegrator, WeightedLossIntegrationConfig, WeightingStrategy
+)
 
 logger = logging.getLogger(__name__)
 
@@ -89,6 +92,19 @@ class ParallelTrainingManager:
         self.active_tasks = {}
         self.resource_usage = {}
         self.performance_metrics = {}
+        
+        # Weighted loss integration
+        self.weighted_loss_integrator = None
+        self.enable_weighted_loss = False
+    
+    def enable_weighted_loss_support(self, config: WeightedLossIntegrationConfig = None):
+        """Enable weighted loss support for parallel training."""
+        if config is None:
+            config = WeightedLossIntegrationConfig()
+        
+        self.weighted_loss_integrator = WeightedLossIntegrator(config)
+        self.enable_weighted_loss = True
+        tprint_success("✅ Weighted loss support enabled for parallel training manager")
     
     @performance_tracked(level=OptimizationLevel.HIGH)
     @memory_optimized(level=MemoryOptimizationLevel.AGGRESSIVE)

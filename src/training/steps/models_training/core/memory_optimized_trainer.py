@@ -46,6 +46,9 @@ from .error_handling import (
     handle_errors, ErrorContext,
     MLModelTrainerError, ResourceError, ModelTrainingError
 )
+from .weighted_loss_integration import (
+    WeightedLossIntegrator, WeightedLossIntegrationConfig, WeightingStrategy
+)
 
 logger = logging.getLogger(__name__)
 
@@ -100,6 +103,23 @@ class MemoryOptimizedTrainer:
         # Memory monitoring
         self.memory_usage_history = []
         self.peak_memory_usage = 0
+        
+        # Weighted loss integration
+        self.weighted_loss_integrator = None
+        self.enable_weighted_loss = False
+    
+    def enable_weighted_loss_support(self, config: WeightedLossIntegrationConfig = None):
+        """Enable weighted loss support for memory-optimized training."""
+        if config is None:
+            config = WeightedLossIntegrationConfig()
+        
+        self.weighted_loss_integrator = WeightedLossIntegrator(config)
+        self.enable_weighted_loss = True
+        tprint_success("✅ Weighted loss support enabled for memory-optimized trainer")
+        
+        # Weighted loss integration
+        self.weighted_loss_integrator = None
+        self.enable_weighted_loss = False
         
     @comprehensive_memory_optimization(level=MemoryOptimizationLevel.AGGRESSIVE)
     @performance_tracked(level=OptimizationLevel.HIGH)

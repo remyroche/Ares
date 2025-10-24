@@ -41,19 +41,8 @@ from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, as_compl
 import hashlib
 import json
 
-# Import existing components
-from src.training.steps.models_training.core.analyst_base_trainer import (
-    AnalystBaseTrainer, AnalystTrainingConfig, AnalystModelType
-)
-from src.training.steps.models_training.core.analyst_ensemble_trainer import (
-    AnalystEnsembleTrainer, AnalystEnsembleTrainingConfig, EnsembleMethod
-)
-from src.training.steps.models_training.core.tactician_base_trainer import (
-    TacticianBaseTrainer, TacticianTrainingConfig, TacticianModelType
-)
-from src.training.steps.models_training.core.tactician_ensemble_trainer import (
-    TacticianEnsembleTrainer, TacticianEnsembleTrainingConfig, TacticianEnsembleMethod
-)
+# Import existing components - removed non-existent core imports
+# These will be handled by the unified MLModelTrainer approach
 
 # Import utilities
 from src.utils.logger import system_logger
@@ -85,7 +74,7 @@ from src.utils.hardware.memory_optimized_decorators import (
 
 # Import ML common utilities
 from src.utils.ml_common.optimization.consolidated_hpo import (
-    ConsolidatedHPO, HPOConfig, OptimizationResult
+    ConsolidatedHPO, HPOConfig, OptimizationResult, MultiFidelityHPO
 )
 from src.utils.ml_common.validation.consolidated_cv import (
     ConsolidatedCV, CVConfig, PurgedCV, WalkForwardCV, TemporalCV
@@ -227,6 +216,7 @@ class MLModelTrainer:
         
         # Initialize process pool for CPU-bound training
         self._process_pool = ProcessPoolExecutor(max_workers=self.config.max_workers)
+        self._process_pool_initialized = True
         
         # Initialize components
         self._initialize_components()
@@ -247,6 +237,25 @@ class MLModelTrainer:
         self.shap_analyzers = {}
         
         tprint_info(f"🔧 Initialized MLModelTrainer for {config.timeframe}")
+    
+    def __del__(self):
+        """Cleanup resources on destruction."""
+        if hasattr(self, '_process_pool_initialized') and self._process_pool_initialized:
+            try:
+                self._process_pool.shutdown(wait=True)
+                tprint_info("🔄 ProcessPoolExecutor shutdown completed")
+            except Exception as e:
+                tprint_error(f"Error during ProcessPool cleanup: {e}")
+    
+    async def cleanup(self):
+        """Explicit cleanup method for async contexts."""
+        if hasattr(self, '_process_pool_initialized') and self._process_pool_initialized:
+            try:
+                self._process_pool.shutdown(wait=True)
+                self._process_pool_initialized = False
+                tprint_info("🔄 ProcessPoolExecutor shutdown completed")
+            except Exception as e:
+                tprint_error(f"Error during ProcessPool cleanup: {e}")
         self.logger.info(f"Initialized MLModelTrainer for {config.timeframe}")
     
     def _infer_task_type_from_recipe(self, recipe: Dict[str, Any]) -> str:
@@ -663,10 +672,20 @@ class MLModelTrainer:
             return TimeSeriesSplit(n_splits=params.get("n_splits", 5))
         elif name == "purgedcv":
             # Use ConsolidatedCV's purged CV
-            return self.cv_system._create_purged_cv(params)
+            from src.utils.ml_common.validation.consolidated_cv import create_purged_cv
+            return create_purged_cv(
+                n_splits=params.get("n_splits", 5),
+                purge_length=params.get("purge_length", 1),
+                embargo_length=params.get("embargo_length", 1)
+            )
         elif name == "walkforward":
             # Use ConsolidatedCV's walk forward CV
-            return self.cv_system._create_walk_forward_cv(params)
+            from src.utils.ml_common.validation.consolidated_cv import create_walk_forward_cv
+            return create_walk_forward_cv(
+                n_splits=params.get("n_splits", 5),
+                initial_train_size=params.get("initial_train_size", 0.6),
+                step_size=params.get("step_size", 0.1)
+            )
         else:
             # Default to TimeSeriesSplit
             from sklearn.model_selection import TimeSeriesSplit
@@ -723,8 +742,18 @@ class MLModelTrainer:
         """Initialize all pipeline components using existing utilities."""
         tprint_info("🔧 Initializing ML Model Trainer components")
         
-        # Initialize hardware manager
+        # Initialize hardware manager with enhanced caching
         self.hardware_manager = get_integrated_hardware_manager()
+        
+        # Initialize enhanced caching system
+        from src.utils.hardware.enhanced_caching_system import EnhancedCacheSystem, CacheConfig
+        cache_config = CacheConfig(
+            max_memory_usage=0.8,  # Use 80% of available memory
+            strategy=CacheStrategy.ADAPTIVE,
+            enable_compression=True,
+            enable_serialization=True
+        )
+        self.cache_system = EnhancedCacheSystem(cache_config)
         tprint_data_format("Hardware manager initialized", LogLevel.INFO)
         
         # Initialize memory manager
@@ -827,6 +856,7 @@ class MLModelTrainer:
         tprint_success("✅ All components initialized successfully")
     
     @memory_managed(MemoryStrategy.MODERATE)
+    @smart_cache
     def _prepare_features(self, data: Dict[str, Any], model_type: ModelType, config: Dict[str, Any], model_config: Dict[str, Any] = None) -> np.ndarray:
         """Prepare features using pre-selected features from upstream feature generation."""
         tprint_info(f"🔄 Preparing features for {model_type.value}")
@@ -926,6 +956,7 @@ class MLModelTrainer:
         return None
     
     @memory_managed(MemoryStrategy.MODERATE)
+    @smart_cache
     def _prepare_targets(self, data: Dict[str, Any], model_type: ModelType, config: Dict[str, Any]) -> np.ndarray:
         """Prepare targets using existing utilities."""
         tprint_info(f"🎯 Preparing targets for {model_type.value}")
@@ -1256,15 +1287,28 @@ class MLModelTrainer:
                     )
                     tasks.append((model_type, task))
         
-        # Wait for all remaining tasks to complete
-        for model_type, task in tasks:
+        # Wait for all remaining tasks to complete using asyncio.gather for better concurrency
+        if tasks:
             try:
-                result = await task
-                results[model_type] = result
-                tprint_success(f"✅ Completed training for {model_type.value}")
+                task_results = await asyncio.gather(*[task for _, task in tasks], return_exceptions=True)
+                for (model_type, _), result in zip(tasks, task_results):
+                    if isinstance(result, Exception):
+                        tprint_error(f"❌ Failed training for {model_type.value}: {result}")
+                        results[model_type] = []
+                    else:
+                        results[model_type] = result
+                        tprint_success(f"✅ Completed training for {model_type.value}")
             except Exception as e:
-                tprint_error(f"❌ Failed training for {model_type.value}: {e}")
-                results[model_type] = []
+                tprint_error(f"❌ Parallel training failed: {e}")
+                # Fallback to individual task handling
+                for model_type, task in tasks:
+                    try:
+                        result = await task
+                        results[model_type] = result
+                        tprint_success(f"✅ Completed training for {model_type.value}")
+                    except Exception as task_e:
+                        tprint_error(f"❌ Failed training for {model_type.value}: {task_e}")
+                        results[model_type] = []
         
         return results
     
@@ -1660,12 +1704,30 @@ class MLModelTrainer:
         # Determine if classification based on task type
         is_classification = (task_type == "classification")
         
-        if model_key in {"LIGHTGBM", "LIGHTGBM_PATCHTST", "STACKER_LGBM_CALIBRATED"}:
+        if model_key in {"LIGHTGBM", "STACKER_LGBM_CALIBRATED"}:
             from lightgbm import LGBMClassifier, LGBMRegressor
             cls = LGBMClassifier if is_classification else LGBMRegressor
             if "n_jobs" not in merged and "nthread" not in merged and "thread_count" not in merged:
                 merged["n_jobs"] = -1 if cls.__name__.startswith("LGBM") else merged.get("n_jobs", -1)
             return cls(**merged, random_state=42, verbose=-1)
+        
+        elif model_key == "LIGHTGBM_PATCHTST":
+            from lightgbm import LGBMClassifier, LGBMRegressor
+            from src.training.steps.model_training.patchtst_wrapper import PatchTSTWrapper
+            base_cls = LGBMClassifier if is_classification else LGBMRegressor
+            base_model = base_cls(**merged, random_state=42, verbose=-1)
+            # Extract PatchTST-specific parameters
+            patchtst_params = {k: v for k, v in merged.items() if k.startswith(('patch_', 'stride_', 'use_transformer_'))}
+            return PatchTSTWrapper(base_model, **patchtst_params)
+        
+        elif model_key == "CAUSAL_DILATED_TCN":
+            from src.models.tcn_regressor import TCNRegressor
+            if not is_classification:
+                return TCNRegressor(**merged)
+            else:
+                # For classification, we'll use a wrapper or convert to regression
+                tprint_warning("CAUSAL_DILATED_TCN is regression-only, using TCNRegressor with threshold")
+                return TCNRegressor(**merged)
         
         elif model_key == "CATBOOST":
             from catboost import CatBoostClassifier, CatBoostRegressor

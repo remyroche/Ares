@@ -51,12 +51,7 @@ models:
       min_gain_to_split: 0.0
       lambda_l1: 0.0
       lambda_l2: 0.0
-      # PatchTST specific parameters
-      patchtst_window_size: 96
-      patchtst_patch_length: 16
-      patchtst_stride: 1
-      patchtst_num_patches: 6
-      patchtst_d_model: 64
+      # PatchTST specific parameters - handled by upstream feature generation
       patchtst_n_heads: 4
       patchtst_d_ff: 256
       patchtst_dropout: 0.1

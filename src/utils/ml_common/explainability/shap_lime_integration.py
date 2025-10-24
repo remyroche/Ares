@@ -40,7 +40,7 @@ class ExplanationConfig:
     """Configuration for model explanations."""
     # SHAP configuration
     enable_shap: bool = True
-    shap_explainer_type: str = "auto"  # auto, tree, linear, kernel, deep
+    shap_explainer_type: str = "tree"  # auto, tree, linear, kernel, deep
     shap_sample_size: int = 100
     shap_max_features: int = 50
 
@@ -352,13 +352,14 @@ class SHAPLIMEExplainer:
         explainer_type = self.config.shap_explainer_type
 
         if explainer_type == "auto":
-            # Auto-detect based on model type
-            if hasattr(model, 'predict_proba'):
+            # Auto-detect based on model type - prefer TreeSHAP when possible
+            if hasattr(model, 'predict_proba') or hasattr(model, 'predict'):
                 explainer_type = "tree"
             elif hasattr(model, 'coef_'):
                 explainer_type = "linear"
             else:
-                explainer_type = "kernel"
+                # Fallback to TreeSHAP instead of KernelSHAP for better performance
+                explainer_type = "tree"
 
         # Create explainer
         if explainer_type == "tree":

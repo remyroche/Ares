@@ -221,11 +221,17 @@ class SHAPAnalyzer:
                 tprint("✅ Created LinearExplainer for linear model")
                 self.logger.info("✅ Created LinearExplainer for linear model")
             else:
-                # Generic explainer using background data
-                background = X_train.sample(min(100, len(X_train)), random_state = 42)
-                explainer = self.shap.Explainer(model, background)
-                tprint("✅ Created generic Explainer with background data")
-                self.logger.info("✅ Created generic Explainer with background data")
+                # Try TreeExplainer first for better performance, fallback to generic Explainer
+                try:
+                    explainer = self.shap.TreeExplainer(model)
+                    tprint("✅ Created TreeExplainer for unknown model type")
+                    self.logger.info("✅ Created TreeExplainer for unknown model type")
+                except Exception:
+                    # Fallback to generic explainer using background data
+                    background = X_train.sample(min(100, len(X_train)), random_state = 42)
+                    explainer = self.shap.Explainer(model, background)
+                    tprint("✅ Created generic Explainer with background data")
+                    self.logger.info("✅ Created generic Explainer with background data")
 
             return explainer
 

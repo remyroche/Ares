@@ -78,7 +78,7 @@ class InterpretabilityConfig:
     # SHAP configuration
     shap_sample_size: int = 1000
     shap_background_size: int = 100
-    shap_explainer_type: str = "tree"  # tree, linear, kernel, deep
+    shap_explainer_type: str = "tree"  # tree, linear, kernel, deep - TreeSHAP preferred for performance
     
     # LIME configuration
     lime_sample_size: int = 5000

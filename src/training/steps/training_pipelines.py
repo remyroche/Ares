@@ -179,7 +179,15 @@ class TrainingPipelineOrchestrator:
             "feature_generation_feature_generation_step",
             "feature_generation_period_lookback_optimization_step",
             "feature_generation_feature_selection_step",
-            "market_analysis",  # Add market analysis step
+            # Market analysis workflow steps
+            "sr_parameter_optimization",
+            "sr_detection",
+            "sr_clustering", 
+            "hdbscan_clustering",
+            "regime_clustering",
+            "regime_models_training",
+            "regime_ensemble_training",
+            "regime_data_splitting",
         ]
         
         # Add model-specific interaction generation step

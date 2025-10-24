@@ -26,6 +26,7 @@ from src.training.steps.models_training.core.weighted_loss_integration import (
 # Import model wrappers
 from src.training.steps.models_training.core.lgbm_gru_wrapper import LGBMGRUWrapper
 from src.training.steps.models_training.core.stacker_lgbm_calibrated_gated import StackerLGBMCalibratedGated
+from src.training.steps.models_training.core.patchtst_wrapper import PatchTSTWrapper
 
 # Import tprint utilities
 from src.utils.tprint import (
@@ -318,6 +319,39 @@ class TestModelIntegration:
             assert probabilities.shape[0] == self.n_samples
         
         tprint_success("✅ LGBM-GRU wrapper with weighted loss test passed")
+    
+    def test_patchtst_wrapper_with_weighted_loss(self):
+        """Test PatchTST wrapper with weighted loss."""
+        tprint_info("Testing PatchTST wrapper with weighted loss...")
+        
+        # Create model with weighted loss enabled
+        model = PatchTSTWrapper(
+            enable_weighted_loss=True,
+            weighted_loss_config={
+                'weighting_strategy': 'adaptive',
+                'max_weight': 3.0,
+                'min_weight': 0.5
+            },
+            patch_length=8,
+            d_model=64,
+            patchtst_epochs=5,
+            n_estimators=50
+        )
+        
+        # Fit the model
+        model.fit(self.X, self.y)
+        assert model.is_fitted
+        
+        # Make predictions
+        predictions = model.predict(self.X)
+        assert len(predictions) == self.n_samples
+        
+        # Test probability prediction
+        if hasattr(model, 'predict_proba'):
+            probabilities = model.predict_proba(self.X)
+            assert probabilities.shape[0] == self.n_samples
+        
+        tprint_success("✅ PatchTST wrapper with weighted loss test passed")
     
     def test_stacker_lgbm_with_weighted_loss(self):
         """Test Stacker LGBM with weighted loss."""

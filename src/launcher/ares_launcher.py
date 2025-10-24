@@ -256,7 +256,7 @@ Examples:
   python ares_launcher.py --stage DATA_COLLECTION --symbol ETHUSDT
   
   # Model training steps
-  python ares_launcher.py --train-analyst-base --symbol ETHUSDT --timeframe 15m --direction longs
+  python ares_launcher.py train_analyst_base --symbol ETHUSDT --timeframe 15m --direction longs
   
   # List available steps
   python ares_launcher.py --list-steps
@@ -273,11 +273,6 @@ Examples:
     step_group.add_argument('--list-steps', action='store_true', help='List all registered steps')
     step_group.add_argument('--list-stages', action='store_true', help='List all available stages')
     
-    # Model training options (included in main group)
-    step_group.add_argument('--train-analyst-base', action='store_true', help='Train analyst base models')
-    step_group.add_argument('--train-analyst-ensemble', action='store_true', help='Train analyst ensemble models')
-    step_group.add_argument('--train-tactician-base', action='store_true', help='Train tactician base models')
-    step_group.add_argument('--train-tactician-ensemble', action='store_true', help='Train tactician ensemble models')
     
     # Regime discovery options
     regime_group = parser.add_mutually_exclusive_group()
@@ -309,6 +304,7 @@ def load_step_modules():
         ("pre_training", "src.training.steps.pre_training"),
         ("market_analysis", "src.training.steps.market_analysis"),
         ("model_training", "src.training.steps.model_training"),
+        ("models_training", "src.training.steps.models_training"),
         ("backtesting", "src.training.steps.backtesting"),
     ]
     
@@ -338,6 +334,7 @@ def load_step_modules():
     if not loaded_modules:
         print("🔄 Attempting to load individual step components...")
         individual_steps = [
+            ("ml_model_trainer", "src.training.steps.models_training.ml_model_trainer_step"),
             ("tactician_ensemble_training", "src.training.steps.models_training.components.tactician_ensemble_training"),
             ("analyst_ensemble_training", "src.training.steps.models_training.components.analyst_ensemble_training"),
             ("tactician_base_training", "src.training.steps.models_training.components.tactician_base_training"),
@@ -453,28 +450,6 @@ def main():
             result = asyncio.run(launcher.run_step(args.sub_pipeline, config))
             print(f"Sub-pipeline '{args.sub_pipeline}' completed: {'✅ Success' if result.get('success') else '❌ Failed'}")
             
-        elif any([args.train_analyst_base, args.train_analyst_ensemble, args.train_tactician_base, args.train_tactician_ensemble]):
-            # Model training execution
-            if args.train_analyst_base:
-                step_name = 'analyst_base_training'
-            elif args.train_analyst_ensemble:
-                step_name = 'analyst_ensemble_training'
-            elif args.train_tactician_base:
-                step_name = 'tactician_base_training'
-            elif args.train_tactician_ensemble:
-                step_name = 'tactician_ensemble_training'
-            
-            # Check if step is available
-            if not launcher.is_step_available(step_name):
-                print(f"❌ Error: Step '{step_name}' is not available.")
-                print("Available steps:")
-                for step in launcher.list_steps():
-                    print(f"  - {step}")
-                return 1
-            
-            logger.info(f"Running model training: {step_name}")
-            result = asyncio.run(launcher.run_step(step_name, config))
-            print(f"Model training '{step_name}' completed: {'✅ Success' if result.get('success') else '❌ Failed'}")
             
         elif args.hdbscan_regime_discovery:
             # HDBSCAN regime discovery execution

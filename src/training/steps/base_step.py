@@ -136,13 +136,12 @@ try:
     # Common utilities for data operations
     from src.utils.common_utilities import (
         safe_dataframe_operation, validate_dataframe_columns, calculate_data_quality_metrics,
-        safe_merge_dataframes, create_summary_statistics, ensure_list, ensure_array, 
-        flatten_dict, safe_convert_to_numeric, safe_drop_na, safe_reset_index
+        safe_merge_dataframes, create_summary_statistics
     )
     COMMON_UTILITIES_AVAILABLE: Final[bool] = True
 except ImportError as e:
     COMMON_UTILITIES_AVAILABLE: Final[bool] = False
-    tprint_debug(f"Common utilities not available: {e}")
+    print(f"Common utilities not available: {e}")
 
 try:
     # Math validation utilities

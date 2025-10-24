@@ -346,6 +346,11 @@ class MLModelTrainer:
         oof_L1 = np.zeros((n, len(base_models)), dtype=float)
         fold_assign = np.full(n, -1, dtype=int)
         base_fold_models = [[] for _ in base_models]
+        
+        # OOF per base model
+        oof_dict = {name: np.zeros(n, dtype=float) for name in base_names}
+        oof_proba_dict = {name: np.full((n, 2), np.nan, dtype=float) 
+                          for name in base_names} if use_proba_as_level1 else {}
 
         # 3) Build OOF predictions
         tprint_info(f"🔄 Building OOF predictions with {k} folds")
@@ -371,9 +376,13 @@ class MLModelTrainer:
                     proba = m.predict_proba(X_va)
                     # Binary classification → use column 1
                     oof_L1[va, j] = proba[:, 1]
+                    oof_dict[base_names[j]][va] = proba[:, 1]
+                    if proba.shape[1] == 2:
+                        oof_proba_dict[base_names[j]][va] = proba
                 else:
                     pred = m.predict(X_va)
                     oof_L1[va, j] = pred
+                    oof_dict[base_names[j]][va] = pred
 
             fold_assign[va] = fold_idx
 
@@ -431,6 +440,8 @@ class MLModelTrainer:
             "base_models": base_models_fitted,
             "meta_model": meta_model,
             "oof_matrix": oof_L1,
+            "oof_dict": oof_dict,
+            "oof_proba_dict": oof_proba_dict if use_proba_as_level1 else {},
             "fold_assign": fold_assign,
             "meta_feature_names": meta_feature_names,
         }
@@ -484,6 +495,11 @@ class MLModelTrainer:
         
         # Evaluate ensemble
         predictions, probabilities = self.predict_shallow_lgbm_stacker(bundle, data['features'])
+        
+        # Extract OOF data from bundle
+        oof = bundle["oof_dict"]
+        oof_proba = bundle.get("oof_proba_dict", {})
+        fold_idx = bundle["fold_assign"]
         
         # Calculate ensemble metrics
         ensemble_metrics = self._calculate_ensemble_metrics(
@@ -581,6 +597,20 @@ class MLModelTrainer:
         if name == "recall":
             return make_scorer(recall_score, **kwargs)
         return name  # built-in string scorers
+    
+    def _make_cv(self, recipe):
+        """Create CV splitter based on recipe configuration."""
+        n = recipe.get("training", {}).get("cv_folds")
+        if n:
+            # Update CV system with recipe-specific folds
+            from src.utils.ml_common.validation.consolidated_cv import CVConfig
+            self.cv_system = ConsolidatedCV(CVConfig(
+                enable_purged_cv=True,
+                enable_walk_forward=True,
+                enable_temporal_cv=True,
+                n_splits=n
+            ))
+        return self.cv_system
     
     async def _save_ensemble_artifacts(self, bundle: Dict, oof: Dict[str, np.ndarray], 
                                      oof_proba: Dict[str, np.ndarray], fold_idx: np.ndarray, 
@@ -1461,7 +1491,7 @@ class MLModelTrainer:
         tprint_info(f"🔄 Preparing training data for {model_type.value}")
         
         # Prepare features using existing utilities
-        X = self._prepare_features(data, model_type, config, model_config)
+        X = self._prepare_features(data, model_type, config, model_config=None)
         tprint_data_format(f"Features prepared: {X.shape}", LogLevel.INFO)
         
         # Prepare targets using existing utilities
@@ -1660,7 +1690,9 @@ class MLModelTrainer:
         """Evaluate model score for HPO using YAML metrics."""
         try:
             scorer, scorer_kwargs = self._resolve_scorer(recipe, task_type)
-            scores = self.cv_system.cross_validate(
+            # Use recipe-specific CV folds
+            cv_system = self._make_cv(recipe)
+            scores = cv_system.cross_validate(
                 model, X, y, 
                 cv_type='temporal', 
                 scoring=scorer, 
@@ -1712,7 +1744,9 @@ class MLModelTrainer:
         
         # CV summary on primary scorer
         scorer, scorer_kwargs = self._resolve_scorer(config, task_type)
-        cv_scores = self.cv_system.cross_validate(
+        # Use recipe-specific CV folds
+        cv_system = self._make_cv(config)
+        cv_scores = cv_system.cross_validate(
             model, X, y, 
             cv_type='temporal', 
             scoring=scorer, 

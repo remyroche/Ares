@@ -20,27 +20,97 @@ from dataclasses import dataclass
 
 from src.training.steps.base_step import BaseStep
 
-# Import enhanced hardware optimization tools
-from src.utils.hardware import (
-    # Core optimization decorators
-    smart_cache, auto_optimize, memory_efficient, performance_tracked,
-    # Memory optimization
-    memory_optimized, gc_optimized, chunked_processing_auto,
-    comprehensive_memory_optimization, MemoryOptimizationLevel,
-    # M1 comprehensive optimization
-    m1_optimized, get_comprehensive_optimizer, ComprehensiveConfig,
-    OptimizationStrategy, WorkloadCategory,
-    # Data optimization
-    optimize_dataframe, optimize_array, optimize_dataframe_default,
-    # Hardware management
-    get_integrated_hardware_manager, process_ml_training_data,
-    # Memory management
-    get_advanced_memory_manager, memory_efficient_processing,
-    track_memory_usage, force_garbage_collection, cleanup_all_memory,
-    MemoryPressureLevel,
-    # Caching
-    get_global_cache, CacheConfig, DataTypeOptimization, CacheStrategy
-)
+# ====== Safe shims for optional hardware stack ======
+try:
+    from src.utils.hardware import (
+        # Core optimization decorators
+        smart_cache, auto_optimize, memory_efficient, performance_tracked,
+        # Memory optimization
+        memory_optimized, gc_optimized, chunked_processing_auto,
+        comprehensive_memory_optimization, MemoryOptimizationLevel,
+        # M1 comprehensive optimization
+        m1_optimized, get_comprehensive_optimizer, ComprehensiveConfig,
+        OptimizationStrategy, WorkloadCategory,
+        # Data optimization
+        optimize_dataframe, optimize_array, optimize_dataframe_default,
+        # Hardware management
+        get_integrated_hardware_manager, process_ml_training_data,
+        # Memory management
+        get_advanced_memory_manager, memory_efficient_processing,
+        track_memory_usage, force_garbage_collection, cleanup_all_memory,
+        MemoryPressureLevel,
+        # Caching
+        get_global_cache, CacheConfig, DataTypeOptimization, CacheStrategy
+    )
+except Exception:
+    # Decorators -> no-ops
+    def smart_cache(*a, **k): 
+        def _wrap(f): return f
+        return _wrap
+    def auto_optimize(*a, **k):
+        def _wrap(f): return f
+        return _wrap
+    def memory_efficient(*a, **k):
+        def _wrap(f): return f
+        return _wrap
+    def performance_tracked(*a, **k):
+        def _wrap(f): return f
+        return _wrap
+    def memory_optimized(*a, **k):
+        def _wrap(f): return f
+        return _wrap
+    def gc_optimized(*a, **k):
+        def _wrap(f): return f
+        return _wrap
+    def chunked_processing_auto(*a, **k):
+        def _wrap(f): return f
+        return _wrap
+    def comprehensive_memory_optimization(*a, **k):
+        def _wrap(f): return f
+        return _wrap
+    def m1_optimized(*a, **k):
+        def _wrap(f): return f
+        return _wrap
+
+    class MemoryOptimizationLevel:
+        LIGHT="LIGHT"; MODERATE="MODERATE"; AGGRESSIVE="AGGRESSIVE"
+
+    class OptimizationStrategy:
+        BALANCED="BALANCED"; MAX_PERF="MAX_PERF"
+
+    class WorkloadCategory:
+        MACHINE_LEARNING="MACHINE_LEARNING"
+        FINANCIAL_MODELING="FINANCIAL_MODELING"
+        BACKTESTING="BACKTESTING"
+
+    def get_comprehensive_optimizer(*a, **k): return None
+    def get_integrated_hardware_manager(*a, **k): return None
+    def get_advanced_memory_manager(*a, **k): return None
+    def get_global_cache(*a, **k): 
+        class _Cache:
+            def get(self, *a, **k): return None
+            def set(self, *a, **k): return None
+        return _Cache()
+
+    def optimize_dataframe(df): return df
+    def optimize_array(x): return x
+    def optimize_dataframe_default(df):
+        import pandas as pd, numpy as np
+        if not isinstance(df, pd.DataFrame): return df
+        out = df.copy()
+        for c in out.select_dtypes(include=["float64"]).columns:
+            out[c] = out[c].astype("float32")
+        for c in out.select_dtypes(include=["int64"]).columns:
+            out[c] = pd.to_numeric(out[c], downcast="integer")
+        return out
+
+    def process_ml_training_data(*a, **k): pass
+    def memory_efficient_processing(*a, **k): pass
+    def track_memory_usage(): return 0.0
+    def force_garbage_collection(): import gc; gc.collect()
+    def cleanup_all_memory(): force_garbage_collection()
+    class MemoryPressureLevel: NORMAL="NORMAL"
+# ====== End shims ======
 
 
 # Import tprint utilities
@@ -59,6 +129,25 @@ except ImportError:
     def tprint_error(*args, **kwargs): print("ERROR:", *args, **kwargs)
     def tprint_debug(*args, **kwargs): print("DEBUG:", *args, **kwargs)
     def tprint_data_preview(*args, **kwargs): print("DATA_PREVIEW:", *args, **kwargs)
+    def tprint_data_format(*args, **kwargs):
+        label = args[1] if len(args) > 1 else "data"
+        print(f"[DATA_FORMAT] {label}")
+        if kwargs.get("return_summary"):
+            try:
+                df = args[0]
+                import pandas as pd, numpy as np
+                if hasattr(df, "memory_usage"):
+                    return {
+                        "shape": getattr(df, "shape", None),
+                        "memory_usage_mb": float(df.memory_usage(deep=True).sum())/1024/1024,
+                        "dtypes_summary": str(getattr(df, "dtypes", "")),
+                        "null_counts": df.isnull().sum().to_dict() if hasattr(df, "isnull") else {},
+                        "numeric_columns": len(df.select_dtypes(include=[np.number]).columns) if hasattr(df, "select_dtypes") else 0,
+                        "categorical_columns": len(df.select_dtypes(exclude=[np.number]).columns) if hasattr(df, "select_dtypes") else 0,
+                    }
+            except Exception:
+                return None
+        return None
 
 # Enhanced hardware-optimized feature selection components
 @dataclass
@@ -522,7 +611,7 @@ class FeatureGenerationFeatureSelectionStep(BaseStep):
         tprint_data_format(targets, "filter_output_targets", level="DEBUG")
         return data, targets
 
-    async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
+    async def execute(self, config: Dict[str, Any]) -> SelectionOutcome:
         """Execute sophisticated feature selection step using hardware-optimized components with BaseStep integration."""
 
         self.logger.info("🎯 Starting sophisticated feature selection step with multi-objective optimization")
@@ -830,7 +919,7 @@ class FeatureGenerationFeatureSelectionStep(BaseStep):
             tprint_debug(f"🔍 [DEBUG] Exception type: {type(e).__name__}")
             tprint_debug(f"🔍 [DEBUG] Exception details: {str(e)}")
             self.logger.error(f"❌ Sophisticated feature selection step failed with exception: {e}", exc_info=True)
-            return FeatureSelectionResult(
+            return SelectionOutcome(
                 success=False,
                 selected_features=pd.DataFrame(),
                 selection_metadata={},
@@ -1750,39 +1839,46 @@ def handle_feature_generation_feature_selection_step(
     start_date: Optional[Union[str, np.ndarray]] = None,
     end_date: Optional[Union[str, np.ndarray]] = None,
     custom_overrides: Optional[Dict[str, Any]] = None
-) -> FeatureSelectionResult:
+) -> SelectionOutcome:
     """Command handler for ares_launcher integration."""
     tprint_info("🚀 [DEBUG] Starting feature generation feature selection step handler")
-    tprint_debug(f"🚀 [DEBUG] Parameters - symbol: {symbol}, exchange: {exchange}, timeframe: {timeframe}")
-    tprint_debug(f"🚀 [DEBUG] Additional parameters - direction: {direction}, intensity: {intensity}")
-    tprint_debug(f"🚀 [DEBUG] Date parameters - lookback_days: {lookback_days}, start_date: {start_date}, end_date: {end_date}")
-    tprint_debug(f"🚀 [DEBUG] Custom overrides: {custom_overrides}")
-    
-    import asyncio
 
-    # Create the feature selection step
-    tprint_info("🚀 [DEBUG] Creating FeatureGenerationFeatureSelectionStep instance")
     step = FeatureGenerationFeatureSelectionStep()
-    tprint_success("✅ [DEBUG] FeatureGenerationFeatureSelectionStep instance created")
 
-    # Execute the step with the provided config
-    tprint_info("🚀 [DEBUG] Executing feature selection step")
+    config = {
+        "symbol": symbol,
+        "exchange": exchange,
+        "timeframe": timeframe,
+        "direction": direction,
+        "intensity": intensity,
+        "lookback_days": lookback_days,
+        "start_date": start_date,
+        "end_date": end_date,
+        "custom_overrides": custom_overrides or {},
+    }
+
+    import asyncio
     try:
-        result = await step.execute(config)
+        result = asyncio.run(step.execute(config))
         tprint_success("✅ [DEBUG] Feature selection step executed successfully")
         return result
     except Exception as e:
         error_msg = f"❌ [CRITICAL] Feature selection step execution failed: {str(e)}"
         tprint_error(error_msg)
-        
-        # Return failure result
         return SelectionOutcome(
             success=False,
             error_message=error_msg,
             selected_features=pd.DataFrame(),
+            selection_metadata={},
             selection_metrics={},
             selection_strategy="failed",
+            feature_importance={},
+            economic_validation={},
+            multi_objective_results={},
+            vectorbt_optimizations={},
+            quality_metrics={},
+            diversity_metrics={},
+            stability_metrics={},
+            artifacts={},
             execution_time=0.0
         )
-    
-    tprint_success("🎉 [DEBUG] Command handler completed with fast fail")

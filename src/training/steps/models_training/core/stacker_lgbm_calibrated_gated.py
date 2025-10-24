@@ -441,6 +441,11 @@ class StackerLGBMCalibratedGated(BaseEstimator, ClassifierMixin):
         self.n_features_in_ = X.shape[1]
         self.classes_ = np.unique(y)
         
+        # Initialize weighted loss manager if enabled
+        if self.enable_weighted_loss and self.weighted_loss_manager is not None:
+            tprint_info("Initializing weighted loss manager...")
+            self.weighted_loss_manager.fit(X, y)
+        
         # Generate OOF predictions
         oof_predictions, oof_probabilities, fold_assignments = self._generate_oof_predictions(X, y)
         
@@ -456,6 +461,13 @@ class StackerLGBMCalibratedGated(BaseEstimator, ClassifierMixin):
         logger.info("Training meta-learner")
         self.meta_model = self._create_meta_model()
         
+        # Get sample weights if weighted loss is enabled
+        meta_sample_weight = None
+        if self.enable_weighted_loss and self.weighted_loss_manager is not None:
+            tprint_info("Calculating sample weights for meta-learner...")
+            meta_sample_weight = self.weighted_loss_manager.get_sample_weights(meta_features, y)
+            tprint_debug(f"Meta-learner sample weight statistics - Mean: {np.mean(meta_sample_weight):.3f}, Std: {np.std(meta_sample_weight):.3f}")
+        
         # Use last fold for validation if needed
         if self.validation_split > 0:
             last_fold = fold_assignments == fold_assignments.max()
@@ -466,13 +478,18 @@ class StackerLGBMCalibratedGated(BaseEstimator, ClassifierMixin):
             X_meta_val = meta_features[last_fold]
             y_val = y[last_fold]
             
+            # Get sample weights for training and validation
+            train_sample_weight = meta_sample_weight[train_mask] if meta_sample_weight is not None else None
+            val_sample_weight = meta_sample_weight[last_fold] if meta_sample_weight is not None else None
+            
             self.meta_model.fit(
                 X_meta_train, y_train,
                 eval_set=[(X_meta_val, y_val)],
+                sample_weight=train_sample_weight,
                 callbacks=[lgb.early_stopping(50, verbose=False)]
             )
         else:
-            self.meta_model.fit(meta_features, y)
+            self.meta_model.fit(meta_features, y, sample_weight=meta_sample_weight)
         
         # Train base models on full data
         logger.info("Training base models on full data")

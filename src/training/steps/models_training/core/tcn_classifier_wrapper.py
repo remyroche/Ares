@@ -80,6 +80,11 @@ class TCNClassifierWrapper(BaseEstimator, ClassifierMixin):
         # Store feature info
         self.n_features_in_ = X.shape[1]
         
+        # Initialize weighted loss manager if enabled
+        if self.enable_weighted_loss and self.weighted_loss_manager is not None:
+            tprint_info("Initializing weighted loss manager...")
+            self.weighted_loss_manager.fit(X, y)
+        
         # Encode labels
         tprint_debug("Encoding labels with LabelEncoder")
         self.label_encoder_ = LabelEncoder()
@@ -87,9 +92,24 @@ class TCNClassifierWrapper(BaseEstimator, ClassifierMixin):
         self.classes_ = self.label_encoder_.classes_
         tprint_data_format(self.classes_, "Encoded classes", LogLevel.DEBUG)
         
+        # Get sample weights if weighted loss is enabled
+        sample_weight = None
+        if self.enable_weighted_loss and self.weighted_loss_manager is not None:
+            tprint_info("Calculating sample weights for training...")
+            sample_weight = self.weighted_loss_manager.get_sample_weights(X, y)
+            tprint_debug(f"Sample weight statistics - Mean: {np.mean(sample_weight):.3f}, Std: {np.std(sample_weight):.3f}")
+        
         # Fit the underlying regressor
         tprint_info("Fitting underlying TCN regressor")
-        self.tcn_regressor.fit(X, y_encoded, **fit_params)
+        if sample_weight is not None and hasattr(self.tcn_regressor, 'fit'):
+            # Check if the regressor supports sample_weight
+            import inspect
+            if 'sample_weight' in inspect.signature(self.tcn_regressor.fit).parameters:
+                self.tcn_regressor.fit(X, y_encoded, sample_weight=sample_weight, **fit_params)
+            else:
+                self.tcn_regressor.fit(X, y_encoded, **fit_params)
+        else:
+            self.tcn_regressor.fit(X, y_encoded, **fit_params)
         
         self.is_fitted = True
         tprint_success(f"TCNClassifierWrapper fitted with {len(self.classes_)} classes")

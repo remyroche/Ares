@@ -263,6 +263,10 @@ class MLModelTrainer:
     def _initialize_weighted_loss_integrator(self):
         """Initialize weighted loss integrator."""
         try:
+            # Load weighted loss configuration from YAML if not provided
+            if self.config.weighted_loss_config is None:
+                self.config.weighted_loss_config = self._load_weighted_loss_config()
+            
             # Create weighted loss integration config
             weighted_loss_config = WeightedLossIntegrationConfig(
                 enable_weighted_loss=self.config.enable_weighted_loss,
@@ -282,6 +286,22 @@ class MLModelTrainer:
         except Exception as e:
             tprint_error(f"❌ Failed to initialize weighted loss integrator: {e}")
             self.weighted_loss_integrator = None
+    
+    def _load_weighted_loss_config(self) -> Dict[str, Any]:
+        """Load weighted loss configuration from YAML file."""
+        try:
+            config_path = Path("config/weighted_loss_config.yaml")
+            if config_path.exists():
+                with open(config_path, 'r') as f:
+                    config = yaml.safe_load(f) or {}
+                tprint_info("✅ Loaded weighted loss configuration from YAML")
+                return config
+            else:
+                tprint_warning("Weighted loss config file not found, using defaults")
+                return {}
+        except Exception as e:
+            tprint_warning(f"Failed to load weighted loss config: {e}, using defaults")
+            return {}
     
     def __del__(self):
         """Cleanup resources on destruction."""
@@ -2378,13 +2398,8 @@ class MLModelTrainer:
         
         elif model_key == "LIGHTGBM_PATCHTST":
             try:
-                from lightgbm import LGBMClassifier, LGBMRegressor
                 from src.training.steps.models_training.core.patchtst_wrapper import PatchTSTWrapper
-                base_cls = LGBMClassifier if is_classification else LGBMRegressor
-                base_model = base_cls(**merged, random_state=42, verbose=-1)
-                # Extract PatchTST-specific parameters
-                patchtst_params = {k: v for k, v in merged.items() if k.startswith(('patchtst_', 'patch_', 'stride_', 'use_transformer_', 'regime_aware', 'attention_', 'sign_'))}
-                return PatchTSTWrapper(base_model, **patchtst_params)
+                return PatchTSTWrapper(**merged)
             except Exception as e:
                 tprint_error(f"Failed to create LIGHTGBM_PATCHTST model: {e}")
                 raise

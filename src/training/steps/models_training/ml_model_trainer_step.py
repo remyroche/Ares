@@ -24,6 +24,9 @@ from src.training.ml_model_trainer import (
 # Import step registry
 from src.training.steps.base_step import step_registry
 
+# Import pipeline mode configuration
+from src.config.pipeline_modes import get_mode_config, get_mode_lookback_days
+
 
 @dataclass
 class MLModelTrainerStepConfig:
@@ -402,13 +405,29 @@ class MLModelTrainerStep(BaseStep):
         try:
             self.logger.info("🚀 Starting ML Model Trainer Step")
             
-            # Set context for enhanced file naming
+            # Get execution mode and validate
+            execution_mode = config.get('execution_mode', 'light')
+            if execution_mode not in ['full', 'light', 'blank']:
+                self.logger.warning(f"Invalid execution mode '{execution_mode}', defaulting to 'light'")
+                execution_mode = 'light'
+            
+            # Get mode configuration for lookback periods and other parameters
+            mode_config = get_mode_config(execution_mode)
+            lookback_days = mode_config.lookback_days
+            
+            self.logger.info(f"📊 Execution Mode: {execution_mode.upper()}")
+            self.logger.info(f"📅 Lookback Period: {lookback_days} days ({mode_config.lookback_years} years)")
+            self.logger.info(f"⚡ Computational Intensity: {mode_config.computational_intensity}")
+            self.logger.info(f"🔄 Max Trials: {mode_config.max_trials}")
+            
+            # Set context for enhanced file naming with execution mode
             self._set_context(
                 symbol=config.get('symbol'),
                 exchange=config.get('exchange'),
                 information=config.get('information'),
                 direction=config.get('direction', 'longs'),
-                model=config.get('model', 'ML_Trainer')
+                model=config.get('model', 'ML_Trainer'),
+                execution_mode=execution_mode
             )
             
             # Determine which model types to train
@@ -423,15 +442,15 @@ class MLModelTrainerStep(BaseStep):
                     'metrics': {}
                 }
             
-            # Create ML model trainer configuration
+            # Create ML model trainer configuration with mode-specific parameters
             ml_config = MLModelTrainerConfig(
                 model_types=model_types,
-                timeframe=self.step_config.timeframe,
+                timeframe=config.get('timeframe', self.step_config.timeframe),
                 random_state=self.step_config.random_state,
                 validation_split=self.step_config.validation_split,
                 test_split=self.step_config.test_split,
-                cv_folds=self.step_config.cv_folds,
-                enable_parallel_training=self.step_config.enable_parallel_training,
+                cv_folds=mode_config.cross_validation_folds,  # Use mode-specific CV folds
+                enable_parallel_training=mode_config.enable_parallelization,  # Use mode-specific parallelization
                 max_workers=self.step_config.max_workers,
                 enable_gpu=self.step_config.enable_gpu,
                 output_dir=self.step_config.output_dir,
@@ -441,6 +460,37 @@ class MLModelTrainerStep(BaseStep):
                 enable_monitoring=self.step_config.enable_monitoring,
                 log_level=self.step_config.log_level,
                 verbose=self.step_config.verbose
+            )
+            
+            # Store mode-specific parameters for use in training
+            mode_params = {
+                'execution_mode': execution_mode,
+                'lookback_days': lookback_days,
+                'lookback_years': mode_config.lookback_years,
+                'intensity_percentage': mode_config.intensity_percentage,
+                'computational_intensity': mode_config.computational_intensity,
+                'max_trials': mode_config.max_trials,
+                'n_trials': mode_config.n_trials,
+                'optuna_trials': mode_config.optuna_trials,
+                'optuna_timeout': mode_config.optuna_timeout,
+                'batch_size': mode_config.batch_size,
+                'epochs': mode_config.epochs,
+                'early_stopping_patience': mode_config.early_stopping_patience,
+                'enable_advanced_features': mode_config.enable_advanced_features,
+                'enable_ensemble_training': mode_config.enable_ensemble_training,
+                'enable_multi_timeframe_training': mode_config.enable_multi_timeframe_training,
+                'enable_adaptive_training': mode_config.enable_adaptive_training
+            }
+            
+            # Save mode parameters as an artifact for reference
+            self._save_dataframe(
+                pd.DataFrame([mode_params]), 
+                'mode_parameters',
+                metadata={
+                    'execution_mode': execution_mode,
+                    'lookback_days': lookback_days,
+                    'description': f'Mode-specific parameters for {execution_mode} execution'
+                }
             )
             
             # Initialize ML model trainer
@@ -456,6 +506,12 @@ class MLModelTrainerStep(BaseStep):
                     'metrics': {}
                 }
             
+            # Add mode parameters to training data metadata and as separate fields
+            data['metadata'].update(mode_params)
+            data['execution_mode'] = execution_mode
+            data['lookback_days'] = lookback_days
+            data['mode_config'] = mode_params
+            
             # Get configuration paths
             config_paths = self._get_config_paths()
             
@@ -467,6 +523,8 @@ class MLModelTrainerStep(BaseStep):
             
             # Train models
             self.logger.info(f"Training models: {[mt.value for mt in model_types]}")
+            self.logger.info(f"Mode: {execution_mode.upper()} | Lookback: {lookback_days} days | CV Folds: {mode_config.cross_validation_folds}")
+            self.logger.info(f"Max Trials: {mode_config.max_trials} | Parallel: {mode_config.enable_parallelization}")
             results = await self.ml_trainer.train_models(data, filtered_config_paths)
             
             # Process results and save artifacts
@@ -571,8 +629,11 @@ class MLModelTrainerStep(BaseStep):
                     'exchange': config.get('exchange'),
                     'timeframe': config.get('timeframe'),
                     'direction': config.get('direction'),
+                    'execution_mode': config.get('execution_mode', 'light'),
                     'feature_shape': features_array.shape,
-                    'target_shape': targets_array.shape
+                    'target_shape': targets_array.shape,
+                    'data_points': len(features_array),
+                    'feature_count': features_array.shape[1] if len(features_array.shape) > 1 else 0
                 }
             }
             

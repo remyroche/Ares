@@ -31,11 +31,43 @@ import numpy as np
 from typing import Any, Dict, List, Optional, Tuple, Union
 from datetime import datetime
 from dataclasses import dataclass
-from sklearn.model_selection import TimeSeriesSplit
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.metrics import log_loss
 import warnings
+
+# VectorBT imports
+from src.vectorbt import (
+    vbt, rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max,
+    rolling_sum, rolling_apply, VECTORBT_AVAILABLE
+)
+
+# Common utilities
+from src.utils.common_utilities import (
+    safe_dataframe_operation, get_numeric_columns, validate_dataframe,
+    safe_correlation_matrix, extract_correlation_stats, extract_variance_stats
+)
+from src.utils.common_operations import (
+    safe_operation, memory_managed, MemoryStrategy
+)
+from src.utils.math_validation import (
+    safe_divide, safe_mean, safe_std, safe_correlation, safe_variance
+)
+
+# ML common utilities
+from src.utils.ml_common.validation import (
+    PurgedGroupTimeSeriesSplit, validate_no_leakage
+)
+
+# Feature selection
+from src.feature_selection.core.framework import (
+    get_feature_selection_framework, select_features
+)
+
+# Hardware optimization
+from src.utils.hardware import (
+    performance_tracked, memory_efficient, smart_cache
+)
 
 from src.training.steps.base_step import BaseStep
 from src.training.steps.pre_training.gate_feature_integration import (
@@ -160,7 +192,7 @@ class FeatureGenerationGateFeatureStep(BaseStep):
             self.gate_manager = get_gate_manager()
             tprint_warning("⚠️ Using fallback gate manager")
     
-    def _setup_purged_cv(self, n_samples: int) -> TimeSeriesSplit:
+    def _setup_purged_cv(self, n_samples: int) -> PurgedGroupTimeSeriesSplit:
         """
         Set up purged time-series cross-validation to prevent leakage.
         
@@ -172,9 +204,9 @@ class FeatureGenerationGateFeatureStep(BaseStep):
         """
         tprint_step("🔧 Setting up purged time-series CV")
         
-        cv = TimeSeriesSplit(
+        cv = PurgedGroupTimeSeriesSplit(
             n_splits=self.gate_learning_config.n_splits,
-            test_size=int(n_samples * self.gate_learning_config.test_size),
+            test_size=self.gate_learning_config.test_size,
             gap=self.gate_learning_config.gap
         )
         
@@ -345,6 +377,8 @@ class FeatureGenerationGateFeatureStep(BaseStep):
             tprint_success(f"✅ Loaded {len(features_df.columns)} features")
             tprint_data_preview(features_df, "gate_input_features")
             tprint_data_format(features_df, "gate_input_features")
+            tprint_info(f"📊 Feature data types: {features_df.dtypes.value_counts().to_dict()}")
+            tprint_info(f"📊 Feature memory usage: {features_df.memory_usage(deep=True).sum() / 1024 / 1024:.2f} MB")
             
             # Load targets from labeling integration step
             tprint_info("🔍 Loading targets from feature_generation_labeling_integration_step")
@@ -376,6 +410,9 @@ class FeatureGenerationGateFeatureStep(BaseStep):
             tprint_success(f"✅ Loaded targets with {len(targets_series)} samples")
             tprint_data_preview(targets_series, "gate_input_targets")
             tprint_data_format(targets_series, "gate_input_targets")
+            tprint_info(f"📊 Target statistics: mean={targets_series.mean():.4f}, std={targets_series.std():.4f}, "
+                       f"min={targets_series.min():.4f}, max={targets_series.max():.4f}")
+            tprint_info(f"📊 Target value counts: {targets_series.value_counts().to_dict()}")
             
             return features_df, targets_series
             
@@ -384,6 +421,7 @@ class FeatureGenerationGateFeatureStep(BaseStep):
             self.logger.error(f"Failed to load input data: {e}")
             return None, None
     
+    @memory_managed(MemoryStrategy.MODERATE)
     def _extract_interpretable_gate_features(self, X: pd.DataFrame, gate_policies: Dict[str, np.ndarray]) -> Dict[str, Any]:
         """
         Extract interpretable gate features using sparse decision trees.
@@ -593,6 +631,8 @@ class FeatureGenerationGateFeatureStep(BaseStep):
         
         return intersection / union >= threshold
     
+    @performance_tracked
+    @memory_efficient
     async def _generate_data_driven_gate_features(self, features_df: pd.DataFrame, targets_series: pd.Series) -> Dict[str, Any]:
         """
         Generate data-driven gate features using the comprehensive approach.
@@ -783,39 +823,23 @@ class FeatureGenerationGateFeatureStep(BaseStep):
             gate_features_data['quality_gate_target_variance'] = targets_series.var()
             gate_features_data['quality_gate_nan_ratio'] = features_df.isnull().sum().sum() / (len(features_df) * len(features_df.columns))
             
-            # Add correlation gate features (only numeric columns)
-            numeric_features = features_df.select_dtypes(include=[np.number])
+            # Add correlation gate features using utilities
+            numeric_features = get_numeric_columns(features_df)
             if len(numeric_features.columns) >= 2:
-                corr_matrix = numeric_features.corr().abs()
-                # Handle edge case when n_features < 2
-                if corr_matrix.shape[0] >= 2:
-                    triu_indices = np.triu_indices_from(corr_matrix.values, k=1)
-                    if len(triu_indices[0]) > 0:
-                        corr_values = corr_matrix.values[triu_indices]
-                        gate_features_data['correlation_gate_max_correlation'] = corr_values.max()
-                        gate_features_data['correlation_gate_mean_correlation'] = corr_values.mean()
-                    else:
-                        gate_features_data['correlation_gate_max_correlation'] = 0.0
-                        gate_features_data['correlation_gate_mean_correlation'] = 0.0
-                else:
-                    gate_features_data['correlation_gate_max_correlation'] = 0.0
-                    gate_features_data['correlation_gate_mean_correlation'] = 0.0
+                corr_matrix = safe_correlation_matrix(numeric_features)
+                max_corr, mean_corr = extract_correlation_stats(corr_matrix)
+                gate_features_data['correlation_gate_max_correlation'] = max_corr
+                gate_features_data['correlation_gate_mean_correlation'] = mean_corr
             else:
                 gate_features_data['correlation_gate_max_correlation'] = 0.0
                 gate_features_data['correlation_gate_mean_correlation'] = 0.0
             
-            # Add variance gate features (only numeric columns)
+            # Add variance gate features using utilities
             if not numeric_features.empty:
-                feature_variances = numeric_features.var()
-                valid_variances = feature_variances.dropna()
-                if len(valid_variances) > 0:
-                    gate_features_data['variance_gate_min_variance'] = valid_variances.min()
-                    gate_features_data['variance_gate_mean_variance'] = valid_variances.mean()
-                    gate_features_data['variance_gate_low_variance_count'] = (valid_variances < 1e-8).sum()
-                else:
-                    gate_features_data['variance_gate_min_variance'] = 0.0
-                    gate_features_data['variance_gate_mean_variance'] = 0.0
-                    gate_features_data['variance_gate_low_variance_count'] = 0
+                min_var, mean_var, low_var_count = extract_variance_stats(numeric_features)
+                gate_features_data['variance_gate_min_variance'] = min_var
+                gate_features_data['variance_gate_mean_variance'] = mean_var
+                gate_features_data['variance_gate_low_variance_count'] = low_var_count
             else:
                 gate_features_data['variance_gate_min_variance'] = 0.0
                 gate_features_data['variance_gate_mean_variance'] = 0.0
@@ -871,35 +895,25 @@ class FeatureGenerationGateFeatureStep(BaseStep):
             Estimated information coefficient
         """
         try:
-            # Use out-of-fold validation for proper IC estimate
-            from sklearn.model_selection import TimeSeriesSplit
-            
-            # Ensure we have numeric columns only
-            numeric_features = features_df.select_dtypes(include=[np.number])
+            # Use purged CV for proper IC estimate
+            numeric_features = get_numeric_columns(features_df)
             if numeric_features.empty:
                 return 0.0
             
-            # Use a small time-series split for IC estimation
-            tscv = TimeSeriesSplit(n_splits=3, test_size=0.2)
+            # Use purged time-series CV for IC estimation
+            cv = PurgedGroupTimeSeriesSplit(n_splits=3, test_size=0.2, gap=1)
             ic_scores = []
             
-            for train_idx, val_idx in tscv.split(numeric_features):
+            for train_idx, val_idx in cv.split(numeric_features):
                 X_train = numeric_features.iloc[train_idx]
-                X_val = numeric_features.iloc[val_idx]
                 y_train = targets_series.iloc[train_idx]
-                y_val = targets_series.iloc[val_idx]
                 
-                # Calculate correlations on training set
-                train_correlations = X_train.corrwith(y_train, method='pearson')
-                
-                # Validate on validation set (simplified)
-                val_correlations = X_val.corrwith(y_val, method='pearson')
-                
-                # Use mean absolute correlation as IC proxy
-                ic_score = train_correlations.abs().mean()
+                # Calculate correlations on training set using safe operations
+                train_correlations = safe_correlation(X_train, y_train)
+                ic_score = safe_mean(train_correlations.abs())
                 ic_scores.append(ic_score)
             
-            return np.mean(ic_scores) if ic_scores else 0.0
+            return safe_mean(ic_scores) if ic_scores else 0.0
             
         except Exception as e:
             tprint_debug(f"IC estimation failed: {e}")
@@ -907,7 +921,7 @@ class FeatureGenerationGateFeatureStep(BaseStep):
     
     def _estimate_feature_importance(self, features_df: pd.DataFrame, targets_series: pd.Series) -> float:
         """
-        Estimate overall feature importance score.
+        Estimate overall feature importance score using safe operations.
         
         Args:
             features_df: Features DataFrame
@@ -917,19 +931,22 @@ class FeatureGenerationGateFeatureStep(BaseStep):
             Estimated feature importance score
         """
         try:
-            # Only use numeric columns for variance calculation
-            numeric_features = features_df.select_dtypes(include=[np.number])
+            # Use utility function for numeric columns
+            numeric_features = get_numeric_columns(features_df)
             if numeric_features.empty:
                 return 0.0
             
-            # Calculate variance only for numeric columns
-            feature_variances = numeric_features.var()
+            # Calculate variance using safe operations
+            feature_variances = safe_variance(numeric_features)
             valid_variances = feature_variances.dropna()
             
             if len(valid_variances) < 2:
                 return 0.0
                 
-            return valid_variances.mean() / valid_variances.std() if valid_variances.std() > 0 else 0.0
+            mean_var = safe_mean(valid_variances)
+            std_var = safe_std(valid_variances)
+            
+            return safe_divide(mean_var, std_var) if std_var > 0 else 0.0
             
         except Exception as e:
             tprint_debug(f"Feature importance estimation failed: {e}")
@@ -1274,6 +1291,10 @@ class FeatureGenerationGateFeatureStep(BaseStep):
             
             # Save gate features
             gate_features_df = gate_result['gate_features_df']
+            tprint_data_preview(gate_features_df, "gate_output_features")
+            tprint_data_format(gate_features_df, "gate_output_features")
+            tprint_info(f"📊 Gate features memory usage: {gate_features_df.memory_usage(deep=True).sum() / 1024 / 1024:.2f} MB")
+            
             self.artifact_manager.save_dataframe(
                 'feature_generation_gate_feature_step',
                 'GATE_FEATURES',

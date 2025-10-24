@@ -61,6 +61,11 @@ from .feature_generation_final_validation_step import (
     handle_feature_generation_final_validation_step
 )
 
+from .feature_generation_gate_feature_step import (
+    FeatureGenerationGateFeatureStep,
+    handle_feature_generation_gate_feature_step
+)
+
 from .feature_generation_period_lookback_optimization_step import (
     FeatureGenerationPeriodLookbackOptimizationStep
 )
@@ -79,6 +84,7 @@ step_registry.register("feature_generation_interaction_generation_step_analyst",
 step_registry.register("feature_generation_interaction_generation_step_tactician", FeatureGenerationInteractionGenerationStepTactician)
 step_registry.register("feature_generation_labeling_integration_step", FeatureGenerationLabelingIntegrationStep)
 step_registry.register("feature_generation_final_feature_selection_step", FeatureGenerationFinalFeatureSelectionStep)
+step_registry.register("feature_generation_gate_feature_step", FeatureGenerationGateFeatureStep)
 step_registry.register("feature_generation_final_validation_step", FeatureGenerationFinalValidationStep)
 
 # Export all step classes and handlers
@@ -94,6 +100,7 @@ __all__ = [
     "FeatureGenerationInteractionGenerationStepTactician",
     "FeatureGenerationLabelingIntegrationStep",
     "FeatureGenerationFinalFeatureSelectionStep",
+    "FeatureGenerationGateFeatureStep",
     "FeatureGenerationFinalValidationStep",
 
     # Result classes
@@ -117,6 +124,7 @@ __all__ = [
     "handle_feature_generation_interaction_generation_step_tactician",
     "handle_feature_generation_labeling_integration_step",
     "handle_feature_generation_final_feature_selection_step",
+    "handle_feature_generation_gate_feature_step",
     "handle_feature_generation_final_validation_step"
 ]
 
@@ -130,6 +138,7 @@ STEP_EXECUTION_ORDER = [
     "feature_generation_interaction_generation_step_analyst",
     "feature_generation_interaction_generation_step_tactician",
     "feature_generation_final_feature_selection_step",
+    "feature_generation_gate_feature_step",
     "feature_generation_final_validation_step"
 ]
 
@@ -143,5 +152,6 @@ STEP_DESCRIPTIONS = {
     "feature_generation_interaction_generation_step_analyst": "Analyst mode: Three-phase LGBM+SHAP interaction generation (variant generation, refinement, deep discovery)",
     "feature_generation_interaction_generation_step_tactician": "Tactician mode: Original interaction generation with CMI complementarity filtering",
     "feature_generation_final_feature_selection_step": "Target-aware feature selection with downstream pipeline: PCA → MI → mRMR → LASSO+Stability → LGBM+RFE+SHAP",
+    "feature_generation_gate_feature_step": "Gate feature generation for quality protection and monitoring (quality gates, correlation gates, variance gates, stability gates)",
     "feature_generation_final_validation_step": "Final validation and quality check"
 }

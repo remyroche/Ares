@@ -178,6 +178,7 @@ class SimplifiedAresLauncher:
                 'feature_generation_interaction_generation_step_analyst',
                 'feature_generation_interaction_generation_step_tactician',
                 'feature_generation_final_feature_selection_step',
+                'feature_generation_gate_feature_step',
                 'feature_generation_final_validation_step'
             ],
             'MODEL_TRAINING': [

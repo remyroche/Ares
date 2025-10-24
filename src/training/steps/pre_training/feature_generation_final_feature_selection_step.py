@@ -589,6 +589,13 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             tprint_info(f"📊 Feature matrix: {features_df.shape}, Target: {targets.shape}")
             tprint_info(f"💾 Memory usage: Features={features_df.memory_usage(deep=True).sum() / 1024 / 1024:.2f}MB")
             
+            # Identify and protect gate features
+            gate_features = self._identify_gate_features(features_df)
+            if gate_features:
+                tprint_info(f"🛡️ Identified {len(gate_features)} gate features for protection: {gate_features}")
+            else:
+                tprint_info("ℹ️ No gate features identified in the feature set")
+            
             # Stage 1: PCA + Approximate MI (→ ~200 features)
             tprint_info("=" * 80)
             tprint_info("🔍 STAGE 1: PCA + Approximate MI Filter")
@@ -596,6 +603,9 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             
             with tprint_timer("stage1_pca_mi", level=LogLevel.PERFORMANCE):
                 features_200 = await self._stage1_pca_mi_filter(features_df, targets)
+            
+            # Protect gate features in Stage 1 selection
+            features_200 = self._protect_gate_features(features_200, gate_features)
             
             self.performance_stats['stage_times']['stage1_pca_mi'] = time.time() - stage1_start
             tprint_performance("Stage 1: PCA + MI Filter", time.time() - stage1_start)
@@ -616,6 +626,9 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
                     features_df[features_200], targets
                 )
             
+            # Protect gate features in Stage 2 selection
+            features_150 = self._protect_gate_features(features_150, gate_features)
+            
             self.performance_stats['stage_times']['stage2_mrmr'] = time.time() - stage2_start
             tprint_performance("Stage 2: mRMR Selection", time.time() - stage2_start)
             tprint_success(f"✅ Stage 2 complete: {len(features_150)} features selected")
@@ -635,6 +648,9 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
                     features_df[features_150], targets
                 )
             
+            # Protect gate features in Stage 3 selection
+            features_100 = self._protect_gate_features(features_100, gate_features)
+            
             self.performance_stats['stage_times']['stage3_lasso_stability'] = time.time() - stage3_start
             tprint_performance("Stage 3: LASSO + Stability Selection", time.time() - stage3_start)
             tprint_success(f"✅ Stage 3 complete: {len(features_100)} features selected")
@@ -653,6 +669,11 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
                 result_dict = await self._stage4_lgbm_rfe_shap(
                     features_df[features_100], targets
                 )
+            
+            # Protect gate features in final selection results
+            for key in ['features_60', 'features_50', 'features_40']:
+                if key in result_dict:
+                    result_dict[key] = self._protect_gate_features(result_dict[key], gate_features)
             
             self.performance_stats['stage_times']['stage4_lgbm_rfe_shap'] = time.time() - stage4_start
             tprint_performance("Stage 4: LGBM + RFE + SHAP", time.time() - stage4_start)
@@ -1601,6 +1622,54 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
     def get_memory_optimization_stats(self) -> Dict[str, Any]:
         """Get memory optimization statistics."""
         return get_memory_stats()
+    
+    def _identify_gate_features(self, features_df: pd.DataFrame) -> List[str]:
+        """
+        Identify gate features in the feature set.
+        
+        Args:
+            features_df: Features DataFrame
+            
+        Returns:
+            List of gate feature names
+        """
+        gate_features = []
+        
+        # Look for gate feature patterns
+        gate_patterns = [
+            'gate_', 'quality_gate', 'correlation_gate', 'variance_gate', 
+            'stability_gate', 'performance_gate', 'data_integrity_gate'
+        ]
+        
+        for col in features_df.columns:
+            col_lower = col.lower()
+            if any(pattern in col_lower for pattern in gate_patterns):
+                gate_features.append(col)
+        
+        return gate_features
+    
+    def _protect_gate_features(self, selected_features: List[str], gate_features: List[str]) -> List[str]:
+        """
+        Ensure gate features are included in the selected features.
+        
+        Args:
+            selected_features: List of selected feature names
+            gate_features: List of gate feature names to protect
+            
+        Returns:
+            Updated list of selected features with gate features protected
+        """
+        if not gate_features:
+            return selected_features
+        
+        # Add gate features that are not already selected
+        protected_features = selected_features.copy()
+        for gate_feature in gate_features:
+            if gate_feature not in protected_features:
+                protected_features.append(gate_feature)
+                tprint_info(f"🛡️ Protected gate feature: {gate_feature}")
+        
+        return protected_features
 
 
 # Handler function for pipeline integration

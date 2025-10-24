@@ -201,6 +201,7 @@ class TrainingPipelineOrchestrator:
         # Add final steps
         steps.extend([
             "feature_generation_final_feature_selection_step",
+            "feature_generation_gate_feature_step",
             "feature_generation_final_validation_step"
         ])
         

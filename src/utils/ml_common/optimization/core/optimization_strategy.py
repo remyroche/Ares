@@ -88,9 +88,17 @@ class OptimizationStrategy(ABC):
                        trial_number: int = None) -> float:
         """Evaluate model performance with error handling."""
         try:
+            if TPRINT_AVAILABLE:
+                tprint_debug(f"🔍 Evaluating model (trial {trial_number})")
+                tprint_data_format(X, f"evaluation_X_trial_{trial_number}")
+                tprint_data_format(y, f"evaluation_y_trial_{trial_number}")
+            
             # This would be implemented by the specific strategy
             # or delegated to a shared evaluation service
             score = self._perform_evaluation(model, X, y)
+            
+            if TPRINT_AVAILABLE:
+                tprint_success(f"✅ Model evaluation completed (trial {trial_number}): score={score:.4f}")
             
             # Update trial history for early stopping
             if self.early_stopping_integration:
@@ -112,6 +120,8 @@ class OptimizationStrategy(ABC):
             
             return score
         except Exception as e:
+            if TPRINT_AVAILABLE:
+                tprint_error(f"❌ Model evaluation failed (trial {trial_number}): {e}")
             raise ModelEvaluationError(f"Model evaluation failed: {e}", {
                 'trial_number': trial_number,
                 'model_type': type(model).__name__
@@ -125,10 +135,32 @@ class OptimizationStrategy(ABC):
         # This is a placeholder - would be implemented with proper CV
         try:
             from sklearn.model_selection import cross_val_score
+            
+            if TPRINT_AVAILABLE:
+                tprint_debug(f"🔄 Running cross-validation: {self.config.cv_folds} folds, scoring={self.config.scoring}")
+                tprint_data_format({
+                    'cv_folds': self.config.cv_folds,
+                    'scoring': self.config.scoring,
+                    'X_shape': X.shape if hasattr(X, 'shape') else len(X),
+                    'y_shape': y.shape if hasattr(y, 'shape') else len(y)
+                }, "evaluation_config")
+            
             scores = cross_val_score(model, X, y, cv=self.config.cv_folds, 
                                    scoring=self.config.scoring, n_jobs=1)
-            return float(np.mean(scores))
+            
+            mean_score = float(np.mean(scores))
+            
+            if TPRINT_AVAILABLE:
+                tprint_data_format({
+                    'scores': scores.tolist(),
+                    'mean_score': mean_score,
+                    'std_score': float(np.std(scores))
+                }, f"evaluation_results")
+            
+            return mean_score
         except Exception as e:
+            if TPRINT_AVAILABLE:
+                tprint_error(f"❌ Cross-validation failed: {e}")
             raise ModelEvaluationError(f"Cross-validation failed: {e}") from e
 
 
@@ -148,6 +180,8 @@ class BayesianStrategy(OptimizationStrategy):
         
         # Step 1: Coarse Grid Search (if enabled)
         if self.config.enable_staged_optimization:
+            if TPRINT_AVAILABLE:
+                tprint_info("🔍 Step 1: Running coarse grid search pre-step")
             grid_result = self._run_grid_prestep(context)
             all_trial_results.extend(grid_result.trial_results)
             total_trials += grid_result.n_trials
@@ -155,14 +189,29 @@ class BayesianStrategy(OptimizationStrategy):
             # Use best grid results to inform Bayesian search
             if grid_result.trial_results:
                 best_grid_params = grid_result.best_params
+                if TPRINT_AVAILABLE:
+                    tprint_success(f"✅ Grid pre-step completed: {grid_result.n_trials} trials, best score: {grid_result.best_score:.4f}")
+                    tprint_data_preview(best_grid_params, "best_grid_params")
                 # Refine search space around best grid results
                 context.search_space = self._refine_search_space_around_best(
                     context.search_space, best_grid_params
                 )
+                if TPRINT_AVAILABLE:
+                    tprint_info("🔧 Refined search space around best grid results")
         
         # Step 2: Bayesian Optimization
         # Calculate remaining trials for Bayesian phase
         remaining_trials = max(1, self.config.n_trials - total_trials)
+        
+        if TPRINT_AVAILABLE:
+            tprint_info(f"🔍 Step 2: Running Bayesian optimization with {remaining_trials} trials")
+            tprint_data_format({
+                'remaining_trials': remaining_trials,
+                'n_startup_trials': min(self.config.n_startup_trials, remaining_trials // 2),
+                'n_ei_candidates': self.config.n_ei_candidates,
+                'multivariate': self.config.multivariate,
+                'group': self.config.group
+            }, "bayesian_config")
         
         # Create study
         study = optuna.create_study(
@@ -189,6 +238,8 @@ class BayesianStrategy(OptimizationStrategy):
             return self._evaluate_model(model, context.X, context.y, trial.number)
         
         # Optimize
+        if TPRINT_AVAILABLE:
+            tprint_info(f"🚀 Starting Bayesian optimization...")
         study.optimize(objective, n_trials=remaining_trials, 
                       timeout=self.config.timeout)
         
@@ -215,18 +266,32 @@ class BayesianStrategy(OptimizationStrategy):
                 if grid_best['value'] > bayesian_best['value']:
                     best_params = grid_best['params']
                     best_score = grid_best['value']
+                    if TPRINT_AVAILABLE:
+                        tprint_info("🏆 Grid search found better results than Bayesian optimization")
                 else:
                     best_params = bayesian_best['params']
                     best_score = bayesian_best['value']
+                    if TPRINT_AVAILABLE:
+                        tprint_info("🏆 Bayesian optimization found better results than grid search")
             elif grid_best:
                 best_params = grid_best['params']
                 best_score = grid_best['value']
+                if TPRINT_AVAILABLE:
+                    tprint_info("🏆 Using best results from grid search")
             else:
                 best_params = bayesian_best['params']
                 best_score = bayesian_best['value']
+                if TPRINT_AVAILABLE:
+                    tprint_info("🏆 Using best results from Bayesian optimization")
         else:
             best_params = best_trial.params
             best_score = best_trial.value
+            if TPRINT_AVAILABLE:
+                tprint_info("🏆 Using best results from single trial")
+        
+        if TPRINT_AVAILABLE:
+            tprint_success(f"✅ Bayesian optimization completed: best score = {best_score:.4f}")
+            tprint_data_preview(best_params, "best_bayesian_params")
         
         return HPOResult(
             best_params=best_params,
@@ -339,14 +404,22 @@ class GridStrategy(OptimizationStrategy):
         # Stage 1: Coarse Grid Search
         if TPRINT_AVAILABLE:
             tprint_info(f"🔍 Stage 1: Coarse grid search with {self.config.coarse_grid_points} points per parameter")
+            tprint_data_format(context.search_space, "coarse_grid_search_space")
         
         coarse_grid = self._generate_parameter_grid(context.search_space, self.config.coarse_grid_points)
+        
+        if TPRINT_AVAILABLE:
+            tprint_info(f"📊 Generated {len(coarse_grid)} parameter combinations for coarse grid")
+            tprint_data_preview(coarse_grid[:3], "coarse_grid_sample", max_rows=3)
+        
         stage1_results = self._eval_param_list(context, coarse_grid, stage_name="coarse")
         all_trial_results.extend(stage1_results)
         
         # Find top performers from coarse stage
         valid_results = [r for r in stage1_results if r.get('value') is not None]
         if not valid_results:
+            if TPRINT_AVAILABLE:
+                tprint_error("❌ No valid results from coarse grid search")
             raise OptimizationError("No valid results from coarse grid search")
         
         # Sort by score and take top performers
@@ -356,6 +429,12 @@ class GridStrategy(OptimizationStrategy):
         
         if TPRINT_AVAILABLE:
             tprint_info(f"📊 Coarse stage: {len(valid_results)} valid trials, best score: {best_score:.4f}")
+            tprint_data_format({
+                'valid_trials': len(valid_results),
+                'top_performers': len(top_coarse),
+                'best_score': best_score,
+                'best_params': best_params
+            }, "coarse_stage_summary")
         
         # Stage 2: Fine Grid Search (if enabled and we have good coarse results)
         if self.config.enable_staged_optimization and top_coarse:
@@ -367,8 +446,16 @@ class GridStrategy(OptimizationStrategy):
                 [t['params'] for t in top_coarse], context.search_space
             )
             
+            if TPRINT_AVAILABLE:
+                tprint_data_format(refined_space, "refined_search_space")
+            
             # Generate fine grid
             fine_grid = self._generate_parameter_grid(refined_space, self.config.fine_grid_points)
+            
+            if TPRINT_AVAILABLE:
+                tprint_info(f"📊 Generated {len(fine_grid)} parameter combinations for fine grid")
+                tprint_data_preview(fine_grid[:3], "fine_grid_sample", max_rows=3)
+            
             stage2_results = self._eval_param_list(context, fine_grid, stage_name="fine")
             all_trial_results.extend(stage2_results)
             
@@ -605,6 +692,10 @@ class RandomStrategy(OptimizationStrategy):
     
     def optimize(self, context: OptimizationContext) -> HPOResult:
         """Execute random search optimization."""
+        if TPRINT_AVAILABLE:
+            tprint_info(f"🎲 Starting random search optimization with {self.config.n_trials} trials")
+            tprint_data_format(context.search_space, "random_search_space")
+        
         best_score = -np.inf
         best_params = {}
         trial_results = []
@@ -622,6 +713,10 @@ class RandomStrategy(OptimizationStrategy):
                 # Sample random parameters
                 params = self._sample_parameters(context.search_space)
                 
+                if TPRINT_AVAILABLE and i % 10 == 0:
+                    tprint_debug(f"🎲 Trial {i}: sampled parameters")
+                    tprint_data_preview(params, f"trial_{i}_params", max_rows=1)
+                
                 # Create model with parameters
                 model = context.model_factory(**params)
                 
@@ -638,10 +733,26 @@ class RandomStrategy(OptimizationStrategy):
                 if score > best_score:
                     best_score = score
                     best_params = params
+                    if TPRINT_AVAILABLE:
+                        tprint_success(f"🏆 New best score at trial {i}: {score:.4f}")
                 
             except Exception as e:
                 # Log error but continue
+                if TPRINT_AVAILABLE:
+                    tprint_warning(f"⚠️ Trial {i} failed: {e}")
                 continue
+        
+        if TPRINT_AVAILABLE:
+            tprint_success(f"✅ Random search completed: {len(trial_results)} trials, best score: {best_score:.4f}")
+            tprint_data_preview(best_params, "best_random_params")
+            tprint_data_format({
+                'n_trials': len(trial_results),
+                'best_score': best_score,
+                'mean_score': np.mean([t['value'] for t in trial_results]),
+                'std_score': np.std([t['value'] for t in trial_results]),
+                'min_score': np.min([t['value'] for t in trial_results]),
+                'max_score': np.max([t['value'] for t in trial_results])
+            }, "random_search_summary")
         
         return HPOResult(
             best_params=best_params,
@@ -693,6 +804,16 @@ class BOHBStrategy(OptimizationStrategy):
         except ImportError:
             raise OptimizationError("Optuna is required for BOHB optimization")
         
+        if TPRINT_AVAILABLE:
+            tprint_info(f"🔍 Starting BOHB optimization with {self.config.n_trials} trials")
+            tprint_data_format({
+                'n_trials': self.config.n_trials,
+                'min_budget': self.config.min_budget,
+                'max_budget': self.config.max_budget,
+                'n_startup_trials': self.config.n_startup_trials,
+                'n_ei_candidates': self.config.n_ei_candidates
+            }, "bohb_config")
+        
         # Create study with pruner
         study = optuna.create_study(
             direction='maximize',
@@ -732,12 +853,24 @@ class BOHBStrategy(OptimizationStrategy):
             return score
         
         # Optimize
+        if TPRINT_AVAILABLE:
+            tprint_info(f"🚀 Starting BOHB optimization...")
         study.optimize(objective, n_trials=self.config.n_trials, 
                       timeout=self.config.timeout)
         
         # Extract results
         best_trial = study.best_trial
         trial_results = [trial for trial in study.trials]
+        
+        if TPRINT_AVAILABLE:
+            tprint_success(f"✅ BOHB optimization completed: best score = {best_trial.value:.4f}")
+            tprint_data_preview(best_trial.params, "best_bohb_params")
+            tprint_data_format({
+                'n_trials': len(trial_results),
+                'best_score': best_trial.value,
+                'mean_score': np.mean([t.value for t in trial_results if t.value is not None]),
+                'std_score': np.std([t.value for t in trial_results if t.value is not None])
+            }, "bohb_summary")
         
         return HPOResult(
             best_params=best_trial.params,
@@ -788,14 +921,34 @@ class BOHBStrategy(OptimizationStrategy):
             n_samples = int(len(X) * budget)
             n_samples = max(10, min(n_samples, len(X)))  # Ensure valid range
             
+            if TPRINT_AVAILABLE:
+                tprint_debug(f"💰 Multi-fidelity evaluation: budget={budget:.3f}, samples={n_samples}/{len(X)}")
+                tprint_data_format({
+                    'budget': budget,
+                    'n_samples': n_samples,
+                    'total_samples': len(X),
+                    'sample_ratio': n_samples / len(X)
+                }, "multi_fidelity_budget")
+            
             # Sample data with replacement if needed
             replace = n_samples > len(X)
             indices = np.random.choice(len(X), n_samples, replace=replace)
             X_subset = X[indices]
             y_subset = y[indices]
             
+            if TPRINT_AVAILABLE:
+                tprint_data_preview(X_subset, f"budget_{budget:.3f}_X_subset", max_rows=3)
+                tprint_data_preview(y_subset, f"budget_{budget:.3f}_y_subset", max_rows=3)
+            
             # Evaluate model
-            return self._evaluate_model(model, X_subset, y_subset)
+            score = self._evaluate_model(model, X_subset, y_subset)
+            
+            if TPRINT_AVAILABLE:
+                tprint_success(f"✅ Multi-fidelity evaluation completed: budget={budget:.3f}, score={score:.4f}")
+            
+            return score
             
         except Exception as e:
+            if TPRINT_AVAILABLE:
+                tprint_error(f"❌ Multi-fidelity model evaluation failed: {e}")
             raise ModelEvaluationError(f"Multi-fidelity model evaluation failed: {e}") from e

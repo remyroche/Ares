@@ -15,6 +15,25 @@ from collections import OrderedDict, deque
 
 from ..exceptions import CacheError
 
+# Import tprint functions
+try:
+    from ...tprint import (
+        tprint, tprint_debug, tprint_info, tprint_warning, tprint_error,
+        tprint_success, tprint_performance, tprint_timer, tprint_data_preview,
+        tprint_data_format, LogLevel, TPrintConfig
+    )
+    TPRINT_AVAILABLE = True
+except ImportError:
+    TPRINT_AVAILABLE = False
+    def tprint_info(*args, **kwargs): pass
+    def tprint_warning(*args, **kwargs): pass
+    def tprint_success(*args, **kwargs): pass
+    def tprint_error(*args, **kwargs): pass
+    def tprint_debug(*args, **kwargs): pass
+    def tprint_performance(*args, **kwargs): pass
+    def tprint_data_preview(*args, **kwargs): pass
+    def tprint_data_format(*args, **kwargs): pass
+
 
 @dataclass
 class CacheEntry:
@@ -61,6 +80,9 @@ class OptimizationCache:
         self.hits = 0
         self.misses = 0
         self.evictions = 0
+        
+        if TPRINT_AVAILABLE:
+            tprint_success(f"💾 OptimizationCache initialized: max_size={max_size}, ttl={ttl_seconds}s, memory_limit={max_memory_mb}MB")
     
     def get(self, key: Hashable) -> Optional[Any]:
         """
@@ -75,6 +97,8 @@ class OptimizationCache:
         try:
             if key not in self.cache:
                 self.misses += 1
+                if TPRINT_AVAILABLE:
+                    tprint_debug(f"🔍 Cache miss for key: {str(key)[:50]}...")
                 return None
             
             entry = self.cache[key]
@@ -83,6 +107,8 @@ class OptimizationCache:
             if time.time() - entry.timestamp > self.ttl_seconds:
                 self._evict(key)
                 self.misses += 1
+                if TPRINT_AVAILABLE:
+                    tprint_debug(f"⏰ Cache entry expired for key: {str(key)[:50]}...")
                 return None
             
             # Update access count and move to end (LRU)
@@ -95,9 +121,13 @@ class OptimizationCache:
             self.access_order.append(key)
             
             self.hits += 1
+            if TPRINT_AVAILABLE:
+                tprint_debug(f"✅ Cache hit for key: {str(key)[:50]}... (access count: {entry.access_count})")
             return entry.value
             
         except Exception as e:
+            if TPRINT_AVAILABLE:
+                tprint_error(f"❌ Cache get failed: {e}")
             raise CacheError(f"Failed to get from cache: {e}") from e
     
     def put(self, key: Hashable, value: Any) -> None:
@@ -109,6 +139,10 @@ class OptimizationCache:
             value: Value to cache
         """
         try:
+            if TPRINT_AVAILABLE:
+                tprint_debug(f"💾 Caching value for key: {str(key)[:50]}...")
+                tprint_data_preview(value, f"cache_value_{str(key)[:20]}")
+            
             # Calculate size
             try:
                 size_bytes = len(pickle.dumps(value))
@@ -141,6 +175,8 @@ class OptimizationCache:
                 old_entry = self.cache[key]
                 self.current_memory_bytes -= old_entry.size_bytes
                 del self.cache[key]
+                if TPRINT_AVAILABLE:
+                    tprint_debug(f"🔄 Replacing existing cache entry for key: {str(key)[:50]}...")
             
             # Add new entry
             entry = CacheEntry(
@@ -152,7 +188,13 @@ class OptimizationCache:
             self.cache[key] = entry
             self.current_memory_bytes += size_bytes
             
+            if TPRINT_AVAILABLE:
+                tprint_success(f"✅ Cached value ({size_bytes} bytes) for key: {str(key)[:50]}...")
+                tprint_info(f"📊 Cache stats: {len(self.cache)}/{self.max_size} entries, {self.current_memory_bytes/1024/1024:.1f}MB used")
+            
         except Exception as e:
+            if TPRINT_AVAILABLE:
+                tprint_error(f"❌ Cache put failed: {e}")
             raise CacheError(f"Failed to put in cache: {e}") from e
     
     def _evict(self, key: Hashable) -> None:
@@ -184,7 +226,10 @@ class OptimizationCache:
         self.cache.clear()
         self.access_order.clear()
         self.current_memory_bytes = 0
-        self.logger.info("Cache cleared")
+        if TPRINT_AVAILABLE:
+            tprint_success("🧹 Cache cleared")
+        else:
+            self.logger.info("Cache cleared")
     
     def get_stats(self) -> Dict[str, Any]:
         """Get cache statistics."""
@@ -216,7 +261,10 @@ class OptimizationCache:
             self._evict(key)
         
         if expired_keys:
-            self.logger.info(f"Cleaned up {len(expired_keys)} expired entries")
+            if TPRINT_AVAILABLE:
+                tprint_success(f"🧹 Cleaned up {len(expired_keys)} expired entries")
+            else:
+                self.logger.info(f"Cleaned up {len(expired_keys)} expired entries")
         
         return len(expired_keys)
 
@@ -285,12 +333,19 @@ class ModelEvaluationCache:
                        data_hash: str) -> Optional[float]:
         """Get cached model score."""
         key = create_cache_key(model_params, data_hash)
-        return self.cache.get(key)
+        if TPRINT_AVAILABLE:
+            tprint_debug(f"🔍 Looking up model score for data hash: {data_hash[:20]}...")
+        score = self.cache.get(key)
+        if score is not None and TPRINT_AVAILABLE:
+            tprint_success(f"✅ Found cached model score: {score:.4f}")
+        return score
     
     def put_model_score(self, model_params: Dict[str, Any], 
                        data_hash: str, score: float) -> None:
         """Cache model score."""
         key = create_cache_key(model_params, data_hash)
+        if TPRINT_AVAILABLE:
+            tprint_info(f"💾 Caching model score {score:.4f} for data hash: {data_hash[:20]}...")
         self.cache.put(key, score)
     
     def create_data_hash(self, X, y) -> str:
@@ -306,7 +361,14 @@ class ModelEvaluationCache:
                 'X_sample': X.flat[:100].tolist() if hasattr(X, 'flat') else X[:100],
                 'y_sample': y.flat[:100].tolist() if hasattr(y, 'flat') else y[:100]
             }
-            return create_cache_key(data_info)
+            hash_key = create_cache_key(data_info)
+            if TPRINT_AVAILABLE:
+                tprint_debug(f"🔑 Created data hash: {hash_key[:20]}...")
+                tprint_data_format(data_info, "data_hash_info")
+            return hash_key
         except Exception:
             # Fallback to simple hash
-            return str(hash(str(X) + str(y)))
+            hash_key = str(hash(str(X) + str(y)))
+            if TPRINT_AVAILABLE:
+                tprint_warning(f"⚠️ Using fallback hash: {hash_key[:20]}...")
+            return hash_key

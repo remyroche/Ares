@@ -14,6 +14,25 @@ from datetime import datetime
 from ..exceptions import MonitoringError
 from ..results import HPOResult
 
+# Import tprint functions
+try:
+    from ...tprint import (
+        tprint, tprint_debug, tprint_info, tprint_warning, tprint_error,
+        tprint_success, tprint_performance, tprint_timer, tprint_data_preview,
+        tprint_data_format, LogLevel, TPrintConfig
+    )
+    TPRINT_AVAILABLE = True
+except ImportError:
+    TPRINT_AVAILABLE = False
+    def tprint_info(*args, **kwargs): pass
+    def tprint_warning(*args, **kwargs): pass
+    def tprint_success(*args, **kwargs): pass
+    def tprint_error(*args, **kwargs): pass
+    def tprint_debug(*args, **kwargs): pass
+    def tprint_performance(*args, **kwargs): pass
+    def tprint_data_preview(*args, **kwargs): pass
+    def tprint_data_format(*args, **kwargs): pass
+
 
 @dataclass
 class OptimizationMetrics:
@@ -45,6 +64,9 @@ class OptimizationMonitor:
         self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
         self.metrics_history: List[OptimizationMetrics] = []
         self.active_optimizations: Dict[str, OptimizationMetrics] = {}
+        
+        if TPRINT_AVAILABLE:
+            tprint_success(f"📊 OptimizationMonitor initialized (detailed_logging: {enable_detailed_logging})")
     
     def start_optimization(self, model_name: str, strategy: str) -> str:
         """Start monitoring an optimization process."""
@@ -60,7 +82,15 @@ class OptimizationMonitor:
             # Use run_id as key to prevent collisions
             self.active_optimizations[run_id] = metrics
             
-            if self.enable_detailed_logging:
+            if TPRINT_AVAILABLE:
+                tprint_info(f"📊 Started monitoring {model_name} using {strategy} (run_id: {run_id[:8]}...)")
+                tprint_data_format({
+                    'model_name': model_name,
+                    'strategy': strategy,
+                    'run_id': run_id,
+                    'start_time': metrics.start_time
+                }, f"monitoring_start_{model_name}")
+            elif self.enable_detailed_logging:
                 self.logger.info(f"Started monitoring optimization for {model_name} using {strategy} (run_id: {run_id})")
             
             return run_id
@@ -95,7 +125,14 @@ class OptimizationMonitor:
             self.metrics_history.append(metrics)
             del self.active_optimizations[run_id]
             
-            if self.enable_detailed_logging:
+            if TPRINT_AVAILABLE:
+                status = "✅ successful" if metrics.success else "❌ failed"
+                tprint_info(f"📊 Stopped monitoring {metrics.model_name} (run_id: {run_id[:8]}...): {status} in {metrics.duration:.2f}s")
+                if metrics.success:
+                    tprint_success(f"🏆 Best score: {metrics.best_score:.4f}, Trials: {metrics.n_trials}")
+                else:
+                    tprint_error(f"💥 Error: {metrics.error}")
+            elif self.enable_detailed_logging:
                 status = "successful" if metrics.success else "failed"
                 self.logger.info(f"Stopped monitoring {metrics.model_name} (run_id: {run_id}): {status} in {metrics.duration:.2f}s")
                 
@@ -114,7 +151,9 @@ class OptimizationMonitor:
                     if metrics.best_score is None or score > metrics.best_score:
                         metrics.best_score = score
                 
-                if self.enable_detailed_logging and trial_number % 10 == 0:
+                if TPRINT_AVAILABLE and trial_number % 10 == 0:
+                    tprint_info(f"🔄 Trial {trial_number} for {model_name}: score={score:.4f}")
+                elif self.enable_detailed_logging and trial_number % 10 == 0:
                     self.logger.info(f"Trial {trial_number} for {model_name}: score={score}")
                     
         except Exception as e:
@@ -169,7 +208,10 @@ class OptimizationMonitor:
         """Clear monitoring history."""
         self.metrics_history.clear()
         self.active_optimizations.clear()
-        self.logger.info("Cleared monitoring history")
+        if TPRINT_AVAILABLE:
+            tprint_success("🧹 Cleared monitoring history")
+        else:
+            self.logger.info("Cleared monitoring history")
     
     def export_metrics(self, filepath: str) -> None:
         """Export metrics to file."""
@@ -199,7 +241,10 @@ class OptimizationMonitor:
             with open(filepath, 'w') as f:
                 json.dump(export_data, f, indent=2)
             
-            self.logger.info(f"Exported metrics to {filepath}")
+            if TPRINT_AVAILABLE:
+                tprint_success(f"📁 Exported metrics to {filepath}")
+            else:
+                self.logger.info(f"Exported metrics to {filepath}")
             
         except Exception as e:
             raise MonitoringError(f"Failed to export metrics: {e}") from e

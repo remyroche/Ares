@@ -18,28 +18,28 @@ models:
       metric: "binary_logloss"
       boosting_type: "gbdt"
       num_leaves: 31
-      learning_rate: 0.05
-      feature_fraction: 0.9
+      learning_rate: 0.08  # Higher learning rate for faster convergence
+      feature_fraction: 0.8  # Reduced to prevent overfitting
       bagging_fraction: 0.8
       bagging_freq: 5
       verbose: -1
       random_state: 42
-      n_estimators: 1000
-      early_stopping_rounds: 50
+      n_estimators: 600  # Reduced for faster training
+      early_stopping_rounds: 30  # More aggressive early stopping
       min_data_in_leaf: 20
       min_gain_to_split: 0.0
-      lambda_l1: 0.0
-      lambda_l2: 0.0
+      lambda_l1: 0.1  # Added L1 regularization
+      lambda_l2: 0.1  # Added L2 regularization
       
       # GRU parameters for embeddings
       gru_hidden_size: 32
       gru_num_layers: 2
-      gru_dropout: 0.1
+      gru_dropout: 0.2  # Increased dropout for better generalization
       gru_bidirectional: false
       embedding_dim: 16
       sequence_length: 20
-      gru_learning_rate: 0.001
-      gru_epochs: 50
+      gru_learning_rate: 0.002  # Higher learning rate
+      gru_epochs: 30  # Reduced epochs with early stopping
       gru_batch_size: 64
 
   - name: "catboost_tactician"

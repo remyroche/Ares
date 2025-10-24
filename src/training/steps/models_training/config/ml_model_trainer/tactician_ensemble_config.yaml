@@ -50,21 +50,7 @@ models:
       calibration_cv_folds: 3
       calibration_test_size: 0.2
       
-      # Gating mechanism parameters
-      gating_enabled: true
-      gating_type: "attention"  # attention, linear, or mlp
-      gating_hidden_size: 64
-      gating_dropout: 0.1
-      gating_activation: "tanh"
-      gating_temperature: 1.0
-      
-      # Attention gating specific
-      attention_heads: 4
-      attention_dim: 64
-      attention_dropout: 0.1
-      
-      # Ensemble weights
-      ensemble_weights: null  # null for equal weights, or list of weights
+      # Note: Gating mechanism removed - using standard stacking approach
       
       # Performance optimization
       enable_parallel_processing: true
@@ -74,8 +60,7 @@ models:
       prediction_horizon: 1
       confidence_threshold: 0.7
       uncertainty_estimation: true
-      blend_method: "weighted_average"
-      weights: null  # null for equal weights, or list of weights
+      blend_method: "stacking"  # Use stacking instead of weighted average
       validation_split: 0.2
 
 # Base Models for Ensemble
@@ -84,8 +69,8 @@ base_models:
     type: "LIGHTGBM"
     enabled: true
     parameters:
-      objective: "regression"
-      metric: "rmse"
+      objective: "binary"
+      metric: "binary_logloss"
       boosting_type: "gbdt"
       num_leaves: 31
       learning_rate: 0.05
@@ -101,8 +86,8 @@ base_models:
     type: "CATBOOST"
     enabled: true
     parameters:
-      objective: "RMSE"
-      eval_metric: "RMSE"
+      objective: "Logloss"
+      eval_metric: "Logloss"
       iterations: 1000
       learning_rate: 0.05
       depth: 6
@@ -193,7 +178,7 @@ training:
   cv_folds: 5
   test_split: 0.1
   random_state: 42
-  stratify: false  # Regression doesn't use stratification
+  stratify: true  # Binary classification uses stratification
   
   # Cross-validation strategy
   cv_strategy: "TimeSeriesSplit"
@@ -215,14 +200,10 @@ training:
     method: "optuna"
     n_trials: 100
     timeout: 3600  # 1 hour
-    direction: "minimize"
-    metric: "rmse"
+    direction: "maximize"
+    metric: "f1_score"
   
-  # Multi-output training
-  multi_output:
-    strategy: "multi_output_regressor"  # or "regressor_chain"
-    chain_order: ["entry_timing", "exit_timing", "position_sizing"]
-    use_previous_outputs: true
+  # Note: Multi-output training removed - using binary classification for confidence scoring
   
   # Ensemble-specific training
   ensemble_training:
@@ -233,12 +214,7 @@ training:
       meta_learner_early_stopping: true
       meta_learner_patience: 20
     
-    # Blending training
-    blending:
-      holdout_split: 0.2
-      blend_method: "weighted_average"
-      weight_optimization: true
-      weight_optimization_method: "grid_search"
+    # Note: Blending removed - using stacking approach
 
 # Feature Engineering
 feature_engineering:
@@ -327,8 +303,6 @@ feature_engineering:
     # Tactician-specific ensemble features
     tactician_ensemble_features:
       include_entry_timing_predictions: true
-# Feature engineering is handled upstream by feature_generation_final_feature_selection_step
-# Features are pre-selected and specific to model type and direction
 
 # Data Quality & Leakage Prevention
 data_quality:
@@ -364,9 +338,9 @@ data_quality:
 
 # Metrics & Evaluation
 metrics:
-  primary: "rmse"
-  secondary: ["mae", "mape", "r2_score", "explained_variance"]
-  multi_output_metrics: ["multi_output_rmse", "multi_output_mae", "multi_output_r2"]
+  primary: "f1_score"
+  secondary: ["precision", "recall", "accuracy", "auc_roc"]
+  confidence_metrics: ["brier_score", "log_loss", "calibration_error"]
   
   # SHAP analysis
   shap_analysis:

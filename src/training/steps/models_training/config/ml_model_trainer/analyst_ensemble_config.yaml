@@ -50,14 +50,10 @@ models:
       calibration_cv_folds: 3
       calibration_test_size: 0.2
       
-      # Ensemble weights
-      ensemble_weights: null  # null for equal weights, or list of weights
-      
       # Performance optimization
       enable_parallel_processing: true
       memory_efficient: true
-      blend_method: "weighted_average"
-      weights: null  # null for equal weights, or list of weights
+      blend_method: "stacking"  # Use stacking instead of weighted average
       validation_split: 0.2
 
 # Base Models for Ensemble

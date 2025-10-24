@@ -40,6 +40,10 @@ class MockExchangeInterface:
         self.connected = False
         tprint_info("🔌 Disconnected from mock exchange")
     
+    async def disconnect(self):
+        self.connected = False
+        tprint_info("🔌 Disconnected from mock exchange")
+    
     async def get_klines(self, symbol, interval, start_time, end_time, limit=1000):
         """Mock get_klines that tracks what data is requested."""
         self.download_calls.append({

@@ -515,9 +515,9 @@ class EnhancedKlinesProcessingPipeline(BaseStep):
     =============================
     This pipeline uses an optimized approach that prevents duplicate downloads:
     1. First analyzes existing data to detect gaps
-    2. Downloads ONLY the missing data periods
+    2. Downloads ONLY the missing data periods (with immediate standardization)
     3. Combines existing and new data
-    4. Standardizes and validates the complete dataset
+    4. Validates and processes the complete dataset
 
     This prevents the inefficient pattern of:
     - Downloading all data → detecting gaps → re-downloading gaps
@@ -526,11 +526,12 @@ class EnhancedKlinesProcessingPipeline(BaseStep):
     - Uses ExchangeInterface for all exchange calls
     - Integrates KlinesParquetManager for efficient storage
     - Implements data standardizer for consistent formatting
-    - Fast fail pattern with no fallbacks or mocks
+    - Fast fail pattern with no fallbacks or mocks (connection failures cause immediate failure)
     - Comprehensive gap detection and filling (OPTIMIZED)
     - Automatic resampling for data older than 3 days
     - Batch-compatible data management
     - Selective downloading to avoid duplicates
+    - Immediate data standardization during download
     """
 
     def __init__(
@@ -1116,12 +1117,14 @@ class EnhancedKlinesProcessingPipeline(BaseStep):
                 "resampled_intervals": []
             }
 
-            # Step 1: Connect to exchange
+            # Step 1: Connect to exchange (fast fail)
             try:
                 await exchange_interface.connect()
             except Exception as e:
+                error_msg = f"Exchange connection failed: {e}"
                 if self.enable_logging:
-                    tprint_warning(f"⚠️ Exchange connection failed: {e}")
+                    tprint_error(f"❌ {error_msg}")
+                raise RuntimeError(error_msg)
 
             # Step 2: Analyze existing data and detect gaps FIRST (OPTIMIZED APPROACH)
             if self.enable_logging:
@@ -1200,18 +1203,6 @@ class EnhancedKlinesProcessingPipeline(BaseStep):
             else:
                 current_data = standardize_result.data
 
-            # Step 5: Handle duplicates (if enabled)
-            if self.config.enable_duplicate_handling:
-                duplicate_result = await self._handle_duplicates(
-                    current_data, symbol, interval
-                )
-                self.processing_results.append(duplicate_result)
-
-                if not duplicate_result.success:
-                    raise RuntimeError(f"Duplicate handling failed: {duplicate_result.errors}")
-
-                results["steps_completed"].append(ProcessingStep.DUPLICATE_HANDLING.value)
-                current_data = duplicate_result.data
 
             # Step 6: Store original data using KlinesParquetManager
             store_result = await self._store_original_data(
@@ -1561,11 +1552,15 @@ class EnhancedKlinesProcessingPipeline(BaseStep):
 
                         if gap_data:
                             gap_df = self._klines_to_dataframe(gap_data, symbol, interval)
+                            
+                            # Standardize the downloaded data immediately
+                            gap_df = await self._standardize_dataframe(gap_df, symbol, interval)
+                            
                             downloaded_data.append(gap_df)
                             gaps_filled += 1
                             
                             if self.enable_logging:
-                                tprint_success(f"✅ Downloaded {len(gap_df)} records for gap")
+                                tprint_success(f"✅ Downloaded and standardized {len(gap_df)} records for gap")
 
                 except Exception as e:
                     error_msg = f"Failed to download gap {gap.start_time} to {gap.end_time}: {e}"
@@ -1759,6 +1754,46 @@ class EnhancedKlinesProcessingPipeline(BaseStep):
 
         result.processing_time = (datetime.now() - start_time).total_seconds()
         return result
+
+    async def _standardize_dataframe(
+        self,
+        df: pd.DataFrame,
+        symbol: str,
+        interval: str
+    ) -> pd.DataFrame:
+        """
+        Standardize a DataFrame using the data standardizer.
+        """
+        try:
+            # Ensure proper column names and types
+            required_columns = ['open', 'high', 'low', 'close', 'volume']
+            for col in required_columns:
+                if col not in df.columns:
+                    raise ValueError(f"Missing required column: {col}")
+                # Convert to numeric, coercing errors to NaN
+                df[col] = pd.to_numeric(df[col], errors='coerce')
+            
+            # Ensure timestamp index is datetime
+            if not pd.api.types.is_datetime64_any_dtype(df.index):
+                df.index = pd.to_datetime(df.index)
+            
+            # Add metadata columns
+            df['symbol'] = symbol.upper()
+            df['interval'] = interval
+            df['exchange'] = self.exchange
+            
+            # Use the data standardizer to ensure consistent format
+            standardized_data = self.data_standardizer.standardize_klines_data(
+                df, symbol, interval
+            )
+            
+            return standardized_data
+            
+        except Exception as e:
+            if self.enable_logging:
+                tprint_warning(f"⚠️ Data standardization failed: {e}")
+            # Return original data if standardization fails
+            return df
 
     def _klines_to_dataframe(
         self,

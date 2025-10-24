@@ -13,7 +13,22 @@ import logging
 
 from src.utils.tprint import (
     tprint, tprint_info, tprint_warning, tprint_error, tprint_success, 
-    tprint_debug, tprint_data_format, LogLevel
+    tprint_debug, tprint_data_format, tprint_data_preview, LogLevel
+)
+
+# Import math validation utilities
+from src.utils.math_validation import (
+    validate_finite, validate_array_finite, safe_divide, safe_log, safe_sqrt
+)
+
+# Import common operations utilities
+from src.utils.common_operations import (
+    safe_dataframe_operation, memory_managed, MemoryStrategy
+)
+
+# Import hardware optimization decorators
+from src.utils.hardware.optimization_decorators import (
+    performance_tracked, memory_efficient, auto_optimize
 )
 
 from .weighted_loss_framework import (
@@ -102,6 +117,8 @@ class WeightedLossIntegrator:
         self.is_initialized = True
         tprint_success(f"Weighted loss integrator initialized for {len(model_types)} model types")
         
+    @memory_managed(MemoryStrategy.MODERATE)
+    @performance_tracked(log_performance=True, track_memory=True)
     def fit(self, model_type: str, X: np.ndarray, y: np.ndarray, 
            market_data: Optional[Dict[str, np.ndarray]] = None):
         """Fit weighted loss manager for specific model type."""
@@ -110,35 +127,58 @@ class WeightedLossIntegrator:
             
         if model_type not in self.weighted_loss_managers:
             raise ModelTrainingError(f"Model type {model_type} not found in integrator")
-            
+        
         tprint_info(f"Fitting weighted loss manager for {model_type}")
+        tprint_data_format(X, f"Input features for {model_type}", LogLevel.DEBUG)
+        tprint_data_format(y, f"Target values for {model_type}", LogLevel.DEBUG)
+        
+        # Validate inputs using math validation utilities
+        X = validate_array_finite(X, f"X_{model_type}")
+        y = validate_array_finite(y, f"y_{model_type}")
+        
+        if market_data:
+            tprint_data_preview(market_data, f"Market data for {model_type}", LogLevel.DEBUG)
         
         self.weighted_loss_managers[model_type].fit(X, y, market_data)
         
         tprint_success(f"Weighted loss manager fitted for {model_type}")
+        tprint_data_format(self.weight_statistics[model_type], f"Weight statistics for {model_type}", LogLevel.DEBUG)
         
+    @memory_managed(MemoryStrategy.MODERATE)
     def get_sample_weights(self, model_type: str, X: np.ndarray, y: np.ndarray,
                           predictions: Optional[np.ndarray] = None,
                           market_data: Optional[Dict[str, np.ndarray]] = None) -> np.ndarray:
-        """Get sample weights for specific model type."""
+        """Get sample weights for specific model type with enhanced logging."""
+        tprint_debug(f"Getting sample weights for {model_type}")
+        tprint_data_format(X, f"Input features for {model_type} weights", LogLevel.DEBUG)
+        tprint_data_format(y, f"Target values for {model_type} weights", LogLevel.DEBUG)
+        
         if model_type not in self.weighted_loss_managers:
             tprint_warning(f"No weighted loss manager for {model_type}, returning uniform weights")
             return np.ones(len(y))
-            
+        
+        # Validate inputs
+        X = validate_array_finite(X, f"X_{model_type}_weights")
+        y = validate_array_finite(y, f"y_{model_type}_weights")
+        
         weights = self.weighted_loss_managers[model_type].get_sample_weights(
             X, y, predictions, market_data
         )
         
-        # Store weight statistics
+        # Store weight statistics with enhanced logging
         if self.config.save_weight_statistics:
-            self.weight_statistics[model_type].append({
-                'mean_weight': np.mean(weights),
-                'std_weight': np.std(weights),
-                'min_weight': np.min(weights),
-                'max_weight': np.max(weights),
+            weight_stats = {
+                'mean_weight': float(np.mean(weights)),
+                'std_weight': float(np.std(weights)),
+                'min_weight': float(np.min(weights)),
+                'max_weight': float(np.max(weights)),
                 'samples': len(weights)
-            })
+            }
+            self.weight_statistics[model_type].append(weight_stats)
             
+            tprint_data_format(weight_stats, f"Weight statistics for {model_type}", LogLevel.DEBUG)
+        
+        tprint_data_format(weights, f"Calculated sample weights for {model_type}", LogLevel.DEBUG)
         return weights
     
     def calculate_weighted_loss(self, model_type: str, y_true: np.ndarray, y_pred: np.ndarray,

@@ -28,6 +28,38 @@ from src.utils.tprint import (
     tprint_debug, tprint_data_format, tprint_data_preview, LogLevel
 )
 
+# Import math validation utilities
+from src.utils.math_validation import (
+    validate_finite, validate_array_finite, safe_divide, safe_log, safe_sqrt, safe_power
+)
+
+# Import common operations utilities
+from src.utils.common_operations import (
+    safe_dataframe_operation, validate_dataframe_columns, memory_managed, MemoryStrategy
+)
+
+# Import hardware optimization decorators
+from src.utils.hardware.optimization_decorators import (
+    performance_tracked, memory_efficient, auto_optimize
+)
+
+# Import VectorBT utilities
+try:
+    from src.vectorbt import (
+        vbt, rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max,
+        rolling_sum, rolling_apply, VECTORBT_AVAILABLE
+    )
+except ImportError:
+    VECTORBT_AVAILABLE = False
+    vbt = None
+    rolling_mean = None
+    rolling_std = None
+    rolling_var = None
+    rolling_min = None
+    rolling_max = None
+    rolling_sum = None
+    rolling_apply = None
+
 from .error_handling import (
     handle_errors, validate_data, safe_import,
     MLModelTrainerError, DataValidationError, ModelTrainingError, PredictionError
@@ -93,15 +125,24 @@ class FailureContextDetector:
         self.scaler = StandardScaler()
         self.is_fitted = False
         
+    @memory_managed(MemoryStrategy.MODERATE)
+    @performance_tracked(log_performance=True, track_memory=True)
     def fit(self, X: np.ndarray, y: np.ndarray, market_data: Optional[Dict[str, np.ndarray]] = None):
         """Fit the failure context detector."""
         tprint_info("Fitting failure context detector")
+        tprint_data_format(X, "Input features for failure context detection", LogLevel.DEBUG)
+        tprint_data_format(y, "Target values for failure context detection", LogLevel.DEBUG)
+        
+        # Validate inputs using math validation utilities
+        X = validate_array_finite(X, "X")
+        y = validate_array_finite(y, "y")
         
         # Fit scaler for normalization
         self.scaler.fit(X)
         self.is_fitted = True
         
         tprint_success("Failure context detector fitted")
+        tprint_data_format(self.scaler.scale_, "Scaler scale parameters", LogLevel.DEBUG)
         
     def detect_failure_contexts(self, X: np.ndarray, y: np.ndarray, 
                               market_data: Optional[Dict[str, np.ndarray]] = None) -> Dict[str, np.ndarray]:
@@ -150,7 +191,13 @@ class FailureContextDetector:
         if market_data and 'bid' in market_data and 'ask' in market_data:
             bid = market_data['bid']
             ask = market_data['ask']
-            spread = (ask - bid) / ((ask + bid) / 2)
+            tprint_data_format(bid, "Bid prices for spread calculation", LogLevel.DEBUG)
+            tprint_data_format(ask, "Ask prices for spread calculation", LogLevel.DEBUG)
+            
+            # Use safe math operations for spread calculation
+            spread = safe_divide(ask - bid, (ask + bid) / 2, 0.0)
+            tprint_data_format(spread, "Calculated spread", LogLevel.DEBUG)
+            
             failure_contexts[FailureContextType.WIDE_SPREAD.value] = (
                 spread > self.config.spread_threshold
             ).astype(float)
@@ -173,15 +220,37 @@ class FailureContextDetector:
         
         return failure_contexts
     
+    @memory_managed(MemoryStrategy.MODERATE)
     def _calculate_rolling_volatility(self, returns: np.ndarray, window: int = 20) -> np.ndarray:
-        """Calculate rolling volatility."""
+        """Calculate rolling volatility using VectorBT for efficiency."""
+        tprint_debug(f"Calculating rolling volatility with window={window}")
+        tprint_data_format(returns, "Returns for volatility calculation", LogLevel.DEBUG)
+        
         if len(returns) < window:
             return np.zeros_like(returns)
         
+        # Use VectorBT for efficient rolling calculations if available
+        if VECTORBT_AVAILABLE and len(returns) > window:
+            try:
+                # Convert to pandas Series for VectorBT
+                returns_series = pd.Series(returns)
+                
+                # Use VectorBT rolling standard deviation
+                rolling_vol = rolling_std(returns_series, window=window, min_periods=1)
+                volatility = rolling_vol.fillna(0).values
+                
+                tprint_data_format(volatility, "VectorBT rolling volatility", LogLevel.DEBUG)
+                tprint_info(f"VectorBT volatility calculation completed for {len(volatility)} samples")
+                return volatility
+            except Exception as e:
+                tprint_warning(f"VectorBT volatility calculation failed, using numpy: {e}")
+        
+        # Fallback to numpy implementation
         volatility = np.zeros_like(returns)
         for i in range(window, len(returns)):
             volatility[i] = np.std(returns[i-window:i])
         
+        tprint_data_format(volatility, "Numpy rolling volatility", LogLevel.DEBUG)
         return volatility
     
     def _extract_price_features(self, X: np.ndarray) -> np.ndarray:
@@ -300,15 +369,26 @@ class SampleDifficultyAssessor:
         
         return total_difficulty
     
+    @memory_managed(MemoryStrategy.MODERATE)
     def _calculate_feature_difficulty(self, X: np.ndarray) -> np.ndarray:
-        """Calculate difficulty based on feature complexity."""
+        """Calculate difficulty based on feature complexity using safe math operations."""
+        tprint_debug("Calculating feature-based difficulty")
+        tprint_data_format(X, "Input features for difficulty calculation", LogLevel.DEBUG)
+        
         # Use feature variance and correlation as difficulty indicators
         feature_variance = np.var(X, axis=1)
         feature_correlation = self._calculate_feature_correlation(X)
         
-        # Combine variance and correlation
+        tprint_data_format(feature_variance, "Feature variance", LogLevel.DEBUG)
+        tprint_data_format(feature_correlation, "Feature correlation", LogLevel.DEBUG)
+        
+        # Combine variance and correlation using safe operations
         difficulty = feature_variance * (1 + feature_correlation)
         
+        # Ensure finite values
+        difficulty = validate_array_finite(difficulty, "feature_difficulty")
+        
+        tprint_data_format(difficulty, "Calculated feature difficulty", LogLevel.DEBUG)
         return difficulty
     
     def _calculate_feature_correlation(self, X: np.ndarray) -> np.ndarray:
@@ -419,10 +499,23 @@ class WeightedLossCalculator:
         
         return weights
     
+    @memory_managed(MemoryStrategy.MODERATE)
     def _calculate_difficulty_weights(self, difficulty: np.ndarray) -> np.ndarray:
-        """Calculate weights based on sample difficulty."""
-        # Higher difficulty = higher weight
-        weights = self.config.base_weight + difficulty * (self.config.max_weight - self.config.base_weight)
+        """Calculate weights based on sample difficulty using safe math operations."""
+        tprint_debug("Calculating difficulty-based weights")
+        tprint_data_format(difficulty, "Input difficulty scores", LogLevel.DEBUG)
+        
+        # Validate input
+        difficulty = validate_array_finite(difficulty, "difficulty")
+        
+        # Higher difficulty = higher weight using safe operations
+        weight_range = self.config.max_weight - self.config.base_weight
+        weights = self.config.base_weight + difficulty * weight_range
+        
+        # Ensure finite weights
+        weights = validate_array_finite(weights, "difficulty_weights")
+        
+        tprint_data_format(weights, "Calculated difficulty weights", LogLevel.DEBUG)
         return weights
     
     def _calculate_failure_context_weights(self, failure_contexts: Dict[str, np.ndarray]) -> np.ndarray:
@@ -459,12 +552,21 @@ class WeightedLossCalculator:
         
         return weights
     
+    @memory_managed(MemoryStrategy.MODERATE)
     def _calculate_focal_weights(self, y_true: np.ndarray, y_pred: Optional[np.ndarray]) -> np.ndarray:
-        """Calculate focal loss weights."""
+        """Calculate focal loss weights using safe math operations."""
+        tprint_debug("Calculating focal loss weights")
+        tprint_data_format(y_true, "True labels for focal loss", LogLevel.DEBUG)
+        tprint_data_format(y_pred, "Predictions for focal loss", LogLevel.DEBUG)
+        
         if y_pred is None:
             return np.ones(len(y_true))
         
-        # Convert to probabilities if needed
+        # Validate inputs
+        y_true = validate_array_finite(y_true, "y_true")
+        y_pred = validate_array_finite(y_pred, "y_pred")
+        
+        # Convert to probabilities if needed using safe operations
         if y_pred.ndim == 1:
             # Binary classification
             p_t = np.where(y_true == 1, y_pred, 1 - y_pred)
@@ -472,10 +574,14 @@ class WeightedLossCalculator:
             # Multiclass classification
             p_t = y_pred[np.arange(len(y_true)), y_true.astype(int)]
         
-        # Calculate focal weights
+        # Calculate focal weights using safe power operation
         alpha_t = self.config.alpha
-        focal_weights = alpha_t * (1 - p_t) ** self.config.gamma
+        focal_weights = alpha_t * safe_power(1 - p_t, self.config.gamma, 0.0)
         
+        # Ensure finite weights
+        focal_weights = validate_array_finite(focal_weights, "focal_weights")
+        
+        tprint_data_format(focal_weights, "Calculated focal weights", LogLevel.DEBUG)
         return focal_weights
     
     def _calculate_gradient_weights(self, X: np.ndarray, y: np.ndarray, 
@@ -499,17 +605,39 @@ class WeightedLossCalculator:
         
         return weights
     
+    @memory_managed(MemoryStrategy.MODERATE)
     def _smooth_weights(self, weights: np.ndarray, window: int = 5) -> np.ndarray:
-        """Smooth weights using moving average."""
+        """Smooth weights using VectorBT rolling mean for efficiency."""
+        tprint_debug(f"Smoothing weights with window={window}")
+        tprint_data_format(weights, "Input weights for smoothing", LogLevel.DEBUG)
+        
         if len(weights) < window:
             return weights
         
+        # Use VectorBT for efficient rolling calculations if available
+        if VECTORBT_AVAILABLE and len(weights) > window:
+            try:
+                # Convert to pandas Series for VectorBT
+                weights_series = pd.Series(weights)
+                
+                # Use VectorBT rolling mean
+                smoothed_weights = rolling_mean(weights_series, window=window, min_periods=1)
+                smoothed_weights = smoothed_weights.fillna(weights_series).values
+                
+                tprint_data_format(smoothed_weights, "VectorBT smoothed weights", LogLevel.DEBUG)
+                tprint_info(f"VectorBT weight smoothing completed for {len(smoothed_weights)} samples")
+                return smoothed_weights
+            except Exception as e:
+                tprint_warning(f"VectorBT smoothing failed, using numpy: {e}")
+        
+        # Fallback to numpy implementation
         smoothed_weights = np.zeros_like(weights)
         for i in range(len(weights)):
             start_idx = max(0, i - window // 2)
             end_idx = min(len(weights), i + window // 2 + 1)
             smoothed_weights[i] = np.mean(weights[start_idx:end_idx])
         
+        tprint_data_format(smoothed_weights, "Numpy smoothed weights", LogLevel.DEBUG)
         return smoothed_weights
     
     def calculate_weighted_loss(self, y_true: np.ndarray, y_pred: np.ndarray, 
@@ -527,20 +655,37 @@ class WeightedLossCalculator:
         
         return loss
     
+    @memory_managed(MemoryStrategy.MODERATE)
     def _calculate_weighted_log_loss(self, y_true: np.ndarray, y_pred: np.ndarray, 
                                    weights: np.ndarray) -> float:
-        """Calculate weighted log loss."""
-        # Clip predictions to avoid log(0)
+        """Calculate weighted log loss using safe math operations."""
+        tprint_debug("Calculating weighted log loss")
+        tprint_data_format(y_true, "True labels for log loss", LogLevel.DEBUG)
+        tprint_data_format(y_pred, "Predictions for log loss", LogLevel.DEBUG)
+        tprint_data_format(weights, "Weights for log loss", LogLevel.DEBUG)
+        
+        # Validate inputs
+        y_true = validate_array_finite(y_true, "y_true")
+        y_pred = validate_array_finite(y_pred, "y_pred")
+        weights = validate_array_finite(weights, "weights")
+        
+        # Clip predictions to avoid log(0) using safe operations
         y_pred = np.clip(y_pred, 1e-15, 1 - 1e-15)
         
-        # Calculate log loss for each sample
-        sample_losses = -(y_true * np.log(y_pred) + (1 - y_true) * np.log(1 - y_pred))
+        # Calculate log loss for each sample using safe log operations
+        log_pred = safe_log(y_pred, -15.0)  # Use safe_log with fallback
+        log_pred_neg = safe_log(1 - y_pred, -15.0)  # Use safe_log with fallback
+        
+        sample_losses = -(y_true * log_pred + (1 - y_true) * log_pred_neg)
         
         # Apply weights
         weighted_losses = sample_losses * weights
         
         # Return mean weighted loss
-        return np.mean(weighted_losses)
+        mean_loss = np.mean(weighted_losses)
+        
+        tprint_data_format(mean_loss, "Calculated weighted log loss", LogLevel.DEBUG)
+        return mean_loss
 
 class WeightedLossManager:
     """Main manager for weighted loss implementation."""

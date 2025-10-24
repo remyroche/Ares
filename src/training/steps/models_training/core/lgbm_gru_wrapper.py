@@ -29,6 +29,9 @@ from .error_handling import (
     handle_errors, validate_data, safe_import,
     MLModelTrainerError, DataValidationError, ModelTrainingError, PredictionError, ResourceError
 )
+from .weighted_loss_framework import (
+    WeightedLossManager, WeightedLossConfig, WeightingStrategy
+)
 
 # Use safe imports with fallbacks
 torch = safe_import('torch', 'torch')
@@ -119,7 +122,11 @@ class LGBMGRUWrapper(BaseEstimator):
                  
                  # Training parameters
                  validation_split: float = 0.2,
-                 device: str = "auto"):
+                 device: str = "auto",
+                 
+                 # Weighted loss parameters
+                 enable_weighted_loss: bool = True,
+                 weighted_loss_config: Optional[Dict[str, Any]] = None):
         """Initialize LGBM-GRU wrapper."""
         
         if not TORCH_AVAILABLE:
@@ -165,6 +172,10 @@ class LGBMGRUWrapper(BaseEstimator):
         self.validation_split = validation_split
         self.device = device
         
+        # Weighted loss parameters
+        self.enable_weighted_loss = enable_weighted_loss
+        self.weighted_loss_config = weighted_loss_config or {}
+        
         # Model components
         self.gru_model = None
         self.lgb_model = None
@@ -172,12 +183,18 @@ class LGBMGRUWrapper(BaseEstimator):
         self.is_fitted = False
         self.n_features_in_ = None
         self.classes_ = None
+        self.weighted_loss_manager = None
         
         # Set device
         if device == "auto":
             self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         else:
             self.device = torch.device(device)
+        
+        # Initialize weighted loss manager if enabled
+        if self.enable_weighted_loss:
+            config = WeightedLossConfig(**self.weighted_loss_config)
+            self.weighted_loss_manager = WeightedLossManager(config)
     
     def _create_sequences(self, X: np.ndarray) -> np.ndarray:
         """Create sequences from time series data."""
@@ -366,6 +383,11 @@ class LGBMGRUWrapper(BaseEstimator):
         ])
         tprint_data_format(X_combined, "Combined features (original + GRU embeddings)", LogLevel.DEBUG)
         
+        # Initialize weighted loss manager if enabled
+        if self.enable_weighted_loss and self.weighted_loss_manager is not None:
+            tprint_info("Initializing weighted loss manager...")
+            self.weighted_loss_manager.fit(X_combined, y_seq)
+        
         # Train LightGBM
         tprint_info("Training LightGBM...")
         self.lgb_model = self._build_lgb_model(is_classification)
@@ -377,14 +399,31 @@ class LGBMGRUWrapper(BaseEstimator):
             y_train, y_val = y_seq[:split_idx], y_seq[split_idx:]
             
             tprint_info(f"Training with validation split - train: {len(X_train)}, val: {len(X_val)}")
+            
+            # Get sample weights if weighted loss is enabled
+            sample_weight = None
+            if self.enable_weighted_loss and self.weighted_loss_manager is not None:
+                tprint_info("Calculating sample weights for training...")
+                sample_weight = self.weighted_loss_manager.get_sample_weights(X_train, y_train)
+                tprint_debug(f"Sample weight statistics - Mean: {np.mean(sample_weight):.3f}, Std: {np.std(sample_weight):.3f}")
+            
             self.lgb_model.fit(
                 X_train, y_train,
                 eval_set=[(X_val, y_val)],
+                sample_weight=sample_weight,
                 callbacks=[lgb.early_stopping(self.early_stopping_rounds, verbose=False)]
             )
         else:
             tprint_info("Training without validation split")
-            self.lgb_model.fit(X_combined, y_seq)
+            
+            # Get sample weights if weighted loss is enabled
+            sample_weight = None
+            if self.enable_weighted_loss and self.weighted_loss_manager is not None:
+                tprint_info("Calculating sample weights for training...")
+                sample_weight = self.weighted_loss_manager.get_sample_weights(X_combined, y_seq)
+                tprint_debug(f"Sample weight statistics - Mean: {np.mean(sample_weight):.3f}, Std: {np.std(sample_weight):.3f}")
+            
+            self.lgb_model.fit(X_combined, y_seq, sample_weight=sample_weight)
         
         self.is_fitted = True
         tprint_success("LGBM-GRU model training completed")

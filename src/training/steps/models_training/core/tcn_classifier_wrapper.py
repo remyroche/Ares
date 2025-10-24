@@ -28,6 +28,9 @@ from .error_handling import (
     handle_errors, validate_data,
     MLModelTrainerError, DataValidationError, ModelTrainingError, PredictionError
 )
+from .weighted_loss_framework import (
+    WeightedLossManager, WeightedLossConfig, WeightingStrategy
+)
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +40,9 @@ class TCNClassifierWrapper(BaseEstimator, ClassifierMixin):
     def __init__(self, 
                  tcn_regressor,
                  threshold: float = 0.5,
-                 probability_method: str = "sigmoid"):  # "sigmoid" or "softmax"
+                 probability_method: str = "sigmoid",  # "sigmoid" or "softmax"
+                 enable_weighted_loss: bool = True,
+                 weighted_loss_config: Optional[Dict[str, Any]] = None):
         """
         Initialize TCN classifier wrapper.
         
@@ -49,6 +54,11 @@ class TCNClassifierWrapper(BaseEstimator, ClassifierMixin):
         self.tcn_regressor = tcn_regressor
         self.threshold = threshold
         self.probability_method = probability_method
+        
+        # Weighted loss configuration
+        self.enable_weighted_loss = enable_weighted_loss
+        self.weighted_loss_config = weighted_loss_config or {}
+        self.weighted_loss_manager = None
         
         # State
         self.is_fitted = False

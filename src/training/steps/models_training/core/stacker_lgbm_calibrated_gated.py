@@ -38,6 +38,9 @@ from .error_handling import (
     MLModelTrainerError, ConfigurationError, DataValidationError, 
     ModelTrainingError, PredictionError, ResourceError
 )
+from .weighted_loss_framework import (
+    WeightedLossManager, WeightedLossConfig, WeightingStrategy
+)
 
 # Use safe import with fallback
 lgb = safe_import('lightgbm', 'lightgbm')
@@ -161,6 +164,10 @@ class StackerLGBMCalibratedGated(BaseEstimator, ClassifierMixin):
                  memory_efficient: bool = True,
                  validation_split: float = 0.2,
                  
+                 # Weighted loss configuration
+                 enable_weighted_loss: bool = True,
+                 weighted_loss_config: Optional[Dict[str, Any]] = None,
+                 
                  # Random state
                  random_state: int = 42):
         """Initialize the stacked ensemble."""
@@ -202,6 +209,11 @@ class StackerLGBMCalibratedGated(BaseEstimator, ClassifierMixin):
         self.memory_efficient = memory_efficient
         self.validation_split = validation_split
         self.random_state = random_state
+        
+        # Weighted loss configuration
+        self.enable_weighted_loss = enable_weighted_loss
+        self.weighted_loss_config = weighted_loss_config or {}
+        self.weighted_loss_manager = None
         
         # Model state
         self.base_models_fitted = []

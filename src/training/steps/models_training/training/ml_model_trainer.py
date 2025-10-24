@@ -99,6 +99,12 @@ from src.training.steps.pre_training.profit_labeling.enhanced_label_definitions 
     EnhancedLabelDefinitions, AnalystLabelConfig, TacticianLabelConfig
 )
 
+# Import weighted loss integration
+from src.training.steps.models_training.core.weighted_loss_integration import (
+    WeightedLossIntegrator, WeightedLossIntegrationConfig, WeightingStrategy,
+    wrap_model_with_weighted_loss
+)
+
 # Import validation and metrics
 from sklearn.model_selection import TimeSeriesSplit, cross_val_score
 from sklearn.metrics import (
@@ -163,6 +169,11 @@ class MLModelTrainerConfig:
     enable_monitoring: bool = True
     log_level: str = "INFO"
     verbose: bool = True
+    
+    # Weighted loss configuration
+    enable_weighted_loss: bool = True
+    weighted_loss_strategy: str = "adaptive"  # "difficulty_based", "failure_context", "adaptive", "focal_loss", "gradient_based"
+    weighted_loss_config: Optional[Dict[str, Any]] = None
     
     def __post_init__(self):
         """Initialize configuration."""
@@ -242,7 +253,35 @@ class MLModelTrainer:
         self.metrics_calculators = {}
         self.shap_analyzers = {}
         
+        # Weighted loss integration
+        self.weighted_loss_integrator = None
+        if self.config.enable_weighted_loss:
+            self._initialize_weighted_loss_integrator()
+        
         tprint_info(f"🔧 Initialized MLModelTrainer for {config.timeframe}")
+    
+    def _initialize_weighted_loss_integrator(self):
+        """Initialize weighted loss integrator."""
+        try:
+            # Create weighted loss integration config
+            weighted_loss_config = WeightedLossIntegrationConfig(
+                enable_weighted_loss=self.config.enable_weighted_loss,
+                weighting_strategy=WeightingStrategy(self.config.weighted_loss_strategy),
+                **(self.config.weighted_loss_config or {})
+            )
+            
+            # Create integrator
+            self.weighted_loss_integrator = WeightedLossIntegrator(weighted_loss_config)
+            
+            # Initialize with model types
+            model_types = [model_type.value for model_type in self.config.model_types]
+            self.weighted_loss_integrator.initialize(model_types)
+            
+            tprint_success("✅ Weighted loss integrator initialized")
+            
+        except Exception as e:
+            tprint_error(f"❌ Failed to initialize weighted loss integrator: {e}")
+            self.weighted_loss_integrator = None
     
     def __del__(self):
         """Cleanup resources on destruction."""
@@ -2224,6 +2263,21 @@ class MLModelTrainer:
         else:
             # Use default parameters
             final_model = self._create_model_with_params(model_config, model_config.get('parameters', {}), task_type)
+        
+        # Apply weighted loss if enabled
+        if self.weighted_loss_integrator is not None:
+            tprint_info("🎯 Applying weighted loss for negative learning approximation")
+            
+            # Get model type for weighted loss
+            model_type = model_config.get('type', 'LIGHTGBM').upper()
+            
+            # Fit weighted loss manager for this model type
+            self.weighted_loss_integrator.fit(model_type, X, y)
+            
+            # Wrap model with weighted loss functionality
+            final_model = wrap_model_with_weighted_loss(final_model, model_type, self.weighted_loss_integrator)
+            
+            tprint_success("✅ Weighted loss applied to model")
         
         # Train the final model with early stopping
         tprint_info("🏋️ Training final model with early stopping")

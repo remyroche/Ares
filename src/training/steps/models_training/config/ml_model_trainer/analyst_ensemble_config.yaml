@@ -122,10 +122,10 @@ base_models:
 
 # Target Configuration
 targets:
-  primary: "analyst_target"  # Binary classification target
-  secondary: "analyst_confidence"  # Confidence score (regression)
+  primary: "analyst_confidence"  # Calibrated confidence score for position entry/stay (0-1)
   target_type: "binary_classification"
-  confidence_weight: 0.3
+  confidence_calibration: true
+  calibration_method: "isotonic"  # or "platt", "sigmoid"
 
 # Input Configuration
 inputs:

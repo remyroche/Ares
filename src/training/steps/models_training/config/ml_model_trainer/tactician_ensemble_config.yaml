@@ -22,8 +22,8 @@ models:
       # Meta-learner configuration
       meta_learner_type: "LIGHTGBM"
       meta_learner_params:
-        objective: "regression"
-        metric: "rmse"
+        objective: "binary"
+        metric: "binary_logloss"
         boosting_type: "gbdt"
         num_leaves: 31
         learning_rate: 0.05
@@ -42,7 +42,7 @@ models:
       # Stacking configuration
       cv_folds: 5
       use_features_in_secondary: true
-      use_proba_as_level1: false  # regression, so use raw predictions
+      use_proba_as_level1: true  # binary classification, so use probabilities
       n_jobs: -1
       
       # Calibration parameters
@@ -130,11 +130,10 @@ base_models:
 
 # Target Configuration
 targets:
-  primary: "entry_timing"  # Entry timing signal (regression)
-  secondary: "exit_timing"  # Exit timing signal (regression)
-  tertiary: "position_sizing"  # Position sizing signal (regression)
-  target_type: "multi_output_regression"
-  target_weights: [0.4, 0.3, 0.3]  # Weights for each target
+  primary: "position_confidence"  # Calibrated confidence score for position entry/stay (0-1)
+  target_type: "binary_classification"
+  confidence_calibration: true
+  calibration_method: "isotonic"  # or "platt", "sigmoid"
 
 # Input Configuration
 inputs:

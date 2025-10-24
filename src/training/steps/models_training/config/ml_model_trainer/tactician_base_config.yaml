@@ -1,9 +1,9 @@
 # Tactician Base Models Configuration
-# This config defines which ML models to train for tactical trading decisions
+# This config defines which ML models to train for confidence-based position decisions
 
 model_type: "tactician_base"
 timeframe: "15m"
-description: "Tactician base models for entry/exit timing and position sizing"
+description: "Tactician base models for calibrated confidence scores on position entry/stay decisions"
 
 # Tactician Base Models Configuration
 # Base models: LGBM + small GRU, CatBoost, Causal Dilated TCN
@@ -14,8 +14,8 @@ models:
     description: "LightGBM with small GRU for embeddings"
     parameters:
       # LightGBM parameters
-      objective: "regression"
-      metric: "rmse"
+      objective: "binary"
+      metric: "binary_logloss"
       boosting_type: "gbdt"
       num_leaves: 31
       learning_rate: 0.05
@@ -45,10 +45,10 @@ models:
   - name: "catboost_tactician"
     type: "CATBOOST"
     enabled: true
-    description: "CatBoost for tactician base predictions"
+    description: "CatBoost for tactician confidence predictions"
     parameters:
-      objective: "RMSE"
-      eval_metric: "RMSE"
+      objective: "Logloss"
+      eval_metric: "Logloss"
       iterations: 1000
       learning_rate: 0.05
       depth: 6
@@ -60,15 +60,15 @@ models:
       bootstrap_type: "Bayesian"
       bagging_temperature: 1.0
       subsample: 0.8
-      # Tactician-specific parameters
-      loss_function: "RMSE"
-      custom_metric: ["MAE", "R2"]
+      # Confidence-specific parameters
+      loss_function: "Logloss"
+      custom_metric: ["AUC", "Precision", "Recall"]
       boosting_type: "Plain"
 
   - name: "causal_dilated_tcn"
     type: "CAUSAL_DILATED_TCN"
     enabled: true
-    description: "Causal Dilated Temporal Convolutional Network"
+    description: "Causal Dilated Temporal Convolutional Network for confidence scoring"
     parameters:
       # TCN architecture
       input_channels: 1
@@ -118,13 +118,12 @@ models:
       n_jobs: -1
       random_state: 42
 
-# Target Configuration
+# Target Configuration - Simplified to focus on confidence scores
 targets:
-  primary: "entry_timing"  # Entry timing signal (regression)
-  secondary: "exit_timing"  # Exit timing signal (regression)
-  tertiary: "position_sizing"  # Position sizing signal (regression)
-  target_type: "multi_output_regression"
-  target_weights: [0.4, 0.3, 0.3]  # Weights for each target
+  primary: "position_confidence"  # Calibrated confidence score for position entry/stay (0-1)
+  target_type: "binary_classification"
+  confidence_calibration: true
+  calibration_method: "isotonic"  # or "platt", "sigmoid"
 
 # Input Configuration
 inputs:
@@ -136,19 +135,19 @@ inputs:
     - "market_microstructure"
     - "order_book_features"
   
-  # Tactician-specific features
-  tactician_features:
-    enable_entry_timing: true
-    entry_lookback: 10
-    entry_features: ["price_momentum", "volume_profile", "volatility_regime"]
+  # Confidence-specific features
+  confidence_features:
+    enable_market_regime: true
+    regime_lookback: 20
+    regime_features: ["volatility_regime", "trend_regime", "momentum_regime"]
     
-    enable_exit_timing: true
-    exit_lookback: 5
-    exit_features: ["profit_targets", "stop_loss", "trailing_stops"]
+    enable_risk_metrics: true
+    risk_lookback: 10
+    risk_features: ["value_at_risk", "expected_shortfall", "volatility_forecast"]
     
-    enable_position_sizing: true
-    position_sizing_lookback: 20
-    position_features: ["volatility_adjusted", "risk_metrics", "correlation_matrix"]
+    enable_sentiment_indicators: true
+    sentiment_lookback: 5
+    sentiment_features: ["order_flow_imbalance", "bid_ask_spread", "liquidity_metrics"]
   
   # Regime model outputs (from previous pipeline steps)
   regime_outputs:
@@ -173,7 +172,7 @@ training:
   cv_folds: 5
   test_split: 0.1
   random_state: 42
-  stratify: false  # Regression doesn't use stratification
+  stratify: true  # Binary classification uses stratification
   
   # Cross-validation strategy
   cv_strategy: "TimeSeriesSplit"
@@ -195,86 +194,62 @@ training:
     method: "optuna"
     n_trials: 100
     timeout: 3600  # 1 hour
-    direction: "minimize"
-    metric: "rmse"
+    direction: "maximize"
+    metric: "f1_score"
   
-  # Multi-output training
-  multi_output:
-    strategy: "multi_output_regressor"  # or "regressor_chain"
-    chain_order: ["entry_timing", "exit_timing", "position_sizing"]
-    use_previous_outputs: true
+  # Confidence calibration
+  confidence_calibration:
+    enabled: true
+    method: "isotonic"  # or "platt", "sigmoid"
+    cv_folds: 3
+    test_size: 0.2
 
 # Feature Engineering
 feature_engineering:
-  # Entry timing features
-  entry_timing:
-    enabled: true
-    lookback_window: 10
-    features:
-      - "price_momentum"
-      - "volume_momentum"
-      - "volatility_regime"
-      - "market_microstructure"
-      - "order_flow_imbalance"
-      - "bid_ask_spread"
-      - "liquidity_metrics"
-  
-  # Exit timing features
-  exit_timing:
-    enabled: true
-    lookback_window: 5
-    features:
-      - "profit_targets"
-      - "stop_loss_levels"
-      - "trailing_stop_adjustments"
-      - "volatility_adjusted_targets"
-      - "regime_conditional_targets"
-      - "risk_adjusted_exits"
-  
-  # Position sizing features
-  position_sizing:
+  # Confidence-specific features
+  confidence_features:
     enabled: true
     lookback_window: 20
     features:
-      - "volatility_adjusted_sizing"
+      - "market_regime_probability"
+      - "volatility_forecast"
+      - "trend_strength"
+      - "momentum_indicators"
       - "risk_metrics"
-      - "correlation_matrix"
-      - "portfolio_heat"
-      - "drawdown_adjusted_sizing"
-      - "regime_conditional_sizing"
+      - "liquidity_indicators"
+      - "order_flow_imbalance"
+      - "bid_ask_spread"
   
-  # Tactician-specific features
-  tactician_specific:
-    # Market microstructure features
-    microstructure:
-      enabled: true
-      features:
-        - "bid_ask_spread"
-        - "order_book_imbalance"
-        - "trade_size_distribution"
-        - "tick_direction"
-        - "volume_weighted_price"
-    
-    # Risk features
-    risk_features:
-      enabled: true
-      features:
-        - "value_at_risk"
-        - "expected_shortfall"
-        - "maximum_drawdown"
-        - "sharpe_ratio"
-        - "calmar_ratio"
-        - "sortino_ratio"
-    
-    # Timing features
-    timing_features:
-      enabled: true
-      features:
-        - "intraday_patterns"
-        - "seasonal_effects"
-        - "market_hours_effects"
-        - "news_impact_timing"
-        - "earnings_announcement_timing"
+  # Market microstructure features
+  microstructure:
+    enabled: true
+    features:
+      - "bid_ask_spread"
+      - "order_book_imbalance"
+      - "trade_size_distribution"
+      - "tick_direction"
+      - "volume_weighted_price"
+  
+  # Risk features
+  risk_features:
+    enabled: true
+    features:
+      - "value_at_risk"
+      - "expected_shortfall"
+      - "maximum_drawdown"
+      - "sharpe_ratio"
+      - "calmar_ratio"
+      - "sortino_ratio"
+  
+  # Timing features
+  timing_features:
+    enabled: true
+    features:
+      - "intraday_patterns"
+      - "seasonal_effects"
+      - "market_hours_effects"
+      - "news_impact_timing"
+      - "earnings_announcement_timing"
 
 # Data Quality & Leakage Prevention
 data_quality:
@@ -300,19 +275,18 @@ data_quality:
     contamination: 0.1
     random_state: 42
   
-  # Tactician-specific validation
-  tactician_validation:
-    check_target_bounds: true
-    entry_timing_bounds: [-1.0, 1.0]
-    exit_timing_bounds: [-1.0, 1.0]
-    position_sizing_bounds: [0.0, 1.0]
+  # Confidence-specific validation
+  confidence_validation:
+    check_confidence_bounds: true
+    confidence_bounds: [0.0, 1.0]
     check_temporal_consistency: true
+    check_calibration_quality: true
 
 # Metrics & Evaluation
 metrics:
-  primary: "rmse"
-  secondary: ["mae", "mape", "r2_score", "explained_variance"]
-  multi_output_metrics: ["multi_output_rmse", "multi_output_mae", "multi_output_r2"]
+  primary: "f1_score"
+  secondary: ["precision", "recall", "accuracy", "auc_roc"]
+  confidence_metrics: ["brier_score", "log_loss", "calibration_error"]
   
   # SHAP analysis
   shap_analysis:
@@ -327,22 +301,17 @@ metrics:
     methods: ["permutation", "shap", "builtin"]
     top_n_features: 20
   
-  # Tactician-specific metrics
-  tactician_metrics:
-    # Trading performance
-    trading_metrics:
+  # Confidence-specific metrics
+  confidence_metrics:
+    # Calibration metrics
+    calibration_metrics:
       enabled: true
-      metrics: ["sharpe_ratio", "calmar_ratio", "sortino_ratio", "max_drawdown"]
+      metrics: ["brier_score", "log_loss", "calibration_error", "reliability_diagram"]
     
-    # Timing accuracy
-    timing_accuracy:
+    # Confidence quality
+    confidence_quality:
       enabled: true
-      metrics: ["timing_precision", "timing_recall", "timing_f1"]
-    
-    # Position sizing accuracy
-    position_sizing_accuracy:
-      enabled: true
-      metrics: ["sizing_rmse", "sizing_mae", "sizing_correlation"]
+      metrics: ["confidence_accuracy", "confidence_precision", "confidence_recall"]
 
 # Performance Monitoring
 monitoring:
@@ -361,13 +330,13 @@ monitoring:
     log_predictions: true
     prediction_sample_size: 1000
   
-  # Tactician monitoring
-  tactician_monitoring:
-    track_entry_timing: true
-    track_exit_timing: true
-    track_position_sizing: true
-    track_trading_performance: true
-    track_risk_metrics: true
+  # Confidence monitoring
+  confidence_monitoring:
+    track_confidence_distribution: true
+    track_calibration_quality: true
+    track_confidence_accuracy: true
+    track_confidence_precision: true
+    track_confidence_recall: true
 
 # Output Configuration
 output:
@@ -384,10 +353,10 @@ output:
   results:
     save_predictions: true
     save_probabilities: true
+    save_confidence_scores: true
     save_feature_importance: true
     save_shap_values: true
-    save_trading_signals: true
-    save_risk_metrics: true
+    save_calibration_plots: true
     results_path: "results/tactician_base"
   
   # Reports
@@ -396,6 +365,6 @@ output:
     report_format: "html"
     include_plots: true
     include_tables: true
-    include_trading_analysis: true
-    include_risk_analysis: true
+    include_confidence_analysis: true
+    include_calibration_analysis: true
     report_path: "reports/tactician_base"

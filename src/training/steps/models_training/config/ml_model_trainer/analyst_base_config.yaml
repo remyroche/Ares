@@ -82,10 +82,10 @@ models:
 
 # Target Configuration
 targets:
-  primary: "analyst_target"  # Binary classification target
-  secondary: "analyst_confidence"  # Confidence score (regression)
+  primary: "analyst_confidence"  # Calibrated confidence score for position entry/stay (0-1)
   target_type: "binary_classification"
-  confidence_weight: 0.3
+  confidence_calibration: true
+  calibration_method: "isotonic"  # or "platt", "sigmoid"
 
 # Input Configuration
 inputs:
@@ -152,6 +152,13 @@ training:
     timeout: 3600  # 1 hour
     direction: "maximize"
     metric: "f1_score"
+  
+  # Confidence calibration
+  confidence_calibration:
+    enabled: true
+    method: "isotonic"  # or "platt", "sigmoid"
+    cv_folds: 3
+    test_size: 0.2
 
 # Feature Engineering
 feature_engineering:
@@ -212,7 +219,7 @@ data_quality:
 metrics:
   primary: "f1_score"
   secondary: ["precision", "recall", "accuracy", "auc_roc"]
-  regression_metrics: ["mse", "mae", "r2_score"]
+  confidence_metrics: ["brier_score", "log_loss", "calibration_error"]
   
   # SHAP analysis
   shap_analysis:
@@ -226,6 +233,18 @@ metrics:
     enabled: true
     methods: ["permutation", "shap", "builtin"]
     top_n_features: 20
+  
+  # Confidence-specific metrics
+  confidence_metrics:
+    # Calibration metrics
+    calibration_metrics:
+      enabled: true
+      metrics: ["brier_score", "log_loss", "calibration_error", "reliability_diagram"]
+    
+    # Confidence quality
+    confidence_quality:
+      enabled: true
+      metrics: ["confidence_accuracy", "confidence_precision", "confidence_recall"]
 
 # Performance Monitoring
 monitoring:
@@ -258,8 +277,10 @@ output:
   results:
     save_predictions: true
     save_probabilities: true
+    save_confidence_scores: true
     save_feature_importance: true
     save_shap_values: true
+    save_calibration_plots: true
     results_path: "results/analyst_base"
   
   # Reports
@@ -268,4 +289,6 @@ output:
     report_format: "html"
     include_plots: true
     include_tables: true
+    include_confidence_analysis: true
+    include_calibration_analysis: true
     report_path: "reports/analyst_base"

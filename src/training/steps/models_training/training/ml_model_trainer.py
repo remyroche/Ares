@@ -776,7 +776,9 @@ class MLModelTrainer:
             enable_optuna=OPTUNA_AVAILABLE,
             max_trials=max_trials,
             timeout=timeout,
-            n_jobs=self.config.max_workers
+            n_jobs=self.config.max_workers,
+            enable_multi_fidelity=True,
+            fidelity_levels=[0.1, 0.3, 0.6, 1.0]  # Progressive fidelity levels
         ))
         tprint_data_format("HPO system initialized", LogLevel.INFO)
         

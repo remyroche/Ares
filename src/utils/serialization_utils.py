@@ -2,24 +2,24 @@
 Serialization Utilities Module
 
 This module provides various serialization utilities for data persistence.
-Uses kline_parquet.py for efficient Parquet operations and prefers Parquet over Pickle.
+Uses kline_parquet.py for efficient Parquet operations and uses Parquet instead of Pickle for saving.
 
 Key Features:
-- Automatic format detection with Parquet preference
+- Automatic format detection using Parquet instead of Pickle for saving
 - Optimized Parquet operations via KlinesParquetManager
-- Lightweight JSON and Pickle serialization
-- Fallback mechanisms for compatibility
+- JSON serialization unchanged
+- Pickle reading maintained for backward compatibility
 - Enhanced error handling and logging
 
 Usage:
-    # Automatic format detection (prefers Parquet for DataFrames)
+    # Automatic format detection (uses Parquet instead of Pickle)
     safe_serialize(data, "data.parquet")  # Will use Parquet
-    safe_serialize(data, "data.pkl")      # Will use Pickle
+    safe_serialize(data, "data.pkl")      # Will convert to Parquet (.parquet)
     safe_serialize(data, "data.json")     # Will use JSON
     
     # Direct format specification
     save_data(data, "output.parquet", format="parquet")
-    load_data("input.parquet")
+    load_data("input.parquet")  # Can load both .parquet and .pkl files
 """
 
 import json
@@ -100,9 +100,25 @@ class ParquetSerializer:
         """Save data as parquet using KlinesParquetManager for efficiency."""
         try:
             import pandas as pd
+            
+            # Convert non-DataFrame data to DataFrame if possible
             if not isinstance(data, pd.DataFrame):
-                logger.error("ParquetSerializer only supports pandas DataFrames")
-                return False
+                try:
+                    # Try to convert to DataFrame
+                    if isinstance(data, (list, tuple)):
+                        data = pd.DataFrame(data)
+                    elif isinstance(data, dict):
+                        data = pd.DataFrame([data])
+                    elif hasattr(data, '__dict__'):
+                        # Convert object to DataFrame
+                        data = pd.DataFrame([data.__dict__])
+                    else:
+                        # Try to convert using pandas
+                        data = pd.DataFrame([data])
+                    logger.info(f"Converted non-DataFrame data to DataFrame for Parquet storage")
+                except Exception as e:
+                    logger.error(f"Could not convert data to DataFrame: {e}")
+                    return False
 
             if self.klines_manager and KLINE_PARQUET_AVAILABLE:
                 # Use KlinesParquetManager for optimized storage
@@ -171,24 +187,22 @@ class UniversalSerializer:
         }
 
     def save(self, data: Any, filepath: str, format: str = 'auto') -> bool:
-        """Save data with automatic format detection, preferring Parquet."""
+        """Save data with automatic format detection, using Parquet instead of Pickle."""
         if format == 'auto':
             if filepath.endswith('.json'):
                 format = 'json'
             elif filepath.endswith('.parquet'):
                 format = 'parquet'
             elif filepath.endswith('.pkl') or filepath.endswith('.pickle'):
-                format = 'pickle'
+                # Convert .pkl/.pickle to Parquet for saving
+                format = 'parquet'
+                if not filepath.endswith('.parquet'):
+                    filepath = str(Path(filepath).with_suffix('.parquet'))
             else:
-                # Prefer Parquet over Pickle for better performance and compatibility
-                import pandas as pd
-                if isinstance(data, pd.DataFrame):
-                    format = 'parquet'
-                    # Update filepath to have .parquet extension
-                    if not filepath.endswith('.parquet'):
-                        filepath = str(Path(filepath).with_suffix('.parquet'))
-                else:
-                    format = 'pickle'  # fallback for non-DataFrame data
+                # Use Parquet for all new saves instead of Pickle
+                format = 'parquet'
+                if not filepath.endswith('.parquet'):
+                    filepath = str(Path(filepath).with_suffix('.parquet'))
 
         serializer = self.serializers.get(format)
         if serializer:
@@ -216,7 +230,7 @@ class UniversalSerializer:
                 return PickleSerializer.load(filepath)
 
 def safe_serialize(data: Any, filepath: str, format: str = 'auto') -> bool:
-    """Safely serialize data to file with error handling."""
+    """Safely serialize data to file with error handling. Uses Parquet instead of Pickle."""
     try:
         serializer = UniversalSerializer()
         return serializer.save(data, filepath, format)
@@ -267,7 +281,7 @@ def load_json(filepath: str) -> Optional[Any]:
 
 
 def save_data(data: Any, filepath: str, format: str = 'auto') -> bool:
-    """Save data with automatic format detection, preferring Parquet."""
+    """Save data with automatic format detection, using Parquet instead of Pickle."""
     serializer = UniversalSerializer()
     return serializer.save(data, filepath, format)
 
@@ -276,3 +290,13 @@ def load_data(filepath: str) -> Optional[Any]:
     """Load data with automatic format detection."""
     serializer = UniversalSerializer()
     return serializer.load(filepath)
+
+
+def save_pickle_as_parquet(data: Any, filepath: str) -> bool:
+    """Save data as Parquet file (replaces Pickle functionality)."""
+    # Convert .pkl extension to .parquet if needed
+    if filepath.endswith('.pkl') or filepath.endswith('.pickle'):
+        filepath = str(Path(filepath).with_suffix('.parquet'))
+    
+    serializer = ParquetSerializer()
+    return serializer.save(data, filepath)

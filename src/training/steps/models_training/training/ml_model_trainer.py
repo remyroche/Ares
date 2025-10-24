@@ -644,6 +644,10 @@ class MLModelTrainer:
     
     def _fit_with_early_stopping(self, model, X: np.ndarray, y: np.ndarray, recipe: Dict[str, Any], task_type: str):
         """Fit model with early stopping using eval_set."""
+        # Early stopping guard when dataset is tiny
+        if X.shape[0] < 50:
+            return model.fit(X, y)
+            
         es = recipe.get("training", {}).get("early_stopping", {}).get("enabled", False)
         if not es:
             return model.fit(X, y)
@@ -1133,26 +1137,6 @@ class MLModelTrainer:
         
         tprint_success(f"✅ Data quality validation completed for {model_type.value}")
     
-    @performance_tracked
-    async def _detect_data_leakage(self, data: Dict[str, Any], model_type: ModelType):
-        """Detect data leakage using existing detector."""
-        tprint_info(f"🔍 Detecting data leakage for {model_type.value}")
-        
-        features = data.get('features', np.array([]))
-        targets = data.get('targets', np.array([]))
-        
-        if features.size > 0 and targets.size > 0:
-            # Use existing leakage detector
-            leakage_report = self.leakage_detector.detect_leakage(features, targets)
-            
-            if leakage_report.has_leakage:
-                tprint_warning(f"Leakage detected for {model_type.value}: {leakage_report.leakage_score:.3f}")
-                tprint_warning(f"Temporal violations: {leakage_report.temporal_violations}")
-                tprint_warning(f"Feature contamination: {leakage_report.feature_contamination}")
-            else:
-                tprint_success(f"✅ No leakage detected for {model_type.value}")
-        
-        tprint_success(f"✅ Leakage detection completed for {model_type.value}")
     
     async def _train_models_parallel(self, data: Dict[str, Any], configs: Dict[ModelType, Dict[str, Any]]) -> Dict[ModelType, List[TrainingResult]]:
         """Train models in parallel using ProcessPoolExecutor."""

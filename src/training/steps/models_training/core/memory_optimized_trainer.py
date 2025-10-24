@@ -15,6 +15,12 @@ from enum import Enum
 import numpy as np
 import pandas as pd
 
+# Import tprint utilities
+from src.utils.tprint import (
+    tprint, tprint_info, tprint_warning, tprint_error, tprint_success, 
+    tprint_debug, tprint_data_format, tprint_data_preview, LogLevel
+)
+
 # Hardware optimization imports
 from src.utils.hardware.memory_optimized_decorators import (
     memory_optimized, gc_optimized, chunked_processing_auto,
@@ -115,31 +121,40 @@ class MemoryOptimizedTrainer:
             Training results
         """
         with ErrorContext("memory_optimized_training", self._cleanup_memory):
+            tprint_info("Starting memory-optimized training")
             logger.info("Starting memory-optimized training")
             
             # Pre-training memory optimization
+            tprint_debug("Applying pre-training memory optimizations")
             await self._pre_training_optimization(data)
             
             # Optimize data types
+            tprint_debug("Optimizing data types")
             optimized_data = await self._optimize_data_types(data)
+            tprint_data_format(optimized_data, "Optimized data", LogLevel.DEBUG)
             
             # Chunked processing if needed
             if self._should_use_chunked_processing(optimized_data):
+                tprint_info("Using chunked processing for large dataset")
                 results = await self._train_with_chunked_processing(
                     model_config, optimized_data, training_config
                 )
             else:
+                tprint_info("Using full data processing")
                 results = await self._train_with_full_data(
                     model_config, optimized_data, training_config
                 )
             
             # Post-training cleanup
+            tprint_debug("Performing post-training cleanup")
             await self._post_training_cleanup()
             
+            tprint_success("Memory-optimized training completed")
             return results
     
     async def _pre_training_optimization(self, data: Dict[str, Any]):
         """Apply pre-training memory optimizations."""
+        tprint_info("Applying pre-training memory optimizations")
         logger.info("Applying pre-training memory optimizations")
         
         # Get system recommendations

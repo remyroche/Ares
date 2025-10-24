@@ -18,6 +18,12 @@ from sklearn.preprocessing import LabelEncoder
 from sklearn.utils.validation import check_X_y, check_array
 import logging
 
+# Import tprint utilities
+from src.utils.tprint import (
+    tprint, tprint_info, tprint_warning, tprint_error, tprint_success, 
+    tprint_debug, tprint_data_format, tprint_data_preview, LogLevel
+)
+
 from .error_handling import (
     handle_errors, validate_data,
     MLModelTrainerError, DataValidationError, ModelTrainingError, PredictionError
@@ -53,22 +59,30 @@ class TCNClassifierWrapper(BaseEstimator, ClassifierMixin):
     @handle_errors(error_type=ModelTrainingError, reraise=True)
     def fit(self, X: np.ndarray, y: np.ndarray, **fit_params) -> 'TCNClassifierWrapper':
         """Fit the TCN classifier wrapper."""
+        tprint_info(f"Fitting TCN classifier wrapper - X shape: {X.shape}, y shape: {y.shape if hasattr(y, 'shape') else len(y)}")
+        
         # Validate inputs
         validate_data(X, y, min_samples=10, min_features=1)
         X, y = check_X_y(X, y)
+        tprint_data_format(X, "Input features X", LogLevel.DEBUG)
+        tprint_data_format(y, "Target labels y", LogLevel.DEBUG)
         
         # Store feature info
         self.n_features_in_ = X.shape[1]
         
         # Encode labels
+        tprint_debug("Encoding labels with LabelEncoder")
         self.label_encoder_ = LabelEncoder()
         y_encoded = self.label_encoder_.fit_transform(y)
         self.classes_ = self.label_encoder_.classes_
+        tprint_data_format(self.classes_, "Encoded classes", LogLevel.DEBUG)
         
         # Fit the underlying regressor
+        tprint_info("Fitting underlying TCN regressor")
         self.tcn_regressor.fit(X, y_encoded, **fit_params)
         
         self.is_fitted = True
+        tprint_success(f"TCNClassifierWrapper fitted with {len(self.classes_)} classes")
         logger.info(f"TCNClassifierWrapper fitted with {len(self.classes_)} classes")
         
         return self
@@ -77,16 +91,21 @@ class TCNClassifierWrapper(BaseEstimator, ClassifierMixin):
     def predict(self, X: np.ndarray) -> np.ndarray:
         """Make predictions."""
         if not self.is_fitted:
+            tprint_error("Model must be fitted before prediction")
             raise PredictionError("Model must be fitted before prediction")
         
+        tprint_debug(f"Making predictions for {X.shape[0]} samples")
         validate_data(X, min_samples=1, min_features=self.n_features_in_)
+        tprint_data_format(X, "Input features for prediction", LogLevel.DEBUG)
         
         # Get regression predictions
         y_reg = self.tcn_regressor.predict(X)
+        tprint_data_format(y_reg, "Regression predictions", LogLevel.DEBUG)
         
         # Convert to classification predictions
         if len(self.classes_) == 2:
             # Binary classification
+            tprint_debug(f"Binary classification with threshold: {self.threshold}")
             y_pred = (y_reg > self.threshold).astype(int)
         else:
             # Multiclass classification - use argmax
@@ -103,13 +122,18 @@ class TCNClassifierWrapper(BaseEstimator, ClassifierMixin):
     def predict_proba(self, X: np.ndarray) -> np.ndarray:
         """Make probability predictions."""
         if not self.is_fitted:
+            tprint_error("Model must be fitted before prediction")
             raise ValueError("Model must be fitted before prediction")
+        
+        tprint_debug(f"Making probability predictions for {X.shape[0]} samples")
         
         # Get regression predictions
         y_reg = self.tcn_regressor.predict(X)
+        tprint_data_format(y_reg, "Regression predictions for probabilities", LogLevel.DEBUG)
         
         # Convert to probabilities
         probabilities = self._regression_to_probabilities(y_reg)
+        tprint_data_format(probabilities, "Probability predictions", LogLevel.DEBUG)
         
         return probabilities
     

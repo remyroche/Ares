@@ -165,7 +165,7 @@ training_modes:
   # Light Mode - Development with minimal data but all features/models
   light:
     description: "Development mode - Minimal data with all features/models"
-    lookback_days: 10   # 10 days
+    lookback_days: 20   # 20 days (updated to match unified config)
     training_mode: "light"
     enable_blank_training_mode: false
     enable_light_training_mode: true

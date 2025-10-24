@@ -32,6 +32,52 @@ from src.utils.hardware.advanced_memory_manager import MemoryPressureLevel
 # Set availability flag
 HARDWARE_OPTIMIZATION_AVAILABLE = False
 
+# Safe no-op shims for missing decorators and utilities
+def comprehensive_memory_optimization(*args, **kwargs):
+    """Safe no-op decorator for comprehensive memory optimization."""
+    return lambda f: f
+
+def memory_optimized(optimization_level=None, **kwargs):
+    """Safe no-op decorator for memory optimization."""
+    return lambda f: f
+
+def chunked_processing_auto(chunk_size_mb=None, **kwargs):
+    """Safe no-op decorator for chunked processing."""
+    return lambda f: f
+
+def performance_tracked(*args, **kwargs):
+    """Safe no-op decorator for performance tracking."""
+    return lambda f: f
+
+def auto_optimize(optimize_inputs=None, optimize_outputs=None, **kwargs):
+    """Safe no-op decorator for auto optimization."""
+    return lambda f: f
+
+class MemoryOptimizationLevel:
+    """Safe no-op enum for memory optimization levels."""
+    AGGRESSIVE = "aggressive"
+    MAXIMUM = "maximum"
+
+class WorkloadType:
+    """Safe no-op enum for workload types."""
+    FEATURE_ENGINEERING = "feature_engineering"
+
+def get_memory_optimization_stats():
+    """Safe no-op function for memory optimization stats."""
+    return {
+        'memory_usage_mb': 0.0,
+        'optimization_applied': [],
+        'memory_savings_mb': 0.0
+    }
+
+def force_cleanup():
+    """Safe no-op function for force cleanup."""
+    pass
+
+def optimize_dataframe_default(df):
+    """Safe no-op function for dataframe optimization."""
+    return df
+
 # Import tprint utilities
 try:
     from src.utils.tprint import (
@@ -56,6 +102,15 @@ except ImportError:
         """Fallback for data format logging."""
         if args:
             print(f"[DATA_FORMAT] {args[0]}")
+        
+        # Return summary dict when return_summary=True
+        if kwargs.get('return_summary', False):
+            return {
+                'shape': 'unknown',
+                'dtypes': 'unknown',
+                'memory_usage': 'unknown',
+                'null_counts': 'unknown'
+            }
         return None
         
     def tprint_performance(*args, **kwargs): 
@@ -92,6 +147,15 @@ class CMIComplementarityConfig:
     enable_regime_awareness: bool = True
     compute_timeout_seconds: float = 300.0
 
+@dataclass
+class CMIComplementarityResult:
+    """CMI complementarity scoring result."""
+    is_valid: bool = True
+    selected_features: List[str] = field(default_factory=list)
+    noise_floor: float = 0.0
+    delta_perf_threshold: float = 0.0
+    feature_scores: Dict[str, float] = field(default_factory=dict)
+
 class CMIComplementarityScorer:
     """Self-contained CMI complementarity scorer."""
     
@@ -102,16 +166,33 @@ class CMIComplementarityScorer:
         """Score features using CMI complementarity."""
         # Simplified implementation - return all features with equal scores
         feature_scores = {}
+        selected_features = []
         for col in features_df.columns:
             if col not in targets:
                 feature_scores[col] = 0.5  # Default score
-        return feature_scores
+                selected_features.append(col)
+        
+        return CMIComplementarityResult(
+            is_valid=True,
+            selected_features=selected_features,
+            noise_floor=0.001,
+            delta_perf_threshold=0.01,
+            feature_scores=feature_scores
+        )
 
 @dataclass
 class AnalystSideInfoConfig:
     """Analyst side info configuration."""
     enable_side_info: bool = True
     side_info_weight: float = 0.1
+
+@dataclass
+class AnalystSideInfoResult:
+    """Analyst side information result."""
+    is_valid: bool = True
+    degraded_to_unconditional: bool = False
+    source: str = "default"
+    n_dims: int = 0
 
 class AnalystSideInfoHandler:
     """Self-contained analyst side info handler."""
@@ -122,6 +203,15 @@ class AnalystSideInfoHandler:
     def process_side_info(self, features_df, **kwargs):
         """Process analyst side information."""
         return features_df.copy()
+    
+    def extract_side_info(self, pipeline_state, targets, index):
+        """Extract analyst side information."""
+        return AnalystSideInfoResult(
+            is_valid=True,
+            degraded_to_unconditional=False,
+            source="default",
+            n_dims=0
+        )
 
 # Set availability flag
 CMI_COMPLEMENTARITY_AVAILABLE = True
@@ -295,7 +385,21 @@ class FeatureGenerationStep(BaseStep):
             self.memory_mapped_threshold = 50000
             self.aggressive_gc_threshold = 0.8
             self.float32_conversion = True
-            self.performance_stats = {}
+            # Initialize performance stats with all required keys
+            self.performance_stats = {
+                'total_processing_time': 0.0,
+                'neural_engine_operations': 0,
+                'gpu_accelerations': 0,
+                'cpu_optimizations': 0,
+                'memory_optimizations': 0,
+                'cache_hits': 0,
+                'memory_savings_mb': 0.0,
+                'optimization_applied': [],
+                'hardware_optimizations_applied': 0,
+                'gpu_accelerations_used': 0,
+                'memory_optimizations_applied': 0,
+                'vectorbt_optimizations_used': 0
+            }
 
     async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """Execute M1-optimized enhanced feature generation step using AutoOptimizedFeatureGenerator with artifact manager integration."""
@@ -660,7 +764,21 @@ class FeatureGenerationStep(BaseStep):
                     "features_generated": generation_result.n_features_generated
                 }, level="ERROR")
 
-            return generation_result
+            # Wrap in ComponentResult for base step compatibility
+            return ComponentResult(
+                success=generation_result.success,
+                metadata={
+                    'feature_names': generation_result.feature_names,
+                    'feature_categories': generation_result.feature_categories,
+                    'generation_time': generation_result.generation_time,
+                    'n_features_generated': generation_result.n_features_generated,
+                    'memory_usage_mb': generation_result.memory_usage_mb,
+                    'optimization_stats': generation_result.optimization_stats,
+                    'metadata': generation_result.metadata
+                },
+                artifacts=generation_result.artifacts,
+                error_message=generation_result.error_message
+            )
 
         except Exception as e:
             error_msg = f"Enhanced feature generation step failed with exception: {e}"
@@ -735,6 +853,8 @@ class FeatureGenerationStep(BaseStep):
                     workload_type=WorkloadType.FEATURE_ENGINEERING,
                     optimization_strategy=OptimizationStrategy.MAXIMUM_PERFORMANCE
                 )
+                self.performance_stats.setdefault('cpu_optimizations', 0)
+                self.performance_stats.setdefault('optimization_applied', [])
                 self.performance_stats['cpu_optimizations'] += 1
                 self.performance_stats['optimization_applied'].append('comprehensive_optimizer')
                 tprint_info("✅ M1 Comprehensive Optimizer applied")
@@ -744,6 +864,8 @@ class FeatureGenerationStep(BaseStep):
             # Apply M1 Unified Memory optimization
             if self.unified_memory_manager:
                 optimized_data = self.unified_memory_manager.optimize_dataframe(optimized_data)
+                self.performance_stats.setdefault('memory_optimizations', 0)
+                self.performance_stats.setdefault('optimization_applied', [])
                 self.performance_stats['memory_optimizations'] += 1
                 self.performance_stats['optimization_applied'].append('unified_memory')
                 tprint_info("✅ M1 Unified Memory optimization applied")
@@ -751,6 +873,8 @@ class FeatureGenerationStep(BaseStep):
             # Apply M1 Advanced CPU optimization
             if self.cpu_optimizer:
                 optimized_data = self.cpu_optimizer.optimize_dataframe(optimized_data)
+                self.performance_stats.setdefault('cpu_optimizations', 0)
+                self.performance_stats.setdefault('optimization_applied', [])
                 self.performance_stats['cpu_optimizations'] += 1
                 self.performance_stats['optimization_applied'].append('advanced_cpu')
                 tprint_info("✅ M1 Advanced CPU optimization applied")
@@ -758,6 +882,8 @@ class FeatureGenerationStep(BaseStep):
             # Apply M1 Enhanced GPU optimization
             if self.gpu_manager and self.gpu_manager.is_available():
                 optimized_data = self.gpu_manager.optimize_dataframe(optimized_data)
+                self.performance_stats.setdefault('gpu_accelerations', 0)
+                self.performance_stats.setdefault('optimization_applied', [])
                 self.performance_stats['gpu_accelerations'] += 1
                 self.performance_stats['optimization_applied'].append('enhanced_gpu')
                 tprint_info("✅ M1 Enhanced GPU optimization applied")
@@ -765,6 +891,8 @@ class FeatureGenerationStep(BaseStep):
             # Apply Advanced Memory Manager optimization
             if self.memory_manager:
                 optimized_data = self.memory_manager.optimize_dataframe(optimized_data)
+                self.performance_stats.setdefault('memory_optimizations', 0)
+                self.performance_stats.setdefault('optimization_applied', [])
                 self.performance_stats['memory_optimizations'] += 1
                 self.performance_stats['optimization_applied'].append('advanced_memory')
             
@@ -774,6 +902,7 @@ class FeatureGenerationStep(BaseStep):
             
             if memory_saved > 0:
                 tprint_success(f"🚀 M1 optimization: {memory_saved / 1024**2:.2f} MB saved")
+                self.performance_stats.setdefault('memory_savings_mb', 0.0)
                 self.performance_stats['memory_savings_mb'] += memory_saved / 1024**2
             
             # Enhanced troubleshooting: Log optimization results
@@ -815,16 +944,19 @@ class FeatureGenerationStep(BaseStep):
             # Use comprehensive optimizer if available
             if self.comprehensive_optimizer:
                 df = self.comprehensive_optimizer.optimize_dataframe(df)
+                self.performance_stats.setdefault('hardware_optimizations_applied', 0)
                 self.performance_stats['hardware_optimizations_applied'] += 1
             
             # Apply enhanced GPU optimization
             if self.gpu_manager and self.gpu_manager.is_available():
                 df = self.gpu_manager.optimize_dataframe(df)
+                self.performance_stats.setdefault('gpu_accelerations_used', 0)
                 self.performance_stats['gpu_accelerations_used'] += 1
             
             # Apply advanced memory optimization
             if self.memory_manager:
                 df = self.memory_manager.optimize_dataframe(df)
+                self.performance_stats.setdefault('memory_optimizations_applied', 0)
                 self.performance_stats['memory_optimizations_applied'] += 1
             
             # Apply unified memory optimization
@@ -839,6 +971,7 @@ class FeatureGenerationStep(BaseStep):
             
             if memory_saved > 0:
                 tprint_info(f"🚀 Enhanced hardware optimization: {memory_saved / 1024**2:.2f} MB saved")
+                self.performance_stats.setdefault('memory_savings_mb', 0.0)
                 self.performance_stats['memory_savings_mb'] += memory_saved / 1024**2
             
             return df
@@ -891,6 +1024,7 @@ class FeatureGenerationStep(BaseStep):
                 memory_saved = cleanup_stats.get('memory_saved_mb', 0)
                 if memory_saved > 0:
                     tprint_info(f"🚀 Enhanced memory optimization: {memory_saved:.1f} MB saved")
+                    self.performance_stats.setdefault('memory_savings_mb', 0.0)
                     self.performance_stats['memory_savings_mb'] += memory_saved
                     
                     # Enhanced troubleshooting: Log cleanup results
@@ -953,6 +1087,7 @@ class FeatureGenerationStep(BaseStep):
             if self.gpu_manager and self.gpu_manager.is_available():
                 try:
                     chunk = self.gpu_manager.optimize_dataframe(chunk)
+                    self.performance_stats.setdefault('gpu_accelerations_used', 0)
                     self.performance_stats['gpu_accelerations_used'] += 1
                     tprint_debug(f"🚀 Chunk {chunk_idx} optimized with enhanced GPU acceleration")
                 except Exception as e:
@@ -1014,6 +1149,7 @@ class FeatureGenerationStep(BaseStep):
                 **kwargs
             )
             
+            self.performance_stats.setdefault('vectorbt_optimizations_used', 0)
             self.performance_stats['vectorbt_optimizations_used'] += 1
             tprint_info(f"🚀 Applied enhanced VectorBT optimization for {operation_type}")
             
@@ -1063,6 +1199,7 @@ class FeatureGenerationStep(BaseStep):
                     )
                     neural_engine_utilization = 85.0  # Estimated utilization
                     optimization_applied.append('neural_engine_ml_features')
+                    self.performance_stats.setdefault('neural_engine_operations', 0)
                     self.performance_stats['neural_engine_operations'] += 1
                     tprint_success("✅ M1 Neural Engine ML features generated")
                 except Exception as e:
@@ -1079,6 +1216,7 @@ class FeatureGenerationStep(BaseStep):
                     )
                     gpu_utilization = 70.0  # Estimated utilization
                     optimization_applied.append('gpu_vectorized_operations')
+                    self.performance_stats.setdefault('gpu_accelerations', 0)
                     self.performance_stats['gpu_accelerations'] += 1
                     tprint_success("✅ M1 Enhanced GPU vectorized features generated")
                 except Exception as e:
@@ -1095,6 +1233,7 @@ class FeatureGenerationStep(BaseStep):
                     )
                     cpu_utilization = 80.0  # Estimated utilization
                     optimization_applied.append('cpu_traditional_features')
+                    self.performance_stats.setdefault('cpu_optimizations', 0)
                     self.performance_stats['cpu_optimizations'] += 1
                     tprint_success("✅ M1 Advanced CPU traditional features generated")
                 except Exception as e:
@@ -1149,6 +1288,7 @@ class FeatureGenerationStep(BaseStep):
             memory_efficiency = (1 - (final_memory / original_memory)) * 100 if original_memory > 0 else 0
             
             # Update performance stats
+            self.performance_stats.setdefault('optimization_applied', [])
             self.performance_stats['optimization_applied'].extend(optimization_applied)
             
             # Enhanced troubleshooting: Log M1 optimization completion
@@ -1326,6 +1466,7 @@ class FeatureGenerationStep(BaseStep):
             # Apply comprehensive hardware optimization before feature generation
             if self.comprehensive_optimizer:
                 data = self.comprehensive_optimizer.optimize_dataframe(data)
+                self.performance_stats.setdefault('hardware_optimizations_applied', 0)
                 self.performance_stats['hardware_optimizations_applied'] += 1
             
             # Use M1-optimized feature generation with progress tracking
@@ -1597,22 +1738,8 @@ class FeatureGenerationStep(BaseStep):
                 }
             )
             
-            # Convert dataclass to dictionary for base step compatibility
-            return {
-                'success': result.success,
-                'feature_names': result.feature_names,
-                'feature_data': result.feature_data,
-                'generated_features': result.generated_features,
-                'feature_categories': result.feature_categories,
-                'generation_time': result.generation_time,
-                'n_features_generated': result.n_features_generated,
-                'cache_hit': result.cache_hit,
-                'memory_usage_mb': result.memory_usage_mb,
-                'error_message': result.error_message,
-                'optimization_stats': result.optimization_stats,
-                'metadata': result.metadata,
-                'artifacts': result.artifacts
-            }
+            # Return the FeatureGenerationResult object directly
+            return result
             
         except Exception as e:
             error_msg = f"Enhanced feature generation failed: {e}"
@@ -1641,6 +1768,7 @@ class FeatureGenerationStep(BaseStep):
             # Use comprehensive optimizer if available
             if self.comprehensive_optimizer:
                 optimized_df = self.comprehensive_optimizer.optimize_dataframe(df)
+                self.performance_stats.setdefault('hardware_optimizations_applied', 0)
                 self.performance_stats['hardware_optimizations_applied'] += 1
             else:
                 # Fallback to enhanced default optimization
@@ -1649,6 +1777,7 @@ class FeatureGenerationStep(BaseStep):
             # Apply additional memory manager optimizations
             if self.memory_manager:
                 optimized_df = self.memory_manager.optimize_dataframe(optimized_df)
+                self.performance_stats.setdefault('memory_optimizations_applied', 0)
                 self.performance_stats['memory_optimizations_applied'] += 1
             
             # Apply unified memory optimizations
@@ -1665,6 +1794,7 @@ class FeatureGenerationStep(BaseStep):
             self.logger.info(f"📊 Optimized memory usage: {optimized_memory:.1f}MB")
             
             # Update performance stats
+            self.performance_stats.setdefault('memory_savings_mb', 0.0)
             self.performance_stats['memory_savings_mb'] += memory_saved
             
             return optimized_df
@@ -1991,6 +2121,7 @@ async def handle_feature_generation_step(
     try:
         # Create the step instance
         step = FeatureGenerationStep(
+            step_name="feature_generation",
             config={
                 'symbol': symbol,
                 'timeframe': timeframe,

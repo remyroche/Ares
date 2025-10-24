@@ -26,6 +26,20 @@ from ..validation import HPOConfig, SearchSpaceParameter
 from ..exceptions import OptimizationError, ModelEvaluationError, TimeoutError
 from ..results import HPOResult
 
+# Try to import tprint
+try:
+    from ...tprint import (
+        tprint, tprint_debug, tprint_info, tprint_warning, tprint_error,
+        tprint_success, tprint_performance, tprint_timer, tprint_data_preview,
+        tprint_data_format, LogLevel, TPrintConfig
+    )
+    TPRINT_AVAILABLE = True
+except ImportError:
+    TPRINT_AVAILABLE = False
+    def tprint_info(*args, **kwargs): pass
+    def tprint_warning(*args, **kwargs): pass
+    def tprint_success(*args, **kwargs): pass
+
 
 @dataclass
 class OptimizationContext:

@@ -127,9 +127,12 @@ class AutoTuner:
         # Analyze dataset
         dataset_chars = self._analyze_dataset(X, y)
 
-        # Estimate trial time
+        # Get market regime context
+        market_regime = self._get_market_regime_context(X, y)
+        
+        # Estimate trial time with market regime context
         trial_time_seconds = self._estimate_trial_time(
-            dataset_chars, model_type
+            dataset_chars, model_type, market_regime
         )
 
         # Calculate optimal n_trials
@@ -193,7 +196,7 @@ class AutoTuner:
         )
 
         # Log configuration summary
-        self._log_auto_tuned_config(config, dataset_chars, model_type, trial_time_seconds)
+        self._log_auto_tuned_config(config, dataset_chars, model_type, trial_time_seconds, market_regime)
         
         # Debug final configuration
         tprint_data_format(config.__dict__, "auto_tuned_config", level=LogLevel.DEBUG)
@@ -209,7 +212,11 @@ class AutoTuner:
             feature_stds = np.std(X, axis=0)
             feature_complexity = float(np.mean(feature_stds) / (np.std(feature_stds) + 1e-10))
             feature_complexity = np.clip(feature_complexity, 0, 1)
-        except:
+        except (ValueError, ZeroDivisionError, TypeError) as e:
+            self.logger.warning(f"Failed to calculate feature complexity: {e}. Using default value.")
+            feature_complexity = 0.5
+        except Exception as e:
+            self.logger.error(f"Unexpected error calculating feature complexity: {e}. Using default value.")
             feature_complexity = 0.5
 
         # Calculate class imbalance (for classification) or target variance (for regression)
@@ -219,14 +226,22 @@ class AutoTuner:
                 class_imbalance = 1.0 - (counts.min() / counts.max())
             else:  # Regression
                 class_imbalance = 0.0
-        except:
+        except (ValueError, ZeroDivisionError, TypeError) as e:
+            self.logger.warning(f"Failed to calculate class imbalance: {e}. Using default value.")
+            class_imbalance = 0.0
+        except Exception as e:
+            self.logger.error(f"Unexpected error calculating class imbalance: {e}. Using default value.")
             class_imbalance = 0.0
 
         # Calculate data quality score (non-NaN, non-inf ratio)
         try:
             valid_ratio = 1.0 - (np.isnan(X).sum() + np.isinf(X).sum()) / X.size
             data_quality_score = float(np.clip(valid_ratio, 0, 1))
-        except:
+        except (ValueError, ZeroDivisionError, TypeError) as e:
+            self.logger.warning(f"Failed to calculate data quality score: {e}. Using default value.")
+            data_quality_score = 1.0
+        except Exception as e:
+            self.logger.error(f"Unexpected error calculating data quality score: {e}. Using default value.")
             data_quality_score = 1.0
 
         # Estimate temporal dependency (for time series)
@@ -244,7 +259,8 @@ class AutoTuner:
     def _estimate_trial_time(
         self,
         dataset_chars: DatasetCharacteristics,
-        model_type: str
+        model_type: str,
+        market_regime: Optional[Dict[str, Any]] = None
     ) -> float:
         """
         Estimate time per trial in seconds.
@@ -282,9 +298,62 @@ class AutoTuner:
         # Adjust for data quality (poor quality = slower training)
         quality_multiplier = 1.0 + (1.0 - dataset_chars.data_quality_score) * 0.3
 
-        estimated_time = base_time * size_multiplier * complexity_multiplier * quality_multiplier
+        # Market regime adjustments
+        regime_multiplier = 1.0
+        if market_regime:
+            # Adjust based on market volatility
+            volatility = market_regime.get('volatility', 0.5)
+            if volatility > 0.8:  # High volatility
+                regime_multiplier *= 1.2  # 20% slower due to complexity
+            elif volatility < 0.2:  # Low volatility
+                regime_multiplier *= 0.9  # 10% faster due to stability
+            
+            # Adjust based on market regime type
+            regime_type = market_regime.get('regime_type', 'normal')
+            if regime_type in ['crisis', 'high_volatility']:
+                regime_multiplier *= 1.3  # 30% slower
+            elif regime_type in ['stable', 'low_volatility']:
+                regime_multiplier *= 0.85  # 15% faster
+
+        estimated_time = base_time * size_multiplier * complexity_multiplier * quality_multiplier * regime_multiplier
 
         return float(estimated_time)
+
+    def _get_market_regime_context(self, X: np.ndarray, y: np.ndarray) -> Optional[Dict[str, Any]]:
+        \"\"\"
+        Get market regime context for optimization.
+        
+        Args:
+            X: Training features
+            y: Training targets
+            
+        Returns:
+            Market regime information or None if not available
+        \"\"\"
+        try:
+            # Simple volatility-based regime detection
+            if hasattr(y, 'std'):
+                volatility = float(y.std())
+            else:
+                volatility = float(np.std(y))
+            
+            # Determine regime type based on volatility
+            if volatility > 0.1:
+                regime_type = 'high_volatility'
+            elif volatility < 0.01:
+                regime_type = 'low_volatility'
+            else:
+                regime_type = 'normal'
+            
+            return {
+                'volatility': volatility,
+                'regime_type': regime_type,
+                'data_points': len(y),
+                'volatility_percentile': min(1.0, volatility / 0.1)  # Normalize to 0-1
+            }
+        except Exception as e:
+            self.logger.warning(f"Failed to determine market regime context: {e}")
+            return None
 
     def _determine_optimal_trials(
         self,
@@ -480,7 +549,16 @@ class AutoTuner:
             batch_size = 128 if not enable_m1_optimization else 256  # M1 unified memory allows larger batches
 
         # Enhanced memory limit calculation with M1 considerations
-        bytes_needed = n_samples * n_features * 8 * 3  # Reduced overhead for VectorBT
+        # Get actual data type size for accurate memory calculation
+        try:
+            if hasattr(X, 'dtype'):
+                element_size = X.dtype.itemsize
+            else:
+                element_size = 8  # Default to float64 size
+        except (AttributeError, TypeError):
+            element_size = 8  # Fallback to float64 size
+            
+        bytes_needed = n_samples * n_features * element_size * 3  # 3x for working space
         gb_needed = bytes_needed / (1024**3)
         
         if enable_m1_optimization:
@@ -517,7 +595,8 @@ class AutoTuner:
         config: OptimizationConfig,
         dataset_chars: DatasetCharacteristics,
         model_type: str,
-        trial_time: float
+        trial_time: float,
+        market_regime: Optional[Dict[str, Any]] = None
     ) -> None:
         """Log summary of auto-tuned configuration."""
         tprint_success(f"✅ Auto-tuned HPO config for {model_type}")

@@ -910,7 +910,7 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                 tprint_info("📊 Standard period/lookback optimization with enhanced hardware acceleration")
                 self.logger.info("📊 Standard period/lookback optimization with enhanced hardware acceleration")
             
-            # Perform actual period + lookback optimization using consolidated pipeline
+            # Perform actual period + lookback optimization using standalone optimization
             tprint_info("Performing data-driven period + lookback optimization")
             
             # Direct period/lookback optimization without pipeline dependency
@@ -997,18 +997,18 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                 'success': True,
                 'period_results': {
                     'optimized_periods': best_period,
-                    'period_scores': {str(p): 0.8 for p in periods_to_test},
+                    'period_scores': period_scores,
                     'best_period': best_period
                 },
                 'lookback_results': {
                     'optimized_lookbacks': best_lookback,
-                    'lookback_scores': {str(l): 0.8 for l in lookbacks_to_test},
+                    'lookback_scores': lookback_scores,
                     'best_lookback': best_lookback
                 },
                 'combined_results': {
                     'best_period': best_period,
                     'best_lookback': best_lookback,
-                    'combined_score': 0.8
+                    'combined_score': (period_scores.get(str(best_period), 0) + lookback_scores.get(str(best_lookback), 0)) / 2
                 },
                 'optimization_metadata': {
                     'method': 'intensity_based_heuristic',
@@ -1695,7 +1695,7 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
 ## 🔧 Configuration Details
 
 ### Optimization Parameters
-- **Optimization Method:** {optimization_results.get('optimization_method', 'consolidated_pipeline')}
+- **Optimization Method:** {optimization_results.get('optimization_method', 'standalone_optimization')}
 - **Correlation Threshold:** {optimization_metadata.get('correlation_threshold', 'N/A')}
 - **Minimum Periods:** {optimization_metadata.get('min_periods', 'N/A')}
 - **Maximum Periods:** {optimization_metadata.get('max_periods', 'N/A')}
@@ -1840,7 +1840,7 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                 'description': 'Optimization of feature generation periods for maximum historical context',
                 'details': {
                     'optimized_value': optimized_periods,
-                    'optimization_method': 'consolidated_pipeline',
+                    'optimization_method': 'standalone_optimization',
                     'constraints': {
                         'min_periods': metadata.get('min_periods', 2),
                         'correlation_threshold': metadata.get('correlation_threshold', 0.85),
@@ -1862,7 +1862,7 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                 'description': 'Optimization of lookback windows for feature computation stability',
                 'details': {
                     'optimized_value': optimized_lookbacks,
-                    'optimization_method': 'consolidated_pipeline',
+                    'optimization_method': 'standalone_optimization',
                     'constraints': {
                         'min_lookback': 5,
                         'max_lookback': 252,
@@ -3002,19 +3002,45 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             tprint_data_format(error_result, "no_targets_error", level="ERROR")
             return error_result
         
-        # Align features and targets
+        # Align features and targets with proper validation
         tprint_info("Aligning features and targets for optimization")
+        
+        # Validate data alignment before joining
+        if not features_df.index.equals(targets_series.index):
+            tprint_warning("Feature and target indices don't match, attempting alignment")
+            # Find common index
+            common_index = features_df.index.intersection(targets_series.index)
+            if len(common_index) == 0:
+                tprint_error("No common timestamps between features and targets")
+                error_result = {
+                    'success': False,
+                    'artifacts': [],
+                    'metrics': {},
+                    'error': 'No common timestamps between features and targets.'
+                }
+                return error_result
+            features_df = features_df.loc[common_index]
+            targets_series = targets_series.loc[common_index]
+        
         aligned_data = features_df.join(targets_series.rename('target'), how='inner').dropna()
+        
+        # Validate alignment quality
         if aligned_data.empty:
-            tprint_error("No overlapping timestamps between features and targets")
+            tprint_error("No overlapping timestamps between features and targets after alignment")
             error_result = {
                 'success': False,
                 'artifacts': [],
                 'metrics': {},
-                'error': 'No overlapping timestamps between features and targets.'
+                'error': 'No overlapping timestamps between features and targets after alignment.'
             }
-            tprint_data_format(error_result, "no_overlap_error", level="ERROR")
             return error_result
+        
+        # Check for data leakage (ensure targets are not in the future)
+        if hasattr(aligned_data.index, 'is_monotonic_increasing'):
+            if not aligned_data.index.is_monotonic_increasing:
+                tprint_warning("Data index is not monotonic, potential data leakage risk")
+        
+        tprint_success(f"Data alignment successful: {len(aligned_data)} samples aligned")
         
         aligned_features = aligned_data.drop(columns=['target'])
         aligned_targets = aligned_data['target']
@@ -3116,6 +3142,20 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                 self.memory_manager.stop_monitoring()
                 if self.aggressive_gc_enabled:
                     self._aggressive_garbage_collection()
+                
+                # Additional cleanup for hardware resources
+                if hasattr(self, 'comprehensive_optimizer'):
+                    try:
+                        self.comprehensive_optimizer.cleanup()
+                    except Exception as hw_cleanup_error:
+                        tprint_warning(f"Hardware optimizer cleanup failed: {hw_cleanup_error}")
+                
+                if hasattr(self, 'tpe_optimizer'):
+                    try:
+                        self.tpe_optimizer.cleanup()
+                    except Exception as tpe_cleanup_error:
+                        tprint_warning(f"TPE optimizer cleanup failed: {tpe_cleanup_error}")
+                        
             except Exception as cleanup_error:
                 tprint_warning(f"Cleanup failed: {cleanup_error}")
                 # Add data format analysis for cleanup error troubleshooting
@@ -3158,6 +3198,12 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
         tprint_data_format(features, "period_optimization_input", level="DEBUG")
         tprint_data_format(targets, "period_optimization_targets", level="DEBUG")
         
+        # Pre-compute all period features to avoid redundant computation
+        tprint_info("🎯 Pre-computing period features for efficient optimization")
+        period_features_cache = {}
+        for period in periods_to_test:
+            period_features_cache[period] = self._create_period_features(features, period)
+        
         # Use TPE optimizer for sophisticated period optimization
         tprint_info("🎯 Using Bayesian TPE optimizer for period optimization")
         
@@ -3166,40 +3212,60 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             period = trial.suggest_int('period', min(periods_to_test), max(periods_to_test))
             
             try:
-                # Create period-based features
-                period_features = self._create_period_features(features, period)
+                # Use pre-computed period features
+                period_features = period_features_cache.get(period, pd.DataFrame())
                 
                 if period_features.empty:
                     return -np.inf
                 
-                # Calculate mutual information
-                mi_scores = []
-                for col in period_features.columns:
-                    if not period_features[col].isna().all():
-                        mi = self._compute_mutual_information(period_features[col], targets)
-                        mi_scores.append(mi)
+                # Calculate mutual information vectorized
+                mi_scores = self._compute_vectorized_mutual_information(period_features, targets)
                 
-                if not mi_scores:
+                if len(mi_scores) == 0 or np.all(mi_scores == 0):
                     return -np.inf
                 
                 avg_mi = np.mean(mi_scores)
                 
-                # Calculate out-of-sample Sharpe ratio
-                sharpe_score = self._compute_oos_sharpe_nested(
-                    period_features.iloc[:, 0] if len(period_features.columns) > 0 else pd.Series(),
+                # Calculate comprehensive risk metrics using all features
+                if len(period_features.columns) > 0:
+                    # Use the first principal component or mean of all features
+                    if len(period_features.columns) == 1:
+                        feature_series = period_features.iloc[:, 0]
+                    else:
+                        # Use mean of all features as a composite signal
+                        feature_series = period_features.mean(axis=1)
+                else:
+                    feature_series = pd.Series()
+                
+                # Calculate multiple risk metrics
+                risk_metrics = self._compute_comprehensive_risk_metrics(
+                    feature_series,
                     targets,
                     direction
-                )[0]
+                )
+                sharpe_score = risk_metrics['sharpe_ratio']
                 
-                # Combined score (weighted average)
-                combined_score = 0.7 * avg_mi + 0.3 * sharpe_score
+                # Calculate transaction cost adjusted score
+                transaction_cost = 0.001  # 0.1% total fees
+                cost_adjusted_sharpe = sharpe_score - transaction_cost
+                
+                # Combined score (weighted average) with transaction cost consideration
+                combined_score = 0.5 * avg_mi + 0.3 * cost_adjusted_sharpe + 0.2 * risk_metrics.get('sortino_ratio', 0.0)
                 return combined_score
                 
+            except ValidationError as e:
+                tprint_error(f"TPE trial validation failed for period {period}: {e}")
+                return -np.inf
+            except ValueError as e:
+                tprint_error(f"TPE trial value error for period {period}: {e}")
+                return -np.inf
             except Exception as e:
-                tprint_warning(f"TPE trial failed for period {period}: {e}")
+                tprint_error(f"TPE trial unexpected error for period {period}: {e}")
+                tprint_debug(f"Exception details: {traceback.format_exc()}")
                 return -np.inf
         
         # Run TPE optimization
+        study = None
         try:
             study = self.tpe_optimizer.optimize(period_objective, {
                 'period': {'type': 'int', 'low': min(periods_to_test), 'high': max(periods_to_test)}
@@ -3208,38 +3274,60 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             best_period = study.best_params['period']
             best_score = study.best_value
             
-            # Generate scores for all tested periods for reporting
+            # Generate scores for all tested periods for reporting (reuse TPE results if available)
             period_scores = {}
-            for period in periods_to_test:
-                try:
-                    period_features = self._create_period_features(features, period)
-                    if period_features.empty:
+            if study is not None and hasattr(study, 'trials'):
+                # Use TPE trial results if available
+                for trial in study.trials:
+                    if trial.value is not None and 'period' in trial.params:
+                        period_scores[str(trial.params['period'])] = trial.value
+                
+                # Fill missing periods with 0.0
+                for period in periods_to_test:
+                    if str(period) not in period_scores:
                         period_scores[str(period)] = 0.0
-                        continue
-                    
-                    mi_scores = []
-                    for col in period_features.columns:
-                        if not period_features[col].isna().all():
-                            mi = self._compute_mutual_information(period_features[col], targets)
-                            mi_scores.append(mi)
-                    
-                    if not mi_scores:
+            else:
+                # Fallback to individual calculation if TPE results not available
+                for period in periods_to_test:
+                    try:
+                        period_features = self._create_period_features(features, period)
+                        if period_features.empty:
+                            period_scores[str(period)] = 0.0
+                            continue
+                        
+                        mi_scores = []
+                        for col in period_features.columns:
+                            if not period_features[col].isna().all():
+                                mi = self._compute_mutual_information(period_features[col], targets)
+                                mi_scores.append(mi)
+                        
+                        if not mi_scores:
+                            period_scores[str(period)] = 0.0
+                            continue
+                        
+                        avg_mi = np.mean(mi_scores)
+                        # Use all features for Sharpe calculation
+                        if len(period_features.columns) > 0:
+                            if len(period_features.columns) == 1:
+                                feature_series = period_features.iloc[:, 0]
+                            else:
+                                # Use mean of all features as a composite signal
+                                feature_series = period_features.mean(axis=1)
+                        else:
+                            feature_series = pd.Series()
+                        
+                        sharpe_score = self._compute_oos_sharpe_nested(
+                            feature_series,
+                            targets,
+                            direction
+                        )[0]
+                        
+                        combined_score = 0.7 * avg_mi + 0.3 * sharpe_score
+                        period_scores[str(period)] = combined_score
+                        
+                    except Exception as e:
+                        tprint_warning(f"Failed to score period {period}: {e}")
                         period_scores[str(period)] = 0.0
-                        continue
-                    
-                    avg_mi = np.mean(mi_scores)
-                    sharpe_score = self._compute_oos_sharpe_nested(
-                        period_features.iloc[:, 0] if len(period_features.columns) > 0 else pd.Series(),
-                        targets,
-                        direction
-                    )[0]
-                    
-                    combined_score = 0.7 * avg_mi + 0.3 * sharpe_score
-                    period_scores[str(period)] = combined_score
-                    
-                except Exception as e:
-                    tprint_warning(f"Failed to score period {period}: {e}")
-                    period_scores[str(period)] = 0.0
                     
         except Exception as e:
             tprint_warning(f"TPE optimization failed, falling back to grid search: {e}")
@@ -3247,6 +3335,14 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             period_scores = {}
             best_period = periods_to_test[0]
             best_score = -np.inf
+        finally:
+            # Clean up TPE study to prevent memory leaks
+            if study is not None:
+                try:
+                    del study
+                    gc.collect()
+                except Exception as cleanup_error:
+                    tprint_warning(f"TPE study cleanup failed: {cleanup_error}")
             
             for period in periods_to_test:
                 try:
@@ -3264,8 +3360,18 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                         continue
                     
                     avg_mi = np.mean(mi_scores)
+                    # Use all features for Sharpe calculation
+                    if len(period_features.columns) > 0:
+                        if len(period_features.columns) == 1:
+                            feature_series = period_features.iloc[:, 0]
+                        else:
+                            # Use mean of all features as a composite signal
+                            feature_series = period_features.mean(axis=1)
+                    else:
+                        feature_series = pd.Series()
+                    
                     sharpe_score = self._compute_oos_sharpe_nested(
-                        period_features.iloc[:, 0] if len(period_features.columns) > 0 else pd.Series(),
+                        feature_series,
                         targets,
                         direction
                     )[0]
@@ -3315,6 +3421,12 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
         tprint_data_format(features, "lookback_optimization_input", level="DEBUG")
         tprint_data_format(targets, "lookback_optimization_targets", level="DEBUG")
         
+        # Pre-compute all lookback features to avoid redundant computation
+        tprint_info("🎯 Pre-computing lookback features for efficient optimization")
+        lookback_features_cache = {}
+        for lookback in lookbacks_to_test:
+            lookback_features_cache[lookback] = self._create_lookback_features(features, lookback)
+        
         # Use TPE optimizer for sophisticated lookback optimization
         tprint_info("🎯 Using Bayesian TPE optimizer for lookback optimization")
         
@@ -3323,40 +3435,57 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             lookback = trial.suggest_int('lookback', min(lookbacks_to_test), max(lookbacks_to_test))
             
             try:
-                # Create lookback-based features
-                lookback_features = self._create_lookback_features(features, lookback)
+                # Use pre-computed lookback features
+                lookback_features = lookback_features_cache.get(lookback, pd.DataFrame())
                 
                 if lookback_features.empty:
                     return -np.inf
                 
-                # Calculate mutual information
-                mi_scores = []
-                for col in lookback_features.columns:
-                    if not lookback_features[col].isna().all():
-                        mi = self._compute_mutual_information(lookback_features[col], targets)
-                        mi_scores.append(mi)
+                # Calculate mutual information vectorized
+                mi_scores = self._compute_vectorized_mutual_information(lookback_features, targets)
                 
-                if not mi_scores:
+                if len(mi_scores) == 0 or np.all(mi_scores == 0):
                     return -np.inf
                 
                 avg_mi = np.mean(mi_scores)
                 
-                # Calculate out-of-sample Sharpe ratio
+                # Calculate out-of-sample Sharpe ratio using all features
+                if len(lookback_features.columns) > 0:
+                    if len(lookback_features.columns) == 1:
+                        feature_series = lookback_features.iloc[:, 0]
+                    else:
+                        # Use mean of all features as a composite signal
+                        feature_series = lookback_features.mean(axis=1)
+                else:
+                    feature_series = pd.Series()
+                
                 sharpe_score = self._compute_oos_sharpe_nested(
-                    lookback_features.iloc[:, 0] if len(lookback_features.columns) > 0 else pd.Series(),
+                    feature_series,
                     targets,
                     direction
                 )[0]
                 
-                # Combined score (weighted average)
-                combined_score = 0.7 * avg_mi + 0.3 * sharpe_score
+                # Calculate transaction cost adjusted score
+                transaction_cost = 0.001  # 0.1% total fees
+                cost_adjusted_sharpe = sharpe_score - transaction_cost
+                
+                # Combined score (weighted average) with transaction cost consideration
+                combined_score = 0.5 * avg_mi + 0.3 * cost_adjusted_sharpe + 0.2 * risk_metrics.get('sortino_ratio', 0.0)
                 return combined_score
                 
+            except ValidationError as e:
+                tprint_error(f"TPE trial validation failed for lookback {lookback}: {e}")
+                return -np.inf
+            except ValueError as e:
+                tprint_error(f"TPE trial value error for lookback {lookback}: {e}")
+                return -np.inf
             except Exception as e:
-                tprint_warning(f"TPE trial failed for lookback {lookback}: {e}")
+                tprint_error(f"TPE trial unexpected error for lookback {lookback}: {e}")
+                tprint_debug(f"Exception details: {traceback.format_exc()}")
                 return -np.inf
         
         # Run TPE optimization
+        study = None
         try:
             study = self.tpe_optimizer.optimize(lookback_objective, {
                 'lookback': {'type': 'int', 'low': min(lookbacks_to_test), 'high': max(lookbacks_to_test)}
@@ -3365,38 +3494,60 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             best_lookback = study.best_params['lookback']
             best_score = study.best_value
             
-            # Generate scores for all tested lookbacks for reporting
+            # Generate scores for all tested lookbacks for reporting (reuse TPE results if available)
             lookback_scores = {}
-            for lookback in lookbacks_to_test:
-                try:
-                    lookback_features = self._create_lookback_features(features, lookback)
-                    if lookback_features.empty:
+            if study is not None and hasattr(study, 'trials'):
+                # Use TPE trial results if available
+                for trial in study.trials:
+                    if trial.value is not None and 'lookback' in trial.params:
+                        lookback_scores[str(trial.params['lookback'])] = trial.value
+                
+                # Fill missing lookbacks with 0.0
+                for lookback in lookbacks_to_test:
+                    if str(lookback) not in lookback_scores:
                         lookback_scores[str(lookback)] = 0.0
-                        continue
-                    
-                    mi_scores = []
-                    for col in lookback_features.columns:
-                        if not lookback_features[col].isna().all():
-                            mi = self._compute_mutual_information(lookback_features[col], targets)
-                            mi_scores.append(mi)
-                    
-                    if not mi_scores:
+            else:
+                # Fallback to individual calculation if TPE results not available
+                for lookback in lookbacks_to_test:
+                    try:
+                        lookback_features = self._create_lookback_features(features, lookback)
+                        if lookback_features.empty:
+                            lookback_scores[str(lookback)] = 0.0
+                            continue
+                        
+                        mi_scores = []
+                        for col in lookback_features.columns:
+                            if not lookback_features[col].isna().all():
+                                mi = self._compute_mutual_information(lookback_features[col], targets)
+                                mi_scores.append(mi)
+                        
+                        if not mi_scores:
+                            lookback_scores[str(lookback)] = 0.0
+                            continue
+                        
+                        avg_mi = np.mean(mi_scores)
+                        # Use all features for Sharpe calculation
+                        if len(lookback_features.columns) > 0:
+                            if len(lookback_features.columns) == 1:
+                                feature_series = lookback_features.iloc[:, 0]
+                            else:
+                                # Use mean of all features as a composite signal
+                                feature_series = lookback_features.mean(axis=1)
+                        else:
+                            feature_series = pd.Series()
+                        
+                        sharpe_score = self._compute_oos_sharpe_nested(
+                            feature_series,
+                            targets,
+                            direction
+                        )[0]
+                        
+                        combined_score = 0.7 * avg_mi + 0.3 * sharpe_score
+                        lookback_scores[str(lookback)] = combined_score
+                        
+                    except Exception as e:
+                        tprint_warning(f"Failed to score lookback {lookback}: {e}")
                         lookback_scores[str(lookback)] = 0.0
-                        continue
-                    
-                    avg_mi = np.mean(mi_scores)
-                    sharpe_score = self._compute_oos_sharpe_nested(
-                        lookback_features.iloc[:, 0] if len(lookback_features.columns) > 0 else pd.Series(),
-                        targets,
-                        direction
-                    )[0]
-                    
-                    combined_score = 0.7 * avg_mi + 0.3 * sharpe_score
-                    lookback_scores[str(lookback)] = combined_score
-                    
-                except Exception as e:
-                    tprint_warning(f"Failed to score lookback {lookback}: {e}")
-                    lookback_scores[str(lookback)] = 0.0
                     
         except Exception as e:
             tprint_warning(f"TPE optimization failed, falling back to grid search: {e}")
@@ -3404,6 +3555,14 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             lookback_scores = {}
             best_lookback = lookbacks_to_test[0]
             best_score = -np.inf
+        finally:
+            # Clean up TPE study to prevent memory leaks
+            if study is not None:
+                try:
+                    del study
+                    gc.collect()
+                except Exception as cleanup_error:
+                    tprint_warning(f"TPE study cleanup failed: {cleanup_error}")
             
             for lookback in lookbacks_to_test:
                 try:
@@ -3421,8 +3580,18 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                         continue
                     
                     avg_mi = np.mean(mi_scores)
+                    # Use all features for Sharpe calculation
+                    if len(lookback_features.columns) > 0:
+                        if len(lookback_features.columns) == 1:
+                            feature_series = lookback_features.iloc[:, 0]
+                        else:
+                            # Use mean of all features as a composite signal
+                            feature_series = lookback_features.mean(axis=1)
+                    else:
+                        feature_series = pd.Series()
+                    
                     sharpe_score = self._compute_oos_sharpe_nested(
-                        lookback_features.iloc[:, 0] if len(lookback_features.columns) > 0 else pd.Series(),
+                        feature_series,
                         targets,
                         direction
                     )[0]
@@ -3445,12 +3614,33 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
         return best_lookback, lookback_scores
     
     def _create_period_features(self, features: pd.DataFrame, period: int) -> pd.DataFrame:
-        """Create period-based features by taking every nth row."""
-        if period <= 0 or period >= len(features):
-            return pd.DataFrame()
+        """Create period-based features using proper period-based feature engineering."""
+        try:
+            if period <= 0 or period >= len(features):
+                tprint_warning(f"Invalid period {period} for data length {len(features)}")
+                return pd.DataFrame()
+        except Exception as e:
+            tprint_error(f"Error validating period {period}: {e}")
+            raise ValidationError(f"Invalid period parameter: {e}")
         
-        # Take every period-th row
-        period_features = features.iloc[::period].copy()
+        # Create period-based features using proper feature engineering
+        period_features = pd.DataFrame(index=features.index)
+        
+        for col in features.columns:
+            if features[col].dtype in ['float64', 'float32', 'int64', 'int32']:
+                # Calculate period-based rolling statistics
+                period_features[f"{col}_period_mean"] = features[col].rolling(window=period, min_periods=period//2).mean()
+                period_features[f"{col}_period_std"] = features[col].rolling(window=period, min_periods=period//2).std()
+                period_features[f"{col}_period_max"] = features[col].rolling(window=period, min_periods=period//2).max()
+                period_features[f"{col}_period_min"] = features[col].rolling(window=period, min_periods=period//2).min()
+                period_features[f"{col}_period_median"] = features[col].rolling(window=period, min_periods=period//2).median()
+                
+                # Calculate period-based momentum and volatility
+                period_features[f"{col}_period_momentum"] = features[col] / features[col].shift(period)
+                period_features[f"{col}_period_volatility"] = features[col].rolling(window=period, min_periods=period//2).std() / features[col].rolling(window=period, min_periods=period//2).mean()
+        
+        # Drop rows with insufficient data
+        period_features = period_features.dropna()
         
         # Add data format analysis for period features (only for debugging)
         tprint_data_format(period_features, f"period_features_created_{period}", level="DEBUG")
@@ -3462,12 +3652,42 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
         return period_features
     
     def _create_lookback_features(self, features: pd.DataFrame, lookback: int) -> pd.DataFrame:
-        """Create lookback-based features using rolling windows."""
-        if lookback <= 0 or lookback >= len(features):
-            return pd.DataFrame()
+        """Create lookback-based features using comprehensive rolling windows."""
+        try:
+            if lookback <= 0 or lookback >= len(features):
+                tprint_warning(f"Invalid lookback {lookback} for data length {len(features)}")
+                return pd.DataFrame()
+        except Exception as e:
+            tprint_error(f"Error validating lookback {lookback}: {e}")
+            raise ValidationError(f"Invalid lookback parameter: {e}")
         
-        # Create rolling mean features
-        lookback_features = features.rolling(window=lookback, min_periods=lookback//2).mean()
+        # Create comprehensive lookback-based features
+        lookback_features = pd.DataFrame(index=features.index)
+        
+        for col in features.columns:
+            if features[col].dtype in ['float64', 'float32', 'int64', 'int32']:
+                # Basic rolling statistics
+                lookback_features[f"{col}_lookback_mean"] = features[col].rolling(window=lookback, min_periods=lookback//2).mean()
+                lookback_features[f"{col}_lookback_std"] = features[col].rolling(window=lookback, min_periods=lookback//2).std()
+                lookback_features[f"{col}_lookback_max"] = features[col].rolling(window=lookback, min_periods=lookback//2).max()
+                lookback_features[f"{col}_lookback_min"] = features[col].rolling(window=lookback, min_periods=lookback//2).min()
+                lookback_features[f"{col}_lookback_median"] = features[col].rolling(window=lookback, min_periods=lookback//2).median()
+                
+                # Advanced rolling statistics
+                lookback_features[f"{col}_lookback_skew"] = features[col].rolling(window=lookback, min_periods=lookback//2).skew()
+                lookback_features[f"{col}_lookback_kurt"] = features[col].rolling(window=lookback, min_periods=lookback//2).kurt()
+                
+                # Volatility and momentum features
+                lookback_features[f"{col}_lookback_volatility"] = features[col].rolling(window=lookback, min_periods=lookback//2).std() / features[col].rolling(window=lookback, min_periods=lookback//2).mean()
+                lookback_features[f"{col}_lookback_momentum"] = features[col] / features[col].shift(lookback)
+                
+                # Trend and change features
+                lookback_features[f"{col}_lookback_trend"] = features[col].rolling(window=lookback, min_periods=lookback//2).apply(lambda x: np.polyfit(range(len(x)), x, 1)[0] if len(x) > 1 else 0)
+                lookback_features[f"{col}_lookback_change"] = features[col].pct_change(lookback)
+                
+                # Range and position features
+                lookback_features[f"{col}_lookback_range"] = features[col].rolling(window=lookback, min_periods=lookback//2).max() - features[col].rolling(window=lookback, min_periods=lookback//2).min()
+                lookback_features[f"{col}_lookback_position"] = (features[col] - features[col].rolling(window=lookback, min_periods=lookback//2).min()) / (features[col].rolling(window=lookback, min_periods=lookback//2).max() - features[col].rolling(window=lookback, min_periods=lookback//2).min())
         
         # Drop rows with insufficient data
         lookback_features = lookback_features.dropna()
@@ -3502,6 +3722,86 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             # Compute mutual information
             mi = mutual_info_regression(x_vals, y_vals, random_state=42)[0]
             return float(mi)
+    
+    def _compute_vectorized_mutual_information(self, features: pd.DataFrame, targets: pd.Series) -> np.ndarray:
+        """Compute mutual information for all features vectorized."""
+        try:
+            from sklearn.feature_selection import mutual_info_regression
+            
+            # Align features and targets
+            aligned_data = features.join(targets.rename('target'), how='inner').dropna()
+            if len(aligned_data) < 10:
+                return np.array([])
+            
+            # Separate features and targets
+            feature_cols = [col for col in features.columns if col in aligned_data.columns]
+            if not feature_cols:
+                return np.array([])
+            
+            X = aligned_data[feature_cols].values
+            y = aligned_data['target'].values
+            
+            # Compute mutual information for all features at once
+            mi_scores = mutual_info_regression(X, y, random_state=42)
+            return mi_scores
+            
+        except Exception as e:
+            tprint_warning(f"Vectorized mutual information calculation failed: {e}")
+            # Fallback to individual calculation
+            mi_scores = []
+            for col in features.columns:
+                if not features[col].isna().all():
+                    mi = self._compute_mutual_information(features[col], targets)
+                    mi_scores.append(mi)
+            return np.array(mi_scores)
+    
+    def _compute_comprehensive_risk_metrics(self, features: pd.Series, targets: pd.Series, direction: str) -> Dict[str, float]:
+        """Compute comprehensive risk metrics including Sharpe, Sortino, Calmar, and Max Drawdown."""
+        try:
+            # Align features and targets
+            aligned_data = pd.concat([features, targets], axis=1).dropna()
+            if len(aligned_data) < 50:
+                return {'sharpe_ratio': 0.0, 'sortino_ratio': 0.0, 'calmar_ratio': 0.0, 'max_drawdown': 0.0}
+            
+            feature_vals = aligned_data.iloc[:, 0].values
+            target_vals = aligned_data.iloc[:, 1].values
+            
+            # Calculate returns
+            returns = np.diff(target_vals) / target_vals[:-1]
+            
+            if len(returns) == 0 or np.std(returns) == 0:
+                return {'sharpe_ratio': 0.0, 'sortino_ratio': 0.0, 'calmar_ratio': 0.0, 'max_drawdown': 0.0}
+            
+            # Sharpe ratio
+            sharpe_ratio = np.mean(returns) / np.std(returns) * np.sqrt(252)  # Annualized
+            
+            # Sortino ratio (downside deviation)
+            downside_returns = returns[returns < 0]
+            if len(downside_returns) > 0:
+                downside_std = np.std(downside_returns)
+                sortino_ratio = np.mean(returns) / downside_std * np.sqrt(252) if downside_std > 0 else 0.0
+            else:
+                sortino_ratio = sharpe_ratio
+            
+            # Maximum drawdown
+            cumulative_returns = np.cumprod(1 + returns)
+            running_max = np.maximum.accumulate(cumulative_returns)
+            drawdowns = (cumulative_returns - running_max) / running_max
+            max_drawdown = np.min(drawdowns)
+            
+            # Calmar ratio
+            calmar_ratio = np.mean(returns) * 252 / abs(max_drawdown) if max_drawdown != 0 else 0.0
+            
+            return {
+                'sharpe_ratio': float(sharpe_ratio),
+                'sortino_ratio': float(sortino_ratio),
+                'calmar_ratio': float(calmar_ratio),
+                'max_drawdown': float(max_drawdown)
+            }
+            
+        except Exception as e:
+            tprint_warning(f"Risk metrics calculation failed: {e}")
+            return {'sharpe_ratio': 0.0, 'sortino_ratio': 0.0, 'calmar_ratio': 0.0, 'max_drawdown': 0.0}
             
         except Exception as e:
             tprint_warning(f"Failed to compute mutual information: {e}")

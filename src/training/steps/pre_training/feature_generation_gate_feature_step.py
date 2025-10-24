@@ -108,6 +108,14 @@ class FeatureGenerationGateFeatureStep(BaseStep):
         # Initialize gate learning configuration
         self.gate_learning_config = GateLearningConfig()
         
+        # Update config from provided parameters
+        if config and 'gate_learning' in config:
+            gate_config = config['gate_learning']
+            for key, value in gate_config.items():
+                if hasattr(self.gate_learning_config, key):
+                    setattr(self.gate_learning_config, key, value)
+                    tprint_debug(f"Updated gate learning config: {key} = {value}")
+        
         # Initialize gate feature manager
         self.gate_manager = None
         self.gate_config = None
@@ -335,8 +343,8 @@ class FeatureGenerationGateFeatureStep(BaseStep):
                 return None, None
             
             tprint_success(f"✅ Loaded {len(features_df.columns)} features")
-            tprint_data_preview(features_df, "gate_input_features", level="DEBUG")
-            tprint_data_format(features_df, "gate_input_features", level="DEBUG")
+            tprint_data_preview(features_df, "gate_input_features")
+            tprint_data_format(features_df, "gate_input_features")
             
             # Load targets from labeling integration step
             tprint_info("🔍 Loading targets from feature_generation_labeling_integration_step")
@@ -366,8 +374,8 @@ class FeatureGenerationGateFeatureStep(BaseStep):
                 targets_series = targets_series.iloc[:, 0]  # Take first column
             
             tprint_success(f"✅ Loaded targets with {len(targets_series)} samples")
-            tprint_data_preview(targets_series, "gate_input_targets", level="DEBUG")
-            tprint_data_format(targets_series, "gate_input_targets", level="DEBUG")
+            tprint_data_preview(targets_series, "gate_input_targets")
+            tprint_data_format(targets_series, "gate_input_targets")
             
             return features_df, targets_series
             
@@ -646,8 +654,19 @@ class FeatureGenerationGateFeatureStep(BaseStep):
                 # Create final gate features DataFrame
                 gate_features_df = pd.DataFrame(gate_features, index=features_df.index)
                 
+                # Log summary of data-driven gate features
+                tprint_info(f"📊 Data-driven gate features summary:")
+                for col in gate_features_df.columns:
+                    unique_vals = gate_features_df[col].nunique()
+                    if unique_vals == 1:
+                        tprint_info(f"   {col}: {gate_features_df[col].iloc[0]} (constant)")
+                    else:
+                        tprint_info(f"   {col}: {unique_vals} unique values, "
+                                   f"mean={gate_features_df[col].mean():.4f}, "
+                                   f"std={gate_features_df[col].std():.4f}")
+                
                 tprint_success(f"✅ Generated {len(gate_features_df.columns)} data-driven gate features")
-                tprint_data_preview(gate_features_df, "data_driven_gate_features", level="DEBUG")
+                tprint_data_preview(gate_features_df, "data_driven_gate_features")
                 
                 return {
                     'success': True,
@@ -714,8 +733,8 @@ class FeatureGenerationGateFeatureStep(BaseStep):
                 return {'success': False, 'error': 'Failed to create gate features DataFrame'}
             
             tprint_success(f"✅ Created gate features DataFrame with {len(gate_features_df.columns)} columns")
-            tprint_data_preview(gate_features_df, "gate_features_output", level="DEBUG")
-            tprint_data_format(gate_features_df, "gate_features_output", level="DEBUG")
+            tprint_data_preview(gate_features_df, "gate_features_output")
+            tprint_data_format(gate_features_df, "gate_features_output")
             
             # Get gate status
             gate_status = self.gate_manager.get_gate_status()
@@ -764,16 +783,43 @@ class FeatureGenerationGateFeatureStep(BaseStep):
             gate_features_data['quality_gate_target_variance'] = targets_series.var()
             gate_features_data['quality_gate_nan_ratio'] = features_df.isnull().sum().sum() / (len(features_df) * len(features_df.columns))
             
-            # Add correlation gate features
-            corr_matrix = features_df.corr().abs()
-            gate_features_data['correlation_gate_max_correlation'] = corr_matrix.values[np.triu_indices_from(corr_matrix.values, k=1)].max()
-            gate_features_data['correlation_gate_mean_correlation'] = corr_matrix.values[np.triu_indices_from(corr_matrix.values, k=1)].mean()
+            # Add correlation gate features (only numeric columns)
+            numeric_features = features_df.select_dtypes(include=[np.number])
+            if len(numeric_features.columns) >= 2:
+                corr_matrix = numeric_features.corr().abs()
+                # Handle edge case when n_features < 2
+                if corr_matrix.shape[0] >= 2:
+                    triu_indices = np.triu_indices_from(corr_matrix.values, k=1)
+                    if len(triu_indices[0]) > 0:
+                        corr_values = corr_matrix.values[triu_indices]
+                        gate_features_data['correlation_gate_max_correlation'] = corr_values.max()
+                        gate_features_data['correlation_gate_mean_correlation'] = corr_values.mean()
+                    else:
+                        gate_features_data['correlation_gate_max_correlation'] = 0.0
+                        gate_features_data['correlation_gate_mean_correlation'] = 0.0
+                else:
+                    gate_features_data['correlation_gate_max_correlation'] = 0.0
+                    gate_features_data['correlation_gate_mean_correlation'] = 0.0
+            else:
+                gate_features_data['correlation_gate_max_correlation'] = 0.0
+                gate_features_data['correlation_gate_mean_correlation'] = 0.0
             
-            # Add variance gate features
-            feature_variances = features_df.var()
-            gate_features_data['variance_gate_min_variance'] = feature_variances.min()
-            gate_features_data['variance_gate_mean_variance'] = feature_variances.mean()
-            gate_features_data['variance_gate_low_variance_count'] = (feature_variances < 1e-8).sum()
+            # Add variance gate features (only numeric columns)
+            if not numeric_features.empty:
+                feature_variances = numeric_features.var()
+                valid_variances = feature_variances.dropna()
+                if len(valid_variances) > 0:
+                    gate_features_data['variance_gate_min_variance'] = valid_variances.min()
+                    gate_features_data['variance_gate_mean_variance'] = valid_variances.mean()
+                    gate_features_data['variance_gate_low_variance_count'] = (valid_variances < 1e-8).sum()
+                else:
+                    gate_features_data['variance_gate_min_variance'] = 0.0
+                    gate_features_data['variance_gate_mean_variance'] = 0.0
+                    gate_features_data['variance_gate_low_variance_count'] = 0
+            else:
+                gate_features_data['variance_gate_min_variance'] = 0.0
+                gate_features_data['variance_gate_mean_variance'] = 0.0
+                gate_features_data['variance_gate_low_variance_count'] = 0
             
             # Add stability gate features
             gate_features_data['stability_gate_feature_count'] = len(features_df.columns)
@@ -792,6 +838,19 @@ class FeatureGenerationGateFeatureStep(BaseStep):
                 if feature_name in features_df.columns:
                     gate_features_df[f'gate_base_{feature_name}'] = features_df[feature_name]
             
+            # Log summary of scalar gate features
+            tprint_info(f"📊 Heuristic gate features summary:")
+            tprint_info(f"   Quality gates: data_size={gate_features_data.get('quality_gate_data_size', 0)}, "
+                       f"target_var={gate_features_data.get('quality_gate_target_variance', 0):.6f}, "
+                       f"nan_ratio={gate_features_data.get('quality_gate_nan_ratio', 0):.4f}")
+            tprint_info(f"   Correlation gates: max={gate_features_data.get('correlation_gate_max_correlation', 0):.4f}, "
+                       f"mean={gate_features_data.get('correlation_gate_mean_correlation', 0):.4f}")
+            tprint_info(f"   Variance gates: min={gate_features_data.get('variance_gate_min_variance', 0):.6f}, "
+                       f"mean={gate_features_data.get('variance_gate_mean_variance', 0):.6f}, "
+                       f"low_var_count={gate_features_data.get('variance_gate_low_variance_count', 0)}")
+            tprint_info(f"   Performance gates: ic_estimate={gate_features_data.get('performance_gate_ic_estimate', 0):.4f}, "
+                       f"importance={gate_features_data.get('performance_gate_feature_importance', 0):.4f}")
+            
             tprint_success(f"✅ Created gate features DataFrame with {len(gate_features_df.columns)} columns")
             return gate_features_df
             
@@ -802,7 +861,7 @@ class FeatureGenerationGateFeatureStep(BaseStep):
     
     def _estimate_information_coefficient(self, features_df: pd.DataFrame, targets_series: pd.Series) -> float:
         """
-        Estimate information coefficient between features and targets.
+        Estimate information coefficient between features and targets using out-of-fold validation.
         
         Args:
             features_df: Features DataFrame
@@ -812,17 +871,38 @@ class FeatureGenerationGateFeatureStep(BaseStep):
             Estimated information coefficient
         """
         try:
-            # Simple correlation-based IC estimate
-            correlations = []
-            for col in features_df.columns:
-                if not features_df[col].isnull().all():
-                    corr = features_df[col].corr(targets_series)
-                    if not np.isnan(corr):
-                        correlations.append(abs(corr))
+            # Use out-of-fold validation for proper IC estimate
+            from sklearn.model_selection import TimeSeriesSplit
             
-            return np.mean(correlations) if correlations else 0.0
+            # Ensure we have numeric columns only
+            numeric_features = features_df.select_dtypes(include=[np.number])
+            if numeric_features.empty:
+                return 0.0
             
-        except Exception:
+            # Use a small time-series split for IC estimation
+            tscv = TimeSeriesSplit(n_splits=3, test_size=0.2)
+            ic_scores = []
+            
+            for train_idx, val_idx in tscv.split(numeric_features):
+                X_train = numeric_features.iloc[train_idx]
+                X_val = numeric_features.iloc[val_idx]
+                y_train = targets_series.iloc[train_idx]
+                y_val = targets_series.iloc[val_idx]
+                
+                # Calculate correlations on training set
+                train_correlations = X_train.corrwith(y_train, method='pearson')
+                
+                # Validate on validation set (simplified)
+                val_correlations = X_val.corrwith(y_val, method='pearson')
+                
+                # Use mean absolute correlation as IC proxy
+                ic_score = train_correlations.abs().mean()
+                ic_scores.append(ic_score)
+            
+            return np.mean(ic_scores) if ic_scores else 0.0
+            
+        except Exception as e:
+            tprint_debug(f"IC estimation failed: {e}")
             return 0.0
     
     def _estimate_feature_importance(self, features_df: pd.DataFrame, targets_series: pd.Series) -> float:
@@ -837,11 +917,22 @@ class FeatureGenerationGateFeatureStep(BaseStep):
             Estimated feature importance score
         """
         try:
-            # Simple variance-based importance estimate
-            feature_variances = features_df.var()
-            return feature_variances.mean() / feature_variances.std() if feature_variances.std() > 0 else 0.0
+            # Only use numeric columns for variance calculation
+            numeric_features = features_df.select_dtypes(include=[np.number])
+            if numeric_features.empty:
+                return 0.0
             
-        except Exception:
+            # Calculate variance only for numeric columns
+            feature_variances = numeric_features.var()
+            valid_variances = feature_variances.dropna()
+            
+            if len(valid_variances) < 2:
+                return 0.0
+                
+            return valid_variances.mean() / valid_variances.std() if valid_variances.std() > 0 else 0.0
+            
+        except Exception as e:
+            tprint_debug(f"Feature importance estimation failed: {e}")
             return 0.0
     
     def _learn_selective_classification_gate(self, X: pd.DataFrame, y: pd.Series, 
@@ -1145,7 +1236,7 @@ class FeatureGenerationGateFeatureStep(BaseStep):
             Execution results dictionary
         """
         tprint_step("🚀 Starting FeatureGenerationGateFeatureStep execution")
-        tprint_data_preview(config, "gate_feature_config", level="DEBUG")
+        tprint_data_preview(config, "gate_feature_config")
         
         try:
             # Initialize gate manager

@@ -221,7 +221,7 @@ feature_engineering:
 
 ### **Basic Usage with YAML**
 ```python
-from src.training.ml_model_trainer import MLModelTrainer, MLModelTrainerConfig, ModelType
+from src.training.steps.models_training.training.ml_model_trainer import MLModelTrainer, MLModelTrainerConfig, ModelType
 
 # Create configuration
 config = MLModelTrainerConfig(

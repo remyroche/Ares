@@ -43,7 +43,7 @@ except ImportError:
 from src.utils.tprint import tprint_info, tprint_success, tprint_error, tprint_warning
 
 # Import our custom types
-from ..types import (
+from ..step_types import (
     StepConfig, ModelTrainingResult, ValidationResult, MetricsDict,
     DataFrameType, SeriesType, SignalType, ModelType, PathType,
     ModelTrainingError, ValidationError, ConfigurationError, ArtifactError,

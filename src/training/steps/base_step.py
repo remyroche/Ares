@@ -104,7 +104,7 @@ from datetime import datetime
 import traceback
 
 # Import our custom types
-from .types import (
+from .step_types import (
     StepConfig, ExecutionResult, ValidationResult, MetricsDict, MetadataDict,
     DataFrameType, SeriesType, PathType, ExecutionMode, SignalType, ModelType, DirectionType,
     TrainingStepError, ValidationError, DataLoadError, ModelTrainingError, 

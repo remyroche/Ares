@@ -15,7 +15,7 @@ from src.utils.tprint import (
     tprint_exception, LogLevel
 )
 
-from .types import (
+from .step_types import (
     ExecutionResult, ValidationResult, MetricsDict,
     TrainingStepError, ValidationError, DataLoadError, ModelTrainingError,
     FeatureSelectionError, ConfigurationError, ArtifactError,

@@ -235,6 +235,11 @@ from exchanges.shared.unified_ohlcv_standardizer import UnifiedOHLCVStandardizer
 # Import BaseStep for inheritance
 from src.training.steps.base_step import BaseStep
 
+# Import existing data collection components
+from .unified_gap_filler import UnifiedGapFiller
+from .enhanced_api_agnostic_data_collector import DataGapDetector, IncrementalDataDownloader
+from .utils.data_operations_utils import DataFormatter, DataFormat
+
 # Initialize quality utilities at module level
 _lazy_import_quality_utilities()
 
@@ -1294,7 +1299,7 @@ class EnhancedKlinesProcessingPipeline(BaseStep):
         max_gap_minutes: int
     ) -> ProcessingResult:
         """
-        Analyze existing data and detect gaps BEFORE downloading anything.
+        Analyze existing data and detect gaps using UnifiedGapFiller.
         This is the optimized approach that prevents duplicate downloads.
         """
         start_time = datetime.now()
@@ -1309,119 +1314,91 @@ class EnhancedKlinesProcessingPipeline(BaseStep):
             if self.enable_logging:
                 tprint_info(f"🔍 Analyzing existing data for {symbol} {interval}")
 
-            # Check if we have existing data
-            data_dir = Path(self.config.data_dir) / "binance" / symbol.lower() / "raw"
-            parquet_files = list(data_dir.glob(f"{symbol.lower()}_{interval}_*.parquet")) if data_dir.exists() else []
+            # Initialize UnifiedGapFiller
+            gap_filler = UnifiedGapFiller(data_cache_path=self.config.data_dir)
             
-            if not parquet_files:
-                if self.enable_logging:
-                    tprint_info("📁 No existing data found - will download all data")
-                
-                # No existing data - we need to download everything
-                result.metadata = {
-                    "gaps_detected": 1,  # One big gap = all data missing
-                    "gaps_filled": 0,
-                    "existing_records": 0,
-                    "download_required": True,
-                    "date_range": None
-                }
-                result.success = True
-                result.data = pd.DataFrame()  # Empty DataFrame to indicate no existing data
-                return result
-
-            # Load existing data
-            if self.enable_logging:
-                tprint_info(f"📁 Found {len(parquet_files)} existing parquet files")
-
-            all_data = []
-            for file_path in sorted(parquet_files):
-                try:
-                    df = pd.read_parquet(file_path)
-                    if not df.empty:
-                        all_data.append(df)
-                        if self.enable_logging:
-                            tprint_info(f"  📊 Loaded {len(df)} records from {file_path.name}")
-                except Exception as e:
-                    result.warnings.append(f"Failed to load {file_path.name}: {e}")
-
-            if not all_data:
-                if self.enable_logging:
-                    tprint_warning("⚠️ No valid data found in parquet files")
-                result.metadata = {
-                    "gaps_detected": 1,
-                    "gaps_filled": 0,
-                    "existing_records": 0,
-                    "download_required": True,
-                    "date_range": None
-                }
-                result.success = True
-                result.data = pd.DataFrame()
-                return result
-
-            # Combine existing data
-            existing_data = pd.concat(all_data, ignore_index=True)
-            existing_data = existing_data.drop_duplicates().sort_values('timestamp')
-            
-            # Ensure timestamp is datetime
-            if not pd.api.types.is_datetime64_any_dtype(existing_data['timestamp']):
-                existing_data['timestamp'] = pd.to_datetime(existing_data['timestamp'])
-            
-            existing_data.set_index('timestamp', inplace=True)
-
-            if self.enable_logging:
-                tprint_success(f"✅ Loaded {len(existing_data)} existing records")
-                tprint_info(f"📅 Existing data range: {existing_data.index.min()} to {existing_data.index.max()}")
-
             # Calculate expected date range
             end_date = datetime.now() - timedelta(days=3)  # 3 days ago
             start_date = end_date - timedelta(days=years * 365)
             
-            # Detect gaps in existing data
-            gaps = self._detect_gaps(existing_data, interval, max_gap_minutes)
-            
-            # Check if we need data before existing data starts
-            if existing_data.index.min() > start_date:
-                gap = GapInfo(
-                    start_time=start_date,
-                    end_time=existing_data.index.min(),
-                    duration_minutes=int((existing_data.index.min() - start_date).total_seconds() / 60),
-                    symbol=symbol,
-                    interval=interval,
-                    priority=1
-                )
-                gaps.insert(0, gap)  # Add to beginning
+            # Use UnifiedGapFiller to detect gaps
+            gaps = gap_filler.detect_gaps(
+                symbol=symbol,
+                exchange="binance",  # Use config exchange
+                data_type="klines",
+                start_date=start_date,
+                end_date=end_date
+            )
 
-            # Check if we need data after existing data ends
-            if existing_data.index.max() < end_date:
-                gap = GapInfo(
-                    start_time=existing_data.index.max(),
-                    end_time=end_date,
-                    duration_minutes=int((end_date - existing_data.index.max()).total_seconds() / 60),
+            # Load existing data if available
+            data_dir = Path(self.config.data_dir) / "binance" / symbol.lower() / "raw"
+            parquet_files = list(data_dir.glob(f"{symbol.lower()}_{interval}_*.parquet")) if data_dir.exists() else []
+            
+            existing_data = pd.DataFrame()
+            if parquet_files:
+                if self.enable_logging:
+                    tprint_info(f"📁 Found {len(parquet_files)} existing parquet files")
+
+                all_data = []
+                for file_path in sorted(parquet_files):
+                    try:
+                        df = pd.read_parquet(file_path)
+                        if not df.empty:
+                            all_data.append(df)
+                            if self.enable_logging:
+                                tprint_info(f"  📊 Loaded {len(df)} records from {file_path.name}")
+                    except Exception as e:
+                        result.warnings.append(f"Failed to load {file_path.name}: {e}")
+
+                if all_data:
+                    existing_data = pd.concat(all_data, ignore_index=True)
+                    existing_data = existing_data.drop_duplicates().sort_values('timestamp')
+                    
+                    # Ensure timestamp is datetime
+                    if not pd.api.types.is_datetime64_any_dtype(existing_data['timestamp']):
+                        existing_data['timestamp'] = pd.to_datetime(existing_data['timestamp'])
+                    
+                    existing_data.set_index('timestamp', inplace=True)
+
+                    if self.enable_logging:
+                        tprint_success(f"✅ Loaded {len(existing_data)} existing records")
+                        tprint_info(f"📅 Existing data range: {existing_data.index.min()} to {existing_data.index.max()}")
+            else:
+                if self.enable_logging:
+                    tprint_info("📁 No existing data found - will download all data")
+
+            # Convert UnifiedGapFiller gaps to our GapInfo format
+            gap_info_list = []
+            for gap in gaps:
+                gap_info = GapInfo(
+                    start_time=gap['start_time'],
+                    end_time=gap['end_time'],
+                    duration_minutes=int(gap['gap_minutes']),
                     symbol=symbol,
                     interval=interval,
-                    priority=1
+                    priority=1 if gap['gap_minutes'] > max_gap_minutes else 2
                 )
-                gaps.append(gap)  # Add to end
+                gap_info_list.append(gap_info)
 
             result.metadata = {
-                "gaps_detected": len(gaps),
+                "gaps_detected": len(gap_info_list),
                 "gaps_filled": 0,
                 "existing_records": len(existing_data),
-                "download_required": len(gaps) > 0,
+                "download_required": len(gap_info_list) > 0,
                 "date_range": {
                     "start": existing_data.index.min().isoformat() if not existing_data.empty else None,
                     "end": existing_data.index.max().isoformat() if not existing_data.empty else None
                 },
-                "gaps": [gap.__dict__ for gap in gaps]
+                "gaps": [gap.__dict__ for gap in gap_info_list]
             }
 
             if self.enable_logging:
-                if len(gaps) > 0:
-                    tprint_warning(f"⚠️ Found {len(gaps)} gaps in existing data")
-                    for i, gap in enumerate(gaps[:3]):  # Show first 3 gaps
+                if len(gap_info_list) > 0:
+                    tprint_warning(f"⚠️ Found {len(gap_info_list)} gaps in existing data")
+                    for i, gap in enumerate(gap_info_list[:3]):  # Show first 3 gaps
                         tprint_info(f"  Gap {i+1}: {gap.start_time} to {gap.end_time} ({gap.duration_minutes}min)")
-                    if len(gaps) > 3:
-                        tprint_info(f"  ... and {len(gaps) - 3} more gaps")
+                    if len(gap_info_list) > 3:
+                        tprint_info(f"  ... and {len(gap_info_list) - 3} more gaps")
                 else:
                     tprint_success("✅ No gaps found in existing data")
 
@@ -1445,7 +1422,7 @@ class EnhancedKlinesProcessingPipeline(BaseStep):
         exchange_interface: ExchangeInterface
     ) -> ProcessingResult:
         """
-        Download only the missing data periods identified by gap analysis.
+        Download only the missing data periods using IncrementalDataDownloader.
         """
         start_time = datetime.now()
         result = ProcessingResult(
@@ -1459,143 +1436,63 @@ class EnhancedKlinesProcessingPipeline(BaseStep):
             if self.enable_logging:
                 tprint_info(f"📥 Downloading missing data for {symbol} {interval}")
 
-            # Get gaps from the previous analysis
-            gaps = []
-            if not existing_data.empty:
-                gaps = self._detect_gaps(existing_data, interval, self.config.max_gap_minutes)
+            # Initialize IncrementalDataDownloader
+            downloader = IncrementalDataDownloader(
+                exchange="binance",
+                symbol=symbol,
+                timeframe=interval,
+                data_cache_path=self.config.data_dir
+            )
+
+            # Use the downloader's detect_and_fill_gaps method
+            gap_result = await downloader.detect_and_fill_gaps(
+                data_type="klines",
+                start_date=datetime.now() - timedelta(days=4 * 365),
+                end_date=datetime.now() - timedelta(days=3)
+            )
+
+            if not gap_result.get('success', False):
+                raise RuntimeError(f"Gap filling failed: {gap_result.get('error', 'Unknown error')}")
+
+            # Load the updated data
+            updated_data = existing_data.copy()
+            
+            # If gaps were filled, reload the data from files
+            if gap_result.get('gaps_filled', 0) > 0:
+                data_dir = Path(self.config.data_dir) / "binance" / symbol.lower() / "raw"
+                parquet_files = list(data_dir.glob(f"{symbol.lower()}_{interval}_*.parquet")) if data_dir.exists() else []
                 
-                # Add gaps for missing data at start/end
-                end_date = datetime.now() - timedelta(days=3)
-                start_date = end_date - timedelta(days=4 * 365)  # 4 years
-                
-                if existing_data.index.min() > start_date:
-                    gap = GapInfo(
-                        start_time=start_date,
-                        end_time=existing_data.index.min(),
-                        duration_minutes=int((existing_data.index.min() - start_date).total_seconds() / 60),
-                        symbol=symbol,
-                        interval=interval,
-                        priority=1
-                    )
-                    gaps.insert(0, gap)
+                if parquet_files:
+                    all_data = []
+                    for file_path in sorted(parquet_files):
+                        try:
+                            df = pd.read_parquet(file_path)
+                            if not df.empty:
+                                all_data.append(df)
+                        except Exception as e:
+                            result.warnings.append(f"Failed to load {file_path.name}: {e}")
 
-                if existing_data.index.max() < end_date:
-                    gap = GapInfo(
-                        start_time=existing_data.index.max(),
-                        end_time=end_date,
-                        duration_minutes=int((end_date - existing_data.index.max()).total_seconds() / 60),
-                        symbol=symbol,
-                        interval=interval,
-                        priority=1
-                    )
-                    gaps.append(gap)
-            else:
-                # No existing data - download everything
-                end_date = datetime.now() - timedelta(days=3)
-                start_date = end_date - timedelta(days=4 * 365)
-                gap = GapInfo(
-                    start_time=start_date,
-                    end_time=end_date,
-                    duration_minutes=int((end_date - start_date).total_seconds() / 60),
-                    symbol=symbol,
-                    interval=interval,
-                    priority=1
-                )
-                gaps = [gap]
-
-            if not gaps:
-                if self.enable_logging:
-                    tprint_success("✅ No missing data to download")
-                result.success = True
-                result.data = existing_data
-                result.metadata = {"gaps_filled": 0, "records_downloaded": 0}
-                return result
-
-            # Download data for each gap
-            downloaded_data = []
-            gaps_filled = 0
-
-            for gap in gaps:
-                if gap.priority > 1:  # Skip low priority gaps
-                    continue
-
-                try:
-                    if self.enable_logging:
-                        tprint_info(f"📥 Downloading gap: {gap.start_time} to {gap.end_time}")
-
-                    # Download data for the gap period
-                    gap_klines = await exchange_interface.get_klines(
-                        symbol=symbol,
-                        interval=interval,
-                        start_time=gap.start_time,
-                        end_time=gap.end_time,
-                        limit=1000
-                    )
-
-                    if gap_klines:
-                        # Convert KlineData objects to DataFrame
-                        gap_data = []
-                        for kline in gap_klines:
-                            gap_data.append([
-                                int(kline.timestamp.timestamp() * 1000),  # timestamp
-                                kline.open_price,  # open
-                                kline.high_price,  # high
-                                kline.low_price,   # low
-                                kline.close_price, # close
-                                kline.volume,      # volume
-                                int(kline.close_time.timestamp() * 1000),  # close_time
-                                kline.quote_asset_volume,  # quote_volume
-                                kline.number_of_trades,     # trades
-                                kline.taker_buy_base_asset_volume,  # taker_buy_base
-                                kline.taker_buy_quote_asset_volume   # taker_buy_quote
-                            ])
-
-                        if gap_data:
-                            gap_df = self._klines_to_dataframe(gap_data, symbol, interval)
-                            
-                            # Standardize the downloaded data immediately
-                            gap_df = await self._standardize_dataframe(gap_df, symbol, interval)
-                            
-                            downloaded_data.append(gap_df)
-                            gaps_filled += 1
-                            
-                            if self.enable_logging:
-                                tprint_success(f"✅ Downloaded and standardized {len(gap_df)} records for gap")
-
-                except Exception as e:
-                    error_msg = f"Failed to download gap {gap.start_time} to {gap.end_time}: {e}"
-                    result.warnings.append(error_msg)
-                    if self.enable_logging:
-                        tprint_warning(f"⚠️ {error_msg}")
-
-            # Combine existing data with downloaded data
-            if downloaded_data:
-                if not existing_data.empty:
-                    # Combine existing and new data
-                    all_data = [existing_data] + downloaded_data
-                    combined_data = pd.concat(all_data, ignore_index=False)
-                else:
-                    # Only downloaded data
-                    combined_data = pd.concat(downloaded_data, ignore_index=False)
-                
-                # Remove duplicates and sort
-                combined_data = combined_data.drop_duplicates().sort_index()
-                
-                if self.enable_logging:
-                    tprint_success(f"✅ Combined data: {len(combined_data)} total records")
-                    tprint_info(f"📅 Final range: {combined_data.index.min()} to {combined_data.index.max()}")
-            else:
-                combined_data = existing_data
-                if self.enable_logging:
-                    tprint_warning("⚠️ No data was downloaded")
+                    if all_data:
+                        updated_data = pd.concat(all_data, ignore_index=True)
+                        updated_data = updated_data.drop_duplicates().sort_values('timestamp')
+                        
+                        # Ensure timestamp is datetime
+                        if not pd.api.types.is_datetime64_any_dtype(updated_data['timestamp']):
+                            updated_data['timestamp'] = pd.to_datetime(updated_data['timestamp'])
+                        
+                        updated_data.set_index('timestamp', inplace=True)
 
             result.success = True
-            result.data = combined_data
+            result.data = updated_data
             result.metadata = {
-                "gaps_filled": gaps_filled,
-                "records_downloaded": sum(len(df) for df in downloaded_data),
-                "total_records": len(combined_data)
+                "gaps_filled": gap_result.get('gaps_filled', 0),
+                "records_downloaded": gap_result.get('total_rows_downloaded', 0),
+                "total_records": len(updated_data)
             }
+
+            if self.enable_logging:
+                tprint_success(f"✅ Downloaded {gap_result.get('gaps_filled', 0)} gaps")
+                tprint_info(f"📊 Total records: {len(updated_data)}")
 
         except Exception as e:
             error_msg = f"Missing data download failed: {str(e)}"
@@ -1762,9 +1659,12 @@ class EnhancedKlinesProcessingPipeline(BaseStep):
         interval: str
     ) -> pd.DataFrame:
         """
-        Standardize a DataFrame using the data standardizer.
+        Standardize a DataFrame using DataFormatter.
         """
         try:
+            # Initialize DataFormatter
+            formatter = DataFormatter()
+            
             # Ensure proper column names and types
             required_columns = ['open', 'high', 'low', 'close', 'volume']
             for col in required_columns:
@@ -1782,12 +1682,21 @@ class EnhancedKlinesProcessingPipeline(BaseStep):
             df['interval'] = interval
             df['exchange'] = self.exchange
             
-            # Use the data standardizer to ensure consistent format
-            standardized_data = self.data_standardizer.standardize_klines_data(
-                df, symbol, interval
+            # Use DataFormatter to format klines data
+            format_result = formatter.format_klines_data(
+                data=df,
+                symbol=symbol,
+                interval=interval,
+                exchange=self.exchange
             )
             
-            return standardized_data
+            if format_result.get('success', False):
+                return format_result['data']
+            else:
+                if self.enable_logging:
+                    tprint_warning(f"⚠️ DataFormatter failed: {format_result.get('error', 'Unknown error')}")
+                # Fall back to original data
+                return df
             
         except Exception as e:
             if self.enable_logging:

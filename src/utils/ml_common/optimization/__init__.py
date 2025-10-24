@@ -46,6 +46,27 @@ from .results import HPOResult
 from .pareto import ParetoFront, ParetoFrontAnalyzer, ParetoOptimizer
 from .regime_specific_tpsl_optimizer import RegimeSpecificTPSLOptimizer
 from .grid_utils import build_coarse_grid_from_search_space, build_fine_grid_around_best
+
+# Import enhanced HPO features
+try:
+    from .enhanced_hpo_engine import (
+        EnhancedHPOEngine, EnhancedHPOConfig, create_enhanced_hpo_engine,
+        create_multi_model_optimization_config
+    )
+    from .multi_objective_optimizer import (
+        MultiObjectiveOptimizer, MultiObjectiveConfig, create_multi_objective_optimizer,
+        create_accuracy_efficiency_objectives, create_performance_robustness_objectives
+    )
+    from .enhanced_early_stopping_integration import (
+        EarlyStoppingIntegration, EarlyStoppingIntegrationConfig, create_early_stopping_integration
+    )
+    from .warm_starting_system import (
+        WarmStartManager, WarmStartConfig, WarmStartData, create_warm_start_manager,
+        create_warm_start_data_from_hpo_result
+    )
+    ENHANCED_HPO_AVAILABLE = True
+except ImportError:
+    ENHANCED_HPO_AVAILABLE = False
 # Enhanced hardware optimization imports
 try:
     from ...hardware import (
@@ -121,6 +142,28 @@ __all__ = [
     'performance_tracked', 'WorkloadCategory', 'OptimizationStrategy',
     'EnhancedCPUOptimizer', 'M1MemoryOptimizer', 'EnhancedM1GPUManager',
 ]
+
+# Add enhanced HPO imports if available
+if ENHANCED_HPO_AVAILABLE:
+    __all__.extend([
+        # Enhanced HPO Engine
+        'EnhancedHPOEngine', 'EnhancedHPOConfig', 'create_enhanced_hpo_engine',
+        'create_multi_model_optimization_config',
+        
+        # Multi-objective Optimization
+        'MultiObjectiveOptimizer', 'MultiObjectiveConfig', 'create_multi_objective_optimizer',
+        'create_accuracy_efficiency_objectives', 'create_performance_robustness_objectives',
+        
+        # Enhanced Early Stopping
+        'EarlyStoppingIntegration', 'EarlyStoppingIntegrationConfig', 'create_early_stopping_integration',
+        
+        # Warm Starting
+        'WarmStartManager', 'WarmStartConfig', 'WarmStartData', 'create_warm_start_manager',
+        'create_warm_start_data_from_hpo_result',
+        
+        # Availability flag
+        'ENHANCED_HPO_AVAILABLE'
+    ])
 
 # Add legacy hardware imports if available
 if LEGACY_HARDWARE_AVAILABLE:

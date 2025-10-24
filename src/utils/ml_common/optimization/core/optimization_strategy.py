@@ -91,21 +91,42 @@ class OptimizationStrategy(ABC):
 
 
 class BayesianStrategy(OptimizationStrategy):
-    """Bayesian optimization using TPE."""
+    """Bayesian optimization using TPE with Grid pre-step."""
     
     def optimize(self, context: OptimizationContext) -> HPOResult:
-        """Execute Bayesian optimization."""
+        """Execute Bayesian optimization with Grid pre-step."""
         try:
             import optuna
             from optuna.samplers import TPESampler
         except ImportError:
             raise OptimizationError("Optuna is required for Bayesian optimization")
         
+        all_trial_results = []
+        total_trials = 0
+        
+        # Step 1: Coarse Grid Search (if enabled)
+        if self.config.enable_staged_optimization:
+            grid_result = self._run_grid_prestep(context)
+            all_trial_results.extend(grid_result.trial_results)
+            total_trials += grid_result.n_trials
+            
+            # Use best grid results to inform Bayesian search
+            if grid_result.trial_results:
+                best_grid_params = grid_result.best_params
+                # Refine search space around best grid results
+                context.search_space = self._refine_search_space_around_best(
+                    context.search_space, best_grid_params
+                )
+        
+        # Step 2: Bayesian Optimization
+        # Calculate remaining trials for Bayesian phase
+        remaining_trials = max(1, self.config.n_trials - total_trials)
+        
         # Create study
         study = optuna.create_study(
             direction='maximize',
             sampler=TPESampler(
-                n_startup_trials=self.config.n_startup_trials,
+                n_startup_trials=min(self.config.n_startup_trials, remaining_trials // 2),
                 n_ei_candidates=self.config.n_ei_candidates,
                 multivariate=self.config.multivariate,
                 group=self.config.group,
@@ -121,31 +142,122 @@ class BayesianStrategy(OptimizationStrategy):
             return self._evaluate_model(model, context.X, context.y, trial.number)
         
         # Optimize
-        study.optimize(objective, n_trials=self.config.n_trials, 
+        study.optimize(objective, n_trials=remaining_trials, 
                       timeout=self.config.timeout)
         
-        # Extract results
+        # Combine results
+        bayesian_trial_results = [{
+            'trial_number': trial.number + total_trials,
+            'params': trial.params,
+            'value': trial.value,
+            'state': trial.state.name
+        } for trial in study.trials]
+        
+        all_trial_results.extend(bayesian_trial_results)
+        
+        # Find overall best result
         best_trial = study.best_trial
-        trial_results = [trial for trial in study.trials]
+        if all_trial_results:
+            # Check if grid search found better results
+            grid_best = max(all_trial_results[:total_trials], 
+                          key=lambda x: x.get('value', -float('inf'))) if total_trials > 0 else None
+            bayesian_best = max(bayesian_trial_results, 
+                              key=lambda x: x.get('value', -float('inf'))) if bayesian_trial_results else None
+            
+            if grid_best and bayesian_best:
+                if grid_best['value'] > bayesian_best['value']:
+                    best_params = grid_best['params']
+                    best_score = grid_best['value']
+                else:
+                    best_params = bayesian_best['params']
+                    best_score = bayesian_best['value']
+            elif grid_best:
+                best_params = grid_best['params']
+                best_score = grid_best['value']
+            else:
+                best_params = bayesian_best['params']
+                best_score = bayesian_best['value']
+        else:
+            best_params = best_trial.params
+            best_score = best_trial.value
         
         return HPOResult(
-            best_params=best_trial.params,
-            best_score=best_trial.value,
+            best_params=best_params,
+            best_score=best_score,
             best_trial=best_trial,
-            n_trials=len(trial_results),
-            trial_results=[{
-                'trial_number': trial.number,
-                'params': trial.params,
-                'value': trial.value,
-                'state': trial.state.name
-            } for trial in trial_results],
-            mean_score=np.mean([t.value for t in trial_results if t.value is not None]),
-            std_score=np.std([t.value for t in trial_results if t.value is not None]),
-            min_score=np.min([t.value for t in trial_results if t.value is not None]),
-            max_score=np.max([t.value for t in trial_results if t.value is not None]),
+            n_trials=len(all_trial_results),
+            trial_results=all_trial_results,
+            mean_score=np.mean([t['value'] for t in all_trial_results if t.get('value') is not None]),
+            std_score=np.std([t['value'] for t in all_trial_results if t.get('value') is not None]),
+            min_score=np.min([t['value'] for t in all_trial_results if t.get('value') is not None]),
+            max_score=np.max([t['value'] for t in all_trial_results if t.get('value') is not None]),
             strategy=self.config.strategy.value,
             optimization_time=time.time() - context.start_time
         )
+    
+    def _run_grid_prestep(self, context: OptimizationContext) -> HPOResult:
+        """Run coarse grid search as pre-step."""
+        # Create a temporary grid strategy
+        grid_strategy = GridStrategy(self.config)
+        
+        # Use coarse grid settings
+        original_coarse_points = self.config.coarse_grid_points
+        original_coarse_trials = self.config.coarse_grid_trials
+        
+        # Temporarily modify config for coarse grid
+        self.config.coarse_grid_points = max(2, self.config.coarse_grid_points)
+        self.config.coarse_grid_trials = min(self.config.coarse_grid_trials, 
+                                           self.config.n_trials // 3)
+        
+        try:
+            result = grid_strategy.optimize(context)
+            return result
+        finally:
+            # Restore original settings
+            self.config.coarse_grid_points = original_coarse_points
+            self.config.coarse_grid_trials = original_coarse_trials
+    
+    def _refine_search_space_around_best(self, search_space: Dict[str, SearchSpaceParameter], 
+                                       best_params: Dict[str, Any]) -> Dict[str, SearchSpaceParameter]:
+        """Refine search space around best parameters from grid search."""
+        refined_space = {}
+        
+        for param_name, param_config in search_space.items():
+            if param_name in best_params:
+                best_value = best_params[param_name]
+                
+                if param_config.type.value == 'float':
+                    # Create tighter range around best value
+                    range_size = (param_config.high - param_config.low) * 0.3  # 30% of original range
+                    new_low = max(param_config.low, best_value - range_size)
+                    new_high = min(param_config.high, best_value + range_size)
+                    
+                    refined_space[param_name] = SearchSpaceParameter(
+                        type=param_config.type,
+                        low=new_low,
+                        high=new_high,
+                        log=param_config.log
+                    )
+                elif param_config.type.value == 'int':
+                    # Create tighter range around best value
+                    range_size = max(1, int((param_config.high - param_config.low) * 0.3))
+                    new_low = max(param_config.low, best_value - range_size)
+                    new_high = min(param_config.high, best_value + range_size)
+                    
+                    refined_space[param_name] = SearchSpaceParameter(
+                        type=param_config.type,
+                        low=new_low,
+                        high=new_high,
+                        log=param_config.log
+                    )
+                else:
+                    # Keep categorical parameters as-is
+                    refined_space[param_name] = param_config
+            else:
+                # Keep parameters not in best_params as-is
+                refined_space[param_name] = param_config
+        
+        return refined_space
     
     def _sample_parameters_from_trial(self, trial, search_space: Dict[str, SearchSpaceParameter]) -> Dict[str, Any]:
         """Sample parameters from Optuna trial."""
@@ -171,41 +283,94 @@ class BayesianStrategy(OptimizationStrategy):
 
 
 class GridStrategy(OptimizationStrategy):
-    """Grid search optimization with staged refinement."""
+    """Grid search optimization with proper coarse-to-fine progression."""
     
     def optimize(self, context: OptimizationContext) -> HPOResult:
-        """Execute grid search optimization."""
-        # Stage 1: Coarse grid search
+        """Execute grid search optimization with coarse-to-fine progression."""
+        all_trial_results = []
+        
+        # Stage 1: Coarse Grid Search
+        if TPRINT_AVAILABLE:
+            tprint_info(f"🔍 Stage 1: Coarse grid search with {self.config.coarse_grid_points} points per parameter")
+        
         coarse_grid = self._generate_parameter_grid(context.search_space, self.config.coarse_grid_points)
-        stage1_results = self._eval_param_list(context, coarse_grid)
+        stage1_results = self._eval_param_list(context, coarse_grid, stage_name="coarse")
+        all_trial_results.extend(stage1_results)
         
-        # Pick top K from coarse stage
-        top = sorted(stage1_results, key=lambda d: d['value'], reverse=True)[:self.config.coarse_grid_trials]
-        best_score = top[0]['value'] if top else -np.inf
-        best_params = top[0]['params'] if top else {}
+        # Find top performers from coarse stage
+        valid_results = [r for r in stage1_results if r.get('value') is not None]
+        if not valid_results:
+            raise OptimizationError("No valid results from coarse grid search")
         
-        # Stage 2: Fine grid search (optional)
-        trial_results = stage1_results[:]
-        if self.config.enable_staged_optimization and top:
-            refined_space = self._refine_search_space([t['params'] for t in top], context.search_space)
-            fine_grid = self._generate_parameter_grid(refined_space, self.config.fine_grid_points)
-            stage2_results = self._eval_param_list(context, fine_grid)
-            trial_results.extend(stage2_results)
+        # Sort by score and take top performers
+        top_coarse = sorted(valid_results, key=lambda d: d['value'], reverse=True)[:self.config.coarse_grid_trials]
+        best_score = top_coarse[0]['value'] if top_coarse else -np.inf
+        best_params = top_coarse[0]['params'] if top_coarse else {}
+        
+        if TPRINT_AVAILABLE:
+            tprint_info(f"📊 Coarse stage: {len(valid_results)} valid trials, best score: {best_score:.4f}")
+        
+        # Stage 2: Fine Grid Search (if enabled and we have good coarse results)
+        if self.config.enable_staged_optimization and top_coarse:
+            if TPRINT_AVAILABLE:
+                tprint_info(f"🔍 Stage 2: Fine grid search with {self.config.fine_grid_points} points per parameter")
             
-            # Update best if we found something better
-            for r in stage2_results:
-                if r['value'] > best_score:
-                    best_score, best_params = r['value'], r['params']
+            # Refine search space around top coarse results
+            refined_space = self._refine_search_space_around_winners(
+                [t['params'] for t in top_coarse], context.search_space
+            )
+            
+            # Generate fine grid
+            fine_grid = self._generate_parameter_grid(refined_space, self.config.fine_grid_points)
+            stage2_results = self._eval_param_list(context, fine_grid, stage_name="fine")
+            all_trial_results.extend(stage2_results)
+            
+            # Update best if we found something better in fine stage
+            valid_fine = [r for r in stage2_results if r.get('value') is not None]
+            if valid_fine:
+                best_fine = max(valid_fine, key=lambda d: d['value'])
+                if best_fine['value'] > best_score:
+                    best_score = best_fine['value']
+                    best_params = best_fine['params']
+                    
+                if TPRINT_AVAILABLE:
+                    tprint_info(f"📊 Fine stage: {len(valid_fine)} valid trials, best score: {best_fine['value']:.4f}")
+        
+        # Stage 3: TPE Refinement (if enabled and we have remaining trials)
+        remaining_trials = self.config.n_trials - len(all_trial_results)
+        if (self.config.enable_staged_optimization and 
+            remaining_trials > 0 and 
+            self.config.tpe_trials > 0):
+            
+            if TPRINT_AVAILABLE:
+                tprint_info(f"🔍 Stage 3: TPE refinement with {min(remaining_trials, self.config.tpe_trials)} trials")
+            
+            tpe_results = self._run_tpe_refinement(context, best_params, min(remaining_trials, self.config.tpe_trials))
+            all_trial_results.extend(tpe_results)
+            
+            # Update best if TPE found something better
+            valid_tpe = [r for r in tpe_results if r.get('value') is not None]
+            if valid_tpe:
+                best_tpe = max(valid_tpe, key=lambda d: d['value'])
+                if best_tpe['value'] > best_score:
+                    best_score = best_tpe['value']
+                    best_params = best_tpe['params']
+                    
+                if TPRINT_AVAILABLE:
+                    tprint_info(f"📊 TPE stage: {len(valid_tpe)} valid trials, best score: {best_tpe['value']:.4f}")
+        
+        if TPRINT_AVAILABLE:
+            tprint_success(f"✅ Grid optimization completed: {len(all_trial_results)} total trials, best score: {best_score:.4f}")
         
         return HPOResult(
             best_params=best_params,
             best_score=best_score,
-            n_trials=len(trial_results),
-            trial_results=trial_results,
-            mean_score=float(np.mean([t['value'] for t in trial_results])) if trial_results else -np.inf,
-            std_score=float(np.std([t['value'] for t in trial_results])) if trial_results else 0.0,
-            min_score=float(np.min([t['value'] for t in trial_results])) if trial_results else -np.inf,
-            max_score=float(np.max([t['value'] for t in trial_results])) if trial_results else -np.inf,
+            n_trials=len(all_trial_results),
+            trial_results=all_trial_results,
+            mean_score=float(np.mean([t['value'] for t in all_trial_results if t.get('value') is not None])) if all_trial_results else -np.inf,
+            std_score=float(np.std([t['value'] for t in all_trial_results if t.get('value') is not None])) if all_trial_results else 0.0,
+            min_score=float(np.min([t['value'] for t in all_trial_results if t.get('value') is not None])) if all_trial_results else -np.inf,
+            max_score=float(np.max([t['value'] for t in all_trial_results if t.get('value') is not None])) if all_trial_results else -np.inf,
             strategy=self.config.strategy.value,
             optimization_time=time.time() - context.start_time
         )
@@ -253,21 +418,35 @@ class GridStrategy(OptimizationStrategy):
         
         return grid
     
-    def _eval_param_list(self, context: OptimizationContext, param_list: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def _eval_param_list(self, context: OptimizationContext, param_list: List[Dict[str, Any]], 
+                        stage_name: str = "grid") -> List[Dict[str, Any]]:
         """Evaluate a list of parameter combinations."""
         out = []
         for i, params in enumerate(param_list):
             try:
+                self._check_timeout(context.start_time)
                 model = context.model_factory(**params)
                 score = self._evaluate_model(model, context.X, context.y, i)
-                out.append({'trial_number': i, 'params': params, 'value': score, 'state': 'COMPLETE'})
+                out.append({
+                    'trial_number': i, 
+                    'params': params, 
+                    'value': score, 
+                    'state': 'COMPLETE',
+                    'stage': stage_name
+                })
             except Exception as e:
                 # Log error but continue
+                if TPRINT_AVAILABLE:
+                    tprint_warning(f"⚠️ Trial {i} failed in {stage_name} stage: {e}")
                 continue
         return out
     
-    def _refine_search_space(self, winners: List[Dict[str, Any]], base_space: Dict[str, SearchSpaceParameter]) -> Dict[str, SearchSpaceParameter]:
+    def _refine_search_space_around_winners(self, winners: List[Dict[str, Any]], 
+                                          base_space: Dict[str, SearchSpaceParameter]) -> Dict[str, SearchSpaceParameter]:
         """Refine search space around winning configurations."""
+        if not winners:
+            return base_space
+            
         refined = {}
         for name, cfg in base_space.items():
             if cfg.type.value == 'categorical':
@@ -298,6 +477,73 @@ class GridStrategy(OptimizationStrategy):
             else:
                 raise OptimizationError(f"Unsupported type {cfg.type}")
         return refined
+    
+    def _run_tpe_refinement(self, context: OptimizationContext, best_params: Dict[str, Any], 
+                           n_trials: int) -> List[Dict[str, Any]]:
+        """Run TPE refinement around best parameters."""
+        try:
+            import optuna
+            from optuna.samplers import TPESampler
+        except ImportError:
+            if TPRINT_AVAILABLE:
+                tprint_warning("⚠️ Optuna not available, skipping TPE refinement")
+            return []
+        
+        # Create refined search space around best parameters
+        refined_space = self._refine_search_space_around_winners([best_params], context.search_space)
+        
+        # Create study
+        study = optuna.create_study(
+            direction='maximize',
+            sampler=TPESampler(
+                n_startup_trials=max(1, n_trials // 4),
+                n_ei_candidates=min(24, n_trials),
+                multivariate=True,
+                group=True,
+                seed=self.config.random_state
+            )
+        )
+        
+        # Define objective
+        def objective(trial):
+            self._check_timeout(context.start_time)
+            params = self._sample_parameters_from_trial(trial, refined_space)
+            model = context.model_factory(**params)
+            return self._evaluate_model(model, context.X, context.y, trial.number)
+        
+        # Optimize
+        study.optimize(objective, n_trials=n_trials)
+        
+        # Convert results
+        return [{
+            'trial_number': trial.number,
+            'params': trial.params,
+            'value': trial.value,
+            'state': trial.state.name,
+            'stage': 'tpe'
+        } for trial in study.trials]
+    
+    def _sample_parameters_from_trial(self, trial, search_space: Dict[str, SearchSpaceParameter]) -> Dict[str, Any]:
+        """Sample parameters from Optuna trial."""
+        params = {}
+        
+        for param_name, param_config in search_space.items():
+            if param_config.type.value == 'float':
+                params[param_name] = trial.suggest_float(
+                    param_name, param_config.low, param_config.high, 
+                    log=param_config.log
+                )
+            elif param_config.type.value == 'int':
+                params[param_name] = trial.suggest_int(
+                    param_name, param_config.low, param_config.high, 
+                    log=param_config.log
+                )
+            elif param_config.type.value == 'categorical':
+                params[param_name] = trial.suggest_categorical(param_name, param_config.choices)
+            else:
+                raise OptimizationError(f"Unsupported parameter type: {param_config.type}")
+        
+        return params
 
 
 class RandomStrategy(OptimizationStrategy):

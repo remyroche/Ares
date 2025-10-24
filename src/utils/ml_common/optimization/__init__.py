@@ -13,7 +13,7 @@ full backward compatibility.
 
 # Import refactored components
 from .refactored_hpo import (
-    ConsolidatedHPO, HPOConfig, HPOPhaseConfig, HPOResult,
+    ConsolidatedHPO, HPOConfig, HPOResult,
     # Legacy compatibility
     HyperparameterOptimization, HierarchicalHPO, HierarchicalHPOConfig,
     optimize_hyperparameters, staged_hpo, bayesian_optimization,

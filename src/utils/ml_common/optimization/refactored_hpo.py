@@ -27,12 +27,11 @@ from .core import HPOEngine, OptimizationStrategy, BayesianStrategy, GridStrateg
 from .core.monitoring import OptimizationMonitor
 from .core.caching import OptimizationCache
 from .core.pruner_factory import PrunerFactory
-from .validation import HPOConfig, validate_hpo_config, validate_search_space, AresExecutionMode
+from .validation import HPOConfig, HPOPhaseConfig, validate_hpo_config, validate_search_space, AresExecutionMode
 from .exceptions import OptimizationError, ConfigurationError
 from .results import HPOResult
 
-# Import legacy components for backward compatibility
-from .consolidated_hpo import ConsolidatedHPO as LegacyConsolidatedHPO
+# Legacy components removed - using refactored version
 
 # Try to import hardware optimization
 try:

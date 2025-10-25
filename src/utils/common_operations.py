@@ -220,6 +220,40 @@ def math_safe(operation, *args, default=None):
     except (ValueError, OverflowError, ZeroDivisionError):
         return default
 
+
+def validate_correlation_matrix(matrix, tolerance=1e-10):
+    """Validate that a matrix is a proper correlation matrix."""
+    try:
+        import numpy as np
+        
+        # Check if matrix is square
+        if matrix.shape[0] != matrix.shape[1]:
+            return False, "Matrix is not square"
+        
+        # Check if matrix is symmetric
+        if not np.allclose(matrix, matrix.T, atol=tolerance):
+            return False, "Matrix is not symmetric"
+        
+        # Check if diagonal elements are 1
+        if not np.allclose(np.diag(matrix), 1.0, atol=tolerance):
+            return False, "Diagonal elements are not 1"
+        
+        # Check if all values are between -1 and 1
+        if not np.all((matrix >= -1.0 - tolerance) & (matrix <= 1.0 + tolerance)):
+            return False, "Values are not in [-1, 1] range"
+        
+        # Check if matrix is positive semi-definite (eigenvalues >= 0)
+        try:
+            eigenvalues = np.linalg.eigvals(matrix)
+            if not np.all(eigenvalues >= -tolerance):
+                return False, "Matrix is not positive semi-definite"
+        except np.linalg.LinAlgError:
+            return False, "Matrix is not positive semi-definite (eigenvalue computation failed)"
+        
+        return True, "Valid correlation matrix"
+    except Exception as e:
+        return False, f"Validation failed: {e}"
+
 def optimize_dataframe_memory(df: pd.DataFrame) -> pd.DataFrame:
     """Optimize DataFrame memory usage by downcasting numeric types."""
     df_opt = df.copy()

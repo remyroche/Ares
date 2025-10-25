@@ -1,4 +1,4 @@
-"""Hardware setup utilities for NAS-TAS clustering components."""
+"""Hardware setup utilities for HDBSCAN clustering components."""
 
 from dataclasses import dataclass
 from typing import Any, Dict, Optional

@@ -62,7 +62,7 @@ class NormalizationFeatureGenerator(FeatureGenerator):
         if config is None:
             config = NormalizationConfig(
                 name="normalization",
-                category=FeatureCategory.NORMALIZATION,
+                category=FeatureCategory.ADVANCED_STATISTICAL,
                 description="Data normalization features using features_common infrastructure",
                 required_columns=["close"],
                 default_lookback=20
@@ -296,7 +296,7 @@ class RollingZScoreGenerator(NormalizationFeatureGenerator):
         """
         config = NormalizationConfig(
             name="rolling_zscore",
-            category=FeatureCategory.NORMALIZATION,
+            category=FeatureCategory.ADVANCED_STATISTICAL,
             description=f"Rolling z-score normalization (window={rolling_window}) using features_common",
             required_columns=["close"],
             default_lookback=rolling_window,
@@ -324,7 +324,7 @@ class VolatilityScalingGenerator(NormalizationFeatureGenerator):
         """
         config = NormalizationConfig(
             name="volatility_scaling",
-            category=FeatureCategory.NORMALIZATION,
+            category=FeatureCategory.ADVANCED_STATISTICAL,
             description=f"Volatility scaling normalization (window={rolling_window})",
             required_columns=["close"],
             default_lookback=rolling_window,
@@ -390,7 +390,7 @@ class CrossSectionalNormalizer(NormalizationFeatureGenerator):
         """
         config = NormalizationConfig(
             name="cross_sectional_normalizer",
-            category=FeatureCategory.NORMALIZATION,
+            category=FeatureCategory.ADVANCED_STATISTICAL,
             description="Cross-sectional normalization across assets using features_common",
             required_columns=["close"],
             default_lookback=1,
@@ -482,7 +482,7 @@ def create_data_normalizer(method: str = "zscore",
         # Default to base normalization generator
         config = NormalizationConfig(
             name=f"normalization_{method}",
-            category=FeatureCategory.NORMALIZATION,
+            category=FeatureCategory.ADVANCED_STATISTICAL,
             description=f"Data normalization using {method} method with features_common",
             required_columns=["close"],
             default_lookback=rolling_window,

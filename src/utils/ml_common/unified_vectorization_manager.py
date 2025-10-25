@@ -43,6 +43,7 @@ class OperationType(Enum):
     PORTFOLIO_OPTIMIZATION = "portfolio_optimization"
     MATRIX_MULTIPLICATION = "matrix_multiplication"
     STATISTICAL_COMPUTATION = "statistical_computation"
+    NORMALIZATION = "normalization"
     # VectorBT-specific operations
     VECTORBT_BACKTESTING = "vectorbt_backtesting"
     VECTORBT_METRICS = "vectorbt_metrics"
@@ -117,9 +118,30 @@ class UnifiedVectorizationManager:
 
     def __init__(self, strategy_config: Optional[StrategySelectionConfig] = None):
         """Initialize the unified vectorization manager."""
+        self.logger = logging.getLogger(__name__)
+        
+        # Initialize strategy_config first
+        self.strategy_config = strategy_config or StrategySelectionConfig()
+        
         if UnifiedVectorizationManager._init_done:
-            # Return early if already initialized
-            self.logger = logging.getLogger(__name__)
+            # Ensure hardware_caps is available even if already initialized
+            if not hasattr(self, 'hardware_caps') or self.hardware_caps is None:
+                self.logger.warning("⚠️ hardware_caps not initialized, detecting hardware capabilities...")
+                self._detect_hardware_capabilities()
+            # Ensure strategy_config is available
+            if not hasattr(self, 'strategy_config') or self.strategy_config is None:
+                self.strategy_config = StrategySelectionConfig()
+            # Ensure optimization_stats is available
+            if not hasattr(self, 'optimization_stats') or self.optimization_stats is None:
+                self.optimization_stats = {
+                    'total_operations': 0,
+                    'strategy_usage': {strategy: 0 for strategy in OptimizationStrategy},
+                    'average_speedup': 0.0,
+                    'total_computation_time': 0.0
+                }
+            # Ensure performance_history is available
+            if not hasattr(self, 'performance_history') or self.performance_history is None:
+                self.performance_history = []
             return
 
         tprint("🚀 Initializing Unified Vectorization Manager...")
@@ -131,6 +153,10 @@ class UnifiedVectorizationManager:
         # Initialize optimization components
         tprint("🔄 Initializing optimization components...")
         self._initialize_components()
+
+        # Initialize hardware capabilities early to prevent access errors
+        tprint("🔄 Detecting hardware capabilities...")
+        self._detect_hardware_capabilities()
 
         # Performance tracking
         tprint("🔄 Setting up performance tracking...")
@@ -275,9 +301,6 @@ class UnifiedVectorizationManager:
         self.hmm_manager = None
         self.hmm_available = False
 
-        # Hardware detection
-        tprint("🔄 Detecting hardware capabilities...")
-        self._detect_hardware_capabilities()
         tprint("✅ Component initialization completed")
 
     def _detect_hardware_capabilities(self):
@@ -345,7 +368,7 @@ class UnifiedVectorizationManager:
         Returns:
             OptimizationResult with optimized execution
         """
-        tprint(f"🚀 Starting operation optimization for {operation_type.value}...")
+        tprint(f"🚀 Starting operation optimization for {operation_type}...")
         start_time = time.time()
 
         # Create default config if not provided
@@ -409,6 +432,15 @@ class UnifiedVectorizationManager:
         Select the optimal optimization strategy based on operation type and constraints.
         Enhanced with VectorBT prioritization for financial operations.
         """
+        # Ensure hardware_caps is available
+        if not hasattr(self, 'hardware_caps') or self.hardware_caps is None:
+            self.logger.warning("⚠️ hardware_caps not initialized, detecting hardware capabilities...")
+            self._detect_hardware_capabilities()
+        
+        # Ensure strategy_config is available
+        if not hasattr(self, 'strategy_config') or self.strategy_config is None:
+            self.strategy_config = StrategySelectionConfig()
+        
         # Check for prefer_vectorbt flag
         prefer_vectorbt = kwargs.get('prefer_vectorbt', False)
 

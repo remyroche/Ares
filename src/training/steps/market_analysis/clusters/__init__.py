@@ -1,5 +1,5 @@
 """
-Clustering modules for NAS-TAS regime detection.
+Clustering modules for HDBSCAN regime detection.
 
 This package contains the refactored clustering components organized by:
 - Main = orchestration (clustering_orchestrator, clustering_service)

@@ -14,9 +14,11 @@ Key Features:
 
 import numpy as np
 import pandas as pd
-from typing import Dict, Any, Optional, Tuple
+from typing import Dict, Any, Optional, Tuple, TYPE_CHECKING
 import logging
 from dataclasses import dataclass
+
+from .bayesian_tpe_optimizer import BayesianTPEOptimizer
 
 from src.utils.math_validation import validate_positive
 from src.utils.math_validation import safe_divide, safe_log
@@ -90,7 +92,8 @@ class AutoTuner:
         model_type: str,
         available_time_minutes: float = 60.0,
         target_metric: str = 'auto',
-        min_improvement_threshold: Optional[float] = None
+        min_improvement_threshold: Optional[float] = None,
+        execution_mode: str = 'light'
     ) -> OptimizationConfig:
         """
         Automatically configure HPO parameters based on dataset and model characteristics.
@@ -102,6 +105,7 @@ class AutoTuner:
             available_time_minutes: Available optimization time budget
             target_metric: Target metric to optimize ('auto' for automatic selection)
             min_improvement_threshold: Minimum improvement for early stopping (auto if None)
+            execution_mode: Execution mode ('full', 'light', 'blank') for adaptive configuration
 
         Returns:
             Optimized OptimizationConfig
@@ -142,6 +146,7 @@ class AutoTuner:
             # Core settings
             n_trials=n_trials,
             timeout=available_time_minutes * 60,
+            execution_mode=execution_mode,
             direction='maximize',  # Typically maximize for accuracy/R²
 
             # TPE sampler settings (adaptive)
@@ -604,7 +609,7 @@ class AutoTuner:
         y: np.ndarray,
         model_type: str,
         available_time_minutes: float = 60.0
-    ) -> 'BayesianTPEOptimizer':
+    ) -> BayesianTPEOptimizer:
         """
         Create a fully configured Bayesian TPE optimizer with auto-tuned parameters.
 
@@ -680,8 +685,9 @@ class AutoTuner:
         X: np.ndarray,
         y: np.ndarray,
         model_type: str,
-        available_time_minutes: float = 60.0
-    ) -> 'BayesianTPEOptimizer':
+        available_time_minutes: float = 60.0,
+        execution_mode: str = 'light'
+    ) -> BayesianTPEOptimizer:
         """
         Create VectorBT-optimized HPO configuration.
 
@@ -693,6 +699,7 @@ class AutoTuner:
             y: Training targets
             model_type: Type of model
             available_time_minutes: Available optimization time
+            execution_mode: Execution mode for adaptive configuration
 
         Returns:
             VectorBT-optimized BayesianTPEOptimizer
@@ -703,7 +710,7 @@ class AutoTuner:
         dataset_chars = self._analyze_dataset(X, y)
 
         # Create VectorBT-optimized configuration
-        config = self._create_vectorbt_hpo_config(dataset_chars, model_type, available_time_minutes)
+        config = self._create_vectorbt_hpo_config(dataset_chars, model_type, available_time_minutes, execution_mode)
 
         # Create optimizer with VectorBT enhancements
         optimizer = BayesianTPEOptimizer(config)
@@ -720,9 +727,17 @@ class AutoTuner:
         self,
         dataset_chars: DatasetCharacteristics,
         model_type: str,
-        available_time_minutes: float
+        available_time_minutes: float,
+        execution_mode: str = 'light'
     ) -> 'OptimizationConfig':
-        """Create VectorBT-optimized HPO configuration."""
+        """Create VectorBT-optimized HPO configuration.
+
+        Args:
+            dataset_chars: Dataset characteristics
+            model_type: Type of model
+            available_time_minutes: Available optimization time
+            execution_mode: Execution mode for adaptive configuration
+        """
         from .bayesian_tpe_optimizer import OptimizationConfig
 
         # Estimate trial time with VectorBT acceleration
@@ -742,6 +757,7 @@ class AutoTuner:
             # Core settings
             n_trials=n_trials,
             timeout=available_time_minutes * 60,
+            execution_mode=execution_mode,
             direction='maximize',
 
             # TPE settings optimized for VectorBT

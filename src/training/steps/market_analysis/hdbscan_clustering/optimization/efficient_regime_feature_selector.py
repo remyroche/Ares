@@ -40,10 +40,12 @@ from src.utils.tprint import tprint_info, tprint_success, tprint_warning, tprint
 
 # Import UnifiedVectorizationManager for VectorBT acceleration
 from src.utils.ml_common.unified_vectorization_manager import (
-    UnifiedVectorizationManager, 
-    VectorizationConfig,
+    UnifiedVectorizationManager,
     get_unified_vectorization_manager
 )
+
+# Import VectorizationConfig from the correct module
+from src.feature_generation.utils.unified_vectorization_manager import VectorizationConfig
 
 logger = logging.getLogger(__name__)
 

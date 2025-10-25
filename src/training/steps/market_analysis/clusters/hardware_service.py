@@ -1,5 +1,5 @@
 """
-Hardware Service for NAS-TAS Clustering.
+Hardware Service for HDBSCAN Clustering.
 
 This module provides hardware abstraction and optimization services,
 managing GPU/Memory/M1 optimization and providing accelerated operations.

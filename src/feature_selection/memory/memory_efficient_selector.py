@@ -19,6 +19,22 @@ from src.utils.hardware.m1_memory_optimizer import M1MemoryOptimizer
 from src.utils.hardware.unified_hardware_manager import UnifiedHardwareManager, HardwareConfig
 from src.utils.tprint import tprint, tprint_success, tprint_warning, tprint_performance, tprint_debug
 
+# Import UnifiedVectorizationManager for enhanced memory-efficient vectorization
+try:
+    from src.feature_generation.utils.unified_vectorization_manager import UnifiedVectorizationManager
+    UNIFIED_VECTORIZATION_AVAILABLE = True
+except ImportError:
+    UNIFIED_VECTORIZATION_AVAILABLE = False
+    UnifiedVectorizationManager = None
+
+# Import VectorBTRollingOptimizer for memory-efficient rolling operations
+try:
+    from src.feature_generation.utils.vectorbt_rolling_optimizer import VectorBTRollingOptimizer
+    VECTORBT_ROLLING_OPTIMIZER_AVAILABLE = True
+except ImportError:
+    VECTORBT_ROLLING_OPTIMIZER_AVAILABLE = False
+    VectorBTRollingOptimizer = None
+
 logger = logging.getLogger(__name__)
 
 @dataclass
@@ -48,9 +64,37 @@ class MemoryEfficientFeatureSelector:
     """Memory-efficient feature selector with hardware optimization."""
 
     def __init__(self, config: Optional[MemoryConfig] = None):
-        """Initialize memory-efficient feature selector."""
+        """Initialize memory-efficient feature selector with enhanced optimizations."""
         self.config = config or MemoryConfig()
         self.logger = logger.getChild('MemoryEfficientFeatureSelector')
+
+        # Initialize UnifiedVectorizationManager for memory-efficient vectorization
+        if UNIFIED_VECTORIZATION_AVAILABLE:
+            try:
+                self.vectorization_manager = UnifiedVectorizationManager()
+                tprint_success("✅ UnifiedVectorizationManager integrated for memory efficiency")
+            except Exception as e:
+                tprint_warning(f"⚠️ UnifiedVectorizationManager initialization failed: {e}")
+                self.vectorization_manager = None
+        else:
+            self.vectorization_manager = None
+            tprint_warning("⚠️ UnifiedVectorizationManager not available. Using fallback methods.")
+
+        # Initialize VectorBTRollingOptimizer for memory-efficient rolling operations
+        if VECTORBT_ROLLING_OPTIMIZER_AVAILABLE:
+            try:
+                self.rolling_optimizer = VectorBTRollingOptimizer(
+                    memory_efficient=True,
+                    chunk_size=self.config.chunk_size,
+                    enable_hardware_optimization=True
+                )
+                tprint_success("✅ VectorBTRollingOptimizer integrated for memory efficiency")
+            except Exception as e:
+                tprint_warning(f"⚠️ VectorBTRollingOptimizer initialization failed: {e}")
+                self.rolling_optimizer = None
+        else:
+            self.rolling_optimizer = None
+            tprint_warning("⚠️ VectorBTRollingOptimizer not available. Using fallback methods.")
 
         # Initialize hardware tools
         if self.config.enable_memory_monitoring:
@@ -67,15 +111,18 @@ class MemoryEfficientFeatureSelector:
             self.memory_optimizer = None
             self.hardware_manager = None
 
-        # Memory tracking
+        # Enhanced memory tracking
         self.memory_stats = {
             'peak_usage_mb': 0,
             'current_usage_mb': 0,
             'chunks_processed': 0,
-            'memory_optimizations': 0
+            'memory_optimizations': 0,
+            'unified_vectorization_operations': 0,
+            'vectorbt_rolling_operations': 0,
+            'memory_saved_mb': 0.0
         }
 
-        tprint_success("🧠 MemoryEfficientFeatureSelector initialized")
+        tprint_success("🧠 MemoryEfficientFeatureSelector initialized with enhanced optimizations")
 
     def _check_memory_usage(self) -> float:
         """Check current memory usage."""

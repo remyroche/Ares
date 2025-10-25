@@ -282,7 +282,7 @@ tail -f logs/{step_name}.log
         """Format financial metrics section."""
         content = ""
         
-        # Performance Indicators
+        # Performance Indicators (traditional metrics)
         if 'sharpe_ratio' in metrics:
             content += f"- **Sharpe Ratio**: {metrics['sharpe_ratio']:.4f}\n"
         if 'max_drawdown' in metrics:
@@ -298,7 +298,7 @@ tail -f logs/{step_name}.log
         if 'information_ratio' in metrics:
             content += f"- **Information Ratio**: {metrics['information_ratio']:.4f}\n"
         
-        # Feature Performance
+        # Feature Performance (traditional metrics)
         if 'feature_performance' in metrics:
             content += f"- **Feature Performance**: {metrics['feature_performance']}\n"
         if 'target_correlation' in metrics:
@@ -310,7 +310,7 @@ tail -f logs/{step_name}.log
         if 'redundancy_scores' in metrics:
             content += f"- **Redundancy Scores**: {metrics['redundancy_scores']}\n"
         
-        # Selection Quality
+        # Selection Quality (traditional metrics)
         if 'selection_accuracy' in metrics:
             content += f"- **Selection Accuracy**: {metrics['selection_accuracy']:.4f}\n"
         if 'selection_precision' in metrics:
@@ -322,7 +322,7 @@ tail -f logs/{step_name}.log
         if 'selection_auc_score' in metrics:
             content += f"- **Selection AUC Score**: {metrics['selection_auc_score']:.4f}\n"
         
-        # Optimization Results
+        # Optimization Results (traditional metrics)
         if 'best_periods' in metrics:
             content += f"- **Best Periods**: {metrics['best_periods']}\n"
         if 'best_lookbacks' in metrics:
@@ -332,35 +332,114 @@ tail -f logs/{step_name}.log
         if 'hyperparameter_sensitivity' in metrics:
             content += f"- **Hyperparameter Sensitivity**: {metrics['hyperparameter_sensitivity']}\n"
         
+        # Labeling-Specific Metrics (nested structure support)
+        if 'labeling_method' in metrics:
+            content += f"\n### Labeling Configuration\n"
+            content += f"- **Method**: {metrics['labeling_method']}\n"
+        
+        if 'volatility_config' in metrics:
+            vc = metrics['volatility_config']
+            base_threshold = vc.get('base_threshold', 0) or 0
+            volatility_threshold = vc.get('volatility_threshold', 0) or 0
+            content += f"- **Base Threshold**: {base_threshold:.1%} ({volatility_threshold*100:.1f}%)\n"
+            content += f"- **Lookahead Periods**: {vc.get('lookahead_periods', 'N/A')}\n"
+            content += f"- **Local Maxima Detection**: {vc.get('local_maxima_detection', 'N/A')}\n"
+            content += f"- **Volatility Adaptation**: {vc.get('volatility_adaptation', 'N/A')}\n"
+            content += f"- **Quality Threshold**: {vc.get('quality_threshold', 0.4):.1%}\n"
+            content += f"- **Predictability Threshold**: {vc.get('predictability_threshold', 0.3):.1%}\n"
+        
+        if 'opportunity_detection' in metrics:
+            content += f"\n### Opportunity Detection\n"
+            od = metrics['opportunity_detection']
+            content += f"- **Total Samples Processed**: {od.get('total_samples_processed', 0):,}\n"
+            content += f"- **Opportunities Detected**: {od.get('total_opportunities_detected', 0):,}\n"
+            content += f"- **Detection Rate**: {od.get('opportunity_detection_rate', 0):.2f}%\n"
+            content += f"- **Long Opportunities**: {od.get('long_opportunities', 0):,}\n"
+            content += f"- **Short Opportunities**: {od.get('short_opportunities', 0):,}\n"
+            long_short_ratio = od.get('long_short_ratio', None)
+            content += f"- **Long/Short Ratio**: {long_short_ratio:.2f}" if long_short_ratio is not None else "- **Long/Short Ratio**: N/A\n"
+            # Add opportunities per day if available
+            avg_ops_per_day = od.get('avg_opportunities_per_day', 0)
+            if avg_ops_per_day > 0:
+                content += f"- **Opportunities per Day**: {avg_ops_per_day:.2f} (target: ≤8/day)\n"
+        
+        if 'quality_filtering' in metrics:
+            content += f"\n### Quality Filtering\n"
+            qf = metrics['quality_filtering']
+            content += f"- **High Quality Opportunities**: {qf.get('high_quality_opportunities', 0):,}\n"
+            content += f"- **Filtered Opportunities**: {qf.get('filtered_opportunities', 0):,}\n"
+            quality_acceptance = qf.get('quality_acceptance_rate', 0) or 0
+            content += f"- **Quality Acceptance Rate**: {quality_acceptance:.2f}%\n"
+            avg_confidence = qf.get('avg_confidence_score', 0) or 0
+            content += f"- **Avg Confidence Score**: {avg_confidence:.3f}\n"
+            avg_volatility = qf.get('avg_volatility_adaptation', 1) or 1
+            content += f"- **Avg Volatility Adaptation**: {avg_volatility:.2f}x\n"
+            min_vol = qf.get('min_volatility_adaptation', 0.8) or 0.8
+            max_vol = qf.get('max_volatility_adaptation', 2.1) or 2.1
+            content += f"- **Volatility Range**: {min_vol:.2f}x - {max_vol:.2f}x\n"
+        
+        if 'expected_performance' in metrics:
+            content += f"\n### Expected Performance\n"
+            ep = metrics['expected_performance']
+            content += f"- **Expected Profit Target**: {ep.get('expected_profit_target', 'N/A')}\n"
+            volatility_targets = ep.get('volatility_adjusted_targets', 'N/A')
+            content += f"- **Volatility Adjusted Targets**: {volatility_targets}\n"
+            quality_signals = ep.get('quality_weighted_signals', 'N/A')
+            content += f"- **Quality Weighted Signals**: {quality_signals}\n"
+            filtering_eff = ep.get('filtering_efficiency', 0) or 0
+            content += f"- **Filtering Efficiency**: {filtering_eff:.1f}%\n"
+            trading_strength = ep.get('trading_signal_strength', 0) or 0
+            content += f"- **Trading Signal Strength**: {trading_strength:.3f}\n"
+            market_adaptation = ep.get('market_regime_adaptation', 'N/A')
+            content += f"- **Market Regime Adaptation**: {market_adaptation}\n"
+        
         return content + "\n"
 
     def _format_technical_metrics(self, metrics: Dict[str, Any]) -> str:
         """Format technical metrics section."""
         content = ""
         
-        # System Performance
-        if 'memory_usage_mb' in metrics:
-            content += f"- **Memory Usage**: {metrics['memory_usage_mb']:.2f} MB\n"
-        if 'execution_time_seconds' in metrics:
-            content += f"- **Execution Time**: {metrics['execution_time_seconds']:.2f} seconds\n"
-        if 'cpu_usage_percent' in metrics:
-            content += f"- **CPU Usage**: {metrics['cpu_usage_percent']:.2f}%\n"
-        if 'gpu_usage_percent' in metrics:
-            content += f"- **GPU Usage**: {metrics['gpu_usage_percent']:.2f}%\n"
-        if 'disk_io_mb' in metrics:
-            content += f"- **Disk I/O**: {metrics['disk_io_mb']:.2f} MB\n"
+        # System Performance - handle both old and new nested structure
+        if 'system_performance' in metrics:
+            # New nested structure
+            sp = metrics['system_performance']
+            memory_usage = sp.get('memory_usage_mb', 0) or 0
+            exec_time = sp.get('execution_time_seconds', 0) or 0
+            cpu_usage = sp.get('cpu_usage_percent', 0) or 0
+            disk_io = sp.get('disk_io_mb', 0) or 0
+            throughput = sp.get('throughput_rows_per_second', 0) or 0
+        else:
+            # Old flat structure
+            memory_usage = metrics.get('memory_usage_mb', 0) or 0
+            exec_time = metrics.get('execution_time_seconds', 0) or 0
+            cpu_usage = metrics.get('cpu_usage_percent', 0) or 0
+            disk_io = metrics.get('disk_io_mb', 0) or 0
+            throughput = 0
+
+        content += f"- **Memory Usage**: {memory_usage:.2f} MB\n"
+        content += f"- **Execution Time**: {exec_time:.2f} seconds\n"
+        content += f"- **CPU Usage**: {cpu_usage:.2f}%\n"
+        if throughput > 0:
+            content += f"- **Throughput**: {throughput:.2f} rows/sec\n"
+        if disk_io > 0:
+            content += f"- **Disk I/O**: {disk_io:.2f} MB\n"
         
         # Data Processing
-        if 'data_size_mb' in metrics:
-            content += f"- **Data Size**: {metrics['data_size_mb']:.2f} MB\n"
-        if 'rows_processed' in metrics:
-            content += f"- **Rows Processed**: {metrics['rows_processed']:,}\n"
-        if 'columns_processed' in metrics:
-            content += f"- **Columns Processed**: {metrics['columns_processed']:,}\n"
-        if 'throughput_rows_per_second' in metrics:
-            content += f"- **Throughput**: {metrics['throughput_rows_per_second']:.2f} rows/sec\n"
-        if 'compression_ratio' in metrics:
-            content += f"- **Compression Ratio**: {metrics['compression_ratio']:.2f}\n"
+        data_size = metrics.get('data_size_mb', 0) or 0
+        if data_size > 0:
+            content += f"- **Data Size**: {data_size:.2f} MB\n"
+        rows_processed = metrics.get('rows_processed', 0) or 0
+        if rows_processed > 0:
+            content += f"- **Rows Processed**: {rows_processed:,}\n"
+        columns_processed = metrics.get('columns_processed', 0) or 0
+        if columns_processed > 0:
+            content += f"- **Columns Processed**: {columns_processed:,}\n"
+        throughput = metrics.get('throughput_rows_per_second', 0) or 0
+        if throughput > 0:
+            content += f"- **Throughput**: {throughput:.2f} rows/sec\n"
+        compression = metrics.get('compression_ratio', 0) or 0
+        if compression > 0:
+            content += f"- **Compression Ratio**: {compression:.2f}\n"
         
         # Algorithm Performance
         if 'iterations_completed' in metrics:
@@ -386,6 +465,34 @@ tail -f logs/{step_name}.log
         if 'hyperparameter_combinations' in metrics:
             content += f"- **Hyperparameter Combinations**: {metrics['hyperparameter_combinations']:,}\n"
         
+        # Labeling-Specific Technical Metrics (nested structure support)
+        if 'labeling_engine' in metrics:
+            content += f"\n### Labeling Engine\n"
+            le = metrics['labeling_engine']
+            content += f"- **Method**: {le.get('method', 'N/A')}\n"
+            content += f"- **Algorithm Type**: {le.get('algorithm_type', 'N/A')}\n"
+            content += f"- **Optimization Level**: {le.get('optimization_level', 'N/A')}\n"
+            content += f"- **VectorBT Integration**: {le.get('vectorbt_integration', 'N/A')}\n"
+            content += f"- **Memory Efficient Processing**: {le.get('memory_efficient_processing', 'N/A')}\n"
+        
+        if 'signal_processing' in metrics:
+            content += f"\n### Signal Processing\n"
+            sp = metrics['signal_processing']
+            content += f"- **Local Maxima Detection**: {sp.get('local_maxima_detection', 'N/A')}\n"
+            content += f"- **Local Minima Detection**: {sp.get('local_minima_detection', 'N/A')}\n"
+            content += f"- **Volatility Adaptation**: {sp.get('volatility_adaptation', 'N/A')}\n"
+            content += f"- **Quality Scoring Enabled**: {sp.get('quality_scoring_enabled', 'N/A')}\n"
+            content += f"- **Confidence Calculation**: {sp.get('confidence_calculation', 'N/A')}\n"
+            content += f"- **Threshold Dynamic Range**: {sp.get('threshold_dynamic_range', 'N/A')}\n"
+        
+        if 'performance_optimization' in metrics:
+            content += f"\n### Performance Optimization\n"
+            po = metrics['performance_optimization']
+            content += f"- **Rolling Window Optimization**: {po.get('rolling_window_optimization', 'N/A')}\n"
+            content += f"- **Batch Processing Size**: {po.get('batch_processing_size', 'N/A')}\n"
+            content += f"- **Memory Management**: {po.get('memory_management', 'N/A')}\n"
+            content += f"- **Cache Utilization**: {po.get('cache_utilization', 0):.1%}\n"
+        
         return content + "\n"
 
     def _format_process_metrics(self, metrics: Dict[str, Any]) -> str:
@@ -393,28 +500,37 @@ tail -f logs/{step_name}.log
         content = ""
         
         # Execution Analysis
-        if 'step_duration_seconds' in metrics:
-            content += f"- **Step Duration**: {metrics['step_duration_seconds']:.2f} seconds\n"
-        if 'artifacts_generated' in metrics:
-            content += f"- **Artifacts Generated**: {metrics['artifacts_generated']}\n"
-        if 'dependencies_loaded' in metrics:
-            content += f"- **Dependencies Loaded**: {metrics['dependencies_loaded']}\n"
-        if 'optimization_phases' in metrics:
-            content += f"- **Optimization Phases**: {metrics['optimization_phases']}\n"
-        if 'validation_checks' in metrics:
-            content += f"- **Validation Checks**: {metrics['validation_checks']}\n"
+        step_duration = metrics.get('step_duration_seconds', 0) or 0
+        if step_duration > 0:
+            content += f"- **Step Duration**: {step_duration:.2f} seconds\n"
+        artifacts_gen = metrics.get('artifacts_generated', 0) or 0
+        if artifacts_gen > 0:
+            content += f"- **Artifacts Generated**: {artifacts_gen}\n"
+        deps_loaded = metrics.get('dependencies_loaded', 0) or 0
+        if deps_loaded > 0:
+            content += f"- **Dependencies Loaded**: {deps_loaded}\n"
+        opt_phases = metrics.get('optimization_phases', 0) or 0
+        if opt_phases > 0:
+            content += f"- **Optimization Phases**: {opt_phases}\n"
+        val_checks = metrics.get('validation_checks', 0) or 0
+        if val_checks > 0:
+            content += f"- **Validation Checks**: {val_checks}\n"
         
         # Quality Metrics
-        if 'data_quality_score' in metrics:
-            content += f"- **Data Quality Score**: {metrics['data_quality_score']:.4f}\n"
-        if 'validation_passed' in metrics:
-            content += f"- **Validation Passed**: {metrics['validation_passed']}\n"
-        if 'warnings_count' in metrics:
-            content += f"- **Warnings Count**: {metrics['warnings_count']}\n"
-        if 'errors_count' in metrics:
-            content += f"- **Errors Count**: {metrics['errors_count']}\n"
-        if 'retry_count' in metrics:
-            content += f"- **Retry Count**: {metrics['retry_count']}\n"
+        data_quality = metrics.get('data_quality_score', 0) or 0
+        if data_quality > 0:
+            content += f"- **Data Quality Score**: {data_quality:.4f}\n"
+        validation_passed = metrics.get('validation_passed', False)
+        content += f"- **Validation Passed**: {validation_passed}\n"
+        warnings_count = metrics.get('warnings_count', 0) or 0
+        if warnings_count > 0:
+            content += f"- **Warnings Count**: {warnings_count}\n"
+        errors_count = metrics.get('errors_count', 0) or 0
+        if errors_count > 0:
+            content += f"- **Errors Count**: {errors_count}\n"
+        retry_count = metrics.get('retry_count', 0) or 0
+        if retry_count > 0:
+            content += f"- **Retry Count**: {retry_count}\n"
         
         # Feature Analysis
         if 'features_analyzed' in metrics:
@@ -439,6 +555,71 @@ tail -f logs/{step_name}.log
             content += f"- **Validation Coverage**: {metrics['validation_coverage']:.4f}\n"
         if 'validation_confidence' in metrics:
             content += f"- **Validation Confidence**: {metrics['validation_confidence']:.4f}\n"
+        
+        # Labeling-Specific Process Metrics (nested structure support)
+        if isinstance(metrics, dict):
+            # Handle direct key-value pairs that might be process-related
+            key_value_pairs = [
+                ('data_loading', 'Data Loading'),
+                ('data_quality_checks', 'Data Quality Checks'),
+                ('labeling_process', 'Labeling Process'),
+                ('labeling_method', 'Labeling Method'),
+                ('volatility_threshold', 'Volatility Threshold'),
+                ('lookahead_periods', 'Lookahead Periods'),
+                ('local_maxima_detection', 'Local Maxima Detection'),
+                ('optimization_applied', 'Optimization Applied'),
+                ('memory_management', 'Memory Management'),
+                ('error_handling', 'Error Handling'),
+                ('logging_completeness', 'Logging Completeness'),
+                ('artifact_management', 'Artifact Management')
+            ]
+            
+            for key, label in key_value_pairs:
+                if key in metrics:
+                    value = metrics[key]
+                    if isinstance(value, (str, int, float, bool)):
+                        content += f"- **{label}**: {value}\n"
+            
+            # Handle volatility calibration section
+            if 'volatility_calibration' in metrics:
+                content += "\n### Volatility Calibration\n"
+                vc = metrics['volatility_calibration']
+                content += f"- **Base Threshold**: {vc.get('base_threshold_percent', 0):.2f}%\n"
+                content += f"- **Effective Threshold Range**: {vc.get('effective_threshold_min', 0):.2f}% - {vc.get('effective_threshold_max', 0):.2f}%\n"
+                content += f"- **Adaptation Multiplier Range**: {vc.get('adaptation_multiplier_range', 'N/A')}\n"
+                content += f"- **Adaptation Active**: {'✅ Yes' if vc.get('adaptation_active', False) else '❌ No'}\n"
+                content += f"- **Adaptation Spread**: {vc.get('adaptation_spread', 0):.1f}%\n"
+                content += f"- **Sensitivity Parameter**: {vc.get('sensitivity_parameter', 1.0)}\n"
+                content += f"- **Window Size**: {vc.get('window_size', 20)}\n"
+            
+            # Handle expanded analysis section
+            if 'expanded_analysis' in metrics:
+                content += "\n### Expanded Analysis\n"
+                ea = metrics['expanded_analysis']
+                
+                # Signal Distribution
+                if 'signal_distribution' in ea:
+                    sd = ea['signal_distribution']
+                    content += f"\n#### Signal Distribution\n"
+                    content += f"- **Long Rate**: {sd.get('long_rate', 0):.2f}%\n"
+                    content += f"- **Short Rate**: {sd.get('short_rate', 0):.2f}%\n"
+                    content += f"- **Signal Balance**: {sd.get('signal_balance', 'N/A')}\n"
+                
+                # Performance Metrics
+                if 'performance_metrics' in ea:
+                    pm = ea['performance_metrics']
+                    content += f"\n#### Performance Metrics\n"
+                    content += f"- **Opportunities Per Week**: {pm.get('opportunities_per_week', 0):.1f}\n"
+                    content += f"- **Detection Efficiency**: {pm.get('detection_efficiency', 0):.2f}%\n"
+                    content += f"- **Quality Signal Ratio**: {pm.get('quality_signal_ratio', 0):.3f}\n"
+                
+                # Market Adaptation
+                if 'market_adaptation' in ea:
+                    ma = ea['market_adaptation']
+                    content += f"\n#### Market Adaptation\n"
+                    content += f"- **Volatility Regime**: {ma.get('volatility_regime', 'N/A')}\n"
+                    content += f"- **Threshold Adjustment Active**: {'✅ Yes' if ma.get('threshold_adjustment_active', False) else '❌ No'}\n"
+                    content += f"- **Adaptation Range**: {ma.get('adaptation_range_percent', 0):.1f}%\n"
         
         return content + "\n"
 

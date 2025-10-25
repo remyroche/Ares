@@ -132,6 +132,7 @@ class ComplementaryLookbackOptimizer:
             tpe_config = OptimizationConfig(
                 n_trials=50,
                 timeout=300,
+                execution_mode=self.config.get('execution_mode', 'light'),
                 enable_staged_optimization=True,
                 coarse_grid_trials=10,
                 fine_grid_trials=15,

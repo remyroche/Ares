@@ -42,9 +42,7 @@ except ImportError:
 
 # Import existing utilities (avoid duplication)
 from ...utils.intensity_scaler import get_intensity_config, apply_intensity_scaling
-from ...training.steps.market_analysis.hybrid_nas_tas_regime.shared_utils.data_normalization import (
-    create_data_normalizer, NormalizationConfig, NormalizationMethod
-)
+# Note: Removed dependency on hybrid_nas_tas_regime module
 from .vectorization_optimizer import get_vectorization_optimizer, VectorizationConfig
 from ...utils.hardware.unified_hardware_manager import get_unified_hardware_manager, WorkloadType, OptimizationLevel
 
@@ -130,16 +128,13 @@ class UnifiedOptimizationSystem:
         """Lazy-loaded normalizer."""
         if self._normalizer is None and self.config.enable_normalization:
             try:
-                normalization_config = NormalizationConfig(
-                    method=NormalizationMethod(self.config.normalization_method.upper()),
-                    use_hardware_acceleration=self.config.enable_hardware_optimization,
-                    use_matrix_operations=True,
-                    memory_limit_gb=self.config.memory_limit_gb
-                )
-                self._normalizer = create_data_normalizer(normalization_config)
-                self.logger.debug("✅ Normalizer initialized")
+                # Use standard normalization instead of hybrid_nas_tas_regime
+                from sklearn.preprocessing import StandardScaler
+                self._normalizer = StandardScaler()
+                self.logger.info("✅ Standard normalizer initialized")
             except Exception as e:
-                self.logger.warning(f"⚠️ Normalizer not available: {e}")
+                self.logger.warning(f"⚠️ Normalizer initialization failed: {e}")
+                self._normalizer = None
         return self._normalizer
 
     @property
@@ -292,14 +287,21 @@ class UnifiedOptimizationSystem:
             if not target_columns:
                 return data, {}
 
-            # Use the unified normalizer
-            result = self.normalizer.normalize_data(data, target_columns=target_columns)
-
-            if result.success:
-                return result.normalized_data, result.normalization_params
+            # Use the standard scaler
+            if hasattr(self.normalizer, 'normalize_data'):
+                result = self.normalizer.normalize_data(data, target_columns=target_columns)
+                if result.success:
+                    return result.normalized_data, result.normalization_params
+                else:
+                    self.logger.warning(f"Normalization failed: {result.error_message}")
+                    return data, {}
             else:
-                self.logger.warning(f"Normalization failed: {result.error_message}")
-                return data, {}
+                # Use StandardScaler directly
+                normalized_data = data.copy()
+                for col in target_columns:
+                    if col in data.columns and data[col].dtype in ['float64', 'float32', 'int64', 'int32']:
+                        normalized_data[col] = self.normalizer.fit_transform(data[[col]]).flatten()
+                return normalized_data, {'scaler': self.normalizer}
 
         except Exception as e:
             self.logger.error(f"Normalization error: {e}")
@@ -362,7 +364,7 @@ class UnifiedOptimizationSystem:
 
     def _get_vectorization_stats(self) -> Dict[str, Any]:
         """Get vectorization statistics."""
-        if self.vectorization_optimizer:
+        if self.vectorization_optimizer and hasattr(self.vectorization_optimizer, 'get_performance_report'):
             return self.vectorization_optimizer.get_performance_report()
         return {}
 

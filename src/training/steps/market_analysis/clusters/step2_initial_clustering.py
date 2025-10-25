@@ -1,5 +1,5 @@
 """
-Step 2: Initial Clustering for NAS-TAS Clustering.
+Step 2: Initial Clustering for HDBSCAN Clustering.
 
 This module handles the initial clustering setup, regime assignment extraction,
 and basic clustering initialization.

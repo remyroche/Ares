@@ -126,11 +126,11 @@ class ConservativeOptimizationStrategy(OptimizationStrategy):
                 if non_finite_count > 0:
                     # Log the issue
                     if hasattr(self, 'logger'):
-                        self.logger.warning(f"Found {non_finite_count} non-finite values in column '{col}' after optimization")
+                        self.logger.warning(f"⚠️ Found {non_finite_count} non-finite values in column '{col}' after optimization")
                     
                     # Replace non-finite values with the last valid value (forward fill)
                     data[col] = data[col].replace([np.inf, -np.inf], np.nan)
-                    data[col] = data[col].fillna(method='ffill')
+                    data[col] = data[col].ffill()  # Use modern pandas syntax
                     
                     # If there are still NaN values at the beginning, fill with 0
                     data[col] = data[col].fillna(0)
@@ -256,11 +256,11 @@ class BalancedOptimizationStrategy(OptimizationStrategy):
                 if non_finite_count > 0:
                     # Log the issue
                     if hasattr(self, 'logger'):
-                        self.logger.warning(f"Found {non_finite_count} non-finite values in column '{col}' after optimization")
+                        self.logger.warning(f"⚠️ Found {non_finite_count} non-finite values in column '{col}' after optimization")
                     
                     # Replace non-finite values with the last valid value (forward fill)
                     data[col] = data[col].replace([np.inf, -np.inf], np.nan)
-                    data[col] = data[col].fillna(method='ffill')
+                    data[col] = data[col].ffill()  # Use modern pandas syntax
                     
                     # If there are still NaN values at the beginning, fill with 0
                     data[col] = data[col].fillna(0)
@@ -375,11 +375,11 @@ class AggressiveOptimizationStrategy(OptimizationStrategy):
                 if non_finite_count > 0:
                     # Log the issue
                     if hasattr(self, 'logger'):
-                        self.logger.warning(f"Found {non_finite_count} non-finite values in column '{col}' after optimization")
+                        self.logger.warning(f"⚠️ Found {non_finite_count} non-finite values in column '{col}' after optimization")
                     
                     # Replace non-finite values with the last valid value (forward fill)
                     data[col] = data[col].replace([np.inf, -np.inf], np.nan)
-                    data[col] = data[col].fillna(method='ffill')
+                    data[col] = data[col].ffill()  # Use modern pandas syntax
                     
                     # If there are still NaN values at the beginning, fill with 0
                     data[col] = data[col].fillna(0)

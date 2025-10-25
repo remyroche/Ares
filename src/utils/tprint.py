@@ -218,7 +218,7 @@ class TPrintConfig:
 
     # Integration
     integrate_with_logging: bool = True
-    log_to_python_logger: bool = False
+    log_to_python_logger: bool = True
 
     # Auto-logging configuration
     auto_log_prints: bool = True

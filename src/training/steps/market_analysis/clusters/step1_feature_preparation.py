@@ -1,5 +1,5 @@
 """
-Step 1: Feature Preparation for NAS-TAS Clustering.
+Step 1: Feature Preparation for HDBSCAN Clustering.
 
 This module handles feature selection, dimensionality reduction, and regime-specific
 feature integration for the clustering process.

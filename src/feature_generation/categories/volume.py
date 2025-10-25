@@ -295,7 +295,7 @@ class VolumeFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMix
                 self.performance_stats['vectorbt_operations'] += 1
                 return volume_sma
             except Exception as e:
-                logger.warning(f"VectorBT rolling optimizer failed: {e}, using fallback")
+                logger.warning(f"VectorBT rolling optimizer failed: {e}, using pandas/numpy fallback")
                 self.performance_stats['pandas_fallbacks'] += 1
 
         # Fallback to VectorBT direct operations
@@ -1002,7 +1002,7 @@ class VolumeFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMix
         try:
             return self._process_volume_features_individually(data, feature_configs)
         except Exception as e:
-            self.logger.warning(f"VWAP batch processing failed: {e}, using fallback processing")
+            self.logger.warning(f"VWAP batch processing failed: {e}, using pandas/numpy fallback processing")
             # Final fallback - return empty DataFrame
             return pd.DataFrame(index=data.index)
 
@@ -1153,7 +1153,7 @@ class VolumeSMAGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
                 self.performance_stats['vectorbt_operations'] += 1
                 return volume_sma
             except Exception as e:
-                logger.warning(f"VectorBT rolling optimizer failed: {e}, using fallback")
+                logger.warning(f"VectorBT rolling optimizer failed: {e}, using pandas/numpy fallback")
                 self.performance_stats['pandas_fallbacks'] += 1
 
         # Fallback to VectorBT direct operations
@@ -1291,7 +1291,7 @@ class VolumeEMAGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
                 self.performance_stats['vectorbt_operations'] += 1
                 return volume_ema
             except Exception as e:
-                self.logger.warning(f"VectorBT rolling optimizer failed: {e}, using fallback")
+                self.logger.warning(f"VectorBT rolling optimizer failed: {e}, using pandas/numpy fallback")
                 self.performance_stats['pandas_fallbacks'] += 1
 
         # Fallback to pandas EMA (VectorBT doesn't have direct EMA support)
@@ -1376,7 +1376,7 @@ class VolumeRatioGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin
                 self.performance_stats['vectorbt_operations'] += 1
                 return volume_ratio
             except Exception as e:
-                self.logger.warning(f"VectorBT rolling optimizer failed: {e}, using fallback")
+                self.logger.warning(f"VectorBT rolling optimizer failed: {e}, using pandas/numpy fallback")
                 self.performance_stats['pandas_fallbacks'] += 1
 
         # Fallback to VectorBT direct operations
@@ -1452,7 +1452,7 @@ class VolumeROCGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
                 self.performance_stats['vectorbt_operations'] += 1
                 return volume_roc
             except Exception as e:
-                self.logger.warning(f"VectorBT rolling optimizer failed: {e}, using fallback")
+                self.logger.warning(f"VectorBT rolling optimizer failed: {e}, using pandas/numpy fallback")
                 self.performance_stats['pandas_fallbacks'] += 1
 
         # Fallback to VectorBT direct operations
@@ -1524,7 +1524,7 @@ class VolumeStdGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
                 self.performance_stats['vectorbt_operations'] += 1
                 return volume_std
             except Exception as e:
-                self.logger.warning(f"VectorBT rolling optimizer failed: {e}, using fallback")
+                self.logger.warning(f"VectorBT rolling optimizer failed: {e}, using pandas/numpy fallback")
                 self.performance_stats['pandas_fallbacks'] += 1
 
         # Fallback to VectorBT direct operations
@@ -2676,7 +2676,7 @@ class VectorBTEnhancedOBVGenerator(VectorBTFeatureGenerator):
 
                     return enhanced_obv.rename(f'vectorbt_enhanced_obv_{self.period}')
                 except Exception as e:
-                    self.logger.warning(f"VectorBT rolling optimizer failed: {e}, using fallback")
+                    self.logger.warning(f"VectorBT rolling optimizer failed: {e}, using pandas/numpy fallback")
 
             # Fallback to VectorBT direct operations
             if VECTORBT_AVAILABLE:
@@ -2858,7 +2858,7 @@ class VectorBTEnhancedADLineGenerator(VectorBTFeatureGenerator):
 
                     return enhanced_ad.rename(f'vectorbt_enhanced_ad_line_{self.period}')
                 except Exception as e:
-                    self.logger.warning(f"VectorBT rolling optimizer failed: {e}, using fallback")
+                    self.logger.warning(f"VectorBT rolling optimizer failed: {e}, using pandas/numpy fallback")
 
             # Fallback to VectorBT direct operations
                 if VECTORBT_AVAILABLE:
@@ -3005,9 +3005,12 @@ class VectorBTVolumeWeightedADLineGenerator(VectorBTFeatureGenerator):
                         smoothed_vw_ad = vw_ad_sum / volume_sum
                         smoothed_vw_ad = np.where(volume_sum == 0, np.nan, smoothed_vw_ad)
 
+                    # Fix numpy array rename issue - convert to pandas Series first
+                    if isinstance(smoothed_vw_ad, np.ndarray):
+                        smoothed_vw_ad = pd.Series(smoothed_vw_ad, index=data.index)
                     return smoothed_vw_ad.rename(f'vectorbt_volume_weighted_ad_line_{self.period}')
                 except Exception as e:
-                    self.logger.warning(f"VectorBT rolling optimizer failed: {e}, using fallback")
+                    self.logger.warning(f"VectorBT rolling optimizer failed: {e}, using pandas/numpy fallback")
 
             # Fallback to VectorBT direct operations
             if VECTORBT_AVAILABLE:
@@ -3106,7 +3109,7 @@ class VectorBTSmoothedOBVGenerator(VectorBTFeatureGenerator):
 
                     return smoothed_obv.rename(f'vectorbt_smoothed_obv_{self.period}')
                 except Exception as e:
-                    self.logger.warning(f"VectorBT rolling optimizer failed: {e}, using fallback")
+                    self.logger.warning(f"VectorBT rolling optimizer failed: {e}, using pandas/numpy fallback")
 
             # Fallback to VectorBT direct operations
             if VECTORBT_AVAILABLE:

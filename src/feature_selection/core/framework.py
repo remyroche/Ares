@@ -16,6 +16,28 @@ import logging
 from ..vectorbt_extensions.vectorbt_unified_framework import VectorBTUnifiedFramework, create_vectorbt_unified_framework
 from ..vectorbt_extensions.vectorbt_config import VectorBTFeatureSelectionConfig
 
+# Import enhanced components
+try:
+    from ..vectorbt_extensions.vectorbt_rolling_operations import VectorBTRollingOperations
+    VECTORBT_ROLLING_AVAILABLE = True
+except ImportError:
+    VECTORBT_ROLLING_AVAILABLE = False
+    VectorBTRollingOperations = None
+
+try:
+    from ..optimizations.vectorized_operations import VectorizedFeatureSelector
+    VECTORIZED_OPERATIONS_AVAILABLE = True
+except ImportError:
+    VECTORIZED_OPERATIONS_AVAILABLE = False
+    VectorizedFeatureSelector = None
+
+try:
+    from ..memory.memory_efficient_selector import MemoryEfficientFeatureSelector
+    MEMORY_EFFICIENT_AVAILABLE = True
+except ImportError:
+    MEMORY_EFFICIENT_AVAILABLE = False
+    MemoryEfficientFeatureSelector = None
+
 # Import tprint for consistent logging
 from src.utils.tprint import tprint, tprint_success, tprint_warning, tprint_performance, tprint_debug
 
@@ -26,19 +48,19 @@ _GLOBAL_VECTORBT_FRAMEWORK: Optional[VectorBTUnifiedFramework] = None
 
 def get_feature_selection_framework(config: Optional[Dict[str, Any]] = None) -> VectorBTUnifiedFramework:
     """
-    Get a global instance of the VectorBT feature selection framework.
+    Get a global instance of the enhanced VectorBT feature selection framework.
 
     Args:
         config: Optional configuration dictionary
 
     Returns:
-        VectorBTUnifiedFramework instance
+        VectorBTUnifiedFramework instance with enhanced optimizations
     """
-    tprint("🚀 Getting VectorBT feature selection framework")
+    tprint("🚀 Getting enhanced VectorBT feature selection framework")
     global _GLOBAL_VECTORBT_FRAMEWORK
 
     if _GLOBAL_VECTORBT_FRAMEWORK is None:
-        tprint("🔧 Initializing new VectorBT feature selection framework")
+        tprint("🔧 Initializing new enhanced VectorBT feature selection framework")
 
         # Convert dict config to VectorBT config if provided
         vectorbt_config = None
@@ -46,7 +68,30 @@ def get_feature_selection_framework(config: Optional[Dict[str, Any]] = None) -> 
             vectorbt_config = VectorBTFeatureSelectionConfig.from_dict(config)
 
         _GLOBAL_VECTORBT_FRAMEWORK = create_vectorbt_unified_framework(vectorbt_config)
-        tprint_success("✅ VectorBT framework initialized successfully")
+        
+        # Initialize enhanced components
+        if VECTORBT_ROLLING_AVAILABLE:
+            try:
+                _GLOBAL_VECTORBT_FRAMEWORK.rolling_operations = VectorBTRollingOperations(vectorbt_config)
+                tprint_success("✅ VectorBTRollingOperations integrated")
+            except Exception as e:
+                tprint_warning(f"⚠️ VectorBTRollingOperations initialization failed: {e}")
+        
+        if VECTORIZED_OPERATIONS_AVAILABLE:
+            try:
+                _GLOBAL_VECTORBT_FRAMEWORK.vectorized_selector = VectorizedFeatureSelector()
+                tprint_success("✅ VectorizedFeatureSelector integrated")
+            except Exception as e:
+                tprint_warning(f"⚠️ VectorizedFeatureSelector initialization failed: {e}")
+        
+        if MEMORY_EFFICIENT_AVAILABLE:
+            try:
+                _GLOBAL_VECTORBT_FRAMEWORK.memory_efficient_selector = MemoryEfficientFeatureSelector()
+                tprint_success("✅ MemoryEfficientFeatureSelector integrated")
+            except Exception as e:
+                tprint_warning(f"⚠️ MemoryEfficientFeatureSelector initialization failed: {e}")
+        
+        tprint_success("✅ Enhanced VectorBT framework initialized successfully")
 
     return _GLOBAL_VECTORBT_FRAMEWORK
 

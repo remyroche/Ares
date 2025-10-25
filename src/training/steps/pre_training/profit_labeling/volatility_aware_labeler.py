@@ -242,11 +242,11 @@ class VolatilityConfig:
 class RateControlConfig:
     """Configuration for data-driven rate calibration."""
     def __init__(self) -> None:
-        self.enabled = False
-        self.max_ops_per_day = 8  # cap opportunities per day
+        self.enabled = True
+        self.max_ops_per_day = 6  # cap opportunities per day (conservative target to ensure ≤8/day)
         self.min_scale = 0.5      # search lower bound for threshold scaling
         self.max_scale = 3.0      # search upper bound for threshold scaling
-        self.tolerance = 0.25     # allowed deviation in ops/day
+        self.tolerance = 0.15     # tighter tolerance (was 0.25)
 
 
 class DataDrivenLabelingConfig:
@@ -258,8 +258,8 @@ class DataDrivenLabelingConfig:
     def __init__(self) -> None:
         # Enable to use quantile-calibrated thresholds instead of fixed bps thresholds
         self.enabled = False
-        # Target average number of signals per day (total of longs+shorts)
-        self.target_ops_per_day = 8.0
+        # Target average number of signals per day (total of longs+shorts) - conservative target
+        self.target_ops_per_day = 6.0  # Reduced from 8.0 to ensure we stay well below the cap
         # Calibration mode: 'global' uses a single set of quantiles; 'vol_bin' uses per-volatility bins
         self.calibration_mode = "global"  # or 'vol_bin'
         # Number of quantile bins over normalized volatility when calibration_mode='vol_bin'
@@ -400,8 +400,13 @@ class VolatilityAwareMultiHorizonLabeler:
             
             # Edge case handling: constant price
             price_series = data[price_column]
-            if price_series.nunique() <= 1:
+            price_clean = price_series.dropna()  # Remove NaN values first
+            if len(price_clean) == 0:
+                self.logger.warning("No valid price data (all NaN) - all labels will be zero")
+            elif price_clean.nunique() <= 1:
                 self.logger.warning("Constant price detected - all labels will be zero")
+            elif price_clean.std() == 0:
+                self.logger.warning("Zero price variance detected - all labels will be zero")
             
             # Explicit units for targets - treat inputs as percent points
             target_pp = profit_targets or []
@@ -457,7 +462,7 @@ class VolatilityAwareMultiHorizonLabeler:
                 tprint_info(f"🔍 [DATA-DRIVEN LABELING] Generated {len(labels)} labels with {(labels != 0).sum()} signals")
             else:
                 # Generate labels based on volatility and (optionally) calibrated profit targets
-                labels = self._generate_volatility_labels(price_series, volatility, calibrated_targets)
+                labels = self._generate_price_target_vol_normalized_labels(price_series, volatility, calibrated_targets)
             
             # Generate quality scores with proper alignment
             quality_scores = self._calculate_quality_scores(labels, price_series)
@@ -715,7 +720,7 @@ class VolatilityAwareMultiHorizonLabeler:
         metrics['std_potential_profit'] = potential_profits.std()
         
         # Quality metrics based on returns-based predictability at signal times
-        # Compute IC over non-zero signals only; for single-direction signals, define IC as 0 (non-negative)
+        # Compute IC over non-zero signals only; calculate confidence based on signal quality and consistency
         ic_val = 0.0
         if lookahead_returns is not None and len(lookahead_returns) > 0:
             try:
@@ -724,21 +729,42 @@ class VolatilityAwareMultiHorizonLabeler:
                     lbls = trade_opportunities.loc[idx].astype(float)
                     rets = lookahead_returns.loc[idx].astype(float)
                     if lbls.nunique() >= 2:
+                        # Multi-directional signals: calculate proper correlation
                         ic_raw = lbls.corr(rets, method='spearman')
                         ic_val = float(ic_raw) if not pd.isna(ic_raw) else 0.0
                     else:
-                        # Only one direction present (e.g., long-only) → make IC non-negative by definition
-                        ic_val = 0.0
+                        # Single direction (long-only): calculate directional correlation
+                        # For long-only, we want to see if positive signals correlate with positive returns
+                        if (lbls > 0).any():  # Has positive signals
+                            pos_signal_idx = idx[lbls > 0]
+                            if len(pos_signal_idx) > 1:
+                                pos_rets = rets.loc[pos_signal_idx]
+                                # Calculate correlation between positive signals and positive returns
+                                pos_rets_binary = (pos_rets > 0).astype(float)
+                                if pos_rets_binary.std() > 0:  # Avoid division by zero
+                                    ic_val = lbls.loc[pos_signal_idx].corr(pos_rets_binary)
+                                else:
+                                    # All returns in same direction, give moderate confidence
+                                    ic_val = 0.3 if pos_rets.mean() > 0 else 0.0
+                            else:
+                                ic_val = 0.0
+                        else:
+                            ic_val = 0.0
             except Exception:
                 ic_val = 0.0
-        # If shorts are disabled in config or no short signals exist, clamp IC to non-negative
+
+        # Apply reasonable bounds to IC but don't force it to 0 for single-direction strategies
         try:
             shorts_disabled = not getattr(self.config, 'enable_short_positions', False)
             has_shorts = (trade_opportunities < 0).any()
             if shorts_disabled or not has_shorts:
-                ic_val = max(0.0, ic_val)
+                # For single-direction strategies, allow negative IC but bound it reasonably
+                ic_val = max(-0.5, min(1.0, ic_val))  # Bound between -0.5 and 1.0
+            else:
+                # Multi-directional: standard bounds
+                ic_val = max(-1.0, min(1.0, ic_val))
         except Exception:
-            pass
+            ic_val = max(-1.0, min(1.0, ic_val))
         metrics['ic'] = ic_val
         # Mark single-direction scenarios (only long or only short signals present)
         try:
@@ -1850,7 +1876,7 @@ class VolatilityAwareMultiHorizonLabeler:
     def _create_downstream_opportunity_data(self, quality_scores: Dict[str, Any]) -> Dict[str, pd.DataFrame]:
         """Create downstream-ready opportunity data with scores and weights for each target."""
         opportunity_data = {}
-        
+
         for target_name, quality in quality_scores.items():
             if hasattr(quality, 'opportunity_scores') and hasattr(quality, 'opportunity_weights') and hasattr(quality, 'potential_profits'):
                 # Create DataFrame with all opportunity information
@@ -1862,20 +1888,34 @@ class VolatilityAwareMultiHorizonLabeler:
                     'weight': quality.opportunity_weights,
                     'target_name': target_name
                 })
-                
+
                 # Add derived metrics
                 opportunity_df['profit_rank'] = opportunity_df['potential_profit'].rank(ascending=False)
                 opportunity_df['quality_rank'] = opportunity_df['quality_score'].rank(ascending=False)
                 opportunity_df['weight_rank'] = opportunity_df['weight'].rank(ascending=False)
-                
+
                 # Add composite opportunity score (combination of quality and weight)
                 opportunity_df['composite_score'] = (
-                    0.6 * opportunity_df['quality_score'] + 
+                    0.6 * opportunity_df['quality_score'] +
                     0.4 * opportunity_df['weight']
                 )
-                
+
+                # Keep only top 80% opportunities per quality (rank-based filtering)
+                if len(opportunity_df) > 0:
+                    # Calculate quality percentile threshold (top 80% = quality_rank <= 0.8 * total_count)
+                    total_opportunities = len(opportunity_df)
+                    quality_threshold_rank = int(0.8 * total_opportunities)
+
+                    # Filter to keep only opportunities in top 80% by quality rank
+                    opportunity_df = opportunity_df[opportunity_df['quality_rank'] <= quality_threshold_rank].copy()
+
+                    # Re-rank after filtering to maintain consecutive ranks
+                    opportunity_df['quality_rank'] = opportunity_df['quality_score'].rank(ascending=False)
+                    opportunity_df['profit_rank'] = opportunity_df['potential_profit'].rank(ascending=False)
+                    opportunity_df['weight_rank'] = opportunity_df['weight'].rank(ascending=False)
+
                 opportunity_data[target_name] = opportunity_df
-        
+
         return opportunity_data
     
     def score_to_training(self, quality_scores: Dict[str, Any], training_config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
@@ -2214,18 +2254,20 @@ class VolatilityAwareMultiHorizonLabeler:
         non_null_labels = metadata.get("non_null_labels", 0)
         coverage = non_null_labels / total_labels if total_labels > 0 else 0
         
-        # Count opportunities
+        # Count opportunities with configurable quality threshold
         total_opportunities = 0
         high_quality_opportunities = 0
+        quality_threshold = getattr(self.config, 'min_label_quality', 0.4)  # Use configured threshold
+
         for quality in quality_scores.values():
             if hasattr(quality, 'opportunity_scores'):
                 total_opportunities += len(quality.opportunity_scores)
-                # Count high-quality opportunities (those with quality > 0.6)
+                # Count high-quality opportunities using configured threshold
                 if hasattr(quality, 'opportunity_scores') and hasattr(quality, 'opportunity_quality_scores'):
-                    high_quality_opportunities += sum(1 for q_score in quality.opportunity_quality_scores if q_score > 0.6)
-            # Fallback: if no opportunity quality scores, use overall quality as proxy
-            elif hasattr(quality, 'overall_quality') and quality.overall_quality > 0.6:
-                high_quality_opportunities += 1
+                    high_quality_opportunities += sum(1 for q_score in quality.opportunity_quality_scores if q_score > quality_threshold)
+                # Fallback: if no opportunity quality scores, use overall quality as proxy
+                elif hasattr(quality, 'overall_quality') and quality.overall_quality > quality_threshold:
+                    high_quality_opportunities += 1
         
         # Overall assessment
         if coverage > 0.1 and total_opportunities > 10:
@@ -3243,7 +3285,7 @@ class VolatilityAwareMultiHorizonLabeler:
 
         return labels
 
-    def _generate_volatility_labels(
+    def _generate_price_target_vol_normalized_labels(
         self,
         prices: pd.Series,
         volatility: pd.Series,

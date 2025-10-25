@@ -1,5 +1,5 @@
 """
-Optimization Service for NAS-TAS Clustering.
+Optimization Service for HDBSCAN Clustering.
 
 This module manages objective function weights and ΔJ calculations,
 runs the 3-step iterative optimization, and applies churn caps, hysteresis,

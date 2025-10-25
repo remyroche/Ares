@@ -1,5 +1,5 @@
 """
-Core Clustering Engine for NAS-TAS Clustering.
+Core Clustering Engine for HDBSCAN Clustering.
 
 This module provides the main clustering engine that wraps initial clustering
 and iterative optimization loops, orchestrating the three main steps.

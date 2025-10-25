@@ -1,5 +1,5 @@
 """
-Clustering Optimizer for NAS-TAS Clustering.
+Clustering Optimizer for HDBSCAN Clustering.
 
 This module implements advanced optimization logic including:
 - ΔJ objective calculation

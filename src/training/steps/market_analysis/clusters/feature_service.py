@@ -1,5 +1,5 @@
 """
-Feature Service for NAS-TAS Clustering.
+Feature Service for HDBSCAN Clustering.
 
 This module provides feature preparation, scaling, and embedding services
 that wrap FeaturePreprocessor, FeatureSelector, and FeatureAnalyzer.

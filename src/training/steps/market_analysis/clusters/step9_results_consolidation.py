@@ -1,5 +1,5 @@
 """
-Step 9: Results Consolidation for NAS-TAS Clustering.
+Step 9: Results Consolidation for HDBSCAN Clustering.
 
 This module handles the final results consolidation, artifact creation,
 and comprehensive metrics calculation.
@@ -187,7 +187,7 @@ class ResultsConsolidationStep:
                     'timestamp': datetime.now().isoformat(),
                     'feature_count': context.optimized_features.shape[1],
                     'sample_count': context.optimized_features.shape[0],
-                    'clustering_algorithm': 'NAS-TAS Clustering (Refactored)',
+                    'clustering_algorithm': 'HDBSCAN Clustering (Refactored)',
                     'version': '2.0.0'
                 }
             }

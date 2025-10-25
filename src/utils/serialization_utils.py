@@ -12,6 +12,17 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
+# Import pandas for Parquet operations
+try:
+    import pandas as pd
+except ImportError:
+    logger.warning("Pandas not available. Parquet serialization will not work.")
+    pd = None
+
+class SerializationError(Exception):
+    """Custom exception for serialization errors."""
+    pass
+
 class JSONSerializer:
     """JSON serialization utilities."""
 
@@ -67,7 +78,9 @@ class ParquetSerializer:
     def save(data: Any, filepath: str) -> bool:
         """Save data as parquet."""
         try:
-            import pandas as pd
+            if pd is None:
+                logger.error("Pandas not available. Cannot save parquet files.")
+                return False
             if isinstance(data, pd.DataFrame):
                 data.to_parquet(filepath)
                 return True
@@ -82,6 +95,9 @@ class ParquetSerializer:
     def load(filepath: str) -> Optional[Any]:
         """Load data from parquet."""
         try:
+            if pd is None:
+                logger.error("Pandas not available. Cannot load parquet files.")
+                return None
             return pd.read_parquet(filepath)
         except Exception as e:
             logger.error(f"Failed to load parquet: {e}")
@@ -128,20 +144,79 @@ class UniversalSerializer:
             # Try pickle as default
             return PickleSerializer.load(filepath)
 
-def safe_serialize(data: Any, filepath: str, format: str = 'auto') -> bool:
-    """Safely serialize data to file with error handling."""
+# Convenience functions for pickle operations
+def save_pickle(data: Any, filepath: str) -> bool:
+    """Save data as pickle file."""
+    try:
+        return PickleSerializer.save(data, filepath)
+    except Exception as e:
+        logger.error(f"Failed to save pickle: {e}")
+        return False
+
+
+def load_pickle(filepath: str) -> Optional[Any]:
+    """Load data from pickle file."""
+    try:
+        return PickleSerializer.load(filepath)
+    except Exception as e:
+        logger.error(f"Failed to load pickle: {e}")
+        return None
+
+
+# Convenience functions for JSON operations
+def save_json(data: Any, filepath: str) -> bool:
+    """Save data as JSON file."""
+    try:
+        return JSONSerializer.save(data, filepath)
+    except Exception as e:
+        logger.error(f"Failed to save JSON: {e}")
+        return False
+
+
+def load_json(filepath: str) -> Optional[Any]:
+    """Load data from JSON file."""
+    try:
+        return JSONSerializer.load(filepath)
+    except Exception as e:
+        logger.error(f"Failed to load JSON: {e}")
+        return None
+
+
+# Convenience functions for parquet operations
+def save_parquet(data: Any, filepath: str) -> bool:
+    """Save data as parquet file."""
+    try:
+        return ParquetSerializer.save(data, filepath)
+    except Exception as e:
+        logger.error(f"Failed to save parquet: {e}")
+        return False
+
+
+def load_parquet(filepath: str) -> Optional[Any]:
+    """Load data from parquet file."""
+    try:
+        return ParquetSerializer.load(filepath)
+    except Exception as e:
+        logger.error(f"Failed to load parquet: {e}")
+        return None
+
+
+# Convenience functions for universal operations
+def save_data(data: Any, filepath: str, format: str = 'auto') -> bool:
+    """Save data with automatic format detection."""
     try:
         serializer = UniversalSerializer()
         return serializer.save(data, filepath, format)
     except Exception as e:
-        logger.error(f"Failed to serialize data: {e}")
+        logger.error(f"Failed to save data: {e}")
         return False
 
-def safe_deserialize(filepath: str) -> Optional[Any]:
-    """Safely deserialize data from file with error handling."""
+
+def load_data(filepath: str) -> Optional[Any]:
+    """Load data with automatic format detection."""
     try:
         serializer = UniversalSerializer()
         return serializer.load(filepath)
     except Exception as e:
-        logger.error(f"Failed to deserialize data: {e}")
+        logger.error(f"Failed to load data: {e}")
         return None

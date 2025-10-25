@@ -1,5 +1,5 @@
 """
-Shared utilities for NAS-TAS regime detection and clustering.
+Shared utilities for HDBSCAN regime detection and clustering.
 
 This package provides common utilities that eliminate redundancy between
 NAS and TAS components, including feature preparation, configuration validation,

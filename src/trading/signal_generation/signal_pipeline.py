@@ -179,21 +179,23 @@ class SignalGenerationPipeline:
     async def _initialize_hmm_regime_detector(self):
         """Initialize NAS/TAS regime detector (replaces HMM-based approach)."""
         try:
-            # Import and initialize NAS/TAS regime detector
-            from src.training.steps.market_analysis.hybrid_nas_tas_regime.core.hybrid_regime_detector import (
-                HybridNASTASRegimeDetector
-            )
-            from src.training.steps.market_analysis.hybrid_nas_tas_regime.config.hybrid_regime_config import (
-                HybridRegimeConfig, RegimeCombinationStrategy
-            )
+            # Import and initialize NAS/TAS regime detector (disabled due to missing dependency)
+            # Note: Removed dependency on hybrid_nas_tas_regime module
+            # from src.training.steps.market_analysis.hybrid_nas_tas_regime.core.hybrid_regime_detector import (
+            #     HybridNASTASRegimeDetector
+            # )
+            # from src.training.steps.market_analysis.hybrid_nas_tas_regime.config.hybrid_regime_config import (
+            #     HybridRegimeConfig, RegimeCombinationStrategy
+            # )
 
-            regime_config = HybridRegimeConfig(
-                n_regimes=8,
-                combination_strategy=RegimeCombinationStrategy.ADAPTIVE_FUSION
-            )
-            self.hmm_regime_detector = HybridNASTASRegimeDetector(regime_config)
+            # regime_config = HybridRegimeConfig(
+            #     n_regimes=8,
+            #     combination_strategy=RegimeCombinationStrategy.ADAPTIVE_FUSION
+            # )
+            # self.hmm_regime_detector = HybridNASTASRegimeDetector(regime_config)
+            self.hmm_regime_detector = None  # Disabled due to missing dependency
 
-            self.logger.info("✅ NAS/TAS regime detector initialized (replaces HMM)")
+            self.logger.info("⚠️ NAS/TAS regime detector disabled (missing dependency)")
 
         except Exception as e:
             self.logger.error(f"❌ Failed to initialize NAS/TAS regime detector: {e}")

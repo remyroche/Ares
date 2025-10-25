@@ -117,6 +117,56 @@ class BaseStep(ABC):
             self.logger.error(f"Failed to retrieve artifact {artifact_name}: {e}")
             raise
     
+    def _apply_light_mode_filter(self, data: Any, config: Dict[str, Any], timeframe: str = "15m") -> Any:
+        """
+        Apply light mode filtering to data if execution mode is 'light'.
+        
+        In light mode, limits data to the last 20 days to speed up processing.
+        
+        Args:
+            data: Data to filter (should have a tail() method like pandas DataFrame/Series)
+            config: Configuration dict containing 'execution_mode'
+            timeframe: Timeframe string (e.g., '15m', '1h', '1d')
+            
+        Returns:
+            Filtered data if light mode, original data otherwise
+        """
+        try:
+            execution_mode = config.get('execution_mode', 'light')
+            
+            if execution_mode.lower() != 'light':
+                return data
+            
+            # Calculate samples per day for different timeframes
+            samples_per_day_map = {
+                '1m': 1440,   # 60 * 24
+                '3m': 480,    # 20 * 24
+                '5m': 288,    # 12 * 24
+                '15m': 96,    # 4 * 24
+                '30m': 48,    # 2 * 24
+                '1h': 24,     # 1 * 24
+                '4h': 6,      # 24 / 4
+                '1d': 1
+            }
+            
+            samples_per_day = samples_per_day_map.get(timeframe, 96)  # Default to 15m
+            days_limit = 20
+            light_limit = days_limit * samples_per_day
+            
+            # Check if data has length attribute and tail method
+            if hasattr(data, '__len__') and hasattr(data, 'tail'):
+                data_len = len(data)
+                if data_len > light_limit:
+                    filtered = data.tail(light_limit).copy()
+                    self.logger.info(f"BaseStep light mode filtering: reduced data from {data_len:,} to {len(filtered):,} samples ({days_limit} days of {timeframe} data)")
+                    return filtered
+            
+            return data
+            
+        except Exception as e:
+            self.logger.warning(f"Failed to apply light mode filter: {e}")
+            return data
+    
     
     async def run(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """

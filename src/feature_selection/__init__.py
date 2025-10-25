@@ -53,6 +53,13 @@ from .vectorbt_extensions import (
     VectorBTFeatureSelectionConfig,
 )
 
+# Enhanced VectorBT components with optimizations
+try:
+    from .vectorbt_extensions.vectorbt_rolling_operations import VectorBTRollingOperations
+    ENHANCED_VECTORBT_ROLLING_AVAILABLE = True
+except ImportError:
+    ENHANCED_VECTORBT_ROLLING_AVAILABLE = False
+
 # Selection methods
 from .methods import (
     MRMRSelector,

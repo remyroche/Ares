@@ -235,8 +235,20 @@ class ModelPreparationValidator:
             results['issues'].append("Target vector contains missing values")
             results['recommendations'].append("Remove or impute missing target values")
         
-        # Check for constant features
-        constant_features = X.columns[X.nunique() <= 1].tolist()
+        # Check for constant features (more robust detection)
+        constant_features = []
+        for col in X.columns:
+            col_data = X[col].dropna()  # Remove NaN values first
+            if len(col_data) == 0:
+                # All values are NaN, consider as constant
+                constant_features.append(col)
+            elif col_data.nunique() <= 1:
+                # Only 1 unique value (excluding NaN)
+                constant_features.append(col)
+            elif col_data.std() == 0:
+                # Zero standard deviation (all values identical)
+                constant_features.append(col)
+        
         if constant_features:
             results['issues'].append(f"Constant features found: {constant_features}")
             results['recommendations'].append("Remove constant features")

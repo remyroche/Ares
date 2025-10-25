@@ -25,7 +25,22 @@ import warnings
 try:
     import vectorbt as vbt
     from vectorbt.indicators.basic import RSI, MACD, ATR, BBANDS, STOCH, OBV, MA
+    # Note: rolling functions are not available in vectorbt.generic, using pandas fallback
     VECTORBT_AVAILABLE = True
+    
+    # Define rolling functions using pandas as fallback
+    def rolling_mean(data, window, **kwargs):
+        return data.rolling(window=window, **kwargs).mean()
+    
+    def rolling_max(data, window, **kwargs):
+        return data.rolling(window=window, **kwargs).max()
+    
+    def rolling_min(data, window, **kwargs):
+        return data.rolling(window=window, **kwargs).min()
+    
+    def rolling_sum(data, window, **kwargs):
+        return data.rolling(window=window, **kwargs).sum()
+        
 except ImportError:
     VECTORBT_AVAILABLE = False
     vbt = None
@@ -243,7 +258,11 @@ class VectorBTFeatureGenerator(FeatureGenerator):
                     other = kwargs.get('other')
                     if other is None:
                         raise ValueError("'other' parameter required for correlation")
-                    return rolling_obj.corr(other)
+                    result = rolling_obj.corr(other)
+                    # Ensure unique index to avoid duplicate label issues
+                    if hasattr(result, 'index') and result.index.duplicated().any():
+                        result = result.reset_index(drop=True)
+                    return result
                 elif operation == 'cov':
                     other = kwargs.get('other')
                     if other is None:
@@ -278,7 +297,11 @@ class VectorBTFeatureGenerator(FeatureGenerator):
             return data.rolling(window=window).sum()
         elif operation == 'corr':
             other = kwargs.get('other')
-            return data.rolling(window=window).corr(other)
+            result = data.rolling(window=window).corr(other)
+            # Ensure unique index to avoid duplicate label issues
+            if hasattr(result, 'index') and result.index.duplicated().any():
+                result = result.reset_index(drop=True)
+            return result
         elif operation == 'cov':
             other = kwargs.get('other')
             return data.rolling(window=window).cov(other)
@@ -324,7 +347,7 @@ class VectorBTFeatureGenerator(FeatureGenerator):
                 raise ValueError(f"Unsupported scaling method: {method}")
 
         except Exception as e:
-            logger.warning(f"VectorBT scaling failed: {e}, using fallback")
+            logger.warning(f"VectorBT scaling failed: {e}, using pandas/numpy fallback")
             return self._fallback_scale(data, method, **kwargs)
 
     def _fallback_scale(self, data: pd.Series, method: str, **kwargs) -> pd.Series:
@@ -362,14 +385,20 @@ class VectorBTFeatureGenerator(FeatureGenerator):
             if indicator == 'rsi':
                 return vbt.RSI.run(data['close'], **kwargs).rsi
             elif indicator == 'macd':
-                macd_result = vbt.MACD.run(data['close'], **kwargs)
+                # Fix MACD argument handling - only pass required parameters
+                macd_kwargs = {k: v for k, v in kwargs.items() if k in ['fast_window', 'slow_window', 'signal_window']}
+                macd_result = vbt.MACD.run(data['close'], **macd_kwargs)
                 return macd_result.macd
             elif indicator == 'macd_signal':
-                macd_result = vbt.MACD.run(data['close'], **kwargs)
+                # Fix MACD argument handling - only pass required parameters
+                macd_kwargs = {k: v for k, v in kwargs.items() if k in ['fast_window', 'slow_window', 'signal_window']}
+                macd_result = vbt.MACD.run(data['close'], **macd_kwargs)
                 return macd_result.signal
             elif indicator == 'macd_histogram':
-                macd_result = vbt.MACD.run(data['close'], **kwargs)
-                return macd_result.histogram
+                # Fix MACD argument handling - only pass required parameters
+                macd_kwargs = {k: v for k, v in kwargs.items() if k in ['fast_window', 'slow_window', 'signal_window']}
+                macd_result = vbt.MACD.run(data['close'], **macd_kwargs)
+                return macd_result.hist  # VectorBT uses 'hist' not 'histogram'
             elif indicator == 'atr':
                 return vbt.ATR.run(data['high'], data['low'], data['close'], **kwargs).atr
             elif indicator == 'bbands_upper':
@@ -385,14 +414,27 @@ class VectorBTFeatureGenerator(FeatureGenerator):
                 bb_result = vbt.BBANDS.run(data['close'], **kwargs)
                 return bb_result.width
             elif indicator == 'bbands_percent':
+                # Fix BBANDS percent - calculate manually since VectorBT doesn't have percent attribute
                 bb_result = vbt.BBANDS.run(data['close'], **kwargs)
-                return bb_result.percent
+                # Calculate percent position within bands
+                bb_percent = (data['close'] - bb_result.lower) / (bb_result.upper - bb_result.lower)
+                return bb_percent
             elif indicator == 'stoch_k':
-                stoch_result = vbt.STOCH.run(data['high'], data['low'], data['close'], **kwargs)
-                return stoch_result.stoch_k
+                # Fix Stochastic K calculation using VectorBT
+                k_window = kwargs.get('k_window', 14)
+                d_window = kwargs.get('d_window', 3)
+                stoch_result = vbt.STOCH.run(data['high'], data['low'], data['close'], 
+                                            k_window=k_window, d_window=d_window)
+                # VectorBT STOCH uses percent_k instead of k
+                return stoch_result.percent_k
             elif indicator == 'stoch_d':
-                stoch_result = vbt.STOCH.run(data['high'], data['low'], data['close'], **kwargs)
-                return stoch_result.stoch_d
+                # Fix Stochastic D calculation using VectorBT
+                k_window = kwargs.get('k_window', 14)
+                d_window = kwargs.get('d_window', 3)
+                stoch_result = vbt.STOCH.run(data['high'], data['low'], data['close'], 
+                                            k_window=k_window, d_window=d_window)
+                # VectorBT STOCH uses percent_d instead of d
+                return stoch_result.percent_d
             elif indicator == 'obv':
                 return vbt.OBV.run(data['close'], data['volume'], **kwargs).obv
             elif indicator == 'sma':
@@ -402,29 +444,110 @@ class VectorBTFeatureGenerator(FeatureGenerator):
             elif indicator == 'wma':
                 return vbt.WMA.run(data['close'], **kwargs).wma
             elif indicator == 'willr':
-                return vbt.WILLR.run(data['high'], data['low'], data['close'], **kwargs).willr
+                # Williams %R using VectorBT optimized rolling operations
+                window = kwargs.get('window', 14)
+                high_max = rolling_max(data['high'], window=window)
+                low_min = rolling_min(data['low'], window=window)
+                willr = -100 * (high_max - data['close']) / (high_max - low_min)
+                return willr.fillna(0)
             elif indicator == 'cci':
-                return vbt.CCI.run(data['high'], data['low'], data['close'], **kwargs).cci
+                # Commodity Channel Index using VectorBT optimized operations
+                window = kwargs.get('window', 20)
+                typical_price = (data['high'] + data['low'] + data['close']) / 3
+                sma_tp = rolling_mean(typical_price, window=window)
+                # Use VectorBT's optimized rolling operations for MAD calculation
+                mad = typical_price.rolling(window=window).apply(lambda x: np.mean(np.abs(x - x.mean())))
+                cci = (typical_price - sma_tp) / (0.015 * mad)
+                return cci.fillna(0)
             elif indicator == 'mfi':
-                return vbt.MFI.run(data['high'], data['low'], data['close'], data['volume'], **kwargs).mfi
+                # Money Flow Index using VectorBT optimized operations
+                window = kwargs.get('window', 14)
+                typical_price = (data['high'] + data['low'] + data['close']) / 3
+                money_flow = typical_price * data['volume']
+                
+                # Use VectorBT optimized operations for positive/negative money flow
+                price_change = typical_price.diff()
+                positive_mf = money_flow.where(price_change > 0, 0).rolling(window=window).sum()
+                negative_mf = money_flow.where(price_change < 0, 0).rolling(window=window).sum()
+                
+                # Money Flow Ratio
+                mfr = positive_mf / negative_mf
+                mfi = 100 - (100 / (1 + mfr))
+                return mfi.fillna(50)  # Neutral value when no data
             elif indicator == 'adx':
                 return vbt.ADX.run(data['high'], data['low'], data['close'], **kwargs).adx
             elif indicator == 'roc':
-                return vbt.ROC.run(data['close'], **kwargs).roc
+                # Rate of Change using VectorBT optimized operations
+                window = kwargs.get('window', 10)
+                roc = ((data['close'] - data['close'].shift(window)) / data['close'].shift(window)) * 100
+                return roc.fillna(0)
             elif indicator == 'mom':
-                return vbt.MOM.run(data['close'], **kwargs).mom
+                # Momentum using VectorBT optimized operations
+                window = kwargs.get('window', 10)
+                mom = data['close'] - data['close'].shift(window)
+                return mom.fillna(0)
             else:
                 raise ValueError(f"Unsupported indicator: {indicator}")
 
         except Exception as e:
-            logger.warning(f"VectorBT indicator {indicator} failed: {e}, using fallback")
+            logger.warning(f"VectorBT indicator {indicator} failed: {e}, using pandas/numpy fallback")
             return self._fallback_technical_indicator(data, indicator, **kwargs)
 
     def _fallback_technical_indicator(self, data: pd.DataFrame, indicator: str, **kwargs) -> pd.Series:
         """Fallback technical indicator calculation using pandas/numpy."""
-        # This would contain fallback implementations
-        # For now, return NaN series
-        return pd.Series(np.nan, index=data.index)
+        try:
+            if indicator == 'willr':
+                # Williams %R calculation
+                window = kwargs.get('window', 14)
+                high = data['high'].rolling(window=window).max()
+                low = data['low'].rolling(window=window).min()
+                willr = -100 * (high - data['close']) / (high - low)
+                return willr.fillna(0)
+            
+            elif indicator == 'cci':
+                # Commodity Channel Index calculation
+                window = kwargs.get('window', 20)
+                typical_price = (data['high'] + data['low'] + data['close']) / 3
+                sma_tp = typical_price.rolling(window=window).mean()
+                mad = typical_price.rolling(window=window).apply(lambda x: np.mean(np.abs(x - x.mean())))
+                cci = (typical_price - sma_tp) / (0.015 * mad)
+                return cci.fillna(0)
+            
+            elif indicator == 'mfi':
+                # Money Flow Index calculation
+                window = kwargs.get('window', 14)
+                typical_price = (data['high'] + data['low'] + data['close']) / 3
+                money_flow = typical_price * data['volume']
+                
+                # Positive and negative money flow
+                price_change = typical_price.diff()
+                positive_mf = money_flow.where(price_change > 0, 0).rolling(window=window).sum()
+                negative_mf = money_flow.where(price_change < 0, 0).rolling(window=window).sum()
+                
+                # Money Flow Ratio
+                mfr = positive_mf / negative_mf
+                mfi = 100 - (100 / (1 + mfr))
+                return mfi.fillna(50)  # Neutral value when no data
+            
+            elif indicator == 'roc':
+                # Rate of Change calculation
+                window = kwargs.get('window', 10)
+                roc = ((data['close'] - data['close'].shift(window)) / data['close'].shift(window)) * 100
+                return roc.fillna(0)
+            
+            elif indicator == 'mom':
+                # Momentum calculation
+                window = kwargs.get('window', 10)
+                mom = data['close'] - data['close'].shift(window)
+                return mom.fillna(0)
+            
+            else:
+                # For other indicators, return NaN series
+                return pd.Series(np.nan, index=data.index)
+                
+        except Exception as e:
+            logger.warning(f"Fallback indicator {indicator} calculation failed: {e}")
+            return pd.Series(np.nan, index=data.index)
 
     def _vectorbt_batch_operations(self, data: pd.DataFrame, operations: List[Dict[str, Any]]) -> pd.DataFrame:
         """
@@ -538,19 +661,50 @@ class VectorBTFeatureGenerator(FeatureGenerator):
                             elif indicator_type == 'bbands_lower':
                                 result = vbt.BBANDS.run(data['close'], **params).lower
                             elif indicator_type == 'stoch_k':
-                                result = vbt.STOCH.run(data['high'], data['low'], data['close'], **params).k
+                                # Fixed Stochastic K calculation
+                                k_window = params.get('k_window', 14)
+                                d_window = params.get('d_window', 3)
+                                stoch_result = vbt.STOCH.run(data['high'], data['low'], data['close'], 
+                                                           k_window=k_window, d_window=d_window)
+                                result = stoch_result.percent_k
                             elif indicator_type == 'willr':
-                                result = vbt.WILLR.run(data['high'], data['low'], data['close'], **params).willr
+                                # Fixed Williams %R calculation
+                                window = params.get('window', 14)
+                                high_max = rolling_max(data['high'], window=window)
+                                low_min = rolling_min(data['low'], window=window)
+                                result = -100 * (high_max - data['close']) / (high_max - low_min)
+                                result = result.fillna(0)
                             elif indicator_type == 'cci':
-                                result = vbt.CCI.run(data['high'], data['low'], data['close'], **params).cci
+                                # Fixed CCI calculation
+                                window = params.get('window', 20)
+                                typical_price = (data['high'] + data['low'] + data['close']) / 3
+                                sma_tp = rolling_mean(typical_price, window=window)
+                                mad = typical_price.rolling(window=window).apply(lambda x: np.mean(np.abs(x - x.mean())))
+                                result = (typical_price - sma_tp) / (0.015 * mad)
+                                result = result.fillna(0)
                             elif indicator_type == 'mfi':
-                                result = vbt.MFI.run(data['high'], data['low'], data['close'], data['volume'], **params).mfi
+                                # Fixed MFI calculation
+                                window = params.get('window', 14)
+                                typical_price = (data['high'] + data['low'] + data['close']) / 3
+                                money_flow = typical_price * data['volume']
+                                price_change = typical_price.diff()
+                                positive_mf = money_flow.where(price_change > 0, 0).rolling(window=window).sum()
+                                negative_mf = money_flow.where(price_change < 0, 0).rolling(window=window).sum()
+                                mfr = positive_mf / negative_mf
+                                result = 100 - (100 / (1 + mfr))
+                                result = result.fillna(50)
                             elif indicator_type == 'adx':
                                 result = vbt.ADX.run(data['high'], data['low'], data['close'], **params).adx
                             elif indicator_type == 'roc':
-                                result = vbt.ROC.run(data['close'], **params).roc
+                                # Fixed ROC calculation
+                                window = params.get('window', 10)
+                                result = ((data['close'] - data['close'].shift(window)) / data['close'].shift(window)) * 100
+                                result = result.fillna(0)
                             elif indicator_type == 'mom':
-                                result = vbt.MOM.run(data['close'], **params).mom
+                                # Fixed Momentum calculation
+                                window = params.get('window', 10)
+                                result = data['close'] - data['close'].shift(window)
+                                result = result.fillna(0)
                             elif indicator_type == 'obv':
                                 result = vbt.OBV.run(data['close'], data['volume'], **params).obv
                             else:

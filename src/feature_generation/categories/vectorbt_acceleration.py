@@ -634,8 +634,33 @@ class VectorBTTrendStrengthGenerator(VectorBTFeatureGenerator):
         # Fallback to pandas rolling if VectorBT optimizer is not available
         min_periods = max(2, min(5, self.window // 4))  # More flexible min_periods
         try:
+            # Define the function locally for the fallback
+            def calculate_trend_strength_fallback(series):
+                if len(series) < 2:
+                    return 0.0
+                try:
+                    # Remove NaN values for calculation
+                    valid_data = series.dropna()
+                    if len(valid_data) < 2:
+                        return 0.0
+
+                    # Use linear regression to calculate trend strength
+                    x = np.arange(len(valid_data))
+                    y = valid_data.values
+                    # Calculate R-squared to measure trend strength
+                    if np.var(y) == 0:  # Avoid division by zero
+                        return 0.0
+                    slope, intercept = np.polyfit(x, y, 1)
+                    y_pred = slope * x + intercept
+                    ss_res = np.sum((y - y_pred) ** 2)
+                    ss_tot = np.sum((y - np.mean(y)) ** 2)
+                    r_squared = 1 - (ss_res / ss_tot) if ss_tot != 0 else 0.0
+                    return r_squared
+                except:
+                    return 0.0
+            
             trend_strength = base_values.rolling(window=self.window, min_periods=min_periods).apply(
-                calculate_trend_strength, raw=False
+                calculate_trend_strength_fallback, raw=False
             )
             return _sanitize_series_output(
                 trend_strength, data.index,
@@ -1161,10 +1186,18 @@ class VectorBTAccelerationCorrelationGenerator(VectorBTFeatureGenerator):
         momentum = safe_percentage_change(shifted_values, base_values)
         acceleration = momentum.diff(self.period)
 
+        # Ensure unique index to avoid duplicate label issues
+        acceleration = acceleration.reset_index(drop=True)
+        base_values = base_values.reset_index(drop=True)
+
         # Calculate acceleration correlation with price
         acceleration_correlation = self._vectorbt_rolling_operation(
             acceleration, 'corr', window=self.period, other=base_values
         )
+
+        # Ensure the result has a unique index
+        if hasattr(acceleration_correlation, 'index') and acceleration_correlation.index.duplicated().any():
+            acceleration_correlation = acceleration_correlation.reset_index(drop=True)
 
         return acceleration_correlation.rename(f'vectorbt_acceleration_correlation_{self.period}_{self.base_calculation.value}')
 
@@ -1503,24 +1536,8 @@ class OptimizedAccelerationBatchGenerator:
 
     def _generate_trend_strength_vectorbt_optimized(self, data: pd.DataFrame, base_values: pd.Series, period: int, base_calculation: str) -> pd.Series:
         """Generate trend strength using optimized VectorBT operations."""
-        if self.vectorbt_rolling_optimizer and VECTORBT_ROLLING_OPTIMIZER_AVAILABLE:
-            try:
-                def calculate_trend_strength(series):
-                    if len(series) < 2:
-                        return 0.0
-                    try:
-                        slope = np.polyfit(range(len(series)), series, 1)[0]
-                        return slope
-                    except:
-                        return 0.0
-
-                return self.vectorbt_rolling_optimizer.rolling_apply(
-                    base_values, calculate_trend_strength, window=period, min_periods=1
-                )
-            except Exception as e:
-                self.logger.warning(f"VectorBT optimized trend strength failed: {e}")
-
-        # Fallback to standard calculation
+        
+        # Define the function outside the try block to ensure it's always available
         def calculate_trend_strength(series):
             if len(series) < 2:
                 return 0.0
@@ -1529,8 +1546,26 @@ class OptimizedAccelerationBatchGenerator:
                 return slope
             except:
                 return 0.0
+        
+        if self.vectorbt_rolling_optimizer and VECTORBT_ROLLING_OPTIMIZER_AVAILABLE:
+            try:
+                return self.vectorbt_rolling_optimizer.rolling_apply(
+                    base_values, calculate_trend_strength, window=period, min_periods=1
+                )
+            except Exception as e:
+                self.logger.warning(f"VectorBT optimized trend strength failed: {e}")
 
-        return base_values.rolling(window=period).apply(calculate_trend_strength, raw=False)
+        # Fallback to standard calculation
+        def calculate_trend_strength_fallback(series):
+            if len(series) < 2:
+                return 0.0
+            try:
+                slope = np.polyfit(range(len(series)), series, 1)[0]
+                return slope
+            except:
+                return 0.0
+        
+        return base_values.rolling(window=period).apply(calculate_trend_strength_fallback, raw=False)
 
     def _generate_trend_consistency_vectorbt(self, data: pd.DataFrame, period: int, base_calculation: str) -> pd.Series:
         """Generate trend consistency using VectorBT optimization."""

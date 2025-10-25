@@ -1,5 +1,5 @@
 """
-Clustering Orchestrator for NAS-TAS Clustering.
+Clustering Orchestrator for HDBSCAN Clustering.
 
 This module orchestrates the entire clustering pipeline by coordinating
 the sequential steps and iterative optimization processes.
@@ -24,7 +24,7 @@ from .hardware_service import HardwareService
 from ..shared_utils import get_logger
 
 class ClusteringOrchestrator:
-    """Orchestrates the entire NAS-TAS clustering pipeline."""
+    """Orchestrates the entire HDBSCAN clustering pipeline."""
 
     def __init__(self, verbose: bool = True):
         """Initialize the clustering orchestrator."""
@@ -57,7 +57,7 @@ class ClusteringOrchestrator:
         try:
             # Initialize performance tracking
             self.performance_metrics["start_time"] = time.time()
-            tprint("🚀 Starting NAS-TAS Clustering Pipeline (Refactored)", "INFO")
+            tprint("🚀 Starting HDBSCAN Clustering Pipeline (Refactored)", "INFO")
             tprint("🎯 Using advanced 3-step iterative clustering with risk mitigation", "INFO")
 
             # Create clustering context
@@ -81,7 +81,7 @@ class ClusteringOrchestrator:
             self.performance_metrics["end_time"] = time.time()
             total_time = self.performance_metrics["end_time"] - self.performance_metrics["start_time"]
 
-            tprint(f"🎉 NAS-TAS Clustering Pipeline completed in {total_time:.2f} seconds", "SUCCESS")
+            tprint(f"🎉 HDBSCAN Clustering Pipeline completed in {total_time:.2f} seconds", "SUCCESS")
 
             # Add performance metrics to results
             if hasattr(context, 'final_results'):

@@ -24,6 +24,40 @@ except ImportError:
 from src.utils.tprint import tprint, tprint_success, tprint_warning, tprint_performance, tprint_debug
 from src.utils.math_validation import validate_numeric_array, validate_finite
 
+# Import VectorBTRollingOptimizer for enhanced performance
+try:
+    from src.feature_generation.utils.vectorbt_rolling_optimizer import VectorBTRollingOptimizer
+    VECTORBT_ROLLING_OPTIMIZER_AVAILABLE = True
+except ImportError:
+    VECTORBT_ROLLING_OPTIMIZER_AVAILABLE = False
+    VectorBTRollingOptimizer = None
+
+# Import UnifiedVectorizationManager for unified vectorization
+try:
+    from src.feature_generation.utils.unified_vectorization_manager import UnifiedVectorizationManager
+    UNIFIED_VECTORIZATION_AVAILABLE = True
+except ImportError:
+    UNIFIED_VECTORIZATION_AVAILABLE = False
+    UnifiedVectorizationManager = None
+
+# Import hardware optimization tools
+try:
+    from src.utils.hardware.unified_hardware_manager import (
+        UnifiedHardwareManager,
+        get_unified_hardware_manager,
+        WorkloadType,
+        OptimizationLevel,
+        HardwareConfig
+    )
+    HARDWARE_AVAILABLE = True
+except ImportError:
+    HARDWARE_AVAILABLE = False
+    UnifiedHardwareManager = None
+    get_unified_hardware_manager = None
+    WorkloadType = None
+    OptimizationLevel = None
+    HardwareConfig = None
+
 from .vectorbt_config import VectorBTFeatureSelectionConfig
 
 logger = logging.getLogger(__name__)
@@ -62,7 +96,7 @@ class VectorBTRollingOperations:
     """
 
     def __init__(self, config: Optional[VectorBTFeatureSelectionConfig] = None):
-        """Initialize VectorBT rolling operations."""
+        """Initialize VectorBT rolling operations with enhanced optimizations."""
         self.config = config or VectorBTFeatureSelectionConfig()
         self.rolling_config = RollingConfig()
         self.logger = logger.getChild('VectorBTRollingOperations')
@@ -71,17 +105,66 @@ class VectorBTRollingOperations:
         if not VECTORBT_AVAILABLE:
             raise ImportError("VectorBT is required but not available. Please install vectorbt.")
 
-        # Performance tracking
+        # Initialize VectorBTRollingOptimizer for enhanced performance
+        if VECTORBT_ROLLING_OPTIMIZER_AVAILABLE:
+            try:
+                self.rolling_optimizer = VectorBTRollingOptimizer(
+                    enable_parallel=self.rolling_config.enable_parallel,
+                    memory_efficient=self.rolling_config.enable_memory_optimization,
+                    chunk_size=self.rolling_config.chunk_size,
+                    enable_hardware_optimization=HARDWARE_AVAILABLE,
+                    workload_type=WorkloadType.FEATURE_ENGINEERING if HARDWARE_AVAILABLE else None
+                )
+                tprint_success("✅ VectorBTRollingOptimizer integrated")
+            except Exception as e:
+                tprint_warning(f"⚠️ VectorBTRollingOptimizer initialization failed: {e}")
+                self.rolling_optimizer = None
+        else:
+            self.rolling_optimizer = None
+            tprint_warning("⚠️ VectorBTRollingOptimizer not available. Using fallback methods.")
+
+        # Initialize UnifiedVectorizationManager
+        if UNIFIED_VECTORIZATION_AVAILABLE:
+            try:
+                self.vectorization_manager = UnifiedVectorizationManager()
+                tprint_success("✅ UnifiedVectorizationManager integrated")
+            except Exception as e:
+                tprint_warning(f"⚠️ UnifiedVectorizationManager initialization failed: {e}")
+                self.vectorization_manager = None
+        else:
+            self.vectorization_manager = None
+            tprint_warning("⚠️ UnifiedVectorizationManager not available. Using fallback methods.")
+
+        # Initialize hardware manager
+        if HARDWARE_AVAILABLE:
+            try:
+                self.hardware_manager = get_unified_hardware_manager()
+                self.hardware_manager.optimize_for_workload(
+                    WorkloadType.FEATURE_ENGINEERING,
+                    OptimizationLevel.BALANCED
+                )
+                tprint_success("✅ Hardware manager integrated")
+            except Exception as e:
+                tprint_warning(f"⚠️ Hardware manager initialization failed: {e}")
+                self.hardware_manager = None
+        else:
+            self.hardware_manager = None
+
+        # Enhanced performance tracking
         self.performance_stats = {
             'total_operations': 0,
             'rolling_operations': 0,
+            'vectorbt_optimizer_operations': 0,
+            'unified_vectorization_operations': 0,
+            'hardware_optimized_operations': 0,
             'total_time': 0.0,
             'rolling_time': 0.0,
             'features_processed': 0,
-            'memory_saved_mb': 0.0
+            'memory_saved_mb': 0.0,
+            'speedup_vs_naive': 0.0
         }
 
-        tprint_success("🚀 VectorBTRollingOperations initialized")
+        tprint_success("🚀 VectorBTRollingOperations initialized with enhanced optimizations")
 
     def _create_time_series_dataframe(self, X: np.ndarray, feature_names: List[str]) -> pd.DataFrame:
         """Create VectorBT-optimized time series DataFrame."""
@@ -141,8 +224,26 @@ class VectorBTRollingOperations:
                 # Create VectorBT DataFrame
                 df = self._create_time_series_dataframe(X, feature_names)
 
-                # Use VectorBT's optimized rolling correlation
-                if hasattr(df, 'vbt'):
+                # Use VectorBTRollingOptimizer if available for enhanced performance
+                if self.rolling_optimizer and VECTORBT_ROLLING_OPTIMIZER_AVAILABLE:
+                    try:
+                        # Use VectorBTRollingOptimizer for enhanced rolling correlation
+                        rolling_corr = self.rolling_optimizer.rolling_corr(
+                            df, window=window, min_periods=self.rolling_config.min_periods
+                        )
+                        self.performance_stats['vectorbt_optimizer_operations'] += 1
+                        tprint_debug("🚀 Using VectorBTRollingOptimizer for correlation analysis")
+                    except Exception as opt_e:
+                        tprint_warning(f"⚠️ VectorBTRollingOptimizer failed, falling back: {opt_e}")
+                        # Fallback to standard VectorBT
+                        if hasattr(df, 'vbt'):
+                            rolling_corr = df.vbt.rolling_corr(
+                                window=window,
+                                min_periods=self.rolling_config.min_periods,
+                            )
+                        else:
+                            rolling_corr = df.rolling(window=window, min_periods=self.rolling_config.min_periods).corr()
+                elif hasattr(df, 'vbt'):
                     try:
                         # VectorBT rolling correlation with memory optimization
                         rolling_corr = df.vbt.rolling_corr(

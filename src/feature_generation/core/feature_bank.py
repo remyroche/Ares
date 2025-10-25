@@ -110,7 +110,7 @@ class FeatureBank:
 
             # Initialize UnifiedVectorizationManager
             try:
-                from src.utils.ml_common.unified_vectorization_manager import UnifiedVectorizationManager, get_unified_vectorization_manager
+                from src.utils.ml_common.unified_vectorization_manager import UnifiedVectorizationManager, get_unified_vectorization_manager, OperationType
                 self.unified_vectorization_manager = get_unified_vectorization_manager()
                 self.logger.debug("✅ UnifiedVectorizationManager enabled")
             except ImportError:
@@ -155,6 +155,7 @@ class FeatureBank:
             'total_generation_time': 0.0,
             'normalization_applied': 0,
             'matrix_accelerations': 0,
+            'vectorization_optimizations': 0,
             'batch_count': 0,
             'periodic_cleanups': 0
         }
@@ -487,7 +488,11 @@ class FeatureBank:
                         else:
                             # Fallback to the original generator's generate method
                             result = self.original_generator.generate(data, **kwargs)
-                            feature_series = result.data
+                            # Handle case where result.data might be a scalar
+                            if hasattr(result, 'data'):
+                                feature_series = result.data
+                            else:
+                                feature_series = result
 
                         # Ensure feature_series is a proper pandas Series
                         if not isinstance(feature_series, pd.Series):
@@ -506,14 +511,14 @@ class FeatureBank:
                         if self.auto_optimization_config.enable_auto_optimization:
                             feature_series = self._optimize_feature_series(feature_series)
 
-                        feature_series = self._ensure_series(feature_series, data.index, self.config.name)
+                        feature_series = CustomAutoOptimizedFeatureGenerator._ensure_series(feature_series, data.index, self.config.name)
                         return feature_series
 
                     except Exception as e:
                         self.logger.error(f"Error in custom auto-optimized feature generation: {e}")
                         # Fallback to parent implementation
                         fallback = super()._generate_feature(data, **kwargs)
-                        return self._ensure_series(fallback, data.index, self.config.name)
+                        return CustomAutoOptimizedFeatureGenerator._ensure_series(fallback, data.index, self.config.name)
 
             auto_optimized_gen = CustomAutoOptimizedFeatureGenerator(
                 generator, modified_config, self.config.auto_optimization_config
@@ -932,9 +937,15 @@ class FeatureBank:
         Returns:
             List of generators for the category
         """
-        tprint(f"🔍 Looking up generators for category: {category.value}")
+        if isinstance(category, FeatureCategory):
+            tprint(f"🔍 Looking up generators for category: {category.value}")
+        else:
+            tprint(f"🔍 Looking up generators for category: {category}")
         generators = self.registry.get_by_category(category)
-        tprint(f"✅ Found {len(generators)} generators for category: {category.value}")
+        if isinstance(category, FeatureCategory):
+            tprint(f"✅ Found {len(generators)} generators for category: {category.value}")
+        else:
+            tprint(f"✅ Found {len(generators)} generators for category: {category}")
         return generators
 
     def get_generator_by_name(self, name: str) -> Optional[FeatureGenerator]:
@@ -1321,17 +1332,20 @@ class FeatureBank:
 
             # Apply normalization using UnifiedVectorizationManager if available
             if self.unified_vectorization_manager:
+                from src.utils.ml_common.unified_vectorization_manager import OperationType
                 transformations = [{
                     'type': self.normalization_method,
                     'params': {'columns': features_to_normalize}
                 }]
 
                 # Use the correct method name
-                normalized_df = self.unified_vectorization_manager.optimize_operation(
-                    operation_type="normalization",
+                optimization_result = self.unified_vectorization_manager.optimize_operation(
+                    operation_type=OperationType.NORMALIZATION,
                     data=normalized_df,
                     transformations=transformations
                 )
+                # Extract the actual DataFrame from the OptimizationResult
+                normalized_df = optimization_result.result
 
                 self.performance_stats['normalization_applied'] += 1
                 self.performance_stats['vectorization_optimizations'] += 1
@@ -1369,7 +1383,9 @@ class FeatureBank:
             self.logger.info(f"✅ Normalization applied to {len(features_to_normalize)} features")
 
         except Exception as e:
+            import traceback
             self.logger.error(f"Error applying automatic normalization: {e}")
+            self.logger.error(f"Traceback: {traceback.format_exc()}")
             # Return original dataframe if normalization fails
 
         return normalized_df
@@ -1390,11 +1406,12 @@ class FeatureBank:
             # Skip features from excluded categories if categories are specified
             if categories:
                 feature_category = self._get_feature_category(feature)
-                if feature_category:
-                    # Handle both enum and string categories
-                    if hasattr(feature_category, 'value'):
+                if feature_category is not None:
+                    # Check if feature_category is actually a FeatureCategory enum
+                    if isinstance(feature_category, FeatureCategory):
                         category_str = feature_category.value
                     else:
+                        # If it's a string, use it directly
                         category_str = str(feature_category)
                     
                     if category_str in self.normalization_config['exclude_categories']:
@@ -1563,9 +1580,17 @@ class FeatureBank:
                 # Skip problematic categories that are already excluded from lookback optimization
                 if self._should_exclude_category(category_enum):
                     self.logger.info(f"🔍 Skipping excluded category: {category_enum}")
+                    if isinstance(category_enum, FeatureCategory):
+                        tprint(f"⏭️  Skipping category: {category_enum.value} (excluded)")
+                    else:
+                        tprint(f"⏭️  Skipping category: {category_enum} (excluded)")
                     continue
 
                 category_generators = self.get_generators_by_category(category_enum)
+                if isinstance(category_enum, FeatureCategory):
+                    tprint(f"📦 Starting category: {category_enum.value} ({len(category_generators)} features)")
+                else:
+                    tprint(f"📦 Starting category: {category_enum} ({len(category_generators)} features)")
                 self.logger.info(f"🔍 Found {len(category_generators)} generators for category {category_enum}")
                 generators.extend(category_generators)
 
@@ -2272,7 +2297,9 @@ class FeatureBank:
                         category = FeatureCategory(category)
                     except ValueError:
                         continue
-                self.performance_stats['categories_used'].add(category.value)
+                # Only add if it's a FeatureCategory enum
+                if isinstance(category, FeatureCategory):
+                    self.performance_stats['categories_used'].add(category.value)
 
     def get_performance_stats(self) -> Dict[str, Any]:
         """
@@ -2349,10 +2376,16 @@ class FeatureBank:
 
         for category in self.list_categories():
             generators = self.get_generators_by_category(category)
-            summary['categories'][category.value] = len(generators)
-            summary['features_by_category'][category.value] = [
-                gen.config.name for gen in generators
-            ]
+            if isinstance(category, FeatureCategory):
+                summary['categories'][category.value] = len(generators)
+                summary['features_by_category'][category.value] = [
+                    gen.config.name for gen in generators
+                ]
+            else:
+                summary['categories'][str(category)] = len(generators)
+                summary['features_by_category'][str(category)] = [
+                    gen.config.name for gen in generators
+                ]
 
         return summary
 
@@ -2375,7 +2408,10 @@ class FeatureBank:
         """
         try:
             tprint(f"🔧 Creating auto-optimized generator via FeatureBank: {name}")
-            tprint(f"📊 Category: {category.value}")
+            if isinstance(category, FeatureCategory):
+                tprint(f"📊 Category: {category.value}")
+            else:
+                tprint(f"📊 Category: {category}")
 
             if optimization_level is None:
                 optimization_level = self.config.default_optimization_level

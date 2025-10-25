@@ -1,5 +1,5 @@
 """
-Clustering Metrics Calculator for NAS-TAS Clustering.
+Clustering Metrics Calculator for HDBSCAN Clustering.
 
 This module computes comprehensive clustering quality metrics including:
 - Silhouette Score

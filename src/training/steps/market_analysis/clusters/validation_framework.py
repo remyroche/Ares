@@ -1,5 +1,5 @@
 """
-Comprehensive Validation Framework for Iterative Clustering Optimization.
+Comprehensive Validation Framework for HDBSCAN Iterative Clustering Optimization.
 
 This module provides rigorous testing and validation for the 3-step iterative
 clustering system to ensure correctness, stability, and performance.

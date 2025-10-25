@@ -86,7 +86,8 @@ from src.utils.serialization_utils import JSONSerializer, PickleSerializer
 # Import ML common utilities
 from src.utils.ml_common.training.vectorized_training_manager import VectorizedTrainingManager
 from src.utils.ml_common.matrix_cross_validation import MatrixCrossValidator
-from src.training.steps.market_analysis.hybrid_nas_tas_regime.shared_utils.hyperparameter_optimization import HyperparameterOptimizer
+# Note: Removed dependency on hybrid_nas_tas_regime module
+# from src.training.steps.market_analysis.hybrid_nas_tas_regime.shared_utils.hyperparameter_optimization import HyperparameterOptimizer
 
 # Import Bayesian TPE optimizer for advanced HPO
 from src.utils.ml_common.optimization.bayesian_tpe_optimizer import (

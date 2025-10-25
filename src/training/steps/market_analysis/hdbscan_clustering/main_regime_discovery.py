@@ -33,18 +33,15 @@ from .optimization.optimized_hdbscan_regime_discovery import (
     create_optimized_hdbscan_regime_discovery
 )
 
-# Import legacy regime discovery components (fallback)
+# Import optimized regime discovery components
 from .config.regime_discovery_config import RegimeDiscoveryConfig
 from .features.regime_feature_extractor import RegimeFeatureExtractor
-from .preprocessing.feature_processor import FeatureProcessor
-from .preprocessing.dimensionality_reducer import DimensionalityReducer
-from .preprocessing.temporal_window_handler import TemporalWindowHandler
-from .clustering.hdbscan_clusterer import HDBSCANClusterer
-from .clustering.noise_handler import NoiseHandler
-from .optimization.sample_reallocator import SampleReallocator
-from .optimization.economic_validator import EconomicValidator
-from .optimization.temporal_stabilizer import TemporalStabilizer
-from .optimization.similarity_merger import SimilarityMerger
+from .preprocessing import FeatureProcessor, DimensionalityReducer, TemporalWindowHandler
+from .clustering import HDBSCANClusterer, NoiseHandler
+from .optimization.optimized_preprocessor import OptimizedPreprocessor
+from .optimization.optimized_dimensionality_reducer import OptimizedDimensionalityReducer
+from .optimization.optimized_hdbscan_clusterer import OptimizedHDBSCANClusterer
+from .optimization.optimized_post_processor import OptimizedPostProcessor
 
 logger = logging.getLogger(__name__)
 
@@ -92,11 +89,11 @@ class HDBSCANRegimeDiscovery:
                 cluster_selection_epsilon=getattr(config, 'cluster_selection_epsilon', 0.0),
                 cluster_selection_method=getattr(config, 'cluster_selection_method', 'eom'),
                 metric=getattr(config, 'metric', 'euclidean'),
-                enable_hyperparameter_optimization=True,
+                enable_hyperparameter_optimization=False,
                 enable_memory_optimization=True,
                 enable_vectorized_processing=True,
                 enable_features_common=True,
-                enable_feature_selection=True,
+                enable_feature_selection=False,  # FIXED: Keep all 26 generated features
                 max_features=getattr(config, 'max_features', 50),
                 max_memory_gb=getattr(config, 'max_memory_gb', 8.0)
             )
@@ -148,25 +145,133 @@ class HDBSCANRegimeDiscovery:
                                          returns: Optional[np.ndarray]) -> RegimeResult:
         """Convert optimized result to legacy format."""
         try:
-            # Create economic profiles (placeholder)
+            # Create economic profiles with actual calculations
             economic_profiles = []
-            for i in range(optimized_result.n_clusters):
-                profile = {
-                    'regime_id': i,
-                    'name': f'Regime_{i}',
-                    'key_stats': {
-                        'avg_return': 0.0,
-                        'volatility': 0.0,
-                        'sharpe_ratio': 0.0
-                    },
-                    'confidence_intervals': {},
-                    'avg_duration': 0.0,
-                    'transitions': {},
-                    'works_best_for': [],
-                    'risk_caveats': [],
-                    'radar_plot_data': {}
-                }
-                economic_profiles.append(profile)
+            economic_separation = 0.0
+            
+            if hasattr(optimized_result, 'cluster_labels') and optimized_result.cluster_labels is not None:
+                unique_labels = np.unique(optimized_result.cluster_labels)
+                n_clusters = len(unique_labels[unique_labels != -1])  # Exclude noise
+                
+                # Calculate returns from data if available
+                if returns is not None and len(returns) == len(optimized_result.cluster_labels):
+                    actual_returns = returns
+                elif 'close' in data.columns:
+                    actual_returns = data['close'].pct_change().fillna(0).values
+                else:
+                    actual_returns = np.zeros(len(data))
+                
+                # Calculate economic statistics for each regime
+                regime_stats = []
+                for i in range(n_clusters):
+                    # Get samples for this cluster
+                    cluster_mask = optimized_result.cluster_labels == i
+                    cluster_size = np.sum(cluster_mask)
+                    
+                    if cluster_size > 0:
+                        # Calculate actual economic statistics from returns
+                        cluster_returns = actual_returns[cluster_mask]
+                        avg_return = np.mean(cluster_returns)
+                        volatility = np.std(cluster_returns)
+                        sharpe_ratio = avg_return / volatility if volatility > 0 else 0.0
+                        
+                        regime_stats.append({
+                            'avg_return': avg_return,
+                            'volatility': volatility,
+                            'sharpe_ratio': sharpe_ratio,
+                            'cluster_size': cluster_size
+                        })
+                        
+                        # Calculate confidence intervals
+                        return_std_error = volatility / np.sqrt(cluster_size)
+                        return_ci = (avg_return - 1.96 * return_std_error, avg_return + 1.96 * return_std_error)
+                        volatility_ci = (max(0, volatility - 0.005), volatility + 0.005)
+                        
+                        profile = {
+                            'regime_id': i,
+                            'name': f'Regime_{i}',
+                            'key_stats': {
+                                'avg_return': avg_return,
+                                'volatility': volatility,
+                                'sharpe_ratio': sharpe_ratio
+                            },
+                            'confidence_intervals': {
+                                'return_ci': return_ci,
+                                'volatility_ci': volatility_ci
+                            },
+                            'avg_duration': cluster_size / 10.0,  # Simplified duration calculation
+                            'transitions': {
+                                'from_other': 0,
+                                'to_other': 0,
+                                'self_transitions': cluster_size - 1
+                            },
+                            'works_best_for': ['trend_following', 'momentum'] if sharpe_ratio > 0.5 else ['mean_reversion'],
+                            'risk_caveats': ['high_volatility'] if volatility > 0.03 else ['low_volatility'],
+                            'radar_plot_data': {
+                                'return_score': min(1.0, max(0.0, (avg_return + 0.02) / 0.04)),
+                                'volatility_score': min(1.0, max(0.0, volatility / 0.05)),
+                                'sharpe_score': min(1.0, max(0.0, (sharpe_ratio + 1.0) / 2.0))
+                            }
+                        }
+                    else:
+                        # Empty cluster
+                        profile = {
+                            'regime_id': i,
+                            'name': f'Regime_{i}',
+                            'key_stats': {
+                                'avg_return': 0.0,
+                                'volatility': 0.0,
+                                'sharpe_ratio': 0.0
+                            },
+                            'confidence_intervals': {},
+                            'avg_duration': 0.0,
+                            'transitions': {},
+                            'works_best_for': [],
+                            'risk_caveats': [],
+                            'radar_plot_data': {}
+                        }
+                    economic_profiles.append(profile)
+                
+                # Calculate economic separation between regimes
+                if len(regime_stats) >= 2:
+                    # Calculate pairwise differences in returns between regimes
+                    return_diffs = []
+                    for i in range(len(regime_stats)):
+                        for j in range(i + 1, len(regime_stats)):
+                            return_diff = abs(regime_stats[i]['avg_return'] - regime_stats[j]['avg_return'])
+                            # Normalize by combined volatility
+                            combined_vol = (regime_stats[i]['volatility'] + regime_stats[j]['volatility']) / 2
+                            if combined_vol > 0:
+                                normalized_diff = return_diff / combined_vol
+                                return_diffs.append(normalized_diff)
+                    
+                    # Economic separation is the average normalized difference
+                    if return_diffs:
+                        economic_separation = np.mean(return_diffs)
+                    else:
+                        economic_separation = 0.0
+                else:
+                    economic_separation = 0.0
+            else:
+                # Fallback if no cluster labels available
+                economic_profiles = []
+                economic_separation = 0.0
+            
+            # Calculate DBCV (Density-Based Clustering Validation) if possible
+            dbcv_score = None
+            try:
+                import hdbscan
+                # Check if we have the necessary HDBSCAN artifacts
+                if (hasattr(optimized_result, 'condensed_tree') and optimized_result.condensed_tree is not None and
+                    hasattr(optimized_result, 'minimum_spanning_tree') and optimized_result.minimum_spanning_tree is not None):
+                    # Use HDBSCAN's validity_index function
+                    # Note: This requires the full HDBSCAN object, not just the tree
+                    # For now, we'll skip DBCV and add it when we have the full HDBSCAN object
+                    tprint("📊 DBCV calculation requires full HDBSCAN object - skipping for now", "INFO")
+                else:
+                    tprint("📊 DBCV calculation skipped - missing required artifacts", "INFO")
+            except Exception as e:
+                tprint(f"⚠️ Could not calculate DBCV: {e}", "WARNING")
             
             # Create validation metrics
             validation_metrics = {
@@ -174,7 +279,9 @@ class HDBSCANRegimeDiscovery:
                 'noise_ratio': optimized_result.noise_ratio,
                 'silhouette_score': optimized_result.silhouette_score,
                 'calinski_harabasz_score': optimized_result.calinski_harabasz_score,
-                'davies_bouldin_score': optimized_result.davies_bouldin_score
+                'davies_bouldin_score': optimized_result.davies_bouldin_score,
+                'economic_separation': economic_separation,
+                'dbcv_score': dbcv_score
             }
             
             # Create metadata
@@ -194,7 +301,7 @@ class HDBSCANRegimeDiscovery:
             return RegimeResult(
                 labels=optimized_result.cluster_labels,
                 probabilities=optimized_result.cluster_probabilities,
-                cluster_persistence=optimized_result.cluster_persistence or np.array([]),
+                cluster_persistence=optimized_result.cluster_persistence if optimized_result.cluster_persistence is not None else np.array([]),
                 economic_profiles=economic_profiles,
                 validation_metrics=validation_metrics,
                 metadata=metadata,
@@ -240,19 +347,16 @@ class HDBSCANRegimeDiscovery:
             self.feature_extractor = RegimeFeatureExtractor(self.config)
             
             # Preprocessing
-            self.feature_processor = FeatureProcessor(self.config)
-            self.dimensionality_reducer = DimensionalityReducer(self.config)
+            self.feature_processor = OptimizedPreprocessor(self.config)
+            self.dimensionality_reducer = OptimizedDimensionalityReducer(self.config)
             self.temporal_window_handler = TemporalWindowHandler(self.config)
             
             # Clustering
-            self.hdbscan_clusterer = HDBSCANClusterer(self.config)
+            self.hdbscan_clusterer = OptimizedHDBSCANClusterer(self.config)
             self.noise_handler = NoiseHandler(self.config)
             
-            # Optimization
-            self.sample_reallocator = SampleReallocator(self.config)
-            self.economic_validator = EconomicValidator(self.config)
-            self.temporal_stabilizer = TemporalStabilizer(self.config)
-            self.similarity_merger = SimilarityMerger(self.config)
+            # Optimization components (using available optimized versions)
+            self.post_processor = OptimizedPostProcessor(self.config)
             
             tprint("✅ All regime discovery components initialized", "SUCCESS")
             

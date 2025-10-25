@@ -130,6 +130,19 @@ def validate_range(value: float, min_val: float = None, max_val: float = None, n
         raise ValueError(f"{name} must be <= {max_val}, got {value}")
     return value
 
+
+def validate_probability(value: float, name: str = "probability") -> float:
+    """Validate that a value is a valid probability (between 0 and 1)."""
+    try:
+        if not isinstance(value, (int, float)):
+            raise ValueError(f"{name} must be numeric")
+        if not (0 <= value <= 1):
+            raise ValueError(f"{name} must be between 0 and 1, got {value}")
+        return float(value)
+    except TypeError:
+        raise ValueError(f"{name} must be numeric")
+
+
 def validate_numeric_array(array: np.ndarray, name: str = "array") -> np.ndarray:
     """Validate that an array contains only numeric values and is finite."""
     if array is None:
@@ -374,6 +387,36 @@ def check_for_inf_nan(data, name="data"):
         logger.warning(f"{name} contains NaN values")
 
     return not (has_inf or has_nan)
+
+
+def check_for_nans(data, name="data"):
+    """Check for NaN values in data."""
+    import pandas as pd
+
+    if isinstance(data, (pd.DataFrame, pd.Series)):
+        has_nan = data.isna().any().any() if isinstance(data, pd.DataFrame) else data.isna().any()
+    else:
+        has_nan = np.isnan(data).any()
+
+    if has_nan:
+        logger.warning(f"{name} contains NaN values")
+
+    return not has_nan
+
+
+def check_for_infs(data, name="data"):
+    """Check for infinite values in data."""
+    import pandas as pd
+
+    if isinstance(data, (pd.DataFrame, pd.Series)):
+        has_inf = np.isinf(data).any().any() if isinstance(data, pd.DataFrame) else np.isinf(data).any()
+    else:
+        has_inf = np.isinf(data).any()
+
+    if has_inf:
+        logger.warning(f"{name} contains infinite values")
+
+    return not has_inf
 
 def is_valid_number(value):
     """Check if a value is a valid number (not NaN or infinite)."""

@@ -19,6 +19,22 @@ from src.utils.hardware.m1_cpu_optimizer import M1CPUOptimizer
 from src.utils.hardware.unified_hardware_manager import UnifiedHardwareManager, HardwareConfig
 from src.utils.tprint import tprint, tprint_success, tprint_warning, tprint_performance, tprint_debug
 
+# Import UnifiedVectorizationManager for enhanced vectorization
+try:
+    from src.feature_generation.utils.unified_vectorization_manager import UnifiedVectorizationManager
+    UNIFIED_VECTORIZATION_AVAILABLE = True
+except ImportError:
+    UNIFIED_VECTORIZATION_AVAILABLE = False
+    UnifiedVectorizationManager = None
+
+# Import VectorBTRollingOptimizer for enhanced rolling operations
+try:
+    from src.feature_generation.utils.vectorbt_rolling_optimizer import VectorBTRollingOptimizer
+    VECTORBT_ROLLING_OPTIMIZER_AVAILABLE = True
+except ImportError:
+    VECTORBT_ROLLING_OPTIMIZER_AVAILABLE = False
+    VectorBTRollingOptimizer = None
+
 logger = logging.getLogger(__name__)
 
 @dataclass
@@ -54,9 +70,38 @@ class VectorizedFeatureSelector:
     """Feature selector with vectorized operations and hardware optimization."""
 
     def __init__(self, config: Optional[VectorizationConfig] = None):
-        """Initialize vectorized feature selector."""
+        """Initialize vectorized feature selector with enhanced optimizations."""
         self.config = config or VectorizationConfig()
         self.logger = logger.getChild('VectorizedFeatureSelector')
+
+        # Initialize UnifiedVectorizationManager for enhanced vectorization
+        if UNIFIED_VECTORIZATION_AVAILABLE:
+            try:
+                self.vectorization_manager = UnifiedVectorizationManager()
+                tprint_success("✅ UnifiedVectorizationManager integrated")
+            except Exception as e:
+                tprint_warning(f"⚠️ UnifiedVectorizationManager initialization failed: {e}")
+                self.vectorization_manager = None
+        else:
+            self.vectorization_manager = None
+            tprint_warning("⚠️ UnifiedVectorizationManager not available. Using fallback methods.")
+
+        # Initialize VectorBTRollingOptimizer for enhanced rolling operations
+        if VECTORBT_ROLLING_OPTIMIZER_AVAILABLE:
+            try:
+                self.rolling_optimizer = VectorBTRollingOptimizer(
+                    enable_parallel=self.config.enable_vectorization,
+                    memory_efficient=True,
+                    chunk_size=self.config.chunk_size,
+                    enable_hardware_optimization=self.config.enable_hardware_acceleration
+                )
+                tprint_success("✅ VectorBTRollingOptimizer integrated")
+            except Exception as e:
+                tprint_warning(f"⚠️ VectorBTRollingOptimizer initialization failed: {e}")
+                self.rolling_optimizer = None
+        else:
+            self.rolling_optimizer = None
+            tprint_warning("⚠️ VectorBTRollingOptimizer not available. Using fallback methods.")
 
         # Initialize hardware tools
         if self.config.enable_hardware_acceleration:
@@ -70,14 +115,18 @@ class VectorizedFeatureSelector:
             self.cpu_optimizer = None
             self.hardware_manager = None
 
-        # Performance tracking
+        # Enhanced performance tracking
         self.performance_stats = {
             'vectorized_operations': 0,
+            'unified_vectorization_operations': 0,
+            'vectorbt_rolling_operations': 0,
+            'hardware_optimized_operations': 0,
             'total_time': 0.0,
-            'speedup_vs_naive': 0.0
+            'speedup_vs_naive': 0.0,
+            'memory_saved_mb': 0.0
         }
 
-        tprint_success("🚀 VectorizedFeatureSelector initialized")
+        tprint_success("🚀 VectorizedFeatureSelector initialized with enhanced optimizations")
 
     def _time_operation(self, operation_name: str, func: callable, *args, **kwargs) -> Any:
         """Time an operation and log performance."""

@@ -41,24 +41,26 @@ except ImportError:
     VECTORBT_AVAILABLE = False
     vbt = None
 
-# Import VectorBTRollingOptimizer and UnifiedVectorizationManager
-try:
-    from src.feature_generation.utils.vectorbt_rolling_optimizer import VectorBTRollingOptimizer, get_vectorbt_rolling_optimizer
-    VECTORBT_ROLLING_AVAILABLE = True
-except ImportError as e:
-    logging.warning(f"VectorBTRollingOptimizer not available: {e}")
-    VECTORBT_ROLLING_AVAILABLE = False
-    VectorBTRollingOptimizer = None
-    get_vectorbt_rolling_optimizer = None
+# Lazy imports to avoid circular dependencies - these will be imported when needed
+VECTORBT_ROLLING_AVAILABLE = True
+UNIFIED_VECTORIZATION_AVAILABLE = True
 
-try:
-    from src.feature_generation.utils.unified_vectorization_manager import UnifiedVectorizationManager, get_unified_vectorization_manager
-    UNIFIED_VECTORIZATION_AVAILABLE = True
-except ImportError as e:
-    logging.warning(f"UnifiedVectorizationManager not available: {e}")
-    UNIFIED_VECTORIZATION_AVAILABLE = False
-    UnifiedVectorizationManager = None
-    get_unified_vectorization_manager = None
+# Lazy import functions
+def _get_vectorbt_rolling_optimizer():
+    """Lazy import VectorBT rolling optimizer."""
+    try:
+        from src.feature_generation.utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer
+        return get_vectorbt_rolling_optimizer()
+    except ImportError:
+        return None
+
+def _get_unified_vectorization_manager():
+    """Lazy import unified vectorization manager."""
+    try:
+        from src.feature_generation.utils.unified_vectorization_manager import get_unified_vectorization_manager
+        return get_unified_vectorization_manager()
+    except ImportError:
+        return None
 
 logger = logging.getLogger(__name__)
 
@@ -99,10 +101,11 @@ class VectorBTOptimizedOperations:
         self.gpu_available = self._detect_gpu_availability()
         self.gpu_memory_limit = self._get_gpu_memory_limit()
 
+        # Initialize logger first
+        self.logger = logger.getChild('VectorBTOptimizedOperations')
+
         # Initialize VectorBT managers
         self._initialize_vectorbt_managers()
-
-        self.logger = logger.getChild('VectorBTOptimizedOperations')
 
         if VECTORBT_AVAILABLE:
             self.logger.info(f"✅ VectorBT optimized operations initialized (GPU: {self.gpu_available}, Memory Limit: {memory_limit_gb}GB)")
@@ -156,12 +159,12 @@ class VectorBTOptimizedOperations:
         try:
             # Initialize VectorBTRollingOptimizer
             if VECTORBT_ROLLING_AVAILABLE:
-                self.rolling_optimizer = get_vectorbt_rolling_optimizer()
+                self.rolling_optimizer = _get_vectorbt_rolling_optimizer()
                 if self.rolling_optimizer:
                     # Reduced verbosity - only log once per session
-                    if not hasattr(VectorBTOptimizations, '_logged_rolling_init'):
+                    if not hasattr(VectorBTOptimizedOperations, '_logged_rolling_init'):
                         self.logger.debug("✅ VectorBTRollingOptimizer initialized")
-                        VectorBTOptimizations._logged_rolling_init = True
+                        VectorBTOptimizedOperations._logged_rolling_init = True
                 else:
                     self.logger.info("ℹ️ VectorBTRollingOptimizer not available")
             else:
@@ -169,7 +172,7 @@ class VectorBTOptimizedOperations:
 
             # Initialize UnifiedVectorizationManager
             if UNIFIED_VECTORIZATION_AVAILABLE:
-                self.vectorization_manager = get_unified_vectorization_manager()
+                self.vectorization_manager = _get_unified_vectorization_manager()
                 if self.vectorization_manager:
                     self.logger.debug("✅ UnifiedVectorizationManager initialized")
                 else:
@@ -178,7 +181,11 @@ class VectorBTOptimizedOperations:
                 self.vectorization_manager = None
 
         except Exception as e:
-            self.logger.error(f"❌ Error initializing VectorBT managers: {e}")
+            # Use module-level logger as fallback if self.logger is not available
+            try:
+                self.logger.error(f"❌ Error initializing VectorBT managers: {e}")
+            except AttributeError:
+                logger.error(f"❌ Error initializing VectorBT managers: {e}")
             self.rolling_optimizer = None
             self.vectorization_manager = None
 

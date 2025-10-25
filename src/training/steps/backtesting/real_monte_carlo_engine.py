@@ -34,7 +34,8 @@ from src.utils.matrix_operations.hardware_integration import HardwareOptimizedMa
 from src.utils.matrix_operations.batch_operations import BatchMatrixProcessor
 
 # VectorBT optimization utilities
-from src.utils.ml_common.unified_vectorization_manager import get_unified_vectorization_manager, VectorizationConfig
+from src.utils.ml_common.unified_vectorization_manager import get_unified_vectorization_manager
+from src.feature_generation.utils.unified_vectorization_manager import VectorizationConfig
 from src.feature_generation.utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer
 
 # ML utilities

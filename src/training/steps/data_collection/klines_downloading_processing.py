@@ -290,7 +290,18 @@ class KlinesDataProcessingPipeline(BaseStep):
             exchange = config.get('exchange', 'binance')
             timeframes = config.get('timeframes', ['1m'])
             execution_mode = config.get('execution_mode', 'light')
-            years = config.get('years', 3)
+
+            # Set years based on execution_mode if not explicitly provided
+            if 'years' in config:
+                years = config['years']
+            else:
+                # Default years based on execution_mode
+                if execution_mode == 'light':
+                    years = 20/365.25  # ~20 days for light mode
+                elif execution_mode == 'blank':
+                    years = 180/365.25  # ~180 days for blank mode
+                else:  # full mode
+                    years = 3  # Full historical data
             
             if not symbol:
                 raise ValueError("Symbol is required for data download")
@@ -298,6 +309,12 @@ class KlinesDataProcessingPipeline(BaseStep):
             self.logger.info(f"Downloading data for {symbol} from {exchange}")
             self.logger.info(f"Timeframes: {timeframes}")
             self.logger.info(f"Execution mode: {execution_mode}")
+            if execution_mode == 'light':
+                self.logger.info(f"Years of data: {years:.4f} (~20 days for {execution_mode} mode)")
+            elif execution_mode == 'blank':
+                self.logger.info(f"Years of data: {years:.4f} (~180 days for {execution_mode} mode)")
+            else:
+                self.logger.info(f"Years of data: {years} (full historical for {execution_mode} mode)")
             
             # Initialize artifacts list
             artifacts = []

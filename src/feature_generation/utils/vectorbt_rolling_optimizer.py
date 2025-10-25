@@ -19,6 +19,7 @@ from typing import Any, Dict, List, Optional, Union, Callable, Tuple
 import warnings
 from functools import wraps
 import time
+from contextlib import contextmanager
 
 # Enhanced logging with tprint
 try:
@@ -46,6 +47,25 @@ except ImportError:
         print(f"[PERF] {' '.join(map(str, args))}")
     def tprint_timer(*args, **kwargs): 
         print(f"[TIMER] {' '.join(map(str, args))}")
+
+# Hardware optimization imports
+try:
+    from src.utils.hardware.unified_hardware_manager import (
+        UnifiedHardwareManager,
+        get_unified_hardware_manager,
+        WorkloadType,
+        OptimizationLevel,
+        HardwareConfig
+    )
+    HARDWARE_AVAILABLE = True
+except ImportError:
+    HARDWARE_AVAILABLE = False
+    UnifiedHardwareManager = None
+    get_unified_hardware_manager = None
+    WorkloadType = None
+    OptimizationLevel = None
+    HardwareConfig = None
+    warnings.warn("UnifiedHardwareManager not available. Install hardware optimization components for enhanced performance")
 
 # VectorBT imports for optimization
 try:
@@ -116,7 +136,8 @@ class VectorBTRollingOptimizer:
 
     def __init__(self, enable_gpu: bool = False, enable_parallel: bool = True,
                  memory_efficient: bool = True, chunk_size: int = 1000,
-                 fast_fail: bool = True, enable_logging: bool = True):
+                 fast_fail: bool = True, enable_logging: bool = True,
+                 enable_hardware_optimization: bool = True, workload_type: WorkloadType = None):
         """
         Initialize VectorBT rolling optimizer with enhanced optimization and logging.
 
@@ -127,13 +148,33 @@ class VectorBTRollingOptimizer:
             chunk_size: Size of data chunks for processing
             fast_fail: Enable fast failing instead of silent fallbacks
             enable_logging: Enable comprehensive logging with tprint
+            enable_hardware_optimization: Enable hardware optimization integration
+            workload_type: Workload type for hardware optimization
         """
         tprint_info("🚀 Initializing VectorBTRollingOptimizer with enhanced logging and fast failing")
 
         # Validate input parameters
         self._validate_init_parameters(enable_gpu, enable_parallel, memory_efficient, chunk_size)
 
-        self.enable_gpu = False  # GPU support removed
+        # Initialize hardware optimization
+        self.enable_hardware_optimization = enable_hardware_optimization and HARDWARE_AVAILABLE
+        self.workload_type = workload_type or (WorkloadType.FEATURE_ENGINEERING if HARDWARE_AVAILABLE else None)
+        self.hardware_manager = None
+        
+        if self.enable_hardware_optimization and HARDWARE_AVAILABLE:
+            try:
+                self.hardware_manager = get_unified_hardware_manager()
+                if self.workload_type:
+                    self.hardware_manager.optimize_for_workload(
+                        self.workload_type,
+                        OptimizationLevel.BALANCED
+                    )
+                tprint_success("✅ Hardware manager initialized and optimized")
+            except Exception as e:
+                tprint_warning(f"⚠️ Hardware manager initialization failed: {e}")
+                self.hardware_manager = None
+
+        self.enable_gpu = enable_gpu and HARDWARE_AVAILABLE and self.hardware_manager is not None
         self.enable_parallel = enable_parallel and VECTORBT_AVAILABLE
         self.memory_efficient = memory_efficient
         self.chunk_size = chunk_size
@@ -148,6 +189,7 @@ class VectorBTRollingOptimizer:
             'numpy_fallbacks': 0,
             'gpu_operations': 0,
             'memory_optimizations': 0,
+            'hardware_optimizations': 0,
             'chunk_operations': 0,
             'parallel_operations': 0,
             'total_operations': 0,
@@ -184,7 +226,7 @@ class VectorBTRollingOptimizer:
                 # Skip settings configuration as they may not be available or needed
                 tprint_success("✅ VectorBT settings configured successfully")
             else:
-                tprint_warning("⚠️ VectorBT not available, using fallback methods")
+                tprint_warning("⚠️ VectorBT not available, using pandas/numpy fallback methods")
         except Exception as e:
             error_msg = f"Failed to configure VectorBT settings: {e}"
             tprint_error(error_msg)
@@ -457,7 +499,7 @@ class VectorBTRollingOptimizer:
             if self.fast_fail:
                 raise VectorBTOptimizationError(error_msg, operation='custom_function', data_shape=data.shape if hasattr(data, 'shape') else None, window=window, original_error=e)
             else:
-                tprint_warning("⚠️ Fast fail disabled, using fallback")
+                tprint_warning("⚠️ Fast fail disabled, using pandas/numpy fallback")
                 return self._fallback_rolling_apply(data, func, window, **kwargs)
 
     def rolling_median(self, data: Union[pd.Series, pd.DataFrame], window: int, **kwargs) -> Union[pd.Series, pd.DataFrame]:
@@ -527,7 +569,7 @@ class VectorBTRollingOptimizer:
             if self.fast_fail:
                 raise VectorBTOptimizationError(error_msg, operation='ewm', data_shape=data.shape if hasattr(data, 'shape') else None, window=window, original_error=e)
             else:
-                tprint_warning("⚠️ Fast fail disabled, using fallback")
+                tprint_warning("⚠️ Fast fail disabled, using pandas/numpy fallback")
                 return self._fallback_rolling_ewm(data, window, alpha, span, **kwargs)
 
     def rolling_ewm_std(self, data: Union[pd.Series, pd.DataFrame], window: int,
@@ -567,7 +609,7 @@ class VectorBTRollingOptimizer:
             if self.fast_fail:
                 raise VectorBTOptimizationError(error_msg, operation='ewm_std', data_shape=data.shape if hasattr(data, 'shape') else None, window=window, original_error=e)
             else:
-                tprint_warning("⚠️ Fast fail disabled, using fallback")
+                tprint_warning("⚠️ Fast fail disabled, using pandas/numpy fallback")
                 return self._fallback_rolling_ewm_std(data, window, alpha, span, **kwargs)
 
     def rolling_ewm_var(self, data: Union[pd.Series, pd.DataFrame], window: int,
@@ -607,7 +649,7 @@ class VectorBTRollingOptimizer:
             if self.fast_fail:
                 raise VectorBTOptimizationError(error_msg, operation='ewm_var', data_shape=data.shape if hasattr(data, 'shape') else None, window=window, original_error=e)
             else:
-                tprint_warning("⚠️ Fast fail disabled, using fallback")
+                tprint_warning("⚠️ Fast fail disabled, using pandas/numpy fallback")
                 return self._fallback_rolling_ewm_var(data, window, alpha, span, **kwargs)
 
     def rolling_correlation_matrix(self, data: pd.DataFrame, window: int, **kwargs) -> pd.DataFrame:
@@ -618,7 +660,7 @@ class VectorBTRollingOptimizer:
         self._validate_rolling_inputs(data, window, 'correlation_matrix')
 
         if not self.use_vectorbt:
-            tprint_warning("⚠️ VectorBT not available, using fallback for correlation matrix")
+            tprint_warning("⚠️ VectorBT not available, using pandas/numpy fallback for correlation matrix")
             return self._fallback_rolling_correlation_matrix(data, window, **kwargs)
 
         try:
@@ -633,7 +675,7 @@ class VectorBTRollingOptimizer:
             if self.fast_fail:
                 raise VectorBTOptimizationError(error_msg, operation='correlation_matrix', data_shape=data.shape, window=window, original_error=e)
             else:
-                tprint_warning("⚠️ Fast fail disabled, using fallback")
+                tprint_warning("⚠️ Fast fail disabled, using pandas/numpy fallback")
                 return self._fallback_rolling_correlation_matrix(data, window, **kwargs)
 
     def rolling_covariance_matrix(self, data: pd.DataFrame, window: int, **kwargs) -> pd.DataFrame:
@@ -644,7 +686,7 @@ class VectorBTRollingOptimizer:
         self._validate_rolling_inputs(data, window, 'covariance_matrix')
 
         if not self.use_vectorbt:
-            tprint_warning("⚠️ VectorBT not available, using fallback for covariance matrix")
+            tprint_warning("⚠️ VectorBT not available, using pandas/numpy fallback for covariance matrix")
             return self._fallback_rolling_covariance_matrix(data, window, **kwargs)
 
         try:
@@ -659,7 +701,7 @@ class VectorBTRollingOptimizer:
             if self.fast_fail:
                 raise VectorBTOptimizationError(error_msg, operation='covariance_matrix', data_shape=data.shape, window=window, original_error=e)
             else:
-                tprint_warning("⚠️ Fast fail disabled, using fallback")
+                tprint_warning("⚠️ Fast fail disabled, using pandas/numpy fallback")
                 return self._fallback_rolling_covariance_matrix(data, window, **kwargs)
 
     def rolling_quantile(self, data: Union[pd.Series, pd.DataFrame], window: int, q: float = 0.5, **kwargs) -> Union[pd.Series, pd.DataFrame]:
@@ -933,8 +975,12 @@ class VectorBTRollingOptimizer:
                 rolling_kwargs.pop('q', None)
             # Remove parameters not accepted by pandas rolling
             rolling_kwargs.pop('func', None)
+            rolling_kwargs.pop('other', None)  # Remove 'other' parameter that pandas rolling doesn't accept
+            
             if operation in {'corr', 'cov'}:
                 data2 = rolling_kwargs.pop('data2', kwargs.get('data2'))
+                if data2 is None:
+                    data2 = kwargs.get('other')  # Fallback to 'other' parameter
             else:
                 data2 = None
             
@@ -962,7 +1008,7 @@ class VectorBTRollingOptimizer:
             elif operation == 'apply':
                 func = kwargs.pop('func', None)
                 if func is not None:
-                    return rolling_obj.apply(func)
+                    return rolling_obj.apply(func, **kwargs)
                 else:
                     # Handle case where func is not provided
                     return rolling_obj
@@ -1013,16 +1059,18 @@ class VectorBTRollingOptimizer:
             return rolling_obj.kurt()
         elif operation == 'apply':
             func = kwargs.get('func')
-            return rolling_obj.apply(func)
+            return rolling_obj.apply(func, **kwargs)
         elif operation == 'corr':
-            other = kwargs.get('other')
+            other = kwargs.get('other') or kwargs.get('data2')
             if other is None:
-                raise ValueError("'other' parameter is required for correlation operation")
+                # If no other series provided, calculate autocorrelation
+                return rolling_obj.apply(lambda x: x.corr(x) if len(x) > 1 else np.nan)
             return rolling_obj.corr(other)
         elif operation == 'cov':
-            other = kwargs.get('other')
+            other = kwargs.get('other') or kwargs.get('data2')
             if other is None:
-                raise ValueError("'other' parameter is required for covariance operation")
+                # If no other series provided, calculate autocovariance
+                return rolling_obj.apply(lambda x: x.cov(x) if len(x) > 1 else np.nan)
             return rolling_obj.cov(other)
         else:
             raise ValueError(f"Unsupported pandas operation: {operation}")
@@ -1839,6 +1887,105 @@ class VectorBTRollingOptimizer:
         }
         tprint_success("✅ Performance statistics reset")
 
+    def optimize_for_workload(self, workload_type: WorkloadType, optimization_level: OptimizationLevel = OptimizationLevel.BALANCED):
+        """Optimize VectorBT operations for specific workload type."""
+        if not self.enable_hardware_optimization or not self.hardware_manager:
+            tprint_warning("⚠️ Hardware optimization not available")
+            return
+
+        try:
+            self.workload_type = workload_type
+            self.hardware_manager.optimize_for_workload(workload_type, optimization_level)
+            
+            # Adjust VectorBT settings based on workload
+            if workload_type == WorkloadType.FEATURE_ENGINEERING:
+                self.chunk_size = 1000
+                self.enable_parallel = True
+                tprint_info("🔧 Optimized for feature engineering workload")
+            elif workload_type == WorkloadType.MODEL_TRAINING:
+                self.chunk_size = 5000
+                self.enable_parallel = False
+                tprint_info("🔧 Optimized for model training workload")
+            elif workload_type == WorkloadType.BACKTESTING:
+                self.chunk_size = 2000
+                self.enable_parallel = True
+                tprint_info("🔧 Optimized for backtesting workload")
+            
+            tprint_success(f"✅ Optimized for {workload_type.value} workload")
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Workload optimization failed: {e}")
+
+    @contextmanager
+    def hardware_optimization_context(self, workload_type: WorkloadType = None, optimization_level: OptimizationLevel = OptimizationLevel.BALANCED):
+        """Context manager for hardware optimization during operations."""
+        if not self.enable_hardware_optimization or not self.hardware_manager:
+            yield
+            return
+
+        try:
+            # Set optimization context
+            if workload_type:
+                self.optimize_for_workload(workload_type, optimization_level)
+            
+            # Enter hardware optimization context
+            with self.hardware_manager.optimization_context(
+                self.workload_type or WorkloadType.FEATURE_ENGINEERING,
+                optimization_level
+            ):
+                yield
+                
+        except Exception as e:
+            tprint_warning(f"⚠️ Hardware optimization context failed: {e}")
+            yield
+
+    def get_hardware_status(self) -> Dict[str, Any]:
+        """Get hardware optimization status and metrics."""
+        if not self.enable_hardware_optimization or not self.hardware_manager:
+            return {
+                'hardware_optimization_enabled': False,
+                'hardware_manager_available': False,
+                'workload_type': None,
+                'gpu_available': False,
+                'memory_optimization': False
+            }
+
+        try:
+            system_status = self.hardware_manager.get_system_status()
+            return {
+                'hardware_optimization_enabled': True,
+                'hardware_manager_available': True,
+                'workload_type': self.workload_type.value if self.workload_type else None,
+                'gpu_available': system_status.get('gpu_available', False),
+                'memory_optimization': self.memory_efficient,
+                'chunk_size': self.chunk_size,
+                'parallel_processing': self.enable_parallel,
+                'system_status': system_status
+            }
+        except Exception as e:
+            tprint_warning(f"⚠️ Failed to get hardware status: {e}")
+            return {
+                'hardware_optimization_enabled': True,
+                'hardware_manager_available': False,
+                'error': str(e)
+            }
+
+    def _apply_hardware_optimizations(self, data: Union[pd.Series, pd.DataFrame]) -> Union[pd.Series, pd.DataFrame]:
+        """Apply hardware-specific optimizations to data."""
+        if not self.enable_hardware_optimization or not self.hardware_manager:
+            return data
+
+        try:
+            # Apply memory optimizations
+            if self.memory_efficient:
+                optimized_data = self.hardware_manager.optimize_memory_usage(data)
+                self.performance_stats['hardware_optimizations'] += 1
+                return optimized_data
+            return data
+        except Exception as e:
+            tprint_warning(f"⚠️ Hardware optimization failed: {e}")
+            return data
+
     def batch_rolling_operations(self, data: Union[pd.Series, pd.DataFrame],
                                 operations: List[str], window: int, **kwargs) -> Dict[str, Union[pd.Series, pd.DataFrame]]:
         """
@@ -2289,7 +2436,8 @@ _global_optimizer = None
 
 def get_vectorbt_rolling_optimizer(enable_gpu: bool = False, enable_parallel: bool = True,
                                  memory_efficient: bool = True, chunk_size: int = 1000,
-                                 fast_fail: bool = True, enable_logging: bool = True) -> VectorBTRollingOptimizer:
+                                 fast_fail: bool = True, enable_logging: bool = True,
+                                 enable_hardware_optimization: bool = True, workload_type: WorkloadType = None) -> VectorBTRollingOptimizer:
     """Get global VectorBT rolling optimizer instance."""
     global _global_optimizer
     if _global_optimizer is None:
@@ -2307,7 +2455,9 @@ def get_vectorbt_rolling_optimizer(enable_gpu: bool = False, enable_parallel: bo
             memory_efficient=memory_efficient,
             chunk_size=chunk_size,
             fast_fail=fast_fail,
-            enable_logging=enable_logging
+            enable_logging=enable_logging,
+            enable_hardware_optimization=enable_hardware_optimization,
+            workload_type=workload_type
         )
     return _global_optimizer
 

@@ -413,7 +413,7 @@ class TrendFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixi
                 )
                 return batch_result.result
             except Exception as e:
-                logger.warning(f"Unified Vectorization Manager batch processing failed: {e}, using fallback")
+                logger.warning(f"Unified Vectorization Manager batch processing failed: {e}, using pandas/numpy fallback")
                 # Fallback to individual processing
                 return self._process_trend_features_individually(data, feature_configs)
         elif self.vectorbt_optimizer:
@@ -1276,8 +1276,8 @@ class EMAGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
         # Use VectorBT for EMA calculation
         if VECTORBT_AVAILABLE and self._should_use_vectorbt(base_values):
             try:
-                ema_indicator = vbt.EMA.run(base_values, window=self.period)
-                ema_series = ema_indicator.ema
+                ema_indicator = vbt.MA.run(base_values, window=self.period, ewm=True)
+                ema_series = ema_indicator.ma
                 # Ensure we always return a Series aligned with the original index
                 if not isinstance(ema_series, pd.Series):
                     ema_series = pd.Series(ema_series, index=base_values.index)
@@ -1579,34 +1579,16 @@ class TRIMAGenerator(VectorizedFeatureGenerator):
         """Generate TRIMA based on the specified base calculation."""
         base_values = self.base_calculator.calculate(data)
 
-        # Use VectorBT for TRIMA calculation
-        if self.vectorbt_optimizer and self._should_use_vectorbt(base_values):
-            try:
-                # Calculate TRIMA using VectorBT rolling mean
-                half_period = self.period // 2
-                trima = self._optimized_rolling_operation(
-                    self.vectorbt_rolling_optimizer.rolling_mean(base_values, half_period),
-                    "mean",
-                    half_period
-                )
-                return trima
-            except Exception as e:
-                self.logger.warning(f"VectorBT TRIMA calculation failed: {e}, using pandas fallback")
-                half_period = self.period // 2
-                trima = self._optimized_rolling_operation(
-                    self._calculate_sma_vectorized(base_values, half_period),
-                    "mean",
-                    half_period
-                )
-                return trima
-        else:
-            half_period = self.period // 2
-            trima = self._optimized_rolling_operation(
-                self._calculate_sma_vectorized(base_values, half_period),
-                "mean",
-                half_period
-            )
-            return trima
+        # Calculate TRIMA using direct pandas approach to avoid VectorBT EMA compatibility issues
+        half_period = self.period // 2
+        
+        # First SMA
+        first_sma = base_values.rolling(window=half_period, min_periods=1).mean()
+        
+        # Second SMA (TRIMA)
+        trima = first_sma.rolling(window=half_period, min_periods=1).mean()
+        
+        return trima
 
 # MAMA (MESA Adaptive Moving Average)class MAMAGenerator(VectorizedFeatureGenerator):
     """Generator for MAMA (MESA Adaptive Moving Average) with different base calculations."""
@@ -2122,13 +2104,13 @@ class VectorBTTrendFeatureGenerator(VectorBTFeatureGenerator):
                 return trend.rename(f'vectorbt_trend_{self.period}')
 
             except Exception as e:
-                logger.warning(f"VectorBTRollingOptimizer failed: {e}, using fallback")
+                logger.warning(f"VectorBTRollingOptimizer failed: {e}, using pandas/numpy fallback")
                 return self._generate_fallback_trend(data, **kwargs)
         else:
             return self._generate_fallback_trend(data, **kwargs)
 
     def _generate_fallback_trend(self, data: pd.DataFrame, **kwargs) -> pd.Series:
-        """Generate trend using fallback method."""
+        """Generate trend using pandas/numpy fallback method."""
         if data.empty:
             return pd.Series(dtype=float, index=data.index, name=f'vectorbt_trend_{self.period}')
 

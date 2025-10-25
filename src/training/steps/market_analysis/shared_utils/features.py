@@ -1,5 +1,5 @@
 """
-Shared feature preparation utilities for NAS-TAS regime detection.
+Shared feature preparation utilities for HDBSCAN regime detection.
 
 This module provides common feature engineering functionality that eliminates
 redundancy between NAS and TAS components.

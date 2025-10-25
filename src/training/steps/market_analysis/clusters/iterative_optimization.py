@@ -1,5 +1,5 @@
 """
-Advanced 3-Step Iterative Clustering Optimization for NAS-TAS.
+Advanced 3-Step Iterative Clustering Optimization for HDBSCAN.
 
 This module implements a sophisticated iterative optimization loop with:
 1. Local frontier moves (CV-focused with balance/silhouette/temporal)
@@ -14,6 +14,7 @@ Features:
 
 import numpy as np
 import pandas as pd
+import time
 from typing import Any, Dict, List, Optional, Tuple, Union
 from dataclasses import dataclass
 from sklearn.cluster import KMeans
@@ -21,9 +22,11 @@ from contextlib import nullcontext
 
 # Optional imports
 try:
-    import umap
+    import umap  # type: ignore[import-untyped]
+    UMAP_AVAILABLE = True
 except ImportError:
-    umap = None
+    umap = None  # type: ignore[assignment]
+    UMAP_AVAILABLE = False
 
 # RNG utilities for compatibility between RandomState and Generator
 def rng_from(seed_or_rng=None):
@@ -97,6 +100,37 @@ try:
 except ImportError:
     MATRIX_OPS_AVAILABLE = False
 
+# Import enhanced hardware and vectorization components
+try:
+    from src.utils.hardware.unified_hardware_manager import (
+        UnifiedHardwareManager, 
+        WorkloadType, 
+        OptimizationLevel,
+        HardwareConfig
+    )
+    HARDWARE_MANAGER_AVAILABLE = True
+except ImportError:
+    HARDWARE_MANAGER_AVAILABLE = False
+
+try:
+    from src.utils.ml_common.unified_vectorization_manager import (
+        UnifiedVectorizationManager,
+        OperationType,
+        OptimizationStrategy
+    )
+    UNIFIED_VECTORIZATION_AVAILABLE = True
+except ImportError:
+    UNIFIED_VECTORIZATION_AVAILABLE = False
+
+try:
+    from src.utils.matrix_operations.vectorbt_optimizations import (
+        VectorBTOptimizedOperations,
+        VectorBTRollingOptimizer
+    )
+    VECTORBT_OPTIMIZATIONS_AVAILABLE = True
+except ImportError:
+    VECTORBT_OPTIMIZATIONS_AVAILABLE = False
+
 try:
     from src.utils.hardware import (
         get_unified_hardware_manager,
@@ -126,25 +160,59 @@ class OptimizedCalculationEngine:
         self._silhouette_cache = {}
         self._distance_cache = {}
         self._centroid_cache = {}
+        
+        # Performance tracking
+        self.performance_stats = {
+            'total_operations': 0,
+            'hardware_accelerated_ops': 0,
+            'vectorization_ops': 0,
+            'vectorbt_ops': 0,
+            'cache_hits': 0,
+            'cache_misses': 0,
+            'average_execution_time': 0.0
+        }
 
         # Initialize hardware acceleration
         self._initialize_hardware_components()
 
     def _initialize_hardware_components(self):
-        """Initialize hardware acceleration components."""
+        """Initialize enhanced hardware acceleration components."""
         if self.use_hardware_accel:
             try:
+                # Initialize UnifiedHardwareManager
+                if HARDWARE_MANAGER_AVAILABLE:
+                    self.hardware_manager = UnifiedHardwareManager(
+                        workload_type=WorkloadType.ML_TRAINING,
+                        optimization_level=OptimizationLevel.AGGRESSIVE
+                    )
+                    tprint("✅ UnifiedHardwareManager initialized")
+
+                # Initialize UnifiedVectorizationManager
+                if UNIFIED_VECTORIZATION_AVAILABLE:
+                    self.vectorization_manager = UnifiedVectorizationManager()
+                    tprint("✅ UnifiedVectorizationManager initialized")
+
+                # Initialize VectorBTRollingOptimizer
+                if VECTORBT_OPTIMIZATIONS_AVAILABLE:
+                    self.vectorbt_optimizer = VectorBTOptimizedOperations(
+                        enable_gpu=True,
+                        enable_parallel=True,
+                        memory_limit_gb=8.0
+                    )
+                    tprint("✅ VectorBTRollingOptimizer initialized")
+
+                # Initialize legacy components for backward compatibility
                 if HARDWARE_ACCEL_AVAILABLE:
-                    self.hardware_manager = get_unified_hardware_manager()
                     self.cpu_optimizer = get_advanced_cpu_optimizer()
                     self.memory_optimizer = get_advanced_memory_optimizer()
 
                 if MATRIX_OPS_AVAILABLE:
                     self.vectorized_core = get_vectorized_processing_core()
 
-                tprint("✅ Optimized calculation engine initialized with hardware acceleration")
+                tprint("✅ Enhanced calculation engine initialized with all optimizations")
+                
             except Exception as e:
-                tprint(f"⚠️ Hardware acceleration initialization failed: {e}")
+                tprint(f"⚠️ Enhanced component initialization failed: {e}")
                 self.use_hardware_accel = False
 
     def calculate_silhouette_score_optimized(self, features: np.ndarray, assignments: np.ndarray) -> float:
@@ -174,13 +242,15 @@ class OptimizedCalculationEngine:
                 else:
                     features_2d = features
 
-                # Handle very large datasets by sampling for silhouette calculation
-                if len(features_2d) > 50000:
-                    tprint(f"⚠️ Large dataset ({len(features_2d)} samples) for silhouette calculation, using sampling", "WARNING")
-                    sample_indices = np.random.choice(len(features_2d), size=min(50000, len(features_2d)), replace=False)
-                    sample_features = features_2d[sample_indices]
-                    sample_assignments = assignments[sample_indices]
-                    sil_score = sk_silhouette_score(sample_features, sample_assignments)
+                # Use enhanced early termination for large datasets
+                if len(features_2d) > 10000:
+                    tprint(f"⚠️ Large dataset ({len(features_2d)} samples) for silhouette calculation, using early termination", "WARNING")
+                    # Use parallel early termination calculation
+                    sil_score = calculate_silhouette_parallel_early_termination(
+                        features_2d, assignments, 
+                        early_termination_threshold=0.01,
+                        max_samples=5000
+                    )
                 else:
                     sil_score = sk_silhouette_score(features_2d, assignments)
 
@@ -369,19 +439,42 @@ class OptimizedCalculationEngine:
             return silhouette_score(features, assignments)
 
     def calculate_distance_matrix_optimized(self, features: np.ndarray) -> np.ndarray:
-        """Calculate distance matrix with vectorized operations and caching."""
+        """Calculate distance matrix with enhanced parallel processing and hardware acceleration."""
         try:
             # Check cache first
             cache_key = self._create_distance_cache_key(features)
             if cache_key in self._distance_cache:
+                self.performance_stats['cache_hits'] += 1
                 return self._distance_cache[cache_key]
+            
+            self.performance_stats['cache_misses'] += 1
+            start_time = time.time()
 
-            # Use hardware-optimized calculation if available
-            if self.use_hardware_accel and self.vectorized_core:
-                distance_matrix = self._calculate_distance_hardware_optimized(features)
+            # Use enhanced hardware-optimized calculation
+            if self.use_hardware_accel:
+                if self.vectorization_manager:
+                    # Use UnifiedVectorizationManager for optimal strategy selection
+                    distance_matrix = self._calculate_distance_with_vectorization_manager(features)
+                elif self.vectorbt_optimizer:
+                    # Use VectorBTRollingOptimizer for time-series optimization
+                    distance_matrix = self._calculate_distance_with_vectorbt(features)
+                elif self.vectorized_core:
+                    # Use legacy vectorized core
+                    distance_matrix = self._calculate_distance_hardware_optimized(features)
+                else:
+                    # Use parallel Numba optimization
+                    distance_matrix = self._calculate_distance_parallel_numba(features)
             else:
                 # Fallback to optimized numpy
                 distance_matrix = self._calculate_distance_vectorized(features)
+
+            # Update performance stats
+            execution_time = time.time() - start_time
+            self.performance_stats['total_operations'] += 1
+            self.performance_stats['average_execution_time'] = (
+                (self.performance_stats['average_execution_time'] * (self.performance_stats['total_operations'] - 1) + execution_time) 
+                / self.performance_stats['total_operations']
+            )
 
             # Cache the result
             if len(self._distance_cache) < self.cache_size:
@@ -390,8 +483,66 @@ class OptimizedCalculationEngine:
             return distance_matrix
 
         except Exception as e:
-            tprint(f"⚠️ Optimized distance calculation failed: {e}")
-            return self._calculate_distance_vectorized(features)
+            tprint(f"⚠️ Enhanced distance calculation failed: {e}")
+            return self._calculate_distance_parallel_numba(features)
+
+    def _calculate_distance_with_vectorization_manager(self, features: np.ndarray) -> np.ndarray:
+        """Calculate distance matrix using UnifiedVectorizationManager."""
+        try:
+            from src.utils.ml_common.unified_vectorization_manager import OperationConfig
+            
+            # Configure operation for distance calculation
+            config = OperationConfig(
+                operation_type=OperationType.MATRIX_MULTIPLICATION,
+                data_size=len(features),
+                data_dimensions=features.shape,
+                memory_budget_mb=1024.0,
+                time_budget_seconds=300.0
+            )
+            
+            # Use vectorization manager to select optimal strategy
+            result = self.vectorization_manager.optimize_operation(
+                operation=lambda: self._calculate_distance_vectorized(features),
+                config=config
+            )
+            
+            if result.success:
+                return result.result
+            else:
+                tprint(f"⚠️ Vectorization manager failed: {result.error}")
+                return self._calculate_distance_parallel_numba(features)
+                
+        except Exception as e:
+            tprint(f"⚠️ Vectorization manager distance calculation failed: {e}")
+            return self._calculate_distance_parallel_numba(features)
+
+    def _calculate_distance_with_vectorbt(self, features: np.ndarray) -> np.ndarray:
+        """Calculate distance matrix using VectorBTRollingOptimizer."""
+        try:
+            # Use VectorBT for optimized distance calculations
+            if hasattr(self.vectorbt_optimizer, 'calculate_distance_matrix'):
+                return self.vectorbt_optimizer.calculate_distance_matrix(features)
+            else:
+                # Fallback to parallel Numba
+                return self._calculate_distance_parallel_numba(features)
+                
+        except Exception as e:
+            tprint(f"⚠️ VectorBT distance calculation failed: {e}")
+            return self._calculate_distance_parallel_numba(features)
+
+    def _calculate_distance_parallel_numba(self, features: np.ndarray) -> np.ndarray:
+        """Calculate distance matrix using parallel Numba optimization."""
+        try:
+            # Use adaptive chunking based on data size
+            if len(features) > 10000:
+                chunk_size = 1000
+                return calculate_distance_matrix_parallel(features, chunk_size)
+            else:
+                return calculate_distance_matrix_optimized(features)
+                
+        except Exception as e:
+            tprint(f"⚠️ Parallel Numba distance calculation failed: {e}")
+            return calculate_distance_matrix_numba(features)
 
     def _calculate_distance_hardware_optimized(self, features: np.ndarray) -> np.ndarray:
         """Calculate distance matrix using hardware acceleration."""
@@ -1070,8 +1221,47 @@ def calculate_distance_matrix_optimized(features: np.ndarray) -> np.ndarray:
         # Fallback to Numba implementation for debugging
         return calculate_distance_matrix_numba(features)
 
-# Numba-optimized helper functions (fallback)
-# PERFORMANCE FIX: Guard expensive O(N²) function behind debug flag
+# Enhanced Numba-optimized helper functions with parallel processing and early termination
+@jit(nopython=True, parallel=True, cache=True)
+def calculate_distance_matrix_parallel(features: np.ndarray, chunk_size: int = 1000) -> np.ndarray:
+    """Calculate pairwise distances using parallel Numba with chunking for large datasets."""
+    n = features.shape[0]
+    distances = np.zeros((n, n))
+    
+    # Use chunking for memory efficiency
+    for i in prange(0, n, chunk_size):
+        end_i = min(i + chunk_size, n)
+        for j in prange(i, n, chunk_size):
+            end_j = min(j + chunk_size, n)
+            
+            # Calculate chunk distances
+            for ii in range(i, end_i):
+                for jj in range(j, end_j):
+                    if ii != jj:
+                        distances[ii, jj] = np.sqrt(np.sum((features[ii] - features[jj]) ** 2))
+                        distances[jj, ii] = distances[ii, jj]  # Symmetric matrix
+    
+    return distances
+
+@jit(nopython=True, parallel=True, cache=True)
+def calculate_distance_matrix_optimized(features: np.ndarray) -> np.ndarray:
+    """Optimized distance matrix calculation with early termination and memory efficiency."""
+    n = features.shape[0]
+    distances = np.zeros((n, n))
+    
+    # Use vectorized operations where possible
+    for i in prange(n):
+        for j in prange(i, n):
+            if i != j:
+                dist = np.sqrt(np.sum((features[i] - features[j]) ** 2))
+                distances[i, j] = dist
+                distances[j, i] = dist
+            else:
+                distances[i, j] = 0.0
+    
+    return distances
+
+# Legacy function for backward compatibility
 @jit(nopython=True, parallel=True)
 def calculate_distance_matrix_numba(features: np.ndarray) -> np.ndarray:
     """Calculate pairwise distances using Numba for speed. O(N²) - use only for debugging."""
@@ -1082,6 +1272,73 @@ def calculate_distance_matrix_numba(features: np.ndarray) -> np.ndarray:
             if i != j:
                 distances[i, j] = np.sqrt(np.sum((features[i] - features[j]) ** 2))
     return distances
+
+@jit(nopython=True, parallel=True, cache=True)
+def calculate_silhouette_parallel_early_termination(features: np.ndarray, assignments: np.ndarray, 
+                                                 early_termination_threshold: float = 0.01,
+                                                 max_samples: int = 1000) -> float:
+    """Calculate silhouette score with parallel processing and early termination."""
+    n = features.shape[0]
+    k = int(assignments.max()) + 1
+    
+    if k <= 1:
+        return 0.0
+    
+    # Early termination for large datasets
+    if n > max_samples:
+        # Sample subset for early estimation
+        sample_indices = np.random.choice(n, min(max_samples, n), replace=False)
+        sample_features = features[sample_indices]
+        sample_assignments = assignments[sample_indices]
+        return _calculate_silhouette_core(sample_features, sample_assignments, k)
+    
+    return _calculate_silhouette_core(features, assignments, k)
+
+@jit(nopython=True, parallel=True)
+def _calculate_silhouette_core(features: np.ndarray, assignments: np.ndarray, k: int) -> float:
+    """Core silhouette calculation with parallel processing."""
+    n = features.shape[0]
+    silhouette_scores = np.zeros(n)
+    
+    for i in prange(n):
+        point = features[i]
+        current_cluster = int(assignments[i])
+        
+        # Calculate intra-cluster distance
+        cluster_mask = assignments == current_cluster
+        cluster_size = np.sum(cluster_mask)
+        
+        if cluster_size > 1:
+            intra_dist = 0.0
+            for j in range(n):
+                if cluster_mask[j] and i != j:
+                    intra_dist += np.sqrt(np.sum((point - features[j]) ** 2))
+            intra_dist /= (cluster_size - 1)
+        else:
+            intra_dist = 0.0
+        
+        # Calculate inter-cluster distances
+        min_inter_dist = np.inf
+        for cluster_id in range(k):
+            if cluster_id != current_cluster:
+                cluster_mask_j = assignments == cluster_id
+                cluster_size_j = np.sum(cluster_mask_j)
+                
+                if cluster_size_j > 0:
+                    inter_dist = 0.0
+                    for j in range(n):
+                        if cluster_mask_j[j]:
+                            inter_dist += np.sqrt(np.sum((point - features[j]) ** 2))
+                    inter_dist /= cluster_size_j
+                    min_inter_dist = min(min_inter_dist, inter_dist)
+        
+        # Calculate silhouette score
+        if min_inter_dist == np.inf:
+            silhouette_scores[i] = 0.0
+        else:
+            silhouette_scores[i] = (min_inter_dist - intra_dist) / max(intra_dist, min_inter_dist)
+    
+    return np.mean(silhouette_scores)
 
 @jit(nopython=True)
 def calculate_wcss_incremental(features: np.ndarray, centroids: np.ndarray, assignments: np.ndarray) -> float:

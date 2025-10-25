@@ -33,7 +33,7 @@ from .enhanced_vectorized_processor import (
 
 # Import feature generation components
 from src.feature_generation.categories.entropy import create_default_entropy_generators
-from src.feature_generation.categories.spectral_features import create_default_spectral_wavelet_generators
+from src.feature_generation.categories.spectral_wavelet import create_default_spectral_wavelet_generators
 from src.feature_generation.categories.regime_features import create_default_regime_generators
 
 logger = logging.getLogger(__name__)
@@ -284,7 +284,24 @@ class EnhancedHDBSCANIntegration:
             # Fallback to standard HDBSCAN
             import hdbscan
             clusterer = hdbscan.HDBSCAN(**hdbscan_params)
-            cluster_labels = clusterer.fit_predict(features_df)
+            # Ensure only numeric data is passed to HDBSCAN
+            numeric_features_df = features_df.select_dtypes(include=[np.number])
+            if len(numeric_features_df.columns) < len(features_df.columns):
+                logger.warning(f"⚠️ Filtered out {len(features_df.columns) - len(numeric_features_df.columns)} non-numeric columns for HDBSCAN")
+            
+            # Convert to float64 and handle any remaining data type issues
+            numeric_features_df = numeric_features_df.astype(np.float64)
+            
+            # Remove any infinite or NaN values
+            numeric_features_df = numeric_features_df.replace([np.inf, -np.inf], np.nan)
+            numeric_features_df = numeric_features_df.fillna(0)
+            
+            # Ensure all values are finite
+            if not np.all(np.isfinite(numeric_features_df.values)):
+                logger.error("❌ Non-finite values found in features after cleaning")
+                raise ValueError("Non-finite values found in features")
+            
+            cluster_labels = clusterer.fit_predict(numeric_features_df)
             clustering_info = {
                 'clusterer': clusterer,
                 'n_clusters': len(set(cluster_labels)) - (1 if -1 in cluster_labels else 0),

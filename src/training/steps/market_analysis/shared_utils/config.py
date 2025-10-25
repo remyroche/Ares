@@ -55,7 +55,7 @@ class TASConfig(BaseConfig):
 
 @dataclass
 class HybridConfig(BaseConfig):
-    """Configuration for hybrid NAS-TAS regime detection."""
+    """Configuration for hybrid HDBSCAN regime detection."""
     combination_strategy: str = "ensemble"
     enable_nas: bool = True
     enable_tas: bool = True
@@ -77,7 +77,7 @@ class HybridConfig(BaseConfig):
     tas_config: TASConfig = field(default_factory=TASConfig)
 
 class ConfigValidator:
-    """Configuration validator for NAS-TAS components."""
+    """Configuration validator for HDBSCAN components."""
 
     def __init__(self, verbose: bool = False):
         """Initialize the configuration validator.
@@ -284,7 +284,7 @@ def create_default_config(
     **kwargs
 ) -> Union[NASConfig, TASConfig, HybridConfig]:
     """
-    Create a default configuration for NAS-TAS components.
+    Create a default configuration for HDBSCAN components.
 
     Args:
         config_type: Type of configuration ('nas', 'tas', 'hybrid')

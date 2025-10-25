@@ -17,14 +17,15 @@ from sklearn.feature_selection import mutual_info_regression
 from sklearn.preprocessing import StandardScaler, RobustScaler
 from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
-import umap
 
 # Import UnifiedVectorizationManager
 from src.utils.ml_common.unified_vectorization_manager import (
-    UnifiedVectorizationManager, 
-    VectorizationConfig,
+    UnifiedVectorizationManager,
     get_unified_vectorization_manager
 )
+
+# Import VectorizationConfig from the correct module
+from src.feature_generation.utils.unified_vectorization_manager import VectorizationConfig
 
 logger = logging.getLogger(__name__)
 

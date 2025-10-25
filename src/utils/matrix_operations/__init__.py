@@ -33,17 +33,24 @@ except ImportError:
     import logging
     logger = logging.getLogger(__name__)
 
-# Core unified operations
-try:
-    from .unified_operations import (
-        get_unified_matrix_operations,
-        UnifiedMatrixOperations,
-        M1EnhancedMatrixOperations,  # Backwards compatibility alias
-    )
-    UNIFIED_OPERATIONS_AVAILABLE = True
-except ImportError as e:
-    UNIFIED_OPERATIONS_AVAILABLE = False
-    logger.warning(f"Unified operations not available: {e}")
+# Core unified operations - using lazy imports to avoid circular dependencies
+UNIFIED_OPERATIONS_AVAILABLE = True
+_unified_operations = None
+
+def get_unified_matrix_operations(enable_gpu: bool = True, **kwargs):
+    """Lazy import and return unified matrix operations to avoid circular imports."""
+    global _unified_operations
+    if _unified_operations is None:
+        try:
+            from .unified_operations import get_unified_matrix_operations as _get_unified_matrix_operations
+            _unified_operations = _get_unified_matrix_operations(enable_gpu=enable_gpu, **kwargs)
+        except ImportError as e:
+            logger.warning(f"Unified operations not available: {e}")
+            UNIFIED_OPERATIONS_AVAILABLE = False
+            # Fallback implementation
+            from ..base_matrix_operations import create_fallback_matrix_operations
+            _unified_operations = create_fallback_matrix_operations()
+    return _unified_operations
 
 # Vectorized processing core
 try:
@@ -115,47 +122,11 @@ except ImportError as e:
 
 # Convenience functions for common operations
 try:
-    # Import safe_correlation_matrix directly from unified_operations to avoid circular import
-    # Use lazy import to avoid circular dependency issues
-    _safe_correlation_matrix = None
-    _unified_matrix_operations = None
-
-    def safe_correlation_matrix(data):
-        """Lazy import and call safe_correlation_matrix to avoid circular imports."""
-        global _safe_correlation_matrix
-        if _safe_correlation_matrix is None:
-            try:
-                from ..base_matrix_operations import safe_correlation_matrix as _safe_correlation_matrix
-            except ImportError:
-                # Fallback implementation
-                def _safe_correlation_matrix(data):
-                    try:
-                        if hasattr(data, 'corr'):
-                            return data.corr().values
-                        else:
-                            return np.corrcoef(data.T)
-                    except Exception:
-                        n = data.shape[1] if len(data.shape) > 1 else 1
-                        return np.eye(n)
-        return _safe_correlation_matrix(data)
-
-    def get_unified_matrix_operations():
-        """Lazy import and return unified matrix operations to avoid circular imports."""
-        global _unified_matrix_operations
-        if _unified_matrix_operations is None:
-            try:
-                from .unified_operations import get_unified_matrix_operations as _get_unified_matrix_operations
-                _unified_matrix_operations = _get_unified_matrix_operations()
-            except ImportError:
-                # Fallback implementation
-                from ..base_matrix_operations import create_fallback_matrix_operations
-                _unified_matrix_operations = create_fallback_matrix_operations()
-        return _unified_matrix_operations
-
     from .convenience import (
         # Matrix operations
         safe_matrix_multiply,
         safe_matrix_inverse,
+        safe_correlation_matrix,
         safe_matrix_operations,
         validate_matrix_properties,
         optimize_matrix_computations,
@@ -279,21 +250,35 @@ def _detect_vectorbt_availability():
 # VectorBT optimizations - only warn once
 VECTORBT_AVAILABLE = _detect_vectorbt_availability()
 
-# VectorBT optimized operations
-try:
-    from .vectorbt_optimizations import (
-        get_vectorbt_optimized_operations,
-        VectorBTOptimizedOperations,
-        vectorbt_matrix_multiply,
-        vectorbt_correlation_matrix,
-        vectorbt_trading_indicators,
-        vectorbt_rolling_features,
-        vectorbt_batch_processing,
-    )
-    VECTORBT_OPTIMIZATIONS_AVAILABLE = True
-except ImportError as e:
-    VECTORBT_OPTIMIZATIONS_AVAILABLE = False
-    logger.warning(f"VectorBT optimizations not available: {e}")
+# VectorBT optimized operations - using lazy imports to avoid circular dependencies
+VECTORBT_OPTIMIZATIONS_AVAILABLE = True
+_vectorbt_operations = None
+
+def get_vectorbt_optimized_operations():
+    """Lazy import and return VectorBT optimized operations to avoid circular imports."""
+    global _vectorbt_operations
+    if _vectorbt_operations is None:
+        try:
+            from .vectorbt_optimizations import get_vectorbt_optimized_operations as _get_vectorbt_operations
+            _vectorbt_operations = _get_vectorbt_operations()
+        except ImportError as e:
+            logger.warning(f"VectorBT optimizations not available: {e}")
+            VECTORBT_OPTIMIZATIONS_AVAILABLE = False
+            # Fallback implementation
+            class FallbackVectorBTOperations:
+                def __init__(self):
+                    self.logger = get_logger(__name__)
+
+                def vectorbt_matrix_multiply(self, *args, **kwargs):
+                    from ..base_matrix_operations import safe_matrix_multiply
+                    return safe_matrix_multiply(*args, **kwargs)
+
+                def vectorbt_correlation_matrix(self, *args, **kwargs):
+                    from ..base_matrix_operations import safe_correlation_matrix
+                    return safe_correlation_matrix(*args, **kwargs)
+
+            _vectorbt_operations = FallbackVectorBTOperations()
+    return _vectorbt_operations
 
 # VectorBT Rolling Optimizer and Unified Vectorization Manager
 try:
@@ -341,13 +326,49 @@ if ERROR_HANDLING_AVAILABLE:
         "get_global_error_handler",
     ])
 
-# Core unified operations
+# Core unified operations - import classes directly from unified_operations module
 if UNIFIED_OPERATIONS_AVAILABLE:
     __all__.extend([
         "UnifiedMatrixOperations",
         "M1EnhancedMatrixOperations",  # Backwards compatibility
         "get_unified_matrix_operations",
     ])
+    # Import classes directly for availability
+    try:
+        from .unified_operations import UnifiedMatrixOperations, M1EnhancedMatrixOperations
+    except ImportError:
+        # Fallback if direct import fails
+        UNIFIED_OPERATIONS_AVAILABLE = False
+        logger.warning("Direct import of UnifiedMatrixOperations failed, using fallback")
+else:
+    # Add fallback aliases and implementations when unified operations are not available
+    __all__.extend([
+        "UnifiedMatrixOperations",
+        "M1EnhancedMatrixOperations",  # Backwards compatibility
+        "get_unified_matrix_operations",
+    ])
+
+    # Create fallback classes
+    class UnifiedMatrixOperations:
+        """Fallback implementation when unified operations are not available."""
+        def __init__(self, *args, **kwargs):
+            self.logger = logging.getLogger(__name__)
+            self.logger.warning("Using fallback UnifiedMatrixOperations implementation")
+
+        def matrix_multiply(self, A, B):
+            import numpy as np
+            return np.dot(A, B)
+
+        def safe_correlation_matrix(self, data):
+            import numpy as np
+            return np.corrcoef(data, rowvar=False)
+
+    M1EnhancedMatrixOperations = UnifiedMatrixOperations
+
+    # Fallback get_unified_matrix_operations function
+    def get_unified_matrix_operations(enable_gpu: bool = True, **kwargs):
+        """Fallback function when unified operations are not available."""
+        return UnifiedMatrixOperations()
 
 # Vectorized processing core
 if VECTORIZED_CORE_AVAILABLE:
@@ -417,6 +438,7 @@ if CONVENIENCE_FUNCTIONS_AVAILABLE:
         "record_batch_performance",
         "get_batch_optimization_stats",
         "m1_matrix_multiply",  # Add backwards compatibility function
+        "safe_correlation_matrix",  # Safe correlation matrix function
         "safe_matrix_operations",  # Safe wrapper for matrix operations
         "validate_matrix_properties",  # Matrix validation function
         "optimize_matrix_computations",  # Matrix optimization function

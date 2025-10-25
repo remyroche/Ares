@@ -1,5 +1,5 @@
 """
-Hardware modules for NAS-TAS regime detection.
+Hardware modules for HDBSCAN regime detection.
 
 This package contains hardware management and optimization components.
 """

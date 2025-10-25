@@ -1050,6 +1050,10 @@ def create_spectral_feature_generators() -> List[FeatureGenerator]:
     """Create all spectral feature generators."""
     return create_default_spectral_generators()
 
+def create_default_spectral_wavelet_generators() -> List[FeatureGenerator]:
+    """Create default spectral and wavelet feature generators."""
+    return create_default_spectral_generators()
+
 def process_spectral_features_batch(data: pd.DataFrame,
                                   generators: Optional[List[FeatureGenerator]] = None,
                                   use_vectorbt: bool = True,
@@ -1121,5 +1125,6 @@ __all__ = [
     'create_default_fractal_generators',
     'create_default_dfa_generators',
     'create_spectral_feature_generators',
+    'create_default_spectral_wavelet_generators',
     'process_spectral_features_batch'
 ]

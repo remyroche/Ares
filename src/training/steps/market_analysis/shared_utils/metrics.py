@@ -1,5 +1,5 @@
 """
-Shared metrics calculation utilities for NAS-TAS regime detection.
+Shared metrics calculation utilities for HDBSCAN regime detection.
 
 This module provides common metrics calculation functionality that eliminates
 redundancy between NAS and TAS components, including consensus/disagreement metrics,
@@ -31,7 +31,7 @@ class MetricsConfig:
     stability_threshold: float = 0.7
 
 class MetricsCalculator:
-    """Centralized metrics calculator for NAS-TAS components."""
+    """Centralized metrics calculator for HDBSCAN components."""
 
     def __init__(self, config: Optional[MetricsConfig] = None, verbose: bool = False):
         """Initialize metrics calculator.

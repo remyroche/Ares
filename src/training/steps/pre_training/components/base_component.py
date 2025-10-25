@@ -27,6 +27,14 @@ except ImportError:
             self.config = config or {}
             self.logger = logger or logging.getLogger(name)
 
+# Base fallback class
+class BaseComponent(ABC):
+    """Fallback base component class when ModularComponent is not available."""
+    def __init__(self, name: str, config: Optional[Dict[str, Any]] = None, logger: Optional[logging.Logger] = None):
+        self.name = name
+        self.config = config or {}
+        self.logger = logger or logging.getLogger(name)
+
 logger = logging.getLogger(__name__)
 
 @dataclass

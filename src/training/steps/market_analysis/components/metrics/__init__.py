@@ -1,5 +1,5 @@
 """
-Metrics modules for NAS-TAS regime detection.
+Metrics modules for HDBSCAN regime detection.
 
 This package contains metrics calculation and analysis components.
 """

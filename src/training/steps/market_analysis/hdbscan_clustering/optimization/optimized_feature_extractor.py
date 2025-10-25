@@ -16,18 +16,20 @@ import multiprocessing as mp
 
 # Import UnifiedVectorizationManager
 from src.utils.ml_common.unified_vectorization_manager import (
-    UnifiedVectorizationManager, 
-    VectorizationConfig,
+    UnifiedVectorizationManager,
     get_unified_vectorization_manager
 )
 
+# Import VectorizationConfig from the correct module
+from src.feature_generation.utils.unified_vectorization_manager import VectorizationConfig
+
 # Import feature generation system
 from src.feature_generation.core.feature_bank import FeatureBank
-from src.feature_generation.categories.returns import ReturnsFeatureExtractor
-from src.feature_generation.categories.volatility import VolatilityFeatureExtractor
-from src.feature_generation.categories.volume import VolumeFeatureExtractor
-from src.feature_generation.categories.entropy import EntropyFeatureExtractor
-from src.feature_generation.categories.spectral_features import SpectralFeatureExtractor
+from src.feature_generation.categories.returns import ReturnsFeatureGenerator
+from src.feature_generation.categories.volatility import VolatilityFeatureGenerator
+from src.feature_generation.categories.volume import VolumeFeatureGenerator
+from src.feature_generation.categories.entropy import EntropyFeatureGenerator
+from src.feature_generation.categories.spectral_features import SpectralFeatureGenerator
 
 logger = logging.getLogger(__name__)
 
@@ -105,19 +107,19 @@ class OptimizedFeatureExtractor:
         self.feature_extractors = {}
         
         if self.config.enable_returns:
-            self.feature_extractors['returns'] = ReturnsFeatureExtractor()
+            self.feature_extractors['returns'] = ReturnsFeatureGenerator()
         
         if self.config.enable_volatility:
-            self.feature_extractors['volatility'] = VolatilityFeatureExtractor()
+            self.feature_extractors['volatility'] = VolatilityFeatureGenerator()
         
         if self.config.enable_volume:
-            self.feature_extractors['volume'] = VolumeFeatureExtractor()
+            self.feature_extractors['volume'] = VolumeFeatureGenerator()
         
         if self.config.enable_entropy:
-            self.feature_extractors['entropy'] = EntropyFeatureExtractor()
+            self.feature_extractors['entropy'] = EntropyFeatureGenerator()
         
         if self.config.enable_spectral:
-            self.feature_extractors['spectral'] = SpectralFeatureExtractor()
+            self.feature_extractors['spectral'] = SpectralFeatureGenerator()
     
     def extract_features(self, data: pd.DataFrame, 
                         symbol: str, 

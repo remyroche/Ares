@@ -1,5 +1,5 @@
 """
-Shared logging utilities for NAS-TAS regime detection.
+Shared logging utilities for HDBSCAN regime detection.
 
 This module provides common logging functionality that eliminates redundancy
 between NAS and TAS components, including execution tracking, performance monitoring,
@@ -19,7 +19,7 @@ from src.utils.tprint import (
 )
 
 class LoggingContext:
-    """Context manager for standardized logging across NAS-TAS components."""
+    """Context manager for standardized logging across HDBSCAN components."""
 
     def __init__(
         self,
@@ -139,7 +139,7 @@ def log_performance(
 
 def get_logger(name: str, level: int = logging.INFO) -> logging.Logger:
     """
-    Get a standardized logger for NAS-TAS components.
+    Get a standardized logger for HDBSCAN components.
 
     Args:
         name: Logger name
@@ -275,7 +275,7 @@ def log_step_progress(step_name: str, total_steps: int, current_step: int):
         raise
 
 class PerformanceTracker:
-    """Performance tracking utility for NAS-TAS components."""
+    """Performance tracking utility for HDBSCAN components."""
 
     def __init__(self, component_name: str):
         """Initialize performance tracker.
@@ -340,7 +340,7 @@ class PerformanceTracker:
         }
 
 class LoggingManager:
-    """Centralized logging manager for NAS-TAS components."""
+    """Centralized logging manager for HDBSCAN components."""
 
     def __init__(self, component_name: str, verbose: bool = True):
         """Initialize logging manager.

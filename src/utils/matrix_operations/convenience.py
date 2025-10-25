@@ -30,25 +30,45 @@ except ImportError:
     SCIPY_AVAILABLE = False
     sparse = None
 
-# Import the unified modules with lazy loading to avoid circular imports
-try:
-    from .unified_operations import (
-        get_unified_matrix_operations,
-        safe_matrix_multiply as _safe_matrix_multiply,
-        safe_matrix_inverse as _safe_matrix_inverse
-    )
-    UNIFIED_OPERATIONS_IMPORTED = True
-except ImportError as e:
-    UNIFIED_OPERATIONS_IMPORTED = False
-    _safe_matrix_multiply = None
-    _safe_matrix_inverse = None
-    get_unified_matrix_operations = None
+# Lazy imports to avoid circular dependencies
+UNIFIED_OPERATIONS_IMPORTED = True
+
+def _safe_matrix_multiply(*args, **kwargs):
+    """Lazy import and call safe_matrix_multiply to avoid circular imports."""
+    try:
+        from ..base_matrix_operations import safe_matrix_multiply
+        return safe_matrix_multiply(*args, **kwargs)
+    except ImportError:
+        import numpy as np
+        if len(args) >= 2:
+            return np.dot(args[0], args[1])
+        raise NotImplementedError("safe_matrix_multiply not available")
+
+def _safe_matrix_inverse(*args, **kwargs):
+    """Lazy import and call safe_matrix_inverse to avoid circular imports."""
+    try:
+        from ..base_matrix_operations import safe_matrix_inverse
+        return safe_matrix_inverse(*args, **kwargs)
+    except ImportError:
+        import numpy as np
+        if len(args) >= 1:
+            return np.linalg.inv(args[0])
+        raise NotImplementedError("safe_matrix_inverse not available")
+
+def get_unified_matrix_operations(*args, **kwargs):
+    """Lazy import and call get_unified_matrix_operations to avoid circular imports."""
+    try:
+        from .unified_operations import get_unified_matrix_operations
+        return get_unified_matrix_operations(*args, **kwargs)
+    except ImportError:
+        from ..base_matrix_operations import create_fallback_matrix_operations
+        return create_fallback_matrix_operations()
 
 # Import correlation matrix function locally to avoid circular import
 def _safe_correlation_matrix(*args, **kwargs):
     """Local wrapper to avoid circular import."""
     try:
-        from .unified_operations import safe_correlation_matrix
+        from ..base_matrix_operations import safe_correlation_matrix
         return safe_correlation_matrix(*args, **kwargs)
     except ImportError:
         # Fallback implementation
@@ -206,7 +226,7 @@ def safe_matrix_multiply(A: 'np.ndarray', B: 'np.ndarray') -> 'np.ndarray':
             logger.warning(f"⚠️ VectorBT matrix multiplication failed: {e}, falling back to standard method")
 
     # Fallback to unified operations if available
-    if UNIFIED_OPERATIONS_IMPORTED and _safe_matrix_multiply:
+    if UNIFIED_OPERATIONS_IMPORTED:
         return _safe_matrix_multiply(A, B)
 
     # Final fallback to basic numpy implementation
@@ -239,7 +259,7 @@ def safe_correlation_matrix(data: Union['np.ndarray', 'pd.DataFrame']) -> 'np.nd
 def safe_matrix_inverse(matrix: 'np.ndarray') -> 'np.ndarray':
     """Safe matrix inversion."""
     # Fallback to unified operations if available
-    if UNIFIED_OPERATIONS_IMPORTED and _safe_matrix_inverse:
+    if UNIFIED_OPERATIONS_IMPORTED:
         return _safe_matrix_inverse(matrix)
 
     # Final fallback to basic numpy implementation

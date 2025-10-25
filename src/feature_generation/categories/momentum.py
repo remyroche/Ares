@@ -363,7 +363,7 @@ class AnalystMomentum5mGenerator(VectorizedFeatureGenerator):
         # Use VectorBT for optimized rolling mean
         if VECTORBT_AVAILABLE and len(returns) > 100:
             try:
-                momentum = rolling_mean(returns, window=self.lookback)
+                momentum = returns.rolling(window=self.lookback).mean()
                 return momentum
             except Exception as e:
                 logger.warning(f"VectorBT rolling mean failed: {e}, using pandas fallback")
@@ -401,7 +401,7 @@ class AnalystMomentum15mGenerator(VectorizedFeatureGenerator):
         # Use VectorBT for optimized rolling mean
         if VECTORBT_AVAILABLE and len(returns) > 100:
             try:
-                momentum = rolling_mean(returns, window=self.lookback)
+                momentum = returns.rolling(window=self.lookback).mean()
                 return momentum
             except Exception as e:
                 logger.warning(f"VectorBT rolling mean failed: {e}, using pandas fallback")
@@ -546,15 +546,15 @@ class RSIGenerator(VectorizedFeatureGenerator):
                 except Exception as e:
                     logger.warning(f"VectorBTRollingOptimizer RSI calculation failed: {e}, using VectorBT fallback")
                     if VECTORBT_AVAILABLE:
-                        avg_gain = rolling_mean(gain, window=self.period)
-                        avg_loss = rolling_mean(loss, window=self.period)
+                        avg_gain = gain.rolling(window=self.period).mean()
+                        avg_loss = loss.rolling(window=self.period).mean()
                     else:
                         avg_gain = gain.rolling(window=self.period).mean()
                         avg_loss = loss.rolling(window=self.period).mean()
             elif VECTORBT_AVAILABLE and len(close) > 100:
                 try:
-                    avg_gain = rolling_mean(gain, window=self.period)
-                    avg_loss = rolling_mean(loss, window=self.period)
+                    avg_gain = gain.rolling(window=self.period).mean()
+                    avg_loss = loss.rolling(window=self.period).mean()
                 except Exception as e:
                     logger.warning(f"VectorBT RSI calculation failed: {e}, using pandas fallback")
                     avg_gain = gain.rolling(window=self.period).mean()

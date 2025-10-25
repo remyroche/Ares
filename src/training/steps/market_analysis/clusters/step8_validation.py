@@ -1,5 +1,5 @@
 """
-Step 8: Validation for NAS-TAS Clustering.
+Step 8: Validation for HDBSCAN Clustering.
 
 This module handles clustering validation, robustness testing, and quality assessment.
 """

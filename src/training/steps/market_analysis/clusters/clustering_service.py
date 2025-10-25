@@ -1,5 +1,5 @@
 """
-Clustering Service for NAS-TAS Clustering.
+Clustering Service for HDBSCAN Clustering.
 
 This module provides the main clustering service that interfaces with the ClusteringEngine,
 manages initial clustering, and coordinates the iterative optimization loop.

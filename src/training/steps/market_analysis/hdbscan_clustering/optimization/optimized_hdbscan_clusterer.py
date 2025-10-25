@@ -18,10 +18,12 @@ import hdbscan
 
 # Import UnifiedVectorizationManager
 from src.utils.ml_common.unified_vectorization_manager import (
-    UnifiedVectorizationManager, 
-    VectorizationConfig,
+    UnifiedVectorizationManager,
     get_unified_vectorization_manager
 )
+
+# Import VectorizationConfig from the correct module
+from src.feature_generation.utils.unified_vectorization_manager import VectorizationConfig
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +37,7 @@ class HDBSCANConfig:
     cluster_selection_method: str = 'eom'  # 'eom' or 'leaf'
     
     # Distance metrics
-    metric: str = 'euclidean'  # 'euclidean', 'manhattan', 'cosine', 'precomputed'
+    metric: str = 'euclidean'  # 'euclidean', 'manhattan', 'precomputed'
     metric_params: Optional[Dict[str, Any]] = None
     
     # Memory optimization
@@ -219,7 +221,24 @@ class OptimizedHDBSCANClusterer:
             else:
                 # Use standard HDBSCAN
                 clusterer = HDBSCAN(**params)
-                cluster_labels = clusterer.fit_predict(features_df)
+                # Ensure only numeric data is passed to HDBSCAN
+                numeric_features_df = features_df.select_dtypes(include=[np.number])
+                if len(numeric_features_df.columns) < len(features_df.columns):
+                    logger.warning(f"⚠️ Filtered out {len(features_df.columns) - len(numeric_features_df.columns)} non-numeric columns for HDBSCAN")
+                
+                # Convert to float64 and handle any remaining data type issues
+                numeric_features_df = numeric_features_df.astype(np.float64)
+                
+                # Remove any infinite or NaN values
+                numeric_features_df = numeric_features_df.replace([np.inf, -np.inf], np.nan)
+                numeric_features_df = numeric_features_df.fillna(0)
+                
+                # Ensure all values are finite
+                if not np.all(np.isfinite(numeric_features_df.values)):
+                    logger.error("❌ Non-finite values found in features after cleaning")
+                    raise ValueError("Non-finite values found in features")
+                
+                cluster_labels = clusterer.fit_predict(numeric_features_df)
                 
                 # Create clustering info
                 clustering_info = {

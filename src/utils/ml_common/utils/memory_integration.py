@@ -575,10 +575,72 @@ def ml_auto_memory_context(**kwargs):
 def integrate_memory_skimming_with_hpo():
     """Integrate memory skimming with hyperparameter optimization utilities."""
     try:
-        from .hpo_utils import HyperparameterOptimization
-        logger.info("✅ Successfully imported HPO utilities")
-    except ImportError as e:
+        # Use lazy import with delay to avoid circular dependencies
+        import sys
+        import time
+        
+        # Try multiple import strategies
+        HyperparameterOptimization = None
+        
+        # Strategy 1: Direct import from hpo_utils
+        try:
+            from ..optimization.hpo_utils import HyperparameterOptimization
+            logger.info("✅ Successfully imported HPO utilities (direct import)")
+        except (ImportError, AttributeError) as e1:
+            logger.debug(f"Direct import failed: {e1}")
+            
+            # Strategy 2: Import module and get class
+            try:
+                # Wait a bit if module is being initialized
+                if 'src.utils.ml_common.optimization.hpo_utils' in sys.modules:
+                    # Module exists but may be partially initialized
+                    time.sleep(0.01)  # Small delay to let initialization complete
+                    
+                # Try to import
+                from ..optimization import hpo_utils
+                
+                # Wait for class to be defined
+                max_attempts = 10
+                for attempt in range(max_attempts):
+                    if hasattr(hpo_utils, 'HyperparameterOptimization'):
+                        HyperparameterOptimization = hpo_utils.HyperparameterOptimization
+                        break
+                    time.sleep(0.01)
+                else:
+                    raise AttributeError("HyperparameterOptimization class not found in hpo_utils")
+                    
+                logger.info("✅ Successfully imported HPO utilities (module import)")
+            except (ImportError, AttributeError) as e2:
+                logger.debug(f"Module import failed: {e2}")
+                
+                # Strategy 3: Try alternative import path
+                try:
+                    from src.utils.ml_common.optimization.hpo_utils import HyperparameterOptimization
+                    logger.info("✅ Successfully imported HPO utilities (alternative path)")
+                except (ImportError, AttributeError) as e3:
+                    logger.debug(f"Alternative import failed: {e3}")
+                    raise ImportError(f"All import strategies failed: {e1}, {e2}, {e3}")
+        
+        if HyperparameterOptimization is None:
+            raise AttributeError("HyperparameterOptimization class not found")
+            
+    except (ImportError, AttributeError) as e:
         logger.warning(f"⚠️ Could not integrate with HPO utilities: {e}")
+        logger.info("ℹ️ Continuing without HPO integration - optimization will use fallback methods")
+        
+        # Create a mock HyperparameterOptimization class to prevent errors
+        class MockHyperparameterOptimization:
+            def __init__(self, *args, **kwargs):
+                pass
+            def multi_objective_optimization(self, *args, **kwargs):
+                logger.warning("HPO integration not available - using fallback optimization")
+                return {'error': 'HPO not available'}
+            def early_stopping_optimization(self, *args, **kwargs):
+                logger.warning("HPO integration not available - using fallback optimization")
+                return {'error': 'HPO not available'}
+        
+        # Set the mock class as the global variable
+        globals()['HyperparameterOptimization'] = MockHyperparameterOptimization
         return False
 
     # Initialize variables to avoid scoping issues

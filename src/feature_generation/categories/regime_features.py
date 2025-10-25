@@ -81,9 +81,9 @@ except ImportError:
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
 try:
-    import cupy as cp
+    import cupy as cp  # type: ignore[import-untyped]
 except ImportError:
-    cp = None
+    cp = None  # type: ignore[assignment]
 
 # Local imports
 from ..core.feature_generator import FeatureGenerator, FeatureResult, VectorizedFeatureGenerator, FeatureConfig, FeatureCategory
@@ -197,7 +197,7 @@ class RegimeStatisticalFeatureGenerator(VectorizedFeatureGenerator):
     def _create_default_config(cls) -> FeatureConfig:
         return FeatureConfig(
             name="regime_statistical_features",
-            category=FeatureCategory.STATISTICAL,
+            category=FeatureCategory.ADVANCED_STATISTICAL,
             description="Statistical regime features for 15m timeframe regime classification",
             required_columns=["close"],
             optional_columns=["high", "low", "open", "volume"],
@@ -380,14 +380,26 @@ class RegimeStatisticalFeatureGenerator(VectorizedFeatureGenerator):
             if 'volume' in data.columns:
                 vol_corr = self._calculate_price_volume_correlation(prices, data['volume'].values, window)
                 vol_corr_padded = np.full(len(data), np.nan)
-                vol_corr_padded[window:] = vol_corr[window:]
+                # Ensure vol_corr has the right length
+                if len(vol_corr) >= window:
+                    vol_corr_padded[window:] = vol_corr[window:]
+                else:
+                    # If vol_corr is shorter, pad it appropriately
+                    start_idx = max(0, len(data) - len(vol_corr))
+                    vol_corr_padded[start_idx:] = vol_corr
                 features[f'price_volume_corr_{window}'] = vol_corr_padded
 
             # Price-range correlation if high/low available
             if 'high' in data.columns and 'low' in data.columns:
                 range_corr = self._calculate_price_range_correlation(prices, data['high'].values, data['low'].values, window)
                 range_corr_padded = np.full(len(data), np.nan)
-                range_corr_padded[window:] = range_corr[window:]
+                # Ensure range_corr has the right length
+                if len(range_corr) >= window:
+                    range_corr_padded[window:] = range_corr[window:]
+                else:
+                    # If range_corr is shorter, pad it appropriately
+                    start_idx = max(0, len(data) - len(range_corr))
+                    range_corr_padded[start_idx:] = range_corr
                 features[f'price_range_corr_{window}'] = range_corr_padded
 
         return features
@@ -590,7 +602,18 @@ class RegimeStatisticalFeatureGenerator(VectorizedFeatureGenerator):
         else:
             correlation = prices_series.rolling(window).corr(volume_series)
 
-        return correlation.fillna(0).values
+        # Ensure the correlation array has the same length as the input data
+        correlation_values = correlation.fillna(0).values
+        if len(correlation_values) != len(prices):
+            # Pad or truncate to match input length
+            if len(correlation_values) < len(prices):
+                padded = np.zeros(len(prices))
+                padded[:len(correlation_values)] = correlation_values
+                return padded
+            else:
+                return correlation_values[:len(prices)]
+        
+        return correlation_values
 
     def _calculate_price_range_correlation(self, prices: np.ndarray, high: np.ndarray, low: np.ndarray, window: int) -> np.ndarray:
         """Calculate price-range correlation - OPTIMIZED VECTORBT."""
@@ -609,7 +632,18 @@ class RegimeStatisticalFeatureGenerator(VectorizedFeatureGenerator):
         else:
             correlation = prices_series.rolling(window).corr(range_series)
 
-        return correlation.fillna(0).values
+        # Ensure the correlation array has the same length as the input data
+        correlation_values = correlation.fillna(0).values
+        if len(correlation_values) != len(prices):
+            # Pad or truncate to match input length
+            if len(correlation_values) < len(prices):
+                padded = np.zeros(len(prices))
+                padded[:len(correlation_values)] = correlation_values
+                return padded
+            else:
+                return correlation_values[:len(prices)]
+        
+        return correlation_values
 
     def _detect_regime_changes(self, prices: np.ndarray, window: int) -> np.ndarray:
         """Detect regime changes - OPTIMIZED VECTORBT."""
@@ -1880,7 +1914,7 @@ class RegimeStructuralTrendFeatureGenerator(VectorizedFeatureGenerator):
         elif operation == 'sum':
             return data.rolling(window).sum()
         elif operation == 'apply':
-            func = kwargs.get('func')
+            func = kwargs.pop('func')  # Remove func from kwargs to avoid duplicate argument
             return data.rolling(window).apply(func, **kwargs)
         else:
             raise ValueError(f"Unsupported operation: {operation}")
@@ -3118,7 +3152,7 @@ class RegimeEntropyGenerator(VectorizedFeatureGenerator):
     def __init__(self, window: int = 10):
         config = FeatureConfig(
             name=f"regime_entropy_{window}",
-            category=FeatureCategory.STATISTICAL,
+            category=FeatureCategory.ADVANCED_STATISTICAL,
             description=f"Regime entropy over {window} periods",
             required_columns=["close"],
             default_lookback=window,
@@ -3199,7 +3233,7 @@ class RegimeComplexityGenerator(VectorizedFeatureGenerator):
     def __init__(self, window: int = 5):
         config = FeatureConfig(
             name=f"regime_complexity_{window}",
-            category=FeatureCategory.STATISTICAL,
+            category=FeatureCategory.ADVANCED_STATISTICAL,
             description=f"Regime complexity over {window} periods",
             required_columns=["close"],
             default_lookback=window,
@@ -3306,7 +3340,7 @@ class RegimeFractalDimensionGenerator(VectorizedFeatureGenerator):
     def __init__(self, window: int = 20):
         config = FeatureConfig(
             name=f"regime_fractal_dimension_{window}",
-            category=FeatureCategory.STATISTICAL,
+            category=FeatureCategory.ADVANCED_STATISTICAL,
             description=f"Regime fractal dimension over {window} periods",
             required_columns=["close"],
             default_lookback=window,
@@ -3416,7 +3450,7 @@ class RegimeHurstExponentGenerator(VectorizedFeatureGenerator):
     def __init__(self, window: int = 20):
         config = FeatureConfig(
             name=f"regime_hurst_exponent_{window}",
-            category=FeatureCategory.STATISTICAL,
+            category=FeatureCategory.ADVANCED_STATISTICAL,
             description=f"Regime Hurst exponent over {window} periods",
             required_columns=["close"],
             default_lookback=window,
@@ -3536,7 +3570,7 @@ class RegimeMemoryStrengthGenerator(VectorizedFeatureGenerator):
     def __init__(self, window: int = 10):
         config = FeatureConfig(
             name=f"regime_memory_strength_{window}",
-            category=FeatureCategory.STATISTICAL,
+            category=FeatureCategory.ADVANCED_STATISTICAL,
             description=f"Regime memory strength over {window} periods",
             required_columns=["close"],
             default_lookback=window,
@@ -3652,6 +3686,23 @@ def create_regime_feature_generators() -> List[FeatureGenerator]:
         generators.append(RegimeMemoryStrengthGenerator(window))
 
     return generators
+
+def create_default_regime_generators() -> List[FeatureGenerator]:
+    """Create default regime feature generators."""
+    return create_regime_feature_generators()
+
+
+# Aliases for backward compatibility
+RegimeFeatureGenerator = RegimeStatisticalFeatureGenerator
+StatisticalRegimeFeatureGenerator = RegimeStatisticalFeatureGenerator
+StructuralTrendRegimeFeatureGenerator = RegimeStructuralTrendFeatureGenerator
+VolatilityRegimeFeatureGenerator = RegimeVolatilityFeatureGenerator
+VolumeRegimeFeatureGenerator = RegimeVolumeFeatureGenerator
+# AdvancedRegimeFeatureGenerator = RegimeFeatureIntegration  # Defined later in file
+
+def create_regime_generators() -> List[FeatureGenerator]:
+    """Create regime feature generators (alias for backward compatibility)."""
+    return create_regime_feature_generators()
 
 def create_advanced_regime_generators() -> List[FeatureGenerator]:
     """Create advanced regime feature generators with VectorBT optimization."""
@@ -4896,6 +4947,23 @@ __all__ = [
     'AnalystRegimeStabilityGenerator',
     'generate_regime_features',
     'create_regime_feature_generators',
+    'create_default_regime_generators',
     'create_advanced_regime_generators',
-    'process_regime_features_batch'
+    'create_regime_generators',
+    'process_regime_features_batch',
+    # Aliases for backward compatibility
+    'RegimeFeatureGenerator',
+    'StatisticalRegimeFeatureGenerator',
+    'StructuralTrendRegimeFeatureGenerator',
+    'VolatilityRegimeFeatureGenerator',
+    'VolumeRegimeFeatureGenerator'
+    'AdvancedRegimeFeatureGenerator'
 ]
+
+# Aliases for backward compatibility and external imports
+RegimeFeatureGenerator = RegimeFeatureIntegration
+AdvancedRegimeFeatureGenerator = RegimeFeatureIntegration
+StatisticalRegimeFeatureGenerator = RegimeStatisticalFeatureGenerator
+StructuralTrendRegimeFeatureGenerator = RegimeStructuralTrendFeatureGenerator
+VolatilityRegimeFeatureGenerator = RegimeVolatilityFeatureGenerator
+VolumeRegimeFeatureGenerator = RegimeVolumeFeatureGenerator

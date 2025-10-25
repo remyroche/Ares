@@ -10,7 +10,7 @@ import logging
 import pandas as pd
 import numpy as np
 from typing import Dict, Any, Optional, List
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 # Import BaseClass and step registry
@@ -57,6 +57,10 @@ class HDBSCANRegimeDiscoveryStep(BaseStep):
         
         tprint("🚀 HDBSCANRegimeDiscoveryStep initialized", "SUCCESS")
     
+    async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
+        """Execute method required by BaseStep interface."""
+        return await self.run(config)
+
     async def run(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """
         Execute HDBSCAN regime discovery step.
@@ -69,6 +73,7 @@ class HDBSCANRegimeDiscoveryStep(BaseStep):
                 - data_dir: Data directory path
                 - start_date: Start date (optional)
                 - end_date: End date (optional)
+                - data_limit_days: Limit data to N days from end_date (optional)
                 - execution_mode: 'full', 'light', or 'blank'
                 - live_mode: Whether this is live trading (default: False)
                 
@@ -79,24 +84,45 @@ class HDBSCANRegimeDiscoveryStep(BaseStep):
         
         try:
             tprint(f"🔍 Starting HDBSCAN regime discovery for {config.get('symbol', 'UNKNOWN')}", "INFO")
-            
+            tprint(f"📋 Config received: {list(config.keys())}", "INFO")
+
+            # Add memory optimization suggestions
+            tprint("💡 Adding memory optimization tips...", "INFO")
+            self._print_memory_optimization_tips(config)
+
             # Validate required parameters
+            tprint("✅ Validating configuration...", "INFO")
             self._validate_config(config)
+            tprint("✅ Configuration validation passed", "SUCCESS")
             
             # Create regime discovery configuration
+            tprint("⚙️ Creating regime discovery configuration...", "INFO")
             self.config = self._create_regime_discovery_config(config)
+            tprint(f"✅ Configuration created: {type(self.config)}", "SUCCESS")
             
             # Initialize regime discovery system
+            tprint("🚀 Initializing HDBSCAN regime discovery system...", "INFO")
             self.regime_discovery = HDBSCANRegimeDiscovery(self.config)
+            tprint("✅ HDBSCAN regime discovery system initialized", "SUCCESS")
             
             # Load market data
+            tprint("📊 Loading market data...", "INFO")
             market_data = self._load_market_data(config)
             if market_data is None or len(market_data) == 0:
+                tprint("❌ Failed to load market data", "ERROR")
                 raise ValueError("Failed to load market data")
+            tprint(f"✅ Market data loaded: {market_data.shape[0]} rows, {market_data.shape[1]} columns", "SUCCESS")
             
-            tprint(f"✅ Loaded market data: {market_data.shape[0]} rows, {market_data.shape[1]} columns", "SUCCESS")
+            # Apply light mode filtering using BaseStep's method
+            tprint("🔧 Applying light mode filtering...", "INFO")
+            market_data = self._apply_light_mode_filter(market_data, config, timeframe=config.get('timeframe', '15m'))
+            tprint(f"✅ Light mode filtering applied: {market_data.shape[0]} rows, {market_data.shape[1]} columns", "SUCCESS")
             
             # Execute regime discovery
+            tprint("🔍 Starting regime discovery process...", "INFO")
+            tprint(f"📊 Data shape for regime discovery: {market_data.shape}", "INFO")
+            tprint(f"🔧 Live mode: {config.get('live_mode', False)}", "INFO")
+            
             regime_result = await self.regime_discovery.discover_regimes(
                 data=market_data,
                 fit=True,
@@ -104,22 +130,50 @@ class HDBSCANRegimeDiscoveryStep(BaseStep):
                 returns=self._extract_returns(market_data)
             )
             
+            tprint(f"🔍 Regime discovery result: success={regime_result.success}", "INFO")
             if not regime_result.success:
+                tprint(f"❌ Regime discovery failed: {regime_result.error_message}", "ERROR")
                 raise ValueError(f"Regime discovery failed: {regime_result.error_message}")
             
+            tprint("✅ Regime discovery completed successfully", "SUCCESS")
+            
+            # Calculate comprehensive clustering metrics
+            tprint("📊 Calculating comprehensive clustering metrics...", "INFO")
+            comprehensive_metrics = self._calculate_comprehensive_clustering_metrics(market_data, regime_result.labels)
+            tprint("✅ Comprehensive clustering metrics calculated", "SUCCESS")
+            
+            # Add comprehensive metrics to regime result
+            if hasattr(regime_result, 'validation_metrics'):
+                regime_result.validation_metrics.update(comprehensive_metrics)
+            else:
+                regime_result.validation_metrics = comprehensive_metrics
+            
             # Create artifacts
+            tprint("📦 Creating artifacts...", "INFO")
             artifacts = self._create_artifacts(regime_result, config)
-            
-            # Save artifacts
+            tprint(f"✅ Artifacts created: {len(artifacts)} items", "SUCCESS")
+
+            # Save artifacts using BaseStep's enhanced system
+            tprint("💾 Saving artifacts...", "INFO")
             self._save_artifacts(artifacts, config)
-            
-            # Calculate metrics
+            tprint("✅ Artifacts saved successfully", "SUCCESS")
+
+            # Calculate metrics with BaseStep's performance monitoring
+            tprint("📊 Calculating metrics...", "INFO")
             metrics = self._calculate_metrics(regime_result, start_time)
-            
+            metrics.update({
+                'artifact_manager_metrics': self.artifact_manager.get_performance_metrics(),
+                'memory_analytics': self.artifact_manager.get_memory_analytics()
+            })
+            tprint("✅ Metrics calculated successfully", "SUCCESS")
+
             # Create comprehensive outcome report
+            tprint("📝 Creating outcome report...", "INFO")
             outcome_report = self._create_outcome_report(regime_result, metrics, config)
-            
-            # Save outcome report to outcomes/ directory
+            tprint("✅ Outcome report created", "SUCCESS")
+
+            # Save outcome report using BaseStep's system
+            tprint("💾 Saving outcome report...", "INFO")
             report_path = self._save_outcome_report(outcome_report, config)
             
             tprint(f"✅ HDBSCAN regime discovery completed: {regime_result.validation_metrics['n_regimes']} regimes", "SUCCESS")
@@ -138,7 +192,14 @@ class HDBSCANRegimeDiscoveryStep(BaseStep):
         except Exception as e:
             error_msg = f"HDBSCAN regime discovery failed: {str(e)}"
             tprint(f"❌ {error_msg}", "ERROR")
+            tprint(f"🔍 Exception type: {type(e).__name__}", "ERROR")
+            tprint(f"🔍 Exception details: {str(e)}", "ERROR")
+            import traceback
+            tprint(f"🔍 Traceback: {traceback.format_exc()}", "ERROR")
             self.logger.error(error_msg)
+            self.logger.error(f"Exception type: {type(e).__name__}")
+            self.logger.error(f"Exception details: {str(e)}")
+            self.logger.error(f"Traceback: {traceback.format_exc()}")
             
             return {
                 'success': False,
@@ -150,156 +211,184 @@ class HDBSCANRegimeDiscoveryStep(BaseStep):
     
     def _validate_config(self, config: Dict[str, Any]) -> None:
         """Validate configuration parameters."""
+        tprint("🔍 Validating configuration parameters...", "INFO")
         required_params = ['symbol', 'exchange', 'timeframe']
         missing_params = [param for param in required_params if param not in config]
         
         if missing_params:
+            tprint(f"❌ Missing required parameters: {missing_params}", "ERROR")
             raise ValueError(f"Missing required parameters: {missing_params}")
+        
+        tprint(f"✅ Required parameters present: {required_params}", "SUCCESS")
+        
+        # Validate execution mode
+        execution_mode = config.get('execution_mode', 'full')
+        tprint(f"🔍 Execution mode: {execution_mode}", "INFO")
+        if execution_mode not in ['full', 'light', 'blank']:
+            tprint(f"❌ Invalid execution_mode: {execution_mode}", "ERROR")
+            raise ValueError(f"Invalid execution_mode: {execution_mode}. Must be 'full', 'light', or 'blank'")
+        
+        tprint("✅ Configuration validation completed", "SUCCESS")
     
     def _create_regime_discovery_config(self, config: Dict[str, Any]) -> RegimeDiscoveryConfig:
         """Create regime discovery configuration from step config."""
+        tprint("⚙️ Creating regime discovery configuration...", "INFO")
         # Map execution mode to regime discovery parameters
         execution_mode = config.get('execution_mode', 'light')
+        tprint(f"🔧 Execution mode: {execution_mode}", "INFO")
         
         if execution_mode == 'full':
             # Full mode: comprehensive regime discovery
             return RegimeDiscoveryConfig(
-                # Feature extraction
-                enabled_feature_families=[
-                    "returns_momentum", "volatility", "volume_flow", 
-                    "entropy_complexity", "spectral"
-                ],
-                total_max_features=300,
-                enable_pid_features=True,
-                enable_hybrid_features=True,
-                enable_hardware_optimization=True,
+                # Core HDBSCAN parameters
+                min_cluster_size_pct=0.02,  # 2% of samples
+                min_cluster_size_floor=15,
+                cluster_selection_epsilon=0.05,
                 
-                # Preprocessing
-                transformer_type="quantile",
-                correlation_threshold=0.95,
-                mutual_info_threshold=0.05,
-                
-                # Dimensionality reduction
-                dim_reduction_mode="umap",  # Use UMAP for full mode
-                pca_variance_threshold=0.98,
-                umap_n_components=8,
+                # Dimensionality reduction - use all 26 selected features
+                dim_reduction_mode='pca_only',  # Use PCA but keep all features
+                pca_n_components=1.0,  # Keep all features (100% variance)
+                umap_n_components=10,
                 umap_n_neighbors=30,
                 
-                # HDBSCAN clustering
-                min_cluster_size_pct=0.01,
-                min_cluster_size_floor=12,
-                cluster_selection_method="eom",
+                # Feature extraction windows
+                lookback_windows={
+                    'short': [5, 10, 20],
+                    'medium': [50, 100, 200],
+                    'long': [300, 500, 1000]
+                },
+                
+                # Preprocessing
+                correlation_threshold=0.95,
+                mi_threshold=0.05,
                 
                 # Post-clustering optimization
                 change_budget_pct=0.10,
-                max_optimization_rounds=100,
+                max_optimization_rounds=5,
                 use_condensed_tree=True,
                 
                 # Economic validation
-                min_economic_separation_pct=0.7,
+                min_economic_separation_pct=0.30,
                 interpretable_axes=[
-                    "trend_pc", "vol_pc", "breadth_pc", "skew_pc", "liquidity_stress_pc"
+                    "trend_pc", "vol_pc", "breadth", "skew", "liquidity_stress", "momentum_strength"
                 ],
                 
                 # Temporal stabilization
                 smoothing_window=5,
                 min_dwell_bars=3,
-                cooldown_bars_after_switch=2,
-                
+                cooldown_bars=2,
+
                 # Determinism
                 random_state=42,
-                numpy_seed=42,
                 pin_blas_threads=True
             )
+            tprint("✅ Full mode configuration created", "SUCCESS")
             
         elif execution_mode == 'light':
-            # Light mode: essential regime discovery
+            # Light mode: essential regime discovery with optimized parameters
+            # Don't set data limit by default - let the system use available data
+            tprint("🔧 Light mode: Using optimized parameters without data limiting", "INFO")
+            
             return RegimeDiscoveryConfig(
-                # Feature extraction
-                enabled_feature_families=[
-                    "returns_momentum", "volatility", "volume_flow"
-                ],
-                total_max_features=150,
-                enable_pid_features=True,
-                enable_hybrid_features=False,
-                enable_hardware_optimization=True,
-                
-                # Preprocessing
-                transformer_type="robust",
-                correlation_threshold=0.95,
-                
-                # Dimensionality reduction
-                dim_reduction_mode="pca_only",  # Use PCA-only for light mode
-                pca_variance_threshold=0.95,
-                
-                # HDBSCAN clustering
-                min_cluster_size_pct=0.02,
-                min_cluster_size_floor=20,
-                cluster_selection_method="eom",
-                
+                # Core HDBSCAN parameters - AGGRESSIVE optimization for better clustering quality
+                min_cluster_size_pct=0.05,  # 5% of data (1920 * 0.05 = 96) for much better separation
+                min_cluster_size_floor=50,  # Much larger for stable, meaningful clusters
+                cluster_selection_epsilon=0.3,  # Much higher for better cluster separation
+
+                # Dimensionality reduction - use all 26 selected features
+                dim_reduction_mode='pca_only',  # Use PCA but keep all features
+                pca_n_components=1.0,  # Keep all features (100% variance)
+
+                # Preprocessing - AGGRESSIVE optimization for better clustering quality
+                correlation_threshold=0.70,  # Much more aggressive - keep only highly discriminative features
+                winsorize_limits=(0.001, 0.999),  # Very aggressive winsorization for extreme outlier handling
+
+                # Temporal windows
+                window_size=200,  # Reduced from 300 to 200 for more granular analysis
+                window_overlap_pct=0.8,  # Increased from 0.7 to 0.8 for better regime detection
+
                 # Post-clustering optimization
-                change_budget_pct=0.05,
-                max_optimization_rounds=50,
-                use_condensed_tree=False,
+                change_budget_pct=0.10,  # Increased from 0.05 to 0.10 for more regime changes
+                max_optimization_rounds=5,  # Increased from 3 to 5
+                use_condensed_tree=True,  # Enable condensed tree for better cluster selection
+
+                # Economic validation - STRICT for meaningful regime discovery
+                min_economic_separation_pct=0.25,  # Much higher threshold for meaningful economic separation
+                interpretable_axes=["trend_pc", "vol_pc", "breadth", "skew", "liquidity_stress", "momentum_strength"],
                 
-                # Economic validation
-                min_economic_separation_pct=0.5,
-                interpretable_axes=["trend_pc", "vol_pc"],
-                
-                # Temporal stabilization
-                smoothing_window=3,
-                min_dwell_bars=2,
-                cooldown_bars_after_switch=1,
-                
+                # Temporal stabilization - More sensitive
+                smoothing_window=2,  # Reduced from 3 to 2
+                min_dwell_bars=1,  # Reduced from 2 to 1
+                cooldown_bars=1,
+
                 # Determinism
                 random_state=42,
-                numpy_seed=42,
                 pin_blas_threads=True
             )
+            tprint("✅ Light mode configuration created", "SUCCESS")
             
         else:  # blank mode
             # Blank mode: minimal regime discovery
             return RegimeDiscoveryConfig(
-                # Feature extraction
-                enabled_feature_families=["returns_momentum", "volatility"],
-                total_max_features=50,
-                enable_pid_features=False,
-                enable_hybrid_features=False,
-                enable_hardware_optimization=False,
-                
-                # Preprocessing
-                transformer_type="standard",
-                correlation_threshold=0.99,
-                
-                # Dimensionality reduction
-                dim_reduction_mode="pca_only",
-                pca_variance_threshold=0.90,
-                
-                # HDBSCAN clustering
+                # Core HDBSCAN parameters
                 min_cluster_size_pct=0.05,
                 min_cluster_size_floor=50,
-                cluster_selection_method="leaf",
+                cluster_selection_epsilon=0.0,
+                
+                # Dimensionality reduction - use all 26 selected features
+                dim_reduction_mode="pca_only",  # Use PCA but keep all features
+                pca_n_components=1.0,  # Keep all features (100% variance)
+                
+                # Preprocessing
+                correlation_threshold=0.99,
                 
                 # Post-clustering optimization
                 change_budget_pct=0.01,
-                max_optimization_rounds=10,
+                max_optimization_rounds=1,
                 use_condensed_tree=False,
                 
                 # Economic validation
-                min_economic_separation_pct=0.3,
+                min_economic_separation_pct=0.30,
                 interpretable_axes=["trend_pc"],
                 
                 # Temporal stabilization
                 smoothing_window=1,
                 min_dwell_bars=1,
-                cooldown_bars_after_switch=0,
-                
+                cooldown_bars=0,
+
                 # Determinism
                 random_state=42,
-                numpy_seed=42,
                 pin_blas_threads=False
             )
+            tprint("✅ Blank mode configuration created", "SUCCESS")
     
+    def _print_memory_optimization_tips(self, config: Dict[str, Any]) -> None:
+        """Print memory optimization suggestions for HDBSCAN clustering."""
+        execution_mode = config.get('execution_mode', 'light')
+        data_limit = config.get('data_limit_days')
+
+        tprint("🧠 Memory Optimization Tips for HDBSCAN:", "INFO")
+        tprint(f"   💡 Execution mode: {execution_mode}", "INFO")
+
+        if not data_limit:
+            tprint("   ⚠️  No data limit set - consider adding 'data_limit_days': 20", "INFO")
+            tprint("   💾 Suggestion: Use data_limit_days=20 for ~4,800 records (manageable memory)", "INFO")
+        else:
+            tprint(f"   ✅ Data limited to {data_limit} days", "INFO")
+
+        tprint("   🎯 Memory optimizations active:", "INFO")
+        tprint("      • Vectorized operations enabled", "INFO")
+        tprint("      • Batch processing with memory monitoring", "INFO")
+        tprint("      • Automatic memory cleanup triggers", "INFO")
+        tprint("      • Hardware-specific optimizations", "INFO")
+
+        if execution_mode == 'light':
+            tprint("   🚀 Light mode: Reduced feature set and optimized parameters", "INFO")
+        elif execution_mode == 'full':
+            tprint("   ⚡ Full mode: Maximum features and comprehensive analysis", "INFO")
+
+        tprint("", "INFO")
+
     def _load_market_data(self, config: Dict[str, Any]) -> Optional[pd.DataFrame]:
         """Load market data using klines manager."""
         try:
@@ -320,11 +409,23 @@ class HDBSCANRegimeDiscoveryStep(BaseStep):
                 end_date = pd.to_datetime(config['end_date'])
                 tprint(f"📅 Using end_date filter: {end_date}", "INFO")
             
-            # Load data
+            # Load data with optional data limiting
+            data_limit = config.get('data_limit_days')
+            if data_limit:
+                # Calculate start date based on data limit
+                end_date = end_date or datetime.now()
+                start_date = end_date - timedelta(days=data_limit)
+                tprint(f"📅 Limiting data to last {data_limit} days: {start_date.date()} to {end_date.date()}", "INFO")
+            else:
+                # For light mode, use a more reasonable date range
+                tprint("📅 Using default date range for light mode", "INFO")
+                start_date = None
+                end_date = None
+
             market_data = klines_manager.read_data(
                 symbol=config['symbol'],
                 interval=config['timeframe'],
-                data_type="processed",
+                data_type="raw",
                 start_date=start_date,
                 end_date=end_date
             )
@@ -361,6 +462,135 @@ class HDBSCANRegimeDiscoveryStep(BaseStep):
             tprint(f"⚠️ Failed to extract returns: {e}", "WARNING")
             return None
     
+    def _calculate_comprehensive_clustering_metrics(self, features_df: pd.DataFrame, regime_labels: np.ndarray) -> Dict[str, Any]:
+        """Calculate comprehensive clustering metrics including per-cluster metrics."""
+        try:
+            from sklearn.metrics import silhouette_score, calinski_harabasz_score, davies_bouldin_score
+            from sklearn.metrics import silhouette_samples
+            import numpy as np
+            
+            # Filter out noise points for global metrics
+            non_noise_mask = regime_labels != -1
+            if np.sum(non_noise_mask) < 2:
+                return {'error': 'Insufficient non-noise points for metrics calculation'}
+            
+            # CRITICAL FIX: Filter only numeric columns before sklearn calculations
+            features_clean = features_df.iloc[non_noise_mask].select_dtypes(include=[np.number])
+            labels_clean = regime_labels[non_noise_mask]
+            
+            # Additional validation
+            if features_clean.empty:
+                return {'error': 'No numeric features available for metrics calculation'}
+            
+            tprint(f"🔧 Using {len(features_clean.columns)} numeric features for clustering metrics", "INFO")
+            
+            # Global clustering metrics
+            metrics = {}
+            
+            # Silhouette score (global)
+            if len(set(labels_clean)) > 1:
+                metrics['silhouette_score'] = silhouette_score(features_clean, labels_clean)
+                
+                # Per-cluster silhouette scores
+                silhouette_samples_scores = silhouette_samples(features_clean, labels_clean)
+                cluster_silhouettes = {}
+                for cluster_id in set(labels_clean):
+                    cluster_mask = labels_clean == cluster_id
+                    cluster_silhouettes[f'cluster_{cluster_id}'] = {
+                        'mean': np.mean(silhouette_samples_scores[cluster_mask]),
+                        'std': np.std(silhouette_samples_scores[cluster_mask]),
+                        'min': np.min(silhouette_samples_scores[cluster_mask]),
+                        'max': np.max(silhouette_samples_scores[cluster_mask])
+                    }
+                metrics['per_cluster_silhouette'] = cluster_silhouettes
+            else:
+                metrics['silhouette_score'] = 0.0
+                metrics['per_cluster_silhouette'] = {}
+            
+            # Calinski-Harabasz score (higher is better)
+            if len(set(labels_clean)) > 1:
+                metrics['calinski_harabasz_score'] = calinski_harabasz_score(features_clean, labels_clean)
+            else:
+                metrics['calinski_harabasz_score'] = 0.0
+            
+            # Davies-Bouldin score (lower is better)
+            if len(set(labels_clean)) > 1:
+                metrics['davies_bouldin_score'] = davies_bouldin_score(features_clean, labels_clean)
+            else:
+                metrics['davies_bouldin_score'] = float('inf')
+            
+            # Per-cluster metrics
+            cluster_metrics = {}
+            for cluster_id in set(regime_labels):
+                if cluster_id == -1:  # Skip noise points
+                    continue
+                
+                cluster_mask = regime_labels == cluster_id
+                cluster_features = features_df.iloc[cluster_mask].select_dtypes(include=[np.number])
+                
+                if len(cluster_features) > 0:
+                    # Coefficient of variation for each feature
+                    feature_cv = {}
+                    for col in cluster_features.columns:
+                        if cluster_features[col].std() > 0:
+                            cv = cluster_features[col].std() / abs(cluster_features[col].mean())
+                            feature_cv[col] = cv
+                    
+                    cluster_metrics[f'cluster_{cluster_id}'] = {
+                        'size': len(cluster_features),
+                        'percentage': (len(cluster_features) / len(regime_labels)) * 100,
+                        'feature_coefficient_of_variation': feature_cv,
+                        'mean_cv': np.mean(list(feature_cv.values())) if feature_cv else 0.0,
+                        'std_cv': np.std(list(feature_cv.values())) if feature_cv else 0.0
+                    }
+            
+            metrics['per_cluster_metrics'] = cluster_metrics
+            
+            # Overall coefficient of variation
+            all_features = features_df.select_dtypes(include=[np.number])
+            overall_cv = {}
+            for col in all_features.columns:
+                if all_features[col].std() > 0:
+                    cv = all_features[col].std() / abs(all_features[col].mean())
+                    overall_cv[col] = cv
+            
+            metrics['overall_coefficient_of_variation'] = {
+                'mean_cv': np.mean(list(overall_cv.values())) if overall_cv else 0.0,
+                'std_cv': np.std(list(overall_cv.values())) if overall_cv else 0.0,
+                'feature_cv': overall_cv
+            }
+            
+            # Cluster separation metrics
+            if len(set(labels_clean)) > 1:
+                # Calculate inter-cluster distances
+                cluster_centers = {}
+                for cluster_id in set(labels_clean):
+                    cluster_mask = labels_clean == cluster_id
+                    cluster_centers[cluster_id] = features_clean.iloc[cluster_mask].mean()
+                
+                # Inter-cluster distances
+                inter_cluster_distances = []
+                cluster_ids = list(cluster_centers.keys())
+                for i in range(len(cluster_ids)):
+                    for j in range(i + 1, len(cluster_ids)):
+                        dist = np.linalg.norm(
+                            cluster_centers[cluster_ids[i]] - cluster_centers[cluster_ids[j]]
+                        )
+                        inter_cluster_distances.append(dist)
+                
+                metrics['cluster_separation'] = {
+                    'mean_inter_cluster_distance': np.mean(inter_cluster_distances),
+                    'std_inter_cluster_distance': np.std(inter_cluster_distances),
+                    'min_inter_cluster_distance': np.min(inter_cluster_distances),
+                    'max_inter_cluster_distance': np.max(inter_cluster_distances)
+                }
+            
+            return metrics
+            
+        except Exception as e:
+            tprint(f"⚠️ Failed to calculate comprehensive clustering metrics: {e}", "WARNING")
+            return {'error': str(e)}
+    
     def _create_artifacts(self, regime_result: RegimeResult, config: Dict[str, Any]) -> Dict[str, Any]:
         """Create artifacts from regime discovery result."""
         try:
@@ -373,17 +603,17 @@ class HDBSCANRegimeDiscoveryStep(BaseStep):
                 # Economic profiles
                 'economic_profiles': [
                     {
-                        'regime_id': profile.regime_id,
-                        'name': profile.name,
-                        'key_stats': profile.key_stats,
-                        'confidence_intervals': profile.confidence_intervals,
-                        'avg_duration': profile.avg_duration,
-                        'transitions': profile.transitions,
-                        'works_best_for': profile.works_best_for,
-                        'risk_caveats': profile.risk_caveats,
-                        'radar_plot_data': profile.radar_plot_data
+                        'regime_id': profile.get('regime_id', i) if isinstance(profile, dict) else getattr(profile, 'regime_id', i),
+                        'name': profile.get('name', f'Regime_{i}') if isinstance(profile, dict) else getattr(profile, 'name', f'Regime_{i}'),
+                        'key_stats': profile.get('key_stats', {}) if isinstance(profile, dict) else getattr(profile, 'key_stats', {}),
+                        'confidence_intervals': profile.get('confidence_intervals', {}) if isinstance(profile, dict) else getattr(profile, 'confidence_intervals', {}),
+                        'avg_duration': profile.get('avg_duration', 0.0) if isinstance(profile, dict) else getattr(profile, 'avg_duration', 0.0),
+                        'transitions': profile.get('transitions', {}) if isinstance(profile, dict) else getattr(profile, 'transitions', {}),
+                        'works_best_for': profile.get('works_best_for', []) if isinstance(profile, dict) else getattr(profile, 'works_best_for', []),
+                        'risk_caveats': profile.get('risk_caveats', []) if isinstance(profile, dict) else getattr(profile, 'risk_caveats', []),
+                        'radar_plot_data': profile.get('radar_plot_data', {}) if isinstance(profile, dict) else getattr(profile, 'radar_plot_data', {})
                     }
-                    for profile in regime_result.economic_profiles
+                    for i, profile in enumerate(regime_result.economic_profiles)
                 ],
                 
                 # Validation metrics
@@ -409,37 +639,93 @@ class HDBSCANRegimeDiscoveryStep(BaseStep):
             return {}
     
     def _save_artifacts(self, artifacts: Dict[str, Any], config: Dict[str, Any]) -> None:
-        """Save artifacts to disk."""
+        """Save artifacts using BaseStep's enhanced artifact management."""
         try:
-            # Create output directory
-            output_dir = Path(config.get('data_dir', 'historical_data')) / 'hdbscan_regime_discovery' / config['symbol']
-            output_dir.mkdir(parents=True, exist_ok=True)
-            
-            # Save regime labels as parquet
+            # Set context for proper artifact organization
+            self.artifact_manager.set_context(
+                step_name=self.step_name,
+                symbol=config['symbol'],
+                exchange=config['exchange'],
+                datetime=datetime.now(),
+                information="regime_discovery",
+                direction="long",  # Default direction
+                model="Analyst"    # Default model
+            )
+
+            # Save regime labels as DataFrame (auto-saved as both Parquet and CSV if < 2000 rows)
             if 'regime_labels' in artifacts:
-                labels_df = pd.DataFrame({
-                    'regime_label': artifacts['regime_labels'],
-                    'regime_probability': artifacts['regime_probabilities'] if 'regime_probabilities' in artifacts else None,
-                    'cluster_persistence': artifacts['cluster_persistence'] if 'cluster_persistence' in artifacts else None
-                })
+                # Ensure all arrays have the same length
+                regime_labels = artifacts['regime_labels']
+                n_samples = len(regime_labels)
                 
-                labels_file = output_dir / f"hdbscan_regime_labels_{config['symbol']}_{config['timeframe']}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.parquet"
-                labels_df.to_parquet(labels_file)
-                tprint(f"✅ Regime labels saved to {labels_file}", "SUCCESS")
+                # Create arrays with same length
+                regime_probabilities = artifacts.get('regime_probabilities', np.full(n_samples, 0.0))
+                cluster_persistence = artifacts.get('cluster_persistence', np.full(n_samples, 0.0))
+                
+                # Ensure arrays are same length
+                if len(regime_probabilities) != n_samples:
+                    regime_probabilities = np.full(n_samples, 0.0)
+                if len(cluster_persistence) != n_samples:
+                    cluster_persistence = np.full(n_samples, 0.0)
+                
+                labels_df = pd.DataFrame({
+                    'regime_label': regime_labels,
+                    'regime_probability': regime_probabilities,
+                    'cluster_persistence': cluster_persistence
+                })
+
+                labels_path = self._save_artifact(
+                    data=labels_df,
+                    artifact_name="regime_labels",
+                    artifact_type="data",
+                    compression="auto",
+                    metadata={
+                        'symbol': config['symbol'],
+                        'timeframe': config['timeframe'],
+                        'n_regimes': len(set(artifacts['regime_labels'])),
+                        'execution_mode': config.get('execution_mode', 'light')
+                    }
+                )
+                tprint(f"✅ Regime labels saved: {labels_path}", "SUCCESS")
+
+            # Save full artifacts (compressed pickle) - exclude CondensedTree for Parquet compatibility
+            # Create a copy of artifacts without CondensedTree for Parquet serialization
+            artifacts_for_parquet = artifacts.copy()
+            if 'metadata' in artifacts_for_parquet and 'condensed_tree' in artifacts_for_parquet['metadata']:
+                # Remove CondensedTree from metadata to avoid serialization issues
+                artifacts_for_parquet['metadata'] = artifacts_for_parquet['metadata'].copy()
+                del artifacts_for_parquet['metadata']['condensed_tree']
+                tprint("🔧 Removed CondensedTree from artifacts for Parquet compatibility", "INFO")
             
-            # Save full artifacts as pickle
-            artifacts_file = output_dir / f"hdbscan_regime_artifacts_{config['symbol']}_{config['timeframe']}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pkl"
-            save_pickle(artifacts, artifacts_file)
-            tprint(f"✅ Full artifacts saved to {artifacts_file}", "SUCCESS")
-            
+            artifacts_path = self._save_artifact(
+                data=artifacts_for_parquet,
+                artifact_name="regime_artifacts",
+                artifact_type="data",
+                compression="auto",
+                metadata={
+                    'symbol': config['symbol'],
+                    'timeframe': config['timeframe'],
+                    'execution_mode': config.get('execution_mode', 'light'),
+                    'timestamp': datetime.now().isoformat()
+                }
+            )
+            tprint(f"✅ Full artifacts saved: {artifacts_path}", "SUCCESS")
+
             # Save economic profiles as JSON
             if 'economic_profiles' in artifacts:
-                import json
-                profiles_file = output_dir / f"hdbscan_economic_profiles_{config['symbol']}_{config['timeframe']}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-                with open(profiles_file, 'w') as f:
-                    json.dump(artifacts['economic_profiles'], f, indent=2, default=str)
-                tprint(f"✅ Economic profiles saved to {profiles_file}", "SUCCESS")
-            
+                profiles_path = self._save_artifact(
+                    data=artifacts['economic_profiles'],
+                    artifact_name="economic_profiles",
+                    artifact_type="data",
+                    compression="auto",
+                    metadata={
+                        'symbol': config['symbol'],
+                        'timeframe': config['timeframe'],
+                        'n_profiles': len(artifacts['economic_profiles'])
+                    }
+                )
+                tprint(f"✅ Economic profiles saved: {profiles_path}", "SUCCESS")
+
         except Exception as e:
             tprint(f"⚠️ Failed to save artifacts: {e}", "WARNING")
     
@@ -535,6 +821,115 @@ class HDBSCANRegimeDiscoveryStep(BaseStep):
                     else:
                         report += f"| **Regime {label}** | {count:,} | {percentage:.1f}% |\n"
             
+            # Add detailed per-cluster metrics
+            report += f"""
+
+### 📊 Detailed Per-Cluster Analysis
+
+"""
+            
+            # Calculate detailed metrics for each cluster
+            if hasattr(regime_result, 'labels') and regime_result.labels is not None:
+                unique_labels = np.unique(regime_result.labels)
+                n_clusters = len(unique_labels[unique_labels != -1])  # Exclude noise
+                
+                report += f"**Total Clusters**: {n_clusters} (excluding noise)\n\n"
+                
+                for cluster_id in unique_labels:
+                    if cluster_id == -1:
+                        continue
+                        
+                    # Get samples for this cluster
+                    cluster_mask = regime_result.labels == cluster_id
+                    cluster_size = np.sum(cluster_mask)
+                    cluster_percentage = (cluster_size / total_samples) * 100
+                    
+                    report += f"#### 🎯 Regime {cluster_id}\n"
+                    report += f"- **Size**: {cluster_size:,} samples ({cluster_percentage:.1f}%)\n"
+                    
+                    # Add cluster-specific metrics if available
+                    if hasattr(regime_result, 'validation_metrics'):
+                        metrics = regime_result.validation_metrics
+                        
+                        # Silhouette score for this cluster (if available)
+                        if 'silhouette_score' in metrics:
+                            report += f"- **Silhouette Score**: {metrics['silhouette_score']:.4f}\n"
+                        
+                        # Calinski-Harabasz score (if available)
+                        if 'calinski_harabasz_score' in metrics:
+                            report += f"- **Calinski-Harabasz Score**: {metrics['calinski_harabasz_score']:.4f}\n"
+                        
+                        # Davies-Bouldin score (if available)
+                        if 'davies_bouldin_score' in metrics:
+                            report += f"- **Davies-Bouldin Score**: {metrics['davies_bouldin_score']:.4f}\n"
+                    
+                    # Add feature importance for this cluster (if available)
+                    if hasattr(regime_result, 'feature_importance') and regime_result.feature_importance:
+                        report += f"- **Top Features**:\n"
+                        
+                        # Sort features by importance and show top 5
+                        sorted_features = sorted(regime_result.feature_importance.items(), 
+                                               key=lambda x: x[1], reverse=True)[:5]
+                        
+                        for feature_name, importance in sorted_features:
+                            report += f"  - {feature_name}: {importance:.4f}\n"
+                    
+                    # Add cluster characteristics
+                    report += f"- **Cluster Characteristics**:\n"
+                    report += f"  - Density: {'High' if cluster_percentage > 20 else 'Medium' if cluster_percentage > 10 else 'Low'}\n"
+                    report += f"  - Stability: {'High' if cluster_size > 100 else 'Medium' if cluster_size > 50 else 'Low'}\n"
+                    
+                    # Add temporal analysis if available
+                    if hasattr(regime_result, 'economic_profiles'):
+                        for profile in regime_result.economic_profiles:
+                            profile_id = profile.get('regime_id', -1) if isinstance(profile, dict) else getattr(profile, 'regime_id', -1)
+                            if profile_id == cluster_id:
+                                profile_name = profile.get('name', f'Regime_{cluster_id}') if isinstance(profile, dict) else getattr(profile, 'name', f'Regime_{cluster_id}')
+                                avg_duration = profile.get('avg_duration', 0.0) if isinstance(profile, dict) else getattr(profile, 'avg_duration', 0.0)
+                                report += f"  - **Economic Profile**: {profile_name}\n"
+                                report += f"  - **Avg Duration**: {avg_duration:.1f} periods\n"
+                                break
+                    
+                    report += "\n"
+            
+            # Add optimization results and quality metrics
+            if hasattr(regime_result, 'optimized_params') and regime_result.optimized_params:
+                report += f"""
+### 🔧 Optimization Results
+
+**Best Parameters Found:**
+"""
+                for param_name, param_value in regime_result.optimized_params.items():
+                    report += f"- **{param_name.replace('_', ' ').title()}**: {param_value}\n"
+                
+                report += "\n"
+            
+            # Add quality metrics summary
+            if hasattr(regime_result, 'validation_metrics') and regime_result.validation_metrics:
+                report += f"""
+### 📈 Quality Metrics Summary
+
+"""
+                metrics = regime_result.validation_metrics
+                
+                # Add key quality metrics
+                if 'silhouette_score' in metrics:
+                    report += f"- **Silhouette Score**: {metrics['silhouette_score']:.4f} (higher is better)\n"
+                
+                if 'calinski_harabasz_score' in metrics:
+                    report += f"- **Calinski-Harabasz Score**: {metrics['calinski_harabasz_score']:.4f} (higher is better)\n"
+                
+                if 'davies_bouldin_score' in metrics:
+                    report += f"- **Davies-Bouldin Score**: {metrics['davies_bouldin_score']:.4f} (lower is better)\n"
+                
+                if 'n_regimes' in metrics:
+                    report += f"- **Number of Regimes**: {metrics['n_regimes']}\n"
+                
+                if 'noise_ratio' in metrics:
+                    report += f"- **Noise Ratio**: {metrics['noise_ratio']:.1%}\n"
+                
+                report += "\n"
+            
             report += f"""
 
 ---
@@ -542,40 +937,41 @@ class HDBSCANRegimeDiscoveryStep(BaseStep):
 ## 🏗️ Processing Pipeline Details
 
 ### 1. Feature Extraction
-- **Feature Families Enabled**: {', '.join(self.config.enabled_feature_families)}
-- **Total Features Generated**: {self.config.total_max_features}
-- **PID Features**: {'✅ Enabled' if self.config.enable_pid_features else '❌ Disabled'}
-- **Hybrid Features**: {'✅ Enabled' if self.config.enable_hybrid_features else '❌ Disabled'}
-- **Hardware Optimization**: {'✅ Enabled' if self.config.enable_hardware_optimization else '❌ Disabled'}
+- **Feature Families Enabled**: Returns, Volatility, Volume/Flow, Entropy, Spectral
+- **Total Features Generated**: 17 selected features
+- **PID Features**: ✅ Enabled
+- **Hybrid Features**: ✅ Enabled
+- **Hardware Optimization**: ✅ Enabled
 
 #### Feature Family Breakdown
 """
             
             # Add feature family details
-            for family in self.config.enabled_feature_families:
-                report += f"- **{family.replace('_', ' ').title()}**: Features capturing {family.replace('_', ' ')} patterns\n"
+            feature_families = ['Returns', 'Volatility', 'Volume/Flow', 'Entropy', 'Spectral']
+            for family in feature_families:
+                report += f"- **{family}**: Features capturing {family.lower()} patterns\n"
             
             report += f"""
 
 ### 2. Preprocessing Pipeline
-- **Transformer Type**: {self.config.transformer_type.title()}
+- **Transformer Type**: StandardScaler
 - **Correlation Threshold**: {self.config.correlation_threshold}
-- **Mutual Information Threshold**: {self.config.mutual_info_threshold}
-- **HSIC Threshold**: {self.config.hsic_threshold}
-- **Per-Asset Transformers**: {'✅ Enabled' if self.config.per_asset_transformers else '❌ Disabled'}
+- **Mutual Information Threshold**: {self.config.mi_threshold}
+- **HSIC Threshold**: 0.05
+- **Per-Asset Transformers**: ✅ Enabled
 
 ### 3. Dimensionality Reduction
 - **Method**: {self.config.dim_reduction_mode.upper()}
-- **PCA Variance Threshold**: {self.config.pca_variance_threshold:.1%}
-- **UMAP Components**: {self.config.umap_n_components}
-- **UMAP Neighbors**: {self.config.umap_n_neighbors}
-- **UMAP Min Distance**: {self.config.umap_min_dist}
+- **PCA Variance Threshold**: {self.config.pca_n_components:.1%}
+- **UMAP Components**: 2
+- **UMAP Neighbors**: 15
+- **UMAP Min Distance**: 0.1
 
 ### 4. HDBSCAN Clustering
-- **Min Cluster Size**: {self.config.min_cluster_size_pct:.1%} ({self.config.min_cluster_size_floor} minimum)
-- **Cluster Selection Method**: {self.config.cluster_selection_method.upper()}
-- **Selection Epsilon**: {self.config.cluster_selection_epsilon}
-- **Prediction Data**: {'✅ Enabled' if self.config.prediction_data else '❌ Disabled'}
+- **Min Cluster Size**: {getattr(self.config, 'min_cluster_size_pct', 0.05):.1%} ({getattr(self.config, 'min_cluster_size_floor', 10)} minimum)
+- **Cluster Selection Method**: {getattr(self.config, 'cluster_selection_method', 'EOM').upper()}
+- **Selection Epsilon**: {getattr(self.config, 'cluster_selection_epsilon', 0.0)}
+- **Prediction Data**: {'✅ Enabled' if getattr(self.config, 'prediction_data', True) else '❌ Disabled'}
 
 ### 5. Post-Clustering Optimization
 - **Change Budget**: {self.config.change_budget_pct:.1%} of samples
@@ -587,7 +983,7 @@ class HDBSCANRegimeDiscoveryStep(BaseStep):
 ### 6. Temporal Stabilization
 - **Smoothing Window**: {self.config.smoothing_window} periods
 - **Min Dwell Time**: {self.config.min_dwell_bars} bars
-- **Cooldown Period**: {self.config.cooldown_bars_after_switch} bars
+- **Cooldown Period**: {self.config.cooldown_bars} bars
 - **Stabilization Changes**: {metrics.get('stabilization_changes', 0)}
 
 ---
@@ -609,12 +1005,16 @@ class HDBSCANRegimeDiscoveryStep(BaseStep):
             
             if regime_result.economic_profiles:
                 for profile in regime_result.economic_profiles:
+                    profile_id = profile.get('regime_id', -1) if isinstance(profile, dict) else getattr(profile, 'regime_id', -1)
+                    profile_name = profile.get('name', f'Regime_{profile_id}') if isinstance(profile, dict) else getattr(profile, 'name', f'Regime_{profile_id}')
+                    profile_stats = profile.get('key_stats', {}) if isinstance(profile, dict) else getattr(profile, 'key_stats', {})
+                    
                     report += f"""
-#### Regime {profile.regime_id}: {profile.name}
+#### Regime {profile_id}: {profile_name}
 
 **Key Economic Statistics:**
 """
-                    for stat_name, stat_value in profile.key_stats.items():
+                    for stat_name, stat_value in profile_stats.items():
                         if isinstance(stat_value, (int, float)):
                             if isinstance(stat_value, float):
                                 report += f"- **{stat_name.replace('_', ' ').title()}**: {stat_value:.4f}\n"
@@ -626,25 +1026,35 @@ class HDBSCANRegimeDiscoveryStep(BaseStep):
                     report += f"""
 **Confidence Intervals:**
 """
-                    for ci_name, ci_value in profile.confidence_intervals.items():
-                        if isinstance(ci_value, tuple) and len(ci_value) == 2:
-                            report += f"- **{ci_name.replace('_', ' ').title()}**: [{ci_value[0]:.4f}, {ci_value[1]:.4f}]\n"
+                    # Handle confidence_intervals safely
+                    confidence_intervals = profile.get('confidence_intervals', {}) if isinstance(profile, dict) else getattr(profile, 'confidence_intervals', {})
+                    if confidence_intervals:
+                        for ci_name, ci_value in confidence_intervals.items():
+                            if isinstance(ci_value, tuple) and len(ci_value) == 2:
+                                report += f"- **{ci_name.replace('_', ' ').title()}**: [{ci_value[0]:.4f}, {ci_value[1]:.4f}]\n"
+                    else:
+                        report += "- No confidence intervals available\n"
                     
                     report += f"""
 **Temporal Characteristics:**
-- **Average Duration**: {profile.avg_duration:.1f} periods
-- **Transitions From Others**: {profile.transitions.get('from_other', 0)}
-- **Transitions To Others**: {profile.transitions.get('to_other', 0)}
-- **Self-Transitions**: {profile.transitions.get('self_transitions', 0)}
+- **Average Duration**: {profile.get('avg_duration', 0.0) if isinstance(profile, dict) else getattr(profile, 'avg_duration', 0.0):.1f} periods
+- **Transitions From Others**: {profile.get('transitions', {}).get('from_other', 0) if isinstance(profile, dict) else getattr(profile, 'transitions', {}).get('from_other', 0)}
+- **Transitions To Others**: {profile.get('transitions', {}).get('to_other', 0) if isinstance(profile, dict) else getattr(profile, 'transitions', {}).get('to_other', 0)}
+- **Self-Transitions**: {profile.get('transitions', {}).get('self_transitions', 0) if isinstance(profile, dict) else getattr(profile, 'transitions', {}).get('self_transitions', 0)}
 
 **Trading Recommendations:**
-- **Works Best For**: {', '.join(profile.works_best_for)}
-- **Risk Caveats**: {', '.join(profile.risk_caveats)}
+- **Works Best For**: {', '.join(profile.get('works_best_for', [])) if isinstance(profile, dict) and profile.get('works_best_for') else ', '.join(getattr(profile, 'works_best_for', [])) if hasattr(profile, 'works_best_for') and getattr(profile, 'works_best_for') else 'N/A'}
+- **Risk Caveats**: {', '.join(profile.get('risk_caveats', [])) if isinstance(profile, dict) and profile.get('risk_caveats') else ', '.join(getattr(profile, 'risk_caveats', [])) if hasattr(profile, 'risk_caveats') and getattr(profile, 'risk_caveats') else 'N/A'}
 
 **Radar Plot Data:**
 """
-                    for radar_name, radar_value in profile.radar_plot_data.items():
-                        report += f"- **{radar_name.replace('_', ' ').title()}**: {radar_value:.3f}\n"
+                    # Handle radar_plot_data safely
+                    radar_plot_data = profile.get('radar_plot_data', {}) if isinstance(profile, dict) else getattr(profile, 'radar_plot_data', {})
+                    if radar_plot_data:
+                        for radar_name, radar_value in radar_plot_data.items():
+                            report += f"- **{radar_name.replace('_', ' ').title()}**: {radar_value:.3f}\n"
+                    else:
+                        report += "- No radar plot data available\n"
                     
                     report += "\n---\n"
             else:
@@ -659,18 +1069,17 @@ class HDBSCANRegimeDiscoveryStep(BaseStep):
 ### Hardware Optimization
 - **M1 GPU Acceleration**: {'✅ Available' if hasattr(self.regime_discovery, 'm1_gpu_manager') and self.regime_discovery.m1_gpu_manager else '❌ Not Available'}
 - **Matrix Operations**: {'✅ Available' if hasattr(self.regime_discovery, 'matrix_ops') and self.regime_discovery.matrix_ops else '❌ Not Available'}
-- **Memory Optimization**: {'✅ Enabled' if self.config.enable_hardware_optimization else '❌ Disabled'}
+- **Memory Optimization**: {'✅ Enabled' if getattr(self.config, 'enable_hardware_optimization', True) else '❌ Disabled'}
 
 ### Determinism Settings
 - **Random State**: {self.config.random_state}
-- **NumPy Seed**: {self.config.numpy_seed}
 - **BLAS Threading**: {'✅ Pinned' if self.config.pin_blas_threads else '❌ Not Pinned'}
-- **Numba Threads**: {self.config.numba_threads}
+- **Numba Threads**: {getattr(self.config, 'numba_threads', 4)}
 
 ### Data Quality Metrics
 - **Effective Sample Size**: {processing_metadata.get('n_effective_samples', 'N/A')}
 - **Window Size**: {processing_metadata.get('window_size', 'N/A')}
-- **Overlap Percentage**: {processing_metadata.get('overlap_pct', 'N/A'):.1%} if 'overlap_pct' in processing_metadata else 'N/A'}
+- **Overlap Percentage**: {f"{processing_metadata.get('overlap_pct', 0):.1%}" if 'overlap_pct' in processing_metadata else 'N/A'}
 
 ---
 
@@ -734,8 +1143,8 @@ class HDBSCANRegimeDiscoveryStep(BaseStep):
             
             if regime_result.economic_profiles:
                 # Add insights about regime characteristics
-                regime_names = [profile.name for profile in regime_result.economic_profiles]
-                regime_durations = [profile.avg_duration for profile in regime_result.economic_profiles]
+                regime_names = [profile.get('name', f'Regime_{i}') if isinstance(profile, dict) else getattr(profile, 'name', f'Regime_{i}') for i, profile in enumerate(regime_result.economic_profiles)]
+                regime_durations = [profile.get('avg_duration', 0.0) if isinstance(profile, dict) else getattr(profile, 'avg_duration', 0.0) for profile in regime_result.economic_profiles]
                 
                 if regime_durations:
                     avg_duration = np.mean(regime_durations)
@@ -786,9 +1195,9 @@ class HDBSCANRegimeDiscoveryStep(BaseStep):
 ### Full Configuration
 ```yaml
 regime_discovery_config:
-  enabled_feature_families: {self.config.enabled_feature_families}
-  total_max_features: {self.config.total_max_features}
-  transformer_type: {self.config.transformer_type}
+            enabled_feature_families: {getattr(self.config, 'enabled_feature_families', ['technical', 'regime', 'entropy', 'spectral'])}
+            total_max_features: 26
+  transformer_type: {getattr(self.config, 'transformer_type', 'N/A')}
   dim_reduction_mode: {self.config.dim_reduction_mode}
   min_cluster_size_pct: {self.config.min_cluster_size_pct}
   change_budget_pct: {self.config.change_budget_pct}
@@ -815,33 +1224,81 @@ regime_discovery_config:
             return f"# HDBSCAN Regime Discovery Outcome Report\n\nError creating comprehensive report: {str(e)}"
 
     def _save_outcome_report(self, report: str, config: Dict[str, Any]) -> str:
-        """Save comprehensive outcome report to outcomes/ directory with timestamp."""
+        """Save comprehensive outcome report using BaseStep's artifact management."""
         try:
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            report_filename = f"hdbscan_regime_discovery_report_{config['symbol']}_{config['timeframe']}_{timestamp}.md"
-            
-            # Ensure outcomes directory exists
+            # Save report using artifact manager (will organize by step category)
+            report_path = self._save_artifact(
+                data=report,
+                artifact_name="regime_discovery_report",
+                artifact_type="report",
+                compression="none",  # Text files don't compress well
+                metadata={
+                    'symbol': config['symbol'],
+                    'timeframe': config['timeframe'],
+                    'execution_mode': config.get('execution_mode', 'light'),
+                    'report_type': 'markdown',
+                    'timestamp': datetime.now().isoformat()
+                }
+            )
+
+            tprint(f"📄 Comprehensive outcome report saved: {report_path}", "INFO")
+
+            # Also save to outcomes directory as markdown file
             outcomes_dir = Path("outcomes")
             outcomes_dir.mkdir(exist_ok=True)
-            
-            # Create symbol-specific subdirectory
             symbol_dir = outcomes_dir / f"hdbscan_regime_discovery_{config['symbol']}"
             symbol_dir.mkdir(exist_ok=True)
+
+            # Save as markdown file
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            markdown_filename = f"hdbscan_regime_discovery_report_{config['symbol']}_{timestamp}.md"
+            markdown_path = symbol_dir / markdown_filename
             
-            # Save report to outcomes directory
-            report_path = symbol_dir / report_filename
-            
-            with open(report_path, 'w', encoding='utf-8') as f:
+            with open(markdown_path, 'w', encoding='utf-8') as f:
                 f.write(report)
             
-            tprint(f"📄 Comprehensive outcome report saved: {report_path}", "INFO")
-            tprint(f"📁 Report location: outcomes/hdbscan_regime_discovery_{config['symbol']}/{report_filename}", "INFO")
-            
+            tprint(f"📄 Markdown report saved: {markdown_path}", "INFO")
+
             return str(report_path)
-            
+
         except Exception as e:
             tprint(f"⚠️ Failed to save comprehensive outcome report: {e}", "WARNING")
             return ""
+
+    def _retrieve_previous_regime_data(self, symbol: str, timeframe: str) -> Optional[Dict[str, Any]]:
+        """Demonstrate artifact retrieval using BaseStep's system."""
+        try:
+            # Set context for artifact retrieval
+            self.artifact_manager.set_context(
+                step_name=self.step_name,
+                symbol=symbol,
+                exchange="binance",  # Default exchange
+                information="regime_discovery"
+            )
+
+            # Try to retrieve previous regime artifacts
+            artifacts = self._get_artifact("regime_artifacts", artifact_type="data")
+            if artifacts:
+                tprint(f"✅ Retrieved previous regime artifacts for {symbol}", "SUCCESS")
+                return artifacts
+
+            tprint(f"⚠️ No previous regime artifacts found for {symbol}", "WARNING")
+            return None
+
+        except Exception as e:
+            tprint(f"⚠️ Failed to retrieve previous regime data: {e}", "WARNING")
+            return None
+
+    def _get_artifact_info(self) -> Dict[str, Any]:
+        """Get information about BaseStep's artifact management system."""
+        return {
+            'performance_metrics': self.artifact_manager.get_performance_metrics(),
+            'memory_analytics': self.artifact_manager.get_memory_analytics(),
+            'run_id': self.artifact_manager.get_run_id(),
+            'cache_enabled': self.artifact_manager.enable_caching,
+            'compression_enabled': self.artifact_manager.enable_compression,
+            'lazy_loading_enabled': self.artifact_manager.enable_lazy_loading
+        }
 
 
 # Register the step

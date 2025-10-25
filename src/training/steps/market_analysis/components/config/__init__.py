@@ -1,5 +1,5 @@
 """
-Configuration modules for NAS-TAS regime detection.
+Configuration modules for HDBSCAN regime detection.
 
 This package contains configuration and state management components.
 """

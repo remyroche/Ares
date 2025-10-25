@@ -119,7 +119,8 @@ class HDBSCANRegimeDiscoveryStep(BaseStep):
                     enable_feature_selection=config.get('enable_feature_selection', True),
                     max_features=config.get('max_features', 50),
                     max_memory_gb=config.get('max_memory_gb', 8.0),
-                    n_jobs=config.get('n_jobs', -1)
+                    n_jobs=config.get('n_jobs', -1),
+                    execution_mode=config.get('execution_mode', 'light')
                 )
             else:
                 self.regime_discovery = HDBSCANRegimeDiscovery(self.config)
@@ -314,44 +315,44 @@ class HDBSCANRegimeDiscoveryStep(BaseStep):
             )
             
         elif execution_mode == 'light':
-            # Light mode: essential regime discovery
+            # Light mode: essential regime discovery with reduced data (20 days)
             return RegimeDiscoveryConfig(
                 # Feature extraction
                 enabled_feature_families=[
                     "returns_momentum", "volatility", "volume_flow"
                 ],
-                total_max_features=150,
+                total_max_features=100,  # Reduced from 150
                 enable_pid_features=True,
                 enable_hybrid_features=False,
                 enable_hardware_optimization=True,
-                
+
                 # Preprocessing
                 transformer_type="robust",
                 correlation_threshold=0.95,
-                
+
                 # Dimensionality reduction
                 dim_reduction_mode="pca_only",  # Use PCA-only for light mode
                 pca_variance_threshold=0.95,
-                
-                # HDBSCAN clustering
-                min_cluster_size_pct=0.02,
-                min_cluster_size_floor=20,
+
+                # HDBSCAN clustering - adjusted for smaller dataset
+                min_cluster_size_pct=0.03,  # Slightly higher percentage with less data
+                min_cluster_size_floor=15,  # Reduced from 20
                 cluster_selection_method="eom",
-                
-                # Post-clustering optimization
+
+                # Post-clustering optimization - reduced rounds for light mode
                 change_budget_pct=0.05,
-                max_optimization_rounds=50,
+                max_optimization_rounds=30,  # Reduced from 50
                 use_condensed_tree=False,
-                
+
                 # Economic validation
                 min_economic_separation_pct=0.5,
                 interpretable_axes=["trend_pc", "vol_pc"],
-                
+
                 # Temporal stabilization
                 smoothing_window=3,
                 min_dwell_bars=2,
                 cooldown_bars_after_switch=1,
-                
+
                 # Determinism
                 random_state=42,
                 numpy_seed=42,
@@ -359,42 +360,42 @@ class HDBSCANRegimeDiscoveryStep(BaseStep):
             )
             
         else:  # blank mode
-            # Blank mode: minimal regime discovery
+            # Blank mode: minimal regime discovery with reduced data (180 days)
             return RegimeDiscoveryConfig(
                 # Feature extraction
                 enabled_feature_families=["returns_momentum", "volatility"],
-                total_max_features=50,
+                total_max_features=40,  # Slightly more features with 180 days
                 enable_pid_features=False,
                 enable_hybrid_features=False,
                 enable_hardware_optimization=False,
-                
+
                 # Preprocessing
                 transformer_type="standard",
-                correlation_threshold=0.99,
-                
+                correlation_threshold=0.98,
+
                 # Dimensionality reduction
                 dim_reduction_mode="pca_only",
                 pca_variance_threshold=0.90,
-                
-                # HDBSCAN clustering
-                min_cluster_size_pct=0.05,
-                min_cluster_size_floor=50,
+
+                # HDBSCAN clustering - adjusted for moderate dataset (180 days)
+                min_cluster_size_pct=0.05,  # Moderate percentage with 180 days data
+                min_cluster_size_floor=15,  # Moderate floor value
                 cluster_selection_method="leaf",
-                
-                # Post-clustering optimization
-                change_budget_pct=0.01,
-                max_optimization_rounds=10,
+
+                # Post-clustering optimization - minimal rounds for blank mode
+                change_budget_pct=0.02,
+                max_optimization_rounds=8,  # More rounds with 180 days
                 use_condensed_tree=False,
-                
+
                 # Economic validation
-                min_economic_separation_pct=0.3,
+                min_economic_separation_pct=0.4,
                 interpretable_axes=["trend_pc"],
-                
+
                 # Temporal stabilization
-                smoothing_window=1,
-                min_dwell_bars=1,
-                cooldown_bars_after_switch=0,
-                
+                smoothing_window=2,
+                min_dwell_bars=2,
+                cooldown_bars_after_switch=1,
+
                 # Determinism
                 random_state=42,
                 numpy_seed=42,
@@ -409,14 +410,30 @@ class HDBSCANRegimeDiscoveryStep(BaseStep):
             # Get klines manager
             klines_manager = get_klines_manager(data_dir=config.get('data_dir', 'historical_data'))
             
-            # Parse date filters if provided
+            # Parse date filters if provided, or set defaults based on execution_mode
             start_date = None
             end_date = None
-            
+
+            # Apply automatic date filtering based on execution_mode
+            execution_mode = config.get('execution_mode', 'light')
+            if execution_mode == 'light' and not ('start_date' in config or 'end_date' in config):
+                # Light mode: use last 20 days for faster processing
+                # Use UTC timezone to match historical data format
+                end_date = pd.Timestamp.now(tz='UTC').normalize()
+                start_date = end_date - pd.Timedelta(days=20)
+                tprint(f"📅 Light mode: Auto-filtering to last 20 days ({start_date.date()} to {end_date.date()})", "INFO")
+            elif execution_mode == 'blank' and not ('start_date' in config or 'end_date' in config):
+                # Blank mode: use last 180 days for minimal processing
+                # Use UTC timezone to match historical data format
+                end_date = pd.Timestamp.now(tz='UTC').normalize()
+                start_date = end_date - pd.Timedelta(days=180)
+                tprint(f"📅 Blank mode: Auto-filtering to last 180 days ({start_date.date()} to {end_date.date()})", "INFO")
+            # Full mode: no automatic filtering, use all available data
+
             if 'start_date' in config and config['start_date']:
                 start_date = pd.to_datetime(config['start_date'])
                 tprint(f"📅 Using start_date filter: {start_date}", "INFO")
-            
+
             if 'end_date' in config and config['end_date']:
                 end_date = pd.to_datetime(config['end_date'])
                 tprint(f"📅 Using end_date filter: {end_date}", "INFO")

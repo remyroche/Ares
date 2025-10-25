@@ -152,7 +152,7 @@ class CommandHandlerFactory:
         training_commands = ["light", "blank", "full"]
         trading_commands = ["paper", "live", "challenger"]
         step_commands = [
-            "step01", "step01_5", "step1_5", "step02", "step02_5", "step2_5",
+            "step01", "step01_5", "step1_5", "step02",
             "step03", "step3_5", "step04", "step05", "step06", "step07", "step08",
             "step8_5", "step09", "step9_5", "step10", "step11", "step12", "step13",
             "step14", "step15", "step16", "step17", "step18", "step19", "step20", "step21"

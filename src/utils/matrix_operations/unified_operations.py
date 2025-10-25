@@ -45,40 +45,44 @@ except ImportError:
 # Note: Using lazy imports to avoid circular dependencies
 UTILITIES_AVAILABLE = False
 
-# Import vectorized processing core
-try:
-    from .vectorized_core import get_vectorized_processing_core
-    VECTORIZED_CORE_AVAILABLE = True
-except ImportError as e:
-    logging.warning(f"Vectorized processing core not available: {e}")
-    VECTORIZED_CORE_AVAILABLE = False
+# Lazy imports to avoid circular dependencies - these will be imported when needed
+VECTORIZED_CORE_AVAILABLE = True
+VECTORBT_OPTIMIZATIONS_AVAILABLE = True
+VECTORBT_ROLLING_AVAILABLE = True
+UNIFIED_VECTORIZATION_AVAILABLE = True
 
-# Import VectorBT optimizations
-try:
-    from .vectorbt_optimizations import get_vectorbt_optimized_operations
-    VECTORBT_OPTIMIZATIONS_AVAILABLE = True
-except ImportError as e:
-    logging.warning(f"VectorBT optimizations not available: {e}")
-    VECTORBT_OPTIMIZATIONS_AVAILABLE = False
+# Lazy import functions
+def _get_vectorized_processing_core():
+    """Lazy import vectorized processing core."""
+    try:
+        from .vectorized_core import get_vectorized_processing_core
+        return get_vectorized_processing_core()
+    except ImportError:
+        return None
 
-# Import VectorBTRollingOptimizer and UnifiedVectorizationManager
-try:
-    from src.feature_generation.utils.vectorbt_rolling_optimizer import VectorBTRollingOptimizer, get_vectorbt_rolling_optimizer
-    VECTORBT_ROLLING_AVAILABLE = True
-except ImportError as e:
-    logging.warning(f"VectorBTRollingOptimizer not available: {e}")
-    VECTORBT_ROLLING_AVAILABLE = False
-    VectorBTRollingOptimizer = None
-    get_vectorbt_rolling_optimizer = None
+def _get_vectorbt_optimized_operations():
+    """Lazy import VectorBT optimized operations."""
+    try:
+        from .vectorbt_optimizations import get_vectorbt_optimized_operations
+        return get_vectorbt_optimized_operations()
+    except ImportError:
+        return None
 
-try:
-    from src.feature_generation.utils.unified_vectorization_manager import UnifiedVectorizationManager, get_unified_vectorization_manager
-    UNIFIED_VECTORIZATION_AVAILABLE = True
-except ImportError as e:
-    logging.warning(f"UnifiedVectorizationManager not available: {e}")
-    UNIFIED_VECTORIZATION_AVAILABLE = False
-    UnifiedVectorizationManager = None
-    get_unified_vectorization_manager = None
+def _get_vectorbt_rolling_optimizer():
+    """Lazy import VectorBT rolling optimizer."""
+    try:
+        from src.feature_generation.utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer
+        return get_vectorbt_rolling_optimizer()
+    except ImportError:
+        return None
+
+def _get_unified_vectorization_manager():
+    """Lazy import unified vectorization manager."""
+    try:
+        from src.feature_generation.utils.unified_vectorization_manager import get_unified_vectorization_manager
+        return get_unified_vectorization_manager()
+    except ImportError:
+        return None
 
 # Import hardware optimizations
 try:
@@ -264,7 +268,7 @@ class UnifiedMatrixOperations:
             # Initialize vectorized processing core
             if VECTORIZED_CORE_AVAILABLE:
                 try:
-                    self.vectorized_core = get_vectorized_processing_core()
+                    self.vectorized_core = _get_vectorized_processing_core()
                     if self.vectorized_core:
                         self.logger.debug("✅ Vectorized Processing Core initialized")
                     else:
@@ -287,7 +291,7 @@ class UnifiedMatrixOperations:
         try:
             # Initialize VectorBTRollingOptimizer
             if VECTORBT_ROLLING_AVAILABLE:
-                self.rolling_optimizer = get_vectorbt_rolling_optimizer()
+                self.rolling_optimizer = _get_vectorbt_rolling_optimizer()
                 if self.rolling_optimizer:
                     # Reduced verbosity - only log once per session
                     if not hasattr(UnifiedMatrixOperations, '_logged_rolling_init'):
@@ -300,7 +304,7 @@ class UnifiedMatrixOperations:
 
             # Initialize UnifiedVectorizationManager
             if UNIFIED_VECTORIZATION_AVAILABLE:
-                self.vectorization_manager = get_unified_vectorization_manager()
+                self.vectorization_manager = _get_unified_vectorization_manager()
                 if self.vectorization_manager:
                     self.logger.debug("✅ UnifiedVectorizationManager initialized")
                 else:
@@ -309,7 +313,11 @@ class UnifiedMatrixOperations:
                 self.vectorization_manager = None
 
         except Exception as e:
-            self.logger.error(f"❌ Error initializing VectorBT managers: {e}")
+            # Use module-level logger as fallback if self.logger is not available
+            try:
+                self.logger.error(f"❌ Error initializing VectorBT managers: {e}")
+            except AttributeError:
+                logging.error(f"❌ Error initializing VectorBT managers: {e}")
             self.rolling_optimizer = None
             self.vectorization_manager = None
 
@@ -404,7 +412,7 @@ class UnifiedMatrixOperations:
         # Try VectorBT optimization first if available
         if VECTORBT_OPTIMIZATIONS_AVAILABLE and self._should_use_vectorbt(A, B):
             try:
-                vectorbt_ops = get_vectorbt_optimized_operations()
+                vectorbt_ops = _get_vectorbt_optimized_operations()
                 result = vectorbt_ops.matrix_multiply(A, B)
                 self.performance_stats['vectorbt_operations'] = self.performance_stats.get('vectorbt_operations', 0) + 1
                 self.logger.debug("✅ VectorBT matrix multiplication completed")

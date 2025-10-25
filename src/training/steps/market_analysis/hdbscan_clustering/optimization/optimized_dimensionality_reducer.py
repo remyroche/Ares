@@ -15,14 +15,22 @@ from sklearn.decomposition import PCA, FastICA, TruncatedSVD
 from sklearn.manifold import TSNE, Isomap, LocallyLinearEmbedding
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
 from sklearn.preprocessing import StandardScaler
-import umap
+# Import umap conditionally
+try:
+    import umap
+    UMAP_AVAILABLE = True
+except ImportError:
+    UMAP_AVAILABLE = False
+    umap = None
 
 # Import UnifiedVectorizationManager
 from src.utils.ml_common.unified_vectorization_manager import (
-    UnifiedVectorizationManager, 
-    VectorizationConfig,
+    UnifiedVectorizationManager,
     get_unified_vectorization_manager
 )
+
+# Import VectorizationConfig from the correct module
+from src.feature_generation.utils.unified_vectorization_manager import VectorizationConfig
 
 logger = logging.getLogger(__name__)
 
@@ -112,7 +120,7 @@ class OptimizedDimensionalityReducer:
         self.reducers = {
             'pca': PCA,
             'ica': FastICA,
-            'umap': umap.UMAP,
+            'umap': umap.UMAP if UMAP_AVAILABLE else None,
             'tsne': TSNE,
             'lda': LinearDiscriminantAnalysis,
             'isomap': Isomap,
@@ -167,7 +175,11 @@ class OptimizedDimensionalityReducer:
         if n_samples > self.config.max_samples_for_tsne and self.config.primary_method == 'tsne':
             logger.info("🔄 Large dataset detected, switching to PCA for t-SNE")
             return 'pca'
-        
+
+        if not UMAP_AVAILABLE and self.config.primary_method == 'umap':
+            logger.info("🔄 UMAP not available, switching to PCA")
+            return 'pca'
+
         if n_samples > self.config.max_samples_for_umap and self.config.primary_method == 'umap':
             logger.info("🔄 Large dataset detected, switching to PCA for UMAP")
             return 'pca'
@@ -188,6 +200,9 @@ class OptimizedDimensionalityReducer:
         if algorithm == 'pca':
             return self._reduce_with_pca(features_df)
         elif algorithm == 'umap':
+            if not UMAP_AVAILABLE:
+                logger.warning("🔄 UMAP not available, falling back to PCA")
+                return self._reduce_with_pca(features_df)
             return self._reduce_with_umap(features_df)
         elif algorithm == 'tsne':
             return self._reduce_with_tsne(features_df)
@@ -372,7 +387,24 @@ class OptimizedDimensionalityReducer:
         
         # Use variance threshold
         pca = PCA(random_state=42)
-        pca.fit(features_df)
+        # Ensure only numeric data is passed to PCA
+        numeric_features_df = features_df.select_dtypes(include=[np.number])
+        if len(numeric_features_df.columns) < len(features_df.columns):
+            logger.warning(f"⚠️ Filtered out {len(features_df.columns) - len(numeric_features_df.columns)} non-numeric columns for PCA")
+        
+        # Convert to float64 and handle any remaining data type issues
+        numeric_features_df = numeric_features_df.astype(np.float64)
+        
+        # Remove any infinite or NaN values
+        numeric_features_df = numeric_features_df.replace([np.inf, -np.inf], np.nan)
+        numeric_features_df = numeric_features_df.fillna(0)
+        
+        # Ensure all values are finite
+        if not np.all(np.isfinite(numeric_features_df.values)):
+            logger.error("❌ Non-finite values found in features after cleaning")
+            raise ValueError("Non-finite values found in features")
+        
+        pca.fit(numeric_features_df)
         
         # Find number of components that explain variance threshold
         cumulative_variance = np.cumsum(pca.explained_variance_ratio_)

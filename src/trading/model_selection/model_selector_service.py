@@ -26,18 +26,19 @@ import pickle
 import warnings
 warnings.filterwarnings('ignore')
 
-# Import model selection components
-from src.training.steps.market_analysis.hybrid_nas_tas_regime.regime_model_mapping.data_driven_model_selector import (
-    DataDrivenModelSelector, ModelSelectorConfig, RegimeModelMapping
-)
+# Import model selection components (disabled due to missing dependency)
+# Note: Removed dependency on hybrid_nas_tas_regime module
+# from src.training.steps.market_analysis.hybrid_nas_tas_regime.regime_model_mapping.data_driven_model_selector import (
+#     DataDrivenModelSelector, ModelSelectorConfig, RegimeModelMapping
+# )
 
-# Import regime detection
-from src.training.steps.market_analysis.hybrid_nas_tas_regime.core.hybrid_regime_detector import (
-    HybridNASTASRegimeDetector, HybridRegimeResult
-)
-from src.training.steps.market_analysis.hybrid_nas_tas_regime.config.hybrid_regime_config import (
-    HybridRegimeConfig, RegimeCombinationStrategy
-)
+# Import regime detection (disabled due to missing dependency)
+# from src.training.steps.market_analysis.hybrid_nas_tas_regime.core.hybrid_regime_detector import (
+#     HybridNASTASRegimeDetector, HybridRegimeResult
+# )
+# from src.training.steps.market_analysis.hybrid_nas_tas_regime.config.hybrid_regime_config import (
+#     HybridRegimeConfig, RegimeCombinationStrategy
+# )
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +64,7 @@ class TradingModelConfig:
 
     # Regime detection
     n_regimes: int = 8
-    regime_combination_strategy: RegimeCombinationStrategy = RegimeCombinationStrategy.ADAPTIVE_FUSION
+    regime_combination_strategy: str = "ADAPTIVE_FUSION"  # Disabled due to missing dependency
 
     # Model selection
     primary_metric: str = 'f1_score'
@@ -127,32 +128,34 @@ class ModelSelectorService:
     def _initialize_regime_detector(self):
         """Initialize NAS/TAS regime detector."""
         try:
-            regime_config = HybridRegimeConfig(
-                n_regimes=self.config.n_regimes,
-                combination_strategy=self.config.regime_combination_strategy
-            )
+            # regime_config = HybridRegimeConfig(
+            #     n_regimes=self.config.n_regimes,
+            #     combination_strategy=self.config.regime_combination_strategy
+            # )
 
-            self.regime_detector = HybridNASTASRegimeDetector(regime_config)
-            self.logger.info("✅ NAS/TAS regime detector initialized")
+            # self.regime_detector = HybridNASTASRegimeDetector(regime_config)
+            self.regime_detector = None  # Disabled due to missing dependency
+            self.logger.info("⚠️ NAS/TAS regime detector disabled (missing dependency)")
 
         except Exception as e:
             self.logger.error(f"❌ Failed to initialize regime detector: {e}")
             raise
 
     def _initialize_model_selector(self):
-        """Initialize data-driven model selector."""
+        """Initialize data-driven model selector (disabled due to missing dependency)."""
         try:
-            selector_config = ModelSelectorConfig(
-                primary_metric=self.config.primary_metric,
-                confidence_threshold=self.config.confidence_threshold,
-                enable_ensemble=self.config.enable_ensemble,
-                max_ensemble_models=self.config.max_ensemble_models,
-                enable_continuous_learning=True,
-                mapping_file_path="data_cache/trading_model_mappings.pkl"
-            )
+            # selector_config = ModelSelectorConfig(
+            #     primary_metric=self.config.primary_metric,
+            #     confidence_threshold=self.config.confidence_threshold,
+            #     enable_ensemble=self.config.enable_ensemble,
+            #     max_ensemble_models=self.config.max_ensemble_models,
+            #     enable_continuous_learning=True,
+            #     mapping_file_path="data_cache/trading_model_mappings.pkl"
+            # )
 
-            self.model_selector = DataDrivenModelSelector(selector_config)
-            self.logger.info("✅ Data-driven model selector initialized")
+            # self.model_selector = DataDrivenModelSelector(selector_config)
+            self.model_selector = None  # Disabled due to missing dependency
+            self.logger.info("⚠️ Data-driven model selector disabled (missing dependency)")
 
         except Exception as e:
             self.logger.error(f"❌ Failed to initialize model selector: {e}")
@@ -310,7 +313,7 @@ class ModelSelectorService:
                 confirmation_details={'exception': str(e)}
             )
 
-    def _detect_current_regime(self, market_data: pd.DataFrame) -> HybridRegimeResult:
+    def _detect_current_regime(self, market_data: pd.DataFrame) -> Optional[dict]:  # Disabled due to missing dependency
         """Detect current market regime."""
         try:
             # Ensure we have required columns
@@ -320,14 +323,24 @@ class ModelSelectorService:
             if missing_columns:
                 raise ValueError(f"Missing required columns: {missing_columns}")
 
-            # Use NAS/TAS regime detector
-            regime_result = self.regime_detector.detect_regimes(
-                market_data=market_data[required_columns],
-                validate_economic_significance=True,
-                validate_financial_relevance=True
-            )
+            # Use NAS/TAS regime detector (disabled due to missing dependency)
+            if self.regime_detector is None:
+                self.logger.warning("⚠️ Regime detector disabled, returning default regime")
+                return {
+                    'regime': 'unknown',
+                    'confidence': 0.0,
+                    'regime_type': 'disabled',
+                    'detection_method': 'disabled'
+                }
+            
+            # regime_result = self.regime_detector.detect_regimes(
+            #     market_data=market_data[required_columns],
+            #     validate_economic_significance=True,
+            #     validate_financial_relevance=True
+            # )
 
-            return regime_result
+            # return regime_result
+            return None  # Disabled
 
         except Exception as e:
             self.logger.error(f"❌ Regime detection failed: {e}")

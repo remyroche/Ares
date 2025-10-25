@@ -1,5 +1,5 @@
 """
-Clustering algorithms for NAS-TAS regime analysis.
+Clustering algorithms for HDBSCAN regime analysis.
 
 This module provides specialized clustering algorithms with optimization
 and validation for financial time series data.

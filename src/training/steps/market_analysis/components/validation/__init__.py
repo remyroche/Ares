@@ -1,5 +1,5 @@
 """
-Validation modules for NAS-TAS regime detection.
+Validation modules for HDBSCAN regime detection.
 
 This package contains validation and cross-validation components.
 """

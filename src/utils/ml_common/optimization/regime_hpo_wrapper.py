@@ -31,8 +31,19 @@ from ..ensembles.oof_stacking_ensemble_manager import OOFStackingEnsembleManager
 # Import regime configurations
 import sys
 sys.path.append(str(Path(__file__).parent.parent.parent.parent))
-from config.regime_base_training_config import load_regime_base_config
-from config.regime_metamodel_training_config import load_regime_metamodel_config
+
+# Fallback for config imports - use default values if config modules not available
+try:
+    from config.regime_base_training_config import load_regime_base_config
+except ImportError:
+    def load_regime_base_config():
+        return {}
+    
+try:
+    from config.regime_metamodel_training_config import load_regime_metamodel_config
+except ImportError:
+    def load_regime_metamodel_config():
+        return {}
 
 logger = logging.getLogger(__name__)
 
@@ -87,15 +98,15 @@ class RegimeHPOResult:
     meta_model_best_params: Dict[str, Any]
     meta_model_best_score: float
 
-    # Meta-feature results
-    meta_feature_results: Optional[Dict[str, Any]] = None
-    meta_feature_best_params: Optional[Dict[str, Any]] = None
-
     # Optimization metadata
     total_optimization_time: float
     optimization_strategy: str
     n_total_trials: int
     convergence_info: Dict[str, Any]
+
+    # Meta-feature results (with defaults)
+    meta_feature_results: Optional[Dict[str, Any]] = None
+    meta_feature_best_params: Optional[Dict[str, Any]] = None
 
 class RegimeHPOWrapper:
     """

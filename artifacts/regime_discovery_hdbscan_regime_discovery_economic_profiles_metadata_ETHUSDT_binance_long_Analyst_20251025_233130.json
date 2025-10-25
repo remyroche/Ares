@@ -1,0 +1,11 @@
+{
+  "symbol": "ETHUSDT",
+  "timeframe": "15m",
+  "n_profiles": 3,
+  "artifact_name": "economic_profiles",
+  "artifact_type": "data",
+  "file_path": "artifacts/market_analysis/ETHUSDT/binance/long/Analyst/hdbscan_regime_discovery/regime_discovery_hdbscan_regime_discovery_economic_profiles_ETHUSDT_binance_long_Analyst_20251025_233130.pkl",
+  "file_size": 1323,
+  "timestamp": "2025-10-25T23:31:30.529180",
+  "compression": "auto"
+}

@@ -1,5 +1,5 @@
 """
-Shared regime characteristics utilities for NAS-TAS regime detection.
+Shared regime characteristics utilities for HDBSCAN regime detection.
 
 This module provides common regime characteristics calculation functionality that
 eliminates redundancy between NAS and TAS components.
@@ -29,7 +29,7 @@ class CharacteristicsConfig:
     include_statistical_summaries: bool = True
 
 class CharacteristicsGenerator:
-    """Centralized regime characteristics generator for NAS-TAS components."""
+    """Centralized regime characteristics generator for HDBSCAN components."""
 
     def __init__(self, config: Optional[CharacteristicsConfig] = None, verbose: bool = False):
         """Initialize characteristics generator.

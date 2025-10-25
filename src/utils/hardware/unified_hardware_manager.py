@@ -649,7 +649,7 @@ class UnifiedHardwareManager:
                 self.logger.info("🚀 GPU acceleration enabled for compute-intensive workload")
         else:
             # Disable GPU for lighter workloads
-            self.logger.info("💻 GPU acceleration disabled for lighter workload")
+            pass
 
     def _optimize_memory_for_workload(self, workload_type: WorkloadType, level: OptimizationLevel):
         """Optimize memory for specific workload."""

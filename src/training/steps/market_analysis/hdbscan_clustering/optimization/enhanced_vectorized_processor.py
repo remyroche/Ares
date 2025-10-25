@@ -15,11 +15,13 @@ import time
 # Import VectorBT optimization components
 from src.utils.ml_common.unified_vectorization_manager import (
     UnifiedVectorizationManager,
-    VectorizationConfig,
     get_unified_vectorization_manager,
     OperationType,
     OptimizationStrategy
 )
+
+# Import VectorizationConfig from the correct module
+from src.feature_generation.utils.unified_vectorization_manager import VectorizationConfig
 
 # Import VectorBTRollingOptimizer
 try:
@@ -230,13 +232,22 @@ class EnhancedVectorizedProcessor:
         
         return result
     
-    def _vectorbt_distance_calculation(self, X: np.ndarray, 
+    def _vectorbt_distance_calculation(self, X: np.ndarray,
                                      metric: str) -> np.ndarray:
         """Calculate distances using VectorBT optimization."""
+        # Map HDBSCAN metric names to scipy-compatible names for VectorBT
+        metric_mapping = {
+            'manhattan': 'cityblock',
+            'l1': 'cityblock',
+            'l2': 'euclidean',
+            'euclidean': 'euclidean',
+        }
+        scipy_metric = metric_mapping.get(metric, metric)
+
         try:
             # Use VectorBT for distance calculations
             if hasattr(self.vectorization_manager, 'calculate_distances'):
-                return self.vectorization_manager.calculate_distances(X, metric)
+                return self.vectorization_manager.calculate_distances(X, scipy_metric)
             else:
                 # Fallback to scipy
                 return self._scipy_distance_calculation(X, metric)
@@ -244,13 +255,22 @@ class EnhancedVectorizedProcessor:
             logger.warning(f"⚠️ VectorBT distance calculation failed: {e}, falling back to scipy")
             return self._scipy_distance_calculation(X, metric)
     
-    def _scipy_distance_calculation(self, X: np.ndarray, 
+    def _scipy_distance_calculation(self, X: np.ndarray,
                                    metric: str) -> np.ndarray:
         """Calculate distances using scipy."""
         from scipy.spatial.distance import pdist, squareform
-        
+
+        # Map HDBSCAN metric names to scipy-compatible names
+        metric_mapping = {
+            'manhattan': 'cityblock',
+            'l1': 'cityblock',
+            'l2': 'euclidean',
+            'euclidean': 'euclidean',
+        }
+        scipy_metric = metric_mapping.get(metric, metric)
+
         # Calculate pairwise distances
-        distances = pdist(X, metric=metric)
+        distances = pdist(X, metric=scipy_metric)
         
         # Convert to square matrix
         distance_matrix = squareform(distances)
@@ -332,20 +352,60 @@ class EnhancedVectorizedProcessor:
         
         # Use VectorBT optimization for distance calculations
         if self.config.enable_clustering_optimization:
-            # Precompute distances using VectorBT
-            distance_matrix = self.vectorized_distance_calculation(
-                features_df.values, 
-                metric=hdbscan_params.get('metric', 'euclidean')
-            )
+            # Use only numeric columns for clustering (HDBSCAN requires numeric data)
+            numeric_features_df = features_df.select_dtypes(include=[np.number])
+            if len(numeric_features_df.columns) == 0:
+                logger.warning("⚠️ No numeric features available for clustering, falling back to standard HDBSCAN")
+                clusterer = hdbscan.HDBSCAN(**hdbscan_params)
+                cluster_labels = clusterer.fit_predict(features_df.values)
+            else:
+                # Precompute distances using VectorBT
+                # Map HDBSCAN metric names to scipy-compatible names
+                metric_mapping = {
+                    'manhattan': 'cityblock',
+                    'l1': 'cityblock',
+                    'l2': 'euclidean',
+                    'euclidean': 'euclidean',
+                }
+                original_metric = hdbscan_params.get('metric', 'euclidean')
+                # Handle case where metric might be a list
+                if isinstance(original_metric, list):
+                    original_metric = original_metric[0] if original_metric else 'euclidean'
+                scipy_metric = metric_mapping.get(original_metric, original_metric)
+
+                distance_matrix = self.vectorized_distance_calculation(
+                    numeric_features_df.values,
+                    metric=scipy_metric
+                )
             
             # Use precomputed distances
             hdbscan_params['metric'] = 'precomputed'
             clusterer = hdbscan.HDBSCAN(**hdbscan_params)
             cluster_labels = clusterer.fit_predict(distance_matrix)
         else:
-            # Use standard HDBSCAN
-            clusterer = hdbscan.HDBSCAN(**hdbscan_params)
-            cluster_labels = clusterer.fit_predict(features_df)
+            # Use standard HDBSCAN (only numeric columns)
+            numeric_features_df = features_df.select_dtypes(include=[np.number])
+            if len(numeric_features_df.columns) == 0:
+                logger.warning("⚠️ No numeric features available for clustering")
+                cluster_labels = np.full(len(features_df), -1)  # All noise
+            else:
+                # Map HDBSCAN metric names to HDBSCAN-compatible names
+                hdbscan_params_copy = hdbscan_params.copy()
+                if 'metric' in hdbscan_params_copy:
+                    metric_mapping = {
+                        'manhattan': 'cityblock',
+                        'l1': 'cityblock',
+                        'l2': 'euclidean',
+                        'euclidean': 'euclidean',
+                    }
+                    original_metric = hdbscan_params_copy['metric']
+                    # Handle case where metric might be a list
+                    if isinstance(original_metric, list):
+                        original_metric = original_metric[0] if original_metric else 'euclidean'
+                    hdbscan_params_copy['metric'] = metric_mapping.get(original_metric, original_metric)
+
+                clusterer = hdbscan.HDBSCAN(**hdbscan_params_copy)
+                cluster_labels = clusterer.fit_predict(numeric_features_df)
         
         # Create clustering info
         clustering_info = {
@@ -418,7 +478,15 @@ class EnhancedVectorizedProcessor:
         stats = self.performance_stats.copy()
         
         # Add vectorization manager stats
-        vectorization_stats = self.vectorization_manager.get_performance_stats()
+        try:
+            vectorization_stats = self.vectorization_manager.get_performance_stats()
+        except AttributeError:
+            # Fallback if method doesn't exist
+            vectorization_stats = {
+                'vectorization_time': 0.0,
+                'vectorization_operations': 0,
+                'vectorization_efficiency': 1.0
+            }
         stats['vectorization_stats'] = vectorization_stats
         
         # Add rolling optimizer stats

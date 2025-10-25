@@ -739,3 +739,51 @@ def create_artifact_manager(
         encryption_key=encryption_key
     )
     return EnhancedArtifactManager(config)
+
+
+# Global artifact manager instance
+_global_artifact_manager: Optional[EnhancedArtifactManager] = None
+
+def get_artifact_manager(
+    backend: StorageBackend = StorageBackend.FILESYSTEM,
+    base_path: str = "artifacts",
+    compression: CompressionType = CompressionType.GZIP,
+    encryption_key: Optional[str] = None
+) -> EnhancedArtifactManager:
+    """Get or create the global artifact manager instance."""
+    global _global_artifact_manager
+    if _global_artifact_manager is None:
+        _global_artifact_manager = create_artifact_manager(
+            backend=backend,
+            base_path=base_path,
+            compression=compression,
+            encryption_key=encryption_key
+        )
+    return _global_artifact_manager
+
+
+__all__ = [
+    # Main classes
+    'EnhancedArtifactManager',
+    'ArtifactConfig',
+    'ArtifactMetadata',
+    'StorageResult',
+
+    # Backend classes
+    'ArtifactBackend',
+    'FilesystemBackend',
+    'S3Backend',
+
+    # Utility classes
+    'CompressionEngine',
+    'SecurityManager',
+    'MetricsCollector',
+
+    # Enums
+    'StorageBackend',
+    'CompressionType',
+
+    # Functions
+    'create_artifact_manager',
+    'get_artifact_manager'
+]

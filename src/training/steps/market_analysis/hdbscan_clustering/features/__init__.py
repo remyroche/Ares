@@ -34,12 +34,10 @@ from src.feature_generation.categories.entropy import (
 )
 
 from src.feature_generation.categories.spectral_features import (
-    SpectralFeatureGenerator,
-    WaveletEnergyGenerator,
-    BandLimitedVolatilityGenerator,
-    CycleLengthGenerator,
-    FractalDimensionGenerator,
-    DFASlopesGenerator,
+    SpectralFeatureGenerator
+)
+
+from src.feature_generation.categories.spectral_wavelet import (
     create_default_spectral_wavelet_generators
 )
 
@@ -49,7 +47,6 @@ from src.feature_generation.categories.regime_features import (
     StructuralTrendRegimeFeatureGenerator,
     VolatilityRegimeFeatureGenerator,
     VolumeRegimeFeatureGenerator,
-    AdvancedRegimeFeatureGenerator,
     create_regime_generators,
     create_default_regime_generators
 )
@@ -91,12 +88,6 @@ __all__ = [
     'create_default_entropy_generators',
     
     # Spectral features
-    'SpectralFeatureGenerator',
-    'WaveletEnergyGenerator',
-    'BandLimitedVolatilityGenerator',
-    'CycleLengthGenerator',
-    'FractalDimensionGenerator',
-    'DFASlopesGenerator',
     'create_default_spectral_wavelet_generators',
     
     # Regime features

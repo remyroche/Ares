@@ -69,7 +69,7 @@ except ImportError as e:
 
 # Import Greedy Rule Lists
 try:
-    from imodels import GreedyRuleListClassifier
+    from imodels import GreedyRuleListClassifier  # type: ignore[import-untyped]
     ML_LIBRARY_VERSIONS['imodels'] = "1.0.0"  # Placeholder version
     tprint(f"✅ [REGIME_MODELS] imodels (Greedy Rule Lists) imported successfully", color="green")
 except ImportError as e:
@@ -267,9 +267,7 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                 # First try to load from artifact manager (most recent session)
                 try:
                     # Legacy NAS/TAS artifacts removed
-                    else:
-                        tprint("⚠️ [REGIME_MODELS] No artifacts found in artifact manager, checking outcome files", color="yellow")
-                        artifacts = self._load_artifacts_from_outcome_files()
+                    artifacts = self._load_artifacts_from_outcome_files()
                 except Exception as e:
                     tprint(f"⚠️ [REGIME_MODELS] Failed to load from artifact manager: {e}, trying outcome files", color="yellow")
                     artifacts = self._load_artifacts_from_outcome_files()
@@ -305,9 +303,7 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                     for artifact_key, artifact_value in artifacts.items():
                         if isinstance(artifact_value, dict):
                             # Legacy TAS assignments removed
-                                break
-                            # Legacy NAS assignments removed
-                            elif 'assignments' in artifact_value:
+                            if 'assignments' in artifact_value:
                                 regime_labels = artifact_value['assignments']
                                 tprint(f"🔍 [REGIME_MODELS] Found assignments in {artifact_key}", color="blue")
                                 break
@@ -496,7 +492,7 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
             # Step 4: Train regime detection models
             tprint("🔍 [REGIME_MODELS] Step 4: Training regime detection models", color="cyan")
             model_training_start = time.time()
-            training_results = self._train_regime_models(X, y, feature_selection_info)
+            training_results = self._train_regime_models(X, y, feature_selection_info, feature_names, unique_regimes)
             self._log_performance_metrics("Model training", model_training_start)
             self._monitor_memory_usage("After model training")
 
@@ -1234,7 +1230,9 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
         self,
         X: np.ndarray,
         y: np.ndarray,
-        feature_selection_info: Optional[Dict[str, Any]] = None
+        feature_selection_info: Optional[Dict[str, Any]] = None,
+        feature_names: Optional[List[str]] = None,
+        unique_regimes: Optional[np.ndarray] = None
     ) -> Dict[str, Any]:
         """Train regime detection models."""
         tprint("🏋️ [REGIME_MODELS] Training regime detection models", color="cyan")

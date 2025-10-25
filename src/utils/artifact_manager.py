@@ -19,6 +19,7 @@ import gc
 import hashlib
 import io
 import json
+import os
 import pickle
 import time
 import threading
@@ -235,6 +236,8 @@ class ArtifactManager:
 	
 	# Cleanup and maintenance
 	enable_health_checks: bool = True
+	preserve_important_files: bool = True
+	enable_duplicate_cleanup: bool = True
 	
 	# Enhanced file naming and path management
 	include_symbol_in_filename: bool = True
@@ -428,37 +431,118 @@ class ArtifactManager:
 		self.logger.debug(f"📁 Generated filename: {filename}")
 		return filename
 
+	def _create_unified_artifact_path(self, step_name: str, artifact_name: str, 
+	                                   file_extension: str = "parquet", 
+	                                   create_directories: bool = True) -> Path:
+		"""
+		Unified path creation method used by both save and fetch operations.
+		This ensures perfect consistency between saving and retrieving artifacts.
+		
+		Args:
+			step_name: Name of the step
+			artifact_name: Name of the artifact
+			file_extension: File extension (default: parquet)
+			create_directories: Whether to create directories (True for save, False for fetch)
+			
+		Returns:
+			Complete path to the artifact
+		"""
+		try:
+			# Determine step category
+			step_category = get_step_category(step_name)
+			self.logger.debug(f"🔍 Step category for '{step_name}': {step_category}")
+			
+			# Create directory structure: artifacts/step_category/symbol/exchange/direction/model/step_name/
+			path_parts = [self._artifacts_dir, step_category]
+			
+			self.logger.debug(f"🔍 Context: symbol={self._current_symbol}, exchange={self._current_exchange}, direction={self._current_direction}, model={self._current_model}")
+			
+			if self._current_symbol:
+				path_parts.append(self._current_symbol)
+			
+			if self._current_exchange:
+				path_parts.append(self._current_exchange)
+			
+			if self._current_direction:
+				path_parts.append(self._current_direction)
+			
+			if self._current_model:
+				path_parts.append(self._current_model)
+			
+			path_parts.append(step_name)
+			
+			step_dir = Path(*path_parts)
+			
+			# Create directories only if requested (for save operations)
+			if create_directories:
+				step_dir.mkdir(parents=True, exist_ok=True)
+			
+			# Generate enhanced filename
+			filename = self._generate_enhanced_filename(artifact_name, step_name, file_extension)
+			full_path = step_dir / filename
+			
+			self.logger.debug(f"🔧 Unified path created: {full_path}")
+			return full_path
+			
+		except Exception as e:
+			self.logger.error(f"Failed to create unified path for {artifact_name}: {e}")
+			raise
+	
 	def _get_enhanced_path(self, step_name: str, key: str, file_extension: str = "parquet") -> Path:
 		"""Get enhanced path with proper directory structure and filename using step categories."""
-		# Determine step category
-		step_category = get_step_category(step_name)
+		# Use unified path creation method
+		return self._create_unified_artifact_path(
+			step_name=step_name,
+			artifact_name=key,
+			file_extension=file_extension,
+			create_directories=True  # Save operations create directories
+		)
+
+	def _get_file_type_priority(self) -> Dict[str, int]:
+		"""
+		Get file type priority mapping for artifact selection.
+		Higher numbers indicate higher priority.
 		
-		# Create directory structure: artifacts/step_category/symbol/exchange/direction/model/step_name/
-		path_parts = [self._artifacts_dir, step_category]
+		Returns:
+			Dictionary mapping file extensions to priority scores
+		"""
+		return {
+			'.parquet': 10,  # Highest priority for data files
+			'.csv': 9,       # High priority for data files
+			'.pkl': 8,       # High priority for model files
+			'.json': 3,      # Lower priority for metadata
+			'.txt': 2,       # Lower priority for text files
+			'.log': 1        # Lowest priority for log files
+		}
+	
+	def _select_best_file_by_priority(self, candidate_files: List[Path]) -> Optional[Path]:
+		"""
+		Select the best file from candidates based on file type priority.
 		
-		if self._current_symbol:
-			path_parts.append(self._current_symbol)
+		Args:
+			candidate_files: List of candidate file paths
+			
+		Returns:
+			Best file path based on priority, or None if no candidates
+		"""
+		if not candidate_files:
+			return None
 		
-		if self._current_exchange:
-			path_parts.append(self._current_exchange)
+		file_type_priority = self._get_file_type_priority()
 		
-		if self._current_direction:
-			path_parts.append(self._current_direction)
+		# Collect files with their priorities
+		prioritized_files = []
+		for file_path in candidate_files:
+			file_extension = file_path.suffix.lower()
+			priority = file_type_priority.get(file_extension, 0)
+			prioritized_files.append((priority, file_path))
 		
-		if self._current_model:
-			path_parts.append(self._current_model)
+		# Sort by priority (highest first) and return the best match
+		prioritized_files.sort(key=lambda x: x[0], reverse=True)
+		best_file = prioritized_files[0][1]
 		
-		path_parts.append(step_name)
-		
-		step_dir = Path(*path_parts)
-		step_dir.mkdir(parents=True, exist_ok=True)
-		
-		# Generate enhanced filename
-		filename = self._generate_enhanced_filename(key, step_name, file_extension)
-		full_path = step_dir / filename
-		
-		self.logger.info(f"📁 Full path created: {full_path}")
-		return full_path
+		self.logger.debug(f"🔍 Selected best file: {best_file} (priority: {prioritized_files[0][0]}) from {len(candidate_files)} candidates")
+		return best_file
 
 	def _log_file_operation(self, operation: str, path: Path, success: bool = True) -> None:
 		"""Log file operations with full path information."""
@@ -516,6 +600,10 @@ class ArtifactManager:
 			Path where the primary artifact (Parquet) was saved
 		"""
 		try:
+			# Log artifact creation
+			from .tprint import tprint
+			tprint(f"💾 Creating artifact: {artifact_name} (type: {artifact_type})")
+			
 			# Save as Parquet (primary format)
 			parquet_path = self._save_artifact_to_parquet(
 				data=data,
@@ -536,6 +624,7 @@ class ArtifactManager:
 			elif isinstance(data, pd.DataFrame) and len(data) >= 2000:
 				self.logger.info(f"📊 Skipping CSV auto-save for {artifact_name} (rows >= 2000: {len(data)})")
 			
+			tprint(f"✅ Artifact saved: {artifact_name} -> {parquet_path}")
 			return parquet_path
 			
 		except Exception as e:
@@ -575,8 +664,20 @@ class ArtifactManager:
 				data.to_parquet(enhanced_path, compression='snappy')
 			elif isinstance(data, dict):
 				# Convert dict to DataFrame and save as Parquet
-				df = pd.DataFrame([data])
-				df.to_parquet(enhanced_path, compression='snappy')
+				# Handle nested dicts by flattening them
+				try:
+					# Pre-process data to handle problematic fields like confidence_intervals
+					processed_data = self._preprocess_data_for_parquet(data)
+					df = pd.json_normalize(processed_data)
+					if df.empty:
+						df = pd.DataFrame([processed_data])
+					df.to_parquet(enhanced_path, compression='snappy')
+				except Exception as e:
+					# If JSON normalize fails, try direct conversion
+					self.logger.warning(f"JSON normalization failed: {e}, using direct conversion")
+					processed_data = self._preprocess_data_for_parquet(data)
+					df = pd.DataFrame([processed_data])
+					df.to_parquet(enhanced_path, compression='snappy')
 			else:
 				# For other data types, save as pickle first, then convert to parquet
 				temp_pickle_path = enhanced_path.with_suffix('.pkl')
@@ -609,10 +710,52 @@ class ArtifactManager:
 			self.logger.error(f"Failed to save Parquet artifact {artifact_name}: {e}")
 			raise
 	
+	def _preprocess_data_for_parquet(self, data: Any) -> Any:
+		"""
+		Pre-process data to handle problematic fields for Parquet serialization.
+		
+		Args:
+			data: Data to preprocess
+			
+		Returns:
+			Preprocessed data safe for Parquet serialization
+		"""
+		if isinstance(data, dict):
+			processed = {}
+			for key, value in data.items():
+				if key in ['confidence_intervals', 'radar_plot_data', 'transitions', 'works_best_for', 'risk_caveats']:
+					# Handle problematic struct fields by converting to string or removing
+					if isinstance(value, dict) and not value:
+						# Empty struct - remove it
+						processed[key] = None
+					elif isinstance(value, dict):
+						# Convert to string representation
+						processed[key] = str(value)
+					elif isinstance(value, list):
+						# Convert list to string representation
+						processed[key] = str(value)
+					else:
+						processed[key] = value
+				elif isinstance(value, (dict, list)):
+					# Recursively process nested structures
+					processed[key] = self._preprocess_data_for_parquet(value)
+				else:
+					processed[key] = value
+			return processed
+		elif isinstance(data, list):
+			return [self._preprocess_data_for_parquet(item) for item in data]
+		else:
+			return data
+	
 	def get_artifact(self, artifact_name: str, 
 	                artifact_type: str = "data") -> Any:
 		"""
 		Retrieve an artifact using the artifact manager.
+		
+		Enhanced retrieval logic:
+		1. First try exact path construction (mirrors save logic)
+		2. Fallback to recursive search in step category
+		3. Final fallback to general artifacts directory search
 		
 		Args:
 			artifact_name: Name of the artifact to retrieve
@@ -622,7 +765,14 @@ class ArtifactManager:
 			Retrieved data
 		"""
 		try:
-			# First try to find in step-category structure
+			# Step 1: Try exact path construction (mirrors _get_enhanced_path logic)
+			exact_path = self._get_artifact_exact_path(artifact_name, artifact_type)
+			if exact_path and exact_path.exists():
+				data = self._load_artifact_from_path(exact_path)
+				self._log_file_operation("Retrieved artifact from exact path", exact_path, success=True)
+				return data
+			
+			# Step 2: Fallback to recursive search in step category
 			step_category = get_step_category(self._current_step_name)
 			artifact_path = self._find_artifact_in_category(
 				step_category, artifact_name, artifact_type
@@ -630,14 +780,14 @@ class ArtifactManager:
 			
 			if artifact_path and artifact_path.exists():
 				data = self._load_artifact_from_path(artifact_path)
-				self._log_file_operation("Retrieved artifact from category", artifact_path, success=True)
+				self._log_file_operation("Retrieved artifact from category search", artifact_path, success=True)
 				return data
 			
-			# Fallback to direct artifacts/ directory search
+			# Step 3: Final fallback to general artifacts directory search
 			fallback_path = self._find_artifact_in_fallback(artifact_name, artifact_type)
 			if fallback_path and fallback_path.exists():
 				data = self._load_artifact_from_path(fallback_path)
-				self._log_file_operation("Retrieved artifact from fallback", fallback_path, success=True)
+				self._log_file_operation("Retrieved artifact from fallback search", fallback_path, success=True)
 				return data
 			
 			self.logger.warning(f"Artifact not found: {artifact_name}")
@@ -647,36 +797,79 @@ class ArtifactManager:
 			self.logger.error(f"Failed to retrieve artifact {artifact_name}: {e}")
 			raise
 	
+	def _get_artifact_exact_path(self, artifact_name: str, artifact_type: str) -> Optional[Path]:
+		"""
+		Get exact artifact path using the unified path creation method.
+		This ensures perfect consistency with save operations.
+		
+		Args:
+			artifact_name: Name of the artifact
+			artifact_type: Type of artifact
+			
+		Returns:
+			Exact path to the artifact if it exists, None otherwise
+		"""
+		try:
+			# Use unified path creation method (same as save logic)
+			file_extension = "parquet" if artifact_type == "data" else artifact_type
+			exact_path = self._create_unified_artifact_path(
+				step_name=self._current_step_name,
+				artifact_name=artifact_name,
+				file_extension=file_extension,
+				create_directories=False  # Fetch operations don't create directories
+			)
+			
+			self.logger.debug(f"🔍 Checking exact path: {exact_path}")
+			return exact_path
+			
+		except Exception as e:
+			self.logger.warning(f"Failed to construct exact path for {artifact_name}: {e}")
+			return None
+	
 	def _find_artifact_in_category(self, step_category: str, artifact_name: str, 
 	                              artifact_type: str) -> Optional[Path]:
-		"""Find artifact in step-category structure."""
+		"""Find artifact in step-category structure with file type priority."""
 		try:
 			category_dir = self._artifacts_dir / step_category
 			if not category_dir.exists():
 				return None
 			
-			# Search recursively for the artifact
+			# Collect all matching files
+			candidate_files = []
 			for file_path in category_dir.rglob(f"*{artifact_name}*"):
 				if file_path.is_file():
-					return file_path
+					candidate_files.append(file_path)
 			
-			return None
+			if not candidate_files:
+				return None
+			
+			# Select best file based on priority
+			best_file = self._select_best_file_by_priority(candidate_files)
+			return best_file
+			
 		except Exception as e:
 			self.logger.warning(f"Failed to search in category {step_category}: {e}")
 			return None
 	
 	def _find_artifact_in_fallback(self, artifact_name: str, artifact_type: str) -> Optional[Path]:
-		"""Find artifact in fallback artifacts/ directory."""
+		"""Find artifact in fallback artifacts/ directory with file type priority."""
 		try:
 			if not self._artifacts_dir.exists():
 				return None
 			
-			# Search recursively for the artifact
+			# Collect all matching files
+			candidate_files = []
 			for file_path in self._artifacts_dir.rglob(f"*{artifact_name}*"):
 				if file_path.is_file():
-					return file_path
+					candidate_files.append(file_path)
 			
-			return None
+			if not candidate_files:
+				return None
+			
+			# Select best file based on priority
+			best_file = self._select_best_file_by_priority(candidate_files)
+			return best_file
+			
 		except Exception as e:
 			self.logger.warning(f"Failed to search in fallback: {e}")
 			return None
@@ -768,7 +961,7 @@ class ArtifactManager:
 		return self._run_dir
 
 	def _cleanup_old_runs(self) -> None:
-		"""Remove old run directories beyond the retention limit."""
+		"""Remove old run directories beyond the retention limit, but preserve important files."""
 		try:
 			run_dirs = sorted(
 				[p for p in self._artifacts_dir.iterdir() if p.is_dir()],
@@ -776,9 +969,167 @@ class ArtifactManager:
 				reverse=True,
 			)
 			for old_run in run_dirs[3:]:  # Keep last 3 runs
+				# Before deleting, preserve important files to the main artifacts directory
+				if self.preserve_important_files:
+					self._preserve_important_files(old_run)
 				shutil.rmtree(old_run, ignore_errors=True)
 		except Exception as exc:
 			self.logger.debug("Failed to cleanup old artifact runs: %s", exc, exc_info=True)
+
+	def _preserve_important_files(self, run_dir: Path) -> None:
+		"""Preserve important files (Parquet, JSON, CSV, Markdown) before cleanup."""
+		try:
+			# Define protected file extensions
+			protected_extensions = {'.parquet', '.json', '.csv', '.md'}
+			
+			# Walk through the run directory to find protected files
+			for root, dirs, files in os.walk(run_dir):
+				for file in files:
+					file_path = Path(root) / file
+					file_ext = file_path.suffix.lower()
+					
+					# Check if this is a protected file type
+					if file_ext in protected_extensions:
+						# Create destination path in main artifacts directory
+						relative_path = file_path.relative_to(run_dir)
+						dest_path = self._artifacts_dir / relative_path
+						
+						# Ensure destination directory exists
+						dest_path.parent.mkdir(parents=True, exist_ok=True)
+						
+						# Copy the file to preserve it (only if destination doesn't exist)
+						if not dest_path.exists():
+							shutil.copy2(file_path, dest_path)
+							self.logger.info(f"Preserved important file: {file_path} -> {dest_path}")
+						else:
+							self.logger.debug(f"Important file already exists: {dest_path}")
+						
+		except Exception as exc:
+			self.logger.warning(f"Failed to preserve important files from {run_dir}: {exc}")
+
+	def _is_protected_file(self, file_path: Path) -> bool:
+		"""Check if a file should be protected from deletion."""
+		protected_extensions = {'.parquet', '.json', '.csv', '.md'}
+		return file_path.suffix.lower() in protected_extensions
+
+	def preserve_file(self, source_path: Path, dest_path: Optional[Path] = None) -> bool:
+		"""Manually preserve a specific file to the main artifacts directory."""
+		try:
+			if not source_path.exists():
+				self.logger.warning(f"Cannot preserve non-existent file: {source_path}")
+				return False
+			
+			# Use provided destination or create one in main artifacts directory
+			if dest_path is None:
+				dest_path = self._artifacts_dir / source_path.name
+			
+			# Ensure destination directory exists
+			dest_path.parent.mkdir(parents=True, exist_ok=True)
+			
+			# Copy the file
+			shutil.copy2(source_path, dest_path)
+			self.logger.info(f"Manually preserved file: {source_path} -> {dest_path}")
+			return True
+			
+		except Exception as exc:
+			self.logger.error(f"Failed to preserve file {source_path}: {exc}")
+			return False
+
+	def disable_aggressive_cleanup(self) -> None:
+		"""Disable aggressive cleanup to prevent file deletion."""
+		self.enable_aggressive_cleanup = False
+		self.cleanup_interval_seconds = 3600  # 1 hour instead of 5 minutes
+		self.logger.info("Disabled aggressive cleanup - files will be preserved longer")
+
+	def cleanup_duplicate_files(self, directory: Path, max_files: int = 3, file_extensions: Optional[Set[str]] = None) -> None:
+		"""Clean up duplicate files based on name pattern, keeping only the most recent ones."""
+		try:
+			if not directory.exists():
+				return
+			
+			# Default file extensions to clean up
+			if file_extensions is None:
+				file_extensions = {'.parquet', '.csv', '.pkl', '.json', '.md'}
+			
+			# Group files by base name (without datetime)
+			file_groups = defaultdict(list)
+			
+			for file_path in directory.iterdir():
+				if file_path.is_file() and file_path.suffix.lower() in file_extensions:
+					# Extract base name by removing datetime patterns
+					base_name = self._extract_base_name(file_path.stem)
+					file_groups[base_name].append(file_path)
+			
+			# Clean up groups with too many files
+			for base_name, files in file_groups.items():
+				if len(files) >= max_files:
+					# Sort by modification time (newest first)
+					files.sort(key=lambda f: f.stat().st_mtime, reverse=True)
+					
+					# Keep the newest files, remove the rest
+					files_to_remove = files[max_files:]
+					for file_to_remove in files_to_remove:
+						try:
+							file_to_remove.unlink()
+							self.logger.info(f"Removed older duplicate file: {file_to_remove}")
+						except Exception as e:
+							self.logger.warning(f"Failed to remove {file_to_remove}: {e}")
+					
+					if len(files_to_remove) > 0:
+						self.logger.info(f"Cleaned up {len(files_to_remove)} older files for base name: {base_name}")
+			
+		except Exception as exc:
+			self.logger.error(f"Failed to cleanup duplicate files in {directory}: {exc}")
+
+	def _extract_base_name(self, filename: str) -> str:
+		"""Extract base name by removing datetime patterns."""
+		import re
+		
+		# Common datetime patterns to remove
+		datetime_patterns = [
+			r'_\d{8}_\d{6}',  # _20251025_132901
+			r'_\d{8}_\d{4}',   # _20251025_1329
+			r'_\d{14}',        # _20251025132901
+			r'_\d{12}',        # _202510251329
+			r'_\d{10}',        # _2025102513
+			r'_\d{8}',         # _20251025
+		]
+		
+		base_name = filename
+		for pattern in datetime_patterns:
+			base_name = re.sub(pattern, '', base_name)
+		
+		return base_name
+
+	def cleanup_all_directories(self) -> None:
+		"""Clean up duplicate files in all relevant directories."""
+		try:
+			# Clean up artifacts directory
+			artifacts_dir = self._artifacts_dir
+			if artifacts_dir.exists():
+				self.cleanup_duplicate_files(artifacts_dir, max_files=3)
+				self.logger.info("Cleaned up artifacts directory")
+			
+			# Clean up outcomes directory
+			outcomes_dir = Path("outcomes")
+			if outcomes_dir.exists():
+				self.cleanup_duplicate_files(outcomes_dir, max_files=3)
+				self.logger.info("Cleaned up outcomes directory")
+			
+			# Clean up logs directory (30+ files)
+			logs_dir = Path("logs")
+			if logs_dir.exists():
+				self.cleanup_duplicate_files(logs_dir, max_files=30)
+				self.logger.info("Cleaned up logs directory")
+			
+		except Exception as exc:
+			self.logger.error(f"Failed to cleanup directories: {exc}")
+
+	def cleanup_duplicates_now(self) -> None:
+		"""Manually trigger cleanup of duplicate files in all directories."""
+		self.logger.info("Starting manual cleanup of duplicate files...")
+		self.cleanup_all_directories()
+		self.logger.info("Manual cleanup completed")
 
 	def _start_background_tasks(self) -> None:
 		"""Start background maintenance tasks."""
@@ -815,6 +1166,10 @@ class ArtifactManager:
 
 			# Clean up old run directories
 			self._cleanup_old_runs()
+
+			# Clean up duplicate files in all directories
+			if self.enable_duplicate_cleanup:
+				self.cleanup_all_directories()
 
 			# Force garbage collection if enabled
 			if self.memory.enable_gc_collection:

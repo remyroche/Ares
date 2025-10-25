@@ -27,7 +27,8 @@ from src.utils.ml_common.optimization import HyperparameterOptimizer
 from src.utils.hardware.m1_gpu_utils import get_m1_gpu_manager
 
 # VectorBT optimization utilities
-from src.utils.ml_common.unified_vectorization_manager import get_unified_vectorization_manager, VectorizationConfig
+from src.utils.ml_common.unified_vectorization_manager import get_unified_vectorization_manager
+from src.feature_generation.utils.unified_vectorization_manager import VectorizationConfig
 from src.feature_generation.utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer
 
 from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer

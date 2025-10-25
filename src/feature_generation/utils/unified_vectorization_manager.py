@@ -174,6 +174,25 @@ get_vectorbt_rolling_optimizer = None
 VectorBTBatchProcessor = None
 BatchProcessingConfig = None
 
+# Hardware optimization imports
+try:
+    from src.utils.hardware.unified_hardware_manager import (
+        UnifiedHardwareManager,
+        get_unified_hardware_manager,
+        WorkloadType,
+        OptimizationLevel,
+        HardwareConfig
+    )
+    HARDWARE_AVAILABLE = True
+except ImportError:
+    HARDWARE_AVAILABLE = False
+    UnifiedHardwareManager = None
+    get_unified_hardware_manager = None
+    WorkloadType = None
+    OptimizationLevel = None
+    HardwareConfig = None
+    warnings.warn("UnifiedHardwareManager not available. Install hardware optimization components for enhanced performance")
+
 logger = logging.getLogger(__name__)
 
 def _lazy_import_optimization_modules():
@@ -320,10 +339,17 @@ class VectorizationConfig:
     enable_gpu: bool = False
     enable_parallel: bool = True
 
+    # Hardware optimization
+    enable_hardware_optimization: bool = True
+    workload_type: WorkloadType = None
+    optimization_level: OptimizationLevel = None
+
     # Memory management
     memory_efficient: bool = True
     max_memory_gb: float = 8.0
     chunk_size: int = 1000
+    memory_optimization_threshold_mb: float = 512.0
+    memory_budget_mb: float = 8192.0
 
     # Performance monitoring
     enable_monitoring: bool = True
@@ -381,6 +407,21 @@ class UnifiedVectorizationManager:
 
         # Validate configuration
         self._validate_config(self.config)
+
+        # Initialize hardware manager
+        self.hardware_manager = None
+        if self.config.enable_hardware_optimization and HARDWARE_AVAILABLE:
+            try:
+                self.hardware_manager = get_unified_hardware_manager()
+                if self.config.workload_type:
+                    self.hardware_manager.optimize_for_workload(
+                        self.config.workload_type,
+                        self.config.optimization_level or OptimizationLevel.BALANCED
+                    )
+                tprint_success("✅ Hardware manager initialized and optimized")
+            except Exception as e:
+                tprint_warning(f"⚠️ Hardware manager initialization failed: {e}")
+                self.hardware_manager = None
 
         # Initialize components with error handling
         tprint_info("🔧 Initializing vectorization components")
@@ -2168,6 +2209,111 @@ class UnifiedVectorizationManager:
         self._result_cache.clear()
         tprint_success("✅ Performance statistics reset")
 
+    def optimize_for_workload(self, workload_type: WorkloadType, optimization_level: OptimizationLevel = OptimizationLevel.BALANCED):
+        """Optimize vectorization operations for specific workload type."""
+        if not self.config.enable_hardware_optimization or not self.hardware_manager:
+            tprint_warning("⚠️ Hardware optimization not available")
+            return
+
+        try:
+            self.config.workload_type = workload_type
+            self.config.optimization_level = optimization_level
+            self.hardware_manager.optimize_for_workload(workload_type, optimization_level)
+            
+            # Adjust vectorization settings based on workload
+            if workload_type == WorkloadType.FEATURE_ENGINEERING:
+                self.config.chunk_size = 1000
+                self.config.batch_size = 10000
+                self.config.enable_parallel = True
+                tprint_info("🔧 Optimized for feature engineering workload")
+            elif workload_type == WorkloadType.MODEL_TRAINING:
+                self.config.chunk_size = 5000
+                self.config.batch_size = 50000
+                self.config.enable_parallel = False
+                tprint_info("🔧 Optimized for model training workload")
+            elif workload_type == WorkloadType.BACKTESTING:
+                self.config.chunk_size = 2000
+                self.config.batch_size = 20000
+                self.config.enable_parallel = True
+                tprint_info("🔧 Optimized for backtesting workload")
+            
+            tprint_success(f"✅ Optimized for {workload_type.value} workload")
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Workload optimization failed: {e}")
+
+    @contextmanager
+    def hardware_optimization_context(self, workload_type: WorkloadType = None, optimization_level: OptimizationLevel = OptimizationLevel.BALANCED):
+        """Context manager for hardware optimization during operations."""
+        if not self.config.enable_hardware_optimization or not self.hardware_manager:
+            yield
+            return
+
+        try:
+            # Set optimization context
+            if workload_type:
+                self.optimize_for_workload(workload_type, optimization_level)
+            
+            # Enter hardware optimization context
+            with self.hardware_manager.optimization_context(
+                self.config.workload_type or WorkloadType.FEATURE_ENGINEERING,
+                optimization_level
+            ):
+                yield
+                
+        except Exception as e:
+            tprint_warning(f"⚠️ Hardware optimization context failed: {e}")
+            yield
+
+    def get_hardware_status(self) -> Dict[str, Any]:
+        """Get hardware optimization status and metrics."""
+        if not self.config.enable_hardware_optimization or not self.hardware_manager:
+            return {
+                'hardware_optimization_enabled': False,
+                'hardware_manager_available': False,
+                'workload_type': None,
+                'gpu_available': False,
+                'memory_optimization': False
+            }
+
+        try:
+            system_status = self.hardware_manager.get_system_status()
+            return {
+                'hardware_optimization_enabled': True,
+                'hardware_manager_available': True,
+                'workload_type': self.config.workload_type.value if self.config.workload_type else None,
+                'optimization_level': self.config.optimization_level.value if self.config.optimization_level else None,
+                'gpu_available': system_status.get('gpu_available', False),
+                'memory_optimization': self.config.memory_efficient,
+                'chunk_size': self.config.chunk_size,
+                'batch_size': self.config.batch_size,
+                'parallel_processing': self.config.enable_parallel,
+                'system_status': system_status
+            }
+        except Exception as e:
+            tprint_warning(f"⚠️ Failed to get hardware status: {e}")
+            return {
+                'hardware_optimization_enabled': True,
+                'hardware_manager_available': False,
+                'error': str(e)
+            }
+
+    def _apply_hardware_optimizations(self, data: Union[pd.Series, pd.DataFrame]) -> Union[pd.Series, pd.DataFrame]:
+        """Apply hardware-specific optimizations to data."""
+        if not self.config.enable_hardware_optimization or not self.hardware_manager:
+            return data
+
+        try:
+            # Apply memory optimizations
+            if self.config.memory_efficient:
+                optimized_data = self.hardware_manager.optimize_memory_usage(data)
+                self.performance_stats['memory_optimizations'] += 1
+                return optimized_data
+            return data
+        except Exception as e:
+            tprint_warning(f"⚠️ Hardware optimization failed: {e}")
+            return data
+
     @contextmanager
     def performance_monitoring(self, operation_name: str):
         """Context manager for performance monitoring."""
@@ -2197,13 +2343,17 @@ def get_unified_vectorization_manager(config: Optional[VectorizationConfig] = No
     return _global_vectorization_manager
 
 def create_optimized_vectorization_pipeline(enable_gpu: bool = False,
-                                          memory_efficient: bool = True) -> UnifiedVectorizationManager:
+                                          memory_efficient: bool = True,
+                                          enable_hardware_optimization: bool = True,
+                                          workload_type: WorkloadType = None) -> UnifiedVectorizationManager:
     """
     Create an optimized vectorization pipeline.
 
     Args:
-        enable_gpu: Enable
+        enable_gpu: Enable GPU acceleration
         memory_efficient: Enable memory optimization
+        enable_hardware_optimization: Enable hardware optimization integration
+        workload_type: Workload type for hardware optimization
 
     Returns:
         Unified vectorization manager
@@ -2212,6 +2362,9 @@ def create_optimized_vectorization_pipeline(enable_gpu: bool = False,
         enable_vectorbt=True,
         enable_gpu=enable_gpu,
         enable_parallel=True,
+        enable_hardware_optimization=enable_hardware_optimization,
+        workload_type=workload_type or (WorkloadType.FEATURE_ENGINEERING if HARDWARE_AVAILABLE else None),
+        optimization_level=OptimizationLevel.BALANCED if HARDWARE_AVAILABLE else None,
         memory_efficient=memory_efficient,
         max_memory_gb=8.0,
         chunk_size=1000,

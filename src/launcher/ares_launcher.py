@@ -43,9 +43,9 @@ from src.training.steps.base_step import step_registry, BaseStep
 # Import step packages to register them
 import src.training.steps.data_collection  # Registers DATA_COLLECTION steps
 import src.training.steps.market_analysis  # Registers MARKET_ANALYSIS steps
-# import src.training.steps.pre_training.unified_data_driven_pipeline.steps  # Registers PRE_TRAINING steps - REMOVED
+import src.training.steps.pre_training  # Registers PRE_TRAINING steps
 import src.training.steps.model_training  # Registers MODEL_TRAINING steps
-import src.training.steps.backtesting  # Registers BACKTESTING steps
+# import src.training.steps.backtesting  # Registers BACKTESTING steps - temporarily disabled due to import issues
 
 
 class SimplifiedAresLauncher:
@@ -179,6 +179,7 @@ class SimplifiedAresLauncher:
                 'feature_generation_feature_selection_step',
                 'feature_generation_interaction_generation_step_analyst',
                 'feature_generation_interaction_generation_step_tactician',
+                'feature_generation_gate_feature_step',
                 'feature_generation_final_feature_selection_step',
                 'feature_generation_final_validation_step'
             ],
@@ -250,7 +251,7 @@ Examples:
     )
     
     # Step execution options
-    step_group = parser.add_mutually_exclusive_group(required=True)
+    step_group = parser.add_mutually_exclusive_group(required=False)
     step_group.add_argument('--step', type=str, help='Run a single step')
     step_group.add_argument('--steps', type=str, help='Run multiple steps (comma-separated)')
     step_group.add_argument('--stage', type=str, help='Run entire stage')
@@ -270,7 +271,7 @@ Examples:
     regime_group.add_argument('--legacy-nas-tas', action='store_true', help='Run legacy NAS/TAS regime discovery (deprecated)')
     
     # Common parameters
-    parser.add_argument('--symbol', type=str, required=True, help='Trading symbol (e.g., ETHUSDT)')
+    parser.add_argument('--symbol', type=str, help='Trading symbol (e.g., ETHUSDT)')
     parser.add_argument('--exchange', type=str, default='binance', help='Exchange name')
     parser.add_argument('--timeframe', type=str, default='15m', help='Timeframe for training')
     parser.add_argument('--direction', type=str, choices=['longs', 'shorts', 'both'], default='longs', help='Trading direction')
@@ -317,6 +318,25 @@ async def main():
         for stage in stages:
             print(f"  - {stage}")
         return
+    
+    # Check if any execution mode is specified
+    has_execution_mode = any([
+        args.step, args.steps, args.stage, args.mode, args.sub_pipeline,
+        args.train_analyst_base, args.train_analyst_ensemble, 
+        args.train_tactician_base, args.train_tactician_ensemble,
+        args.hdbscan_regime_discovery, args.legacy_nas_tas
+    ])
+    
+    if not has_execution_mode:
+        print("No execution mode specified. Use --help to see available options.")
+        print("Available utility commands:")
+        print("  --list-steps    List all registered steps")
+        print("  --list-stages   List all available stages")
+        return
+    
+    # Validate required parameters for execution modes
+    if not args.symbol and has_execution_mode:
+        parser.error("--symbol is required when running execution modes")
     
     # Build configuration
     config = {

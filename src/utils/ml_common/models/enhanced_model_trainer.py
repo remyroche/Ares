@@ -36,8 +36,9 @@ from src.utils.common_operations import (
 )
 
 # Import evaluation result types
-from src.training.steps.market_analysis.hybrid_nas_tas_regime.shared_utils.unified_evaluation_framework import EvaluationResult
-from src.training.steps.market_analysis.hybrid_nas_tas_regime.shared_utils.unified_validation_system import ValidationResult
+# Note: Removed dependency on hybrid_nas_tas_regime module
+# from src.training.steps.market_analysis.hybrid_nas_tas_regime.shared_utils.unified_evaluation_framework import EvaluationResult
+# from src.training.steps.market_analysis.hybrid_nas_tas_regime.shared_utils.unified_validation_system import ValidationResult
 from src.utils.ml_common.post_training.model_persistence import PersistenceResult
 from src.utils.math_validation import (
     safe_divide, safe_log, safe_sqrt, safe_power, validate_finite,

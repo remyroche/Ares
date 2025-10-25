@@ -47,9 +47,9 @@ from src.utils.ml_common.optimization.bayesian_tpe_optimizer import (
 )
 
 # ML utilities
-from src.utils.ml_common.cv_utils import TimeSeriesSplitValidator
-from src.utils.ml_common.oof_generator import OOFGenerator
-from src.utils.ml_common.data_leakage_detector import DataLeakageDetector
+from src.utils.ml_common.validation.cv_utils import TimeSeriesSplitValidator
+from src.utils.ml_common.validation.cv_utils import OOFGenerator
+from src.utils.ml_common.validation.data_leakage_detector import DataLeakageDetector
 
 # Math and validation utilities
 from src.utils.math_validation import (
@@ -467,6 +467,7 @@ class FinalParametersOptimizer(BaseStep):
             opt_config = OptimizationConfig(
                 n_trials=self.n_trials,
                 timeout=self.timeout,
+                execution_mode=self.config.get('execution_mode', 'light'),
                 direction='maximize',
                 enable_staged_optimization=True,
                 coarse_grid_trials=min(25, self.n_trials // 4),

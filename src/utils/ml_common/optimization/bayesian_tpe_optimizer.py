@@ -67,6 +67,9 @@ class OptimizationConfig:
     n_trials: int = 100
     timeout: Optional[float] = None
 
+    # Execution mode for adaptive configuration (detected from ares_launcher)
+    execution_mode: str = "light"  # "full", "light", "blank"
+
     # TPE sampler settings
     n_startup_trials: int = 10
     n_ei_candidates: int = 24
@@ -139,6 +142,25 @@ class OptimizationConfig:
     pruner_type: str = 'hyperband'  # 'hyperband', 'successive_halving', 'median'
     pruner_params: Dict[str, Any] = None
     max_trial_history: int = 200  # cap stored trial summaries to limit memory
+
+    def __post_init__(self):
+        """Apply execution mode-based optimizations."""
+        if self.execution_mode == "blank":
+            self.n_trials = min(self.n_trials, 25)
+            self.coarse_grid_trials = min(self.coarse_grid_trials, 10)
+            self.fine_grid_trials = min(self.fine_grid_trials, 15)
+            self.tpe_trials = min(self.tpe_trials, 20)
+            self.coarse_grid_points = min(self.coarse_grid_points, 3)
+            self.fine_grid_points = min(self.fine_grid_points, 3)
+        elif self.execution_mode == "blank":
+            # Blank mode: moderate trials for 180 days data
+            self.n_trials = min(self.n_trials, 15)
+            self.coarse_grid_trials = min(self.coarse_grid_trials, 8)
+            self.fine_grid_trials = min(self.fine_grid_trials, 7)
+            self.tpe_trials = min(self.tpe_trials, 15)
+            self.coarse_grid_points = 3
+            self.fine_grid_points = 3
+        # Full mode: keep default values
 
     def validate(self) -> None:
         """Validate configuration parameters."""
@@ -419,8 +441,10 @@ class BayesianTPEOptimizer:
                         best_params = coarse_results['best_params']
                         best_value = coarse_results['best_value']
 
-                if coarse_results:
+                if coarse_results and coarse_results.get('best_value') is not None:
                     self.logger.info(f"   Coarse grid: {len(coarse_results['trials'])} trials, best: {coarse_results['best_value']:.4f}")
+                elif coarse_results:
+                    self.logger.info(f"   Coarse grid: {len(coarse_results['trials'])} trials, best: N/A")
 
             # Stage 2: Fine Grid Search around best coarse results
             if coarse_results and coarse_results['best_params']:
@@ -1095,10 +1119,9 @@ class BayesianTPEOptimizer:
                 self.logger.warning("⚠️ No coarse grid points generated")
                 return None
 
-            # Use VectorBT batch evaluation if available
-            if self.vectorbt_manager and self.config.enable_vectorbt_optimization and len(coarse_grid) > 1:
-                return self._vectorbt_batch_evaluate_grid(objective, coarse_grid, 'coarse')
-            elif self.batch_processor and self.config.enable_batch_processing and len(coarse_grid) > 1:
+            # Use batch evaluation if available and safe
+            if (self.batch_processor and self.config.enable_batch_processing and
+                len(coarse_grid) > 1 and self._is_batch_evaluation_safe(coarse_grid)):
                 return self._batch_evaluate_grid(objective, coarse_grid, 'coarse')
             else:
                 # Fallback to sequential evaluation
@@ -1131,10 +1154,9 @@ class BayesianTPEOptimizer:
                 self.logger.warning("⚠️ No fine grid points generated")
                 return None
 
-            # Use VectorBT batch evaluation if available
-            if self.vectorbt_manager and self.config.enable_vectorbt_optimization and len(fine_grid) > 1:
-                return self._vectorbt_batch_evaluate_grid(objective, fine_grid, 'fine')
-            elif self.batch_processor and self.config.enable_batch_processing and len(fine_grid) > 1:
+            # Use batch evaluation if available and safe
+            if (self.batch_processor and self.config.enable_batch_processing and
+                len(fine_grid) > 1 and self._is_batch_evaluation_safe(fine_grid)):
                 return self._batch_evaluate_grid(objective, fine_grid, 'fine')
             else:
                 # Fallback to sequential evaluation
@@ -1171,8 +1193,11 @@ class BayesianTPEOptimizer:
                 self.logger.warning("⚠️ No adaptive grid points generated")
                 return None
 
-            # Use VectorBT batch evaluation for adaptive grid
-            adaptive_results = self._vectorbt_batch_evaluate_grid(objective, adaptive_grid, 'adaptive')
+            # Use batch evaluation for adaptive grid if safe
+            if self._is_batch_evaluation_safe(adaptive_grid):
+                adaptive_results = self._batch_evaluate_grid(objective, adaptive_grid, 'adaptive')
+            else:
+                adaptive_results = self._sequential_evaluate_grid(objective, adaptive_grid, 'adaptive')
 
             if adaptive_results:
                 # Update refinement history
@@ -1462,6 +1487,34 @@ class BayesianTPEOptimizer:
             self.logger.error(f"❌ TPE stage failed: {e}")
             return None
 
+    def _is_batch_evaluation_safe(self, grid_points: List[Dict[str, Any]]) -> bool:
+        """Check if batch evaluation is safe for the given grid points."""
+        if not grid_points:
+            return False
+
+        try:
+            # Check if all grid points have the same parameter names
+            param_names = set(grid_points[0].keys())
+            if not all(set(params.keys()) == param_names for params in grid_points):
+                return False
+
+            # Check if parameter values are compatible types for batch processing
+            for param_name in param_names:
+                values = [params[param_name] for params in grid_points]
+
+                # Check for problematic types that can't be batched
+                if any(isinstance(v, (dict, list)) and len(str(v)) > 50 for v in values):
+                    return False
+
+                # Check for extremely heterogeneous types
+                types = [type(v) for v in values]
+                if len(set(types)) > 3:  # More than 3 different types
+                    return False
+
+            return True
+        except Exception:
+            return False
+
     def _batch_evaluate_grid(self, objective: Callable, grid_points: List[Dict[str, Any]],
                            stage: str) -> Dict[str, Any]:
         """Evaluate grid points using hardware-accelerated batch processing."""
@@ -1634,7 +1687,23 @@ class BayesianTPEOptimizer:
                 for name in param_names:
                     # Extract values for each parameter across all grid points
                     values = [params[name] for params in grid_points]
-                    param_matrices[name] = np.array(values)
+
+                    # Handle different data types safely
+                    try:
+                        # Check if all values are the same type and shape
+                        if all(isinstance(v, (int, float)) for v in values):
+                            # Numeric values - can be safely converted to array
+                            param_matrices[name] = np.array(values)
+                        elif all(isinstance(v, str) for v in values):
+                            # String values - convert to object array
+                            param_matrices[name] = np.array(values, dtype=object)
+                        else:
+                            # Mixed types - convert to object array
+                            param_matrices[name] = np.array(values, dtype=object)
+                    except (ValueError, TypeError) as e:
+                        # If array creation fails, use object array
+                        self.logger.debug(f"Array creation failed for {name}: {e}, using object array")
+                        param_matrices[name] = np.array(values, dtype=object)
 
                 # Use batch matrix operations for efficient processing
                 if hasattr(self.matrix_processor, 'batch_matrix_multiply'):
@@ -2374,3 +2443,5 @@ class BayesianTPEOptimizer:
         except Exception as e:
             self.logger.error(f"❌ Failed to load study: {e}")
             raise
+
+

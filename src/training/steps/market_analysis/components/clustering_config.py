@@ -1,5 +1,5 @@
 """
-Configuration management for NAS-TAS clustering components.
+Configuration management for HDBSCAN clustering components.
 
 This module provides centralized configuration management with validation,
 inheritance, and documentation for clustering-related components.
@@ -200,11 +200,11 @@ class ClusteringConfig(BaseConfig):
 
 @dataclass
 class NASTASClusteringConfig(ClusteringConfig):
-    """Configuration specifically for NAS-TAS clustering component."""
+    """Configuration specifically for HDBSCAN clustering component."""
 
     exchange: str = "binance"
 
-    # NAS-TAS specific parameters
+    # HDBSCAN specific parameters
     enable_label_fusion: bool = True
     fusion_method: str = "dawid_skene"
     fusion_max_iterations: int = 50
@@ -221,7 +221,7 @@ class NASTASClusteringConfig(ClusteringConfig):
     memory_limit_mb: Optional[int] = None
 
     def __post_init__(self):
-        """Validate NAS-TAS specific configuration."""
+        """Validate HDBSCAN specific configuration."""
         super().__post_init__()
 
         # Validate fusion parameters

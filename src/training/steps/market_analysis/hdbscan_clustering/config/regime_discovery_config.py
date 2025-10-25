@@ -47,6 +47,12 @@ class RegimeDiscoveryConfig:
     # ============================================================================
     # FEATURE EXTRACTION (200-300 features)
     # ============================================================================
+    # Feature generation flags
+    enable_entropy_features: bool = True
+    enable_spectral_features: bool = True
+    enable_regime_features: bool = True
+    enable_volatility_labeling: bool = True
+    
     lookback_windows: Dict[str, List[int]] = field(default_factory=lambda: {
         'short': [5, 10, 20],
         'medium': [50, 100],

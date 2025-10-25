@@ -9,6 +9,7 @@ import gc
 import psutil
 import os
 from contextlib import contextmanager
+from itertools import islice
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -31,6 +32,193 @@ def get_memory_usage() -> Dict[str, float]:
         'vms': memory_info.vms / 1024 / 1024,  # MB
         'percent': process.memory_percent()
     }
+
+def is_m1_available() -> bool:
+    """Check if M1 chip is available."""
+    try:
+        import platform
+        return platform.machine() == 'arm64' and 'Apple' in platform.processor()
+    except:
+        return False
+
+def is_mps_available() -> bool:
+    """Check if MPS (Metal Performance Shaders) is available."""
+    try:
+        import torch
+        return torch.backends.mps.is_available()
+    except:
+        return False
+
+def get_m1_gpu_manager():
+    """Get M1 GPU manager instance."""
+    try:
+        from src.utils.hardware.m1_gpu_utils import M1GPUManager
+        return M1GPUManager()
+    except:
+        return None
+
+def get_m1_memory_optimizer():
+    """Get M1 memory optimizer instance."""
+    try:
+        from src.utils.hardware.m1_memory_optimizer import M1MemoryOptimizer
+        return M1MemoryOptimizer()
+    except:
+        return None
+
+def get_m1_cpu_optimizer():
+    """Get M1 CPU optimizer instance."""
+    try:
+        from src.utils.hardware.m1_cpu_optimizer import M1CPUOptimizer
+        return M1CPUOptimizer()
+    except:
+        return None
+
+def chunked_iterable(iterable, chunk_size):
+    """Split an iterable into chunks of specified size."""
+    iterator = iter(iterable)
+    while True:
+        chunk = list(islice(iterator, chunk_size))
+        if not chunk:
+            break
+        yield chunk
+
+def parallel_map(func, iterable, max_workers=None):
+    """Simple parallel map function."""
+    try:
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            return list(executor.map(func, iterable))
+    except:
+        # Fallback to regular map if parallel processing fails
+        return list(map(func, iterable))
+
+def parse_datetime(dt_str, format_str=None):
+    """Parse datetime string with optional format."""
+    try:
+        from datetime import datetime
+        if format_str:
+            return datetime.strptime(dt_str, format_str)
+        else:
+            # Try common formats
+            formats = [
+                '%Y-%m-%d %H:%M:%S',
+                '%Y-%m-%d',
+                '%Y-%m-%d %H:%M:%S.%f',
+                '%Y-%m-%dT%H:%M:%S',
+                '%Y-%m-%dT%H:%M:%S.%f',
+                '%Y-%m-%dT%H:%M:%SZ'
+            ]
+            for fmt in formats:
+                try:
+                    return datetime.strptime(dt_str, fmt)
+                except ValueError:
+                    continue
+            # If no format works, try pandas
+            import pandas as pd
+            return pd.to_datetime(dt_str)
+    except Exception as e:
+        raise ValueError(f"Could not parse datetime string '{dt_str}': {e}")
+
+def safe_resample(df, rule, **kwargs):
+    """Safely resample a DataFrame with error handling."""
+    try:
+        import pandas as pd
+        if not isinstance(df, pd.DataFrame):
+            raise ValueError("Input must be a pandas DataFrame")
+        
+        # Ensure index is datetime
+        if not isinstance(df.index, pd.DatetimeIndex):
+            if 'datetime' in df.columns:
+                df = df.set_index('datetime')
+            else:
+                raise ValueError("DataFrame must have a datetime index or 'datetime' column")
+        
+        # Perform resampling
+        return df.resample(rule, **kwargs)
+    except Exception as e:
+        raise ValueError(f"Safe resampling failed: {e}")
+
+def align_dataframes(df1, df2, method='inner'):
+    """Align two DataFrames by their index."""
+    try:
+        import pandas as pd
+        if not isinstance(df1, pd.DataFrame) or not isinstance(df2, pd.DataFrame):
+            raise ValueError("Both inputs must be pandas DataFrames")
+        
+        # Align the DataFrames
+        if method == 'inner':
+            return df1.align(df2, join='inner')
+        elif method == 'outer':
+            return df1.align(df2, join='outer')
+        elif method == 'left':
+            return df1.align(df2, join='left')
+        elif method == 'right':
+            return df1.align(df2, join='right')
+        else:
+            raise ValueError(f"Unknown join method: {method}")
+    except Exception as e:
+        raise ValueError(f"DataFrame alignment failed: {e}")
+
+def sanitize_string(s, max_length=None, replace_chars=None):
+    """Sanitize a string by removing/replacing problematic characters."""
+    try:
+        if not isinstance(s, str):
+            s = str(s)
+        
+        # Default replacements for common problematic characters
+        if replace_chars is None:
+            replace_chars = {
+                '/': '_',
+                '\\': '_',
+                ':': '_',
+                '*': '_',
+                '?': '_',
+                '"': '_',
+                '<': '_',
+                '>': '_',
+                '|': '_',
+                ' ': '_'
+            }
+        
+        # Apply replacements
+        for old_char, new_char in replace_chars.items():
+            s = s.replace(old_char, new_char)
+        
+        # Remove any remaining non-alphanumeric characters except underscores and hyphens
+        import re
+        s = re.sub(r'[^a-zA-Z0-9_-]', '', s)
+        
+        # Limit length if specified
+        if max_length is not None and len(s) > max_length:
+            s = s[:max_length]
+        
+        return s
+    except Exception as e:
+        raise ValueError(f"String sanitization failed: {e}")
+
+
+def math_safe(operation, *args, default=None):
+    """Safely perform mathematical operations with error handling."""
+    try:
+        import math
+        if operation == 'sqrt':
+            return math.sqrt(args[0]) if args[0] >= 0 else default
+        elif operation == 'log':
+            return math.log(args[0]) if args[0] > 0 else default
+        elif operation == 'exp':
+            return math.exp(args[0])
+        elif operation == 'pow':
+            return math.pow(args[0], args[1])
+        elif operation == 'abs':
+            return abs(args[0])
+        elif operation == 'floor':
+            return math.floor(args[0])
+        elif operation == 'ceil':
+            return math.ceil(args[0])
+        else:
+            return default
+    except (ValueError, OverflowError, ZeroDivisionError):
+        return default
 
 def optimize_dataframe_memory(df: pd.DataFrame) -> pd.DataFrame:
     """Optimize DataFrame memory usage by downcasting numeric types."""
@@ -231,7 +419,7 @@ def calculate_volatility(returns: pd.Series,
         vol = vol * np.sqrt(252)  # Assuming daily data
     return vol
 
-def calculate_sharpe_ratio(returns: pd.Series, 
+def calculate_sharpe_ratio(returns: pd.Series,
                           risk_free_rate: float = 0.0,
                           window: int = 20) -> pd.Series:
     """Calculate rolling Sharpe ratio."""
@@ -239,6 +427,25 @@ def calculate_sharpe_ratio(returns: pd.Series,
     mean_return = excess_returns.rolling(window=window).mean()
     std_return = excess_returns.rolling(window=window).std()
     return mean_return / std_return
+
+
+def calculate_sortino_ratio(returns: pd.Series,
+                           risk_free_rate: float = 0.0,
+                           window: int = 20) -> pd.Series:
+    """Calculate rolling Sortino ratio (downside deviation based)."""
+    excess_returns = returns - risk_free_rate
+    mean_return = excess_returns.rolling(window=window).mean()
+
+    # Calculate downside deviation (only negative returns)
+    downside_returns = excess_returns.copy()
+    downside_returns[downside_returns > 0] = 0
+    downside_std = downside_returns.rolling(window=window).std()
+
+    # Avoid division by zero
+    sortino_ratio = mean_return / downside_std
+    sortino_ratio[downside_std == 0] = 0
+
+    return sortino_ratio
 
 def calculate_max_drawdown(prices: pd.Series) -> pd.Series:
     """Calculate maximum drawdown."""

@@ -254,6 +254,24 @@ def validate_correlation_matrix(matrix, tolerance=1e-10):
     except Exception as e:
         return False, f"Validation failed: {e}"
 
+
+def safe_matrix_inverse(matrix, regularization=1e-6):
+    """Safely compute matrix inverse with regularization for numerical stability."""
+    try:
+        import numpy as np
+        
+        # Add regularization to diagonal for numerical stability
+        regularized_matrix = matrix + regularization * np.eye(matrix.shape[0])
+        
+        # Try direct inverse first
+        try:
+            return np.linalg.inv(regularized_matrix)
+        except np.linalg.LinAlgError:
+            # If direct inverse fails, use pseudo-inverse
+            return np.linalg.pinv(regularized_matrix)
+    except Exception as e:
+        raise ValueError(f"Matrix inverse computation failed: {e}")
+
 def optimize_dataframe_memory(df: pd.DataFrame) -> pd.DataFrame:
     """Optimize DataFrame memory usage by downcasting numeric types."""
     df_opt = df.copy()

@@ -14,7 +14,7 @@ import numpy as np
 import pandas as pd
 from typing import Dict, List, Tuple, Optional, Any, Union
 from dataclasses import dataclass
-from collections import defaultdict
+from collections import defaultdict, OrderedDict
 import logging
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -28,20 +28,26 @@ from statsmodels.stats.multitest import multipletests
 
 # VectorBT imports
 try:
-    from src.vectorbt import (
-        vbt, rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max,
-        rolling_sum, rolling_apply, VECTORBT_AVAILABLE
-    )
+    import vectorbt as vbt
+    VECTORBT_AVAILABLE = True
 except ImportError:
     VECTORBT_AVAILABLE = False
     vbt = None
-    rolling_mean = None
-    rolling_std = None
-    rolling_var = None
-    rolling_min = None
-    rolling_max = None
-    rolling_sum = None
-    rolling_apply = None
+    warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
+
+# Math validation imports
+from src.utils.math_validation import (
+    safe_divide, safe_log, safe_sqrt, safe_power, validate_finite,
+    safe_correlation, safe_covariance, safe_mean, safe_std, MathValidation
+)
+
+# VectorBT rolling optimizer
+try:
+    from src.feature_generation.utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer
+    VECTORBT_ROLLING_AVAILABLE = True
+except ImportError:
+    VECTORBT_ROLLING_AVAILABLE = False
+    get_vectorbt_rolling_optimizer = None
 
 # Feature common utilities
 try:
@@ -83,6 +89,25 @@ class OptimizedPruningConfig:
     max_workers: int = 4
     chunk_size: int = 1000
     memory_efficient: bool = True
+    cache_ttl_seconds: int = 3600  # 1 hour TTL
+    max_cache_size: int = 1000  # Maximum number of cached items
+    
+    def __post_init__(self):
+        """Validate configuration parameters."""
+        if not 0 < self.variance_threshold < 1:
+            raise ValueError("variance_threshold must be between 0 and 1")
+        if not 0 < self.stability_ratio_threshold < 1:
+            raise ValueError("stability_ratio_threshold must be between 0 and 1")
+        if not 0 < self.significance_p_threshold < 1:
+            raise ValueError("significance_p_threshold must be between 0 and 1")
+        if not 0 < self.mi_bottom_percentile < 100:
+            raise ValueError("mi_bottom_percentile must be between 0 and 100")
+        if not 0 < self.correlation_threshold < 1:
+            raise ValueError("correlation_threshold must be between 0 and 1")
+        if self.max_workers < 1:
+            raise ValueError("max_workers must be >= 1")
+        if self.chunk_size < 1:
+            raise ValueError("chunk_size must be >= 1")
 
 class OptimizedCheapPruningPipeline:
     """
@@ -109,6 +134,13 @@ class OptimizedCheapPruningPipeline:
         self.resource_tracker = get_resource_tracker() if FEATURE_COMMON_AVAILABLE else None
         self.data_validator = get_data_validator() if FEATURE_COMMON_AVAILABLE else None
         
+        # Initialize math validation
+        self.math_validator = MathValidation()
+        
+        # Initialize content-based cache with TTL
+        self._content_cache = OrderedDict()
+        self._cache_timestamps = {}
+        
         # Initialize VectorBT components
         self.vectorization_manager = None
         if ML_COMMON_AVAILABLE and VECTORBT_AVAILABLE:
@@ -125,6 +157,15 @@ class OptimizedCheapPruningPipeline:
                 tprint_info("✅ VectorBT components initialized")
             except Exception as e:
                 tprint_warning(f"⚠️ VectorBT initialization failed: {e}")
+        
+        # Initialize VectorBT rolling optimizer
+        self.rolling_optimizer = None
+        if VECTORBT_ROLLING_AVAILABLE:
+            try:
+                self.rolling_optimizer = get_vectorbt_rolling_optimizer()
+                tprint_info("✅ VectorBT rolling optimizer initialized")
+            except Exception as e:
+                tprint_warning(f"⚠️ VectorBT rolling optimizer initialization failed: {e}")
         
         # Track statistics
         self.stats = {
@@ -175,9 +216,15 @@ class OptimizedCheapPruningPipeline:
         feature_categories: Dict[str, str],
         composite_scores: Dict[str, float]
     ) -> Tuple[pd.DataFrame, Dict[str, Any]]:
-        """Implementation of optimized pruning pipeline."""
+        """Implementation of optimized pruning pipeline with memory-efficient processing."""
         self.stats['initial_features'] = len(features_df.columns)
         current_features = features_df.copy()
+        
+        # Initialize memory monitoring
+        if self.hardware_manager:
+            self.hardware_manager.start_memory_monitoring()
+            initial_memory = self.hardware_manager.get_memory_usage()
+            tprint_info(f"📊 Initial memory usage: {initial_memory:.2f} MB")
         
         tprint_info(f"🔧 Starting optimized pruning pipeline on {len(current_features.columns)} features")
         
@@ -211,23 +258,36 @@ class OptimizedCheapPruningPipeline:
             self.stats['initial_features']
         )
         
+        # Final memory monitoring
+        if self.hardware_manager:
+            final_memory = self.hardware_manager.get_memory_usage()
+            memory_used = final_memory - initial_memory
+            tprint_info(f"📊 Final memory usage: {final_memory:.2f} MB (used: {memory_used:.2f} MB)")
+            self.hardware_manager.stop_memory_monitoring()
+        
         tprint_success(f"✅ Optimized pruning completed: {self.stats['initial_features']} → {self.stats['final_features']} features ({self.stats['total_reduction']:.1%} reduction)")
         
         return current_features, self.stats
     
+    def _clean_cache(self):
+        """Clean expired cache entries."""
+        current_time = time.time()
+        expired_keys = []
+        
+        for key, timestamp in self._cache_timestamps.items():
+            if current_time - timestamp > self.config.cache_ttl_seconds:
+                expired_keys.append(key)
+        
+        for key in expired_keys:
+            self._content_cache.pop(key, None)
+            self._cache_timestamps.pop(key, None)
+    
     def _variance_pruning_optimized(self, features_df: pd.DataFrame, stage_name: str) -> pd.DataFrame:
-        """Optimized variance pruning with caching."""
+        """Optimized variance pruning with direct calculation (no redundant rolling)."""
         tprint_info(f"  📊 Stage 1: Optimized variance pruning...")
         
-        # Use cached variance calculation if available
-        if self.feature_cache:
-            variances = {}
-            for col in features_df.columns:
-                variances[col] = self.feature_cache.get_rolling_stat(features_df[col], 1, 'var').iloc[-1]
-            variances = pd.Series(variances)
-        else:
-            # Standard variance calculation
-            variances = features_df.var()
+        # Direct variance calculation - no need for rolling with window=1
+        variances = features_df.var()
         
         # Identify low variance features
         low_var_mask = variances < self.config.variance_threshold
@@ -267,17 +327,17 @@ class OptimizedCheapPruningPipeline:
         features_aligned = features_df.loc[common_index]
         target_aligned = target.loc[common_index]
         
-        # Batch statistical testing
+        # Batch statistical testing with parallel processing
         if self.config.enable_batch_operations and ML_COMMON_AVAILABLE:
             try:
                 # Use batch statistical analysis
                 batch_results = batch_statistical_analysis(features_aligned, target_aligned.to_frame())
                 p_values = batch_results.get('ttest_pvalues', {})
             except Exception as e:
-                tprint_warning(f"⚠️ Batch statistical analysis failed, falling back to individual tests: {e}")
-                p_values = self._individual_statistical_tests(features_aligned, target_aligned)
+                tprint_warning(f"⚠️ Batch statistical analysis failed, falling back to parallel individual tests: {e}")
+                p_values = self._parallel_statistical_tests(features_aligned, target_aligned)
         else:
-            p_values = self._individual_statistical_tests(features_aligned, target_aligned)
+            p_values = self._parallel_statistical_tests(features_aligned, target_aligned)
         
         # Apply multiple testing correction if enabled
         if self.config.enable_multiple_testing_correction and len(p_values) > 1:
@@ -352,6 +412,108 @@ class OptimizedCheapPruningPipeline:
         
         return p_values
     
+    def _parallel_statistical_tests(self, features_aligned: pd.DataFrame, target_aligned: pd.Series) -> Dict[str, float]:
+        """Perform statistical tests in parallel for better performance."""
+        try:
+            if not self.config.enable_parallel_processing or len(features_aligned.columns) < 10:
+                return self._individual_statistical_tests(features_aligned, target_aligned)
+            
+            # Use hardware manager to determine optimal number of workers
+            max_workers = self.config.max_workers
+            if self.hardware_manager:
+                max_workers = min(max_workers, self.hardware_manager.get_optimal_worker_count())
+            
+            # Prepare data for parallel processing
+            feature_data = [(col, features_aligned[col].values) for col in features_aligned.columns]
+            target_data = target_aligned.values
+            
+            # Process in parallel
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                futures = {
+                    executor.submit(self._single_statistical_test, feature_name, feature_values, target_data): feature_name
+                    for feature_name, feature_values in feature_data
+                }
+                
+                p_values = {}
+                for future in futures:
+                    feature_name = futures[future]
+                    try:
+                        p_values[feature_name] = future.result()
+                    except Exception as e:
+                        self.logger.warning(f"Statistical test failed for {feature_name}: {e}")
+                        p_values[feature_name] = 1.0
+            
+            return p_values
+            
+        except Exception as e:
+            self.logger.warning(f"Parallel statistical tests failed: {e}")
+            return self._individual_statistical_tests(features_aligned, target_aligned)
+    
+    def _single_statistical_test(self, feature_name: str, feature_values: np.ndarray, target_values: np.ndarray) -> float:
+        """Perform a single statistical test for parallel processing."""
+        try:
+            # Remove NaN values
+            valid_mask = ~(np.isnan(feature_values) | np.isnan(target_values))
+            if not np.any(valid_mask) or np.sum(valid_mask) < 3:
+                return 1.0
+            
+            feature_clean = feature_values[valid_mask]
+            target_clean = target_values[valid_mask]
+            
+            # Perform t-test
+            _, p_value = stats.ttest_ind(feature_clean, target_clean)
+            return float(p_value) if not np.isnan(p_value) else 1.0
+            
+        except Exception as e:
+            self.logger.warning(f"Single statistical test failed for {feature_name}: {e}")
+            return 1.0
+    
+    def _calculate_stability_ratio(self, feature: pd.Series, n_splits: int = 3) -> float:
+        """Calculate stability ratio using proper temporal windowing."""
+        try:
+            if len(feature) < n_splits * 10:  # Need at least 10 points per split
+                return 1.0  # Consider unstable if insufficient data
+            
+            window_size = len(feature) // n_splits
+            fold_means = []
+            
+            for i in range(n_splits):
+                start_idx = i * window_size
+                end_idx = (i + 1) * window_size if i < n_splits - 1 else len(feature)
+                fold_data = feature.iloc[start_idx:end_idx]
+                
+                if len(fold_data) > 0:
+                    fold_means.append(fold_data.mean())
+            
+            if len(fold_means) < 2:
+                return 1.0  # Consider unstable if insufficient folds
+            
+            # Calculate stability ratio with safe operations
+            mean_val = self.math_validator.safe_mean(np.array(fold_means), default=0.0)
+            std_val = self.math_validator.safe_std(np.array(fold_means), default=0.0)
+            
+            return self.math_validator.safe_divide(std_val, mean_val + 1e-10, default=1.0)
+            
+        except Exception as e:
+            self.logger.warning(f"Stability ratio calculation failed: {e}")
+            return 1.0  # Consider unstable on error
+    
+    def _calculate_stability_ratio_vectorized(self, feature: pd.Series, rolling_mean: pd.Series) -> float:
+        """Calculate stability ratio using VectorBT rolling calculations."""
+        try:
+            if len(rolling_mean) < 2:
+                return 1.0
+            
+            # Calculate stability ratio with safe operations
+            mean_val = self.math_validator.safe_mean(rolling_mean.values, default=0.0)
+            std_val = self.math_validator.safe_std(rolling_mean.values, default=0.0)
+            
+            return self.math_validator.safe_divide(std_val, mean_val + 1e-10, default=1.0)
+            
+        except Exception as e:
+            self.logger.warning(f"Vectorized stability ratio calculation failed: {e}")
+            return 1.0
+    
     def _stability_pruning_optimized(
         self,
         features_df: pd.DataFrame,
@@ -362,9 +524,6 @@ class OptimizedCheapPruningPipeline:
         """Optimized stability pruning with TimeSeriesSplit."""
         tprint_info(f"  🔄 Stage 3: Optimized stability pruning...")
         
-        # Use TimeSeriesSplit for proper temporal validation
-        tscv = TimeSeriesSplit(n_splits=self.config.n_temporal_folds)
-        
         removed_features = []
         protected_features = []
         
@@ -372,26 +531,22 @@ class OptimizedCheapPruningPipeline:
             try:
                 feature = features_df[feature_name].dropna()
                 
-                # Calculate fold means using TimeSeriesSplit
-                fold_means = []
-                for train_idx, test_idx in tscv.split(feature):
-                    fold_data = feature.iloc[test_idx]
-                    if len(fold_data) > 0:
-                        fold_means.append(fold_data.mean())
-                
-                if len(fold_means) < 2:
+                if len(feature) < 30:  # Skip features with insufficient data
                     removed_features.append(feature_name)
                     continue
                 
-                # Calculate stability ratio
-                fold_means = np.array(fold_means)
-                mean_fold_mean = np.mean(fold_means)
-                std_fold_means = np.std(fold_means)
-                
-                if mean_fold_mean == 0:
-                    stability_ratio = float('inf')
+                # Calculate stability ratio using proper temporal windowing
+                # Use VectorBT rolling optimizer if available for better performance
+                if self.rolling_optimizer and len(feature) > 100:
+                    # Use VectorBT for rolling calculations on large datasets
+                    try:
+                        rolling_mean = self.rolling_optimizer.rolling_mean(feature, window=len(feature) // self.config.n_temporal_folds)
+                        stability_ratio = self._calculate_stability_ratio_vectorized(feature, rolling_mean)
+                    except Exception as e:
+                        self.logger.warning(f"VectorBT rolling calculation failed: {e}")
+                        stability_ratio = self._calculate_stability_ratio(feature, n_splits=self.config.n_temporal_folds)
                 else:
-                    stability_ratio = std_fold_means / abs(mean_fold_mean)
+                    stability_ratio = self._calculate_stability_ratio(feature, n_splits=self.config.n_temporal_folds)
                 
                 # Check if feature should be removed
                 if stability_ratio > self.config.stability_ratio_threshold:
@@ -539,22 +694,89 @@ class OptimizedCheapPruningPipeline:
             
             # Create 2D histogram
             hist_2d, _, _ = np.histogram2d(x_clean, y_clean, bins=bins)
-            hist_2d = hist_2d + 1e-10  # Avoid log(0)
             
             # Calculate probabilities
             pxy = hist_2d / hist_2d.sum()
             px = pxy.sum(axis=1)
             py = pxy.sum(axis=0)
-            px_py = px[:, None] * py[None, :]
             
-            # Calculate MI
-            mi = np.sum(pxy * np.log(pxy / (px_py + 1e-10)))
+            # Calculate entropies using safe operations
+            hx = -np.sum(px * self.math_validator.safe_log(px + 1e-10, default=0.0))
+            hy = -np.sum(py * self.math_validator.safe_log(py + 1e-10, default=0.0))
+            hxy = -np.sum(pxy * self.math_validator.safe_log(pxy + 1e-10, default=0.0))
+            
+            # Calculate mutual information: I(X;Y) = H(X) + H(Y) - H(X,Y)
+            mi = hx + hy - hxy
             
             return max(0.0, mi)  # Ensure non-negative
             
         except Exception as e:
             self.logger.warning(f"Fast MI calculation failed: {e}")
             return 0.0
+    
+    def _calculate_correlation_matrix(self, features_df: pd.DataFrame) -> pd.DataFrame:
+        """Calculate correlation matrix with memory-efficient approach and VectorBT optimization."""
+        n_features = len(features_df.columns)
+        estimated_memory = (n_features ** 2 * 8) / (1024 ** 2)  # MB
+        
+        # Use VectorBT for large correlation matrices if available
+        if self.rolling_optimizer and n_features > 500:
+            try:
+                return self._vectorized_correlation_calculation(features_df)
+            except Exception as e:
+                self.logger.warning(f"VectorBT correlation calculation failed: {e}")
+        
+        # Use chunked calculation for large matrices
+        if estimated_memory > 500:  # 500MB threshold
+            return self._chunked_correlation_calculation(features_df)
+        else:
+            return features_df.corr().abs()
+    
+    def _chunked_correlation_calculation(self, features_df: pd.DataFrame) -> pd.DataFrame:
+        """Calculate correlation matrix in chunks for memory efficiency."""
+        try:
+            # Use hardware manager to determine optimal chunk size
+            if self.hardware_manager:
+                available_memory = self.hardware_manager.get_available_memory()
+                chunk_size = min(100, max(10, int(available_memory * 0.1 / len(features_df.columns))))
+            else:
+                chunk_size = min(100, len(features_df.columns) // 4)
+            
+            n_features = len(features_df.columns)
+            corr_matrix = pd.DataFrame(
+                np.eye(n_features), 
+                index=features_df.columns, 
+                columns=features_df.columns
+            )
+            
+            # Calculate correlations in chunks with memory monitoring
+            for i in range(0, n_features, chunk_size):
+                end_i = min(i + chunk_size, n_features)
+                chunk_i = features_df.iloc[:, i:end_i]
+                
+                for j in range(i, n_features, chunk_size):
+                    end_j = min(j + chunk_size, n_features)
+                    chunk_j = features_df.iloc[:, j:end_j]
+                    
+                    # Calculate correlation between chunks
+                    chunk_corr = chunk_i.corrwith(chunk_j, axis=0).abs()
+                    
+                    # Fill correlation matrix
+                    for idx_i, col_i in enumerate(chunk_i.columns):
+                        for idx_j, col_j in enumerate(chunk_j.columns):
+                            if col_i != col_j:
+                                corr_matrix.loc[col_i, col_j] = chunk_corr.iloc[idx_i, idx_j]
+                
+                # Monitor memory usage
+                if self.hardware_manager:
+                    self.hardware_manager.monitor_memory_usage()
+            
+            return corr_matrix
+            
+        except Exception as e:
+            self.logger.warning(f"Chunked correlation calculation failed: {e}")
+            # Fallback to standard correlation
+            return features_df.corr().abs()
     
     def _correlation_pruning_optimized(
         self,
@@ -566,19 +788,8 @@ class OptimizedCheapPruningPipeline:
         """Optimized correlation pruning with vectorized operations."""
         tprint_info(f"  🔗 Stage 5: Optimized correlation pruning...")
         
-        # Use cached correlation matrix if available
-        if self.feature_cache:
-            corr_matrix = self.feature_cache.get_correlation_matrix(features_df)
-        else:
-            # Calculate correlation matrix
-            if self.config.enable_vectorized_correlation and VECTORBT_AVAILABLE:
-                # Use VectorBT for large correlation matrices
-                if len(features_df.columns) > 1000:
-                    corr_matrix = self._vectorized_correlation_calculation(features_df)
-                else:
-                    corr_matrix = features_df.corr().abs()
-            else:
-                corr_matrix = features_df.corr().abs()
+        # Use memory-efficient correlation matrix calculation
+        corr_matrix = self._calculate_correlation_matrix(features_df)
         
         # Find highly correlated pairs
         upper_tri = np.triu(np.ones_like(corr_matrix, dtype=bool), k=1)

@@ -18,27 +18,29 @@ import logging
 import time
 from concurrent.futures import ThreadPoolExecutor
 import warnings
+import hashlib
+from collections import OrderedDict
 
 # VectorBT imports
 try:
-    from src.vectorbt import (
-        vbt, rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max,
-        rolling_sum, rolling_apply, VECTORBT_AVAILABLE
-    )
+    import vectorbt as vbt
+    VECTORBT_AVAILABLE = True
 except ImportError:
     VECTORBT_AVAILABLE = False
     vbt = None
-    rolling_mean = None
-    rolling_std = None
-    rolling_var = None
-    rolling_min = None
-    rolling_max = None
-    rolling_sum = None
-    rolling_apply = None
+    warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
+
+# Math validation imports
+from src.utils.math_validation import (
+    safe_divide, safe_log, safe_sqrt, safe_power, validate_finite,
+    safe_correlation, safe_covariance, safe_mean, safe_std, MathValidation
+)
 
 # Hardware optimization
 try:
-    from src.utils.hardware.unified_hardware_manager import UnifiedHardwareManager, WorkloadType
+    from src.utils.hardware.unified_hardware_manager import (
+        UnifiedHardwareManager, WorkloadType, OptimizationLevel, get_unified_hardware_manager
+    )
     from src.utils.hardware.m1_memory_optimizer import M1MemoryOptimizer
     HARDWARE_OPT_AVAILABLE = True
 except ImportError:
@@ -55,7 +57,9 @@ except ImportError:
 
 # ML common utilities
 try:
-    from src.utils.ml_common.unified_vectorization_manager import UnifiedVectorizationManager, VectorizationConfig
+    from src.utils.ml_common.unified_vectorization_manager import (
+        UnifiedVectorizationManager, VectorizationConfig, get_unified_vectorization_manager
+    )
     from src.utils.ml_common.explainability.shap_lime_integration import SHAPLIMEIntegration
     ML_COMMON_AVAILABLE = True
 except ImportError:
@@ -82,6 +86,19 @@ class OptimizedVariantConfig:
     robust_scaler_quantile_range: Tuple[float, float] = (1.0, 99.0)
     max_workers: int = 4
     chunk_size: int = 1000
+    cache_ttl_seconds: int = 3600  # 1 hour TTL
+    max_cache_size: int = 1000  # Maximum number of cached items
+    
+    def __post_init__(self):
+        """Validate configuration parameters."""
+        if self.optimal_lookback < 1:
+            raise ValueError("optimal_lookback must be >= 1")
+        if not 0 < self.robust_scaler_quantile_range[0] < self.robust_scaler_quantile_range[1] < 100:
+            raise ValueError("Invalid quantile range")
+        if self.max_workers < 1:
+            raise ValueError("max_workers must be >= 1")
+        if self.chunk_size < 1:
+            raise ValueError("chunk_size must be >= 1")
 
 class OptimizedVariantGenerator:
     """
@@ -108,7 +125,7 @@ class OptimizedVariantGenerator:
         self.memory_optimizer = None
         if HARDWARE_OPT_AVAILABLE:
             try:
-                self.hardware_manager = UnifiedHardwareManager()
+                self.hardware_manager = get_unified_hardware_manager()
                 self.memory_optimizer = M1MemoryOptimizer(memory_limit_gb=8.0)
                 tprint_info("✅ Hardware optimization initialized")
             except Exception as e:
@@ -118,15 +135,7 @@ class OptimizedVariantGenerator:
         self.vectorization_manager = None
         if ML_COMMON_AVAILABLE and VECTORBT_AVAILABLE:
             try:
-                vectorization_config = VectorizationConfig(
-                    enable_vectorbt=True,
-                    enable_gpu=False,  # Disable GPU for now
-                    enable_parallel=True,
-                    memory_efficient=True,
-                    max_memory_gb=8.0,
-                    chunk_size=1000
-                )
-                self.vectorization_manager = UnifiedVectorizationManager(vectorization_config)
+                self.vectorization_manager = get_unified_vectorization_manager()
                 tprint_info("✅ VectorBT components initialized")
             except Exception as e:
                 tprint_warning(f"⚠️ VectorBT initialization failed: {e}")
@@ -137,6 +146,16 @@ class OptimizedVariantGenerator:
         self.performance_monitor = get_performance_monitor() if FEATURE_COMMON_AVAILABLE else None
         self.resource_tracker = get_resource_tracker() if FEATURE_COMMON_AVAILABLE else None
         self.data_validator = get_data_validator() if FEATURE_COMMON_AVAILABLE else None
+        
+        # Initialize math validation
+        self.math_validator = MathValidation()
+        
+        # Initialize reusable scalers cache
+        self._scalers_cache = {}
+        
+        # Initialize content-based cache with TTL
+        self._content_cache = OrderedDict()
+        self._cache_timestamps = {}
         
         # Track statistics
         self.stats = {
@@ -249,29 +268,35 @@ class OptimizedVariantGenerator:
         close_prices: pd.Series,
         lookback: int
     ) -> Optional[pd.Series]:
-        """Generate volatility-normalized variant with optimizations."""
+        """Generate volatility-normalized variant with optimizations using VectorBTRollingOptimizer."""
         try:
-            # Use cached rolling calculations if available
-            if self.feature_cache:
-                rolling_vol = self.feature_cache.get_rolling_stat(
-                    close_prices.pct_change(), lookback, 'std'
-                )
-            else:
-                # Fallback to VectorBT if available
-                if VECTORBT_AVAILABLE:
-                    returns = close_prices.pct_change()
-                    rolling_vol = rolling_std(returns, window=lookback)
-                else:
-                    # Standard pandas implementation
+            # Use VectorBTRollingOptimizer for efficient rolling calculations
+            if self.vectorization_manager and VECTORBT_AVAILABLE:
+                try:
+                    from src.feature_generation.utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer
+                    rolling_optimizer = get_vectorbt_rolling_optimizer()
+                    if rolling_optimizer:
+                        returns = close_prices.pct_change()
+                        rolling_vol = rolling_optimizer.rolling_std(returns, window=lookback)
+                    else:
+                        # Fallback to pandas
+                        returns = close_prices.pct_change()
+                        rolling_vol = returns.rolling(window=lookback, min_periods=max(1, lookback // 2)).std()
+                except Exception:
+                    # Fallback to pandas
                     returns = close_prices.pct_change()
                     rolling_vol = returns.rolling(window=lookback, min_periods=max(1, lookback // 2)).std()
+            else:
+                # Standard pandas implementation
+                returns = close_prices.pct_change()
+                rolling_vol = returns.rolling(window=lookback, min_periods=max(1, lookback // 2)).std()
             
-            # Avoid division by zero
+            # Use safe division from math_validation
             rolling_vol = rolling_vol.replace(0, np.nan)
             rolling_vol = rolling_vol.fillna(rolling_vol.mean())
             
-            # Normalize
-            vol_normalized = feature / rolling_vol
+            # Normalize with safe division
+            vol_normalized = self.math_validator.safe_divide(feature, rolling_vol, default=0.0)
             
             # Apply robust scaling with caching
             vol_normalized = self._apply_robust_scaling_cached(vol_normalized, "volnorm")
@@ -288,24 +313,31 @@ class OptimizedVariantGenerator:
         volume: pd.Series,
         lookback: int
     ) -> Optional[pd.Series]:
-        """Generate VWAP-weighted variant with optimizations."""
+        """Generate VWAP-weighted variant with optimizations using VectorBTRollingOptimizer."""
         try:
-            # Use cached rolling calculations
-            if self.feature_cache:
-                rolling_vol_mean = self.feature_cache.get_rolling_stat(volume, lookback, 'mean')
-            else:
-                # Fallback to VectorBT or pandas
-                if VECTORBT_AVAILABLE:
-                    rolling_vol_mean = rolling_mean(volume, window=lookback)
-                else:
+            # Use VectorBTRollingOptimizer for efficient rolling calculations
+            if self.vectorization_manager and VECTORBT_AVAILABLE:
+                try:
+                    from src.feature_generation.utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer
+                    rolling_optimizer = get_vectorbt_rolling_optimizer()
+                    if rolling_optimizer:
+                        rolling_vol_mean = rolling_optimizer.rolling_mean(volume, window=lookback)
+                    else:
+                        # Fallback to pandas
+                        rolling_vol_mean = volume.rolling(window=lookback, min_periods=max(1, lookback // 2)).mean()
+                except Exception:
+                    # Fallback to pandas
                     rolling_vol_mean = volume.rolling(window=lookback, min_periods=max(1, lookback // 2)).mean()
+            else:
+                # Standard pandas implementation
+                rolling_vol_mean = volume.rolling(window=lookback, min_periods=max(1, lookback // 2)).mean()
             
-            # Avoid division by zero
+            # Use safe division from math_validation
             rolling_vol_mean = rolling_vol_mean.replace(0, np.nan)
             rolling_vol_mean = rolling_vol_mean.fillna(volume.mean())
             
-            # Calculate volume ratio
-            volume_ratio = volume / rolling_vol_mean
+            # Calculate volume ratio with safe division
+            volume_ratio = self.math_validator.safe_divide(volume, rolling_vol_mean, default=1.0)
             
             # Weight feature by volume ratio
             vwap_weighted = feature * volume_ratio
@@ -325,7 +357,7 @@ class OptimizedVariantGenerator:
         ohlcv_data: pd.DataFrame,
         lookback: int
     ) -> Optional[pd.Series]:
-        """Generate trend-adjusted variant with optimizations."""
+        """Generate trend-adjusted variant with optimizations using VectorBTRollingOptimizer."""
         try:
             close = ohlcv_data['close']
             high = ohlcv_data['high']
@@ -334,14 +366,22 @@ class OptimizedVariantGenerator:
             # Use cheaper trend strength proxy instead of full ADX
             trend_strength = self._calculate_cheap_trend_strength(high, low, close, lookback)
             
-            # Calculate trend direction
-            if self.feature_cache:
-                sma = self.feature_cache.get_rolling_stat(close, lookback, 'mean')
-            else:
-                if VECTORBT_AVAILABLE:
-                    sma = rolling_mean(close, window=lookback)
-                else:
+            # Calculate trend direction using VectorBTRollingOptimizer
+            if self.vectorization_manager and VECTORBT_AVAILABLE:
+                try:
+                    from src.feature_generation.utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer
+                    rolling_optimizer = get_vectorbt_rolling_optimizer()
+                    if rolling_optimizer:
+                        sma = rolling_optimizer.rolling_mean(close, window=lookback)
+                    else:
+                        # Fallback to pandas
+                        sma = close.rolling(window=lookback, min_periods=max(1, lookback // 2)).mean()
+                except Exception:
+                    # Fallback to pandas
                     sma = close.rolling(window=lookback, min_periods=max(1, lookback // 2)).mean()
+            else:
+                # Standard pandas implementation
+                sma = close.rolling(window=lookback, min_periods=max(1, lookback // 2)).mean()
             
             trend_direction = np.sign(sma - close.shift(1))
             
@@ -365,31 +405,57 @@ class OptimizedVariantGenerator:
         lookback: int
     ) -> pd.Series:
         """
-        Calculate cheap trend strength proxy (5x faster than full ADX).
+        Calculate cheap trend strength proxy using math_validation.py for safe operations.
         
-        Uses simplified trend strength calculation instead of complex ADX.
+        Uses improved trend strength calculation with proper mathematical validation.
         """
         try:
-            # Calculate price range
+            # Validate inputs using math_validation
+            high = self.math_validator.validate_finite(high, "high prices")
+            low = self.math_validator.validate_finite(low, "low prices")
+            close = self.math_validator.validate_finite(close, "close prices")
+            
+            # Calculate price range with safe division
             price_range = high - low
             
-            # Calculate price momentum
-            price_momentum = abs(close.pct_change())
+            # Calculate price momentum with safe operations
+            price_momentum = abs(close.pct_change().fillna(0))
             
-            # Combine for trend strength
-            trend_strength = (price_range / close) * price_momentum
+            # Improved trend strength calculation
+            # Use additive approach instead of multiplicative to avoid numerical issues
+            price_range_norm = self.math_validator.safe_divide(
+                price_range, close + 1e-10, default=0.0
+            )
             
-            # Smooth with rolling mean
-            if self.feature_cache:
-                trend_strength = self.feature_cache.get_rolling_stat(trend_strength, 14, 'mean')
-            else:
-                if VECTORBT_AVAILABLE:
-                    trend_strength = rolling_mean(trend_strength, window=14)
-                else:
+            # Combine components additively for better numerical stability
+            trend_strength = price_range_norm + (price_momentum * 0.1)  # Scale momentum
+            
+            # Smooth with rolling mean using VectorBT if available
+            if self.vectorization_manager and VECTORBT_AVAILABLE:
+                try:
+                    # Use VectorBTRollingOptimizer for efficient rolling operations
+                    from src.feature_generation.utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer
+                    rolling_optimizer = get_vectorbt_rolling_optimizer()
+                    if rolling_optimizer:
+                        trend_strength = rolling_optimizer.rolling_mean(trend_strength, window=14)
+                    else:
+                        trend_strength = trend_strength.rolling(window=14, min_periods=7).mean()
+                except Exception:
                     trend_strength = trend_strength.rolling(window=14, min_periods=7).mean()
+            else:
+                trend_strength = trend_strength.rolling(window=14, min_periods=7).mean()
             
-            # Normalize to 0-1 range
-            trend_strength = trend_strength / (trend_strength.max() + 1e-10)
+            # Normalize to 0-1 range with safe operations
+            max_val = trend_strength.max()
+            if max_val > 0:
+                trend_strength = self.math_validator.safe_divide(
+                    trend_strength, max_val + 1e-10, default=0.5
+                )
+            else:
+                trend_strength = pd.Series(0.5, index=close.index)
+            
+            # Ensure values are in valid range
+            trend_strength = trend_strength.clip(0.0, 1.0)
             
             return trend_strength.fillna(0.5)  # Default neutral trend
             
@@ -398,17 +464,52 @@ class OptimizedVariantGenerator:
             # Return default trend strength
             return pd.Series(0.5, index=close.index)
     
-    def _apply_robust_scaling_cached(self, series: pd.Series, variant_type: str) -> pd.Series:
-        """Apply robust scaling with caching."""
+    def _get_series_hash(self, series: pd.Series) -> str:
+        """Generate content-based hash for series."""
         try:
-            # Check cache first
-            if self.shared_cache:
-                cache_key = f"robust_scaling_{variant_type}_{id(series)}"
-                cached_result = self.shared_cache.cache.get(cache_key)
-                if cached_result is not None:
+            # Use content hash instead of object id
+            content = series.values.tobytes() + str(series.index).encode()
+            return hashlib.md5(content).hexdigest()
+        except Exception:
+            # Fallback to string representation
+            return hashlib.md5(str(series).encode()).hexdigest()
+    
+    def _clean_cache(self):
+        """Clean expired cache entries."""
+        current_time = time.time()
+        expired_keys = []
+        
+        for key, timestamp in self._cache_timestamps.items():
+            if current_time - timestamp > self.config.cache_ttl_seconds:
+                expired_keys.append(key)
+        
+        for key in expired_keys:
+            self._content_cache.pop(key, None)
+            self._cache_timestamps.pop(key, None)
+    
+    def _apply_robust_scaling_cached(self, series: pd.Series, variant_type: str) -> pd.Series:
+        """Apply robust scaling with content-based caching and reusable scalers."""
+        try:
+            # Generate content-based cache key
+            series_hash = self._get_series_hash(series)
+            cache_key = f"robust_scaling_{variant_type}_{series_hash}"
+            
+            # Check content-based cache first
+            if cache_key in self._content_cache:
+                # Check if cache entry is still valid
+                if time.time() - self._cache_timestamps.get(cache_key, 0) < self.config.cache_ttl_seconds:
                     self.stats['cache_hits'] += 1
-                    return cached_result
-                self.stats['cache_misses'] += 1
+                    return self._content_cache[cache_key]
+                else:
+                    # Remove expired entry
+                    self._content_cache.pop(cache_key, None)
+                    self._cache_timestamps.pop(cache_key, None)
+            
+            self.stats['cache_misses'] += 1
+            
+            # Clean cache if it's getting too large
+            if len(self._content_cache) > self.config.max_cache_size:
+                self._clean_cache()
             
             # Remove NaN values for scaling
             valid_mask = ~series.isna()
@@ -417,18 +518,26 @@ class OptimizedVariantGenerator:
             if len(valid_data) == 0:
                 return series
             
-            # Apply robust scaling
-            from sklearn.preprocessing import RobustScaler
-            scaler = RobustScaler(quantile_range=self.config.robust_scaler_quantile_range)
-            scaled_data = scaler.fit_transform(valid_data)
+            # Use reusable scaler
+            scaler_key = f"scaler_{variant_type}"
+            if scaler_key not in self._scalers_cache:
+                from sklearn.preprocessing import RobustScaler
+                self._scalers_cache[scaler_key] = RobustScaler(
+                    quantile_range=self.config.robust_scaler_quantile_range
+                )
+                # Fit the scaler
+                self._scalers_cache[scaler_key].fit(valid_data)
+            
+            # Transform data using fitted scaler
+            scaled_data = self._scalers_cache[scaler_key].transform(valid_data)
             
             # Create result series
             result = series.copy()
             result[valid_mask] = scaled_data.flatten()
             
-            # Cache result
-            if self.shared_cache:
-                self.shared_cache.cache[cache_key] = result
+            # Cache result with timestamp
+            self._content_cache[cache_key] = result
+            self._cache_timestamps[cache_key] = time.time()
             
             # Track clipping statistics
             if variant_type not in self.stats['clipping_stats']:

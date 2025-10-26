@@ -259,7 +259,8 @@ class RegimeClusteringStep(BaseStep):
 
     def _apply_temporal_stabilization(self, labels: np.ndarray, config: Dict[str, Any]) -> np.ndarray:
         """
-        Apply temporal stabilization to reduce regime switching noise.
+        Apply enhanced temporal stabilization to reduce regime switching noise.
+        Implements adaptive dwell time and stability constraints.
         
         Args:
             labels: Original regime labels
@@ -269,30 +270,83 @@ class RegimeClusteringStep(BaseStep):
             Temporally stabilized labels
         """
         try:
-            # Simple temporal smoothing - replace isolated regime changes
             stabilized_labels = labels.copy()
-            min_dwell = config.get('min_dwell_bars', 3)
             
-            for i in range(min_dwell, len(labels) - min_dwell):
-                # Check if current label is different from surrounding labels
-                if (labels[i] != labels[i-1] and 
-                    labels[i] != labels[i+1] and 
-                    labels[i-1] == labels[i+1]):
-                    # Replace isolated change with surrounding label
-                    stabilized_labels[i] = labels[i-1]
+            # Enhanced temporal smoothing parameters
+            base_min_dwell = config.get('min_dwell_bars', 3)
+            max_dwell = config.get('max_dwell_bars', 8)
+            stability_threshold = config.get('stability_threshold', 0.7)
+            volatility_factor = config.get('volatility_factor', 1.0)
             
-            changes = np.sum(labels != stabilized_labels)
-            tprint(f"🔧 Temporal stabilization: {changes} changes applied", "INFO")
+            # Calculate adaptive dwell time based on local volatility
+            adaptive_dwell = self._calculate_adaptive_dwell_time(labels, base_min_dwell, max_dwell, volatility_factor)
+            
+            # Multi-pass temporal smoothing with increasing strictness
+            for pass_num in range(3):
+                changes_this_pass = 0
+                
+                # Pass 1: Remove isolated changes
+                # Pass 2: Apply stability constraints
+                # Pass 3: Final consistency check
+                
+                for i in range(adaptive_dwell, len(labels) - adaptive_dwell):
+                    current_label = labels[i]
+                    
+                    # Calculate local stability score
+                    local_stability = self._calculate_local_stability(labels, i, adaptive_dwell)
+                    
+                    # Apply different rules based on pass
+                    if pass_num == 0:
+                        # Remove isolated changes
+                        if (current_label != labels[i-1] and 
+                            current_label != labels[i+1] and 
+                            labels[i-1] == labels[i+1]):
+                            stabilized_labels[i] = labels[i-1]
+                            changes_this_pass += 1
+                    
+                    elif pass_num == 1:
+                        # Apply stability constraints
+                        if local_stability < stability_threshold:
+                            # Find most stable neighbor
+                            neighbor_stability = [
+                                self._calculate_local_stability(labels, i-1, adaptive_dwell),
+                                self._calculate_local_stability(labels, i+1, adaptive_dwell)
+                            ]
+                            most_stable_neighbor = i-1 if neighbor_stability[0] > neighbor_stability[1] else i+1
+                            
+                            if neighbor_stability[0] > stability_threshold or neighbor_stability[1] > stability_threshold:
+                                stabilized_labels[i] = labels[most_stable_neighbor]
+                                changes_this_pass += 1
+                    
+                    else:
+                        # Final consistency check - ensure smooth transitions
+                        if (stabilized_labels[i] != stabilized_labels[i-1] and 
+                            stabilized_labels[i] != stabilized_labels[i+1] and
+                            stabilized_labels[i-1] == stabilized_labels[i+1]):
+                            # Use weighted average of neighbors
+                            stabilized_labels[i] = stabilized_labels[i-1]
+                            changes_this_pass += 1
+                
+                if changes_this_pass == 0:
+                    break  # No more changes needed
+                
+                tprint(f"🔧 Temporal stabilization pass {pass_num + 1}: {changes_this_pass} changes", "INFO")
+            
+            # Apply final stability validation
+            stabilized_labels = self._apply_stability_validation(stabilized_labels, config)
+            
+            total_changes = np.sum(labels != stabilized_labels)
+            tprint(f"🔧 Enhanced temporal stabilization: {total_changes} total changes applied", "INFO")
             
             return stabilized_labels
             
         except Exception as e:
-            tprint(f"⚠️ Temporal stabilization failed: {e}", "WARNING")
+            tprint(f"⚠️ Enhanced temporal stabilization failed: {e}", "WARNING")
             return labels
 
     def _apply_economic_validation(self, labels: np.ndarray, artifacts: Dict[str, Any], config: Dict[str, Any]) -> np.ndarray:
         """
-        Apply economic validation to ensure clusters have meaningful economic differences.
+        Apply enhanced economic validation with dynamic size constraints.
         
         Args:
             labels: Regime labels
@@ -303,7 +357,7 @@ class RegimeClusteringStep(BaseStep):
             Economically validated labels
         """
         try:
-            # Enhanced economic validation with cluster balance checking
+            # Enhanced economic validation with dynamic size constraints
             unique_labels, counts = np.unique(labels, return_counts=True)
             non_noise_labels = unique_labels[unique_labels != -1]
             
@@ -311,41 +365,167 @@ class RegimeClusteringStep(BaseStep):
                 tprint("🔧 Economic validation: Insufficient clusters for validation", "INFO")
                 return labels
             
-            # Check cluster balance
             total_samples = len(labels)
-            max_cluster_ratio = 0.0
-            min_cluster_ratio = 1.0
+            n_clusters = len(non_noise_labels)
             
+            # Dynamic size constraints based on cluster count and data quality
+            ideal_cluster_size = total_samples / n_clusters
+            min_cluster_ratio = config.get('min_cluster_ratio', 0.05)  # 5% minimum
+            max_cluster_ratio = config.get('max_cluster_ratio', 0.35)  # 35% maximum (more flexible)
+            target_cluster_ratio = config.get('target_cluster_ratio', 0.20)  # 20% target
+            
+            # Calculate cluster statistics
+            cluster_stats = []
             for label in non_noise_labels:
                 cluster_size = np.sum(labels == label)
                 cluster_ratio = cluster_size / total_samples
-                max_cluster_ratio = max(max_cluster_ratio, cluster_ratio)
-                min_cluster_ratio = min(min_cluster_ratio, cluster_ratio)
+                cluster_stats.append({
+                    'label': label,
+                    'size': cluster_size,
+                    'ratio': cluster_ratio,
+                    'is_balanced': min_cluster_ratio <= cluster_ratio <= max_cluster_ratio
+                })
             
-            # If the largest cluster is too dominant, apply rebalancing
-            if max_cluster_ratio > 0.20:  # If any cluster is > 20% (HDBSCAN goal)
-                tprint(f"🔧 Economic validation: Largest cluster ratio {max_cluster_ratio:.1%} - applying rebalancing", "INFO")
-                
-                # Find the largest cluster
-                largest_cluster = non_noise_labels[np.argmax([np.sum(labels == label) for label in non_noise_labels])]
-                largest_size = np.sum(labels == largest_cluster)
-                
-                # Reassign some samples from the largest cluster to noise
-                reassign_ratio = 0.25  # Reassign 25% of the largest cluster
-                reassign_count = int(largest_size * reassign_ratio)
-                
-                if reassign_count > 0:
-                    cluster_indices = np.where(labels == largest_cluster)[0]
-                    np.random.seed(42)  # For reproducibility
-                    reassign_indices = np.random.choice(cluster_indices, size=reassign_count, replace=False)
-                    labels[reassign_indices] = -1  # Assign to noise
-                    tprint(f"🔧 Reassigned {reassign_count} samples from largest cluster for rebalancing", "INFO")
+            # Sort by size (largest first)
+            cluster_stats.sort(key=lambda x: x['size'], reverse=True)
             
-            tprint("🔧 Economic validation: Enhanced validation applied", "INFO")
-            return labels
+            tprint(f"🔧 Economic validation: {n_clusters} clusters, target ratio: {target_cluster_ratio:.1%}", "INFO")
+            
+            # Apply dynamic rebalancing
+            rebalanced_labels = labels.copy()
+            rebalance_applied = False
+            
+            for i, cluster_stat in enumerate(cluster_stats):
+                label = cluster_stat['label']
+                current_ratio = cluster_stat['ratio']
+                
+                if current_ratio > max_cluster_ratio:
+                    # Cluster too large - reduce size
+                    target_size = int(total_samples * target_cluster_ratio)
+                    current_size = cluster_stat['size']
+                    reduce_by = current_size - target_size
+                    
+                    if reduce_by > 0:
+                        cluster_indices = np.where(rebalanced_labels == label)[0]
+                        np.random.seed(42)  # For reproducibility
+                        reduce_indices = np.random.choice(cluster_indices, size=min(reduce_by, len(cluster_indices)), replace=False)
+                        
+                        # Reassign to smallest clusters first
+                        smallest_clusters = [cs for cs in cluster_stats if cs['ratio'] < target_cluster_ratio and cs['label'] != label]
+                        smallest_clusters.sort(key=lambda x: x['ratio'])
+                        
+                        reassigned_count = 0
+                        for small_cluster in smallest_clusters:
+                            if reassigned_count >= len(reduce_indices):
+                                break
+                            
+                            # Calculate how many this cluster can absorb
+                            remaining_capacity = int(total_samples * target_cluster_ratio) - small_cluster['size']
+                            to_reassign = min(remaining_capacity, len(reduce_indices) - reassigned_count)
+                            
+                            if to_reassign > 0:
+                                rebalanced_labels[reduce_indices[reassigned_count:reassigned_count + to_reassign]] = small_cluster['label']
+                                reassigned_count += to_reassign
+                        
+                        # Convert remaining to noise if no capacity
+                        if reassigned_count < len(reduce_indices):
+                            remaining_indices = reduce_indices[reassigned_count:]
+                            rebalanced_labels[remaining_indices] = -1
+                        
+                        tprint(f"🔧 Rebalanced cluster {label}: {current_ratio:.1%} -> {target_cluster_ratio:.1%} (reassigned {reassigned_count})", "INFO")
+                        rebalance_applied = True
+                
+                elif current_ratio < min_cluster_ratio:
+                    # Cluster too small - try to merge with similar clusters
+                    tprint(f"🔧 Cluster {label} too small ({current_ratio:.1%}), considering merge", "INFO")
+                    
+                    # Find most similar cluster for potential merge
+                    best_merge_candidate = self._find_best_merge_candidate(rebalanced_labels, label, cluster_stats)
+                    if best_merge_candidate is not None:
+                        cluster_mask = rebalanced_labels == label
+                        rebalanced_labels[cluster_mask] = best_merge_candidate
+                        tprint(f"🔧 Merged small cluster {label} with cluster {best_merge_candidate}", "INFO")
+                        rebalance_applied = True
+            
+            # Apply final balance validation
+            if rebalance_applied:
+                rebalanced_labels = self._apply_final_balance_validation(rebalanced_labels, config)
+            
+            tprint("🔧 Enhanced economic validation completed", "INFO")
+            return rebalanced_labels
             
         except Exception as e:
-            tprint(f"⚠️ Economic validation failed: {e}", "WARNING")
+            tprint(f"⚠️ Enhanced economic validation failed: {e}", "WARNING")
+            return labels
+
+    def _find_best_merge_candidate(self, labels: np.ndarray, small_cluster_label: int, cluster_stats: List[Dict]) -> Optional[int]:
+        """Find the best cluster to merge with a small cluster."""
+        try:
+            # Find clusters that are not too large and not the same as small cluster
+            candidates = []
+            for cluster_stat in cluster_stats:
+                if (cluster_stat['label'] != small_cluster_label and 
+                    cluster_stat['ratio'] < 0.25):  # Not too large
+                    candidates.append(cluster_stat)
+            
+            if not candidates:
+                return None
+            
+            # Return the smallest candidate (most similar size)
+            best_candidate = min(candidates, key=lambda x: x['size'])
+            return best_candidate['label']
+            
+        except Exception as e:
+            tprint(f"⚠️ Best merge candidate search failed: {e}", "WARNING")
+            return None
+
+    def _apply_final_balance_validation(self, labels: np.ndarray, config: Dict[str, Any]) -> np.ndarray:
+        """Apply final balance validation to ensure optimal cluster distribution."""
+        try:
+            validated_labels = labels.copy()
+            total_samples = len(labels)
+            
+            # Calculate final cluster statistics
+            unique_labels, counts = np.unique(labels, return_counts=True)
+            non_noise_labels = unique_labels[unique_labels != -1]
+            
+            if len(non_noise_labels) < 2:
+                return validated_labels
+            
+            # Calculate final balance metrics
+            cluster_ratios = [count / total_samples for count in counts if count > 0]
+            balance_variance = np.var(cluster_ratios)
+            balance_std = np.std(cluster_ratios)
+            
+            tprint(f"🔧 Final balance validation: variance={balance_variance:.4f}, std={balance_std:.4f}", "INFO")
+            
+            # If balance is still poor, apply final adjustments
+            if balance_std > 0.15:  # High imbalance
+                tprint("🔧 Applying final balance adjustments", "INFO")
+                
+                # Find most imbalanced clusters
+                cluster_ratio_pairs = [(label, count / total_samples) for label, count in zip(unique_labels, counts) if count > 0]
+                cluster_ratio_pairs.sort(key=lambda x: x[1], reverse=True)
+                
+                # Redistribute from largest to smallest
+                largest_label, largest_ratio = cluster_ratio_pairs[0]
+                smallest_label, smallest_ratio = cluster_ratio_pairs[-1]
+                
+                if largest_ratio > 0.3 and smallest_ratio < 0.1:  # Significant imbalance
+                    # Move some samples from largest to smallest
+                    move_count = int(total_samples * 0.05)  # Move 5% of data
+                    largest_indices = np.where(validated_labels == largest_label)[0]
+                    
+                    if len(largest_indices) > move_count:
+                        np.random.seed(42)
+                        move_indices = np.random.choice(largest_indices, size=move_count, replace=False)
+                        validated_labels[move_indices] = smallest_label
+                        tprint(f"🔧 Final rebalance: moved {move_count} samples from cluster {largest_label} to {smallest_label}", "INFO")
+            
+            return validated_labels
+            
+        except Exception as e:
+            tprint(f"⚠️ Final balance validation failed: {e}", "WARNING")
             return labels
 
     def _merge_similar_clusters(self, labels: np.ndarray, config: Dict[str, Any]) -> np.ndarray:
@@ -402,19 +582,35 @@ class RegimeClusteringStep(BaseStep):
             # Initialize iterative optimization
             optimizer = IterativeOptimization(verbose=True, k=None)
             
-            # Set up optimization parameters for aggressive noise reduction
-            optimizer.config.min_size_ratio = 0.02  # 2% minimum
-            optimizer.config.max_size_ratio = 0.10  # 10% maximum (very strict)
+            # Set up enhanced optimization parameters with improved constraints
+            optimizer.config.min_size_ratio = 0.05  # 5% minimum (more realistic)
+            optimizer.config.max_size_ratio = 0.35  # 35% maximum (more flexible)
             optimizer.config.max_rounds = 50  # More iterations for better optimization
-            optimizer.config.w_cv = 0.5  # Higher weight on CV optimization
+            
+            # Enhanced objective weights with cohesion penalties
+            optimizer.config.w_cv = 0.50  # CV ratio weight (reduced for cohesion)
             optimizer.config.w_temp = 0.15  # Temporal consistency
-            optimizer.config.w_sil = 0.2  # Silhouette score
+            optimizer.config.w_sil = 0.10  # Silhouette score
             optimizer.config.w_bal = 0.15  # Cluster balance
-            optimizer.config.K_MIN = 5  # Minimum clusters (more clusters = less noise)
-            optimizer.config.K_MAX = 10  # Maximum clusters
-            optimizer.config.large_cluster_threshold = 50  # Lower threshold for large cluster detection
-            optimizer.config.split_size_threshold = 1.1  # Split clusters > 10% of data
-            optimizer.config.SOFT_CAP = int(len(labels) * 0.10)  # Hard cap at 10% of data
+            optimizer.config.w_frag = 0.10  # Fragmentation penalty weight (NEW)
+            
+            # Enhanced size constraints
+            optimizer.config.min_cluster_ratio = 0.05  # 5% minimum cluster ratio
+            optimizer.config.max_cluster_ratio = 0.35  # 35% maximum cluster ratio
+            optimizer.config.target_cluster_ratio = 0.20  # 20% target cluster ratio
+            optimizer.config.size_balance_weight = 0.20  # Size balance weight
+            
+            # Cohesion and fragmentation parameters
+            optimizer.config.fragmentation_penalty_threshold = 0.5  # Fragmentation threshold
+            optimizer.config.cohesion_reward_threshold = 0.7  # Cohesion threshold
+            optimizer.config.enable_cohesion_optimization = True  # Enable cohesion optimization
+            
+            # Cluster management
+            optimizer.config.K_MIN = 3  # Minimum clusters (more realistic)
+            optimizer.config.K_MAX = 8  # Maximum clusters
+            optimizer.config.large_cluster_threshold = 0.25  # 25% threshold for large clusters
+            optimizer.config.split_size_threshold = 0.20  # 20% threshold for splitting
+            optimizer.config.SOFT_CAP = int(len(labels) * 0.15)  # 15% soft cap
             
             # Run optimization
             tprint(f"🔧 Starting iterative optimization on {len(features)} features, {len(labels)} samples", "INFO")
@@ -606,79 +802,201 @@ class RegimeClusteringStep(BaseStep):
             Labels with reduced noise ratio
         """
         try:
+            # Enhanced noise reduction parameters
+            target_noise_ratio = config.get('target_noise_ratio', 0.05)  # 5% target noise
+            max_reassignment_ratio = config.get('max_reassignment_ratio', 0.15)  # 15% max reassignment
+            min_cluster_size_for_reassignment = config.get('min_cluster_size_for_reassignment', 10)
+            use_soft_assignment = config.get('use_soft_assignment', True)
+            
             noise_mask = labels == -1
             noise_count = np.sum(noise_mask)
             total_samples = len(labels)
-            noise_ratio = noise_count / total_samples * 100
+            current_noise_ratio = noise_count / total_samples if total_samples > 0 else 0
             
-            tprint(f"🔧 Post-optimization noise reduction: {noise_count} noise points ({noise_ratio:.1f}%)", "INFO")
+            tprint(f"🔧 Enhanced post-optimization noise reduction: {noise_count} noise points ({current_noise_ratio:.1%})", "INFO")
             
-            # Target noise ratio: 5-10% (very aggressive)
-            target_noise_ratio = 8.0
-            max_noise_samples = int(total_samples * target_noise_ratio / 100)
-            
-            if noise_count <= max_noise_samples:
-                tprint(f"✅ Noise ratio already acceptable: {noise_ratio:.1f}%", "SUCCESS")
+            if noise_count == 0 or current_noise_ratio <= target_noise_ratio:
+                tprint("🔧 Post-optimization noise reduction: Target noise ratio already achieved", "INFO")
                 return labels
             
-            # Calculate how many noise points to reassign
-            excess_noise = noise_count - max_noise_samples
-            tprint(f"🔧 Reassigning {excess_noise} excess noise points to clusters", "INFO")
-            
-            # Get noise point indices
-            noise_indices = np.where(noise_mask)[0]
-            
-            # Get cluster information
-            unique_labels, counts = np.unique(labels, return_counts=True)
+            # Get non-noise clusters with sufficient size
+            unique_labels = np.unique(labels)
             non_noise_labels = unique_labels[unique_labels != -1]
             
-            if len(non_noise_labels) == 0:
-                tprint("⚠️ No clusters available for noise reassignment", "WARNING")
+            # Filter clusters by minimum size
+            valid_clusters = []
+            for label in non_noise_labels:
+                cluster_size = np.sum(labels == label)
+                if cluster_size >= min_cluster_size_for_reassignment:
+                    valid_clusters.append(label)
+            
+            if len(valid_clusters) == 0:
+                tprint("🔧 Post-optimization noise reduction: No valid clusters for reassignment", "INFO")
                 return labels
             
-            # Reassign excess noise points to clusters
-            reassigned_count = 0
-            labels_copy = labels.copy()
-            
-            # Strategy: Reassign to smallest clusters first (to balance cluster sizes)
-            cluster_sizes = [(label, np.sum(labels == label)) for label in non_noise_labels]
-            cluster_sizes.sort(key=lambda x: x[1])  # Sort by size (smallest first)
-            
-            for label, _ in cluster_sizes:
-                if reassigned_count >= excess_noise:
-                    break
+            # Calculate cluster statistics
+            cluster_stats = {}
+            for label in valid_clusters:
+                cluster_mask = labels == label
+                cluster_features = self.features[cluster_mask]
+                centroid = np.mean(cluster_features, axis=0)
                 
-                # Calculate how many points to reassign to this cluster
-                remaining_excess = excess_noise - reassigned_count
-                available_noise = len(noise_indices)
-                reassign_to_cluster = min(remaining_excess, available_noise)
+                # Calculate cluster quality metrics
+                if len(cluster_features) > 1:
+                    distances = np.sqrt(np.sum((cluster_features - centroid) ** 2, axis=1))
+                    cohesion = 1.0 / (1.0 + np.std(distances) / (np.mean(distances) + 1e-8))
+                else:
+                    cohesion = 1.0
                 
-                if reassign_to_cluster > 0 and len(noise_indices) > 0:
-                    # Randomly select noise points to reassign
-                    np.random.seed(42)  # For reproducibility
-                    selected_indices = np.random.choice(noise_indices, size=min(reassign_to_cluster, len(noise_indices)), replace=False)
+                cluster_stats[label] = {
+                    'centroid': centroid,
+                    'size': len(cluster_features),
+                    'cohesion': cohesion,
+                    'capacity': int(len(cluster_features) * 0.2)  # 20% growth capacity
+                }
+            
+            # Calculate how many noise points to reassign
+            target_noise_count = int(total_samples * target_noise_ratio)
+            max_reassign_count = int(total_samples * max_reassignment_ratio)
+            reassign_count = min(noise_count - target_noise_count, max_reassign_count)
+            
+            if reassign_count <= 0:
+                tprint("🔧 Post-optimization noise reduction: No reassignment needed", "INFO")
+                return labels
+            
+            # Get noise points for reassignment
+            noise_features = self.features[noise_mask]
+            noise_indices = np.where(noise_mask)[0]
+            
+            # Select noise points for reassignment (prioritize those closer to clusters)
+            if use_soft_assignment:
+                reassign_indices = self._select_noise_points_for_reassignment(
+                    noise_features, noise_indices, cluster_stats, reassign_count
+                )
+            else:
+                # Simple random selection
+                np.random.seed(42)
+                reassign_indices = np.random.choice(noise_indices, size=min(reassign_count, len(noise_indices)), replace=False)
+            
+            # Reassign selected noise points
+            reassigned_labels = labels.copy()
+            reassignment_success = 0
+            
+            for noise_idx in reassign_indices:
+                noise_feature = self.features[noise_idx:noise_idx+1]
+                
+                # Find best cluster for this noise point
+                best_cluster = self._find_best_cluster_for_noise_point(
+                    noise_feature, cluster_stats, reassigned_labels
+                )
+                
+                if best_cluster is not None:
+                    reassigned_labels[noise_idx] = best_cluster
+                    reassignment_success += 1
                     
-                    # Reassign to cluster
-                    labels_copy[selected_indices] = label
-                    reassigned_count += len(selected_indices)
-                    
-                    # Remove reassigned indices from noise list
-                    noise_indices = noise_indices[~np.isin(noise_indices, selected_indices)]
-                    
-                    tprint(f"🔧 Reassigned {len(selected_indices)} noise points to cluster {label}", "INFO")
+                    # Update cluster capacity
+                    cluster_stats[best_cluster]['capacity'] -= 1
+            
+            tprint(f"🔧 Enhanced post-optimization noise reduction: Reassigned {reassignment_success}/{len(reassign_indices)} noise points", "INFO")
             
             # Calculate final noise ratio
-            final_noise_count = np.sum(labels_copy == -1)
-            final_noise_ratio = final_noise_count / total_samples * 100
+            final_noise_count = np.sum(reassigned_labels == -1)
+            final_noise_ratio = final_noise_count / total_samples if total_samples > 0 else 0
+            tprint(f"✅ Enhanced post-optimization noise reduction completed: {current_noise_ratio:.1%} → {final_noise_ratio:.1%}", "SUCCESS")
             
-            tprint(f"✅ Post-optimization noise reduction completed: {noise_ratio:.1f}% → {final_noise_ratio:.1f}%", "SUCCESS")
-            tprint(f"📊 Reassigned {reassigned_count} noise points to clusters", "INFO")
-            
-            return labels_copy
+            return reassigned_labels
             
         except Exception as e:
             tprint(f"⚠️ Post-optimization noise reduction failed: {e}", "WARNING")
             return labels
+
+    def _select_noise_points_for_reassignment(self, noise_features: np.ndarray, noise_indices: np.ndarray, 
+                                            cluster_stats: Dict, reassign_count: int) -> np.ndarray:
+        """Select noise points for reassignment based on proximity to clusters."""
+        try:
+            if len(noise_features) == 0 or reassign_count <= 0:
+                return np.array([])
+            
+            # Calculate distances from each noise point to all cluster centroids
+            distances = []
+            for noise_feature in noise_features:
+                point_distances = []
+                for cluster_id, stats in cluster_stats.items():
+                    distance = np.sqrt(np.sum((noise_feature - stats['centroid']) ** 2))
+                    point_distances.append(distance)
+                distances.append(point_distances)
+            
+            distances = np.array(distances)
+            
+            # Calculate assignment scores (lower distance = higher score)
+            # Also consider cluster capacity and cohesion
+            assignment_scores = []
+            for i, point_distances in enumerate(distances):
+                point_scores = []
+                for j, (cluster_id, stats) in enumerate(cluster_stats.items()):
+                    # Base score from distance (inverted)
+                    distance_score = 1.0 / (1.0 + point_distances[j])
+                    
+                    # Capacity bonus (prefer clusters with more capacity)
+                    capacity_bonus = min(stats['capacity'] / max(stats['size'], 1), 1.0)
+                    
+                    # Cohesion bonus (prefer more cohesive clusters)
+                    cohesion_bonus = stats['cohesion']
+                    
+                    # Combined score
+                    total_score = distance_score * (1.0 + 0.3 * capacity_bonus + 0.2 * cohesion_bonus)
+                    point_scores.append(total_score)
+                
+                assignment_scores.append(point_scores)
+            
+            assignment_scores = np.array(assignment_scores)
+            
+            # Select noise points with highest assignment scores
+            max_scores = np.max(assignment_scores, axis=1)
+            selected_indices = np.argsort(max_scores)[-reassign_count:]
+            
+            return noise_indices[selected_indices]
+            
+        except Exception as e:
+            tprint(f"⚠️ Noise point selection failed: {e}", "WARNING")
+            # Fallback to random selection
+            np.random.seed(42)
+            return np.random.choice(noise_indices, size=min(reassign_count, len(noise_indices)), replace=False)
+
+    def _find_best_cluster_for_noise_point(self, noise_feature: np.ndarray, cluster_stats: Dict, 
+                                         current_labels: np.ndarray) -> Optional[int]:
+        """Find the best cluster for a noise point based on distance and cluster quality."""
+        try:
+            if len(cluster_stats) == 0:
+                return None
+            
+            best_cluster = None
+            best_score = -1.0
+            
+            for cluster_id, stats in cluster_stats.items():
+                # Skip clusters that are at capacity
+                if stats['capacity'] <= 0:
+                    continue
+                
+                # Calculate distance to cluster centroid
+                distance = np.sqrt(np.sum((noise_feature - stats['centroid']) ** 2))
+                
+                # Calculate assignment score
+                distance_score = 1.0 / (1.0 + distance)
+                capacity_bonus = min(stats['capacity'] / max(stats['size'], 1), 1.0)
+                cohesion_bonus = stats['cohesion']
+                
+                total_score = distance_score * (1.0 + 0.3 * capacity_bonus + 0.2 * cohesion_bonus)
+                
+                if total_score > best_score:
+                    best_score = total_score
+                    best_cluster = cluster_id
+            
+            return best_cluster
+            
+        except Exception as e:
+            tprint(f"⚠️ Best cluster search failed: {e}", "WARNING")
+            return None
 
     def _basic_cluster_balancing(self, labels: np.ndarray, config: Dict[str, Any]) -> np.ndarray:
         """
@@ -1558,6 +1876,106 @@ This report provides a comprehensive analysis of the regime clustering refinemen
             return "Unknown"
         except:
             return "Unknown"
+
+    def _calculate_adaptive_dwell_time(self, labels: np.ndarray, base_min_dwell: int, max_dwell: int, volatility_factor: float) -> int:
+        """Calculate adaptive dwell time based on local volatility."""
+        try:
+            # Calculate local volatility as frequency of regime changes
+            changes = np.sum(labels[1:] != labels[:-1])
+            volatility = changes / len(labels) if len(labels) > 0 else 0
+            
+            # Adaptive dwell time: higher volatility = longer dwell time
+            adaptive_dwell = int(base_min_dwell * (1 + volatility * volatility_factor))
+            adaptive_dwell = min(adaptive_dwell, max_dwell)
+            adaptive_dwell = max(adaptive_dwell, base_min_dwell)
+            
+            tprint(f"🔧 Adaptive dwell time: {adaptive_dwell} (volatility: {volatility:.3f})", "INFO")
+            return adaptive_dwell
+            
+        except Exception as e:
+            tprint(f"⚠️ Adaptive dwell calculation failed: {e}", "WARNING")
+            return base_min_dwell
+
+    def _calculate_local_stability(self, labels: np.ndarray, center_idx: int, window_size: int) -> float:
+        """Calculate local stability score around a given index."""
+        try:
+            start_idx = max(0, center_idx - window_size)
+            end_idx = min(len(labels), center_idx + window_size + 1)
+            
+            local_labels = labels[start_idx:end_idx]
+            if len(local_labels) == 0:
+                return 0.0
+            
+            # Calculate stability as consistency of labels in local window
+            unique_labels, counts = np.unique(local_labels, return_counts=True)
+            if len(unique_labels) == 0:
+                return 0.0
+            
+            # Stability = proportion of most common label
+            max_count = np.max(counts)
+            stability = max_count / len(local_labels)
+            
+            return stability
+            
+        except Exception as e:
+            tprint(f"⚠️ Local stability calculation failed: {e}", "WARNING")
+            return 0.0
+
+    def _apply_stability_validation(self, labels: np.ndarray, config: Dict[str, Any]) -> np.ndarray:
+        """Apply final stability validation to ensure cluster consistency."""
+        try:
+            validated_labels = labels.copy()
+            min_segment_length = config.get('min_segment_length', 2)
+            stability_threshold = config.get('final_stability_threshold', 0.8)
+            
+            # Find segments of each cluster
+            segments = []
+            current_label = labels[0]
+            current_start = 0
+            
+            for i in range(1, len(labels)):
+                if labels[i] != current_label:
+                    segments.append({
+                        'label': current_label,
+                        'start': current_start,
+                        'end': i,
+                        'length': i - current_start
+                    })
+                    current_label = labels[i]
+                    current_start = i
+            
+            # Add final segment
+            segments.append({
+                'label': current_label,
+                'start': current_start,
+                'end': len(labels),
+                'length': len(labels) - current_start
+            })
+            
+            # Validate and fix unstable segments
+            for segment in segments:
+                if segment['length'] < min_segment_length:
+                    # Find most common neighbor label
+                    neighbor_labels = []
+                    if segment['start'] > 0:
+                        neighbor_labels.append(labels[segment['start'] - 1])
+                    if segment['end'] < len(labels):
+                        neighbor_labels.append(labels[segment['end']])
+                    
+                    if neighbor_labels:
+                        # Use most common neighbor label
+                        unique_neighbors, counts = np.unique(neighbor_labels, return_counts=True)
+                        most_common_neighbor = unique_neighbors[np.argmax(counts)]
+                        
+                        # Replace segment with most common neighbor
+                        validated_labels[segment['start']:segment['end']] = most_common_neighbor
+                        tprint(f"🔧 Fixed unstable segment: length {segment['length']} -> {most_common_neighbor}", "INFO")
+            
+            return validated_labels
+            
+        except Exception as e:
+            tprint(f"⚠️ Stability validation failed: {e}", "WARNING")
+            return labels
 
 
 # Register the step

@@ -43,11 +43,23 @@ class OptimizerConfig:
     convergence_tolerance: float = 1e-5
     enable_early_stopping: bool = True
 
-    # ΔJ calculation weights (finance-first approach)
-    w_cv: float = 0.55      # CV ratio weight
+    # ΔJ calculation weights (finance-first approach with enhanced cohesion)
+    w_cv: float = 0.50      # CV ratio weight (reduced to make room for cohesion)
     w_bal: float = 0.15     # Balance weight
     w_sil: float = 0.10     # Silhouette weight
-    w_temp: float = 0.20    # Temporal consistency weight
+    w_temp: float = 0.15    # Temporal consistency weight (reduced)
+    w_frag: float = 0.10    # Fragmentation penalty weight (NEW)
+
+    # Enhanced size constraints
+    min_cluster_ratio: float = 0.05      # 5% minimum cluster size
+    max_cluster_ratio: float = 0.35      # 35% maximum cluster size (more flexible)
+    target_cluster_ratio: float = 0.20   # 20% target cluster size
+    size_balance_weight: float = 0.20    # Weight for size balance in objective
+
+    # Cohesion and fragmentation parameters
+    fragmentation_penalty_threshold: float = 0.5  # Fragmentation score threshold
+    cohesion_reward_threshold: float = 0.7        # Cohesion score threshold
+    enable_cohesion_optimization: bool = True     # Enable cohesion-based optimization
 
     # Neighbor consensus parameters
     neighbor_consensus_threshold: float = 0.65
@@ -237,14 +249,9 @@ class ClusteringOptimizer:
             for iteration in range(self.config.max_iterations):
                 tprint(f"\n🔄 Optimization Iteration {iteration + 1}/{self.config.max_iterations}", "INFO")
 
-                # Calculate current objective value
-                current_objective = stats.get_objective_value(
-                    w_cv=self.config.w_cv,
-                    w_bal=self.config.w_bal,
-                    w_sil=self.config.w_sil,
-                    w_temp=self.config.w_temp,
-                    k_complexity_penalty=self.config.k_complexity_penalty,
-                    k_max=self.config.k_max
+                # Calculate current objective value with enhanced metrics
+                current_objective = self._calculate_enhanced_objective(
+                    stats, features, config
                 )
 
                 tprint(f"Current objective: {current_objective:.6f}", "INFO")
@@ -815,6 +822,220 @@ class ClusteringOptimizer:
         except Exception as e:
             tprint(f"❌ K-growth check failed: {e}", "ERROR")
             return False
+
+    def _calculate_enhanced_objective(self, stats: ClusteringStats, features: np.ndarray, config: Any) -> float:
+        """Calculate enhanced objective function with fragmentation penalties and size constraints."""
+        try:
+            # Base objective from ClusteringStats
+            base_objective = stats.get_objective_value(
+                w_cv=self.config.w_cv,
+                w_bal=self.config.w_bal,
+                w_sil=self.config.w_sil,
+                w_temp=self.config.w_temp,
+                k_complexity_penalty=self.config.k_complexity_penalty,
+                k_max=self.config.k_max
+            )
+            
+            # Calculate fragmentation penalty
+            fragmentation_penalty = 0.0
+            if self.config.enable_cohesion_optimization:
+                fragmentation_penalty = self._calculate_fragmentation_penalty(stats, features)
+            
+            # Calculate size balance penalty
+            size_balance_penalty = self._calculate_size_balance_penalty(stats)
+            
+            # Calculate cohesion reward
+            cohesion_reward = 0.0
+            if self.config.enable_cohesion_optimization:
+                cohesion_reward = self._calculate_cohesion_reward(stats, features)
+            
+            # Enhanced objective = base + penalties - rewards
+            enhanced_objective = (base_objective + 
+                                fragmentation_penalty + 
+                                size_balance_penalty - 
+                                cohesion_reward)
+            
+            # Store detailed metrics for monitoring
+            if not hasattr(self, '_objective_breakdown'):
+                self._objective_breakdown = {}
+            
+            self._objective_breakdown = {
+                'base_objective': base_objective,
+                'fragmentation_penalty': fragmentation_penalty,
+                'size_balance_penalty': size_balance_penalty,
+                'cohesion_reward': cohesion_reward,
+                'enhanced_objective': enhanced_objective
+            }
+            
+            return enhanced_objective
+            
+        except Exception as e:
+            tprint(f"❌ Enhanced objective calculation failed: {e}", "ERROR")
+            return base_objective if 'base_objective' in locals() else 0.0
+
+    def _calculate_fragmentation_penalty(self, stats: ClusteringStats, features: np.ndarray) -> float:
+        """Calculate fragmentation penalty based on cluster cohesion."""
+        try:
+            total_penalty = 0.0
+            n_clusters = stats.n_clusters
+            
+            for cluster_id in range(n_clusters):
+                if stats.cluster_sizes[cluster_id] == 0:
+                    continue
+                
+                # Get cluster points
+                cluster_mask = stats.assignments == cluster_id
+                cluster_features = features[cluster_mask]
+                
+                if len(cluster_features) < 2:
+                    continue
+                
+                # Calculate fragmentation score for this cluster
+                fragmentation_score = self._calculate_cluster_fragmentation(
+                    cluster_features, stats.centroids[cluster_id]
+                )
+                
+                # Apply penalty if fragmentation is high
+                if fragmentation_score > self.config.fragmentation_penalty_threshold:
+                    penalty = (fragmentation_score - self.config.fragmentation_penalty_threshold) * self.config.w_frag
+                    total_penalty += penalty
+                    
+                    tprint(f"🔧 Cluster {cluster_id} fragmentation penalty: {penalty:.4f}", "DEBUG")
+            
+            return total_penalty
+            
+        except Exception as e:
+            tprint(f"⚠️ Fragmentation penalty calculation failed: {e}", "WARNING")
+            return 0.0
+
+    def _calculate_cluster_fragmentation(self, cluster_features: np.ndarray, centroid: np.ndarray) -> float:
+        """Calculate fragmentation score for a single cluster."""
+        try:
+            if len(cluster_features) < 2:
+                return 0.0
+            
+            # Calculate distances from points to centroid
+            distances = np.sqrt(np.sum((cluster_features - centroid) ** 2, axis=1))
+            
+            # Fragmentation = coefficient of variation of distances
+            if np.mean(distances) == 0:
+                return 0.0
+            
+            fragmentation = np.std(distances) / np.mean(distances)
+            return min(fragmentation, 1.0)  # Cap at 1.0
+            
+        except Exception as e:
+            tprint(f"⚠️ Cluster fragmentation calculation failed: {e}", "WARNING")
+            return 0.0
+
+    def _calculate_size_balance_penalty(self, stats: ClusteringStats) -> float:
+        """Calculate penalty for imbalanced cluster sizes."""
+        try:
+            if stats.n_clusters < 2:
+                return 0.0
+            
+            # Calculate cluster size ratios
+            total_samples = len(stats.assignments)
+            cluster_ratios = [size / total_samples for size in stats.cluster_sizes if size > 0]
+            
+            if not cluster_ratios:
+                return 0.0
+            
+            # Calculate size balance metrics
+            target_ratio = 1.0 / len(cluster_ratios)  # Equal distribution
+            size_variance = np.var(cluster_ratios)
+            size_std = np.std(cluster_ratios)
+            
+            # Penalty based on deviation from target
+            penalty = 0.0
+            
+            # Penalty for clusters that are too large
+            for ratio in cluster_ratios:
+                if ratio > self.config.max_cluster_ratio:
+                    excess = ratio - self.config.max_cluster_ratio
+                    penalty += excess * self.config.size_balance_weight
+            
+            # Penalty for clusters that are too small
+            for ratio in cluster_ratios:
+                if ratio < self.config.min_cluster_ratio:
+                    deficit = self.config.min_cluster_ratio - ratio
+                    penalty += deficit * self.config.size_balance_weight
+            
+            # Additional penalty for high variance
+            if size_std > 0.15:  # High imbalance
+                penalty += size_std * self.config.size_balance_weight * 0.5
+            
+            return penalty
+            
+        except Exception as e:
+            tprint(f"⚠️ Size balance penalty calculation failed: {e}", "WARNING")
+            return 0.0
+
+    def _calculate_cohesion_reward(self, stats: ClusteringStats, features: np.ndarray) -> float:
+        """Calculate reward for high cluster cohesion."""
+        try:
+            total_reward = 0.0
+            n_clusters = stats.n_clusters
+            
+            for cluster_id in range(n_clusters):
+                if stats.cluster_sizes[cluster_id] < 2:
+                    continue
+                
+                # Get cluster points
+                cluster_mask = stats.assignments == cluster_id
+                cluster_features = features[cluster_mask]
+                
+                # Calculate cohesion score for this cluster
+                cohesion_score = self._calculate_cluster_cohesion(
+                    cluster_features, stats.centroids[cluster_id]
+                )
+                
+                # Apply reward if cohesion is high
+                if cohesion_score > self.config.cohesion_reward_threshold:
+                    reward = (cohesion_score - self.config.cohesion_reward_threshold) * self.config.w_frag * 0.5
+                    total_reward += reward
+                    
+                    tprint(f"🔧 Cluster {cluster_id} cohesion reward: {reward:.4f}", "DEBUG")
+            
+            return total_reward
+            
+        except Exception as e:
+            tprint(f"⚠️ Cohesion reward calculation failed: {e}", "WARNING")
+            return 0.0
+
+    def _calculate_cluster_cohesion(self, cluster_features: np.ndarray, centroid: np.ndarray) -> float:
+        """Calculate cohesion score for a single cluster."""
+        try:
+            if len(cluster_features) < 2:
+                return 0.0
+            
+            # Calculate average distance to centroid
+            distances = np.sqrt(np.sum((cluster_features - centroid) ** 2, axis=1))
+            avg_distance = np.mean(distances)
+            
+            # Calculate pairwise distances within cluster
+            from sklearn.metrics.pairwise import euclidean_distances
+            pairwise_distances = euclidean_distances(cluster_features)
+            
+            # Remove diagonal (self-distances)
+            pairwise_distances = pairwise_distances[np.triu_indices_from(pairwise_distances, k=1)]
+            
+            if len(pairwise_distances) == 0:
+                return 0.0
+            
+            avg_pairwise_distance = np.mean(pairwise_distances)
+            
+            # Cohesion = ratio of centroid distance to pairwise distance
+            # Higher ratio = more cohesive (points close to centroid relative to each other)
+            if avg_pairwise_distance == 0:
+                return 1.0
+            
+            cohesion = avg_distance / avg_pairwise_distance
+            return min(cohesion, 1.0)  # Cap at 1.0
+            
+        except Exception as e:
+            tprint(f"⚠️ Cluster cohesion calculation failed: {e}", "WARNING")
+            return 0.0
 
     def _get_optimization_summary(self) -> Dict[str, Any]:
         """Get summary of optimization performance."""

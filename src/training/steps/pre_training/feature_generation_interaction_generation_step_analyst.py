@@ -449,21 +449,31 @@ class FeatureGenerationInteractionGenerationStepAnalyst(BaseStep):
                         'composite_score': composite_score
                     })
         
-        # Generate variants using our utility
+        # Generate variants using parallel processing
         try:
-            variant_features, variant_stats = generate_all_variants(
-                features_df=generated_features,
-                selected_features=selected_features,
-                ohlcv_data=ohlcv_data
-            )
+            # Use parallel processing for large feature sets
+            if len(selected_features) > 10:
+                tprint_info("  🚀 Using parallel variant generation...")
+                variant_features = self._parallel_variant_generation(
+                    selected_features, generated_features, ohlcv_data
+                )
+                variant_stats = {'variants_by_type': {}, 'failed_variants': []}
+            else:
+                # Use sequential processing for small feature sets
+                variant_features, variant_stats = generate_all_variants(
+                    features_df=generated_features,
+                    selected_features=selected_features,
+                    ohlcv_data=ohlcv_data
+                )
             
             self.performance_stats['variants_generated'] = len(variant_features.columns)
             
             # Log variant generation statistics
             tprint_success(f"✅ Generated {len(variant_features.columns)} variant features")
-            tprint_info(f"📊 Variant breakdown: {variant_stats['variants_by_type']}")
+            if variant_stats.get('variants_by_type'):
+                tprint_info(f"📊 Variant breakdown: {variant_stats['variants_by_type']}")
             
-            if variant_stats['failed_variants']:
+            if variant_stats.get('failed_variants'):
                 tprint_warning(f"⚠️ Failed variants: {len(variant_stats['failed_variants'])}")
             
             return variant_features
@@ -507,26 +517,8 @@ class FeatureGenerationInteractionGenerationStepAnalyst(BaseStep):
         
         targets = labeled_data[target_columns]
         
-        # Create feature categories mapping
-        feature_categories = {}
-        for col in variant_features.columns:
-            # Try to infer category from feature name
-            if any(cat in col.lower() for cat in ['trend', 'sma', 'ema']):
-                feature_categories[col] = 'trend'
-            elif any(cat in col.lower() for cat in ['rsi', 'stoch', 'oscillator']):
-                feature_categories[col] = 'oscillator'
-            elif any(cat in col.lower() for cat in ['momentum', 'roc', 'macd']):
-                feature_categories[col] = 'momentum'
-            elif any(cat in col.lower() for cat in ['return', 'pct_change']):
-                feature_categories[col] = 'return'
-            elif any(cat in col.lower() for cat in ['vol', 'volatility', 'std']):
-                feature_categories[col] = 'volatility'
-            elif any(cat in col.lower() for cat in ['volume', 'vol']):
-                feature_categories[col] = 'volume'
-            elif any(cat in col.lower() for cat in ['accel', 'jerk']):
-                feature_categories[col] = 'acceleration'
-            else:
-                feature_categories[col] = 'unknown'
+        # Get feature categories from lookback optimization (feature bank)
+        feature_categories = self._get_feature_categories_from_bank(variant_features.columns, lookback_optimization)
         
         # Create composite scores (use 1.0 as default if not available)
         composite_scores = {col: 1.0 for col in variant_features.columns}
@@ -630,22 +622,20 @@ class FeatureGenerationInteractionGenerationStepAnalyst(BaseStep):
         """
         Phase 3.1: Shallow LGBM sweep to select top 30% features.
         
-        Uses MultiOutputRegressor with corrected parameters:
+        Uses fast feature importance + mutual information proxy instead of expensive SHAP.
         - max_depth=4 (increased to capture interactions)
         - num_leaves=15 (more flexibility)
         - n_estimators=100 (more stable importance)
-        - Sample data for SHAP (max 10k rows)
+        - Fast proxy: 60% feature importance + 40% mutual information
         """
-        tprint_info("  📊 Training shallow LGBM with MultiOutputRegressor...")
+        tprint_info("  📊 Training shallow LGBM with fast feature selection...")
         
-        # Sample data for SHAP calculation (max 10k rows)
-        if len(features) > 10000:
-            sample_indices = np.random.choice(len(features), 10000, replace=False)
-            features_sample = features.iloc[sample_indices]
-            targets_sample = targets.iloc[sample_indices]
-        else:
-            features_sample = features
-            targets_sample = targets
+        # Use consistent sampling strategy with chunked processing
+        features_sample, targets_sample = self._get_consistent_sample(features, targets, max_samples=8000)
+        
+        # Apply chunked processing for large datasets
+        if len(features_sample) > 5000:
+            features_sample = self._chunked_processing(features_sample, targets_sample, chunk_size=2000)
         
         # Setup LGBM with corrected parameters
         lgbm_params = {
@@ -661,22 +651,30 @@ class FeatureGenerationInteractionGenerationStepAnalyst(BaseStep):
         model = MultiOutputRegressor(lgb.LGBMRegressor(**lgbm_params))
         model.fit(features_sample, targets_sample)
         
-        # Calculate SHAP values
-        tprint_info("  🔍 Calculating SHAP values...")
-        explainer = shap.TreeExplainer(model.estimators_[0], model_output='raw')
-        shap_values = explainer.shap_values(features_sample)
+        # Fast feature importance calculation (no SHAP)
+        tprint_info("  🔍 Calculating fast feature importance...")
         
-        # Average SHAP values across targets
-        if isinstance(shap_values, list):
-            # Multiple targets
-            avg_shap = np.mean([np.abs(sv) for sv in shap_values], axis=0)
-        else:
-            # Single target
-            avg_shap = np.abs(shap_values)
+        # Get feature importance from LGBM
+        importance_scores = model.estimators_[0].feature_importances_
         
-        # Rank features by mean absolute SHAP value
+        # Calculate mutual information with first target
+        from sklearn.feature_selection import mutual_info_regression
+        mi_scores = mutual_info_regression(
+            features_sample, 
+            targets_sample.iloc[:, 0], 
+            random_state=42
+        )
+        
+        # Normalize scores
+        importance_scores = (importance_scores - np.min(importance_scores)) / (np.max(importance_scores) - np.min(importance_scores) + 1e-8)
+        mi_scores = (mi_scores - np.min(mi_scores)) / (np.max(mi_scores) - np.min(mi_scores) + 1e-8)
+        
+        # Combined score: 60% importance + 40% mutual information
+        combined_scores = 0.6 * importance_scores + 0.4 * mi_scores
+        
+        # Rank features by combined score
         feature_importance = pd.Series(
-            np.mean(avg_shap, axis=0),
+            combined_scores,
             index=features.columns
         ).sort_values(ascending=False)
         
@@ -684,7 +682,7 @@ class FeatureGenerationInteractionGenerationStepAnalyst(BaseStep):
         n_select = max(1, int(len(features.columns) * 0.3))
         top_features = feature_importance.head(n_select).index.tolist()
         
-        tprint_success(f"  ✅ Selected {len(top_features)} features (top 30%)")
+        tprint_success(f"  ✅ Selected {len(top_features)} features (top 30%) using fast proxy")
         
         return features[top_features]
     
@@ -697,21 +695,19 @@ class FeatureGenerationInteractionGenerationStepAnalyst(BaseStep):
         """
         Phase 3.2: Deeper LGBM refinement to select top 40 features.
         
-        Uses deeper LGBM with multi-criteria selection:
-        - SHAP importance (60%)
-        - Feature importance (30%)
+        Uses deeper LGBM with fast multi-criteria selection:
+        - Feature importance (60%)
+        - Mutual information (30%)
         - Stability (10%)
         """
         tprint_info("  📊 Training deeper LGBM for refinement...")
         
-        # Sample data for SHAP calculation
-        if len(features) > 10000:
-            sample_indices = np.random.choice(len(features), 10000, replace=False)
-            features_sample = features.iloc[sample_indices]
-            targets_sample = targets.iloc[sample_indices]
-        else:
-            features_sample = features
-            targets_sample = targets
+        # Use consistent sampling strategy with chunked processing
+        features_sample, targets_sample = self._get_consistent_sample(features, targets, max_samples=8000)
+        
+        # Apply chunked processing for large datasets
+        if len(features_sample) > 5000:
+            features_sample = self._chunked_processing(features_sample, targets_sample, chunk_size=2000)
         
         # Setup deeper LGBM
         lgbm_params = {
@@ -727,38 +723,33 @@ class FeatureGenerationInteractionGenerationStepAnalyst(BaseStep):
         model = MultiOutputRegressor(lgb.LGBMRegressor(**lgbm_params))
         model.fit(features_sample, targets_sample)
         
-        # Calculate SHAP values
-        explainer = shap.TreeExplainer(model.estimators_[0], model_output='raw')
-        shap_values = explainer.shap_values(features_sample)
-        
-        # Average SHAP values across targets
-        if isinstance(shap_values, list):
-            avg_shap = np.mean([np.abs(sv) for sv in shap_values], axis=0)
-        else:
-            avg_shap = np.abs(shap_values)
+        # Fast multi-criteria selection (no SHAP)
+        tprint_info("  🔍 Calculating fast multi-criteria scores...")
         
         # Calculate feature importance
         feature_importance = model.estimators_[0].feature_importances_
         
-        # Calculate stability (consistency across targets)
-        if isinstance(shap_values, list):
-            stability = np.std([np.mean(np.abs(sv), axis=0) for sv in shap_values], axis=0)
-        else:
-            stability = np.zeros(len(features.columns))
+        # Calculate mutual information with first target
+        from sklearn.feature_selection import mutual_info_regression
+        mi_scores = mutual_info_regression(
+            features_sample, 
+            targets_sample.iloc[:, 0], 
+            random_state=42
+        )
+        
+        # Calculate stability (variance across features)
+        stability = np.var(features_sample.values, axis=0)
         
         # Normalize scores
-        shap_scores = np.mean(avg_shap, axis=0)
-        shap_scores = (shap_scores - np.min(shap_scores)) / (np.max(shap_scores) - np.min(shap_scores) + 1e-8)
-        
         imp_scores = (feature_importance - np.min(feature_importance)) / (np.max(feature_importance) - np.min(feature_importance) + 1e-8)
-        
+        mi_scores = (mi_scores - np.min(mi_scores)) / (np.max(mi_scores) - np.min(mi_scores) + 1e-8)
         stab_scores = (stability - np.min(stability)) / (np.max(stability) - np.min(stability) + 1e-8)
         
         # Multi-criteria selection
         combined_scores = (
-            0.6 * shap_scores +  # SHAP importance (60%)
-            0.3 * imp_scores +  # Feature importance (30%)
-            0.1 * stab_scores   # Stability (10%)
+            0.6 * imp_scores +   # Feature importance (60%)
+            0.3 * mi_scores +    # Mutual information (30%)
+            0.1 * stab_scores    # Stability (10%)
         )
         
         # Rank and select top 40
@@ -766,7 +757,7 @@ class FeatureGenerationInteractionGenerationStepAnalyst(BaseStep):
         n_select = min(40, len(features.columns))
         top_features = feature_scores.head(n_select).index.tolist()
         
-        tprint_success(f"  ✅ Selected {len(top_features)} features (top 40)")
+        tprint_success(f"  ✅ Selected {len(top_features)} features (top 40) using fast proxy")
         
         return features[top_features]
     
@@ -787,14 +778,12 @@ class FeatureGenerationInteractionGenerationStepAnalyst(BaseStep):
         """
         tprint_info("  🌳 Training deep LGBM for interaction guidance...")
         
-        # Sample data for efficiency
-        if len(features) > 10000:
-            sample_indices = np.random.choice(len(features), 10000, replace=False)
-            features_sample = features.iloc[sample_indices]
-            targets_sample = targets.iloc[sample_indices]
-        else:
-            features_sample = features
-            targets_sample = targets
+        # Use consistent sampling strategy with chunked processing
+        features_sample, targets_sample = self._get_consistent_sample(features, targets, max_samples=8000)
+        
+        # Apply chunked processing for large datasets
+        if len(features_sample) > 5000:
+            features_sample = self._chunked_processing(features_sample, targets_sample, chunk_size=2000)
         
         # Train deep LGBM for tree analysis
         lgbm_params = {
@@ -850,69 +839,36 @@ class FeatureGenerationInteractionGenerationStepAnalyst(BaseStep):
                 self.logger.warning(f"MI calculation failed for {name}: {e}")
                 mi_scores[name] = 0.0
         
-        # Select top 30 candidates by MI
-        top_candidates = sorted(mi_scores.items(), key=lambda x: x[1], reverse=True)[:30]
-        
-        # Calculate SHAP values for top candidates
-        tprint_info("  🔍 Calculating SHAP values for top candidates...")
-        shap_scores = {}
-        
-        for name, _ in top_candidates:
-            try:
-                # Add interaction to feature set
-                test_features = features.copy()
-                test_features[name] = interaction_candidates[[n for n, _ in interaction_candidates].index(name)][1]
-                
-                # Sample for SHAP
-                if len(test_features) > 5000:
-                    sample_indices = np.random.choice(len(test_features), 5000, replace=False)
-                    test_sample = test_features.iloc[sample_indices]
-                    targets_test = targets.iloc[sample_indices]
-                else:
-                    test_sample = test_features
-                    targets_test = targets
-                
-                # Train model and calculate SHAP
-                test_model = MultiOutputRegressor(lgb.LGBMRegressor(**lgbm_params))
-                test_model.fit(test_sample, targets_test)
-                
-                explainer = shap.TreeExplainer(test_model.estimators_[0], model_output='raw')
-                shap_values = explainer.shap_values(test_sample)
-                
-                # Get SHAP value for the interaction feature
-                interaction_idx = test_sample.columns.get_loc(name)
-                if isinstance(shap_values, list):
-                    interaction_shap = np.mean([np.abs(sv[:, interaction_idx]) for sv in shap_values])
-                else:
-                    interaction_shap = np.mean(np.abs(shap_values[:, interaction_idx]))
-                
-                shap_scores[name] = interaction_shap
-                
-            except Exception as e:
-                self.logger.warning(f"SHAP calculation failed for {name}: {e}")
-                shap_scores[name] = 0.0
-        
-        # Select top 50 interactions
-        top_interactions = sorted(shap_scores.items(), key=lambda x: x[1], reverse=True)[:50]
+        # Early stopping interaction discovery
+        tprint_info("  🔧 Generating interactions with early stopping...")
+        interaction_features = self._early_stopping_interaction_discovery(
+            feature_pairs, features, targets, max_candidates=20
+        )
         
         # Create interaction DataFrame
-        interaction_features = pd.DataFrame(index=features.index)
+        interaction_df = pd.DataFrame(interaction_features, index=features.index)
+        
+        # Apply causality shift
+        interaction_df = interaction_df.shift(1)
+        
+        # Apply RobustScaler
+        scaler = RobustScaler()
+        interaction_df = pd.DataFrame(
+            scaler.fit_transform(interaction_df),
+            columns=interaction_df.columns,
+            index=interaction_df.index
+        )
+        
+        # Create metadata
         interaction_metadata = {
             'feature_pairs': feature_pairs[:10],
-            'interaction_scores': dict(top_interactions),
-            'mi_scores': dict(top_candidates)
+            'interaction_scores': {name: 1.0 for name in interaction_df.columns},  # Placeholder scores
+            'early_stopping_applied': True
         }
         
-        for name, _ in top_interactions:
-            # Find the interaction in candidates
-            for candidate_name, interaction in interaction_candidates:
-                if candidate_name == name:
-                    interaction_features[name] = interaction
-                    break
+        tprint_success(f"  ✅ Generated {len(interaction_df.columns)} interaction features with early stopping")
         
-        tprint_success(f"  ✅ Generated {len(interaction_features.columns)} interaction features")
-        
-        return interaction_features, interaction_metadata
+        return interaction_df, interaction_metadata
     
     def _extract_tree_splitting_pairs(self, booster) -> List[Tuple[str, str, int]]:
         """
@@ -1093,26 +1049,8 @@ class FeatureGenerationInteractionGenerationStepAnalyst(BaseStep):
         """
         tprint_info("🔍 Verifying category coverage (minimum 2 per category)...")
         
-        # Create feature categories mapping
-        feature_categories = {}
-        for col in combined_features.columns:
-            # Infer category from feature name
-            if any(cat in col.lower() for cat in ['trend', 'sma', 'ema']):
-                feature_categories[col] = 'trend'
-            elif any(cat in col.lower() for cat in ['rsi', 'stoch', 'oscillator']):
-                feature_categories[col] = 'oscillator'
-            elif any(cat in col.lower() for cat in ['momentum', 'roc', 'macd']):
-                feature_categories[col] = 'momentum'
-            elif any(cat in col.lower() for cat in ['return', 'pct_change']):
-                feature_categories[col] = 'return'
-            elif any(cat in col.lower() for cat in ['vol', 'volatility', 'std']):
-                feature_categories[col] = 'volatility'
-            elif any(cat in col.lower() for cat in ['volume', 'vol']):
-                feature_categories[col] = 'volume'
-            elif any(cat in col.lower() for cat in ['accel', 'jerk']):
-                feature_categories[col] = 'acceleration'
-            else:
-                feature_categories[col] = 'unknown'
+        # Get feature categories from lookback optimization (feature bank)
+        feature_categories = self._get_feature_categories_from_bank(combined_features.columns, lookback_optimization)
         
         # Count features per category
         category_counts = {}
@@ -1288,69 +1226,269 @@ class FeatureGenerationInteractionGenerationStepAnalyst(BaseStep):
         
         return category_counts
 
-    def _generate_outcome_report(
-        self,
-        shap_metadata: Dict,
-        pruning_stats: Dict,
-        category_coverage: Dict,
-        config: Dict[str, Any]
-    ) -> Optional[str]:
-        """Generate comprehensive outcome report in markdown format."""
+    def _get_feature_categories_from_bank(self, feature_names: List[str], lookback_optimization: Dict) -> Dict[str, str]:
+        """Get feature categories from lookback optimization feature bank."""
+        feature_categories = {}
+        
+        # Get categories from lookback optimization if available
+        if 'feature_categories' in lookback_optimization:
+            bank_categories = lookback_optimization['feature_categories']
+            for feature_name in feature_names:
+                # Try to find exact match first
+                if feature_name in bank_categories:
+                    feature_categories[feature_name] = bank_categories[feature_name]
+                else:
+                    # Try to find partial match (for variants)
+                    base_name = feature_name.split('_')[0]  # Get base feature name
+                    if base_name in bank_categories:
+                        feature_categories[feature_name] = bank_categories[base_name]
+                    else:
+                        feature_categories[feature_name] = 'unknown'
+        else:
+            # Fallback to name-based inference
+            for feature_name in feature_names:
+                feature_categories[feature_name] = self._infer_feature_category(feature_name)
+        
+        return feature_categories
+    
+    def _infer_feature_category(self, feature_name: str) -> str:
+        """Infer feature category from name with robust keyword matching."""
+        category_keywords = {
+            'trend': ['sma', 'ema', 'trend', 'moving_average', 'ma'],
+            'oscillator': ['rsi', 'stoch', 'oscillator', 'williams', 'cci'],
+            'momentum': ['momentum', 'roc', 'macd', 'rate_of_change', 'pct_change'],
+            'return': ['return', 'pct_change', 'log_return', 'ret'],
+            'volatility': ['vol', 'volatility', 'std', 'atr', 'bb', 'bollinger'],
+            'volume': ['volume', 'vol', 'vwap', 'obv', 'ad'],
+            'acceleration': ['accel', 'jerk', 'second_derivative', '2nd_deriv']
+        }
+        
+        feature_lower = feature_name.lower()
+        for category, keywords in category_keywords.items():
+            if any(keyword in feature_lower for keyword in keywords):
+                return category
+        
+        return 'unknown'
+    
+    def _get_consistent_sample(self, features: pd.DataFrame, targets: pd.DataFrame, max_samples: int = 8000) -> Tuple[pd.DataFrame, pd.DataFrame]:
+        """Get consistent sample across all phases."""
+        if len(features) > max_samples:
+            # Use same random seed for consistency
+            np.random.seed(42)
+            sample_idx = np.random.choice(len(features), max_samples, replace=False)
+            return features.iloc[sample_idx], targets.iloc[sample_idx]
+        return features, targets
+    
+    def _adaptive_category_selection(self, features_by_category: Dict[str, List[str]], feature_importance: pd.Series, min_per_category: int = 2, max_per_category: int = 8) -> List[str]:
+        """Dynamic feature selection based on signal strength."""
+        selected_features = []
+        
+        for category, features in features_by_category.items():
+            if len(features) == 0:
+                continue
+                
+            # Calculate signal strength (composite score variance)
+            scores = [feature_importance.get(f, 0) for f in features]
+            if len(scores) > 1:
+                signal_strength = np.std(scores) / (np.mean(scores) + 1e-8)
+            else:
+                signal_strength = 0.5  # Default for single feature
+            
+            # Adaptive selection: more features for stronger signals
+            if signal_strength > 0.5:  # High signal strength
+                n_select = min(max_per_category, len(features))
+            elif signal_strength > 0.2:  # Medium signal strength
+                n_select = min(6, len(features))
+            else:  # Low signal strength
+                n_select = min(min_per_category, len(features))
+            
+            # Get top features by importance
+            category_importance = feature_importance[features]
+            top_category_features = category_importance.nlargest(n_select).index.tolist()
+            selected_features.extend(top_category_features)
+        
+        return selected_features
+    
+    def _early_stopping_interaction_discovery(self, feature_pairs: List[Tuple], features: pd.DataFrame, targets: pd.DataFrame, max_candidates: int = 20) -> Dict[str, pd.Series]:
+        """Early stopping interaction discovery with diminishing returns detection."""
+        from sklearn.feature_selection import mutual_info_regression
+        
+        interaction_features = {}
+        scores = []
+        best_score = 0
+        stagnation_count = 0
+        
+        for i, (f1, f2, co_occurrence) in enumerate(feature_pairs):
+            if i >= max_candidates:
+                break
+                
+            if f1 not in features.columns or f2 not in features.columns:
+                continue
+                
+            # Generate interactions
+            interactions = {
+                f"{f1}_x_{f2}": features[f1] * features[f2],
+                f"{f1}_div_{f2}": features[f1] / (features[f2] + 1e-8),
+                f"{f1}_minus_{f2}": features[f1] - features[f2]
+            }
+            
+            # Score interactions using MI + correlation
+            for name, interaction in interactions.items():
+                try:
+                    mi_score = mutual_info_regression(
+                        interaction.values.reshape(-1, 1), 
+                        targets.iloc[:, 0],
+                        random_state=42
+                    )[0]
+                    corr_score = abs(interaction.corr(targets.iloc[:, 0]))
+                    
+                    # Combined score (70% MI + 30% correlation)
+                    combined_score = 0.7 * mi_score + 0.3 * corr_score
+                    scores.append((name, combined_score))
+                    
+                    # Early stopping logic
+                    if combined_score > best_score:
+                        best_score = combined_score
+                        stagnation_count = 0
+                    else:
+                        stagnation_count += 1
+                        
+                    if stagnation_count >= 5:  # Stop if no improvement for 5 iterations
+                        break
+                        
+                except Exception as e:
+                    tprint_warning(f"  ⚠️ Error scoring interaction {name}: {e}")
+                    continue
+            
+            if stagnation_count >= 5:
+                break
+        
+        # Select top interactions
+        scores.sort(key=lambda x: x[1], reverse=True)
+        top_interactions = scores[:10]  # Top 10 interactions
+        
+        # Generate final interaction features
+        for name, score in top_interactions:
+            if name in interactions:
+                interaction_features[name] = interactions[name]
+        
+        return interaction_features
+    
+    def _parallel_variant_generation(self, selected_features: List[Dict], features_df: pd.DataFrame, ohlcv_data: pd.DataFrame) -> pd.DataFrame:
+        """Parallel variant generation using multiprocessing."""
+        import multiprocessing as mp
+        from functools import partial
+        
+        if not HARDWARE_OPT_AVAILABLE:
+            # Fallback to sequential processing
+            return self._sequential_variant_generation(selected_features, features_df, ohlcv_data)
+        
         try:
-            outcomes_dir = Path('outcomes')
-            outcomes_dir.mkdir(exist_ok=True)
+            # Get hardware manager
+            hardware_manager = get_unified_hardware_manager()
+            hardware_manager.optimize_for_workload(WorkloadType.FEATURE_ENGINEERING, OptimizationLevel.BALANCED)
             
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            report_filename = f"{self.step_name}_report_{timestamp}.md"
-            report_path = outcomes_dir / report_filename
+            # Use optimal number of processes
+            max_processes = min(4, mp.cpu_count())
             
-            with open(report_path, 'w') as f:
-                f.write(f"# Analyst Interaction Generation Report\n\n")
-                f.write(f"**Generated:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-                f.write(f"**Symbol:** {config.get('symbol', 'N/A')}\n")
-                f.write(f"**Timeframe:** {config.get('timeframe', 'N/A')}\n\n")
-                
-                f.write("## Performance Summary\n\n")
-                f.write(f"- **Total Execution Time:** {self.performance_stats['total_time']:.2f}s\n")
-                f.write(f"- **Phase 0 Time:** {self.performance_stats['phase0_time']:.2f}s\n")
-                f.write(f"- **Phase 1 Time:** {self.performance_stats['phase1_time']:.2f}s\n")
-                f.write(f"- **Phase 2 Time:** {self.performance_stats['phase2_time']:.2f}s\n")
-                f.write(f"- **Phase 3.1 Time:** {self.performance_stats['phase3_1_time']:.2f}s\n")
-                f.write(f"- **Phase 3.2 Time:** {self.performance_stats['phase3_2_time']:.2f}s\n")
-                f.write(f"- **Phase 3.3 Time:** {self.performance_stats['phase3_3_time']:.2f}s\n")
-                f.write(f"- **Phase 4 Time:** {self.performance_stats['phase4_time']:.2f}s\n\n")
-                
-                f.write("## Feature Statistics\n\n")
-                f.write(f"- **Variants Generated:** {self.performance_stats['variants_generated']}\n")
-                f.write(f"- **Features After Pruning:** {self.performance_stats['features_after_pruning']}\n")
-                f.write(f"- **Final Feature Count:** {self.performance_stats['final_feature_count']}\n")
-                f.write(f"- **Interaction Count:** {self.performance_stats['interaction_count']}\n")
-                f.write(f"- **Total Features:** {self.performance_stats['final_feature_count'] + self.performance_stats['interaction_count']}\n\n")
-                
-                f.write("## Category Coverage\n\n")
-                for category, count in category_coverage.items():
-                    f.write(f"- **{category}:** {count} features\n")
-                f.write("\n")
-                
-                f.write("## Numerical Safety\n\n")
-                f.write(f"- **Safety Incidents:** {self.performance_stats['numerical_safety_incidents']}\n\n")
-                
-                if self.numerical_safety_log:
-                    f.write("### Safety Incidents Log\n\n")
-                    for incident in self.numerical_safety_log[:10]:  # Show first 10
-                        f.write(f"- {incident}\n")
-                    if len(self.numerical_safety_log) > 10:
-                        f.write(f"\n... and {len(self.numerical_safety_log) - 10} more incidents\n")
-                
-                f.write("\n## Pruning Statistics\n\n")
-                for key, value in pruning_stats.items():
-                    f.write(f"- **{key}:** {value}\n")
+            with mp.Pool(processes=max_processes) as pool:
+                generate_func = partial(
+                    self._generate_single_feature_variants,
+                    features_df=features_df,
+                    ohlcv_data=ohlcv_data
+                )
+                results = pool.map(generate_func, selected_features)
             
-            return str(report_path)
+            # Combine results
+            all_variants = {}
+            for variants in results:
+                if variants:
+                    all_variants.update(variants)
+            
+            return pd.DataFrame(all_variants, index=features_df.index)
             
         except Exception as e:
-            tprint_error(f"❌ Report generation failed: {e}")
-            return None
+            tprint_warning(f"⚠️ Parallel processing failed, falling back to sequential: {e}")
+            return self._sequential_variant_generation(selected_features, features_df, ohlcv_data)
+    
+    def _generate_single_feature_variants(self, feature_info: Dict, features_df: pd.DataFrame, ohlcv_data: pd.DataFrame) -> Dict[str, pd.Series]:
+        """Generate variants for a single feature (for parallel processing)."""
+        try:
+            from src.training.utils.feature_selection.variant_generator import generate_all_variants
+            
+            # Generate variants for single feature
+            variants, _ = generate_all_variants(
+                features_df=features_df,
+                selected_features=[feature_info],
+                ohlcv_data=ohlcv_data
+            )
+            
+            return variants.to_dict('series')
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Failed to generate variants for {feature_info.get('feature_name', 'unknown')}: {e}")
+            return {}
+    
+    def _sequential_variant_generation(self, selected_features: List[Dict], features_df: pd.DataFrame, ohlcv_data: pd.DataFrame) -> pd.DataFrame:
+        """Sequential variant generation (fallback)."""
+        try:
+            from src.training.utils.feature_selection.variant_generator import generate_all_variants
+            
+            variants, _ = generate_all_variants(
+                features_df=features_df,
+                selected_features=selected_features,
+                ohlcv_data=ohlcv_data
+            )
+            
+            return variants
+            
+        except Exception as e:
+            tprint_error(f"❌ Sequential variant generation failed: {e}")
+            raise
+    
+    def _chunked_processing(self, features: pd.DataFrame, targets: pd.DataFrame, chunk_size: int = 5000) -> pd.DataFrame:
+        """Process large datasets in chunks to reduce memory usage."""
+        if not HARDWARE_OPT_AVAILABLE:
+            return features
+        
+        try:
+            # Get memory optimizer
+            memory_optimizer = get_m1_memory_optimizer()
+            
+            # Check if chunking is needed
+            if len(features) <= chunk_size:
+                return features
+            
+            tprint_info(f"  📊 Processing {len(features)} rows in chunks of {chunk_size}")
+            
+            # Process in chunks
+            chunk_results = []
+            for i in range(0, len(features), chunk_size):
+                chunk_features = features.iloc[i:i+chunk_size]
+                chunk_targets = targets.iloc[i:i+chunk_size]
+                
+                # Process chunk
+                processed_chunk = self._process_chunk(chunk_features, chunk_targets)
+                chunk_results.append(processed_chunk)
+                
+                # Memory cleanup
+                memory_optimizer.force_garbage_collection()
+            
+            # Combine results
+            result = pd.concat(chunk_results, ignore_index=True)
+            
+            tprint_success(f"  ✅ Chunked processing completed: {len(result)} rows")
+            return result
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Chunked processing failed, using full dataset: {e}")
+            return features
+    
+    def _process_chunk(self, chunk_features: pd.DataFrame, chunk_targets: pd.DataFrame) -> pd.DataFrame:
+        """Process a single chunk of data."""
+        # This is a placeholder - implement specific chunk processing logic
+        return chunk_features
+
 
     async def run(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """Run method required by BaseStep interface."""

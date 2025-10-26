@@ -84,7 +84,7 @@ class HDBSCANParameterSpace:
     min_cluster_size: Tuple[int, int] = (10, 100)  # (min, max)
     min_samples: Tuple[int, int] = (5, 50)
     cluster_selection_epsilon: Tuple[float, float] = (0.0, 0.5)
-    cluster_selection_method: List[str] = field(default_factory=lambda: ['eom', 'leaf'])
+    cluster_selection_method: List[str] = field(default_factory=lambda: ['leaf', 'eom'])  # Prioritize 'leaf' method
     metric: List[str] = field(default_factory=lambda: ['euclidean', 'manhattan', 'cosine'])
     alpha: Tuple[float, float] = (0.5, 2.0)
     cluster_selection_epsilon: Tuple[float, float] = (0.0, 0.5)
@@ -837,13 +837,13 @@ class AutomatedHDBSCANTuner:
         """Create intelligent fallback strategies optimized for 4-8 clusters."""
         strategies = []
         
-        # Strategy 1: Target 4-6 clusters with leaf method
+        # Strategy 1: Target 4-6 clusters with leaf method (enhanced)
         strategies.append(FallbackStrategy(
-            name='target_4_6_clusters_leaf',
-            description='Target 4-6 clusters using leaf method',
+            name='target_4_6_clusters_leaf_enhanced',
+            description='Target 4-6 clusters using leaf method with enhanced epsilon range',
             parameters={
                 'cluster_selection_method': 'leaf',
-                'cluster_selection_epsilon': 0.01,
+                'cluster_selection_epsilon': 0.05,  # Increased from 0.01 for better separation
                 'min_cluster_size': max(25, characteristics.n_samples // 25),  # Target ~4-6 clusters
                 'min_samples': max(12, characteristics.n_samples // 50),
                 'metric': 'euclidean'
@@ -851,18 +851,32 @@ class AutomatedHDBSCANTuner:
             priority=1
         ))
         
-        # Strategy 1.5: Ultra-aggressive for balanced distribution
+        # Strategy 1.5: Enhanced leaf method for better separation
+        strategies.append(FallbackStrategy(
+            name='enhanced_leaf_separation',
+            description='Enhanced leaf method for better cluster separation',
+            parameters={
+                'cluster_selection_method': 'leaf',
+                'cluster_selection_epsilon': 0.15,  # Optimized epsilon for better separation
+                'min_cluster_size': max(20, characteristics.n_samples // 40),  # Balanced cluster size
+                'min_samples': max(8, characteristics.n_samples // 80),  # Balanced samples
+                'metric': 'euclidean'  # Use euclidean for better regime detection
+            },
+            priority=1
+        ))
+        
+        # Strategy 1.6: Ultra-aggressive for balanced distribution
         strategies.append(FallbackStrategy(
             name='ultra_balanced_distribution',
             description='Ultra-aggressive parameters for balanced cluster distribution',
             parameters={
                 'cluster_selection_method': 'leaf',
-                'cluster_selection_epsilon': 0.5,  # Much higher epsilon
+                'cluster_selection_epsilon': 0.3,  # High epsilon for aggressive clustering
                 'min_cluster_size': max(15, characteristics.n_samples // 50),  # Much smaller clusters
                 'min_samples': max(5, characteristics.n_samples // 100),  # Much smaller samples
                 'metric': 'manhattan'  # Use manhattan for better separation
             },
-            priority=1
+            priority=2
         ))
         
         # Strategy 2: Target 6-8 clusters with EOM method

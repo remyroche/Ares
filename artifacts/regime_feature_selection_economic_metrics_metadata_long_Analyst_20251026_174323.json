@@ -1,0 +1,10 @@
+{
+  "regime_count": 0,
+  "calculation_method": "vectorized",
+  "artifact_name": "economic_metrics",
+  "artifact_type": "data",
+  "file_path": "artifacts/pre_training/long/Analyst/regime_feature_selection/regime_feature_selection_economic_metrics_long_Analyst_20251026_174323.parquet",
+  "file_size": 974,
+  "timestamp": "2025-10-26T17:58:25.409969",
+  "compression": "auto"
+}

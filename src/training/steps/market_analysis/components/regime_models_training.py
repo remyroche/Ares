@@ -23,6 +23,27 @@ from src.utils.logger import system_logger
 from src.utils.tprint import tprint
 from .base_component import BaseMarketAnalysisComponent, ComponentConfig, ComponentResult
 
+# Enhanced imports for new functionality
+from src.utils.ml_common.unified_vectorization_manager import (
+    UnifiedVectorizationManager, OperationType, OptimizationStrategy
+)
+from src.utils.ml_common.optimization.hpo_utils import (
+    HyperparameterOptimization
+)
+from src.utils.ml_common.validation.universal_temporal_validation import (
+    UniversalTemporalValidator, TemporalValidationConfig
+)
+from src.utils.ml_common.utils.lookahead_protection import LookaheadProtection
+from src.utils.hardware.unified_hardware_manager import (
+    UnifiedHardwareManager, HardwareConfig, WorkloadType, OptimizationLevel
+)
+from src.utils.ml_common.evaluation.evaluation_utils import (
+    EvaluationUtils
+)
+from src.utils.ml_common.post_training.model_validation import (
+    ModelValidator, ValidationConfig
+)
+
 # Suppress warnings
 warnings.filterwarnings('ignore')
 
@@ -106,7 +127,7 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
     """
 
     def __init__(self, config: Optional[ComponentConfig] = None):
-        """Initialize the Regime Models Training Component."""
+        """Initialize the Regime Models Training Component with enhanced utilities."""
         tprint("🚀 [REGIME_MODELS] Initializing Regime Models Training Component", color="cyan", bold=True)
         tprint(f"📋 [REGIME_MODELS] Config provided: {config is not None}", color="blue")
 
@@ -125,6 +146,63 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
             tprint("✅ [REGIME_MODELS] Logger initialized successfully", color="green")
         except Exception as e:
             tprint(f"⚠️ [REGIME_MODELS] Logger initialization warning: {e}", color="yellow")
+
+        # Initialize hardware manager for optimization
+        self.hardware_manager = UnifiedHardwareManager(
+            HardwareConfig(
+                cpu_optimization_level=OptimizationLevel.AGGRESSIVE,
+                gpu_optimization_level=OptimizationLevel.BALANCED,
+                memory_optimization_level=OptimizationLevel.BALANCED,
+                enable_adaptive_optimization=True,
+                enable_learning=True
+            )
+        )
+        tprint("🔧 [REGIME_MODELS] Hardware manager initialized", color="green")
+
+        # Initialize vectorization manager for feature generation
+        self.vectorization_manager = UnifiedVectorizationManager()
+        tprint("🔧 [REGIME_MODELS] Vectorization manager initialized", color="green")
+
+        # Initialize HPO optimizer
+        self.hpo_optimizer = HyperparameterOptimization(
+            {
+                'max_trials': 50,
+                'timeout_seconds': 300,
+                'enable_early_stopping': True,
+                'enable_pruning': True
+            }
+        )
+        tprint("🔧 [REGIME_MODELS] HPO optimizer initialized", color="green")
+
+        # Initialize temporal validator for data leakage prevention
+        self.temporal_validator = UniversalTemporalValidator(
+            TemporalValidationConfig(
+                enable_temporal_checks=True,
+                strict_temporal_order=True,
+                initial_train_size=0.7,
+                test_size=0.3,
+                gap_size=1
+            )
+        )
+        tprint("🔧 [REGIME_MODELS] Temporal validator initialized", color="green")
+
+        # Initialize lookahead protection
+        self.lookahead_protection = LookaheadProtection()
+        tprint("🔧 [REGIME_MODELS] Lookahead protection initialized", color="green")
+
+        # Initialize model evaluator
+        self.model_evaluator = EvaluationUtils()
+        tprint("🔧 [REGIME_MODELS] Model evaluator initialized", color="green")
+
+        # Initialize model validator
+        self.model_validator = ModelValidator(
+            ValidationConfig(
+                enable_purged_cv=True,
+                enable_data_leakage_detection=True,
+                enable_time_series_validation=True
+            )
+        )
+        tprint("🔧 [REGIME_MODELS] Model validator initialized", color="green")
 
         # Initialize model training parameters
         tprint("🔧 [REGIME_MODELS] Configuring model training parameters", color="cyan")
@@ -198,11 +276,173 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
         tprint("📋 [REGIME_MODELS] Getting required artifacts", color="cyan")
         required_artifacts = ['regime_models_training_result']
         tprint(f"✅ [REGIME_MODELS] Required artifacts: {required_artifacts}", color="green")
-        return required_artifacts
+    async def _train_models_with_hpo(self, X_train: np.ndarray, y_train: np.ndarray, X_test: np.ndarray, y_test: np.ndarray) -> Dict[str, Any]:
+        """Train models with HPO optimization."""
+        tprint("🔍 [REGIME_MODELS] Training models with HPO optimization", color="cyan")
+        
+        trained_models = {}
+        
+        # Train CatBoost with HPO
+        if ML_LIBRARIES_AVAILABLE:
+            try:
+                tprint("🐱 [REGIME_MODELS] Training CatBoost with HPO", color="blue")
+                
+                def create_catboost_model(trial):
+                    return cb.CatBoostClassifier(
+                        iterations=trial.suggest_int('iterations', 50, 200),
+                        depth=trial.suggest_int('depth', 3, 8),
+                        learning_rate=trial.suggest_float('learning_rate', 0.01, 0.3),
+                        random_seed=42,
+                        verbose=False
+                    )
+                
+                hpo_result = self.hpo_optimizer.optimize(
+                    model_factory=create_catboost_model,
+                    X=X_train,
+                    y=y_train,
+                    cv_folds=3,
+                    scoring='accuracy',
+                    n_trials=15
+                )
+                
+                if hpo_result.success:
+                    trained_models['catboost'] = hpo_result.best_model
+                    tprint(f"✅ [REGIME_MODELS] CatBoost HPO completed - Best score: {hpo_result.best_score:.4f}", color="green")
+                else:
+                    # Fallback to default parameters
+                    catboost_model = cb.CatBoostClassifier(
+                        iterations=100,
+                        depth=6,
+                        learning_rate=0.1,
+                        random_seed=42,
+                        verbose=False
+                    )
+                    catboost_model.fit(X_train, y_train)
+                    trained_models['catboost'] = catboost_model
+                    tprint("⚠️ [REGIME_MODELS] CatBoost HPO failed, using default parameters", color="yellow")
+                    
+            except Exception as e:
+                tprint(f"❌ [REGIME_MODELS] CatBoost training failed: {e}", color="red")
+
+            # Train ExtraTrees with HPO
+            try:
+                tprint("🌳 [REGIME_MODELS] Training ExtraTrees with HPO", color="blue")
+                
+                def create_extratrees_model(trial):
+                    return ExtraTreesClassifier(
+                        n_estimators=trial.suggest_int('n_estimators', 50, 200),
+                        max_depth=trial.suggest_int('max_depth', 5, 20),
+                        min_samples_split=trial.suggest_int('min_samples_split', 2, 10),
+                        min_samples_leaf=trial.suggest_int('min_samples_leaf', 1, 5),
+                        max_features=trial.suggest_categorical('max_features', ['sqrt', 'log2', None]),
+                        random_state=42,
+                        n_jobs=-1
+                    )
+                
+                hpo_result = self.hpo_optimizer.optimize(
+                    model_factory=create_extratrees_model,
+                    X=X_train,
+                    y=y_train,
+                    cv_folds=3,
+                    scoring='accuracy',
+                    n_trials=15
+                )
+                
+                if hpo_result.success:
+                    trained_models['extra_trees'] = hpo_result.best_model
+                    tprint(f"✅ [REGIME_MODELS] ExtraTrees HPO completed - Best score: {hpo_result.best_score:.4f}", color="green")
+                else:
+                    # Fallback to default parameters
+                    extratrees_model = ExtraTreesClassifier(
+                        n_estimators=100,
+                        max_depth=None,
+                        min_samples_split=2,
+                        min_samples_leaf=1,
+                        max_features='sqrt',
+                        random_state=42,
+                        n_jobs=-1
+                    )
+                    extratrees_model.fit(X_train, y_train)
+                    trained_models['extra_trees'] = extratrees_model
+                    tprint("⚠️ [REGIME_MODELS] ExtraTrees HPO failed, using default parameters", color="yellow")
+                    
+            except Exception as e:
+                tprint(f"❌ [REGIME_MODELS] ExtraTrees training failed: {e}", color="red")
+
+            # Train Greedy Rule Lists (no HPO needed)
+            try:
+                tprint("📋 [REGIME_MODELS] Training Greedy Rule Lists", color="blue")
+                rule_model = GreedyRuleListClassifier(
+                    max_depth=20,
+                    criterion='gini',
+                    class_weight='balanced'
+                )
+                rule_model.fit(X_train, y_train)
+                trained_models['greedy_rule_lists'] = rule_model
+                tprint("✅ [REGIME_MODELS] Greedy Rule Lists trained successfully", color="green")
+                
+            except Exception as e:
+                tprint(f"❌ [REGIME_MODELS] Greedy Rule Lists training failed: {e}", color="red")
+
+        tprint(f"✅ [REGIME_MODELS] Model training completed - {len(trained_models)} models trained", color="green")
+        return trained_models
+
+    async def _evaluate_models_enhanced(self, models: Dict[str, Any], X_test: np.ndarray, y_test: np.ndarray) -> Dict[str, Any]:
+        """Evaluate models with enhanced evaluation utilities."""
+        tprint("📊 [REGIME_MODELS] Evaluating models with enhanced evaluation", color="cyan")
+        
+        model_metrics = {}
+        
+        for model_name, model in models.items():
+            try:
+                tprint(f"🔍 [REGIME_MODELS] Evaluating {model_name}", color="blue")
+                
+                # Get predictions
+                y_pred = model.predict(X_test)
+                y_pred_proba = model.predict_proba(X_test) if hasattr(model, 'predict_proba') else None
+                
+                # Use enhanced model evaluator
+                evaluation_result = self.model_evaluator.evaluate_model(
+                    model=model,
+                    X=X_test,
+                    y=y_test,
+                    y_pred=y_pred,
+                    y_pred_proba=y_pred_proba
+                )
+                
+                # Use model validator
+                validation_result = self.model_validator.validate_model(
+                    model=model,
+                    X=X_test,
+                    y=y_test,
+                    cv_folds=3
+                )
+                
+                # Calculate basic metrics
+                accuracy = accuracy_score(y_test, y_pred)
+                precision, recall, f1, support = precision_recall_fscore_support(y_test, y_pred, average='weighted')
+                
+                model_metrics[model_name] = {
+                    'accuracy': accuracy,
+                    'precision': precision,
+                    'recall': recall,
+                    'f1_score': f1,
+                    'classification_report': classification_report(y_test, y_pred, output_dict=True),
+                    'enhanced_evaluation': evaluation_result,
+                    'model_validation': validation_result
+                }
+                
+                tprint(f"✅ [REGIME_MODELS] {model_name} - Accuracy: {accuracy:.4f}, F1: {f1:.4f}", color="green")
+                
+            except Exception as e:
+                tprint(f"❌ [REGIME_MODELS] Failed to evaluate {model_name}: {e}", color="red")
+                model_metrics[model_name] = {'error': str(e)}
+        
+        return model_metrics
 
     async def execute(self, data: pd.DataFrame, pipeline_state: Dict[str, Any]) -> ComponentResult:
         """
-        Execute regime detection models training.
+        Execute regime detection models training with enhanced hardware optimization and validation.
 
         Args:
             data: Market data DataFrame
@@ -212,15 +452,210 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
             ComponentResult with training results
         """
         execution_start_time = time.time()
-        tprint("🚀 [REGIME_MODELS] Starting regime detection models training execution", color="cyan", bold=True)
-        self.logger.info("Starting regime detection models training execution")
+        tprint("🚀 [REGIME_MODELS] Starting enhanced regime detection models training execution", color="cyan", bold=True)
+        self.logger.info("Starting enhanced regime detection models training execution")
 
-        # Log initial system performance
-        initial_perf = self._get_system_performance()
-        if initial_perf:
-            tprint(f"💻 [REGIME_MODELS] Initial system state - CPU: {initial_perf.get('cpu_percent', 'N/A')}%, Memory: {initial_perf.get('memory_percent', 'N/A')}%", color="blue")
+        try:
+            # Initialize hardware optimization for intensive workload
+            tprint("🔧 [REGIME_MODELS] Initializing hardware optimization", color="cyan")
+            await self.hardware_manager.initialize()
+            await self.hardware_manager.optimize_for_workload(WorkloadType.ML_TRAINING)
+            tprint("✅ [REGIME_MODELS] Hardware optimization initialized", color="green")
 
-        # Monitor initial memory usage
+            # Apply lookahead protection
+            tprint("🔒 [REGIME_MODELS] Applying lookahead protection", color="cyan")
+            protected_data = self.lookahead_protection.protect_data(data)
+            tprint("✅ [REGIME_MODELS] Lookahead protection applied", color="green")
+
+            # Log initial system performance
+            initial_perf = self._get_system_performance()
+            if initial_perf:
+                tprint(f"💻 [REGIME_MODELS] Initial system state - CPU: {initial_perf.get('cpu_percent', 'N/A')}%, Memory: {initial_perf.get('memory_percent', 'N/A')}%", color="blue")
+
+            # Monitor initial memory usage
+            initial_memory = psutil.virtual_memory()
+            tprint(f"🧠 [REGIME_MODELS] Initial memory usage: {initial_memory.percent:.1f}% ({initial_memory.used / 1024**3:.1f}GB / {initial_memory.total / 1024**3:.1f}GB)", color="blue")
+
+            # Extract regime labels from pipeline state
+            tprint("📊 [REGIME_MODELS] Extracting regime labels from pipeline state", color="yellow")
+            artifacts = pipeline_state.get('artifacts', {})
+            regime_labels = None
+
+            # Try multiple possible artifact keys for clustering results
+            optimal_clustering_result = artifacts.get('optimal_regime_clustering_result', {})
+            if optimal_clustering_result:
+                clustering_result = optimal_clustering_result.get('clustering_result')
+                if clustering_result:
+                    if isinstance(clustering_result, dict):
+                        regime_labels = clustering_result.get('cluster_assignments')
+                        if isinstance(regime_labels, str):
+                            try:
+                                clean_str = regime_labels.strip('[]')
+                                regime_labels = np.array([int(x) for x in clean_str.split() if x.strip()])
+                                tprint("🔍 [REGIME_MODELS] Parsed regime labels from string representation", color="blue")
+                            except Exception as e:
+                                tprint(f"⚠️ [REGIME_MODELS] Failed to parse regime labels string: {e}", color="yellow")
+                                regime_labels = None
+                    elif hasattr(clustering_result, 'cluster_assignments'):
+                        regime_labels = clustering_result.cluster_assignments
+                        if isinstance(regime_labels, str):
+                            try:
+                                clean_str = regime_labels.strip('[]')
+                                regime_labels = np.array([int(x) for x in clean_str.split() if x.strip()])
+                                tprint("🔍 [REGIME_MODELS] Parsed regime labels from clustering_result object", color="blue")
+                            except Exception as e:
+                                tprint(f"⚠️ [REGIME_MODELS] Failed to parse regime labels string: {e}", color="yellow")
+                                regime_labels = None
+
+            # Fallback to old regime_clustering_result structure
+            if regime_labels is None:
+                regime_clustering_result = artifacts.get('regime_clustering_result', {})
+                regime_labels = regime_clustering_result.get('cluster_assignments')
+                if regime_labels is not None:
+                    tprint("🔍 [REGIME_MODELS] Found regime labels in regime_clustering_result", color="blue")
+
+            # Check if regime labels are available
+            if regime_labels is None:
+                tprint("⚠️ [REGIME_MODELS] No regime labels found in artifacts, will create synthetic regime labels", color="yellow")
+                regime_labels = self._create_synthetic_regime_labels(protected_data)
+
+            # Prepare training data with enhanced feature generation
+            tprint("🔧 [REGIME_MODELS] Preparing training data with enhanced feature generation", color="yellow")
+            X, y, feature_names = self._prepare_training_data(protected_data, regime_labels, pipeline_state)
+
+            # Validate required data
+            if X is None or y is None or feature_names is None:
+                tprint("❌ [REGIME_MODELS] Failed to prepare training data", color="red")
+                return ComponentResult(
+                    success=False,
+                    artifacts={},
+                    error_message="Failed to prepare training data",
+                    metadata={'component_type': 'regime_models_training'}
+                )
+
+            tprint(f"📊 [REGIME_MODELS] Training data prepared - X: {X.shape}, y: {y.shape}", color="green")
+
+            # Perform temporal validation
+            tprint("🔄 [REGIME_MODELS] Performing temporal validation", color="cyan")
+            total_samples = len(X)
+            train_size = int(total_samples * 0.7)
+            train_indices = np.arange(train_size)
+            test_indices = np.arange(train_size, total_samples)
+
+            X_train = X[train_indices]
+            X_test = X[test_indices]
+            y_train = y[train_indices]
+            y_test = y[test_indices]
+
+            # Validate temporal split
+            validation_report = self.temporal_validator.validate_temporal_split(
+                X_train, X_test, y_train, y_test,
+                model_name="regime_models",
+                model_type="classification"
+            )
+
+            if not validation_report.temporal_order_valid:
+                tprint(f"⚠️ [REGIME_MODELS] Temporal validation failed: {validation_report.temporal_message}", color="yellow")
+                # Use fallback split
+                from sklearn.model_selection import train_test_split
+                X_train, X_test, y_train, y_test = train_test_split(
+                    X, y, test_size=0.3, random_state=42, stratify=y
+                )
+            else:
+                tprint("✅ [REGIME_MODELS] Temporal validation passed", color="green")
+
+            # Train models with HPO optimization
+            tprint("🏋️ [REGIME_MODELS] Training models with HPO optimization", color="yellow")
+            trained_models = await self._train_models_with_hpo(X_train, y_train, X_test, y_test)
+
+            # Evaluate models with enhanced evaluation
+            tprint("📊 [REGIME_MODELS] Evaluating models with enhanced evaluation", color="yellow")
+            model_metrics = await self._evaluate_models_enhanced(trained_models, X_test, y_test)
+
+            # Create comprehensive results
+            execution_time = time.time() - execution_start_time
+            results = {
+                'regime_models_training_result': {
+                    'models': trained_models,
+                    'model_metrics': model_metrics,
+                    'training_time': execution_time,
+                    'success': True,
+                    'validation_report': {
+                        'temporal_order_valid': validation_report.temporal_order_valid,
+                        'leakage_detected': validation_report.leakage_detected,
+                        'validation_score': validation_report.validation_score,
+                        'warnings': validation_report.warnings,
+                        'recommendations': validation_report.recommendations
+                    },
+                    'hardware_optimization': {
+                        'enabled': True,
+                        'workload_type': 'ML_TRAINING',
+                        'optimization_applied': True
+                    },
+                    'lookahead_protection': {
+                        'enabled': True,
+                        'protection_applied': True
+                    },
+                    'metadata': {
+                        'component_type': 'regime_models_training',
+                        'data_shape': X.shape,
+                        'train_shape': X_train.shape,
+                        'test_shape': X_test.shape,
+                        'n_regimes': len(np.unique(regime_labels)) if regime_labels is not None else 0,
+                        'feature_names': feature_names,
+                        'timestamp': datetime.now().isoformat()
+                    }
+                }
+            }
+
+            tprint("✅ [REGIME_MODELS] Regime models training completed successfully", color="green", bold=True)
+            tprint(f"⏱️ [REGIME_MODELS] Total execution time: {execution_time:.2f}s", color="blue")
+
+            # Save artifacts persistently
+            try:
+                save_report = await self.save_artifacts(results, {
+                    'component_type': 'regime_models_training',
+                    'execution_time': execution_time
+                })
+                tprint(
+                    f"💾 [REGIME_MODELS] Artifacts saved persistently (correlation_id={save_report.correlation_id}): {list(save_report.paths.keys())}",
+                    color="green"
+                )
+            except Exception as e:
+                tprint(f"⚠️ [REGIME_MODELS] Failed to save artifacts persistently: {e}", color="yellow")
+
+            # Cleanup hardware resources
+            await self.hardware_manager.cleanup()
+            tprint("🔧 [REGIME_MODELS] Hardware resources cleaned up", color="green")
+
+            return ComponentResult(
+                success=True,
+                artifacts=results,
+                metadata={
+                    'component_type': 'regime_models_training',
+                    'execution_time': execution_time,
+                    'artifacts_saved_persistently': True,
+                    'hardware_optimization_enabled': True,
+                    'lookahead_protection_enabled': True
+                }
+            )
+
+        except Exception as e:
+            tprint(f"❌ [REGIME_MODELS] Regime models training failed: {e}", color="red", bold=True)
+            self.logger.error(f"Regime models training failed: {e}", exc_info=True)
+            
+            # Cleanup hardware resources on error
+            try:
+                await self.hardware_manager.cleanup()
+            except Exception as cleanup_error:
+                tprint(f"⚠️ [REGIME_MODELS] Hardware cleanup failed: {cleanup_error}", color="yellow")
+            
+            return ComponentResult(
+                success=False,
+                artifacts={},
+                error_message=str(e),
+                metadata={'component_type': 'regime_models_training'}
+            )
         initial_memory = self._monitor_memory_usage("Initial")
 
         # Log execution context

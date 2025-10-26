@@ -1,0 +1,65 @@
+# Enhanced Tactician Interaction Generation Configuration
+enhanced_interaction_engine:
+  enabled: true
+  
+  # Log Ratio Interactions
+  log_ratios:
+    enabled: true
+    safe_division: true # Use safe division to prevent NaNs/Infs
+    min_denominator: 1e-8 # Minimum value for denominator in log ratio calculations
+    smoothing:
+      enabled: true
+      window: 5 # Rolling window for smoothing log ratios
+    
+  # Ratio Interactions
+  ratio:
+    enabled: true
+    safe_division: true # Use safe division to prevent NaNs/Infs
+    min_denominator: 1e-8 # Minimum value for denominator in ratio calculations
+    combinations: # Pairs of features for ratio interactions (numerator / denominator)
+      - ["returns", "volume"]
+      - ["price", "volume"]
+      - ["volatility", "returns"]
+      - ["volatility", "price"]
+      - ["volume", "volatility"]
+      - ["momentum", "volume"]
+      - ["trend", "volatility"]
+    smoothing:
+      enabled: true
+      window: 5
+      
+  # Conditional Interactions
+  conditional:
+    enabled: true
+    conditioning_features: ["regime", "trend"] # Features to condition on
+    target_features: ["returns", "volatility", "volume", "momentum", "price"] # Features to apply conditional logic to
+    interaction_types: ["mean", "std", "interact"] # Types of conditional interactions
+    smoothing:
+      enabled: true
+      window: 5
+    
+  # Efficiency and Optimization
+  efficiency:
+    use_proxies: true # Use computationally cheaper proxies for expensive calculations (e.g., MI)
+    cache_correlations: true # Cache correlation matrices to avoid re-computation
+    cache_size: 1000
+    min_samples_for_correlation: 10
+    
+  # VectorBT Optimization
+  vectorbt_optimization:
+    enabled: true
+    rolling_window_sizes: [5, 10, 20] # Window sizes for VectorBT rolling operations
+    rolling_operations:
+      mean: true
+      std: true
+      min: true
+      max: true
+      sum: true
+    
+  # Hardware Optimization
+  hardware_optimization:
+    enabled: true
+    workload_type: "feature_engineering"
+    optimization_level: "balanced"
+    memory_efficient: true
+    parallel_processing: true

@@ -1,0 +1,12 @@
+{
+  "symbol": "ETHUSDT",
+  "exchange": "binance",
+  "timeframe": "1h",
+  "created_at": "2025-10-26T12:03:49.224731",
+  "artifact_name": "labeling_metadata_ETHUSDT_1h",
+  "artifact_type": "metadata",
+  "file_path": "artifacts/pre_training/long/Analyst/feature_generation_labeling_integration_step/feature_generation_labeling_integration_step_labeling_metadata_ETHUSDT_1h_long_Analyst_20251026_120344.parquet",
+  "file_size": 20117,
+  "timestamp": "2025-10-26T12:03:49.238152",
+  "compression": "auto"
+}

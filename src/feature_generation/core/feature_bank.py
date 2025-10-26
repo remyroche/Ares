@@ -1657,7 +1657,7 @@ class FeatureBank:
             # Additional exclusions as specified in feature generation step
             FeatureCategory.ORDER_FLOW,
             FeatureCategory.MICROSTRUCTURE,  # Exclude microstructure features
-            FeatureCategory.ADVANCED_STATISTICAL,  # Exclude advanced statistical features
+            # FeatureCategory.ADVANCED_STATISTICAL,  # REMOVED: Allow advanced statistical features
             # Exclude empty categories that have 0 generators but still consume processing time
             FeatureCategory.CROSS_TIMEFRAME,  # 0 generators but still processed
             FeatureCategory.LEGACY,           # 0 generators but still processed

@@ -1,0 +1,8 @@
+{
+  "artifact_name": "gate_results_summary",
+  "artifact_type": "data",
+  "file_path": "artifacts/pre_training/long/Analyst/feature_generation_gate_feature_step/feature_generation_gate_feature_step_gate_results_summary_long_Analyst_20251026_191112.parquet",
+  "file_size": 8785,
+  "timestamp": "2025-10-26T19:11:13.991269",
+  "compression": "auto"
+}

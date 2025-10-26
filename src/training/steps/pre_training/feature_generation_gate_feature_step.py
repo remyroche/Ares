@@ -98,6 +98,22 @@ class FeatureGenerationGateFeatureStep(BaseStep):
         self.vectorization_manager: Optional[UnifiedVectorizationManager] = None
         self.rolling_optimizer: Optional[VectorBTRollingOptimizer] = None
         self.vectorization_config: Optional[VectorizationConfig] = None
+        
+        # Hardware optimization components
+        self.hardware_manager: Optional[UnifiedHardwareManager] = None
+        self.streaming_processor: Optional[StreamingDataProcessor] = None
+        self.feature_cache: Optional[IntelligentFeatureCache] = None
+        
+        # Performance metrics
+        self.performance_metrics = {
+            'total_processing_time': 0.0,
+            'cache_hits': 0,
+            'cache_misses': 0,
+            'vectorbt_operations': 0,
+            'vectorbt_usage_rate': 0.0,
+            'memory_optimizations': 0,
+            'cache_hit_rate': 0.0
+        }
 
     async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -124,11 +140,39 @@ class FeatureGenerationGateFeatureStep(BaseStep):
             self._initialize_vectorbt_optimization(config)
 
             # Get required data from previous steps
-            features_df = self._get_artifact('labeled_dataframe')
-            targets = self._get_artifact('targets')
-
-            if features_df is None or targets is None:
-                raise ValueError("Required artifacts 'labeled_dataframe' and 'targets' not found")
+            symbol = config.get('symbol', 'ETHUSDT')
+            timeframe = config.get('timeframe', '15m')
+            
+            # Try to get labeled data with the correct naming convention
+            labeled_data_name = f'labeled_data_{symbol}_{timeframe}'
+            metadata_name = f'labeling_metadata_{symbol}_{timeframe}'
+            
+            try:
+                features_df = self._get_artifact(labeled_data_name)
+                targets_metadata = self._get_artifact(metadata_name)
+                
+                if features_df is None:
+                    raise ValueError(f"Required artifact '{labeled_data_name}' not found")
+                if targets_metadata is None:
+                    raise ValueError(f"Required artifact '{metadata_name}' not found")
+                    
+                # Extract targets from the labeled dataframe
+                # Look for target columns in the labeled data
+                target_columns = [col for col in features_df.columns if 'target' in col.lower() or 'label' in col.lower()]
+                if not target_columns:
+                    raise ValueError("No target columns found in labeled data")
+                
+                # Use the first target column as the main target
+                targets = features_df[target_columns[0]]
+                
+                tprint_success(f"✅ Retrieved labeled data: {features_df.shape}")
+                tprint_success(f"✅ Retrieved targets: {len(targets)} samples")
+                tprint_info(f"📊 Target column used: {target_columns[0]}")
+                
+            except Exception as e:
+                tprint_error(f"❌ Failed to retrieve required artifacts: {e}")
+                tprint_info("💡 Make sure feature_generation_labeling_integration_step has been run first")
+                raise ValueError(f"Required artifacts not found: {e}")
 
             # Check if we need streaming processing for large datasets
             needs_streaming = len(features_df) > 50000  # Threshold for streaming
@@ -220,12 +264,22 @@ class FeatureGenerationGateFeatureStep(BaseStep):
             # Calculate metrics
             metrics = self._calculate_metrics(gate_results, config)
 
-            # Save outcome report
-            report_path = self._save_artifact(
-                outcome_report,
-                "gate_feature_outcome_report",
-                artifact_type="report"
-            )
+            # Save outcome report to outcomes/ directory with datetime
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            symbol = config.get('symbol', 'unknown')
+            report_filename = f"gate_feature_outcome_report_{symbol}_{timestamp}.md"
+            
+            # Ensure outcomes directory exists
+            outcomes_dir = Path("outcomes")
+            outcomes_dir.mkdir(exist_ok=True)
+            
+            report_path = outcomes_dir / report_filename
+            
+            # Write the markdown report
+            with open(report_path, 'w', encoding='utf-8') as f:
+                f.write(outcome_report)
+            
+            tprint_success(f"📄 Outcome report saved to: {report_path}")
 
             # Add performance metrics to the result
             metrics.update(self.performance_metrics)
@@ -345,7 +399,18 @@ class FeatureGenerationGateFeatureStep(BaseStep):
             'passed_gates': len([r for r in gate_results if r.status.value == 'passed']),
             'failed_gates': len([r for r in gate_results if r.status.value == 'failed']),
             'warning_gates': len([r for r in gate_results if r.status.value == 'warning']),
-            'gate_details': [result.__dict__ for result in gate_results],
+            'gate_details': [
+                {
+                    'feature_name': result.feature_name,
+                    'gate_type': result.gate_type.value,
+                    'status': result.status.value,
+                    'score': result.score,
+                    'message': result.message,
+                    'threshold': result.threshold,
+                    'metadata': result.metadata if result.metadata else {'note': 'No additional metadata available'}
+                }
+                for result in gate_results
+            ],
             'timestamp': datetime.now().isoformat(),
             'symbol': config.get('symbol', 'unknown'),
             'execution_mode': config.get('execution_mode', 'light')
@@ -405,14 +470,25 @@ class FeatureGenerationGateFeatureStep(BaseStep):
     def _create_outcome_report(self, gate_results: List[GateFeatureResult], config: Dict[str, Any]) -> str:
         """Create comprehensive outcome report."""
         try:
+            timestamp = datetime.now()
+            symbol = config.get('symbol', 'unknown')
+            exchange = config.get('exchange', 'binance')
+            timeframe = config.get('timeframe', '15m')
+            execution_mode = config.get('execution_mode', 'light')
+            
             report = f"""# Gate Feature Protection Outcome Report
 
+## Executive Summary
+
+This report provides a comprehensive analysis of gate feature protection and validation for the feature generation pipeline. Gate features act as quality gates and protection mechanisms to ensure feature quality before proceeding to final feature selection and validation.
+
 **Execution Details:**
-- **Symbol:** {config.get('symbol', 'unknown')}
-- **Exchange:** {config.get('exchange', 'binance')}
-- **Timeframe:** {config.get('timeframe', '15m')}
-- **Execution Mode:** {config.get('execution_mode', 'light')}
-- **Timestamp:** {datetime.now().isoformat()}
+- **Symbol:** {symbol}
+- **Exchange:** {exchange}
+- **Timeframe:** {timeframe}
+- **Execution Mode:** {execution_mode}
+- **Execution Timestamp:** {timestamp.isoformat()}
+- **Report Generated:** {timestamp.strftime('%Y-%m-%d %H:%M:%S UTC')}
 
 ## Gate Evaluation Summary
 
@@ -425,65 +501,296 @@ class FeatureGenerationGateFeatureStep(BaseStep):
                 passed = len([r for r in gate_results if r.status == GateStatus.PASSED])
                 failed = len([r for r in gate_results if r.status == GateStatus.FAILED])
                 warnings = len([r for r in gate_results if r.status == GateStatus.WARNING])
+                skipped = len([r for r in gate_results if r.status == GateStatus.SKIPPED])
 
-                report += f"- ✅ **Passed:** {passed}\n"
-                report += f"- ❌ **Failed:** {failed}\n"
-                report += f"- ⚠️ **Warnings:** {warnings}\n"
+                report += f"- ✅ **Passed:** {passed} ({passed/len(gate_results)*100:.1f}%)\n"
+                report += f"- ❌ **Failed:** {failed} ({failed/len(gate_results)*100:.1f}%)\n"
+                report += f"- ⚠️ **Warnings:** {warnings} ({warnings/len(gate_results)*100:.1f}%)\n"
+                report += f"- ⏭️ **Skipped:** {skipped} ({skipped/len(gate_results)*100:.1f}%)\n"
 
                 if gate_results:
-                    avg_score = np.mean([r.score for r in gate_results])
+                    scores = [r.score for r in gate_results]
+                    avg_score = np.mean(scores)
+                    min_score = np.min(scores)
+                    max_score = np.max(scores)
+                    std_score = np.std(scores)
+                    
+                    report += f"\n**Score Statistics:**\n"
                     report += f"- 📊 **Average Score:** {avg_score:.4f}\n"
+                    report += f"- 📈 **Highest Score:** {max_score:.4f}\n"
+                    report += f"- 📉 **Lowest Score:** {min_score:.4f}\n"
+                    report += f"- 📏 **Score Std Dev:** {std_score:.4f}\n"
+
+                # Gate type breakdown
+                gate_types = {}
+                for result in gate_results:
+                    gate_type = result.gate_type.value
+                    if gate_type not in gate_types:
+                        gate_types[gate_type] = {'total': 0, 'passed': 0, 'failed': 0, 'warning': 0, 'skipped': 0}
+                    gate_types[gate_type]['total'] += 1
+                    status = result.status.value
+                    if status in gate_types[gate_type]:
+                        gate_types[gate_type][status] += 1
+                    else:
+                        # Handle unexpected status values
+                        gate_types[gate_type]['skipped'] += 1
+
+                report += f"\n**Gate Type Breakdown:**\n"
+                for gate_type, stats in gate_types.items():
+                    report += f"- **{gate_type.replace('_', ' ').title()}:** {stats['total']} total "
+                    report += f"(✅{stats['passed']} ❌{stats['failed']} ⚠️{stats['warning']} ⏭️{stats['skipped']})\n"
 
                 report += "\n## Detailed Gate Results\n"
 
+                # Group results by gate type for better organization
+                gate_results_by_type = {}
                 for result in gate_results:
-                    status_icon = {
-                        GateStatus.PASSED: '✅',
-                        GateStatus.FAILED: '❌',
-                        GateStatus.WARNING: '⚠️',
-                        GateStatus.SKIPPED: '⏭️'
-                    }.get(result.status, '❓')
+                    gate_type = result.gate_type.value
+                    if gate_type not in gate_results_by_type:
+                        gate_results_by_type[gate_type] = []
+                    gate_results_by_type[gate_type].append(result)
 
-                    report += f"\n### {status_icon} {result.gate_type.value.replace('_', ' ').title()}\n"
-                    report += f"- **Feature:** {result.feature_name}\n"
-                    report += f"- **Score:** {result.score:.4f}\n"
-                    report += f"- **Threshold:** {result.threshold:.4f}\n"
-                    report += f"- **Status:** {result.status.value.upper()}\n"
-                    if result.message:
-                        report += f"- **Message:** {result.message}\n"
+                for gate_type, results in gate_results_by_type.items():
+                    report += f"\n### {gate_type.replace('_', ' ').title()} Gates\n"
+                    
+                    for result in results:
+                        status_icon = {
+                            GateStatus.PASSED: '✅',
+                            GateStatus.FAILED: '❌',
+                            GateStatus.WARNING: '⚠️',
+                            GateStatus.SKIPPED: '⏭️'
+                        }.get(result.status, '❓')
+
+                        report += f"\n#### {status_icon} {result.feature_name}\n"
+                        report += f"- **Gate Type:** {result.gate_type.value.replace('_', ' ').title()}\n"
+                        report += f"- **Score:** {result.score:.4f}\n"
+                        report += f"- **Threshold:** {result.threshold:.4f}\n"
+                        report += f"- **Status:** {result.status.value.upper()}\n"
+                        report += f"- **Pass/Fail:** {'✅ PASSED' if result.score >= result.threshold else '❌ FAILED'}\n"
+                        if result.message:
+                            report += f"- **Message:** {result.message}\n"
+                        
+                        # Add additional context based on gate type
+                        if result.gate_type == GateFeatureType.QUALITY_GATE:
+                            report += f"- **Quality Assessment:** {'High' if result.score > 0.7 else 'Medium' if result.score > 0.4 else 'Low'}\n"
+                        elif result.gate_type == GateFeatureType.CORRELATION_GATE:
+                            report += f"- **Correlation Stability:** {'Stable' if result.score > 0.5 else 'Unstable'}\n"
+                        elif result.gate_type == GateFeatureType.VARIANCE_GATE:
+                            report += f"- **Variance Stability:** {'Stable' if result.score > 0.6 else 'Variable'}\n"
+                        elif result.gate_type == GateFeatureType.OUTLIER_GATE:
+                            report += f"- **Outlier Control:** {'Good' if result.score > 0.8 else 'Needs Attention'}\n"
             else:
                 report += "- No gates were evaluated (gate protection may be disabled)\n"
 
+            # Performance metrics section
+            report += f"\n## Performance Metrics\n"
+            if hasattr(self, 'performance_metrics') and self.performance_metrics:
+                report += f"- **Total Processing Time:** {self.performance_metrics.get('total_processing_time', 0):.2f} seconds\n"
+                report += f"- **Cache Hits:** {self.performance_metrics.get('cache_hits', 0)}\n"
+                report += f"- **Cache Misses:** {self.performance_metrics.get('cache_misses', 0)}\n"
+                if self.performance_metrics.get('cache_hits', 0) + self.performance_metrics.get('cache_misses', 0) > 0:
+                    cache_hit_rate = self.performance_metrics.get('cache_hits', 0) / (self.performance_metrics.get('cache_hits', 0) + self.performance_metrics.get('cache_misses', 0))
+                    report += f"- **Cache Hit Rate:** {cache_hit_rate:.1%}\n"
+                report += f"- **VectorBT Operations:** {self.performance_metrics.get('vectorbt_operations', 0)}\n"
+                report += f"- **VectorBT Usage Rate:** {self.performance_metrics.get('vectorbt_usage_rate', 0):.1%}\n"
+                report += f"- **Memory Optimizations:** {self.performance_metrics.get('memory_optimizations', 0)}\n"
+
             # Configuration section
             if self.gate_manager:
-                report += "\n## Gate Configuration\n"
+                report += f"\n## Gate Configuration\n"
                 gate_status = self.gate_manager.get_gate_status()
                 for key, value in gate_status.items():
                     if key != 'configuration':  # Skip nested configuration for brevity
                         report += f"- **{key}:** {value}\n"
 
                 # Add key configuration items
+                report += f"\n**Key Configuration Parameters:**\n"
                 report += f"- **Max Gate Features Per Base:** {self.gate_manager.config.max_gate_features_per_base}\n"
                 report += f"- **Min Gate IC Improvement:** {self.gate_manager.config.min_gate_ic_improvement}\n"
                 report += f"- **Min Gate Stability:** {self.gate_manager.config.min_gate_stability}\n"
+                report += f"- **Max NaN Ratio:** {self.gate_manager.config.max_nan_ratio}\n"
+                report += f"- **Min Variance Threshold:** {self.gate_manager.config.min_variance_threshold}\n"
+                report += f"- **Max Correlation Threshold:** {self.gate_manager.config.max_correlation_threshold}\n"
+                report += f"- **Min Data Points:** {self.gate_manager.config.min_data_points}\n"
+                report += f"- **Min IC Threshold:** {self.gate_manager.config.min_ic_threshold}\n"
+                report += f"- **Max IC Decay:** {self.gate_manager.config.max_ic_decay}\n"
+                report += f"- **Min Sharpe Ratio:** {self.gate_manager.config.min_sharpe_ratio}\n"
 
-            report += f"""
+            # Hardware optimization section
+            if hasattr(self, 'hardware_manager') and self.hardware_manager:
+                report += f"\n## Hardware Optimization Status\n"
+                try:
+                    system_status = self.hardware_manager.get_system_status()
+                    report += f"- **CPU Usage:** {system_status.get('cpu_usage', 'N/A')}\n"
+                    report += f"- **Memory Usage:** {system_status.get('memory_usage', 'N/A')}\n"
+                    report += f"- **GPU Available:** {system_status.get('gpu_available', 'N/A')}\n"
+                    report += f"- **Optimization Level:** {system_status.get('optimization_level', 'N/A')}\n"
+                except Exception as e:
+                    report += f"- **Status:** Unable to retrieve hardware status ({str(e)})\n"
 
-## Generated Artifacts
-- Gate results summary (JSON)
-- Gate performance metrics (JSON)
-- Gate state (JSON) - if persistence enabled
-- This outcome report (Markdown)
+            # VectorBT optimization section
+            if hasattr(self, 'vectorization_manager') and self.vectorization_manager:
+                report += f"\n## VectorBT Optimization Status\n"
+                try:
+                    vectorbt_stats = self.vectorization_manager.get_performance_stats()
+                    report += f"- **VectorBT Operations:** {vectorbt_stats.get('vectorbt_operations', 0)}\n"
+                    report += f"- **VectorBT Usage Rate:** {vectorbt_stats.get('vectorbt_usage_rate', 0):.1%}\n"
+                    report += f"- **Memory Optimizations:** {vectorbt_stats.get('memory_optimizations', 0)}\n"
+                    report += f"- **Cache Hit Rate:** {vectorbt_stats.get('cache_hit_rate', 0):.1%}\n"
+                except Exception as e:
+                    report += f"- **Status:** Unable to retrieve VectorBT stats ({str(e)})\n"
 
----
-*Generated by Feature Generation Gate Feature Step at {datetime.now().isoformat()}*
-"""
+            # Recommendations section
+            report += f"\n## Recommendations\n"
+            if gate_results:
+                failed_gates = [r for r in gate_results if r.status == GateStatus.FAILED]
+                warning_gates = [r for r in gate_results if r.status == GateStatus.WARNING]
+                
+                if failed_gates:
+                    report += f"### Critical Issues\n"
+                    report += f"- **{len(failed_gates)} gate(s) failed** - These require immediate attention before proceeding\n"
+                    for gate in failed_gates[:5]:  # Show first 5 failed gates
+                        report += f"  - {gate.feature_name}: {gate.message}\n"
+                    if len(failed_gates) > 5:
+                        report += f"  - ... and {len(failed_gates) - 5} more failed gates\n"
+                
+                if warning_gates:
+                    report += f"### Warnings\n"
+                    report += f"- **{len(warning_gates)} gate(s) have warnings** - Review these for potential improvements\n"
+                    for gate in warning_gates[:5]:  # Show first 5 warning gates
+                        report += f"  - {gate.feature_name}: {gate.message}\n"
+                    if len(warning_gates) > 5:
+                        report += f"  - ... and {len(warning_gates) - 5} more warning gates\n"
+                
+                # Overall assessment
+                success_rate = len([r for r in gate_results if r.status == GateStatus.PASSED]) / len(gate_results)
+                if success_rate >= 0.9:
+                    report += f"### Overall Assessment\n"
+                    report += f"- ✅ **Excellent gate performance** ({success_rate:.1%} pass rate)\n"
+                    report += f"- The feature pipeline is ready for final feature selection\n"
+                elif success_rate >= 0.7:
+                    report += f"### Overall Assessment\n"
+                    report += f"- ⚠️ **Good gate performance** ({success_rate:.1%} pass rate)\n"
+                    report += f"- Review warnings and consider feature improvements\n"
+                else:
+                    report += f"### Overall Assessment\n"
+                    report += f"- ❌ **Poor gate performance** ({success_rate:.1%} pass rate)\n"
+                    report += f"- Significant feature quality issues need to be addressed\n"
+            else:
+                report += f"- No gates were evaluated - verify gate protection is properly configured\n"
+
+            # Generated artifacts section
+            report += f"\n## Generated Artifacts\n"
+            report += f"- **Gate Results Summary:** JSON file containing detailed gate evaluation results\n"
+            report += f"- **Gate Performance Metrics:** JSON file with statistical analysis of gate performance\n"
+            report += f"- **Gate State:** JSON file with current gate state and configuration (if persistence enabled)\n"
+            report += f"- **Outcome Report:** This comprehensive markdown report\n"
+
+            # Technical details section
+            report += f"\n## Technical Details\n"
+            report += f"- **Step Name:** {self.step_name}\n"
+            report += f"- **Execution Mode:** {execution_mode}\n"
+            report += f"- **Gate Protection Enabled:** {self.gate_manager.is_gate_protection_enabled() if self.gate_manager else 'Unknown'}\n"
+            report += f"- **VectorBT Optimization:** {'Enabled' if hasattr(self, 'vectorization_manager') and self.vectorization_manager else 'Disabled'}\n"
+            report += f"- **Hardware Optimization:** {'Enabled' if hasattr(self, 'hardware_manager') and self.hardware_manager else 'Disabled'}\n"
+            report += f"- **Caching:** {'Enabled' if hasattr(self, 'feature_cache') and self.feature_cache else 'Disabled'}\n"
+
+            report += f"\n---\n"
+            report += f"*Generated by Feature Generation Gate Feature Step at {timestamp.isoformat()}*\n"
+            report += f"*Report Version: 2.0 - Enhanced Comprehensive Analysis*\n"
 
             return report
 
         except Exception as e:
             tprint_error(f"⚠️ Failed to create outcome report: {e}")
-            return f"# Gate Feature Outcome Report\n\nError creating report: {str(e)}"
+            return f"""# Gate Feature Outcome Report
+
+## Error Report
+
+**Error:** {str(e)}
+**Timestamp:** {datetime.now().isoformat()}
+**Symbol:** {config.get('symbol', 'unknown')}
+
+This report could not be generated due to an error in the report creation process.
+Please check the logs for more details.
+
+---
+*Generated by Feature Generation Gate Feature Step at {datetime.now().isoformat()}*
+"""
+
+    def _initialize_hardware_optimization(self, config: Dict[str, Any]):
+        """Initialize hardware optimization components."""
+        try:
+            if HARDWARE_AVAILABLE:
+                tprint_info("🔧 Initializing hardware optimization...")
+                
+                # Initialize hardware manager
+                hardware_config = HardwareConfig(
+                    enable_gpu=config.get('enable_gpu', False),
+                    enable_parallel=config.get('enable_parallel', True),
+                    max_memory_gb=config.get('max_memory_gb', 8.0),
+                    enable_monitoring=True,
+                    enable_profiling=config.get('enable_profiling', False)
+                )
+                
+                self.hardware_manager = UnifiedHardwareManager(hardware_config)
+                
+                # Initialize streaming processor if needed
+                streaming_config = StreamingConfig(
+                    chunk_size=config.get('chunk_size', 10000),
+                    memory_threshold=config.get('memory_threshold', 0.8),
+                    enable_monitoring=True
+                )
+                self.streaming_processor = StreamingDataProcessor(streaming_config)
+                
+                # Initialize feature cache
+                cache_config = CacheConfig(
+                    enable_caching=True,
+                    cache_size_mb=config.get('cache_size_mb', 1000),
+                    ttl_seconds=config.get('cache_ttl_seconds', 3600),
+                    enable_monitoring=True
+                )
+                self.feature_cache = IntelligentFeatureCache(cache_config)
+                
+                tprint_success("✅ Hardware optimization initialized")
+            else:
+                tprint_warning("⚠️ Hardware optimization not available")
+                self.hardware_manager = None
+                self.streaming_processor = None
+                self.feature_cache = None
+
+        except Exception as e:
+            tprint_warning(f"⚠️ Hardware optimization initialization failed: {e}")
+            self.hardware_manager = None
+            self.streaming_processor = None
+            self.feature_cache = None
+
+    def _cleanup_hardware_resources(self):
+        """Cleanup hardware resources."""
+        try:
+            if hasattr(self, 'hardware_manager') and self.hardware_manager:
+                self.hardware_manager.cleanup()
+            if hasattr(self, 'streaming_processor') and self.streaming_processor:
+                self.streaming_processor.cleanup()
+            if hasattr(self, 'feature_cache') and self.feature_cache:
+                self.feature_cache.cleanup()
+        except Exception as e:
+            tprint_warning(f"⚠️ Hardware cleanup failed: {e}")
+
+    def _generate_cache_key(self, features_df: pd.DataFrame, targets: pd.Series, gate_config: Dict[str, Any]) -> str:
+        """Generate cache key for gate results."""
+        import hashlib
+        
+        # Create hash from key parameters
+        key_data = {
+            'features_shape': features_df.shape,
+            'targets_shape': targets.shape,
+            'gate_config': gate_config,
+            'timestamp': datetime.now().strftime('%Y%m%d_%H')
+        }
+        
+        key_string = str(key_data)
+        return hashlib.md5(key_string.encode()).hexdigest()
 
     def _initialize_vectorbt_optimization(self, config: Dict[str, Any]):
         """Initialize VectorBT optimization components."""
@@ -710,6 +1017,50 @@ class FeatureGenerationGateFeatureStep(BaseStep):
             tprint_warning(f"⚠️ Outlier gate evaluation failed: {e}")
             
         return results
+
+    def _evaluate_gates_streaming(self, features_df: pd.DataFrame, targets: pd.Series) -> List[GateFeatureResult]:
+        """Evaluate gate features using streaming processing for large datasets."""
+        try:
+            tprint_info("🌊 Evaluating gates with streaming processing...")
+            
+            gate_results = []
+            
+            # Process data in chunks
+            chunk_size = self.streaming_processor.config.chunk_size
+            total_rows = len(features_df)
+            
+            for start_idx in range(0, total_rows, chunk_size):
+                end_idx = min(start_idx + chunk_size, total_rows)
+                
+                # Get chunk
+                chunk_features = features_df.iloc[start_idx:end_idx]
+                chunk_targets = targets.iloc[start_idx:end_idx]
+                
+                # Evaluate gates on chunk
+                chunk_results = self.gate_manager.evaluate_gate_features(chunk_features, chunk_targets)
+                
+                # Aggregate results (simplified aggregation)
+                for result in chunk_results:
+                    # Find existing result or create new one
+                    existing_result = next((r for r in gate_results if r.feature_name == result.feature_name), None)
+                    if existing_result:
+                        # Update aggregated score
+                        existing_result.score = (existing_result.score + result.score) / 2
+                        # Update status based on worst case
+                        if result.status == GateStatus.FAILED:
+                            existing_result.status = GateStatus.FAILED
+                        elif result.status == GateStatus.WARNING and existing_result.status == GateStatus.PASSED:
+                            existing_result.status = GateStatus.WARNING
+                    else:
+                        gate_results.append(result)
+            
+            tprint_success(f"✅ Streaming gate evaluation completed: {len(gate_results)} gates evaluated")
+            return gate_results
+            
+        except Exception as e:
+            tprint_error(f"❌ Streaming gate evaluation failed: {e}")
+            # Fallback to standard gate evaluation
+            return self.gate_manager.evaluate_gate_features(features_df, targets)
 
 
 # Register the step

@@ -662,6 +662,15 @@ class UnifiedHardwareManager:
             self.memory_optimizer.thresholds['high'] = 0.85
             self.memory_optimizer.thresholds['critical'] = 0.95
 
+    def get_optimal_cpu_count(self) -> int:
+        """Get optimal CPU count for the current workload."""
+        if hasattr(self, 'cpu_optimizer') and self.cpu_optimizer:
+            return self.cpu_optimizer.cpu_count
+        else:
+            # Fallback to basic CPU count
+            import multiprocessing
+            return max(1, multiprocessing.cpu_count() // 2)
+
     def _get_cpu_settings(self) -> Dict[str, Any]:
         """Get current CPU settings."""
         return {

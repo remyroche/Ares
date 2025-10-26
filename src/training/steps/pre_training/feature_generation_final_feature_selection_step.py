@@ -15,8 +15,19 @@ Features:
 
 import asyncio
 import logging
+import warnings
 import pandas as pd
 import numpy as np
+
+# Fix NumPy compatibility for older libraries
+if not hasattr(np, 'bool'):
+    np.bool = bool
+if not hasattr(np, 'int'):
+    np.int = int
+if not hasattr(np, 'float'):
+    np.float = float
+if not hasattr(np, 'complex'):
+    np.complex = complex
 from typing import Dict, Any, Optional, List, Union, Tuple
 from datetime import datetime
 from pathlib import Path
@@ -57,13 +68,35 @@ from src.utils.hardware.unified_hardware_manager import (
 # Import additional hardware optimization components
 from src.utils.hardware.adaptive_optimization_engine import (
     AdaptiveOptimizationEngine,
-    LearningAlgorithm,
-    OptimizationStrategy
+    LearningAlgorithm
+)
+
+# Import CMI complementarity components for Tactician mode
+try:
+    # These modules don't exist yet - placeholder for future implementation
+    CMIComplementarityScorer = None
+    CMIComplementarityConfig = None
+    AnalystSideInfoHandler = None
+    CMI_COMPLEMENTARITY_AVAILABLE = False
+    print("⚠️ CMI complementarity components not available - placeholder implementation")
+except ImportError:
+    CMI_COMPLEMENTARITY_AVAILABLE = False
+    CMIComplementarityScorer = None
+    CMIComplementarityConfig = None
+    AnalystSideInfoHandler = None
+
+# Import OptimizationStrategy from the correct location
+from src.feature_generation.core.optimization_strategies import (
+    OptimizationStrategy,
+    ConservativeOptimizationStrategy,
+    BalancedOptimizationStrategy,
+    AggressiveOptimizationStrategy
 )
 
 from src.utils.hardware.advanced_cpu_optimizer import (
     AdvancedM1CPUOptimizer,
-    WorkloadProfile
+    WorkloadProfile,
+    CoreType
 )
 
 from src.utils.hardware.enhanced_gpu_manager import (
@@ -77,8 +110,19 @@ from src.utils.hardware.advanced_memory_optimizer import (
 )
 
 # Import utilities
-from src.utils.tprint import tprint, tprint_info, tprint_success, tprint_warning, tprint_error
+from src.utils.tprint import tprint, tprint_info, tprint_success, tprint_warning, tprint_error, configure_tprint, TPrintConfig, LogLevel
 from src.utils.artifact_manager import ArtifactManager
+
+# Configure tprint for minimal mode to reduce overhead
+configure_tprint(TPrintConfig(
+    use_colors=False,
+    output_to_file=False,
+    log_to_python_logger=False,
+    integrate_with_logging=False,
+    min_log_level=LogLevel.INFO,
+    enable_lazy_evaluation=True,
+    cache_timestamps=True
+))
 
 logger = logging.getLogger(__name__)
 
@@ -108,6 +152,25 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
         self.gpu_manager: Optional[EnhancedM1GPUManager] = None
         self.memory_optimizer: Optional[AdvancedM1MemoryOptimizer] = None
         self.hardware_optimization_enabled: bool = True
+        
+        # Initialize CMI complementarity components for Tactician mode
+        if CMI_COMPLEMENTARITY_AVAILABLE:
+            self.cmi_config = CMIComplementarityConfig(
+                per_family_budget=(5, 15),
+                upstream_multiplier=3,
+                max_total_features=60,
+                enable_regime_awareness=True,
+                compute_timeout_seconds=300.0,
+                enable_synergy=True,
+                beta_synergy=0.25
+            )
+            self.cmi_scorer = CMIComplementarityScorer(self.cmi_config)
+            self.analyst_handler = AnalystSideInfoHandler()
+            tprint_info("✅ CMI complementarity components initialized for final feature selection")
+        else:
+            self.cmi_scorer = None
+            self.analyst_handler = None
+            tprint_warning("⚠️ CMI complementarity components not available")
 
     async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -129,11 +192,12 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             tprint_info(f"🎯 Starting {self.step_name} execution...")
 
             # Get required data from previous steps
-            labeled_df = self._get_artifact('labeled_dataframe')
-            targets = self._get_artifact('targets')
+            # Look for artifacts created by labeling integration step
+            labeled_df = self._get_artifact('labeled_data')
+            targets = self._get_artifact('labeling_metadata')
 
             if labeled_df is None or targets is None:
-                raise ValueError("Required artifacts 'labeled_dataframe' and 'targets' not found")
+                raise ValueError("Required artifacts 'labeled_data' and 'labeling_metadata' not found")
 
             # Get features from previous steps
             features_data = self._collect_features_from_previous_steps()
@@ -161,7 +225,7 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             shap_values = self._generate_shap_values(feature_sets, combined_features_df, targets, config)
 
             # Generate artifacts
-            artifacts = self._generate_artifacts(feature_sets, shap_values, config)
+            artifacts = self._generate_artifacts(feature_sets, shap_values, config, combined_features_df)
 
             # Create comprehensive outcome report
             outcome_report = self._create_outcome_report(feature_sets, shap_values, config)
@@ -180,12 +244,16 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
                     'type': 'data'
                 })
 
-            # Save outcome report
+            # Save outcome report (pickle format)
             report_path = self._save_artifact(
                 outcome_report,
                 "final_feature_selection_outcome_report",
                 artifact_type="report"
             )
+            
+            # Generate and save markdown report
+            markdown_report = self._generate_markdown_report(outcome_report, feature_sets, shap_values, config)
+            markdown_path = self._save_markdown_report(markdown_report, "final_feature_selection_outcome_report")
 
             # Calculate metrics
             metrics = self._calculate_metrics(feature_sets, shap_values, config)
@@ -201,6 +269,7 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
                 'feature_sets': {k: len(v) for k, v in feature_sets.items()},
                 'shap_summary': self._summarize_shap_values(shap_values),
                 'outcome_report_path': report_path,
+                'markdown_report_path': markdown_path,
                 'execution_time': 0.0,  # Will be set by base class
                 'optimization_enabled': self.optimization_enabled,
                 'vectorization_stats': self._get_vectorization_stats()
@@ -214,7 +283,6 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
         except Exception as e:
             error_msg = f"Final feature selection step failed: {str(e)}"
             tprint_error(error_msg)
-            logger.error(error_msg, exc_info=True)
 
             return {
                 'success': False,
@@ -228,34 +296,66 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
         """Collect features from previous steps in the pipeline."""
         features_data = {}
 
-        # Get features from interaction generation steps
+        # PRIORITY 1: Get features from main feature generation step (334+ features)
         try:
-            analyst_interactions = self._get_artifact('interaction_features')
+            # Try different possible artifact names for generated features
+            generated_features = None
+            for artifact_name in ['generated_features', 'generated_features_1h', 'generated_features_15m', 'generated_features_long']:
+                try:
+                    generated_features = self._get_artifact(artifact_name)
+                    if generated_features is not None:
+                        features_data['generated_features'] = generated_features
+                        tprint_info(f"✅ Retrieved main generated features ({artifact_name}): {generated_features.shape if hasattr(generated_features, 'shape') else 'Unknown shape'}")
+                        break
+                except Exception:
+                    continue
+            
+            if generated_features is None:
+                tprint_warning("⚠️ Could not get main generated features from any artifact name")
+        except Exception as e:
+            tprint_warning(f"⚠️ Could not get main generated features: {e}")
+
+        # PRIORITY 2: Get features from lookback optimization step (Most sophisticated engineered features)
+        try:
+            lookback_features = self._get_artifact('lookback_optimization')
+            if lookback_features is not None:
+                features_data['lookback_optimization'] = lookback_features
+                tprint_info(f"✅ Retrieved lookback optimization features: {lookback_features.shape if hasattr(lookback_features, 'shape') else 'Unknown shape'}")
+        except Exception as e:
+            tprint_warning(f"⚠️ Could not get lookback optimization features: {e}")
+
+        # PRIORITY 3: Get features from interaction generation steps (Complex feature interactions)
+        try:
+            analyst_interactions = self._get_artifact('analyst_interaction_features')
             if analyst_interactions is not None:
                 features_data['analyst_interactions'] = analyst_interactions
+                tprint_info(f"✅ Retrieved analyst interaction features: {analyst_interactions.shape if hasattr(analyst_interactions, 'shape') else 'Unknown shape'}")
         except Exception as e:
             tprint_warning(f"⚠️ Could not get analyst interaction features: {e}")
 
         try:
-            tactician_interactions = self._get_artifact('interaction_features')  # Same artifact name for both
+            tactician_interactions = self._get_artifact('tactician_interaction_features')
             if tactician_interactions is not None:
                 features_data['tactician_interactions'] = tactician_interactions
+                tprint_info(f"✅ Retrieved tactician interaction features: {tactician_interactions.shape if hasattr(tactician_interactions, 'shape') else 'Unknown shape'}")
         except Exception as e:
             tprint_warning(f"⚠️ Could not get tactician interaction features: {e}")
 
-        # Get features from feature selection step
+        # PRIORITY 4: Get features from feature selection step (Previously selected features)
         try:
             selected_features = self._get_artifact('selected_features')
             if selected_features is not None:
                 features_data['selected_features'] = selected_features
+                tprint_info(f"✅ Retrieved selected features: {len(selected_features) if isinstance(selected_features, list) else 'Unknown count'}")
         except Exception as e:
             tprint_warning(f"⚠️ Could not get selected features: {e}")
 
-        # Get feature dataframe from feature generation step
+        # PRIORITY 5: Get feature dataframe from feature generation step (Other engineered features)
         try:
             feature_df = self._get_artifact('feature_dataframe')
             if feature_df is not None:
                 features_data['feature_dataframe'] = feature_df
+                tprint_info(f"✅ Retrieved feature dataframe: {feature_df.shape if hasattr(feature_df, 'shape') else 'Unknown shape'}")
         except Exception as e:
             tprint_warning(f"⚠️ Could not get feature dataframe: {e}")
 
@@ -321,50 +421,51 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             )
             
             self.hardware_manager = UnifiedHardwareManager(hardware_config)
-            await self.hardware_manager.initialize()
-            tprint_success("✅ Unified hardware manager initialized")
+            init_result = self.hardware_manager.initialize()
+            if init_result:
+                tprint_success("✅ Unified hardware manager initialized")
+            else:
+                tprint_warning("⚠️ Unified hardware manager initialization failed")
             
             # Initialize adaptive optimization engine
             self.adaptive_engine = AdaptiveOptimizationEngine(
-                learning_algorithm=LearningAlgorithm.DECISION_TREE,
-                optimization_strategy=OptimizationStrategy.BALANCED,
-                enable_learning=True,
-                auto_tuning_enabled=True
+                database_path="optimization_performance.db"
             )
-            await self.adaptive_engine.initialize()
+            # Initialize hardware managers for the adaptive engine
+            self.adaptive_engine.initialize_hardware_managers()
             tprint_success("✅ Adaptive optimization engine initialized")
             
-            # Initialize CPU optimizer
-            self.cpu_optimizer = AdvancedM1CPUOptimizer(
-                workload_profile=WorkloadProfile.FEATURE_ENGINEERING,
-                optimization_level=OptimizationLevel.BALANCED,
-                enable_thermal_monitoring=True,
-                enable_power_management=True
-            )
-            await self.cpu_optimizer.initialize()
+            # Initialize CPU optimizer with warning suppression
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", message=".*CoreAffinityManager.*")
+                warnings.filterwarnings("ignore", message=".*core affinity.*")
+                self.cpu_optimizer = AdvancedM1CPUOptimizer()
+                # Add custom workload profile for feature engineering
+                feature_engineering_profile = WorkloadProfile(
+                    name='feature_engineering',
+                    cpu_intensity=0.7,
+                    memory_intensity=0.8,
+                    thermal_sensitivity=0.4,
+                    power_sensitivity=0.5,
+                    preferred_cores=CoreType.PERFORMANCE,
+                    max_threads=6
+                )
+                self.cpu_optimizer.add_workload_profile(feature_engineering_profile)
+                # Optimize for feature engineering workload
+                self.cpu_optimizer.optimize_for_workload_profile('feature_engineering')
             tprint_success("✅ Advanced CPU optimizer initialized")
             
             # Initialize GPU manager
-            self.gpu_manager = EnhancedM1GPUManager(
-                operation_type=GPUOperationType.MATRIX_OPERATIONS,
-                optimization_level=OptimizationLevel.BALANCED,
-                enable_mps_acceleration=True,
-                enable_gpu_memory_pooling=True,
-                enable_batch_operations=True
-            )
-            await self.gpu_manager.initialize()
+            self.gpu_manager = EnhancedM1GPUManager()
+            # EnhancedM1GPUManager doesn't have an initialize method
             tprint_success("✅ Enhanced GPU manager initialized")
             
             # Initialize memory optimizer
             self.memory_optimizer = AdvancedM1MemoryOptimizer(
-                memory_strategy=MemoryStrategy.ADAPTIVE,
-                optimization_level=OptimizationLevel.BALANCED,
                 memory_limit_gb=config.get('memory_limit_gb', 8.0),
-                enable_memory_pooling=True,
-                enable_predictive_allocation=True,
-                enable_compression=True
+                strategy=MemoryStrategy.ADAPTIVE
             )
-            await self.memory_optimizer.initialize()
+            # AdvancedM1MemoryOptimizer doesn't have an initialize method
             tprint_success("✅ Advanced memory optimizer initialized")
             
             tprint_success("✅ All hardware optimization components initialized")
@@ -378,8 +479,41 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
         """Combine features from different sources into a single DataFrame with VectorBT optimizations."""
         tprint_info("🔄 Combining features with VectorBT optimizations...")
         
-        # Start with the labeled dataframe (OHLCV + labels)
+        # PRIORITY 1: Start with labeled dataframe to preserve target column
         base_features = labeled_df.copy()
+        tprint_info(f"📊 Using labeled dataframe as base: {base_features.shape}")
+        tprint_info(f"📊 Target column in base: {'price_target_vol_normalized' in base_features.columns}")
+        
+        # PRIORITY 2: Add main generated features if available
+        if 'generated_features' in features_data and features_data['generated_features'] is not None:
+            generated_features = features_data['generated_features']
+            tprint_info(f"📊 Adding main generated features: {generated_features.shape}")
+            
+            # Check data alignment
+            if generated_features.shape[0] != base_features.shape[0]:
+                tprint_warning(f"⚠️ Shape mismatch: base_features {base_features.shape} vs generated_features {generated_features.shape}")
+                # Try to align by index if possible
+                if hasattr(generated_features.index, 'intersection') and hasattr(base_features.index, 'intersection'):
+                    common_index = base_features.index.intersection(generated_features.index)
+                    if len(common_index) > 0:
+                        tprint_info(f"📊 Aligning dataframes using {len(common_index)} common indices")
+                        generated_features = generated_features.loc[common_index]
+                        base_features = base_features.loc[common_index]
+                    else:
+                        tprint_warning("⚠️ No common indices found, skipping generated features")
+                        generated_features = None
+                else:
+                    tprint_warning("⚠️ Cannot align dataframes, skipping generated features")
+                    generated_features = None
+            
+            if generated_features is not None:
+                # Add generated features (excluding any duplicate columns and target columns)
+                target_cols = ['target', 'label', 'return', 'price_target_vol_normalized']
+                generated_cols = [col for col in generated_features.columns
+                               if col not in base_features.columns and col not in target_cols]
+                if generated_cols:
+                    base_features = pd.concat([base_features, generated_features[generated_cols]], axis=1)
+                    tprint_info(f"📊 Added {len(generated_cols)} generated features")
 
         # Use vectorization manager for optimized operations if available
         if self.vectorization_manager and self.optimization_enabled:
@@ -390,23 +524,106 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             except Exception as e:
                 tprint_warning(f"⚠️ Memory optimization failed: {e}")
 
-        # Add features from feature dataframe if available
+        # PRIORITY 2: Add lookback optimization features (most sophisticated engineered features)
+        if 'lookback_optimization' in features_data and features_data['lookback_optimization'] is not None:
+            lookback_data = features_data['lookback_optimization']
+            if isinstance(lookback_data, pd.DataFrame):
+                # Check if lookback data has the correct shape (samples, features)
+                if lookback_data.shape[0] > 1:  # Multiple samples
+                    # Optimize lookback dataframe if available
+                    if self.vectorization_manager and self.optimization_enabled:
+                        try:
+                            lookback_data = self.vectorization_manager.optimize_dataframe(lookback_data)
+                        except Exception as e:
+                            tprint_warning(f"⚠️ Lookback dataframe optimization failed: {e}")
+                    
+                    # Add lookback features (excluding any duplicate columns)
+                    lookback_cols = [col for col in lookback_data.columns
+                                   if col not in base_features.columns]
+                    if lookback_cols:
+                        base_features = pd.concat([base_features, lookback_data[lookback_cols]], axis=1)
+                        tprint_info(f"📊 Added {len(lookback_cols)} lookback optimization features (PRIORITY 2)")
+                else:
+                    tprint_warning(f"⚠️ Lookback optimization data has wrong shape {lookback_data.shape}, skipping")
+            elif isinstance(lookback_data, dict):
+                # Lookback optimization produces metadata, not feature data
+                tprint_info(f"📊 Lookback optimization metadata available: {len(lookback_data)} categories")
+                tprint_info(f"📊 Lookback optimization categories: {list(lookback_data.keys())}")
+                # TODO: Use this metadata to generate features with optimized lookback periods
+                tprint_info("ℹ️ Note: Lookback optimization metadata should be used to generate features with optimized lookback periods")
+
+        # PRIORITY 3: Add interaction features (complex feature interactions)
+        for interaction_type in ['analyst_interactions', 'tactician_interactions']:
+            if interaction_type in features_data and features_data[interaction_type] is not None:
+                interaction_df = features_data[interaction_type]
+                if isinstance(interaction_df, pd.DataFrame):
+                    # Optimize interaction dataframe if available
+                    if self.vectorization_manager and self.optimization_enabled:
+                        try:
+                            interaction_df = self.vectorization_manager.optimize_dataframe(interaction_df)
+                        except Exception as e:
+                            tprint_warning(f"⚠️ Interaction dataframe optimization failed: {e}")
+                    
+                    # Check data alignment and handle shape mismatches
+                    if interaction_df.shape[0] != base_features.shape[0]:
+                        tprint_warning(f"⚠️ Shape mismatch: base_features {base_features.shape} vs {interaction_type} {interaction_df.shape}")
+                        # Align dataframes by index if possible
+                        if hasattr(interaction_df.index, 'intersection') and hasattr(base_features.index, 'intersection'):
+                            common_index = base_features.index.intersection(interaction_df.index)
+                            if len(common_index) > 0:
+                                tprint_info(f"📊 Aligning dataframes using {len(common_index)} common indices")
+                                interaction_df = interaction_df.loc[common_index]
+                                base_features = base_features.loc[common_index]
+                            else:
+                                tprint_warning(f"⚠️ No common indices found, skipping {interaction_type}")
+                                continue
+                        else:
+                            tprint_warning(f"⚠️ Cannot align dataframes, skipping {interaction_type}")
+                            continue
+                    
+                    # Add interaction features (excluding any duplicate columns)
+                    interaction_cols = [col for col in interaction_df.columns
+                                     if col not in base_features.columns]
+                    if interaction_cols:
+                        base_features = pd.concat([base_features, interaction_df[interaction_cols]], axis=1)
+                        tprint_info(f"📊 Added {len(interaction_cols)} {interaction_type} features (PRIORITY 3)")
+
+        # PRIORITY 4: Add features from feature dataframe if available (with proper alignment)
         if 'feature_dataframe' in features_data and features_data['feature_dataframe'] is not None:
             feature_df = features_data['feature_dataframe']
             
-            # Optimize feature dataframe if vectorization manager is available
-            if self.vectorization_manager and self.optimization_enabled:
-                try:
-                    feature_df = self.vectorization_manager.optimize_dataframe(feature_df)
-                except Exception as e:
-                    tprint_warning(f"⚠️ Feature dataframe optimization failed: {e}")
+            # Check data alignment first
+            if feature_df.shape[0] != base_features.shape[0]:
+                tprint_warning(f"⚠️ Feature dataframe shape mismatch: base_features {base_features.shape} vs feature_df {feature_df.shape}")
+                # Try to align by index if possible
+                if hasattr(feature_df.index, 'intersection') and hasattr(base_features.index, 'intersection'):
+                    common_index = base_features.index.intersection(feature_df.index)
+                    if len(common_index) > 0:
+                        tprint_info(f"📊 Aligning feature dataframe using {len(common_index)} common indices")
+                        feature_df = feature_df.loc[common_index]
+                        base_features = base_features.loc[common_index]
+                    else:
+                        tprint_warning("⚠️ No common indices found, skipping feature dataframe")
+                        feature_df = None
+                else:
+                    tprint_warning("⚠️ Cannot align feature dataframe, skipping")
+                    feature_df = None
             
-            # Find common columns (excluding OHLCV and target columns)
-            ohlcv_cols = ['open', 'high', 'low', 'close', 'volume', 'timestamp']
-            target_cols = ['target', 'label', 'return']  # Common target column names
+            if feature_df is not None:
+                # Optimize feature dataframe if vectorization manager is available
+                if self.vectorization_manager and self.optimization_enabled:
+                    try:
+                        feature_df = self.vectorization_manager.optimize_dataframe(feature_df)
+                    except Exception as e:
+                        tprint_warning(f"⚠️ Feature dataframe optimization failed: {e}")
+            
+                # Find common columns (excluding OHLCV, basic time features, and target columns)
+                ohlcv_cols = ['open', 'high', 'low', 'close', 'volume', 'timestamp']
+                basic_time_cols = ['hour', 'day_of_week', 'base_threshold']
+                target_cols = ['target', 'label', 'return', 'price_target_vol_normalized']  # Common target column name
 
             feature_cols = [col for col in feature_df.columns
-                          if col not in ohlcv_cols and col not in target_cols]
+                                  if col not in ohlcv_cols and col not in basic_time_cols and col not in target_cols]
 
             if feature_cols:
                 # Use optimized concatenation if available
@@ -429,34 +646,31 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
                 else:
                     base_features = pd.concat([base_features, feature_df[feature_cols]], axis=1)
                 
-                tprint_info(f"📊 Added {len(feature_cols)} features from feature dataframe")
+                    tprint_info(f"📊 Added {len(feature_cols)} feature dataframe columns")
+                    tprint_info(f"📊 Added {len(feature_cols)} features from feature dataframe (PRIORITY 4)")
 
-        # Add interaction features if available
-        for interaction_type in ['analyst_interactions', 'tactician_interactions']:
-            if interaction_type in features_data and features_data[interaction_type] is not None:
-                interaction_df = features_data[interaction_type]
-                if isinstance(interaction_df, pd.DataFrame):
-                    # Optimize interaction dataframe if available
-                    if self.vectorization_manager and self.optimization_enabled:
-                        try:
-                            interaction_df = self.vectorization_manager.optimize_dataframe(interaction_df)
-                        except Exception as e:
-                            tprint_warning(f"⚠️ Interaction dataframe optimization failed: {e}")
-                    
-                    # Add interaction features (excluding any duplicate columns)
-                    interaction_cols = [col for col in interaction_df.columns
-                                      if col not in base_features.columns]
-                    if interaction_cols:
-                        base_features = pd.concat([base_features, interaction_df[interaction_cols]], axis=1)
-                        tprint_info(f"📊 Added {len(interaction_cols)} {interaction_type} features")
-
-        # Remove any non-numeric columns except timestamp
+        # Remove any non-numeric columns except timestamp and target columns
         numeric_cols = []
+        target_cols = ['target', 'label', 'return', 'price_target_vol_normalized']
+        
         for col in base_features.columns:
-            if col == 'timestamp' or pd.api.types.is_numeric_dtype(base_features[col]):
+            if col == 'timestamp' or col in target_cols or pd.api.types.is_numeric_dtype(base_features[col]):
                 numeric_cols.append(col)
 
+        tprint_info(f"🔍 DEBUG: Base features columns after combination: {list(base_features.columns)}")
+        tprint_info(f"🔍 DEBUG: Numeric columns found: {len(numeric_cols)}")
+        tprint_info(f"🔍 DEBUG: Numeric columns: {numeric_cols[:10]}...")  # Show first 10
+
         result_df = base_features[numeric_cols].copy()
+        
+        # Debug: Check if target column is present
+        available_targets = [col for col in target_cols if col in result_df.columns]
+        tprint_info(f"📊 Combined feature matrix: {len(numeric_cols)} features, {len(result_df)} samples")
+        tprint_info(f"📊 Available target columns: {available_targets}")
+        
+        if not available_targets:
+            tprint_warning("⚠️ No target columns found in combined features!")
+            tprint_info(f"📊 All columns in result_df: {list(result_df.columns)[:20]}...")
 
         # Handle NaN values with optimized operations
         if self.vectorization_manager and self.optimization_enabled:
@@ -464,12 +678,18 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
                 # Use vectorized operations for NaN handling
                 tprint_info("🔄 Optimizing NaN handling...")
                 
-                # Drop columns with too many NaN values
-                nan_threshold = int(0.7 * len(result_df))
+                # Drop columns with too many NaN values (more lenient for sophisticated features)
+                nan_threshold = int(0.5 * len(result_df))  # More lenient threshold
                 valid_cols = []
                 for col in result_df.columns:
                     if result_df[col].count() >= nan_threshold:
                         valid_cols.append(col)
+                    else:
+                        # Check if it's a sophisticated feature and be more lenient
+                        if any(keyword in col.lower() for keyword in ['vectorbt', 'interaction', 'enhanced', 'optimized', 'advanced', 'statistical', 'wavelet', 'entropy', 'ad_line', 'obv', 'volatility', 'order_flow']):
+                            if result_df[col].count() >= int(0.3 * len(result_df)):  # Even more lenient for sophisticated features
+                                valid_cols.append(col)
+                                tprint_info(f"📊 Keeping sophisticated feature with low data coverage: {col}")
                 
                 result_df = result_df[valid_cols]
                 
@@ -479,7 +699,7 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
                     medians = result_df[numeric_cols_only].median()
                     result_df[numeric_cols_only] = result_df[numeric_cols_only].fillna(medians)
                 
-                tprint_success("✅ NaN handling optimized")
+                tprint_success("✅ NaN handling optimized with sophisticated feature protection")
             except Exception as e:
                 tprint_warning(f"⚠️ Optimized NaN handling failed, using standard method: {e}")
                 result_df = result_df.dropna(axis=1, thresh=int(0.7 * len(result_df)))
@@ -525,20 +745,60 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
         )
 
     def _perform_multi_size_selection(self, features_df: pd.DataFrame, targets: pd.Series, config: Dict[str, Any]) -> Dict[str, List[str]]:
-        """Perform feature selection for multiple feature set sizes with VectorBT optimizations."""
+        """Perform feature selection for multiple feature set sizes with CMI-aware Tactician mode support."""
         # Define feature set sizes
         feature_set_sizes = config.get('feature_set_sizes', [60, 50, 40])
 
         feature_sets = {}
 
-        # Separate features from targets
-        feature_cols = [col for col in features_df.columns
-                       if col not in ['target', 'label', 'return', 'timestamp']]
-        target_cols = [col for col in ['target', 'label', 'return']
+        # Detect Tactician mode and check for CMI availability
+        is_tactician_mode = self._detect_tactician_mode(features_df, config)
+        cmi_available = CMI_COMPLEMENTARITY_AVAILABLE and self.cmi_scorer is not None
+        
+        if is_tactician_mode and cmi_available:
+            tprint_info("🎯 Tactician mode detected with CMI support - using CMI-based feature selection")
+            return self._perform_cmi_aware_selection(features_df, targets, config, feature_set_sizes)
+        elif is_tactician_mode and not cmi_available:
+            tprint_warning("⚠️ Tactician mode detected but CMI not available - using standard selection")
+        else:
+            tprint_info("📊 Standard mode - using regular mutual information selection")
+
+        # Separate features from targets and exclude raw data columns
+        raw_data_columns = ['open', 'high', 'low', 'close', 'volume', 'hour', 'day_of_week', 'base_threshold']
+        basic_features = ['open_time', 'close_time', 'body_size', 'close_return', 'price_range_pct', 
+                         'volume_return', 'close_log_return', 'volume_log_return', 'price_range', 
+                         'body_size_pct', 'trades', 'quote_volume', 'day', 'lookahead_periods', 'is_weekend']
+        
+        # Debug: Show all available columns
+        tprint_info(f"🔍 DEBUG: All columns in features_df: {list(features_df.columns)}")
+        
+        # Prioritize sophisticated engineered features over basic ones
+        sophisticated_features = [col for col in features_df.columns
+                                if col not in ['target', 'label', 'return', 'timestamp', 'price_target_vol_normalized'] + raw_data_columns
+                                and any(keyword in col.lower() for keyword in ['vectorbt', 'interaction', 'enhanced', 'optimized', 'advanced', 'statistical', 'wavelet', 'entropy', 'ad_line', 'obv', 'volatility', 'order_flow'])]
+        
+        basic_engineered_features = [col for col in features_df.columns
+                                   if col not in ['target', 'label', 'return', 'timestamp', 'price_target_vol_normalized'] + raw_data_columns
+                                   and col not in sophisticated_features]
+        
+        # Prioritize sophisticated features first
+        feature_cols = sophisticated_features + basic_engineered_features
+        target_cols = [col for col in ['target', 'label', 'return', 'price_target_vol_normalized']
                       if col in features_df.columns]
+
+        tprint_info(f"🔍 Sophisticated features: {len(sophisticated_features)}")
+        tprint_info(f"🔍 Basic engineered features: {len(basic_engineered_features)}")
+        tprint_info(f"🔍 Total available features: {len(feature_cols)}")
+        tprint_info(f"🔍 Available targets: {len(target_cols)}")
+        tprint_info(f"🔍 Sophisticated features: {sophisticated_features[:5]}...")  # Show first 5 sophisticated features
+        tprint_info(f"🔍 Basic engineered features: {basic_engineered_features[:5]}...")  # Show first 5 basic features
+        tprint_info(f"🔍 Target columns: {target_cols}")
 
         if not target_cols:
             raise ValueError("No target column found in features dataframe")
+
+        if not feature_cols:
+            raise ValueError("No feature columns found in features dataframe")
 
         X = features_df[feature_cols]
         y = features_df[target_cols[0]]
@@ -615,6 +875,267 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
         tprint_success(f"✅ Created {len(feature_sets)} feature sets")
         return feature_sets
 
+    def _detect_tactician_mode(self, features_df: pd.DataFrame, config: Dict[str, Any]) -> bool:
+        """
+        Detect if we're in Tactician mode based on launcher commands and available features.
+        
+        Args:
+            features_df: Combined features dataframe
+            config: Configuration dictionary
+            
+        Returns:
+            True if in Tactician mode, False otherwise
+        """
+        # Primary detection: Check current step name for Tactician training steps
+        # This is the most reliable method since it comes directly from ares_launcher.py
+        current_step_name = getattr(self, 'step_name', '')
+        is_tactician_training_step = (
+            'tactician_base_training' in current_step_name or
+            'tactician_ensemble_training' in current_step_name or
+            'tactician' in current_step_name.lower()
+        )
+        
+        # Also check if we're in a Tactician execution context
+        # This could be set by upstream steps or the launcher
+        tactician_execution_context = config.get('execution_context', '').lower()
+        is_tactician_context = 'tactician' in tactician_execution_context
+        
+        # Secondary detection: Check for Tactician-specific features
+        tactician_features = [col for col in features_df.columns if 'tactician' in col.lower()]
+        
+        # Tertiary detection: Check for CMI-based Tactician features
+        cmi_tactician_features = [col for col in features_df.columns if 'cmi' in col.lower()]
+        
+        # Quaternary detection: Check configuration for explicit Tactician mode
+        explicit_tactician_mode = config.get('tactician_mode', False)
+        
+        # Quinary detection: Check for Analyst features (if present, we might be in complementarity mode)
+        analyst_features = [col for col in features_df.columns if 'analyst' in col.lower()]
+        
+        # Determine mode based on step name (primary) or feature analysis (secondary)
+        is_tactician_mode = (
+            is_tactician_training_step or
+            is_tactician_context or
+            len(tactician_features) > 0 or 
+            len(cmi_tactician_features) > 0 or 
+            explicit_tactician_mode or
+            (len(analyst_features) > 0 and config.get('enable_cmi_complementarity', False))
+        )
+        
+        tprint_info(f"🔍 Tactician mode detection:")
+        tprint_info(f"  - Current step name: {current_step_name}")
+        tprint_info(f"  - Is Tactician training step: {is_tactician_training_step}")
+        tprint_info(f"  - Execution context: {config.get('execution_context', 'N/A')}")
+        tprint_info(f"  - Is Tactician context: {is_tactician_context}")
+        tprint_info(f"  - Tactician features: {len(tactician_features)}")
+        tprint_info(f"  - CMI Tactician features: {len(cmi_tactician_features)}")
+        tprint_info(f"  - Analyst features: {len(analyst_features)}")
+        tprint_info(f"  - Explicit Tactician mode: {explicit_tactician_mode}")
+        tprint_info(f"  - CMI complementarity enabled: {config.get('enable_cmi_complementarity', False)}")
+        tprint_info(f"  - Detected Tactician mode: {is_tactician_mode}")
+        
+        return is_tactician_mode
+
+    def _perform_cmi_aware_selection(self, features_df: pd.DataFrame, targets: pd.Series, 
+                                   config: Dict[str, Any], feature_set_sizes: List[int]) -> Dict[str, List[str]]:
+        """
+        Perform CMI-aware feature selection for Tactician mode.
+        
+        Args:
+            features_df: Combined features dataframe
+            targets: Target variables
+            config: Configuration dictionary
+            feature_set_sizes: List of feature set sizes to create
+            
+        Returns:
+            Dictionary of feature sets
+        """
+        tprint_info("🎯 Performing CMI-aware feature selection for Tactician mode...")
+        
+        try:
+            # Extract Analyst side information for CMI conditioning
+            analyst_side_info = self._extract_analyst_side_info_for_cmi(features_df, config)
+            
+            if not analyst_side_info.get('cmi_enabled', False):
+                tprint_warning("⚠️ CMI not available, falling back to standard selection")
+                return self._perform_standard_selection(features_df, targets, config, feature_set_sizes)
+            
+            # Separate Tactician and Analyst features
+            tactician_features = [col for col in features_df.columns 
+                                if 'tactician' in col.lower() or 'cmi' in col.lower()]
+            analyst_features = [col for col in features_df.columns 
+                              if 'analyst' in col.lower()]
+            other_features = [col for col in features_df.columns 
+                            if col not in tactician_features + analyst_features 
+                            and col not in ['target', 'label', 'return', 'timestamp', 'price_target_vol_normalized']]
+            
+            tprint_info(f"🔍 Feature separation:")
+            tprint_info(f"  - Tactician features: {len(tactician_features)}")
+            tprint_info(f"  - Analyst features: {len(analyst_features)}")
+            tprint_info(f"  - Other features: {len(other_features)}")
+            
+            # Prepare features for CMI selection
+            all_features = tactician_features + other_features
+            if not all_features:
+                tprint_warning("⚠️ No features available for CMI selection")
+                return self._perform_standard_selection(features_df, targets, config, feature_set_sizes)
+            
+            X = features_df[all_features]
+            y = features_df[targets.name] if hasattr(targets, 'name') else targets
+            
+            # Perform CMI-based selection for each size
+            feature_sets = {}
+            for size in feature_set_sizes:
+                tprint_info(f"🎯 CMI-based selection for {size} features...")
+                
+                # Use CMI scorer for feature selection
+                selected_features = self.cmi_scorer.select_features(
+                    features=X,
+                    targets=y,
+                    analyst_side_info=analyst_side_info['side_info']
+                )
+                
+                # Limit to requested size
+                selected_features = selected_features[:size]
+                
+                feature_sets[f'selected_features_{size}'] = selected_features
+                feature_sets[f'selected_feature_dataframe_{size}'] = features_df[selected_features + [targets.name if hasattr(targets, 'name') else 'target']].copy()
+                
+                tprint_success(f"✅ CMI-based selection completed: {len(selected_features)} features selected")
+            
+            return feature_sets
+            
+        except Exception as e:
+            tprint_error(f"❌ CMI-aware selection failed: {e}")
+            tprint_warning("⚠️ Falling back to standard selection")
+            return self._perform_standard_selection(features_df, targets, config, feature_set_sizes)
+
+    def _extract_analyst_side_info_for_cmi(self, features_df: pd.DataFrame, config: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Extract Analyst side information for CMI conditioning.
+        
+        Args:
+            features_df: Combined features dataframe
+            config: Configuration dictionary
+            
+        Returns:
+            Dictionary containing Analyst side information and CMI configuration
+        """
+        if not CMI_COMPLEMENTARITY_AVAILABLE or self.analyst_handler is None:
+            return {
+                'cmi_enabled': False,
+                'reason': 'CMI complementarity not available'
+            }
+        
+        try:
+            # Extract Analyst features
+            analyst_features = [col for col in features_df.columns if 'analyst' in col.lower()]
+            
+            if not analyst_features:
+                return {
+                    'cmi_enabled': False,
+                    'reason': 'No Analyst features found'
+                }
+            
+            # Create Analyst features dataframe
+            analyst_df = features_df[analyst_features]
+            
+            # Extract Analyst side information
+            analyst_side_info = self.analyst_handler.extract_side_info(
+                {'analyst_features': analyst_df},
+                targets=None,  # Will be provided later
+                data_index=analyst_df.index
+            )
+            
+            if analyst_side_info.is_valid:
+                return {
+                    'cmi_enabled': True,
+                    'analyst_features': analyst_df,
+                    'side_info': analyst_side_info
+                }
+            else:
+                return {
+                    'cmi_enabled': False,
+                    'reason': 'Analyst side information invalid'
+                }
+                
+        except Exception as e:
+            tprint_warning(f"⚠️ Failed to extract Analyst side information: {e}")
+            return {
+                'cmi_enabled': False,
+                'reason': f'Extraction failed: {e}'
+            }
+
+    def _perform_standard_selection(self, features_df: pd.DataFrame, targets: pd.Series, 
+                                  config: Dict[str, Any], feature_set_sizes: List[int]) -> Dict[str, List[str]]:
+        """
+        Perform standard feature selection (fallback method).
+        
+        Args:
+            features_df: Combined features dataframe
+            targets: Target variables
+            config: Configuration dictionary
+            feature_set_sizes: List of feature set sizes to create
+            
+        Returns:
+            Dictionary of feature sets
+        """
+        tprint_info("📊 Performing standard feature selection...")
+        
+        # Use the original selection logic
+        feature_sets = {}
+        
+        # Separate features from targets and exclude raw data columns
+        raw_data_columns = ['open', 'high', 'low', 'close', 'volume', 'hour', 'day_of_week', 'base_threshold']
+        
+        # Prioritize sophisticated engineered features over basic ones
+        sophisticated_features = [col for col in features_df.columns
+                                if col not in ['target', 'label', 'return', 'timestamp', 'price_target_vol_normalized'] + raw_data_columns
+                                and any(keyword in col.lower() for keyword in ['vectorbt', 'interaction', 'enhanced', 'optimized', 'advanced', 'statistical', 'wavelet', 'entropy', 'ad_line', 'obv', 'volatility', 'order_flow'])]
+        
+        basic_engineered_features = [col for col in features_df.columns
+                                   if col not in ['target', 'label', 'return', 'timestamp', 'price_target_vol_normalized'] + raw_data_columns
+                                   and col not in sophisticated_features]
+        
+        # Prioritize sophisticated features first
+        feature_cols = sophisticated_features + basic_engineered_features
+        target_cols = [col for col in ['target', 'label', 'return', 'price_target_vol_normalized']
+                      if col in features_df.columns]
+
+        if not target_cols:
+            raise ValueError("No target column found in features dataframe")
+
+        if not feature_cols:
+            raise ValueError("No feature columns found in features dataframe")
+
+        X = features_df[feature_cols]
+        y = features_df[target_cols[0]]
+
+        # Create selection configs for different sizes
+        for size in feature_set_sizes:
+            tprint_info(f"🎯 Selecting top {size} features...")
+
+            # Create config for this size
+            size_config = FinalFeatureSelectionConfig(
+                max_features=size,
+                min_features=max(5, size // 2),  # Minimum is half the size or 5, whichever is larger
+                selection_method=config.get('selection_method', 'mutual_info'),
+                scoring_threshold=config.get('scoring_threshold', 0.01),
+                use_tree_based=config.get('use_tree_based', True)
+            )
+
+            # Create temporary component for this selection
+            temp_component = FinalFeatureSelectionComponent(size_config)
+            selected_features = temp_component.select_features(X, y, feature_cols)
+
+            feature_sets[f'selected_features_{size}'] = selected_features
+
+            # Also create the corresponding dataframes
+            feature_sets[f'selected_feature_dataframe_{size}'] = features_df[selected_features + target_cols].copy()
+
+        tprint_success(f"✅ Created {len(feature_sets)} feature sets")
+        return feature_sets
+
     def _generate_shap_values(self, feature_sets: Dict[str, List[str]], features_df: pd.DataFrame, targets: pd.Series, config: Dict[str, Any]) -> Dict[str, Any]:
         """Generate SHAP values for interpretability."""
         shap_values = {}
@@ -624,11 +1145,20 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             import shap
             from sklearn.ensemble import RandomForestRegressor
             from sklearn.model_selection import train_test_split
+            import warnings
+            
+            # Suppress NumPy deprecation warnings
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", message=".*np\.bool.*")
+                warnings.filterwarnings("ignore", message=".*np\.int.*")
+                warnings.filterwarnings("ignore", message=".*np\.float.*")
+                warnings.filterwarnings("ignore", message=".*np\.complex.*")
 
             # Get target column
-            target_cols = [col for col in ['target', 'label', 'return']
+            target_cols = [col for col in ['target', 'label', 'return', 'price_target_vol_normalized']
                           if col in features_df.columns]
             if not target_cols:
+                tprint_warning("⚠️ No target column found for SHAP analysis")
                 return shap_values
 
             target_col = target_cols[0]
@@ -644,7 +1174,7 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             rf_model = RandomForestRegressor(n_estimators=100, random_state=42)
             rf_model.fit(X_train, y_train)
 
-            # Create SHAP explainer
+                # Create SHAP explainer with additivity check disabled
             explainer = shap.TreeExplainer(rf_model)
 
             # Calculate SHAP values for each feature set
@@ -653,8 +1183,8 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
                     size = set_name.split('_')[-1]
 
                     if len(feature_list) > 0:
-                        # Get SHAP values for this feature set
-                        shap_test = explainer.shap_values(X_test[feature_list])
+                        # Get SHAP values for this feature set with additivity check disabled
+                        shap_test = explainer.shap_values(X_test[feature_list], check_additivity=False)
 
                         # Store SHAP summary
                         shap_values[f'shap_values_{size}'] = {
@@ -675,7 +1205,7 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
 
         return shap_values
 
-    def _generate_artifacts(self, feature_sets: Dict[str, List[str]], shap_values: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
+    def _generate_artifacts(self, feature_sets: Dict[str, List[str]], shap_values: Dict[str, Any], config: Dict[str, Any], combined_features_df: pd.DataFrame) -> Dict[str, Any]:
         """Generate artifacts from feature selection results."""
         artifacts = {}
 
@@ -696,8 +1226,8 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
 
         # Selection metadata
         selection_metadata = {
-            'total_features_available': len([col for col in self._get_artifact('labeled_dataframe', pd.DataFrame()).columns
-                                           if col not in ['target', 'label', 'return', 'timestamp']]),
+            'total_features_available': len([col for col in combined_features_df.columns
+                                           if col not in ['target', 'label', 'return', 'timestamp', 'price_target_vol_normalized']]),
             'feature_set_sizes': config.get('feature_set_sizes', [60, 50, 40]),
             'selection_method': config.get('selection_method', 'mutual_info'),
             'scoring_threshold': config.get('scoring_threshold', 0.01),
@@ -789,13 +1319,24 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
         # Add hardware optimization metrics
         if self.hardware_manager and self.hardware_optimization_enabled:
             try:
-                hardware_stats = self.hardware_manager.get_performance_metrics()
-                metrics.update({
-                    'hardware_optimization_operations': hardware_stats.get('total_operations', 0),
-                    'cpu_optimization_operations': hardware_stats.get('cpu_optimizations', 0),
-                    'gpu_optimization_operations': hardware_stats.get('gpu_optimizations', 0),
-                    'memory_optimization_operations': hardware_stats.get('memory_optimizations', 0),
-                    'adaptive_optimization_operations': hardware_stats.get('adaptive_optimizations', 0)
+                # Check if the method exists before calling it
+                if hasattr(self.hardware_manager, 'get_performance_metrics'):
+                    hardware_stats = self.hardware_manager.get_performance_metrics()
+                    metrics.update({
+                        'hardware_optimization_operations': hardware_stats.get('total_operations', 0),
+                        'cpu_optimization_operations': hardware_stats.get('cpu_optimizations', 0),
+                        'gpu_optimization_operations': hardware_stats.get('gpu_optimizations', 0),
+                        'memory_optimization_operations': hardware_stats.get('memory_optimizations', 0),
+                        'adaptive_optimization_operations': hardware_stats.get('adaptive_optimizations', 0)
+                })
+                else:
+                    # Use default values if method doesn't exist
+                    metrics.update({
+                        'hardware_optimization_operations': 0,
+                        'cpu_optimization_operations': 0,
+                        'gpu_optimization_operations': 0,
+                        'memory_optimization_operations': 0,
+                        'adaptive_optimization_operations': 0
                 })
             except Exception as e:
                 tprint_warning(f"⚠️ Failed to get hardware optimization stats: {e}")
@@ -916,7 +1457,165 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             tprint_error(f"⚠️ Failed to create outcome report: {e}")
             return f"# Final Feature Selection Outcome Report\n\nError creating report: {str(e)}"
 
+    def _generate_markdown_report(self, outcome_report: Dict[str, Any], 
+                                 feature_sets: Dict[str, List[str]], 
+                                 shap_values: Dict[str, Any], 
+                                 config: FinalFeatureSelectionConfig) -> str:
+        """
+        Generate a comprehensive markdown report for the final feature selection step.
+        
+        Args:
+            outcome_report: The outcome report dictionary
+            feature_sets: Dictionary of feature sets
+            shap_values: SHAP values dictionary
+            config: Configuration object
+            
+        Returns:
+            Markdown formatted report string
+        """
+        try:
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            
+            report = f"""# Final Feature Selection Report
 
+**Generated:** {timestamp}
+**Step:** feature_generation_final_feature_selection_step
+
+## Configuration
+
+- **Symbol:** {getattr(self, 'symbol', 'N/A')}
+- **Exchange:** {getattr(self, 'exchange', 'N/A')}
+- **Timeframe:** {getattr(self, 'timeframe', 'N/A')}
+- **Execution Mode:** {getattr(self, 'execution_mode', 'N/A')}
+- **Feature Count Targets:** {config.get('feature_count_targets', 'N/A')}
+- **Selection Method:** {config.get('selection_method', 'N/A')}
+- **Optimization Enabled:** {self.optimization_enabled}
+
+## Feature Selection Results
+
+"""
+            
+            # Add feature set summaries
+            for set_name, features in feature_sets.items():
+                if set_name.startswith('selected_features_'):
+                    count = set_name.split('_')[-1]
+                    report += f"- **{count} Features Set:** {len(features)} features selected\n"
+            
+            report += f"\n- **Total Feature Sets:** {len([k for k in feature_sets.keys() if k.startswith('selected_features_')])}\n"
+            
+            # Add SHAP analysis summary
+            if shap_values:
+                report += f"\n## SHAP Analysis Summary\n\n"
+                report += f"- **SHAP Analyses Generated:** {len(shap_values)}\n"
+                for shap_name, shap_data in shap_values.items():
+                    if isinstance(shap_data, dict) and 'top_features' in shap_data:
+                        report += f"- **{shap_name}:** {len(shap_data['top_features'])} top features analyzed\n"
+            
+            # Add detailed feature lists with SHAP metrics
+            report += f"\n## Selected Features by Set\n\n"
+            
+            for set_name, features in feature_sets.items():
+                if set_name.startswith('selected_features_'):
+                    count = set_name.split('_')[-1]
+                    report += f"### {count} Features Set ({len(features)} features)\n\n"
+                    
+                    # Get SHAP values for this feature set if available
+                    shap_key = f'shap_values_{count}'
+                    feature_importance = {}
+                    if shap_key in shap_values and isinstance(shap_values[shap_key], dict):
+                        feature_importance = shap_values[shap_key].get('feature_importance', {})
+                    
+                    for i, feature in enumerate(features[:20], 1):  # Show first 20 features
+                        shap_score = feature_importance.get(feature, 0.0)
+                        report += f"{i}. {feature}"
+                        if shap_score > 0:
+                            report += f" (SHAP: {shap_score:.4f})"
+                        report += "\n"
+                    
+                    if len(features) > 20:
+                        report += f"... and {len(features) - 20} more features\n"
+                    
+                    # Add SHAP summary for this set
+                    if shap_key in shap_values and isinstance(shap_values[shap_key], dict):
+                        mean_abs_shap = shap_values[shap_key].get('mean_abs_shap', [])
+                        if mean_abs_shap:
+                            avg_shap = sum(mean_abs_shap) / len(mean_abs_shap)
+                            report += f"\n**Average SHAP Importance:** {avg_shap:.4f}\n"
+                    
+                    report += "\n"
+            
+            # Add performance metrics
+            report += f"## Performance Metrics\n\n"
+            if isinstance(outcome_report, dict):
+                report += f"- **Execution Time:** {outcome_report.get('execution_time', 'N/A')} seconds\n"
+            else:
+                report += f"- **Execution Time:** N/A seconds\n"
+            report += f"- **Optimization Enabled:** {'Yes' if self.optimization_enabled else 'No'}\n"
+            report += f"- **Hardware Optimization:** {'Yes' if self.hardware_optimization_enabled else 'No'}\n"
+            
+            # Add optimization details
+            if self.optimization_enabled:
+                report += f"\n## Optimization Details\n\n"
+                report += f"- **VectorBT Optimization:** {'Enabled' if self.vectorization_manager else 'Disabled'}\n"
+                report += f"- **Rolling Optimizer:** {'Available' if self.rolling_optimizer else 'Not Available'}\n"
+                report += f"- **Hardware Manager:** {'Available' if self.hardware_manager else 'Not Available'}\n"
+            
+            # Add artifacts summary
+            report += f"\n## Generated Artifacts\n\n"
+            artifact_count = len([name for name in feature_sets.keys() if name.startswith('selected_features_')]) * 2
+            artifact_count += len(shap_values) if shap_values else 0
+            artifact_count += 2  # feature_scores + selection_metadata
+            
+            report += f"- **Feature Sets:** {len([name for name in feature_sets.keys() if name.startswith('selected_features_')])}\n"
+            report += f"- **Feature DataFrames:** {len([name for name in feature_sets.keys() if name.startswith('selected_feature_dataframe_')])}\n"
+            report += f"- **SHAP Analyses:** {len(shap_values) if shap_values else 0}\n"
+            report += f"- **Metadata Files:** 2\n"
+            report += f"- **Total Artifacts:** {artifact_count + 2}\n"  # +2 for pickle and markdown reports
+            
+            report += f"\n## Summary\n\n"
+            report += f"Final feature selection completed successfully. Generated {len([k for k in feature_sets.keys() if k.startswith('selected_features_')])} optimized feature sets "
+            report += f"with comprehensive SHAP analysis and metadata. All artifacts saved in both pickle and markdown formats.\n"
+            
+            report += f"\n---\n"
+            report += f"*Generated by Feature Generation Final Feature Selection Step at {timestamp}*\n"
+            
+            return report
+            
+        except Exception as e:
+            tprint_error(f"⚠️ Failed to generate markdown report: {e}")
+            return f"# Final Feature Selection Report\n\nError generating report: {str(e)}"
+
+    def _save_markdown_report(self, markdown_content: str, base_name: str) -> str:
+        """
+        Save a markdown report to the outcomes directory.
+        
+        Args:
+            markdown_content: The markdown content to save
+            base_name: Base name for the file
+            
+        Returns:
+            Path where the markdown file was saved
+        """
+        try:
+            # Create outcomes directory if it doesn't exist
+            outcomes_dir = Path("outcomes")
+            outcomes_dir.mkdir(exist_ok=True)
+            
+            # Generate filename with timestamp
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"{base_name}_report_{timestamp}.md"
+            file_path = outcomes_dir / filename
+            
+            # Write markdown content
+            with open(file_path, 'w', encoding='utf-8') as f:
+                f.write(markdown_content)
+            
+            tprint_success(f"✅ Markdown report saved: {file_path}")
+            return str(file_path)
+            
+        except Exception as e:
+            tprint_error(f"⚠️ Failed to save markdown report: {e}")
+            raise
 
 
 # Register the step

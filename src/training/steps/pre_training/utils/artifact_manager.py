@@ -37,6 +37,7 @@ class ArtifactConfig:
     include_information_in_filename: bool = True
     include_direction_in_filename: bool = True
     include_model_in_filename: bool = True
+    include_timeframe_in_filename: bool = True
 
     # Data format options
     use_joint_parquet_format: bool = True
@@ -86,7 +87,8 @@ class PreTrainingArtifactManager:
                    datetime_obj: Optional[datetime] = None,
                    information: str = "pre_training",
                    direction: str = "long",
-                   model: str = "Analyst") -> None:
+                   model: str = "Analyst",
+                   timeframe: Optional[str] = None) -> None:
         """Set context for enhanced file naming and organization."""
         self._context = {
             'symbol': symbol,
@@ -94,7 +96,8 @@ class PreTrainingArtifactManager:
             'datetime': datetime_obj or datetime.now(),
             'information': information,
             'direction': direction,
-            'model': model
+            'model': model,
+            'timeframe': timeframe
         }
 
         if self.config.enable_comprehensive_logging:
@@ -131,6 +134,10 @@ class PreTrainingArtifactManager:
 
         if self.config.include_model_in_filename and self._context.get('model'):
             parts.append(self._context['model'])
+
+        # Add timeframe
+        if self.config.include_timeframe_in_filename and self._context.get('timeframe'):
+            parts.append(self._context['timeframe'])
 
         # Add datetime
         if self.config.include_datetime_in_filename and self._context.get('datetime'):
@@ -445,6 +452,7 @@ def get_pretraining_artifact_manager() -> PreTrainingArtifactManager:
 def artifact_context(symbol: str,
                     exchange: str,
                     information: str = "pre_training",
+                    timeframe: Optional[str] = None,
                     **kwargs):
     """Context manager for artifact manager with automatic context setting."""
     am = get_pretraining_artifact_manager()
@@ -458,6 +466,7 @@ def artifact_context(symbol: str,
             symbol=symbol,
             exchange=exchange,
             information=information,
+            timeframe=timeframe,
             **kwargs
         )
 

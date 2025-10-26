@@ -1,0 +1,10 @@
+{
+  "validation_method": "comprehensive",
+  "overall_score": 0.2950900482380235,
+  "artifact_name": "validation_metrics",
+  "artifact_type": "data",
+  "file_path": "artifacts/pre_training/long/Analyst/regime_feature_selection/regime_feature_selection_validation_metrics_long_Analyst_20251026_184026.parquet",
+  "file_size": 5514,
+  "timestamp": "2025-10-26T18:42:42.323414",
+  "compression": "auto"
+}

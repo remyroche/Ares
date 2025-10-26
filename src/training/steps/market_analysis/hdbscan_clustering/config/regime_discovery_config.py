@@ -28,6 +28,7 @@ class RegimeDiscoveryConfig:
     min_samples_options: List[Union[int, str]] = field(default_factory=lambda: [None, 'half', 'same'])
     cluster_selection_method_options: List[str] = field(default_factory=lambda: ['eom', 'leaf'])
     cluster_selection_epsilon: float = 0.01
+    metric: str = 'euclidean'  # Distance metric: 'euclidean', 'manhattan', 'cosine', etc.
     prediction_data: bool = True
     
     # ============================================================================

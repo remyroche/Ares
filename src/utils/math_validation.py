@@ -7,6 +7,7 @@ to prevent errors in mathematical calculations.
 
 import logging
 import numpy as np
+import pandas as pd
 from typing import Any, List, Callable, Optional
 
 # Setup logging
@@ -43,6 +44,14 @@ def safe_power(x: float, y: float, default: float = 0.0) -> float:
 def validate_finite(value: Any, name: str = "value") -> Any:
     """Validate that a value is finite."""
     try:
+        # Handle pandas Series - preserve the Series type
+        if isinstance(value, pd.Series):
+            finite_mask = value.isna() | np.isinf(value)
+            if finite_mask.any():
+                non_finite_count = finite_mask.sum()
+                raise ValueError(f"{name} contains {non_finite_count} non-finite values (NaN or inf)")
+            return value
+        
         # Handle numpy arrays
         if isinstance(value, np.ndarray):
             if value.size == 0:
@@ -466,6 +475,22 @@ class MathValidation:
     def safe_power(self, x: float, y: float, default: float = 0.0) -> float:
         """Safely calculate power."""
         return safe_power(x, y, default)
+    
+    def safe_mean(self, x: np.ndarray, axis: Optional[int] = None, default: float = 0.0) -> float:
+        """Safely calculate mean."""
+        return safe_mean(x, axis, default)
+    
+    def safe_std(self, x: np.ndarray, axis: Optional[int] = None, default: float = 0.0) -> float:
+        """Safely calculate standard deviation."""
+        return safe_std(x, axis, default)
+    
+    def safe_correlation(self, x: np.ndarray, y: np.ndarray, default: float = 0.0) -> float:
+        """Safely calculate correlation."""
+        return safe_correlation(x, y, default)
+    
+    def safe_covariance(self, x: np.ndarray, y: np.ndarray, default: float = 0.0) -> float:
+        """Safely calculate covariance."""
+        return safe_covariance(x, y, default)
 
 class MathValidationError(Exception):
     """Exception raised for math validation errors."""

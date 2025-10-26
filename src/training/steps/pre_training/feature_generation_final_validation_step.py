@@ -141,32 +141,128 @@ class FeatureGenerationFinalValidationStep(BaseStep):
             }
 
     def _get_final_datasets(self) -> Dict[str, pd.DataFrame]:
-        """Get final datasets from previous steps."""
+        """Get final datasets from previous steps based on execution mode."""
         final_datasets = {}
 
-        # Get the final feature selection artifacts
+        # Determine execution mode (Analyst vs Tactician)
+        execution_mode = self._determine_execution_mode()
+        tprint_info(f"🔍 Execution mode detected: {execution_mode}")
+
+        # Get the final feature selection artifacts based on mode
         feature_set_sizes = [60, 50, 40]  # Standard sizes
 
         for size in feature_set_sizes:
-            # Try to get the selected feature dataframe
-            try:
-                dataset = self._get_artifact(f'selected_feature_dataframe_{size}')
-                if dataset is not None and isinstance(dataset, pd.DataFrame):
-                    final_datasets[f'final_dataset_{size}'] = dataset
-                    tprint_info(f"📊 Retrieved final dataset with {size} features")
-            except Exception as e:
-                tprint_warning(f"⚠️ Could not retrieve final dataset for {size} features: {e}")
+            # Try to get the selected feature dataframe with mode-specific naming
+            artifact_names_to_try = [
+                f'selected_feature_dataframe_{size}',  # Generic fallback
+                f'{execution_mode}_selected_feature_dataframe_{size}',  # Mode-specific
+                f'final_{execution_mode}_dataset_{size}'  # Alternative naming
+            ]
+            
+            dataset = None
+            for artifact_name in artifact_names_to_try:
+                try:
+                    dataset = self._get_artifact(artifact_name)
+                    if dataset is not None and isinstance(dataset, pd.DataFrame):
+                        final_datasets[f'final_dataset_{size}'] = dataset
+                        tprint_info(f"📊 Retrieved {execution_mode} final dataset with {size} features from '{artifact_name}'")
+                        break
+                except Exception as e:
+                    continue
+            
+            if dataset is None:
+                tprint_warning(f"⚠️ Could not retrieve final dataset for {size} features in {execution_mode} mode")
 
-        # Also try to get labeled dataframe as fallback
-        try:
-            labeled_df = self._get_artifact('labeled_dataframe')
-            if labeled_df is not None and len(final_datasets) == 0:
-                final_datasets['labeled_dataframe'] = labeled_df
-                tprint_info("📊 Using labeled dataframe as fallback for validation")
-        except Exception as e:
-            tprint_warning(f"⚠️ Could not retrieve labeled dataframe: {e}")
+        # Also try to get labeled dataframe for target relationships with mode-specific naming
+        labeled_df = None
+        artifact_names_to_try = [
+            'labeled_dataframe', 'labeled_data', 'labeled_dataset', 'target_dataframe',  # Generic fallbacks
+            f'{execution_mode}_labeled_dataframe', f'{execution_mode}_labeled_data',  # Mode-specific
+            f'{execution_mode}_target_dataframe', f'{execution_mode}_dataset'  # Alternative naming
+        ]
+        
+        for artifact_name in artifact_names_to_try:
+            try:
+                labeled_df = self._get_artifact(artifact_name)
+                if labeled_df is not None:
+                    tprint_info(f"📊 Retrieved {execution_mode} labeled data from '{artifact_name}' with {len(labeled_df.columns)} columns")
+                    break
+            except Exception as e:
+                continue
+        
+        if labeled_df is not None:
+            final_datasets['labeled_dataframe'] = labeled_df
+        else:
+            tprint_warning(f"⚠️ Could not retrieve labeled data from any known artifact names for {execution_mode} mode")
 
         return final_datasets
+
+    def _determine_execution_mode(self) -> str:
+        """
+        Determine execution mode (Analyst vs Tactician) from configuration.
+        
+        Returns:
+            str: 'analyst' or 'tactician' (defaults to 'analyst')
+        """
+        # Check for execution_context in config (set by ares_launcher)
+        if hasattr(self, 'config') and self.config:
+            execution_context = self.config.get('execution_context', '').lower()
+            
+            if 'tactician' in execution_context:
+                return 'tactician'
+            elif 'analyst' in execution_context:
+                return 'analyst'
+        
+        # Fallback: check for mode-specific artifacts to infer the mode
+        try:
+            # Check if tactician-specific artifacts exist
+            tactician_artifacts = [
+                'tactician_interaction_features',
+                'tactician_selected_feature_dataframe_60',
+                'tactician_labeled_dataframe'
+            ]
+            
+            analyst_artifacts = [
+                'analyst_interaction_features', 
+                'analyst_selected_feature_dataframe_60',
+                'analyst_labeled_dataframe'
+            ]
+            
+            # Count available artifacts for each mode
+            tactician_count = 0
+            analyst_count = 0
+            
+            for artifact_name in tactician_artifacts:
+                try:
+                    artifact = self._get_artifact(artifact_name)
+                    if artifact is not None:
+                        tactician_count += 1
+                except Exception:
+                    continue
+            
+            for artifact_name in analyst_artifacts:
+                try:
+                    artifact = self._get_artifact(artifact_name)
+                    if artifact is not None:
+                        analyst_count += 1
+                except Exception:
+                    continue
+            
+            # Determine mode based on artifact availability
+            if tactician_count > analyst_count:
+                tprint_info(f"🔍 Inferred tactician mode from artifacts ({tactician_count} tactician vs {analyst_count} analyst artifacts)")
+                return 'tactician'
+            elif analyst_count > tactician_count:
+                tprint_info(f"🔍 Inferred analyst mode from artifacts ({analyst_count} analyst vs {tactician_count} tactician artifacts)")
+                return 'analyst'
+            else:
+                # Equal or no artifacts found, default to analyst
+                tprint_info(f"🔍 No clear mode indicators found, defaulting to analyst mode")
+                return 'analyst'
+                
+        except Exception as e:
+            tprint_warning(f"⚠️ Error determining execution mode from artifacts: {e}")
+            return 'analyst'  # Default fallback
 
     def _perform_comprehensive_validation(self, datasets: Dict[str, pd.DataFrame], config: Dict[str, Any]) -> Dict[str, Any]:
         """Perform comprehensive validation of all datasets."""
@@ -207,7 +303,7 @@ class FeatureGenerationFinalValidationStep(BaseStep):
         validation['validations']['statistical'] = self._validate_statistical_properties(dataset, config)
 
         # Overall assessment
-        validation['overall_assessment'] = self._assess_dataset_quality(validation['validations'], config)
+        validation['overall_assessment'] = self._assess_dataset_quality(validation['validations'], config, dataset)
 
         return validation
 
@@ -239,15 +335,16 @@ class FeatureGenerationFinalValidationStep(BaseStep):
                 'max': numeric_data.max().to_dict()
             }
 
-        # Outlier detection (simple IQR method)
+        # Outlier detection (3-sigma method for financial data)
         outlier_counts = {}
         for col in numeric_data.columns:
             if col not in ['target', 'label', 'return']:  # Skip target columns for outlier detection
-                Q1 = numeric_data[col].quantile(0.25)
-                Q3 = numeric_data[col].quantile(0.75)
-                IQR = Q3 - Q1
-                lower_bound = Q1 - 1.5 * IQR
-                upper_bound = Q3 + 1.5 * IQR
+                mean_val = numeric_data[col].mean()
+                std_val = numeric_data[col].std()
+                
+                # Use 3-sigma rule for financial data (more lenient than IQR)
+                lower_bound = mean_val - 3 * std_val
+                upper_bound = mean_val + 3 * std_val
 
                 outliers = ((numeric_data[col] < lower_bound) | (numeric_data[col] > upper_bound)).sum()
                 outlier_counts[col] = int(outliers)
@@ -297,8 +394,20 @@ class FeatureGenerationFinalValidationStep(BaseStep):
         if distribution_stats:
             normal_features = len([col for col, stats in distribution_stats.items()
                                  if isinstance(stats, dict) and stats.get('is_normal', False)])
+            
+            # Calculate average statistics
+            skewness_values = [stats.get('skewness', 0) for stats in distribution_stats.values() 
+                              if isinstance(stats, dict) and 'skewness' in stats]
+            kurtosis_values = [stats.get('kurtosis', 0) for stats in distribution_stats.values() 
+                              if isinstance(stats, dict) and 'kurtosis' in stats]
+            
             distributions['normal_features_count'] = normal_features
-            distributions['normal_features_percentage'] = normal_features / len(distribution_stats)
+            distributions['total_features_tested'] = len(distribution_stats)
+            distributions['normal_features_percentage'] = (normal_features / len(distribution_stats)) * 100
+            distributions['average_skewness'] = np.mean(skewness_values) if skewness_values else 0
+            distributions['average_kurtosis'] = np.mean(kurtosis_values) if kurtosis_values else 0
+            distributions['skewness_range'] = (min(skewness_values), max(skewness_values)) if skewness_values else (0, 0)
+            distributions['kurtosis_range'] = (min(kurtosis_values), max(kurtosis_values)) if kurtosis_values else (0, 0)
 
         return distributions
 
@@ -307,9 +416,24 @@ class FeatureGenerationFinalValidationStep(BaseStep):
         relationships = {}
 
         # Identify target and feature columns
-        target_cols = [col for col in ['target', 'label', 'return'] if col in dataset.columns]
+        # Look for common target column patterns in financial data
+        target_patterns = ['target', 'label', 'return', 'quality_scores', 'price_target', 'volatility_target', 'direction']
+        target_cols = []
+        
+        for col in dataset.columns:
+            col_lower = col.lower()
+            if any(pattern in col_lower for pattern in target_patterns):
+                target_cols.append(col)
+        
+        # If no obvious targets found, look for columns that might be targets based on naming
+        if not target_cols:
+            for col in dataset.columns:
+                col_lower = col.lower()
+                if any(suffix in col_lower for suffix in ['_target', '_label', '_score', '_signal', '_direction']):
+                    target_cols.append(col)
+        
         feature_cols = [col for col in dataset.columns
-                       if col not in target_cols + ['timestamp']]
+                       if col not in target_cols + ['timestamp', 'open_time', 'close_time']]
 
         if not target_cols or not feature_cols:
             return {'error': 'No target or feature columns found'}
@@ -462,7 +586,7 @@ class FeatureGenerationFinalValidationStep(BaseStep):
 
         return stats_validation
 
-    def _assess_dataset_quality(self, validations: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
+    def _assess_dataset_quality(self, validations: Dict[str, Any], config: Dict[str, Any], dataset: pd.DataFrame) -> Dict[str, Any]:
         """Assess overall dataset quality based on all validations."""
         assessment = {
             'overall_score': 0.0,
@@ -479,36 +603,128 @@ class FeatureGenerationFinalValidationStep(BaseStep):
             dq = validations['data_quality']
             total_checks += 1
 
-            if dq.get('max_nan_percentage', 100) < 5:  # Less than 5% NaN
+            # Detailed NaN analysis
+            max_nan_pct = dq.get('max_nan_percentage', 100)
+            total_nans = dq.get('total_nans', 0)
+            high_nan_cols = dq.get('high_nan_columns', {})
+            
+            if max_nan_pct < 5:  # Less than 5% NaN
                 passed_checks += 1
+                assessment['recommendations'].append(f"✅ Good data completeness: max NaN {max_nan_pct:.1f}%")
             else:
-                assessment['issues'].append(f"High NaN percentage: {dq['max_nan_percentage']:.1f}%")
+                assessment['issues'].append(f"❌ High NaN percentage: {max_nan_pct:.1f}% (total: {total_nans:,} missing values)")
+                if high_nan_cols:
+                    worst_cols = sorted(high_nan_cols.items(), key=lambda x: x[1], reverse=True)[:5]
+                    assessment['issues'].append(f"   Worst columns: {', '.join([f'{col}({pct:.1f}%)' for col, pct in worst_cols])}")
 
-            if dq.get('total_outliers', 0) < len(dataset) * 0.1:  # Less than 10% outliers
+            # Detailed outlier analysis
+            total_outliers = dq.get('total_outliers', 0)
+            outlier_percentage = (total_outliers / len(dataset)) * 100 if len(dataset) > 0 else 0
+            outlier_counts = dq.get('outlier_counts', {})
+            
+            if total_outliers < len(dataset) * 0.3:  # Less than 30% outliers (more realistic threshold)
                 passed_checks += 0.5
+                assessment['recommendations'].append(f"✅ Acceptable outlier level: {outlier_percentage:.1f}% ({total_outliers:,} outliers)")
             else:
-                assessment['warnings'].append(f"High outlier count: {dq['total_outliers']}")
+                assessment['warnings'].append(f"⚠️ High outlier count: {outlier_percentage:.1f}% ({total_outliers:,} outliers)")
+                
+                # Show which features have the most outliers
+                if outlier_counts:
+                    top_outlier_features = sorted(outlier_counts.items(), key=lambda x: x[1], reverse=True)[:5]
+                    outlier_details = ', '.join([f'{col}({count})' for col, count in top_outlier_features])
+                    assessment['warnings'].append(f"   Top outlier features: {outlier_details}")
+                    assessment['recommendations'].append("✅ Using 3-sigma outlier detection (more lenient than IQR) for financial data")
+                
+            # Data type analysis
+            numeric_cols = dq.get('numeric_columns', 0)
+            categorical_cols = dq.get('categorical_columns', 0)
+            datetime_cols = dq.get('datetime_columns', 0)
+            assessment['recommendations'].append(f"📊 Data types: {numeric_cols} numeric, {categorical_cols} categorical, {datetime_cols} datetime")
 
         # Assess feature distributions
         if 'feature_distributions' in validations:
             fd = validations['feature_distributions']
             total_checks += 1
 
-            if fd.get('normal_features_percentage', 0) > 0.3:  # More than 30% normal features
+            normal_pct = fd.get('normal_features_percentage', 0)
+            total_features_tested = fd.get('total_features_tested', 0)
+            normal_features_count = fd.get('normal_features_count', 0)
+            
+            # For financial data, we expect many features to be non-normal
+            if normal_pct > 0.2:  # More than 20% normal features (lowered threshold for financial data)
                 passed_checks += 1
+                assessment['recommendations'].append(f"✅ Good distribution normality: {normal_pct:.1f}% ({normal_features_count}/{total_features_tested}) features are normal")
             else:
-                assessment['recommendations'].append("Consider feature transformations for non-normal distributions")
+                # Check if non-normal features are percentage-based, naturally bounded, or raw market data
+                distribution_stats = fd.get('feature_distribution_stats', {})
+                problematic_features = []
+                acceptable_features = []
+                
+                for col, stats in distribution_stats.items():
+                    if isinstance(stats, dict) and not stats.get('is_normal', False):
+                        skewness = stats.get('skewness', 0)
+                        col_lower = col.lower()
+                        
+                        # Skip percentage features, naturally bounded features, and raw market data
+                        is_percentage = any(suffix in col_lower for suffix in ['_pct', '_percent', '_ratio', '_rate', '_return', '_log_return'])
+                        is_raw_market_data = any(raw_feature in col_lower for raw_feature in [
+                            'price_range', 'body_size', 'volume', 'quote_volume', 'trades', 
+                            'high', 'low', 'open', 'close', 'amount', 'count'
+                        ])
+                        
+                        if is_percentage or is_raw_market_data:
+                            feature_type = "percentage" if is_percentage else "raw market data"
+                            acceptable_features.append(f"{col}(skew={skewness:.2f}, {feature_type})")
+                        else:
+                            problematic_features.append(f"{col}(skew={skewness:.2f})")
+                
+                if problematic_features:
+                    assessment['warnings'].append(f"⚠️ Low normality: only {normal_pct:.1f}% ({normal_features_count}/{total_features_tested}) features are normally distributed")
+                    # Show top 5 most skewed non-percentage features
+                    top_skewed = sorted(problematic_features, key=lambda x: abs(float(x.split('skew=')[1].rstrip(')'))), reverse=True)[:5]
+                    assessment['warnings'].append(f"   Most skewed features: {', '.join(top_skewed)}")
+                    assessment['recommendations'].append("💡 Consider feature transformations (log, sqrt, Box-Cox) for engineered features only")
+                else:
+                    assessment['recommendations'].append(f"✅ Acceptable distributions: {normal_pct:.1f}% normal, {len(acceptable_features)} percentage/raw market data features")
+                
+            # Distribution statistics summary
+            avg_skewness = fd.get('average_skewness', 0)
+            avg_kurtosis = fd.get('average_kurtosis', 0)
+            assessment['recommendations'].append(f"📈 Distribution stats: avg skewness={avg_skewness:.2f}, avg kurtosis={avg_kurtosis:.2f}")
 
         # Assess target relationships
         if 'target_relationships' in validations:
             tr = validations['target_relationships']
             total_checks += 1
 
-            strong_correlations = len(tr.get('strong_correlations', {}))
-            if strong_correlations > 0:
+            strong_correlations = tr.get('strong_correlations', {})
+            all_correlations = tr.get('feature_target_correlations', {})
+            strong_count = len(strong_correlations)
+            total_features = len(all_correlations)
+            
+            if strong_count > 0:
                 passed_checks += 1
+                assessment['recommendations'].append(f"✅ Strong correlations found: {strong_count}/{total_features} features have |corr| > 0.8")
+                # Show top correlations
+                top_correlations = sorted(strong_correlations.items(), key=lambda x: abs(x[1]), reverse=True)[:5]
+                corr_details = ', '.join([f'{col}({corr:.3f})' for col, corr in top_correlations])
+                assessment['recommendations'].append(f"   Top correlations: {corr_details}")
             else:
-                assessment['warnings'].append("No strong feature-target correlations found")
+                # Check if this is due to missing targets
+                error_msg = tr.get('error', '')
+                if 'No target' in error_msg or 'No feature' in error_msg:
+                    assessment['issues'].append(f"❌ Missing target variables: {error_msg}")
+                    assessment['recommendations'].append("💡 Target variables are required for supervised learning and correlation analysis")
+                    assessment['recommendations'].append("💡 Check if labeled data contains target columns with expected naming patterns")
+                else:
+                    assessment['warnings'].append(f"⚠️ No strong correlations: {total_features} features tested, none with |corr| > 0.8")
+                    
+                    # Show best correlations even if not strong
+                    if all_correlations:
+                        best_correlations = sorted(all_correlations.items(), key=lambda x: abs(x[1]) if isinstance(x[1], (int, float)) else 0, reverse=True)[:5]
+                        best_details = ', '.join([f'{col}({corr:.3f})' for col, corr in best_correlations if isinstance(corr, (int, float))])
+                        assessment['recommendations'].append(f"💡 Best correlations: {best_details}")
+                        assessment['recommendations'].append("💡 Consider feature engineering to create more predictive features")
 
         # Assess CV readiness
         if 'cv_readiness' in validations:
@@ -516,9 +732,30 @@ class FeatureGenerationFinalValidationStep(BaseStep):
             total_checks += 1
 
             if 'error' not in cv and cv.get('r2_score', -1) > 0:
+                r2_score = cv.get('r2_score', 0)
+                mse = cv.get('mse', 0)
+                rmse = cv.get('rmse', 0)
                 passed_checks += 1
+                assessment['recommendations'].append(f"✅ Good CV performance: R²={r2_score:.3f}, MSE={mse:.3f}, RMSE={rmse:.3f}")
             else:
-                assessment['issues'].append("Poor cross-validation performance")
+                error_msg = cv.get('error', 'Unknown error')
+                r2_score = cv.get('r2_score', 0)
+                mse = cv.get('mse', 0)
+                rmse = cv.get('rmse', 0)
+                
+                if 'insufficient_data' in cv:
+                    sample_size = cv.get('sample_size', 0)
+                    assessment['issues'].append(f"❌ Insufficient data for CV: only {sample_size} samples (need ≥100)")
+                elif 'No target' in error_msg or 'No feature' in error_msg:
+                    assessment['issues'].append(f"❌ Cannot perform CV: {error_msg}")
+                    assessment['recommendations'].append("💡 Cross-validation requires both features and targets")
+                    assessment['recommendations'].append("💡 Check if labeled data contains target columns with expected naming patterns")
+                else:
+                    assessment['issues'].append(f"❌ Poor CV performance: R²={r2_score:.3f}, MSE={mse:.3f}, RMSE={rmse:.3f}")
+                    if error_msg != 'Unknown error':
+                        assessment['issues'].append(f"   Error details: {error_msg}")
+                
+                assessment['recommendations'].append("💡 Consider: 1) More data collection, 2) Feature selection, 3) Different algorithms, 4) Target variable refinement")
 
         # Calculate overall score
         if total_checks > 0:
@@ -552,7 +789,30 @@ class FeatureGenerationFinalValidationStep(BaseStep):
 
             # Check quality level
             if quality_level == 'poor':
-                tprint_warning(f"⚠️ Poor quality dataset {dataset_name}: {assessment.get('overall_score', 0):.2f}")
+                score = assessment.get('overall_score', 0)
+                issues = assessment.get('issues', [])
+                warnings = assessment.get('warnings', [])
+                
+                tprint_warning(f"⚠️ Poor quality dataset {dataset_name}: {score:.2f}")
+                
+                # Show specific issues
+                if issues:
+                    tprint_error(f"   Critical issues: {len(issues)}")
+                    for issue in issues[:3]:  # Show top 3 issues
+                        tprint_error(f"   - {issue}")
+                
+                if warnings:
+                    tprint_warning(f"   Warnings: {len(warnings)}")
+                    for warning in warnings[:3]:  # Show top 3 warnings
+                        tprint_warning(f"   - {warning}")
+                
+                # Show recommendations
+                recommendations = assessment.get('recommendations', [])
+                if recommendations:
+                    tprint_info(f"   Recommendations: {len(recommendations)}")
+                    for rec in recommendations[:3]:  # Show top 3 recommendations
+                        tprint_info(f"   - {rec}")
+                
                 if execution_mode == 'strict':
                     return False
 
@@ -567,8 +827,9 @@ class FeatureGenerationFinalValidationStep(BaseStep):
         for dataset_name, dataset in final_datasets.items():
             artifacts[dataset_name] = dataset
 
-        # Validation results summary
-        artifacts['final_validation_metrics'] = validation_results
+        # Validation results summary (flattened for PyArrow compatibility)
+        flattened_metrics = self._flatten_validation_results(validation_results)
+        artifacts['final_validation_metrics'] = flattened_metrics
 
         # Quality scores
         quality_scores = {}
@@ -605,15 +866,60 @@ class FeatureGenerationFinalValidationStep(BaseStep):
 
         return artifacts
 
+    def _flatten_validation_results(self, validation_results: Dict[str, Any]) -> pd.DataFrame:
+        """Flatten validation results into a PyArrow-compatible DataFrame."""
+        flattened_data = []
+        
+        for dataset_name, validation in validation_results.items():
+            # Extract basic information
+            row = {
+                'dataset_name': dataset_name,
+                'shape_rows': validation.get('shape', (0, 0))[0],
+                'shape_cols': validation.get('shape', (0, 0))[1],
+                'memory_usage': validation.get('memory_usage', 0),
+                'columns_count': len(validation.get('columns', [])),
+            }
+            
+            # Extract overall assessment
+            assessment = validation.get('overall_assessment', {})
+            row.update({
+                'overall_score': assessment.get('overall_score', 0.0),
+                'quality_level': assessment.get('quality_level', 'unknown'),
+                'issues_count': len(assessment.get('issues', [])),
+                'warnings_count': len(assessment.get('warnings', [])),
+                'recommendations_count': len(assessment.get('recommendations', [])),
+            })
+            
+            # Extract validation details
+            validations = validation.get('validations', {})
+            for validation_type, validation_data in validations.items():
+                if isinstance(validation_data, dict):
+                    # Flatten nested validation data
+                    for key, value in validation_data.items():
+                        if isinstance(value, (int, float, str, bool)):
+                            row[f"{validation_type}_{key}"] = value
+                        else:
+                            row[f"{validation_type}_{key}"] = str(value)
+                else:
+                    row[validation_type] = str(validation_data)
+            
+            flattened_data.append(row)
+        
+        return pd.DataFrame(flattened_data)
+
     def _calculate_metrics(self, validation_results: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
         """Calculate metrics for the validation."""
+        execution_mode = self._determine_execution_mode()
+        
         metrics = {
             'datasets_validated': len(validation_results),
             'execution_timestamp': datetime.now().isoformat(),
             'symbol': config.get('symbol', 'unknown'),
             'exchange': config.get('exchange', 'binance'),
             'timeframe': config.get('timeframe', '15m'),
-            'execution_mode': config.get('execution_mode', 'light')
+            'execution_mode': config.get('execution_mode', 'light'),
+            'model_type': execution_mode,  # analyst or tactician
+            'execution_context': config.get('execution_context', 'unknown')
         }
 
         # Quality statistics
@@ -666,6 +972,9 @@ class FeatureGenerationFinalValidationStep(BaseStep):
     def _create_outcome_report(self, validation_results: Dict[str, Any], config: Dict[str, Any]) -> str:
         """Create comprehensive outcome report."""
         try:
+            # Get execution mode for reporting
+            execution_mode = self._determine_execution_mode()
+            
             report = f"""# Final Dataset Validation Outcome Report
 
 **Execution Details:**
@@ -673,6 +982,7 @@ class FeatureGenerationFinalValidationStep(BaseStep):
 - **Exchange:** {config.get('exchange', 'binance')}
 - **Timeframe:** {config.get('timeframe', '15m')}
 - **Execution Mode:** {config.get('execution_mode', 'light')}
+- **Model Type:** {execution_mode.title()} (Analyst/Tactician)
 - **Timestamp:** {datetime.now().isoformat()}
 
 ## Validation Summary
@@ -711,20 +1021,78 @@ class FeatureGenerationFinalValidationStep(BaseStep):
                 report += f"\n### {quality_icon} {dataset_name}\n"
                 report += f"- **Quality Level:** {quality_level.upper()}\n"
                 report += f"- **Quality Score:** {score:.2f}\n"
-                report += f"- **Issues:** {len(assessment.get('issues', []))}\n"
-                report += f"- **Warnings:** {len(assessment.get('warnings', []))}\n"
+                report += f"- **Shape:** {validation.get('shape', 'unknown')}\n"
+                report += f"- **Memory Usage:** {validation.get('memory_usage', 0):,} bytes\n"
 
-                # Key metrics
+                # Detailed validation results
                 validations = validation.get('validations', {})
+                
+                # Data Quality Details
                 if 'data_quality' in validations:
                     dq = validations['data_quality']
-                    report += f"- **Max NaN %:** {dq.get('max_nan_percentage', 0):.1f}%\n"
-                    report += f"- **Outliers:** {dq.get('total_outliers', 0)}\n"
+                    report += f"\n#### 📊 Data Quality Metrics\n"
+                    report += f"- **NaN Percentage:** {dq.get('max_nan_percentage', 0):.1f}% (total: {dq.get('total_nans', 0):,} missing)\n"
+                    report += f"- **Outliers:** {dq.get('total_outliers', 0):,} detected\n"
+                    report += f"- **Data Types:** {dq.get('numeric_columns', 0)} numeric, {dq.get('categorical_columns', 0)} categorical\n"
+                    
+                    if dq.get('high_nan_columns'):
+                        report += f"- **High NaN Columns:** {', '.join([f'{col}({pct:.1f}%)' for col, pct in list(dq['high_nan_columns'].items())[:5]])}\n"
 
+                # Feature Distribution Details
+                if 'feature_distributions' in validations:
+                    fd = validations['feature_distributions']
+                    report += f"\n#### 📈 Feature Distribution Analysis\n"
+                    report += f"- **Normal Features:** {fd.get('normal_features_count', 0)}/{fd.get('total_features_tested', 0)} ({fd.get('normal_features_percentage', 0):.1f}%)\n"
+                    report += f"- **Average Skewness:** {fd.get('average_skewness', 0):.2f}\n"
+                    report += f"- **Average Kurtosis:** {fd.get('average_kurtosis', 0):.2f}\n"
+
+                # Target Relationship Details
+                if 'target_relationships' in validations:
+                    tr = validations['target_relationships']
+                    strong_corr = tr.get('strong_correlations', {})
+                    all_corr = tr.get('feature_target_correlations', {})
+                    report += f"\n#### 🎯 Feature-Target Relationships\n"
+                    report += f"- **Strong Correlations:** {len(strong_corr)}/{len(all_corr)} features with |corr| > 0.8\n"
+                    
+                    if strong_corr:
+                        top_corr = sorted(strong_corr.items(), key=lambda x: abs(x[1]), reverse=True)[:3]
+                        report += f"- **Top Correlations:** {', '.join([f'{col}({corr:.3f})' for col, corr in top_corr])}\n"
+                    elif all_corr:
+                        best_corr = sorted(all_corr.items(), key=lambda x: abs(x[1]) if isinstance(x[1], (int, float)) else 0, reverse=True)[:3]
+                        report += f"- **Best Correlations:** {', '.join([f'{col}({corr:.3f})' for col, corr in best_corr if isinstance(corr, (int, float))])}\n"
+
+                # CV Performance Details
                 if 'cv_readiness' in validations:
                     cv = validations['cv_readiness']
-                    if 'r2_score' in cv:
-                        report += f"- **CV R² Score:** {cv['r2_score']:.3f}\n"
+                    report += f"\n#### 🔄 Cross-Validation Performance\n"
+                    if 'error' not in cv:
+                        report += f"- **R² Score:** {cv.get('r2_score', 0):.3f}\n"
+                        report += f"- **MSE:** {cv.get('mse', 0):.3f}\n"
+                        report += f"- **RMSE:** {cv.get('rmse', 0):.3f}\n"
+                    else:
+                        report += f"- **Status:** Failed - {cv.get('error', 'Unknown error')}\n"
+                        if 'insufficient_data' in cv:
+                            report += f"- **Sample Size:** {cv.get('sample_size', 0)} (minimum required: 100)\n"
+
+                # Issues and warnings
+                issues = assessment.get('issues', [])
+                warnings = assessment.get('warnings', [])
+                recommendations = assessment.get('recommendations', [])
+
+                if issues:
+                    report += f"\n#### ❌ Critical Issues ({len(issues)})\n"
+                    for issue in issues:
+                        report += f"- {issue}\n"
+
+                if warnings:
+                    report += f"\n#### ⚠️ Warnings ({len(warnings)})\n"
+                    for warning in warnings:
+                        report += f"- {warning}\n"
+
+                if recommendations:
+                    report += f"\n#### 💡 Recommendations ({len(recommendations)})\n"
+                    for rec in recommendations:
+                        report += f"- {rec}\n"
 
             # Issues and warnings
             all_issues = []

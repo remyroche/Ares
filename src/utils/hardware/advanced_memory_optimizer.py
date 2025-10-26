@@ -586,7 +586,7 @@ class AdvancedM1MemoryOptimizer(M1MemoryOptimizer):
 
                     # Take action based on predictions
                     if (prediction and prediction.confidence and prediction.confidence > 0.7 and
-                        prediction.predicted_usage_mb and prediction.predicted_usage_mb > self.memory_limit_gb * 0.9):
+                        prediction.predicted_usage_mb is not None and prediction.predicted_usage_mb > self.memory_limit_gb * 0.9):
                         self.logger.warning(f"🚨 Predicted memory pressure in 30min: {prediction.predicted_usage_mb:.2f}GB")
                         self._proactive_memory_cleanup()
 

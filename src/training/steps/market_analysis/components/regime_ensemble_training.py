@@ -18,6 +18,27 @@ from src.utils.logger import system_logger
 from src.utils.tprint import tprint
 from .base_component import BaseMarketAnalysisComponent, ComponentConfig, ComponentResult
 
+# Enhanced imports for new functionality
+from src.utils.ml_common.unified_vectorization_manager import (
+    UnifiedVectorizationManager, OperationType, OptimizationStrategy
+)
+from src.utils.ml_common.optimization.hpo_utils import (
+    HyperparameterOptimization
+)
+from src.utils.ml_common.validation.universal_temporal_validation import (
+    UniversalTemporalValidator, TemporalValidationConfig
+)
+from src.utils.ml_common.utils.lookahead_protection import LookaheadProtection
+from src.utils.hardware.unified_hardware_manager import (
+    UnifiedHardwareManager, HardwareConfig, WorkloadType, OptimizationLevel
+)
+from src.utils.ml_common.evaluation.evaluation_utils import (
+    EvaluationUtils
+)
+from src.utils.ml_common.post_training.model_validation import (
+    ModelValidator, ValidationConfig
+)
+
 # Suppress warnings
 warnings.filterwarnings('ignore')
 
@@ -60,6 +81,63 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
         self.logger = system_logger.getChild('RegimeEnsembleTrainingComponent')
         tprint("✅ [REGIME_ENSEMBLE] Logger initialized", color="green")
 
+        # Initialize hardware manager for optimization
+        self.hardware_manager = UnifiedHardwareManager(
+            HardwareConfig(
+                cpu_optimization_level=OptimizationLevel.AGGRESSIVE,
+                gpu_optimization_level=OptimizationLevel.BALANCED,
+                memory_optimization_level=OptimizationLevel.BALANCED,
+                enable_adaptive_optimization=True,
+                enable_learning=True
+            )
+        )
+        tprint("🔧 [REGIME_ENSEMBLE] Hardware manager initialized", color="green")
+
+        # Initialize vectorization manager for feature generation
+        self.vectorization_manager = UnifiedVectorizationManager()
+        tprint("🔧 [REGIME_ENSEMBLE] Vectorization manager initialized", color="green")
+
+        # Initialize HPO optimizer
+        self.hpo_optimizer = HyperparameterOptimization(
+            {
+                'max_trials': 50,
+                'timeout_seconds': 300,
+                'enable_early_stopping': True,
+                'enable_pruning': True
+            }
+        )
+        tprint("🔧 [REGIME_ENSEMBLE] HPO optimizer initialized", color="green")
+
+        # Initialize temporal validator for data leakage prevention
+        self.temporal_validator = UniversalTemporalValidator(
+            TemporalValidationConfig(
+                enable_temporal_checks=True,
+                strict_temporal_order=True,
+                initial_train_size=0.7,
+                test_size=0.3,
+                gap_size=1
+            )
+        )
+        tprint("🔧 [REGIME_ENSEMBLE] Temporal validator initialized", color="green")
+
+        # Initialize lookahead protection
+        self.lookahead_protection = LookaheadProtection()
+        tprint("🔧 [REGIME_ENSEMBLE] Lookahead protection initialized", color="green")
+
+        # Initialize model evaluator
+        self.model_evaluator = EvaluationUtils()
+        tprint("🔧 [REGIME_ENSEMBLE] Model evaluator initialized", color="green")
+
+        # Initialize model validator
+        self.model_validator = ModelValidator(
+            ValidationConfig(
+                enable_purged_cv=True,
+                enable_data_leakage_detection=True,
+                enable_time_series_validation=True
+            )
+        )
+        tprint("🔧 [REGIME_ENSEMBLE] Model validator initialized", color="green")
+
         # Initialize ensemble training parameters
         self.ensemble_config = {
             'n_estimators': 100,
@@ -88,7 +166,7 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
 
     async def execute(self, data: pd.DataFrame, pipeline_state: Dict[str, Any]) -> ComponentResult:
         """
-        Execute regime ensemble training.
+        Execute regime ensemble training with enhanced hardware optimization and validation.
 
         Args:
             data: Market data DataFrame
@@ -97,10 +175,21 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
         Returns:
             ComponentResult with training results
         """
-        tprint("🚀 [REGIME_ENSEMBLE] Starting regime ensemble training execution", color="cyan", bold=True)
+        tprint("🚀 [REGIME_ENSEMBLE] Starting enhanced regime ensemble training execution", color="cyan", bold=True)
         start_time = datetime.now()
 
         try:
+            # Initialize hardware optimization for intensive workload
+            tprint("🔧 [REGIME_ENSEMBLE] Initializing hardware optimization", color="cyan")
+            await self.hardware_manager.initialize()
+            await self.hardware_manager.optimize_for_workload(WorkloadType.ML_TRAINING)
+            tprint("✅ [REGIME_ENSEMBLE] Hardware optimization initialized", color="green")
+
+            # Apply lookahead protection
+            tprint("🔒 [REGIME_ENSEMBLE] Applying lookahead protection", color="cyan")
+            protected_data = self.lookahead_protection.protect_data(data)
+            tprint("✅ [REGIME_ENSEMBLE] Lookahead protection applied", color="green")
+
             # Extract required data from pipeline state
             tprint("📊 [REGIME_ENSEMBLE] Extracting data from pipeline state", color="yellow")
 
@@ -161,11 +250,11 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
             if regime_labels is None:
                 tprint("⚠️ [REGIME_ENSEMBLE] No regime labels found in artifacts, will create synthetic regime labels", color="yellow")
                 # Create synthetic regime labels based on data patterns
-                regime_labels = self._create_synthetic_regime_labels(data)
+                regime_labels = self._create_synthetic_regime_labels(protected_data)
 
             # Prepare training data from the input data DataFrame with advanced regime features
             tprint("🔧 [REGIME_ENSEMBLE] Preparing training data from input DataFrame with advanced regime features", color="yellow")
-            X, y, feature_names = self._prepare_training_data(data, regime_labels, pipeline_state)
+            X, y, feature_names = self._prepare_training_data(protected_data, regime_labels, pipeline_state)
 
             # Validate required data
             tprint("🔍 [REGIME_ENSEMBLE] Validating required data", color="yellow")
@@ -200,20 +289,7 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
             X_processed, y_processed, regime_labels_processed = self._prepare_data(X, y, regime_labels)
             tprint(f"✅ [REGIME_ENSEMBLE] Data prepared - X: {X_processed.shape}, y: {y_processed.shape}", color="green")
 
-            # Import temporal validation utilities
-            from src.utils.ml_common.validation.universal_temporal_validation import UniversalTemporalValidator, TemporalValidationConfig
-
-            # Create temporal validator for proper train/test splitting
-            temporal_config = TemporalValidationConfig(
-                enable_temporal_checks=True,
-                strict_temporal_order=True,
-                initial_train_size=0.7,  # 70% for training
-                test_size=0.3,  # 30% for validation
-                gap_size=1  # Gap between train and test
-            )
-            temporal_validator = UniversalTemporalValidator(temporal_config)
-
-            # Perform proper temporal split to prevent data leakage
+            # Perform proper temporal split to prevent data leakage using temporal validator
             tprint("🔄 [REGIME_ENSEMBLE] Performing temporal train/test split to prevent data leakage", color="cyan")
 
             # For temporal data, we need to sort by time if not already sorted
@@ -232,7 +308,7 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
             y_test = y_processed[test_indices]
 
             # Validate the temporal split
-            validation_report = temporal_validator.validate_temporal_split(
+            validation_report = self.temporal_validator.validate_temporal_split(
                 X_train, X_test, y_train, y_test,
                 model_name="regime_ensemble",
                 model_type="ensemble"
@@ -275,6 +351,15 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
                         'warnings': validation_report.warnings,
                         'recommendations': validation_report.recommendations
                     },
+                    'hardware_optimization': {
+                        'enabled': True,
+                        'workload_type': 'ML_TRAINING',
+                        'optimization_applied': True
+                    },
+                    'lookahead_protection': {
+                        'enabled': True,
+                        'protection_applied': True
+                    },
                     'metadata': {
                         'component_type': 'regime_ensemble_training',
                         'data_shape': X_processed.shape,
@@ -314,19 +399,32 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
             except Exception as e:
                 tprint(f"⚠️ [REGIME_ENSEMBLE] Failed to save artifacts persistently: {e}", color="yellow")
 
+            # Cleanup hardware resources
+            await self.hardware_manager.cleanup()
+            tprint("🔧 [REGIME_ENSEMBLE] Hardware resources cleaned up", color="green")
+
             return ComponentResult(
                 success=True,
                 artifacts=results,
                 metadata={
                     'component_type': 'regime_ensemble_training',
                     'execution_time': (datetime.now() - start_time).total_seconds(),
-                    'artifacts_saved_persistently': True
+                    'artifacts_saved_persistently': True,
+                    'hardware_optimization_enabled': True,
+                    'lookahead_protection_enabled': True
                 }
             )
 
         except Exception as e:
             tprint(f"❌ [REGIME_ENSEMBLE] Regime ensemble training failed: {e}", color="red", bold=True)
             self.logger.error(f"Regime ensemble training failed: {e}", exc_info=True)
+            
+            # Cleanup hardware resources on error
+            try:
+                await self.hardware_manager.cleanup()
+            except Exception as cleanup_error:
+                tprint(f"⚠️ [REGIME_ENSEMBLE] Hardware cleanup failed: {cleanup_error}", color="yellow")
+            
             return ComponentResult(
                 success=False,
                 artifacts={},
@@ -420,8 +518,8 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
             return meta_features
 
     def _train_stacker_lgbm_calibrated(self, X: np.ndarray, y: np.ndarray, base_models: Dict[str, Any]) -> Dict[str, Any]:
-        """Train stacker_lgbm_calibrated meta-learner."""
-        tprint("🎭 [REGIME_ENSEMBLE] Training stacker_lgbm_calibrated meta-learner", color="yellow")
+        """Train stacker_lgbm_calibrated meta-learner with HPO optimization."""
+        tprint("🎭 [REGIME_ENSEMBLE] Training stacker_lgbm_calibrated meta-learner with HPO", color="yellow")
 
         try:
             # Filter out None models and non-model objects (like feature indices)
@@ -440,7 +538,7 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
 
             tprint(f"📊 [REGIME_ENSEMBLE] Using {len(valid_base_models)} valid base models: {list(valid_base_models.keys())}", color="blue")
 
-            # Create base model predictions for meta-learning
+            # Generate base model predictions for meta-learning
             tprint("🔧 [REGIME_ENSEMBLE] Generating base model predictions", color="blue")
             base_predictions = []
             base_model_names = []
@@ -482,29 +580,57 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
             meta_features = np.column_stack(base_predictions)
             tprint(f"📊 [REGIME_ENSEMBLE] Meta-features shape: {meta_features.shape}", color="blue")
 
-            # Create LightGBM meta-learner with AGGRESSIVE regularization to prevent overfitting
-            tprint("🌲 [REGIME_ENSEMBLE] Creating LightGBM meta-learner with AGGRESSIVE regularization", color="blue", bold=True)
-            meta_learner = LGBMClassifier(
-                num_leaves=8,           # Dramatically reduced from 63 to 8
-                max_depth=2,            # Dramatically reduced from 8 to 2
-                learning_rate=0.02,     # Reduced from 0.05 to 0.02
-                n_estimators=100,       # Reduced from 200 to 100
-                min_child_samples=50,   # Increased from 20 to 50
-                subsample=0.5,          # Reduced from 0.8 to 0.5
-                colsample_bytree=0.5,   # Reduced from 0.8 to 0.5
-                reg_alpha=1.0,          # Increased from 0.1 to 1.0
-                reg_lambda=1.0,         # Increased from 0.1 to 1.0
-                class_weight='balanced', # Handle class imbalance
-                max_bin=127,            # Added: limit bin size
-                min_data_in_bin=3,      # Added: minimum data per bin
-                boost_from_average=False, # Added: disable boost from average
-                force_col_wise=True,    # Added: force column-wise boosting
-                extra_trees=True,       # Added: use extra trees for more randomness
-                min_split_gain=0.1,     # Added: high threshold for splits
-                random_state=42,
-                verbose=-1,
-                n_jobs=-1
+            # Define HPO search space for LightGBM
+            def create_lgbm_model(trial):
+                return LGBMClassifier(
+                    num_leaves=trial.suggest_int('num_leaves', 8, 63),
+                    max_depth=trial.suggest_int('max_depth', 2, 8),
+                    learning_rate=trial.suggest_float('learning_rate', 0.01, 0.2),
+                    n_estimators=trial.suggest_int('n_estimators', 50, 200),
+                    min_child_samples=trial.suggest_int('min_child_samples', 20, 100),
+                    subsample=trial.suggest_float('subsample', 0.5, 1.0),
+                    colsample_bytree=trial.suggest_float('colsample_bytree', 0.5, 1.0),
+                    reg_alpha=trial.suggest_float('reg_alpha', 0.1, 2.0),
+                    reg_lambda=trial.suggest_float('reg_lambda', 0.1, 2.0),
+                    class_weight='balanced',
+                    random_state=42,
+                    verbose=-1,
+                    n_jobs=-1
+                )
+
+            # Perform HPO optimization
+            tprint("🔍 [REGIME_ENSEMBLE] Starting HPO optimization for meta-learner", color="cyan")
+            hpo_result = self.hpo_optimizer.optimize(
+                model_factory=create_lgbm_model,
+                X=meta_features,
+                y=y,
+                cv_folds=3,
+                scoring='accuracy',
+                n_trials=20
             )
+
+            if hpo_result.success:
+                tprint(f"✅ [REGIME_ENSEMBLE] HPO optimization completed successfully", color="green")
+                tprint(f"📊 [REGIME_ENSEMBLE] Best score: {hpo_result.best_score:.4f}", color="blue")
+                meta_learner = hpo_result.best_model
+            else:
+                tprint(f"⚠️ [REGIME_ENSEMBLE] HPO optimization failed, using default parameters", color="yellow")
+                # Fallback to default parameters
+                meta_learner = LGBMClassifier(
+                    num_leaves=8,
+                    max_depth=2,
+                    learning_rate=0.02,
+                    n_estimators=100,
+                    min_child_samples=50,
+                    subsample=0.5,
+                    colsample_bytree=0.5,
+                    reg_alpha=1.0,
+                    reg_lambda=1.0,
+                    class_weight='balanced',
+                    random_state=42,
+                    verbose=-1,
+                    n_jobs=-1
+                )
 
             # Add feature engineering for meta-learner
             tprint("🔧 [REGIME_ENSEMBLE] Creating enhanced meta-learner features", color="blue")
@@ -535,7 +661,8 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
                     'meta_features_shape': meta_features.shape,
                     'calibration_method': 'isotonic',
                     'cv_folds': 3,
-                    'training_success': True
+                    'training_success': True,
+                    'hpo_result': hpo_result if hpo_result.success else None
                 }
 
                 tprint("✅ [REGIME_ENSEMBLE] stacker_lgbm_calibrated training completed successfully", color="green")
@@ -553,7 +680,8 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
                     'meta_features_shape': meta_features.shape,
                     'calibration_method': 'none',
                     'cv_folds': 0,
-                    'training_success': True
+                    'training_success': True,
+                    'hpo_result': hpo_result if hpo_result.success else None
                 }
 
                 tprint("✅ [REGIME_ENSEMBLE] stacker_lgbm_calibrated training completed (uncalibrated)", color="green")
@@ -564,8 +692,8 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
             return None
 
     def _evaluate_ensemble(self, X: np.ndarray, y: np.ndarray, stacker_result: Dict[str, Any]) -> Dict[str, Any]:
-        """Evaluate ensemble performance."""
-        tprint("📊 [REGIME_ENSEMBLE] Evaluating ensemble performance", color="yellow")
+        """Evaluate ensemble performance using enhanced ML utilities."""
+        tprint("📊 [REGIME_ENSEMBLE] Evaluating ensemble performance with enhanced ML utilities", color="yellow")
 
         metrics = {}
 
@@ -624,12 +752,32 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
             y_pred = meta_learner.predict(meta_features)
             y_pred_proba = meta_learner.predict_proba(meta_features)
 
-            # Calculate metrics
+            # Use enhanced model evaluator for comprehensive evaluation
+            tprint("🔍 [REGIME_ENSEMBLE] Performing comprehensive model evaluation", color="cyan")
+            evaluation_result = self.model_evaluator.evaluate_model(
+                model=meta_learner,
+                X=meta_features,
+                y=y,
+                y_pred=y_pred,
+                y_pred_proba=y_pred_proba
+            )
+
+            # Use model validator for additional validation
+            tprint("🔍 [REGIME_ENSEMBLE] Performing model validation", color="cyan")
+            validation_result = self.model_validator.validate_model(
+                model=meta_learner,
+                X=meta_features,
+                y=y,
+                cv_folds=5
+            )
+
+            # Calculate basic metrics
             accuracy = accuracy_score(y, y_pred)
 
             # Calculate top-3 regime analysis with entropy metrics
             top_3_analysis = self._calculate_top_regime_analysis(y_pred_proba)
 
+            # Enhanced metrics with ML utilities
             metrics['stacker_lgbm_calibrated'] = {
                 'accuracy': accuracy,
                 'classification_report': classification_report(y, y_pred, output_dict=True),
@@ -640,7 +788,10 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
                 'top_regime_analysis': top_3_analysis,
                 'calibration_method': stacker_result.get('calibration_method', 'none'),
                 'base_models_used': len(base_models),
-                'meta_features_shape': meta_features.shape
+                'meta_features_shape': meta_features.shape,
+                'enhanced_evaluation': evaluation_result,
+                'model_validation': validation_result,
+                'hpo_result': stacker_result.get('hpo_result')
             }
 
             # Calculate comprehensive metrics for meta-learner
@@ -658,6 +809,23 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
             tprint(f"🔧 Calibration Method: {stacker_result.get('calibration_method', 'none')}", color="green")
             tprint(f"🤖 Base Models Used: {len(base_models)}", color="green")
             tprint(f"📊 Meta-features Shape: {meta_features.shape}", color="green")
+
+            # Display enhanced evaluation results
+            if evaluation_result and evaluation_result.get('success'):
+                eval_metrics = evaluation_result.get('metrics', {})
+                tprint("🔍 ENHANCED EVALUATION RESULTS", color="cyan", bold=True)
+                tprint(f"   📊 SHAP Analysis: {'Available' if eval_metrics.get('shap_available') else 'Not Available'}", color="cyan")
+                tprint(f"   📊 LIME Analysis: {'Available' if eval_metrics.get('lime_available') else 'Not Available'}", color="cyan")
+                tprint(f"   📊 OOF Validation: {'Passed' if eval_metrics.get('oof_validation_passed') else 'Failed'}", color="cyan")
+                tprint(f"   📊 OOS Validation: {'Passed' if eval_metrics.get('oos_validation_passed') else 'Failed'}", color="cyan")
+
+            # Display validation results
+            if validation_result and validation_result.get('success'):
+                val_metrics = validation_result.get('metrics', {})
+                tprint("🔍 MODEL VALIDATION RESULTS", color="cyan", bold=True)
+                tprint(f"   📊 Purged CV Score: {val_metrics.get('purged_cv_score', 'N/A')}", color="cyan")
+                tprint(f"   📊 Data Leakage: {'Detected' if val_metrics.get('data_leakage_detected') else 'Not Detected'}", color="cyan")
+                tprint(f"   📊 Time Series Validation: {'Passed' if val_metrics.get('time_series_validation_passed') else 'Failed'}", color="cyan")
 
             # Display top regime analysis summary
             if 'top_regime_analysis' in metrics['stacker_lgbm_calibrated']:
@@ -904,13 +1072,23 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
             return None, None, None
 
     def _generate_features_with_bank(self, data: pd.DataFrame) -> Optional[np.ndarray]:
-        """Generate comprehensive features using the existing feature bank."""
-        tprint("🔧 [REGIME_ENSEMBLE] Generating features using feature bank", color="cyan", bold=True)
+        """Generate comprehensive features using the UnifiedVectorizationManager and feature bank."""
+        tprint("🔧 [REGIME_ENSEMBLE] Generating features using UnifiedVectorizationManager and feature bank", color="cyan", bold=True)
 
         try:
             if not FEATURE_GENERATION_AVAILABLE:
                 tprint("❌ [REGIME_ENSEMBLE] Feature generation system not available", color="red")
                 return None
+
+            # Configure vectorization for feature engineering
+            vectorization_config = {
+                'operation_type': OperationType.FEATURE_ENGINEERING,
+                'data_size': len(data),
+                'data_dimensions': data.shape,
+                'memory_budget_mb': 2048.0,
+                'time_budget_seconds': 300.0,
+                'precision_requirement': 'high'
+            }
 
             # Get feature bank
             feature_bank = get_feature_bank()
@@ -929,9 +1107,9 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
             all_features = pd.DataFrame(index=data.index)
             total_features = 0
 
-            # Generate features for each category
+            # Generate features for each category using vectorization manager
             for category in categories:
-                tprint(f"🔍 [REGIME_ENSEMBLE] Generating {category.value} features", color="blue")
+                tprint(f"🔍 [REGIME_ENSEMBLE] Generating {category.value} features with vectorization", color="blue")
 
                 # Get generators for this category
                 generators = feature_bank.get_generators_by_category(category)
@@ -942,18 +1120,23 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
 
                 category_features = pd.DataFrame(index=data.index)
 
-                # Generate features using each generator
+                # Generate features using each generator with vectorization optimization
                 for generator in generators:
                     try:
                         tprint(f"🔧 [REGIME_ENSEMBLE] Using generator: {generator.config.name}", color="blue")
-                        result = generator.generate(data)
+                        
+                        # Use vectorization manager for optimized feature generation
+                        result = self.vectorization_manager.optimize_operation(
+                            operation=lambda: generator.generate(data),
+                            config=vectorization_config
+                        )
 
-                        if result and hasattr(result, 'data') and not len(result.data) == 0:
+                        if result.success and result.result and hasattr(result.result, 'data') and not len(result.result.data) == 0:
                             # Add feature with category prefix
-                            feature_name = f"{category.value}_{result.name}"
-                            category_features[feature_name] = result.data
+                            feature_name = f"{category.value}_{result.result.name}"
+                            category_features[feature_name] = result.result.data
                             total_features += 1
-                            tprint(f"✅ [REGIME_ENSEMBLE] Generated feature: {feature_name}", color="green")
+                            tprint(f"✅ [REGIME_ENSEMBLE] Generated feature: {feature_name} (optimized)", color="green")
                         else:
                             tprint(f"⚠️ [REGIME_ENSEMBLE] Generator {generator.config.name} returned empty result", color="yellow")
 

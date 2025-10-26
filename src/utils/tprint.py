@@ -1331,3 +1331,223 @@ __all__ = [
 
 # Auto-setup print capture if configured
 _auto_setup_print_capture()
+
+# =============================================================================
+# DATA PREVIEW AND FORMAT FUNCTIONS
+# =============================================================================
+
+def tprint_data_preview(data: Any, name: str = "Data", max_rows: int = 5, max_cols: int = 10, 
+                       show_dtypes: bool = True, show_shape: bool = True, **kwargs) -> None:
+    """
+    Print data preview with timestamp and comprehensive information.
+    
+    Args:
+        data: Data to preview (DataFrame, Series, array, etc.)
+        name: Name/description of the data
+        max_rows: Maximum number of rows to show
+        max_cols: Maximum number of columns to show
+        show_dtypes: Whether to show data types
+        show_shape: Whether to show shape information
+        **kwargs: Additional keyword arguments for print function
+    """
+    try:
+        import pandas as pd
+        import numpy as np
+        
+        # Basic info
+        info_lines = [f"📊 {name} Preview:"]
+        
+        if show_shape:
+            if hasattr(data, 'shape'):
+                info_lines.append(f"   Shape: {data.shape}")
+            elif hasattr(data, '__len__'):
+                info_lines.append(f"   Length: {len(data)}")
+        
+        # Data type information
+        if show_dtypes:
+            if isinstance(data, pd.DataFrame):
+                info_lines.append(f"   Columns: {len(data.columns)}")
+                info_lines.append(f"   Memory Usage: {data.memory_usage(deep=True).sum() / 1024**2:.2f} MB")
+            elif isinstance(data, pd.Series):
+                info_lines.append(f"   Data Type: {data.dtype}")
+                info_lines.append(f"   Memory Usage: {data.memory_usage(deep=True) / 1024**2:.2f} MB")
+            elif isinstance(data, np.ndarray):
+                info_lines.append(f"   Data Type: {data.dtype}")
+                info_lines.append(f"   Memory Usage: {data.nbytes / 1024**2:.2f} MB")
+        
+        # Show preview
+        if isinstance(data, pd.DataFrame):
+            if len(data) > 0:
+                preview_df = data.head(max_rows)
+                if len(data.columns) > max_cols:
+                    preview_df = preview_df.iloc[:, :max_cols]
+                    info_lines.append(f"   Showing first {max_rows} rows and {max_cols} columns")
+                else:
+                    info_lines.append(f"   Showing first {max_rows} rows")
+                
+                # Convert to string representation
+                preview_str = preview_df.to_string()
+                info_lines.append("   Preview:")
+                for line in preview_str.split('\n'):
+                    info_lines.append(f"   {line}")
+            else:
+                info_lines.append("   Empty DataFrame")
+                
+        elif isinstance(data, pd.Series):
+            if len(data) > 0:
+                preview_series = data.head(max_rows)
+                info_lines.append(f"   Showing first {max_rows} values")
+                preview_str = preview_series.to_string()
+                info_lines.append("   Preview:")
+                for line in preview_str.split('\n'):
+                    info_lines.append(f"   {line}")
+            else:
+                info_lines.append("   Empty Series")
+                
+        elif isinstance(data, np.ndarray):
+            if data.size > 0:
+                if data.ndim == 1:
+                    preview_data = data[:max_rows]
+                    info_lines.append(f"   Showing first {len(preview_data)} values")
+                    info_lines.append(f"   Values: {preview_data}")
+                elif data.ndim == 2:
+                    preview_data = data[:max_rows, :max_cols]
+                    info_lines.append(f"   Showing first {preview_data.shape[0]} rows and {preview_data.shape[1]} columns")
+                    info_lines.append(f"   Preview:\n{preview_data}")
+                else:
+                    info_lines.append(f"   Multi-dimensional array (ndim={data.ndim})")
+                    info_lines.append(f"   First few values: {data.flat[:5]}")
+            else:
+                info_lines.append("   Empty array")
+                
+        else:
+            info_lines.append(f"   Type: {type(data).__name__}")
+            info_lines.append(f"   Value: {str(data)[:200]}{'...' if len(str(data)) > 200 else ''}")
+        
+        # Print all info lines
+        for line in info_lines:
+            tprint_info(line, **kwargs)
+            
+    except Exception as e:
+        tprint_error(f"Error previewing {name}: {e}", **kwargs)
+
+def tprint_data_format(data: Any, name: str = "Data", check_compatibility: bool = True, **kwargs) -> None:
+    """
+    Print data format information and compatibility checks.
+    
+    Args:
+        data: Data to analyze
+        name: Name/description of the data
+        check_compatibility: Whether to check format compatibility
+        **kwargs: Additional keyword arguments for print function
+    """
+    try:
+        import pandas as pd
+        import numpy as np
+        
+        info_lines = [f"🔍 {name} Format Analysis:"]
+        
+        # Basic type information
+        info_lines.append(f"   Type: {type(data).__name__}")
+        
+        if hasattr(data, 'dtype'):
+            info_lines.append(f"   Data Type: {data.dtype}")
+        
+        # Shape information
+        if hasattr(data, 'shape'):
+            info_lines.append(f"   Shape: {data.shape}")
+        elif hasattr(data, '__len__'):
+            info_lines.append(f"   Length: {len(data)}")
+        
+        # Memory usage
+        if isinstance(data, pd.DataFrame):
+            memory_mb = data.memory_usage(deep=True).sum() / 1024**2
+            info_lines.append(f"   Memory Usage: {memory_mb:.2f} MB")
+            info_lines.append(f"   Columns: {list(data.columns)}")
+            
+        elif isinstance(data, pd.Series):
+            memory_mb = data.memory_usage(deep=True) / 1024**2
+            info_lines.append(f"   Memory Usage: {memory_mb:.2f} MB")
+            info_lines.append(f"   Name: {data.name}")
+            
+        elif isinstance(data, np.ndarray):
+            memory_mb = data.nbytes / 1024**2
+            info_lines.append(f"   Memory Usage: {memory_mb:.2f} MB")
+            info_lines.append(f"   Strides: {data.strides}")
+            info_lines.append(f"   Flags: C_CONTIGUOUS={data.flags.c_contiguous}, F_CONTIGUOUS={data.flags.f_contiguous}")
+        
+        # Compatibility checks
+        if check_compatibility:
+            compatibility_issues = []
+            
+            if isinstance(data, pd.DataFrame):
+                # Check for missing values
+                missing_count = data.isnull().sum().sum()
+                if missing_count > 0:
+                    compatibility_issues.append(f"Missing values: {missing_count}")
+                
+                # Check for infinite values
+                inf_count = np.isinf(data.select_dtypes(include=[np.number])).sum().sum()
+                if inf_count > 0:
+                    compatibility_issues.append(f"Infinite values: {inf_count}")
+                
+                # Check for duplicate columns
+                if len(data.columns) != len(set(data.columns)):
+                    compatibility_issues.append("Duplicate column names")
+                
+                # Check for empty DataFrame
+                if data.empty:
+                    compatibility_issues.append("Empty DataFrame")
+                    
+            elif isinstance(data, np.ndarray):
+                # Check for NaN values
+                if np.any(np.isnan(data)):
+                    nan_count = np.isnan(data).sum()
+                    compatibility_issues.append(f"NaN values: {nan_count}")
+                
+                # Check for infinite values
+                if np.any(np.isinf(data)):
+                    inf_count = np.isinf(data).sum()
+                    compatibility_issues.append(f"Infinite values: {inf_count}")
+            
+            if compatibility_issues:
+                info_lines.append("   ⚠️ Compatibility Issues:")
+                for issue in compatibility_issues:
+                    info_lines.append(f"      - {issue}")
+            else:
+                info_lines.append("   ✅ No compatibility issues detected")
+        
+        # Print all info lines
+        for line in info_lines:
+            tprint_info(line, **kwargs)
+            
+    except Exception as e:
+        tprint_error(f"Error analyzing {name} format: {e}", **kwargs)
+
+def tprint_feature_counts(before_count: int, after_count: int, step_name: str, 
+                        filtered_count: int = None, **kwargs) -> None:
+    """
+    Print feature count changes with detailed information.
+    
+    Args:
+        before_count: Number of features before filtering
+        after_count: Number of features after filtering
+        step_name: Name of the filtering step
+        filtered_count: Number of features filtered out (optional, calculated if not provided)
+        **kwargs: Additional keyword arguments for print function
+    """
+    if filtered_count is None:
+        filtered_count = before_count - after_count
+    
+    retention_rate = (after_count / before_count * 100) if before_count > 0 else 0
+    
+    tprint_info(f"📈 {step_name} Feature Filtering:")
+    tprint_info(f"   Before: {before_count} features")
+    tprint_info(f"   After: {after_count} features")
+    tprint_info(f"   Filtered out: {filtered_count} features")
+    tprint_info(f"   Retention rate: {retention_rate:.1f}%")
+    
+    if retention_rate < 10:
+        tprint_warning(f"   ⚠️ Low retention rate ({retention_rate:.1f}%) - consider reviewing filtering criteria")
+    elif retention_rate > 90:
+        tprint_info(f"   ✅ High retention rate ({retention_rate:.1f}%) - minimal filtering applied")

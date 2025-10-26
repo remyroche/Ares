@@ -1,0 +1,15 @@
+{
+  "symbol": "ETHUSDT",
+  "exchange": "binance",
+  "timeframe": "1h",
+  "execution_mode": "light",
+  "created_at": "2025-10-26T13:10:47.521931",
+  "n_features": 300,
+  "removed_constants": 0,
+  "artifact_name": "generated_features_1h",
+  "artifact_type": "data",
+  "file_path": "artifacts/pre_training/long/Analyst/feature_generation_feature_generation_step/feature_generation_feature_generation_step_generated_features_1h_long_Analyst_20251026_131017.parquet",
+  "file_size": 833724,
+  "timestamp": "2025-10-26T13:10:47.557587",
+  "compression": "auto"
+}

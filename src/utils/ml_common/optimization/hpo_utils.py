@@ -73,31 +73,50 @@ except ImportError:
     SKLEARN_AVAILABLE = False
     logger.warning("Scikit-learn not available - limited HPO functionality")
 
-# VectorBT optimization imports
-try:
-    import vectorbt as vbt
-    from src.feature_generation.utils.vectorbt_rolling_optimizer import VectorBTRollingOptimizer, get_vectorbt_rolling_optimizer
-    from src.utils.ml_common.unified_vectorization_manager import (
-        UnifiedVectorizationManager, get_unified_vectorization_manager
-    )
-    from src.feature_generation.utils.unified_vectorization_manager import VectorizationConfig
-    VECTORBT_AVAILABLE = True
-    logger.info("✅ VectorBT optimization available")
-except ImportError as e:
-    VECTORBT_AVAILABLE = False
-    vbt = None
-    VectorBTRollingOptimizer = None
-    get_vectorbt_rolling_optimizer = None
-    UnifiedVectorizationManager = None
-    VectorizationConfig = None
-    get_unified_vectorization_manager = None
-    logger.warning(f"VectorBT optimization not available: {e}")
+# VectorBT optimization imports - lazy loading to avoid circular imports
+VECTORBT_AVAILABLE = False
+vbt = None
+VectorBTRollingOptimizer = None
+get_vectorbt_rolling_optimizer = None
+UnifiedVectorizationManager = None
+VectorizationConfig = None
+get_unified_vectorization_manager = None
+
+def _load_vectorbt_components():
+    """Lazy load VectorBT components to avoid circular imports."""
+    global VECTORBT_AVAILABLE, vbt, VectorBTRollingOptimizer, get_vectorbt_rolling_optimizer
+    global UnifiedVectorizationManager, VectorizationConfig, get_unified_vectorization_manager
+    
+    if VECTORBT_AVAILABLE:
+        return  # Already loaded
+    
+    try:
+        import vectorbt as vbt
+        from src.feature_generation.utils.vectorbt_rolling_optimizer import VectorBTRollingOptimizer, get_vectorbt_rolling_optimizer
+        from src.utils.ml_common.unified_vectorization_manager import (
+            UnifiedVectorizationManager, get_unified_vectorization_manager
+        )
+        from src.feature_generation.utils.unified_vectorization_manager import VectorizationConfig
+        VECTORBT_AVAILABLE = True
+        logger.info("✅ VectorBT optimization available")
+    except ImportError as e:
+        VECTORBT_AVAILABLE = False
+        vbt = None
+        VectorBTRollingOptimizer = None
+        get_vectorbt_rolling_optimizer = None
+        UnifiedVectorizationManager = None
+        VectorizationConfig = None
+        get_unified_vectorization_manager = None
+        logger.warning(f"VectorBT optimization not available: {e}")
 
 class HyperparameterOptimization:
     """Enhanced hyperparameter optimization utilities with monitoring and failure detection."""
 
     def __init__(self, config: Optional[Dict[str, Any]] = None, nonlinear_config: Optional[NonLinearConfig] = None):
         """Initialize hyperparameter optimization utilities with configuration."""
+        # Load VectorBT components lazily to avoid circular imports
+        _load_vectorbt_components()
+        
         self.config = config or {}
         self.logger = logger.getChild('HPOUtils')
 

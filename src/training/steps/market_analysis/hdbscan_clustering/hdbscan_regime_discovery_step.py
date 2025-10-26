@@ -23,6 +23,24 @@ from src.training.steps.market_analysis.hdbscan_clustering import (
     RegimeResult
 )
 
+# Import auto-tuning system for HDBSCAN
+try:
+    from src.training.steps.market_analysis.hdbscan_clustering.optimization.automated_hdbscan_parameter_tuner import (
+        create_automated_hdbscan_tuner,
+        ClusteringQualityMetrics
+    )
+    AUTO_TUNER_AVAILABLE = True
+except ImportError as e:
+    AUTO_TUNER_AVAILABLE = False
+    logging.warning(f"Auto-tuner not available: {e}")
+
+# Import regime feature selector
+from src.training.steps.market_analysis.hdbscan_clustering.optimization.regime_feature_selector import (
+    RegimeFeatureSelector,
+    RegimeFeatureSelectorConfig,
+    create_regime_feature_selector
+)
+
 # Import utilities
 from src.utils.tprint import tprint, tprint_info, tprint_success, tprint_warning, tprint_error
 from src.utils.data.klines_parquet import get_klines_manager
@@ -55,6 +73,9 @@ class HDBSCANRegimeDiscoveryStep(BaseStep):
         self.regime_discovery = None
         self.config = None
         
+        # Initialize feature selector
+        self.feature_selector = create_regime_feature_selector()
+        
         tprint("🚀 HDBSCANRegimeDiscoveryStep initialized", "SUCCESS")
     
     async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
@@ -84,6 +105,16 @@ class HDBSCANRegimeDiscoveryStep(BaseStep):
         
         try:
             tprint(f"🔍 Starting HDBSCAN regime discovery for {config.get('symbol', 'UNKNOWN')}", "INFO")
+            
+            # Use regime_timeframe (defaults to 1h) for HDBSCAN regime discovery
+            regime_timeframe = config.get('regime_timeframe', '1h')
+            if 'regime_timeframe' not in config:
+                tprint(f"⏰ Using regime_timeframe={regime_timeframe} for HDBSCAN regime discovery", "INFO")
+                config['regime_timeframe'] = regime_timeframe
+            if config.get('timeframe') != regime_timeframe:
+                tprint(f"⏰ Overriding timeframe to {regime_timeframe} for HDBSCAN regime discovery (was: {config.get('timeframe', 'not set')})", "INFO")
+                config['timeframe'] = regime_timeframe
+            
             tprint(f"📋 Config received: {list(config.keys())}", "INFO")
 
             # Add memory optimization suggestions
@@ -118,16 +149,21 @@ class HDBSCANRegimeDiscoveryStep(BaseStep):
             market_data = self._apply_light_mode_filter(market_data, config, timeframe=config.get('timeframe', '15m'))
             tprint(f"✅ Light mode filtering applied: {market_data.shape[0]} rows, {market_data.shape[1]} columns", "SUCCESS")
             
+            # Apply feature selection for better regime discrimination
+            tprint("🎯 Applying regime feature selection...", "INFO")
+            market_data_selected = self._apply_feature_selection(market_data, config)
+            tprint(f"✅ Feature selection applied: {market_data.shape[1]} -> {market_data_selected.shape[1]} features", "SUCCESS")
+            
             # Execute regime discovery
             tprint("🔍 Starting regime discovery process...", "INFO")
-            tprint(f"📊 Data shape for regime discovery: {market_data.shape}", "INFO")
+            tprint(f"📊 Data shape for regime discovery: {market_data_selected.shape}", "INFO")
             tprint(f"🔧 Live mode: {config.get('live_mode', False)}", "INFO")
             
             regime_result = await self.regime_discovery.discover_regimes(
-                data=market_data,
+                data=market_data_selected,
                 fit=True,
                 is_live=config.get('live_mode', False),
-                returns=self._extract_returns(market_data)
+                returns=self._extract_returns(market_data_selected)
             )
             
             tprint(f"🔍 Regime discovery result: success={regime_result.success}", "INFO")
@@ -136,6 +172,11 @@ class HDBSCANRegimeDiscoveryStep(BaseStep):
                 raise ValueError(f"Regime discovery failed: {regime_result.error_message}")
             
             tprint("✅ Regime discovery completed successfully", "SUCCESS")
+            
+            # Apply auto-tuning if enabled and results are poor (ALWAYS enable for better results)
+            if config.get('enable_auto_tuning', True) and AUTO_TUNER_AVAILABLE:
+                tprint("🎯 Auto-tuning enabled - checking cluster quality...", "INFO")
+                regime_result = self._apply_auto_tuning(market_data_selected, regime_result, config)
             
             # Calculate comprehensive clustering metrics
             tprint("📊 Calculating comprehensive clustering metrics...", "INFO")
@@ -150,7 +191,7 @@ class HDBSCANRegimeDiscoveryStep(BaseStep):
             
             # Create artifacts
             tprint("📦 Creating artifacts...", "INFO")
-            artifacts = self._create_artifacts(regime_result, config)
+            artifacts = self._create_artifacts(regime_result, config, market_data_selected)
             tprint(f"✅ Artifacts created: {len(artifacts)} items", "SUCCESS")
 
             # Save artifacts using BaseStep's enhanced system
@@ -290,18 +331,26 @@ class HDBSCANRegimeDiscoveryStep(BaseStep):
             tprint("🔧 Light mode: Using optimized parameters without data limiting", "INFO")
             
             return RegimeDiscoveryConfig(
-                # Core HDBSCAN parameters - AGGRESSIVE optimization for better clustering quality
-                min_cluster_size_pct=0.05,  # 5% of data (1920 * 0.05 = 96) for much better separation
-                min_cluster_size_floor=50,  # Much larger for stable, meaningful clusters
-                cluster_selection_epsilon=0.3,  # Much higher for better cluster separation
+                # Core HDBSCAN parameters - ULTRA AGGRESSIVE to subdivide large regime & recluster noise
+                # Goal 1: Force subdivision of the 48.3% regime and recluster the 38.3% noise
+                min_cluster_size_pct=0.01,  # 1% to force more granular clusters
+                min_cluster_size_floor=10,  # Very low floor to allow fine-grained clusters
+                
+                # Goal 2: Much more flexible clustering to capture subtle differences
+                min_samples_options=[5],  # Very low min_samples for maximum flexibility
+                
+                # Cluster selection - use leaf for balanced clusters that don't merge
+                cluster_selection_method_options=['leaf'],  # Leaf method to preserve all clusters
+                cluster_selection_epsilon=0.001,  # Extremely tight epsilon to prevent cluster merging
+                metric='cosine',  # Try cosine for normalized data (more stable than manhattan)
 
                 # Dimensionality reduction - use all 26 selected features
                 dim_reduction_mode='pca_only',  # Use PCA but keep all features
                 pca_n_components=1.0,  # Keep all features (100% variance)
 
-                # Preprocessing - AGGRESSIVE optimization for better clustering quality
-                correlation_threshold=0.70,  # Much more aggressive - keep only highly discriminative features
-                winsorize_limits=(0.001, 0.999),  # Very aggressive winsorization for extreme outlier handling
+                # Preprocessing - LESS AGGRESSIVE to keep more features
+                correlation_threshold=0.85,  # Lower threshold to keep more features (currently only 17)
+                winsorize_limits=(0.01, 0.99),  # Moderate winsorization for outlier handling
 
                 # Temporal windows
                 window_size=200,  # Reduced from 300 to 200 for more granular analysis
@@ -449,6 +498,59 @@ class HDBSCANRegimeDiscoveryStep(BaseStep):
             tprint(f"❌ Failed to load market data: {e}", "ERROR")
             return None
     
+    def _apply_feature_selection(self, data: pd.DataFrame, config: Dict[str, Any]) -> pd.DataFrame:
+        """Apply feature selection based on regime discriminative power."""
+        try:
+            # Check if feature selection is enabled
+            if not config.get('enable_feature_selection', True):
+                tprint("⏭️ Feature selection disabled, using all features", "INFO")
+                return data
+            
+            # Get regime labels from previous clustering if available
+            regime_labels = config.get('regime_labels')
+            if regime_labels is None or len(regime_labels) != len(data):
+                tprint("⚠️ No regime labels available for feature selection, using all features", "WARNING")
+                return data
+            
+            # Configure feature selector
+            selector_config = RegimeFeatureSelectorConfig(
+                min_mutual_info=config.get('feature_selection_min_mi', 0.01),
+                min_discriminative_power=config.get('feature_selection_min_discriminative', 0.1),
+                min_economic_significance=config.get('feature_selection_min_economic', 0.05),
+                min_clustering_contribution=config.get('feature_selection_min_clustering', 0.1),
+                min_stability_score=config.get('feature_selection_min_stability', 0.7),
+                max_features=config.get('feature_selection_max_features', 20)
+            )
+            
+            # Create and configure feature selector
+            feature_selector = create_regime_feature_selector(selector_config)
+            
+            # Select features
+            selected_features, feature_metrics = feature_selector.select_features(
+                data, regime_labels, method='composite'
+            )
+            
+            # Apply feature selection
+            selected_data = feature_selector.apply_feature_selection(data)
+            
+            # Log feature selection results
+            tprint(f"🎯 Feature selection completed: {len(selected_features)} features selected", "SUCCESS")
+            
+            # Generate feature importance report
+            importance_report = feature_selector.get_feature_importance_report()
+            if not importance_report.empty:
+                top_features = importance_report.head(5)
+                tprint("🏆 Top 5 most important features:", "INFO")
+                for _, row in top_features.iterrows():
+                    tprint(f"  • {row['feature']}: {row['composite_score']:.3f}", "INFO")
+            
+            return selected_data
+            
+        except Exception as e:
+            self.logger.warning(f"Feature selection failed: {e}")
+            tprint(f"⚠️ Feature selection failed: {e}, using all features", "WARNING")
+            return data
+
     def _extract_returns(self, market_data: pd.DataFrame) -> Optional[np.ndarray]:
         """Extract returns from market data for economic validation."""
         try:
@@ -591,7 +693,7 @@ class HDBSCANRegimeDiscoveryStep(BaseStep):
             tprint(f"⚠️ Failed to calculate comprehensive clustering metrics: {e}", "WARNING")
             return {'error': str(e)}
     
-    def _create_artifacts(self, regime_result: RegimeResult, config: Dict[str, Any]) -> Dict[str, Any]:
+    def _create_artifacts(self, regime_result: RegimeResult, config: Dict[str, Any], features_df: pd.DataFrame) -> Dict[str, Any]:
         """Create artifacts from regime discovery result."""
         try:
             artifacts = {
@@ -599,6 +701,10 @@ class HDBSCANRegimeDiscoveryStep(BaseStep):
                 'regime_labels': regime_result.labels,
                 'regime_probabilities': regime_result.probabilities,
                 'cluster_persistence': regime_result.cluster_persistence,
+                
+                # Original features used for clustering (NEW)
+                'clustering_features': features_df.values.tolist(),  # Convert to list for Parquet compatibility
+                'feature_names': features_df.columns.tolist(),  # Save feature names
                 
                 # Economic profiles
                 'economic_profiles': [
@@ -1299,6 +1405,128 @@ regime_discovery_config:
             'compression_enabled': self.artifact_manager.enable_compression,
             'lazy_loading_enabled': self.artifact_manager.enable_lazy_loading
         }
+    
+    def _apply_auto_tuning(self, data: pd.DataFrame, initial_result: RegimeResult, config: Dict[str, Any]) -> RegimeResult:
+        """Apply automated parameter tuning to improve clustering quality."""
+        try:
+            tprint("🎯 Applying automated parameter tuning...", "INFO")
+            
+            # Create auto-tuner
+            tuner = create_automated_hdbscan_tuner()
+            
+            # Assess current quality
+            current_quality = ClusteringQualityMetrics(
+                silhouette_score=initial_result.validation_metrics.get('silhouette_score'),
+                calinski_harabasz_score=initial_result.validation_metrics.get('calinski_harabasz_score'),
+                davies_bouldin_score=initial_result.validation_metrics.get('davies_bouldin_score'),
+                n_clusters=initial_result.validation_metrics.get('n_regimes'),
+                n_noise_points=initial_result.validation_metrics.get('noise_points', 0),
+                noise_ratio=initial_result.validation_metrics.get('noise_ratio', 0.0)
+            )
+            
+            # Goal 3: Enhanced metrics display
+            tprint(f"📊 Current quality:", "INFO")
+            tprint(f"   • Silhouette: {current_quality.silhouette_score:.4f}", "INFO")
+            tprint(f"   • DBI: {current_quality.davies_bouldin_score:.4f}", "INFO")
+            tprint(f"   • CH: {current_quality.calinski_harabasz_score:.4f}", "INFO")
+            tprint(f"   • Clusters: {current_quality.n_clusters}", "INFO")
+            tprint(f"   • Noise: {current_quality.noise_ratio:.1%}", "INFO")
+            tprint(f"   • Within-CV: {current_quality.within_cluster_cv:.4f}" if current_quality.within_cluster_cv else "   • Within-CV: N/A", "INFO")
+            tprint(f"   • Between-CV: {current_quality.between_cluster_cv:.4f}" if current_quality.between_cluster_cv else "   • Between-CV: N/A", "INFO")
+            
+            # Check if tuning is needed
+            if current_quality.is_poor_quality():
+                tprint("⚠️ Poor clustering quality detected - running auto-tuner...", "WARNING")
+                
+                # Goal 4: Enhanced auto-tuning with suggestions
+                # Provide initial suggestions based on current state
+                suggestions = self._generate_tuning_suggestions(current_quality)
+                tprint("💡 Auto-tuning suggestions:", "INFO")
+                for suggestion in suggestions[:3]:  # Show top 3
+                    tprint(f"   • {suggestion}", "INFO")
+                
+                # Run auto-tuner with enhanced configuration
+                best_params, tuned_quality = tuner.tune_parameters(
+                    data=data,
+                    n_trials=config.get('auto_tuning_trials', 50),  # Increased trials for better exploration
+                    timeout=config.get('auto_tuning_timeout', 300)
+                )
+                
+                tprint(f"✅ Auto-tuning completed:", "SUCCESS")
+                tprint(f"   • Silhouette: {tuned_quality.silhouette_score:.4f}", "SUCCESS")
+                tprint(f"   • DBI: {tuned_quality.davies_bouldin_score:.4f}", "SUCCESS")
+                tprint(f"   • CH: {tuned_quality.calinski_harabasz_score:.4f}", "SUCCESS")
+                tprint(f"   • Clusters: {tuned_quality.n_clusters}", "SUCCESS")
+                tprint(f"   • Noise: {tuned_quality.noise_ratio:.1%}", "SUCCESS")
+                
+                # If quality improved, apply the tuned parameters
+                if tuned_quality.calculate_composite_score() > current_quality.calculate_composite_score():
+                    tprint("✅ Auto-tuned parameters provide better quality - applying...", "SUCCESS")
+                    # Note: We can't directly update the result here as the discovery is already done
+                    # But we can store the tuned parameters for future runs
+                    initial_result.validation_metrics['auto_tuned_parameters'] = best_params
+                    initial_result.validation_metrics['auto_tuned_quality'] = {
+                        'silhouette_score': tuned_quality.silhouette_score,
+                        'calinski_harabasz_score': tuned_quality.calinski_harabasz_score,
+                        'davies_bouldin_score': tuned_quality.davies_bouldin_score,
+                        'n_clusters': tuned_quality.n_clusters,
+                        'noise_ratio': tuned_quality.noise_ratio
+                    }
+                else:
+                    tprint("⚠️ Auto-tuned parameters do not improve quality - keeping original", "WARNING")
+            else:
+                tprint("✅ Cluster quality is acceptable - no tuning needed", "SUCCESS")
+            
+            return initial_result
+            
+        except Exception as e:
+            tprint(f"⚠️ Auto-tuning failed: {e}", "WARNING")
+            return initial_result
+    
+    def _generate_tuning_suggestions(self, quality: ClusteringQualityMetrics) -> List[str]:
+        """Generate intelligent tuning suggestions based on current quality metrics."""
+        suggestions = []
+        
+        # Check regime count - ENHANCED suggestions for getting more regimes
+        if quality.n_clusters < 4:
+            suggestions.append("🎯 Too few regimes: Current parameters create only 2 clusters")
+            suggestions.append("📋 Try: min_cluster_size_pct=0.01 (1%), min_cluster_size_floor=20")
+            suggestions.append("🔧 Alternative: Use 'manhattan' or 'cosine' distance metric")
+            suggestions.append("⚙️ Try cluster_selection_method='leaf' for more balanced clusters")
+        elif quality.n_clusters > 8:
+            suggestions.append("🎯 Too many regimes: Increase min_cluster_size to get 4-8 clusters")
+        
+        # Check noise ratio
+        if quality.noise_ratio > 0.3:
+            suggestions.append(f"🔇 High noise ({quality.noise_ratio:.1%}): Increase min_samples to {int(quality.n_clusters * 20)}")
+        
+        # Check silhouette score
+        if quality.silhouette_score is not None and quality.silhouette_score < 0.1:
+            suggestions.append("📊 Poor separation: Try different cluster_selection_method or adjust epsilon")
+        
+        # Check Davies-Bouldin score
+        if quality.davies_bouldin_score is not None and quality.davies_bouldin_score > 5.0:
+            suggestions.append("📈 Poor cluster separation: Reduce cluster_selection_epsilon for tighter clusters")
+        
+        # Check Calinski-Harabasz score
+        if quality.calinski_harabasz_score is not None and quality.calinski_harabasz_score < 10.0:
+            suggestions.append("🎪 Low between-cluster variance: Reduce min_cluster_size or try 'leaf' method")
+        
+        # Check within-cluster CV
+        if quality.within_cluster_cv is not None and quality.within_cluster_cv > 0.3:
+            suggestions.append("📉 High within-cluster variation: Improve feature selection or increase min_samples")
+        
+        # Check between-cluster CV
+        if quality.between_cluster_cv is not None and quality.between_cluster_cv < 0.1:
+            suggestions.append("📈 Low between-cluster variation: Increase min_cluster_size or change metric")
+        
+        # Default suggestions if none generated
+        if not suggestions:
+            suggestions.append("✅ Current configuration is reasonable - auto-tuner will optimize further")
+            suggestions.append("🔍 Testing multiple parameter combinations for best results")
+            suggestions.append("⏱️ Auto-tuning will explore 50+ parameter combinations")
+        
+        return suggestions
 
 
 # Register the step

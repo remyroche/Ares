@@ -1,0 +1,20 @@
+{
+  "symbol": "ETHUSDT",
+  "exchange": "binance",
+  "timeframe": "1h",
+  "labeling_method": "volatility_aware_multi_horizon",
+  "base_threshold": 0.007,
+  "lookahead_periods": 6,
+  "total_samples": 26274,
+  "opportunities_detected": 7553,
+  "high_quality_opportunities": 3776,
+  "avg_confidence_score": 0.7190415589370464,
+  "volatility_adaptation_range": "1.00x - 2.00x",
+  "created_at": "2025-10-26T12:03:49.046528",
+  "artifact_name": "labeled_data_ETHUSDT_1h",
+  "artifact_type": "data",
+  "file_path": "artifacts/pre_training/long/Analyst/feature_generation_labeling_integration_step/feature_generation_labeling_integration_step_labeled_data_ETHUSDT_1h_long_Analyst_20251026_120344.parquet",
+  "file_size": 2698421,
+  "timestamp": "2025-10-26T12:03:49.222064",
+  "compression": "auto"
+}

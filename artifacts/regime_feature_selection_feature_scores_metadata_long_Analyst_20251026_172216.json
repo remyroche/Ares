@@ -1,0 +1,10 @@
+{
+  "total_features_scored": 221,
+  "selection_method": "economic_regime_selection",
+  "artifact_name": "feature_scores",
+  "artifact_type": "data",
+  "file_path": "artifacts/pre_training/long/Analyst/regime_feature_selection/regime_feature_selection_feature_scores_long_Analyst_20251026_172216.parquet",
+  "file_size": 15447,
+  "timestamp": "2025-10-26T17:30:40.949320",
+  "compression": "auto"
+}

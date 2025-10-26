@@ -87,7 +87,7 @@ class FeaturePerformanceMonitor:
                     
                     # Estimate input/output sizes
                     input_size = self._estimate_data_size(args, kwargs)
-                    output_size = self._estimate_data_size([result])
+                    output_size = self._estimate_data_size([result], {})
                     
                     # Create metrics
                     metrics = PerformanceMetrics(
@@ -126,7 +126,8 @@ class FeaturePerformanceMonitor:
         
         for arg in args:
             if isinstance(arg, (pd.DataFrame, pd.Series)):
-                total_size += arg.memory_usage(deep=True).sum()
+                mem_usage = arg.memory_usage(deep=True)
+                total_size += int(mem_usage.sum()) if hasattr(mem_usage, 'sum') else int(mem_usage)
             elif isinstance(arg, np.ndarray):
                 total_size += arg.nbytes
             elif isinstance(arg, (list, tuple)):
@@ -134,7 +135,8 @@ class FeaturePerformanceMonitor:
         
         for value in kwargs.values():
             if isinstance(value, (pd.DataFrame, pd.Series)):
-                total_size += value.memory_usage(deep=True).sum()
+                mem_usage = value.memory_usage(deep=True)
+                total_size += int(mem_usage.sum()) if hasattr(mem_usage, 'sum') else int(mem_usage)
             elif isinstance(value, np.ndarray):
                 total_size += value.nbytes
         

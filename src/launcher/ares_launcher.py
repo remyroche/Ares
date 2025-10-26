@@ -22,6 +22,7 @@ import logging
 import os
 import sys
 import argparse
+import re
 from typing import Any, Dict, List, Optional
 from datetime import datetime
 from pathlib import Path
@@ -177,8 +178,7 @@ class SimplifiedAresLauncher:
                 'feature_generation_feature_generation_step',
                 'feature_generation_period_lookback_optimization_step',
                 'feature_generation_feature_selection_step',
-                'feature_generation_interaction_generation_step_analyst',
-                'feature_generation_interaction_generation_step_tactician',
+                'feature_generation_interaction_generation_step',
                 'feature_generation_gate_feature_step',
                 'feature_generation_final_feature_selection_step',
                 'feature_generation_final_validation_step'
@@ -289,9 +289,113 @@ Examples:
     return parser
 
 
+def cleanup_duplicate_files(directories: List[str], keep_count: int = 5):
+    """
+    Clean up duplicate files in specified directories.
+    
+    Duplicates are identified by base filename (without datetime suffix),
+    and only the keep_count youngest files are kept.
+    
+    Args:
+        directories: List of directory paths to clean
+        keep_count: Number of youngest files to keep per group
+    """
+    logger.info("🧹 Starting cleanup of duplicate files...")
+    
+    # Pattern to match datetime suffixes like: _20251026_223845
+    datetime_pattern = re.compile(r'_(\d{8}_\d{6})(\.[a-zA-Z]+)?$')
+    
+    total_deleted = 0
+    total_skipped = 0
+    
+    for directory in directories:
+        if not os.path.exists(directory):
+            logger.debug(f"Directory does not exist, skipping: {directory}")
+            continue
+        
+        # Special handling for logs directory - keep 100 youngest
+        current_keep_count = 100 if directory == 'logs' else keep_count
+        logger.info(f"Cleaning directory: {directory} (keeping {current_keep_count} youngest files per group)")
+        
+        # Get all files in the directory
+        try:
+            all_files = list(Path(directory).glob('*'))
+            files = [f for f in all_files if f.is_file()]
+        except Exception as e:
+            logger.error(f"Error reading directory {directory}: {e}")
+            continue
+        
+        if not files:
+            logger.debug(f"No files found in {directory}")
+            continue
+        
+        # Group files by base name (without datetime suffix)
+        file_groups = {}
+        
+        for file_path in files:
+            file_name = file_path.name
+            
+            # Try to extract base name and datetime
+            match = datetime_pattern.search(file_name)
+            if match:
+                # Has datetime suffix
+                datetime_str = match.group(1)
+                extension = match.group(2) if match.group(2) else ''
+                # Extract the base name before the datetime
+                base_name = file_name[:match.start()] + extension
+            else:
+                # No datetime suffix - treat as unique
+                base_name = file_name
+                datetime_str = None
+            
+            if base_name not in file_groups:
+                file_groups[base_name] = []
+            
+            file_groups[base_name].append({
+                'path': file_path,
+                'name': file_name,
+                'datetime': datetime_str,
+                'mtime': file_path.stat().st_mtime
+            })
+        
+        # Process each group
+        for base_name, files_in_group in file_groups.items():
+            if len(files_in_group) <= current_keep_count:
+                # Not enough files to clean
+                continue
+            
+            # Sort by modification time (newest first)
+            files_in_group.sort(key=lambda x: x['mtime'], reverse=True)
+            
+            # Keep the youngest current_keep_count files, delete the rest
+            to_keep = files_in_group[:current_keep_count]
+            to_delete = files_in_group[current_keep_count:]
+            
+            logger.info(f"  Group '{base_name}': {len(files_in_group)} files, keeping {len(to_keep)}, deleting {len(to_delete)}")
+            
+            for file_info in to_delete:
+                try:
+                    file_info['path'].unlink()
+                    total_deleted += 1
+                    logger.debug(f"    Deleted: {file_info['name']}")
+                except Exception as e:
+                    logger.error(f"    Failed to delete {file_info['name']}: {e}")
+                    total_skipped += 1
+    
+    logger.info(f"✅ Cleanup complete: {total_deleted} files deleted, {total_skipped} files skipped")
+
+
 async def main():
     """Main entry point."""
     logger.info("🎯 Starting Simplified Ares Launcher...")
+    
+    # Run cleanup before anything else
+    directories_to_clean = [
+        'logs',
+        'artifacts',
+        'outcomes'
+    ]
+    cleanup_duplicate_files(directories_to_clean, keep_count=5)
     
     # Create CLI parser
     parser = create_cli_parser()
@@ -386,12 +490,16 @@ async def main():
             # Model training execution
             if args.train_analyst_base:
                 step_name = 'analyst_base_training'
+                config['execution_context'] = 'analyst'
             elif args.train_analyst_ensemble:
                 step_name = 'analyst_ensemble_training'
+                config['execution_context'] = 'analyst'
             elif args.train_tactician_base:
                 step_name = 'tactician_base_training'
+                config['execution_context'] = 'tactician'
             elif args.train_tactician_ensemble:
                 step_name = 'tactician_ensemble_training'
+                config['execution_context'] = 'tactician'
             
             logger.info(f"Running model training: {step_name}")
             result = await launcher.run_step(step_name, config)

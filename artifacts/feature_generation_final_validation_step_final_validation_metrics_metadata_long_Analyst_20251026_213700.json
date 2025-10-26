@@ -1,0 +1,8 @@
+{
+  "artifact_name": "final_validation_metrics",
+  "artifact_type": "data",
+  "file_path": "artifacts/pre_training/long/Analyst/feature_generation_final_validation_step/feature_generation_final_validation_step_final_validation_metrics_long_Analyst_20251026_213700.parquet",
+  "file_size": 52111,
+  "timestamp": "2025-10-26T21:37:01.963248",
+  "compression": "auto"
+}

@@ -123,6 +123,13 @@ def create_feature_bank_with_defaults() -> FeatureBank:
             SupportResistanceFeatureGenerator,
             CandlestickPatternFeatureGenerator
         )
+        
+        # Import advanced statistical generator
+        try:
+            from ..categories.advanced_statistical import create_advanced_statistical_generators
+            ADVANCED_STATISTICAL_AVAILABLE = True
+        except ImportError:
+            ADVANCED_STATISTICAL_AVAILABLE = False
 
         # Create and register default generators
         default_generators = [
@@ -135,6 +142,16 @@ def create_feature_bank_with_defaults() -> FeatureBank:
             SupportResistanceFeatureGenerator.create_default(),
             CandlestickPatternFeatureGenerator.create_default()
         ]
+        
+        # Add advanced statistical generators if available
+        if ADVANCED_STATISTICAL_AVAILABLE:
+            try:
+                advanced_statistical_generators = create_advanced_statistical_generators()
+                if advanced_statistical_generators:
+                    default_generators.extend(advanced_statistical_generators)
+                    logger.info(f"Added {len(advanced_statistical_generators)} advanced statistical generators")
+            except Exception as e:
+                logger.warning(f"Failed to create advanced statistical generators: {e}")
 
         for generator in default_generators:
             if generator:

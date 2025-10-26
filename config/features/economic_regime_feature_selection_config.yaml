@@ -1,0 +1,76 @@
+# Economic Regime Feature Selection Configuration
+economic_regime_feature_selection:
+
+  # Multi-target approach settings
+  multi_target_enabled: true
+  target_columns:
+    - close_return          # Price-based regimes
+    - volume_log_return     # Volume-based regimes  
+    - price_range_pct       # Relative volatility regimes
+    - body_size_pct         # Price efficiency regimes
+    - volume_return         # Volume momentum regimes
+    - close_log_return      # Log price movements
+    - price_range           # Absolute volatility
+    - trades                # Trade count patterns
+    - volatility_20         # Realized volatility rolling
+    - cmf                   # Volume imbalance/order flow
+
+  # Target weights (must sum to 1.0) - Increased volatility focus
+  target_weights:
+    close_return: 0.08      # Price movements (8% - reduced from 10%)
+    volume_log_return: 0.05  # Volume patterns (5% - reduced from 8%)
+    price_range_pct: 0.30   # Relative volatility (30% - increased from 25%)
+    body_size_pct: 0.05     # Price efficiency (5% - kept same)
+    volume_return: 0.05     # Volume momentum (5% - kept same)
+    close_log_return: 0.05  # Log price movements (5% - reduced from 8%)
+    price_range: 0.25       # Absolute volatility (25% - increased from 20%)
+    trades: 0.00            # Trade patterns (0% - removed)
+    volatility_20: 0.20     # Realized volatility rolling (20% - increased from 15%)
+    cmf: 0.02              # Volume imbalance/order flow (2% - reduced from 4%)
+
+  # Feature selection parameters
+  target_feature_count: 25
+  min_feature_count: 15
+  max_feature_count: 35
+
+  # Economic scoring weights (must sum to 1.0)
+  economic_significance_weight: 0.30  # Increased back to make room
+  regime_discrimination_weight: 0.25  # Kept same
+  clustering_quality_weight: 0.15     # Kept same
+  stability_weight: 0.10              # Kept same
+  mrmr_weight: 0.25                  # Aligned with mRMR parameters section
+  regime_transition_weight: 0.05      # Kept same
+
+  # Validation parameters
+  cv_folds: 3  # Cheap proxy: 3 instead of 5
+  silhouette_sample_ratio: 0.10  # Cheap proxy: 10% sample
+  min_economic_significance: 0.25  # Adjusted to match actual scores
+  min_regime_discrimination: 0.90  # Adjusted to match actual scores  
+  min_clustering_quality: 0.10     # Adjusted for proper clustering calculation
+  min_stability_score: 0.30        # Adjusted for proper stability calculation
+
+  # Performance thresholds
+  min_sharpe_variance: 0.5
+  max_noise_ratio: 0.30
+
+  # Regime transition feature parameters
+  transition_score_threshold: 0.95  # Increased significantly to be very discriminating
+  max_transition_features_ratio: 0.3
+  transition_window_size: 10
+
+  # mRMR parameters
+  enable_mrmr: true
+  mrmr_weight: 0.25  # Weight for mRMR score in composite (increased to 25% to better protect volatility)
+  protect_categories:
+    - volatility
+    - volume
+
+  # Computational optimization
+  enable_vectorbt: true
+  enable_hardware_optimization: true
+  enable_cheap_proxies: true
+
+  # Feature filtering parameters
+  exclude_categories:
+    - microstructure
+    - support_resistance

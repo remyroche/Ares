@@ -45,6 +45,12 @@ except ImportError:
 # Import VectorBT for optimized computations
 try:
     import vectorbt as vbt
+    VECTORBT_AVAILABLE = True
+except ImportError as e:
+    VECTORBT_AVAILABLE = False
+    logging.warning(f"VectorBT not available: {e}")
+
+try:
     from src.feature_generation.utils.vectorbt_rolling_optimizer import VectorBTRollingOptimizer, get_vectorbt_rolling_optimizer
     from src.utils.ml_common.unified_vectorization_manager import UnifiedVectorizationManager, get_unified_vectorization_manager
     VECTORBT_OPTIMIZATION_AVAILABLE = True
@@ -84,8 +90,8 @@ class HDBSCANParameterSpace:
     min_cluster_size: Tuple[int, int] = (10, 100)  # (min, max)
     min_samples: Tuple[int, int] = (5, 50)
     cluster_selection_epsilon: Tuple[float, float] = (0.0, 0.5)
-    cluster_selection_method: List[str] = field(default_factory=lambda: ['eom', 'leaf'])
-    metric: List[str] = field(default_factory=lambda: ['euclidean', 'manhattan', 'cosine'])
+    cluster_selection_method: List[str] = field(default_factory=lambda: ['leaf', 'eom'])  # Prioritize 'leaf' method
+    metric: List[str] = field(default_factory=lambda: ['manhattan', 'cosine', 'euclidean'])  # Try manhattan and cosine first
     alpha: Tuple[float, float] = (0.5, 2.0)
     cluster_selection_epsilon: Tuple[float, float] = (0.0, 0.5)
 
@@ -277,9 +283,18 @@ class AutomatedHDBSCANTuner:
             )
         
         try:
-            # Use AutoTuner to analyze dataset
-            characteristics = self.auto_tuner.analyze_dataset_characteristics(data)
-            tprint(f"📊 Dataset analysis: {data.shape[0]} samples, {data.shape[1]} features", "INFO")
+            # AutoTuner doesn't have analyze_dataset_characteristics, so use our own analysis
+            # Convert data to numpy array for analysis
+            data_array = data.values if isinstance(data, pd.DataFrame) else data
+            characteristics = DatasetCharacteristics(
+                n_samples=data_array.shape[0],
+                n_features=data_array.shape[1],
+                feature_complexity=self._estimate_feature_complexity(data),
+                class_imbalance=0.0,  # Not applicable for clustering
+                data_quality_score=0.8,  # Assume good data quality
+                temporal_dependency=0.7  # High for financial time series
+            )
+            tprint(f"📊 Dataset analysis: {data_array.shape[0]} samples, {data_array.shape[1]} features", "INFO")
             return characteristics
         except Exception as e:
             logger.warning(f"Error analyzing dataset characteristics: {e}")
@@ -292,6 +307,19 @@ class AutomatedHDBSCANTuner:
                 data_quality_score=0.8,
                 temporal_dependency=0.7
             )
+    
+    def _estimate_feature_complexity(self, data: pd.DataFrame) -> float:
+        """Estimate feature complexity based on data statistics."""
+        try:
+            # Calculate coefficient of variation for each feature
+            cv_values = data.std() / (data.mean().abs() + 1e-8)
+            avg_cv = cv_values.mean()
+            
+            # Normalize to 0-1 range (typical CV range is 0-5 for financial data)
+            complexity = min(1.0, avg_cv / 3.0)
+            return float(complexity)
+        except Exception:
+            return 0.5  # Default medium complexity
     
     def create_parameter_search_space(self, characteristics: DatasetCharacteristics) -> Dict[str, Any]:
         """Create parameter search space based on dataset characteristics."""
@@ -837,13 +865,13 @@ class AutomatedHDBSCANTuner:
         """Create intelligent fallback strategies optimized for 4-8 clusters."""
         strategies = []
         
-        # Strategy 1: Target 4-6 clusters with leaf method
+        # Strategy 1: Target 4-6 clusters with leaf method (enhanced)
         strategies.append(FallbackStrategy(
-            name='target_4_6_clusters_leaf',
-            description='Target 4-6 clusters using leaf method',
+            name='target_4_6_clusters_leaf_enhanced',
+            description='Target 4-6 clusters using leaf method with enhanced epsilon range',
             parameters={
                 'cluster_selection_method': 'leaf',
-                'cluster_selection_epsilon': 0.01,
+                'cluster_selection_epsilon': 0.05,  # Increased from 0.01 for better separation
                 'min_cluster_size': max(25, characteristics.n_samples // 25),  # Target ~4-6 clusters
                 'min_samples': max(12, characteristics.n_samples // 50),
                 'metric': 'euclidean'
@@ -851,18 +879,32 @@ class AutomatedHDBSCANTuner:
             priority=1
         ))
         
-        # Strategy 1.5: Ultra-aggressive for balanced distribution
+        # Strategy 1.5: Enhanced leaf method for better separation
+        strategies.append(FallbackStrategy(
+            name='enhanced_leaf_separation',
+            description='Enhanced leaf method for better cluster separation',
+            parameters={
+                'cluster_selection_method': 'leaf',
+                'cluster_selection_epsilon': 0.15,  # Optimized epsilon for better separation
+                'min_cluster_size': max(20, characteristics.n_samples // 40),  # Balanced cluster size
+                'min_samples': max(8, characteristics.n_samples // 80),  # Balanced samples
+                'metric': 'euclidean'  # Use euclidean for better regime detection
+            },
+            priority=1
+        ))
+        
+        # Strategy 1.6: Ultra-aggressive for balanced distribution
         strategies.append(FallbackStrategy(
             name='ultra_balanced_distribution',
             description='Ultra-aggressive parameters for balanced cluster distribution',
             parameters={
                 'cluster_selection_method': 'leaf',
-                'cluster_selection_epsilon': 0.5,  # Much higher epsilon
+                'cluster_selection_epsilon': 0.3,  # High epsilon for aggressive clustering
                 'min_cluster_size': max(15, characteristics.n_samples // 50),  # Much smaller clusters
                 'min_samples': max(5, characteristics.n_samples // 100),  # Much smaller samples
                 'metric': 'manhattan'  # Use manhattan for better separation
             },
-            priority=1
+            priority=2
         ))
         
         # Strategy 2: Target 6-8 clusters with EOM method
@@ -1148,8 +1190,11 @@ class AutomatedHDBSCANTuner:
             
             # Memory optimization
             if self.memory_optimizer is not None:
-                memory_info = self.memory_optimizer.get_memory_info()
-                tprint(f"💾 Available memory: {memory_info.get('available_gb', 0):.1f} GB", "INFO")
+                try:
+                    memory_info = self.memory_optimizer.get_memory_stats()
+                    tprint(f"💾 Memory stats: {memory_info.get('total_gb', 0):.1f} GB total", "INFO")
+                except Exception as e:
+                    logger.warning(f"Could not get memory stats: {e}")
         
         # Step 1: Analyze dataset characteristics
         characteristics = self.analyze_dataset_characteristics(data)

@@ -1,52 +1,161 @@
 """
-Variant Generator for Feature Engineering
+Optimized Variant Generator for Feature Engineering
 
-Generates normalized variants of features using optimal lookbacks with:
-- Volatility normalization
-- VWAP weighting
-- Trend adjustment
-- RobustScaler bounding to prevent extreme values
-- Causality enforcement via shift(1)
+Enhanced version with:
+- Shared computation caching
+- Vectorized operations using VectorBT
+- Hardware optimization
+- Cheaper proxy calculations
+- Performance monitoring
+- Data validation
 """
 
 import numpy as np
 import pandas as pd
-from typing import Dict, List, Tuple, Optional, Any
+from typing import Dict, List, Tuple, Optional, Any, Union
 from dataclasses import dataclass
-from sklearn.preprocessing import RobustScaler
 import logging
+import time
+from concurrent.futures import ThreadPoolExecutor
+import warnings
+import hashlib
+from collections import OrderedDict
 
-from src.utils.tprint import tprint, tprint_info, tprint_success, tprint_error, tprint_warning
+# VectorBT imports
+try:
+    import vectorbt as vbt
+    VECTORBT_AVAILABLE = True
+except ImportError:
+    VECTORBT_AVAILABLE = False
+    vbt = None
+    warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
+
+# Math validation imports
+from src.utils.math_validation import (
+    safe_divide, safe_log, safe_sqrt, safe_power, validate_finite,
+    safe_correlation, safe_covariance, safe_mean, safe_std, MathValidation
+)
+
+# Hardware optimization
+try:
+    from src.utils.hardware.unified_hardware_manager import (
+        UnifiedHardwareManager, WorkloadType, OptimizationLevel, get_unified_hardware_manager
+    )
+    from src.utils.hardware.m1_memory_optimizer import M1MemoryOptimizer
+    HARDWARE_OPT_AVAILABLE = True
+except ImportError:
+    HARDWARE_OPT_AVAILABLE = False
+
+# Feature common utilities
+try:
+    from src.utils.feature_common.caching import get_shared_cache, get_feature_cache
+    from src.utils.feature_common.monitoring import get_performance_monitor, get_resource_tracker
+    from src.utils.feature_common.validation import get_data_validator
+    FEATURE_COMMON_AVAILABLE = True
+except ImportError:
+    FEATURE_COMMON_AVAILABLE = False
+
+# ML common utilities
+try:
+    from src.utils.ml_common.unified_vectorization_manager import (
+        UnifiedVectorizationManager, VectorizationConfig, get_unified_vectorization_manager
+    )
+    from src.utils.ml_common.explainability.shap_lime_integration import SHAPLIMEIntegration
+    ML_COMMON_AVAILABLE = True
+except ImportError:
+    ML_COMMON_AVAILABLE = False
+
+from src.utils.tprint import tprint, tprint_info, tprint_success, tprint_error, tprint_warning, tprint_performance
 from src.utils.logger import system_logger
 
+logger = system_logger.getChild('OptimizedVariantGenerator')
 
 @dataclass
-class VariantConfig:
-    """Configuration for variant generation."""
+class OptimizedVariantConfig:
+    """Configuration for optimized variant generation."""
     feature_name: str
     category: str
     optimal_lookback: int
     enable_vol_norm: bool = True
     enable_vwap: bool = True
     enable_trend_adj: bool = True
+    enable_vectorbt: bool = True
+    enable_hardware_opt: bool = True
+    enable_caching: bool = True
+    enable_monitoring: bool = True
     robust_scaler_quantile_range: Tuple[float, float] = (1.0, 99.0)
-
-
-class VariantGenerator:
-    """
-    Generates normalized variants of features with causality enforcement.
+    max_workers: int = 4
+    chunk_size: int = 1000
+    cache_ttl_seconds: int = 3600  # 1 hour TTL
+    max_cache_size: int = 1000  # Maximum number of cached items
     
-    Produces 3-4 variants per feature depending on category:
-    1. Base variant (original)
-    2. Volatility-normalized (except volatility features)
-    3. VWAP-weighted (only price-based features, not volume)
-    4. Trend-adjusted (only oscillators/momentum)
+    def __post_init__(self):
+        """Validate configuration parameters."""
+        if self.optimal_lookback < 1:
+            raise ValueError("optimal_lookback must be >= 1")
+        if not 0 < self.robust_scaler_quantile_range[0] < self.robust_scaler_quantile_range[1] < 100:
+            raise ValueError("Invalid quantile range")
+        if self.max_workers < 1:
+            raise ValueError("max_workers must be >= 1")
+        if self.chunk_size < 1:
+            raise ValueError("chunk_size must be >= 1")
+
+class OptimizedVariantGenerator:
+    """
+    Optimized variant generator with comprehensive performance improvements.
+    
+    Features:
+    - VectorBT integration for vectorized operations
+    - Hardware optimization for Apple Silicon
+    - Shared computation caching
+    - Performance monitoring
+    - Data validation
+    - Cheaper proxy calculations
     """
     
-    def __init__(self):
-        """Initialize variant generator."""
-        self.logger = system_logger.getChild('VariantGenerator')
-        self.scaler = RobustScaler(quantile_range=(1.0, 99.0))
+    def __init__(self, config: Optional[OptimizedVariantConfig] = None):
+        """Initialize optimized variant generator."""
+        self.config = config or OptimizedVariantConfig(
+            feature_name="", category="", optimal_lookback=20
+        )
+        self.logger = system_logger.getChild('OptimizedVariantGenerator')
+        
+        # Initialize hardware optimization
+        self.hardware_manager = None
+        self.memory_optimizer = None
+        if HARDWARE_OPT_AVAILABLE:
+            try:
+                self.hardware_manager = get_unified_hardware_manager()
+                self.memory_optimizer = M1MemoryOptimizer(memory_limit_gb=8.0)
+                tprint_info("✅ Hardware optimization initialized")
+            except Exception as e:
+                tprint_warning(f"⚠️ Hardware optimization failed: {e}")
+        
+        # Initialize VectorBT components
+        self.vectorization_manager = None
+        if ML_COMMON_AVAILABLE and VECTORBT_AVAILABLE:
+            try:
+                self.vectorization_manager = get_unified_vectorization_manager()
+                tprint_info("✅ VectorBT components initialized")
+            except Exception as e:
+                tprint_warning(f"⚠️ VectorBT initialization failed: {e}")
+        
+        # Initialize shared utilities
+        self.shared_cache = get_shared_cache() if FEATURE_COMMON_AVAILABLE else None
+        self.feature_cache = get_feature_cache() if FEATURE_COMMON_AVAILABLE else None
+        self.performance_monitor = get_performance_monitor() if FEATURE_COMMON_AVAILABLE else None
+        self.resource_tracker = get_resource_tracker() if FEATURE_COMMON_AVAILABLE else None
+        self.data_validator = get_data_validator() if FEATURE_COMMON_AVAILABLE else None
+        
+        # Initialize math validation
+        self.math_validator = MathValidation()
+        
+        # Initialize reusable scalers cache
+        self._scalers_cache = {}
+        
+        # Initialize content-based cache with TTL
+        self._content_cache = OrderedDict()
+        self._cache_timestamps = {}
         
         # Track statistics
         self.stats = {
@@ -58,8 +167,13 @@ class VariantGenerator:
                 'volnorm': 0,
                 'vwap': 0,
                 'trend_adj': 0
-            }
+            },
+            'performance_metrics': {},
+            'cache_hits': 0,
+            'cache_misses': 0
         }
+        
+        tprint_info("🔧 Initialized OptimizedVariantGenerator")
     
     def generate_variants(
         self,
@@ -70,75 +184,96 @@ class VariantGenerator:
         ohlcv_data: pd.DataFrame
     ) -> Dict[str, pd.Series]:
         """
-        Generate all applicable variants for a feature.
+        Generate optimized variants for a feature.
         
         Args:
             data: DataFrame containing the feature
             feature_name: Name of the feature to generate variants for
-            category: Feature category (trend, oscillator, momentum, return, volatility, volume, acceleration)
-            optimal_lookback: Optimal lookback period from optimization
-            ohlcv_data: DataFrame with OHLCV columns (close, high, low, open, volume)
+            category: Feature category
+            optimal_lookback: Optimal lookback period
+            ohlcv_data: DataFrame with OHLCV columns
             
         Returns:
             Dictionary mapping variant names to Series
         """
+        if self.performance_monitor:
+            return self.performance_monitor.monitor_operation("generate_variants")(
+                self._generate_variants_impl
+            )(data, feature_name, category, optimal_lookback, ohlcv_data)
+        else:
+            return self._generate_variants_impl(data, feature_name, category, optimal_lookback, ohlcv_data)
+    
+    def _generate_variants_impl(
+        self,
+        data: pd.DataFrame,
+        feature_name: str,
+        category: str,
+        optimal_lookback: int,
+        ohlcv_data: pd.DataFrame
+    ) -> Dict[str, pd.Series]:
+        """Implementation of variant generation with optimizations."""
         variants = {}
+        skipped_variants = []
         
         try:
             # 1. Base variant (original feature)
-            base_variant = data[feature_name].copy()
-            variants[f"{feature_name}_base"] = self._apply_causality_shift(base_variant)
+            base_variant = self._generate_base_variant(data[feature_name])
+            variants[f"{feature_name}_base"] = base_variant
             self.stats['variants_by_type']['base'] += 1
+            tprint_info(f"    ✅ Generated base variant for {feature_name}")
             
-            # 2. Volatility-normalized (skip if volatility feature)
+            # 2. Volatility-normalized (skip only for volatility features)
             if category.lower() != 'volatility':
-                try:
-                    vol_norm = self._generate_volatility_normalized(
-                        data[feature_name],
-                        ohlcv_data['close'],
-                        optimal_lookback
-                    )
-                    if vol_norm is not None:
-                        variants[f"{feature_name}_volnorm"] = self._apply_causality_shift(vol_norm)
-                        self.stats['variants_by_type']['volnorm'] += 1
-                except Exception as e:
-                    self.logger.warning(f"Failed to generate vol-norm variant for {feature_name}: {e}")
-                    self.stats['failed_variants'].append(f"{feature_name}_volnorm")
+                vol_norm = self._generate_volatility_normalized_optimized(
+                    data[feature_name], ohlcv_data['close'], optimal_lookback
+                )
+                if vol_norm is not None:
+                    variants[f"{feature_name}_volnorm"] = vol_norm
+                    self.stats['variants_by_type']['volnorm'] += 1
+                    tprint_info(f"    ✅ Generated volnorm variant for {feature_name}")
+                else:
+                    skipped_variants.append(f"{feature_name}_volnorm (generation failed)")
+            else:
+                skipped_variants.append(f"{feature_name}_volnorm (skipped: volatility category)")
             
-            # 3. VWAP-weighted (only for price-based features, skip volume)
-            if category.lower() not in ['volume'] and self._is_price_based_feature(feature_name, category):
-                try:
-                    vwap_weighted = self._generate_vwap_weighted(
-                        data[feature_name],
-                        ohlcv_data['volume'],
-                        optimal_lookback
-                    )
-                    if vwap_weighted is not None:
-                        variants[f"{feature_name}_vwap"] = self._apply_causality_shift(vwap_weighted)
-                        self.stats['variants_by_type']['vwap'] += 1
-                except Exception as e:
-                    self.logger.warning(f"Failed to generate VWAP variant for {feature_name}: {e}")
-                    self.stats['failed_variants'].append(f"{feature_name}_vwap")
+            # 3. VWAP-weighted (generate for all features except volume category)
+            if category.lower() != 'volume':
+                vwap_weighted = self._generate_vwap_weighted_optimized(
+                    data[feature_name], ohlcv_data['volume'], optimal_lookback
+                )
+                if vwap_weighted is not None:
+                    variants[f"{feature_name}_vwap"] = vwap_weighted
+                    self.stats['variants_by_type']['vwap'] += 1
+                    tprint_info(f"    ✅ Generated vwap variant for {feature_name}")
+                else:
+                    skipped_variants.append(f"{feature_name}_vwap (generation failed)")
+            else:
+                skipped_variants.append(f"{feature_name}_vwap (skipped: volume category)")
             
-            # 4. Trend-adjusted (only for oscillators/momentum)
-            if category.lower() in ['oscillator', 'momentum']:
-                try:
-                    trend_adj = self._generate_trend_adjusted(
-                        data[feature_name],
-                        ohlcv_data,
-                        optimal_lookback
-                    )
-                    if trend_adj is not None:
-                        variants[f"{feature_name}_trend_adj"] = self._apply_causality_shift(trend_adj)
-                        self.stats['variants_by_type']['trend_adj'] += 1
-                except Exception as e:
-                    self.logger.warning(f"Failed to generate trend-adj variant for {feature_name}: {e}")
-                    self.stats['failed_variants'].append(f"{feature_name}_trend_adj")
+            # 4. Trend-adjusted (generate for all features)
+            trend_adj = self._generate_trend_adjusted_optimized(
+                data[feature_name], ohlcv_data, optimal_lookback
+            )
+            if trend_adj is not None:
+                variants[f"{feature_name}_trend_adj"] = trend_adj
+                self.stats['variants_by_type']['trend_adj'] += 1
+                tprint_info(f"    ✅ Generated trend_adj variant for {feature_name}")
+            else:
+                skipped_variants.append(f"{feature_name}_trend_adj (generation failed)")
+            
+            # Log detailed variant generation summary for this feature
+            total_possible = 4
+            actual_generated = len(variants)
+            tprint_info(f"  📊 {feature_name} ({category}): {actual_generated}/{total_possible} variants generated")
+            
+            if skipped_variants:
+                tprint_warning(f"    ⚠️ Skipped variants: {', '.join(skipped_variants)}")
             
             self.stats['total_variants_generated'] += len(variants)
             
         except Exception as e:
             self.logger.error(f"Failed to generate variants for {feature_name}: {e}")
+            tprint_error(f"    ❌ Failed to generate variants for {feature_name}: {e}")
             # Return at least base variant
             if f"{feature_name}_base" in variants:
                 return {f"{feature_name}_base": variants[f"{feature_name}_base"]}
@@ -146,33 +281,69 @@ class VariantGenerator:
         
         return variants
     
-    def _generate_volatility_normalized(
+    def _generate_base_variant(self, feature: pd.Series) -> pd.Series:
+        """Generate base variant with causality enforcement."""
+        # Ensure feature is a pandas Series
+        if not isinstance(feature, pd.Series):
+            if isinstance(feature, np.ndarray):
+                # Convert numpy array to pandas Series with proper index
+                feature = pd.Series(feature, name='feature')
+            else:
+                # Convert other types to pandas Series
+                feature = pd.Series(feature, name='feature')
+        return self._apply_causality_shift(feature)
+    
+    def _generate_volatility_normalized_optimized(
         self,
         feature: pd.Series,
         close_prices: pd.Series,
         lookback: int
     ) -> Optional[pd.Series]:
-        """
-        Generate volatility-normalized variant.
-        
-        Formula: feature / rolling_std(returns, window=lookback)
-        """
+        """Generate volatility-normalized variant with optimizations using VectorBTRollingOptimizer."""
         try:
-            # Calculate returns
-            returns = close_prices.pct_change()
+            # Ensure inputs are pandas Series
+            if not isinstance(feature, pd.Series):
+                if isinstance(feature, np.ndarray):
+                    feature = pd.Series(feature, name='feature')
+                else:
+                    feature = pd.Series(feature, name='feature')
             
-            # Calculate rolling volatility
-            rolling_vol = returns.rolling(window=lookback, min_periods=max(1, lookback // 2)).std()
+            if not isinstance(close_prices, pd.Series):
+                if isinstance(close_prices, np.ndarray):
+                    close_prices = pd.Series(close_prices, name='close')
+                else:
+                    close_prices = pd.Series(close_prices, name='close')
             
-            # Avoid division by zero
+            # Use VectorBTRollingOptimizer for efficient rolling calculations
+            if self.vectorization_manager and VECTORBT_AVAILABLE:
+                try:
+                    from src.feature_generation.utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer
+                    rolling_optimizer = get_vectorbt_rolling_optimizer()
+                    if rolling_optimizer:
+                        returns = close_prices.pct_change()
+                        rolling_vol = rolling_optimizer.rolling_std(returns, window=lookback)
+                    else:
+                        # Fallback to pandas
+                        returns = close_prices.pct_change()
+                        rolling_vol = returns.rolling(window=lookback, min_periods=max(1, lookback // 2)).std()
+                except Exception:
+                    # Fallback to pandas
+                    returns = close_prices.pct_change()
+                    rolling_vol = returns.rolling(window=lookback, min_periods=max(1, lookback // 2)).std()
+            else:
+                # Standard pandas implementation
+                returns = close_prices.pct_change()
+                rolling_vol = returns.rolling(window=lookback, min_periods=max(1, lookback // 2)).std()
+            
+            # Use safe division from math_validation
             rolling_vol = rolling_vol.replace(0, np.nan)
             rolling_vol = rolling_vol.fillna(rolling_vol.mean())
             
-            # Normalize
-            vol_normalized = feature / rolling_vol
+            # Normalize with safe division
+            vol_normalized = self.math_validator.safe_divide(feature, rolling_vol, default=0.0)
             
-            # Apply robust scaling to bound extreme values
-            vol_normalized = self._apply_robust_scaling(vol_normalized, f"volnorm")
+            # Apply robust scaling with caching
+            vol_normalized = self._apply_robust_scaling_cached(vol_normalized, "volnorm")
             
             return vol_normalized
             
@@ -180,33 +351,56 @@ class VariantGenerator:
             self.logger.error(f"Volatility normalization failed: {e}")
             return None
     
-    def _generate_vwap_weighted(
+    def _generate_vwap_weighted_optimized(
         self,
         feature: pd.Series,
         volume: pd.Series,
         lookback: int
     ) -> Optional[pd.Series]:
-        """
-        Generate VWAP-weighted variant.
-        
-        Formula: feature * (volume / rolling_mean(volume, window=lookback))
-        """
+        """Generate VWAP-weighted variant with optimizations using VectorBTRollingOptimizer."""
         try:
-            # Calculate rolling mean volume
-            rolling_vol_mean = volume.rolling(window=lookback, min_periods=max(1, lookback // 2)).mean()
+            # Ensure inputs are pandas Series
+            if not isinstance(feature, pd.Series):
+                if isinstance(feature, np.ndarray):
+                    feature = pd.Series(feature, name='feature')
+                else:
+                    feature = pd.Series(feature, name='feature')
             
-            # Avoid division by zero
+            if not isinstance(volume, pd.Series):
+                if isinstance(volume, np.ndarray):
+                    volume = pd.Series(volume, name='volume')
+                else:
+                    volume = pd.Series(volume, name='volume')
+            
+            # Use VectorBTRollingOptimizer for efficient rolling calculations
+            if self.vectorization_manager and VECTORBT_AVAILABLE:
+                try:
+                    from src.feature_generation.utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer
+                    rolling_optimizer = get_vectorbt_rolling_optimizer()
+                    if rolling_optimizer:
+                        rolling_vol_mean = rolling_optimizer.rolling_mean(volume, window=lookback)
+                    else:
+                        # Fallback to pandas
+                        rolling_vol_mean = volume.rolling(window=lookback, min_periods=max(1, lookback // 2)).mean()
+                except Exception:
+                    # Fallback to pandas
+                    rolling_vol_mean = volume.rolling(window=lookback, min_periods=max(1, lookback // 2)).mean()
+            else:
+                # Standard pandas implementation
+                rolling_vol_mean = volume.rolling(window=lookback, min_periods=max(1, lookback // 2)).mean()
+            
+            # Use safe division from math_validation
             rolling_vol_mean = rolling_vol_mean.replace(0, np.nan)
             rolling_vol_mean = rolling_vol_mean.fillna(volume.mean())
             
-            # Calculate volume ratio
-            volume_ratio = volume / rolling_vol_mean
+            # Calculate volume ratio with safe division
+            volume_ratio = self.math_validator.safe_divide(volume, rolling_vol_mean, default=1.0)
             
             # Weight feature by volume ratio
             vwap_weighted = feature * volume_ratio
             
-            # Apply robust scaling to bound extreme values
-            vwap_weighted = self._apply_robust_scaling(vwap_weighted, f"vwap")
+            # Apply robust scaling with caching
+            vwap_weighted = self._apply_robust_scaling_cached(vwap_weighted, "vwap")
             
             return vwap_weighted
             
@@ -214,37 +408,60 @@ class VariantGenerator:
             self.logger.error(f"VWAP weighting failed: {e}")
             return None
     
-    def _generate_trend_adjusted(
+    def _generate_trend_adjusted_optimized(
         self,
         feature: pd.Series,
         ohlcv_data: pd.DataFrame,
         lookback: int
     ) -> Optional[pd.Series]:
-        """
-        Generate trend-adjusted variant.
-        
-        Formula: feature * EMA(ADX, span=14) * sign(SMA(close, lookback) - close.shift(1))
-        """
+        """Generate trend-adjusted variant with optimizations using VectorBTRollingOptimizer."""
         try:
+            # Ensure feature is a pandas Series
+            if not isinstance(feature, pd.Series):
+                if isinstance(feature, np.ndarray):
+                    feature = pd.Series(feature, name='feature')
+                else:
+                    feature = pd.Series(feature, name='feature')
+            
             close = ohlcv_data['close']
             high = ohlcv_data['high']
             low = ohlcv_data['low']
             
-            # Calculate ADX (Average Directional Index)
-            adx = self._calculate_adx(high, low, close, period=14)
+            # Ensure OHLCV data columns are pandas Series
+            if not isinstance(close, pd.Series):
+                close = pd.Series(close, name='close')
+            if not isinstance(high, pd.Series):
+                high = pd.Series(high, name='high')
+            if not isinstance(low, pd.Series):
+                low = pd.Series(low, name='low')
             
-            # Smooth ADX with EMA
-            adx_ema = adx.ewm(span=14, adjust=False).mean()
+            # Use cheaper trend strength proxy instead of full ADX
+            trend_strength = self._calculate_cheap_trend_strength(high, low, close, lookback)
             
-            # Calculate trend direction
-            sma = close.rolling(window=lookback, min_periods=max(1, lookback // 2)).mean()
+            # Calculate trend direction using VectorBTRollingOptimizer
+            if self.vectorization_manager and VECTORBT_AVAILABLE:
+                try:
+                    from src.feature_generation.utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer
+                    rolling_optimizer = get_vectorbt_rolling_optimizer()
+                    if rolling_optimizer:
+                        sma = rolling_optimizer.rolling_mean(close, window=lookback)
+                    else:
+                        # Fallback to pandas
+                        sma = close.rolling(window=lookback, min_periods=max(1, lookback // 2)).mean()
+                except Exception:
+                    # Fallback to pandas
+                    sma = close.rolling(window=lookback, min_periods=max(1, lookback // 2)).mean()
+            else:
+                # Standard pandas implementation
+                sma = close.rolling(window=lookback, min_periods=max(1, lookback // 2)).mean()
+            
             trend_direction = np.sign(sma - close.shift(1))
             
-            # Combine: feature * smoothed_ADX * trend_direction
-            trend_adjusted = feature * (adx_ema / 100.0) * trend_direction  # Normalize ADX to 0-1 range
+            # Combine: feature * trend_strength * trend_direction
+            trend_adjusted = feature * trend_strength * trend_direction
             
-            # Apply robust scaling
-            trend_adjusted = self._apply_robust_scaling(trend_adjusted, f"trend_adj")
+            # Apply robust scaling with caching
+            trend_adjusted = self._apply_robust_scaling_cached(trend_adjusted, "trend_adj")
             
             return trend_adjusted
             
@@ -252,58 +469,130 @@ class VariantGenerator:
             self.logger.error(f"Trend adjustment failed: {e}")
             return None
     
-    def _calculate_adx(
+    def _calculate_cheap_trend_strength(
         self,
         high: pd.Series,
         low: pd.Series,
         close: pd.Series,
-        period: int = 14
+        lookback: int
     ) -> pd.Series:
         """
-        Calculate Average Directional Index (ADX).
+        Calculate cheap trend strength proxy using math_validation.py for safe operations.
         
-        Simplified implementation for trend strength measurement.
+        Uses improved trend strength calculation with proper mathematical validation.
         """
         try:
-            # Calculate True Range
-            tr1 = high - low
-            tr2 = abs(high - close.shift(1))
-            tr3 = abs(low - close.shift(1))
-            tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+            # Validate inputs using math_validation
+            high = self.math_validator.validate_finite(high, "high prices")
+            low = self.math_validator.validate_finite(low, "low prices")
+            close = self.math_validator.validate_finite(close, "close prices")
             
-            # Calculate Directional Movement
-            up_move = high - high.shift(1)
-            down_move = low.shift(1) - low
+            # Calculate price range with safe division
+            price_range = high - low
             
-            plus_dm = np.where((up_move > down_move) & (up_move > 0), up_move, 0)
-            minus_dm = np.where((down_move > up_move) & (down_move > 0), down_move, 0)
+            # Calculate price momentum with safe operations
+            price_momentum = abs(close.pct_change().fillna(0))
             
-            plus_dm = pd.Series(plus_dm, index=high.index)
-            minus_dm = pd.Series(minus_dm, index=high.index)
+            # Improved trend strength calculation
+            # Use additive approach instead of multiplicative to avoid numerical issues
+            price_range_norm = self.math_validator.safe_divide(
+                price_range, close + 1e-10, default=0.0
+            )
             
-            # Smooth with EMA
-            atr = tr.ewm(span=period, adjust=False).mean()
-            plus_di = 100 * (plus_dm.ewm(span=period, adjust=False).mean() / atr)
-            minus_di = 100 * (minus_dm.ewm(span=period, adjust=False).mean() / atr)
+            # Combine components additively for better numerical stability
+            trend_strength = price_range_norm + (price_momentum * 0.1)  # Scale momentum
             
-            # Calculate ADX
-            dx = 100 * abs(plus_di - minus_di) / (plus_di + minus_di + 1e-10)
-            adx = dx.ewm(span=period, adjust=False).mean()
+            # Smooth with rolling mean using VectorBT if available
+            if self.vectorization_manager and VECTORBT_AVAILABLE:
+                try:
+                    # Use VectorBTRollingOptimizer for efficient rolling operations
+                    from src.feature_generation.utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer
+                    rolling_optimizer = get_vectorbt_rolling_optimizer()
+                    if rolling_optimizer:
+                        trend_strength = rolling_optimizer.rolling_mean(trend_strength, window=14)
+                    else:
+                        trend_strength = trend_strength.rolling(window=14, min_periods=7).mean()
+                except Exception:
+                    trend_strength = trend_strength.rolling(window=14, min_periods=7).mean()
+            else:
+                trend_strength = trend_strength.rolling(window=14, min_periods=7).mean()
             
-            return adx.fillna(25)  # Default ADX value
+            # Normalize to 0-1 range with safe operations
+            max_val = trend_strength.max()
+            if max_val > 0:
+                trend_strength = self.math_validator.safe_divide(
+                    trend_strength, max_val + 1e-10, default=0.5
+                )
+            else:
+                trend_strength = pd.Series(0.5, index=close.index)
+            
+            # Ensure values are in valid range
+            trend_strength = trend_strength.clip(0.0, 1.0)
+            
+            return trend_strength.fillna(0.5)  # Default neutral trend
             
         except Exception as e:
-            self.logger.error(f"ADX calculation failed: {e}")
-            # Return default ADX values
-            return pd.Series(25, index=high.index)
+            self.logger.error(f"Cheap trend strength calculation failed: {e}")
+            # Return default trend strength
+            return pd.Series(0.5, index=close.index)
     
-    def _apply_robust_scaling(self, series: pd.Series, variant_type: str) -> pd.Series:
-        """
-        Apply RobustScaler to bound extreme values using percentile clipping.
-        
-        Uses 1st and 99th percentiles to avoid discontinuities from z-score clipping.
-        """
+    def _get_series_hash(self, series: pd.Series) -> str:
+        """Generate content-based hash for series."""
         try:
+            # Use content hash instead of object id
+            content = series.values.tobytes() + str(series.index).encode()
+            return hashlib.md5(content).hexdigest()
+        except Exception:
+            # Fallback to string representation
+            return hashlib.md5(str(series).encode()).hexdigest()
+    
+    def _clean_cache(self):
+        """Clean expired cache entries."""
+        current_time = time.time()
+        expired_keys = []
+        
+        for key, timestamp in self._cache_timestamps.items():
+            if current_time - timestamp > self.config.cache_ttl_seconds:
+                expired_keys.append(key)
+        
+        for key in expired_keys:
+            self._content_cache.pop(key, None)
+            self._cache_timestamps.pop(key, None)
+    
+    def _apply_robust_scaling_cached(self, series: pd.Series, variant_type: str) -> pd.Series:
+        """Apply robust scaling with content-based caching and reusable scalers."""
+        try:
+            # Ensure series is a pandas Series
+            if not isinstance(series, pd.Series):
+                if isinstance(series, np.ndarray):
+                    series = pd.Series(series, name='series')
+                elif isinstance(series, (int, float)):
+                    # Handle scalar values
+                    series = pd.Series([series], name='series')
+                else:
+                    series = pd.Series(series, name='series')
+            
+            # Generate content-based cache key
+            series_hash = self._get_series_hash(series)
+            cache_key = f"robust_scaling_{variant_type}_{series_hash}"
+            
+            # Check content-based cache first
+            if cache_key in self._content_cache:
+                # Check if cache entry is still valid
+                if time.time() - self._cache_timestamps.get(cache_key, 0) < self.config.cache_ttl_seconds:
+                    self.stats['cache_hits'] += 1
+                    return self._content_cache[cache_key]
+                else:
+                    # Remove expired entry
+                    self._content_cache.pop(cache_key, None)
+                    self._cache_timestamps.pop(cache_key, None)
+            
+            self.stats['cache_misses'] += 1
+            
+            # Clean cache if it's getting too large
+            if len(self._content_cache) > self.config.max_cache_size:
+                self._clean_cache()
+            
             # Remove NaN values for scaling
             valid_mask = ~series.isna()
             valid_data = series[valid_mask].values.reshape(-1, 1)
@@ -311,13 +600,28 @@ class VariantGenerator:
             if len(valid_data) == 0:
                 return series
             
-            # Fit and transform
-            scaled_data = self.scaler.fit_transform(valid_data)
+            # Use reusable scaler
+            scaler_key = f"scaler_{variant_type}"
+            if scaler_key not in self._scalers_cache:
+                from sklearn.preprocessing import RobustScaler
+                # Use default parameters to avoid issues
+                scaler = RobustScaler()
+                # Fit the scaler with valid data
+                scaler.fit(valid_data.reshape(-1, 1))
+                self._scalers_cache[scaler_key] = scaler
+            
+            # Transform data using fitted scaler
+            scaled_data = self._scalers_cache[scaler_key].transform(valid_data)
+            
+            # Create result series
+            result = series.copy()
+            result[valid_mask] = scaled_data.flatten()
+            
+            # Cache result with timestamp
+            self._content_cache[cache_key] = result
+            self._cache_timestamps[cache_key] = time.time()
             
             # Track clipping statistics
-            original_range = (valid_data.min(), valid_data.max())
-            scaled_range = (scaled_data.min(), scaled_data.max())
-            
             if variant_type not in self.stats['clipping_stats']:
                 self.stats['clipping_stats'][variant_type] = {
                     'count': 0,
@@ -326,12 +630,12 @@ class VariantGenerator:
                 }
             
             self.stats['clipping_stats'][variant_type]['count'] += 1
-            self.stats['clipping_stats'][variant_type]['original_ranges'].append(original_range)
-            self.stats['clipping_stats'][variant_type]['scaled_ranges'].append(scaled_range)
-            
-            # Create result series
-            result = series.copy()
-            result[valid_mask] = scaled_data.flatten()
+            self.stats['clipping_stats'][variant_type]['original_ranges'].append(
+                (valid_data.min(), valid_data.max())
+            )
+            self.stats['clipping_stats'][variant_type]['scaled_ranges'].append(
+                (scaled_data.min(), scaled_data.max())
+            )
             
             return result
             
@@ -340,18 +644,11 @@ class VariantGenerator:
             return series
     
     def _apply_causality_shift(self, series: pd.Series) -> pd.Series:
-        """
-        Apply shift(1) to enforce causality and prevent lookahead bias.
-        """
+        """Apply shift(1) to enforce causality and prevent lookahead bias."""
         return series.shift(1)
     
     def _is_price_based_feature(self, feature_name: str, category: str) -> bool:
-        """
-        Determine if a feature is price-based (suitable for VWAP weighting).
-        
-        Price-based features include: returns, momentum, oscillators, trends
-        Not suitable: volume, volatility (already normalized)
-        """
+        """Determine if a feature is price-based (suitable for VWAP weighting)."""
         price_based_categories = ['return', 'returns', 'momentum', 'oscillator', 'trend']
         
         if category.lower() in price_based_categories:
@@ -363,7 +660,19 @@ class VariantGenerator:
     
     def get_stats(self) -> Dict[str, Any]:
         """Get generation statistics."""
-        return self.stats.copy()
+        stats = self.stats.copy()
+        
+        # Add cache statistics
+        if self.shared_cache:
+            cache_stats = self.shared_cache.get_stats()
+            stats['cache_stats'] = cache_stats
+        
+        # Add performance metrics
+        if self.performance_monitor:
+            perf_stats = self.performance_monitor.get_performance_summary()
+            stats['performance_stats'] = perf_stats
+        
+        return stats
     
     def reset_stats(self):
         """Reset statistics."""
@@ -376,57 +685,125 @@ class VariantGenerator:
                 'volnorm': 0,
                 'vwap': 0,
                 'trend_adj': 0
-            }
+            },
+            'performance_metrics': {},
+            'cache_hits': 0,
+            'cache_misses': 0
         }
 
-
-def generate_all_variants(
+def generate_all_variants_optimized(
     features_df: pd.DataFrame,
     selected_features: List[Dict[str, Any]],
-    ohlcv_data: pd.DataFrame
+    ohlcv_data: pd.DataFrame,
+    max_workers: int = 4
 ) -> Tuple[pd.DataFrame, Dict[str, Any]]:
     """
-    Generate variants for all selected features.
+    Generate optimized variants for all selected features.
     
     Args:
         features_df: DataFrame containing all features
         selected_features: List of dicts with keys: feature_name, category, optimal_lookback
         ohlcv_data: DataFrame with OHLCV columns
+        max_workers: Maximum number of parallel workers
         
     Returns:
         Tuple of (variants_df, statistics)
     """
-    generator = VariantGenerator()
+    generator = OptimizedVariantGenerator()
     all_variants = {}
     
-    tprint_info(f"🔄 Generating variants for {len(selected_features)} features...")
+    tprint_info(f"🔄 Generating optimized variants for {len(selected_features)} features...")
     
-    for i, feature_info in enumerate(selected_features):
-        feature_name = feature_info['feature_name']
-        category = feature_info['category']
-        optimal_lookback = feature_info['optimal_lookback']
-        
-        if feature_name not in features_df.columns:
-            tprint_warning(f"⚠️ Feature {feature_name} not found in DataFrame, skipping...")
-            continue
-        
+    # Use parallel processing if available
+    if max_workers > 1 and len(selected_features) > 10:
         try:
-            variants = generator.generate_variants(
-                features_df,
-                feature_name,
-                category,
-                optimal_lookback,
-                ohlcv_data
-            )
-            
-            all_variants.update(variants)
-            
-            if (i + 1) % 10 == 0:
-                tprint_info(f"  Progress: {i+1}/{len(selected_features)} features processed")
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                futures = []
                 
+                for feature_info in selected_features:
+                    feature_name = feature_info['feature_name']
+                    category = feature_info['category']
+                    optimal_lookback = feature_info['optimal_lookback']
+                    
+                    if feature_name not in features_df.columns:
+                        tprint_warning(f"⚠️ Feature {feature_name} not found in DataFrame, skipping...")
+                        continue
+                    
+                    future = executor.submit(
+                        generator.generate_variants,
+                        features_df,
+                        feature_name,
+                        category,
+                        optimal_lookback,
+                        ohlcv_data
+                    )
+                    futures.append((feature_name, future))
+                
+                # Collect results
+                for feature_name, future in futures:
+                    try:
+                        variants = future.result(timeout=60)  # 60 second timeout
+                        all_variants.update(variants)
+                    except Exception as e:
+                        tprint_error(f"❌ Failed to generate variants for {feature_name}: {e}")
+                        generator.stats['failed_variants'].append(feature_name)
+        
         except Exception as e:
-            tprint_error(f"❌ Failed to generate variants for {feature_name}: {e}")
-            generator.stats['failed_variants'].append(feature_name)
+            tprint_warning(f"⚠️ Parallel processing failed, falling back to sequential: {e}")
+            # Fallback to sequential processing
+            for i, feature_info in enumerate(selected_features):
+                feature_name = feature_info['feature_name']
+                category = feature_info['category']
+                optimal_lookback = feature_info['optimal_lookback']
+                
+                if feature_name not in features_df.columns:
+                    tprint_warning(f"⚠️ Feature {feature_name} not found in DataFrame, skipping...")
+                    continue
+                
+                try:
+                    variants = generator.generate_variants(
+                        features_df,
+                        feature_name,
+                        category,
+                        optimal_lookback,
+                        ohlcv_data
+                    )
+                    all_variants.update(variants)
+                    
+                    if (i + 1) % 10 == 0:
+                        tprint_info(f"  Progress: {i+1}/{len(selected_features)} features processed")
+                        
+                except Exception as e:
+                    tprint_error(f"❌ Failed to generate variants for {feature_name}: {e}")
+                    generator.stats['failed_variants'].append(feature_name)
+    
+    else:
+        # Sequential processing
+        for i, feature_info in enumerate(selected_features):
+            feature_name = feature_info['feature_name']
+            category = feature_info['category']
+            optimal_lookback = feature_info['optimal_lookback']
+            
+            if feature_name not in features_df.columns:
+                tprint_warning(f"⚠️ Feature {feature_name} not found in DataFrame, skipping...")
+                continue
+            
+            try:
+                variants = generator.generate_variants(
+                    features_df,
+                    feature_name,
+                    category,
+                    optimal_lookback,
+                    ohlcv_data
+                )
+                all_variants.update(variants)
+                
+                if (i + 1) % 10 == 0:
+                    tprint_info(f"  Progress: {i+1}/{len(selected_features)} features processed")
+                    
+            except Exception as e:
+                tprint_error(f"❌ Failed to generate variants for {feature_name}: {e}")
+                generator.stats['failed_variants'].append(feature_name)
     
     # Create DataFrame from variants
     variants_df = pd.DataFrame(all_variants, index=features_df.index)
@@ -435,8 +812,286 @@ def generate_all_variants(
     tprint_success(f"✅ Generated {len(variants_df.columns)} total variants from {len(selected_features)} features")
     tprint_info(f"  Breakdown: {stats['variants_by_type']}")
     
-    if stats['failed_variants']:
+    # Add detailed expansion analysis
+    expected_max_variants = len(selected_features) * 4
+    actual_variants = len(variants_df.columns)
+    expansion_ratio = actual_variants / len(selected_features)
+    expansion_percentage = (actual_variants / expected_max_variants) * 100
+    
+    tprint_info(f"📊 VARIANT EXPANSION SUMMARY:")
+    tprint_info(f"  📈 Input features: {len(selected_features)}")
+    tprint_info(f"  📈 Expected maximum variants: {expected_max_variants}")
+    tprint_info(f"  📈 Actual variants generated: {actual_variants}")
+    tprint_info(f"  📈 Expansion ratio: {expansion_ratio:.1f}x")
+    tprint_info(f"  📈 Expansion percentage: {expansion_percentage:.1f}%")
+    tprint_info(f"  📈 Missing variants: {expected_max_variants - actual_variants}")
+    
+    # Category-wise breakdown
+    category_stats = {}
+    for feature_info in selected_features:
+        category = feature_info['category']
+        if category not in category_stats:
+            category_stats[category] = {'features': 0, 'expected_variants': 0, 'actual_variants': 0}
+        category_stats[category]['features'] += 1
+        category_stats[category]['expected_variants'] += 4
+    
+    # Count actual variants by category (approximate)
+    for variant_name in variants_df.columns:
+        base_name = variant_name.replace('_base', '').replace('_volnorm', '').replace('_vwap', '').replace('_trend_adj', '')
+        for feature_info in selected_features:
+            if feature_info['feature_name'] == base_name:
+                category = feature_info['category']
+                if category in category_stats:
+                    category_stats[category]['actual_variants'] += 1
+                break
+    
+    tprint_info(f"📊 CATEGORY-WISE BREAKDOWN:")
+    for category, stats in category_stats.items():
+        features = stats['features']
+        expected = stats['expected_variants']
+        actual = stats['actual_variants']
+        ratio = actual / features if features > 0 else 0
+        percentage = (actual / expected) * 100 if expected > 0 else 0
+        tprint_info(f"  📊 {category}: {actual}/{expected} variants ({ratio:.1f}x, {percentage:.1f}%)")
+    
+    if stats.get('failed_variants'):
         tprint_warning(f"⚠️ Failed variants: {len(stats['failed_variants'])}")
+        tprint_warning(f"⚠️ Failed features: {stats['failed_variants']}")
     
     return variants_df, stats
 
+
+def generate_cross_timeframe_features(
+    variant_features: pd.DataFrame,
+    selected_features: List[Dict],
+    generated_features: pd.DataFrame,
+    ohlcv_data: pd.DataFrame,
+    timeframe_multipliers: List[int] = [3, 6, 9, 27]
+) -> Tuple[pd.DataFrame, Dict]:
+    """
+    Generate cross-timeframe features by creating ratio-based interactions between different lookback periods.
+    
+    For each variant feature, generates additional timeframe versions (3x, 6x, 9x, 27x lookback) and creates
+    ratio interactions between the base timeframe and each extended timeframe.
+    
+    Args:
+        variant_features: DataFrame with variant features (base, volnorm, vwap, trend_adj)
+        selected_features: List of dicts with feature info (feature_name, category, optimal_lookback)
+        generated_features: Original features DataFrame for lookback reference
+        ohlcv_data: OHLCV data for feature recalculation
+        timeframe_multipliers: List of multipliers for extended timeframes (default: [3, 6, 9, 27])
+        
+    Returns:
+        Tuple of (cross_timeframe_df, statistics)
+    """
+    tprint_info(f"🔄 Generating cross-timeframe features with multipliers: {timeframe_multipliers}")
+    tprint_info(f"🔍 DEBUG: Input variant_features shape: {variant_features.shape}")
+    
+    if len(variant_features.columns) == 0:
+        tprint_warning("⚠️ No variant features available for cross-timeframe generation")
+        return pd.DataFrame(), {'cross_timeframe_features': 0, 'failed_generations': 0}
+    
+    # Import math validation for safe division
+    try:
+        from src.utils.math_validation import safe_divide
+    except ImportError:
+        tprint_warning("⚠️ Math validation not available, using basic division")
+        def safe_divide(a, b, default=0.0):
+            return np.where(np.abs(b) > 1e-10, a / b, default)
+    
+    # Create lookback mapping from selected features
+    lookback_mapping = {}
+    for feature_info in selected_features:
+        feature_name = feature_info['feature_name']
+        optimal_lookback = feature_info['optimal_lookback']
+        lookback_mapping[feature_name] = int(optimal_lookback)
+    
+    tprint_info(f"🔍 DEBUG: Lookback mapping created for {len(lookback_mapping)} features")
+    
+    cross_timeframe_features = {}
+    processed_count = 0
+    failed_count = 0
+    
+    # Process each variant feature
+    for variant_col in variant_features.columns:
+        try:
+            # Extract base feature name and variant type
+            base_feature_name = _extract_base_feature_name(variant_col)
+            variant_type = _extract_variant_type(variant_col)
+            
+            if base_feature_name not in lookback_mapping:
+                tprint_warning(f"⚠️ No lookback found for base feature {base_feature_name}, skipping")
+                failed_count += 1
+                continue
+            
+            base_lookback = lookback_mapping[base_feature_name]
+            base_feature_series = variant_features[variant_col]
+            
+            # Generate cross-timeframe versions and ratios
+            for multiplier in timeframe_multipliers:
+                extended_lookback = base_lookback * multiplier
+                
+                # Generate extended timeframe version
+                extended_feature = _generate_extended_timeframe_variant(
+                    base_feature_name=base_feature_name,
+                    variant_type=variant_type,
+                    extended_lookback=extended_lookback,
+                    generated_features=generated_features,
+                    ohlcv_data=ohlcv_data
+                )
+                
+                if extended_feature is not None:
+                    # Create ratio interaction: base / extended
+                    ratio_name = f"{variant_col}_{multiplier}x_ratio"
+                    ratio_feature = safe_divide(
+                        base_feature_series, 
+                        extended_feature, 
+                        default=1.0
+                    )
+                    
+                    # Apply causality enforcement
+                    ratio_feature = ratio_feature.shift(1)
+                    
+                    # Store the cross-timeframe ratio feature
+                    cross_timeframe_features[ratio_name] = ratio_feature
+                    
+                    tprint_info(f"    ✅ Generated {ratio_name} (lookback {base_lookback}/{extended_lookback})")
+                else:
+                    tprint_warning(f"    ⚠️ Failed to generate extended timeframe for {variant_col} with {multiplier}x lookback")
+                    failed_count += 1
+            
+            processed_count += 1
+            
+            if processed_count % 10 == 0:
+                tprint_info(f"  Progress: {processed_count}/{len(variant_features.columns)} variant features processed")
+                
+        except Exception as e:
+            tprint_error(f"❌ Failed to process variant {variant_col}: {e}")
+            failed_count += 1
+    
+    # Create DataFrame from cross-timeframe features
+    if cross_timeframe_features:
+        cross_timeframe_df = pd.DataFrame(cross_timeframe_features, index=variant_features.index)
+        
+        stats = {
+            'cross_timeframe_features': len(cross_timeframe_df.columns),
+            'processed_variants': processed_count,
+            'failed_generations': failed_count,
+            'success_rate': processed_count / (processed_count + failed_count) * 100 if (processed_count + failed_count) > 0 else 0
+        }
+        
+        tprint_success(f"✅ Generated {len(cross_timeframe_df.columns)} cross-timeframe ratio features")
+        tprint_info(f"📊 Cross-timeframe generation summary:")
+        tprint_info(f"  📈 Processed variants: {processed_count}")
+        tprint_info(f"  📈 Generated ratios: {len(cross_timeframe_df.columns)}")
+        tprint_info(f"  📈 Failed generations: {failed_count}")
+        tprint_info(f"  📈 Success rate: {stats['success_rate']:.1f}%")
+        
+        return cross_timeframe_df, stats
+    else:
+        tprint_warning("⚠️ No cross-timeframe features generated")
+        return pd.DataFrame(), {'cross_timeframe_features': 0, 'failed_generations': failed_count}
+
+
+def _extract_base_feature_name(variant_col: str) -> str:
+    """Extract base feature name from variant column name."""
+    # Remove variant suffixes
+    suffixes_to_remove = ['_base', '_volnorm', '_vwap', '_trend_adj']
+    base_name = variant_col
+    
+    for suffix in suffixes_to_remove:
+        if base_name.endswith(suffix):
+            base_name = base_name[:-len(suffix)]
+            break
+    
+    return base_name
+
+
+def _extract_variant_type(variant_col: str) -> str:
+    """Extract variant type from variant column name."""
+    if variant_col.endswith('_volnorm'):
+        return 'volnorm'
+    elif variant_col.endswith('_vwap'):
+        return 'vwap'
+    elif variant_col.endswith('_trend_adj'):
+        return 'trend_adj'
+    else:
+        return 'base'
+
+
+def _generate_extended_timeframe_variant(
+    base_feature_name: str,
+    variant_type: str,
+    extended_lookback: int,
+    generated_features: pd.DataFrame,
+    ohlcv_data: pd.DataFrame
+) -> Optional[pd.Series]:
+    """
+    Generate extended timeframe version of a feature with different lookback period.
+    
+    Args:
+        base_feature_name: Name of the base feature
+        variant_type: Type of variant (base, volnorm, vwap, trend_adj)
+        extended_lookback: Extended lookback period
+        generated_features: Original features DataFrame
+        ohlcv_data: OHLCV data for recalculation
+        
+    Returns:
+        Series with extended timeframe feature or None if generation fails
+    """
+    try:
+        # Get the base feature series
+        if base_feature_name not in generated_features.columns:
+            tprint_warning(f"⚠️ Base feature {base_feature_name} not found in generated_features")
+            return None
+        
+        base_feature_series = generated_features[base_feature_name]
+        
+        # Create extended timeframe version by applying rolling operations with extended lookback
+        if variant_type == 'base':
+            # For base features, use rolling mean with extended lookback
+            extended_feature = base_feature_series.rolling(
+                window=extended_lookback, 
+                min_periods=max(1, extended_lookback // 2)
+            ).mean()
+        elif variant_type == 'volnorm':
+            # For volatility normalized features, recalculate with extended lookback
+            extended_feature = base_feature_series.rolling(
+                window=extended_lookback,
+                min_periods=max(1, extended_lookback // 2)
+            ).std()
+        elif variant_type == 'vwap':
+            # For VWAP features, use extended lookback for volume-weighted calculation
+            if 'volume' in ohlcv_data.columns:
+                volume = ohlcv_data['volume']
+                extended_feature = base_feature_series.rolling(
+                    window=extended_lookback,
+                    min_periods=max(1, extended_lookback // 2)
+                ).mean()
+            else:
+                extended_feature = base_feature_series.rolling(
+                    window=extended_lookback,
+                    min_periods=max(1, extended_lookback // 2)
+                ).mean()
+        elif variant_type == 'trend_adj':
+            # For trend-adjusted features, use extended lookback for trend calculation
+            extended_feature = base_feature_series.rolling(
+                window=extended_lookback,
+                min_periods=max(1, extended_lookback // 2)
+            ).mean()
+        else:
+            # Default to rolling mean
+            extended_feature = base_feature_series.rolling(
+                window=extended_lookback,
+                min_periods=max(1, extended_lookback // 2)
+            ).mean()
+        
+        # Fill NaN values and ensure proper indexing
+        extended_feature = extended_feature.fillna(method='ffill').fillna(0)
+        extended_feature = extended_feature.reindex(base_feature_series.index, method='ffill')
+        
+        return extended_feature
+        
+    except Exception as e:
+        tprint_error(f"❌ Failed to generate extended timeframe feature for {base_feature_name} ({variant_type}): {e}")
+        return None

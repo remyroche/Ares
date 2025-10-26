@@ -9,6 +9,9 @@ import logging
 from typing import Any, Dict, List, Optional
 from datetime import datetime
 
+import pandas as pd
+import numpy as np
+
 from src.training.steps.base_step import BaseStep
 from src.utils.logger import system_logger
 from src.utils.tprint import tprint
@@ -54,14 +57,16 @@ class FeatureGenerationFeatureGenerationStep(BaseStep):
             features = await self._generate_features(market_data, config)
 
             # Save generated features as artifact
+            timeframe = config.get('timeframe', '15m')
+            artifact_name = f'generated_features_{timeframe}'
             features_artifact_path = self._save_artifact(
                 data=features,
-                artifact_name='generated_features',
+                artifact_name=artifact_name,
                 artifact_type='data',
                 metadata={
                     'symbol': config['symbol'],
                     'exchange': config['exchange'],
-                    'timeframe': config['timeframe'],
+                    'timeframe': timeframe,
                     'execution_mode': config.get('execution_mode', 'light'),
                     'created_at': datetime.now().isoformat(),
                     'n_features': len(features.columns) if hasattr(features, 'columns') else 0
@@ -113,6 +118,50 @@ class FeatureGenerationFeatureGenerationStep(BaseStep):
                         tprint(f"   {i}. {feature_name}")
                     if len(metrics['constant_feature_names']) > 10:
                         tprint(f"   ... and {len(metrics['constant_feature_names']) - 10} more")
+                
+                # Diagnostic: Print detailed info about constant features
+                if 'constant_feature_names' in metrics and metrics['constant_feature_names']:
+                    tprint("🔍 DIAGNOSTIC: Investigating constant features...")
+                    for feat_name in metrics['constant_feature_names'][:5]:  # Check first 5
+                        feat_data = features[feat_name]
+                        tprint(f"  • {feat_name}:")
+                        tprint(f"    - Unique values: {feat_data.nunique()}")
+                        tprint(f"    - Non-null count: {feat_data.notna().sum()}")
+                        if feat_data.nunique() <= 3:  # Show sample values for low-cardinality
+                            unique_vals = feat_data.dropna().unique()
+                            tprint(f"    - Sample values: {unique_vals[:5]}")
+                        tprint(f"    - Std deviation: {feat_data.std():.6f}")
+                
+                # Optionally remove constant features (configurable)
+                remove_constants = config.get('remove_constant_features', True)  # Default: True
+                if remove_constants and 'constant_feature_names' in metrics and metrics['constant_feature_names']:
+                    tprint(f"🗑️  Removing {len(metrics['constant_feature_names'])} constant features...")
+                    features = features.drop(columns=metrics['constant_feature_names'])
+                    tprint(f"✅ Removed constant features. Remaining: {len(features.columns)} features")
+                    # Update metrics after removal
+                    metrics['n_features_generated'] = len(features.columns)
+                    metrics['constant_features'] = 0
+                    metrics['constant_feature_names'] = []
+                    # Re-save artifact with cleaned features
+                    tprint("💾 Re-saving artifact with cleaned features...")
+                    features_artifact_path = self._save_artifact(
+                        data=features,
+                        artifact_name=artifact_name,
+                        artifact_type='data',
+                        metadata={
+                            'symbol': config['symbol'],
+                            'exchange': config['exchange'],
+                            'timeframe': timeframe,
+                            'execution_mode': config.get('execution_mode', 'light'),
+                            'created_at': datetime.now().isoformat(),
+                            'n_features': len(features.columns),
+                            'removed_constants': len(metrics.get('constant_feature_names', []))
+                        }
+                    )
+                    artifacts['generated_features'] = features_artifact_path
+                    tprint(f"✅ Artifact updated: {features_artifact_path}")
+                elif not remove_constants:
+                    tprint("ℹ️  Keeping constant features (remove_constant_features=False)")
             
             # Generate outcome report
             report_path = self._generate_outcome_report(metrics, artifacts, config)
@@ -187,16 +236,21 @@ class FeatureGenerationFeatureGenerationStep(BaseStep):
             'spectral_wavelet'
         ]
         
+        # Fix FeatureBank bug by disabling optimized pipeline
+        # The optimized pipeline has a bug where all features get identical values
+        tprint(f"🔧 Using FeatureBank with standard generation (fixing optimized pipeline bug)")
+        
         try:
-            # Generate features for the selected categories
+            # Generate features using FeatureBank but with optimized pipeline disabled
             generated_features = feature_bank.generate_features(
                 data=market_data,
                 categories=feature_categories,
-                use_optimized_pipeline=True,
-                progressive_loading=True
+                use_optimized_pipeline=False,  # Disable optimized pipeline to fix identical values bug
+                progressive_loading=True,
+                auto_normalize=False  # Disable automatic normalization to prevent zero-mean issue
             )
             
-            tprint(f"✅ Generated {len(generated_features.columns)} features from FeatureBank")
+            tprint(f"✅ Generated {len(generated_features.columns)} features from FeatureBank (standard mode)")
             return generated_features
             
         except Exception as e:
@@ -208,17 +262,136 @@ class FeatureGenerationFeatureGenerationStep(BaseStep):
             
             features = pd.DataFrame(index=market_data.index)
             
-            # Price-based features
-            if 'close' in market_data.columns:
-                features['returns'] = market_data['close'].pct_change()
-                features['price_ma_5'] = market_data['close'].rolling(5).mean()
-                features['price_std_5'] = market_data['close'].rolling(5).std()
+            # Generate comprehensive features manually
+            features = self._add_basic_features(features, market_data)
             
-            # Volume-based features
-            if 'volume' in market_data.columns:
-                features['volume_ma_5'] = market_data['volume'].rolling(5).mean()
+            # Fill NaN values
+            features = features.fillna(0)
             
-            return features.fillna(0)
+            tprint(f"✅ Generated {len(features.columns)} features using fallback simple generation")
+            return features
+
+    def _add_basic_features(self, features: pd.DataFrame, market_data: pd.DataFrame) -> pd.DataFrame:
+        """Add basic features as fallback when FeatureBank doesn't generate enough."""
+        import pandas as pd
+        import numpy as np
+        
+        tprint(f"🔧 Adding basic features as fallback...")
+        
+        # Price-based features (returns category)
+        if 'close' in market_data.columns:
+            features['returns_features_returns'] = market_data['close'].pct_change()
+            features['returns_features_price_ma_5'] = market_data['close'].rolling(5).mean()
+            features['returns_features_price_std_5'] = market_data['close'].rolling(5).std()
+            features['returns_features_price_ma_10'] = market_data['close'].rolling(10).mean()
+            features['returns_features_price_std_10'] = market_data['close'].rolling(10).std()
+            features['returns_features_price_ma_20'] = market_data['close'].rolling(20).mean()
+            features['returns_features_price_std_20'] = market_data['close'].rolling(20).std()
+            
+            # RSI calculation (oscillator category)
+            delta = market_data['close'].diff()
+            gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+            loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+            rs = gain / loss
+            features['oscillator_features_rsi_14'] = 100 - (100 / (1 + rs))
+            
+            # MACD (oscillator category)
+            ema_12 = market_data['close'].ewm(span=12).mean()
+            ema_26 = market_data['close'].ewm(span=26).mean()
+            features['oscillator_features_macd'] = ema_12 - ema_26
+            features['oscillator_features_macd_signal'] = features['oscillator_features_macd'].ewm(span=9).mean()
+            features['oscillator_features_macd_histogram'] = features['oscillator_features_macd'] - features['oscillator_features_macd_signal']
+        
+        # Volume-based features (volume category)
+        if 'volume' in market_data.columns:
+            features['volume_features_volume_ma_5'] = market_data['volume'].rolling(5).mean()
+            features['volume_features_volume_std_5'] = market_data['volume'].rolling(5).std()
+            features['volume_features_volume_ma_10'] = market_data['volume'].rolling(10).mean()
+            features['volume_features_volume_std_10'] = market_data['volume'].rolling(10).std()
+            features['volume_features_volume_ma_20'] = market_data['volume'].rolling(20).mean()
+            features['volume_features_volume_std_20'] = market_data['volume'].rolling(20).std()
+            
+            # Volume-price relationship
+            features['volume_features_volume_price_trend'] = market_data['volume'] * market_data['close'].pct_change()
+            features['volume_features_volume_sma_ratio'] = market_data['volume'] / market_data['volume'].rolling(20).mean()
+        
+        # High-Low features (volatility category)
+        if 'high' in market_data.columns and 'low' in market_data.columns:
+            features['volatility_features_hl_range'] = market_data['high'] - market_data['low']
+            features['volatility_features_hl_range_pct'] = features['volatility_features_hl_range'] / market_data['close']
+            features['volatility_features_hl_ma_5'] = features['volatility_features_hl_range'].rolling(5).mean()
+            features['volatility_features_hl_ma_10'] = features['volatility_features_hl_range'].rolling(10).mean()
+        
+        # Open-Close features (returns category)
+        if 'open' in market_data.columns and 'close' in market_data.columns:
+            features['returns_features_oc_return'] = (market_data['close'] - market_data['open']) / market_data['open']
+            features['returns_features_oc_abs'] = abs(features['returns_features_oc_return'])
+            features['returns_features_oc_ma_5'] = features['returns_features_oc_return'].rolling(5).mean()
+            features['returns_features_oc_ma_10'] = features['returns_features_oc_return'].rolling(10).mean()
+        
+        # Volatility features (volatility category)
+        if 'close' in market_data.columns:
+            features['volatility_features_volatility_5'] = market_data['close'].pct_change().rolling(5).std()
+            features['volatility_features_volatility_10'] = market_data['close'].pct_change().rolling(10).std()
+            features['volatility_features_volatility_20'] = market_data['close'].pct_change().rolling(20).std()
+            
+            # Bollinger Bands
+            bb_period = 20
+            bb_std = 2
+            bb_middle = market_data['close'].rolling(bb_period).mean()
+            bb_std_val = market_data['close'].rolling(bb_period).std()
+            features['volatility_features_bb_upper'] = bb_middle + (bb_std_val * bb_std)
+            features['volatility_features_bb_lower'] = bb_middle - (bb_std_val * bb_std)
+            features['volatility_features_bb_width'] = features['volatility_features_bb_upper'] - features['volatility_features_bb_lower']
+            features['volatility_features_bb_position'] = (market_data['close'] - features['volatility_features_bb_lower']) / features['volatility_features_bb_width']
+        
+        # Momentum features (momentum category)
+        if 'close' in market_data.columns:
+            features['momentum_features_momentum_5'] = market_data['close'] / market_data['close'].shift(5) - 1
+            features['momentum_features_momentum_10'] = market_data['close'] / market_data['close'].shift(10) - 1
+            features['momentum_features_momentum_20'] = market_data['close'] / market_data['close'].shift(20) - 1
+            
+            # Rate of Change
+            features['momentum_features_roc_5'] = market_data['close'].pct_change(5)
+            features['momentum_features_roc_10'] = market_data['close'].pct_change(10)
+            features['momentum_features_roc_20'] = market_data['close'].pct_change(20)
+        
+        # Trend features (trend category)
+        if 'close' in market_data.columns:
+            # Simple Moving Average crossovers
+            sma_5 = market_data['close'].rolling(5).mean()
+            sma_10 = market_data['close'].rolling(10).mean()
+            sma_20 = market_data['close'].rolling(20).mean()
+            
+            features['trend_features_sma_5_10_diff'] = sma_5 - sma_10
+            features['trend_features_sma_10_20_diff'] = sma_10 - sma_20
+            features['trend_features_sma_5_20_diff'] = sma_5 - sma_20
+            
+            # Trend strength
+            features['trend_features_trend_strength_5'] = (market_data['close'] - sma_5) / sma_5
+            features['trend_features_trend_strength_10'] = (market_data['close'] - sma_10) / sma_10
+            features['trend_features_trend_strength_20'] = (market_data['close'] - sma_20) / sma_20
+        
+        # Add some basic advanced_statistical features
+        if 'close' in market_data.columns:
+            # Skewness and Kurtosis
+            features['advanced_statistical_features_skewness_20'] = market_data['close'].pct_change().rolling(20).skew()
+            features['advanced_statistical_features_kurtosis_20'] = market_data['close'].pct_change().rolling(20).kurt()
+            
+            # Hurst-like measure (simplified)
+            returns = market_data['close'].pct_change().dropna()
+            if len(returns) > 20:
+                features['advanced_statistical_features_hurst_like'] = returns.rolling(20).apply(lambda x: np.log(np.var(x)) / np.log(len(x)) if len(x) > 1 else 0)
+        
+        # Add some basic support_resistance features
+        if 'high' in market_data.columns and 'low' in market_data.columns:
+            # Simple support/resistance levels
+            features['support_resistance_features_resistance_20'] = market_data['high'].rolling(20).max()
+            features['support_resistance_features_support_20'] = market_data['low'].rolling(20).min()
+            features['support_resistance_features_sr_position'] = (market_data['close'] - features['support_resistance_features_support_20']) / (features['support_resistance_features_resistance_20'] - features['support_resistance_features_support_20'])
+        
+        tprint(f"✅ Added {len(features.columns)} basic features as fallback")
+        return features
 
     def _generate_outcome_report(self, metrics: Dict[str, Any], artifacts: Dict[str, Any], config: Dict[str, Any]) -> Optional[str]:
         """Generate comprehensive outcome report in markdown format."""

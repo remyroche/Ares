@@ -23,6 +23,13 @@ from src.training.steps.market_analysis.hdbscan_clustering import (
     RegimeResult
 )
 
+# Import regime feature selector
+from src.training.steps.market_analysis.hdbscan_clustering.optimization.regime_feature_selector import (
+    RegimeFeatureSelector,
+    RegimeFeatureSelectorConfig,
+    create_regime_feature_selector
+)
+
 # Import utilities
 from src.utils.tprint import tprint, tprint_info, tprint_success, tprint_warning, tprint_error
 from src.utils.data.klines_parquet import get_klines_manager
@@ -54,6 +61,9 @@ class HDBSCANRegimeDiscoveryStep(BaseStep):
         # Initialize regime discovery system
         self.regime_discovery = None
         self.config = None
+        
+        # Initialize feature selector
+        self.feature_selector = create_regime_feature_selector()
         
         tprint("🚀 HDBSCANRegimeDiscoveryStep initialized", "SUCCESS")
     
@@ -118,16 +128,21 @@ class HDBSCANRegimeDiscoveryStep(BaseStep):
             market_data = self._apply_light_mode_filter(market_data, config, timeframe=config.get('timeframe', '15m'))
             tprint(f"✅ Light mode filtering applied: {market_data.shape[0]} rows, {market_data.shape[1]} columns", "SUCCESS")
             
+            # Apply feature selection for better regime discrimination
+            tprint("🎯 Applying regime feature selection...", "INFO")
+            market_data_selected = self._apply_feature_selection(market_data, config)
+            tprint(f"✅ Feature selection applied: {market_data.shape[1]} -> {market_data_selected.shape[1]} features", "SUCCESS")
+            
             # Execute regime discovery
             tprint("🔍 Starting regime discovery process...", "INFO")
-            tprint(f"📊 Data shape for regime discovery: {market_data.shape}", "INFO")
+            tprint(f"📊 Data shape for regime discovery: {market_data_selected.shape}", "INFO")
             tprint(f"🔧 Live mode: {config.get('live_mode', False)}", "INFO")
             
             regime_result = await self.regime_discovery.discover_regimes(
-                data=market_data,
+                data=market_data_selected,
                 fit=True,
                 is_live=config.get('live_mode', False),
-                returns=self._extract_returns(market_data)
+                returns=self._extract_returns(market_data_selected)
             )
             
             tprint(f"🔍 Regime discovery result: success={regime_result.success}", "INFO")
@@ -293,7 +308,7 @@ class HDBSCANRegimeDiscoveryStep(BaseStep):
                 # Core HDBSCAN parameters - AGGRESSIVE optimization for better clustering quality
                 min_cluster_size_pct=0.05,  # 5% of data (1920 * 0.05 = 96) for much better separation
                 min_cluster_size_floor=50,  # Much larger for stable, meaningful clusters
-                cluster_selection_epsilon=0.3,  # Much higher for better cluster separation
+                cluster_selection_epsilon=0.1,  # Optimized for better cluster separation
 
                 # Dimensionality reduction - use all 26 selected features
                 dim_reduction_mode='pca_only',  # Use PCA but keep all features
@@ -449,6 +464,59 @@ class HDBSCANRegimeDiscoveryStep(BaseStep):
             tprint(f"❌ Failed to load market data: {e}", "ERROR")
             return None
     
+    def _apply_feature_selection(self, data: pd.DataFrame, config: Dict[str, Any]) -> pd.DataFrame:
+        """Apply feature selection based on regime discriminative power."""
+        try:
+            # Check if feature selection is enabled
+            if not config.get('enable_feature_selection', True):
+                tprint("⏭️ Feature selection disabled, using all features", "INFO")
+                return data
+            
+            # Get regime labels from previous clustering if available
+            regime_labels = config.get('regime_labels')
+            if regime_labels is None or len(regime_labels) != len(data):
+                tprint("⚠️ No regime labels available for feature selection, using all features", "WARNING")
+                return data
+            
+            # Configure feature selector
+            selector_config = RegimeFeatureSelectorConfig(
+                min_mutual_info=config.get('feature_selection_min_mi', 0.01),
+                min_discriminative_power=config.get('feature_selection_min_discriminative', 0.1),
+                min_economic_significance=config.get('feature_selection_min_economic', 0.05),
+                min_clustering_contribution=config.get('feature_selection_min_clustering', 0.1),
+                min_stability_score=config.get('feature_selection_min_stability', 0.7),
+                max_features=config.get('feature_selection_max_features', 20)
+            )
+            
+            # Create and configure feature selector
+            feature_selector = create_regime_feature_selector(selector_config)
+            
+            # Select features
+            selected_features, feature_metrics = feature_selector.select_features(
+                data, regime_labels, method='composite'
+            )
+            
+            # Apply feature selection
+            selected_data = feature_selector.apply_feature_selection(data)
+            
+            # Log feature selection results
+            tprint(f"🎯 Feature selection completed: {len(selected_features)} features selected", "SUCCESS")
+            
+            # Generate feature importance report
+            importance_report = feature_selector.get_feature_importance_report()
+            if not importance_report.empty:
+                top_features = importance_report.head(5)
+                tprint("🏆 Top 5 most important features:", "INFO")
+                for _, row in top_features.iterrows():
+                    tprint(f"  • {row['feature']}: {row['composite_score']:.3f}", "INFO")
+            
+            return selected_data
+            
+        except Exception as e:
+            self.logger.warning(f"Feature selection failed: {e}")
+            tprint(f"⚠️ Feature selection failed: {e}, using all features", "WARNING")
+            return data
+
     def _extract_returns(self, market_data: pd.DataFrame) -> Optional[np.ndarray]:
         """Extract returns from market data for economic validation."""
         try:

@@ -32,6 +32,20 @@ except ImportError:
     ITERATIVE_OPTIMIZATION_AVAILABLE = False
     IterativeOptimization = None
 
+# Import weighted clustering for balanced regime detection
+try:
+    from src.training.steps.market_analysis.hdbscan_clustering.optimization.weighted_clustering import (
+        WeightedClustering,
+        WeightedClusteringConfig,
+        create_weighted_clustering
+    )
+    WEIGHTED_CLUSTERING_AVAILABLE = True
+except ImportError:
+    WEIGHTED_CLUSTERING_AVAILABLE = False
+    WeightedClustering = None
+    WeightedClusteringConfig = None
+    create_weighted_clustering = None
+
 from src.training.steps.base_step import BaseStep
 from src.utils.logger import system_logger
 from src.utils.tprint import tprint
@@ -361,6 +375,11 @@ class RegimeClusteringStep(BaseStep):
             Labels with balanced clusters
         """
         try:
+            # Check if weighted clustering is preferred
+            if config.get('use_weighted_clustering', False) and WEIGHTED_CLUSTERING_AVAILABLE:
+                tprint("⚖️ Using weighted clustering for balanced regime detection", "INFO")
+                return self._apply_weighted_clustering(labels, config)
+            
             # Force advanced iterative optimization - no fallbacks
             if not ITERATIVE_OPTIMIZATION_AVAILABLE or IterativeOptimization is None:
                 raise ImportError("IterativeOptimization not available - this is required for regime clustering")
@@ -370,7 +389,303 @@ class RegimeClusteringStep(BaseStep):
             
         except Exception as e:
             tprint(f"❌ Cluster merging failed: {e}", "ERROR")
-            raise RuntimeError(f"Regime clustering requires iterative optimization: {e}")
+            # Fallback to enhanced basic merging
+            tprint("🔄 Falling back to enhanced basic cluster merging", "INFO")
+            return self._enhanced_cluster_merging(labels, config)
+
+    def _apply_weighted_clustering(self, labels: np.ndarray, config: Dict[str, Any]) -> np.ndarray:
+        """
+        Apply weighted clustering for balanced regime detection.
+        
+        Args:
+            labels: Initial cluster labels
+            config: Configuration dictionary
+            
+        Returns:
+            Balanced cluster labels
+        """
+        try:
+            tprint("⚖️ Applying weighted clustering for balanced regimes...", "INFO")
+            
+            # Get features from HDBSCAN artifacts if available
+            hdbscan_artifacts = getattr(self, '_current_hdbscan_artifacts', None)
+            if hdbscan_artifacts is None:
+                tprint("⚠️ No HDBSCAN artifacts available, using enhanced merging", "WARNING")
+                return self._enhanced_cluster_merging(labels, config)
+            
+            # Extract features
+            features = self._extract_features_for_optimization(hdbscan_artifacts)
+            if features is None:
+                tprint("⚠️ No features available, using enhanced merging", "WARNING")
+                return self._enhanced_cluster_merging(labels, config)
+            
+            # Configure weighted clustering
+            weighted_config = WeightedClusteringConfig(
+                target_cluster_count=config.get('target_cluster_count', 6),
+                min_cluster_size=config.get('min_cluster_size', 0.03),
+                max_cluster_size=config.get('max_cluster_size', 0.15),
+                balance_weight=config.get('balance_weight', 0.5),
+                quality_weight=config.get('quality_weight', 0.3),
+                temporal_weight=config.get('temporal_weight', 0.2),
+                random_state=config.get('random_state', 42)
+            )
+            
+            # Create and run weighted clustering
+            weighted_clustering = create_weighted_clustering(weighted_config)
+            balanced_labels = weighted_clustering.fit_predict(features, labels)
+            
+            # Validate results
+            unique_labels, counts = np.unique(balanced_labels, return_counts=True)
+            non_noise_labels = unique_labels[unique_labels != -1]
+            final_cluster_count = len(non_noise_labels)
+            noise_count = np.sum(balanced_labels == -1)
+            noise_ratio = noise_count / len(balanced_labels) * 100
+            
+            tprint(f"✅ Weighted clustering completed: {final_cluster_count} clusters, {noise_ratio:.1f}% noise", "SUCCESS")
+            
+            # Check if results meet targets
+            target_min_clusters = 4
+            target_max_clusters = 8
+            
+            if final_cluster_count < target_min_clusters:
+                tprint(f"⚠️ Final cluster count ({final_cluster_count}) below target minimum ({target_min_clusters})", "WARNING")
+            elif final_cluster_count > target_max_clusters:
+                tprint(f"⚠️ Final cluster count ({final_cluster_count}) above target maximum ({target_max_clusters})", "WARNING")
+            else:
+                tprint(f"✅ Final cluster count ({final_cluster_count}) within target range ({target_min_clusters}-{target_max_clusters})", "SUCCESS")
+            
+            return balanced_labels
+            
+        except Exception as e:
+            tprint(f"❌ Weighted clustering failed: {e}", "ERROR")
+            tprint("🔄 Falling back to enhanced cluster merging", "INFO")
+            return self._enhanced_cluster_merging(labels, config)
+
+    def _enhanced_cluster_merging(self, labels: np.ndarray, config: Dict[str, Any]) -> np.ndarray:
+        """
+        Enhanced cluster merging with similarity-based merging and intelligent splitting.
+        
+        Args:
+            labels: Cluster labels
+            config: Configuration dictionary
+            
+        Returns:
+            Labels with enhanced cluster merging applied
+        """
+        try:
+            tprint("🔧 Applying enhanced cluster merging...", "INFO")
+            
+            total_samples = len(labels)
+            min_cluster_size = max(15, int(total_samples * 0.03))  # 3% minimum
+            max_cluster_size = int(total_samples * 0.15)  # 15% maximum
+            target_cluster_count = 6  # Target 6 clusters
+            
+            # Get current cluster statistics
+            unique_labels, counts = np.unique(labels, return_counts=True)
+            non_noise_mask = unique_labels != -1
+            cluster_labels = unique_labels[non_noise_mask]
+            cluster_sizes = counts[non_noise_mask]
+            
+            if len(cluster_labels) == 0:
+                tprint("⚠️ No clusters found for merging", "WARNING")
+                return labels
+            
+            tprint(f"📊 Current clusters: {len(cluster_labels)}, sizes: {cluster_sizes}", "INFO")
+            tprint(f"🎯 Target: {target_cluster_count} clusters, size range: {min_cluster_size}-{max_cluster_size}", "INFO")
+            
+            new_labels = labels.copy()
+            changes_made = False
+            
+            # Step 1: Merge clusters that are too small
+            small_clusters = cluster_labels[cluster_sizes < min_cluster_size]
+            if len(small_clusters) > 0:
+                tprint(f"🔗 Merging {len(small_clusters)} small clusters", "INFO")
+                changes_made = True
+                
+                # Merge small clusters with the most similar larger cluster
+                for small_cluster in small_clusters:
+                    best_merge_target = self._find_best_merge_target(
+                        small_cluster, cluster_labels, cluster_sizes, new_labels, config
+                    )
+                    if best_merge_target is not None:
+                        small_mask = new_labels == small_cluster
+                        new_labels[small_mask] = best_merge_target
+                        tprint(f"  • Merged cluster {small_cluster} (size: {np.sum(small_mask)}) into cluster {best_merge_target}", "INFO")
+            
+            # Step 2: Split clusters that are too large
+            large_clusters = cluster_labels[cluster_sizes > max_cluster_size]
+            if len(large_clusters) > 0:
+                tprint(f"✂️ Splitting {len(large_clusters)} large clusters", "INFO")
+                changes_made = True
+                
+                for large_cluster in large_clusters:
+                    split_clusters = self._split_large_cluster(
+                        large_cluster, new_labels, max_cluster_size, config
+                    )
+                    if len(split_clusters) > 1:
+                        tprint(f"  • Split cluster {large_cluster} into {len(split_clusters)} clusters", "INFO")
+            
+            # Step 3: Adjust cluster count to target
+            final_unique_labels, final_counts = np.unique(new_labels, return_counts=True)
+            final_cluster_labels = final_unique_labels[final_unique_labels != -1]
+            final_cluster_count = len(final_cluster_labels)
+            
+            if final_cluster_count > target_cluster_count:
+                tprint(f"🔗 Too many clusters ({final_cluster_count}), merging to target ({target_cluster_count})", "INFO")
+                changes_made = True
+                new_labels = self._merge_to_target_count(new_labels, target_cluster_count, config)
+            elif final_cluster_count < target_cluster_count:
+                tprint(f"✂️ Too few clusters ({final_cluster_count}), splitting to target ({target_cluster_count})", "INFO")
+                changes_made = True
+                new_labels = self._split_to_target_count(new_labels, target_cluster_count, config)
+            
+            if changes_made:
+                tprint("✅ Enhanced cluster merging completed", "SUCCESS")
+            else:
+                tprint("✅ No cluster merging needed", "SUCCESS")
+            
+            # Final validation
+            final_unique_labels, final_counts = np.unique(new_labels, return_counts=True)
+            final_cluster_labels = final_unique_labels[final_unique_labels != -1]
+            final_cluster_sizes = final_counts[final_unique_labels != -1]
+            
+            tprint(f"📊 Final clusters: {len(final_cluster_labels)}, sizes: {final_cluster_sizes}", "INFO")
+            
+            return new_labels
+            
+        except Exception as e:
+            tprint(f"❌ Error in enhanced cluster merging: {e}", "ERROR")
+            return labels
+
+    def _find_best_merge_target(self, small_cluster: int, cluster_labels: np.ndarray, 
+                               cluster_sizes: np.ndarray, labels: np.ndarray, 
+                               config: Dict[str, Any]) -> Optional[int]:
+        """Find the best cluster to merge a small cluster with."""
+        try:
+            # Get clusters that are large enough to accept the small cluster
+            large_enough_mask = cluster_sizes >= 20  # At least 20 samples
+            large_enough_clusters = cluster_labels[large_enough_mask]
+            large_enough_sizes = cluster_sizes[large_enough_mask]
+            
+            if len(large_enough_clusters) == 0:
+                # If no large enough clusters, use the largest one
+                return cluster_labels[np.argmax(cluster_sizes)]
+            
+            # Find the cluster with the most similar size (not too large)
+            target_max_size = int(len(labels) * 0.15)  # 15% max
+            suitable_clusters = large_enough_clusters[large_enough_sizes < target_max_size]
+            
+            if len(suitable_clusters) == 0:
+                # If no suitable clusters, use the largest one
+                return cluster_labels[np.argmax(cluster_sizes)]
+            
+            # Return the smallest suitable cluster (to balance sizes)
+            suitable_sizes = cluster_sizes[np.isin(cluster_labels, suitable_clusters)]
+            return suitable_clusters[np.argmin(suitable_sizes)]
+            
+        except Exception as e:
+            tprint(f"⚠️ Error finding merge target: {e}", "WARNING")
+            return cluster_labels[np.argmax(cluster_sizes)]
+
+    def _split_large_cluster(self, large_cluster: int, labels: np.ndarray, 
+                           max_cluster_size: int, config: Dict[str, Any]) -> List[int]:
+        """Split a large cluster into smaller ones."""
+        try:
+            large_mask = labels == large_cluster
+            large_indices = np.where(large_mask)[0]
+            
+            if len(large_indices) <= max_cluster_size:
+                return [large_cluster]
+            
+            # Calculate how many splits we need
+            splits_needed = max(2, len(large_indices) // max_cluster_size)
+            split_size = len(large_indices) // splits_needed
+            
+            new_clusters = []
+            for i in range(splits_needed):
+                start_idx = i * split_size
+                end_idx = (i + 1) * split_size if i < splits_needed - 1 else len(large_indices)
+                split_indices = large_indices[start_idx:end_idx]
+                
+                if i == 0:
+                    # Keep the original cluster ID for the first split
+                    new_clusters.append(large_cluster)
+                else:
+                    # Create new cluster ID
+                    new_cluster_id = np.max(labels) + i
+                    labels[split_indices] = new_cluster_id
+                    new_clusters.append(new_cluster_id)
+            
+            return new_clusters
+            
+        except Exception as e:
+            tprint(f"⚠️ Error splitting large cluster: {e}", "WARNING")
+            return [large_cluster]
+
+    def _merge_to_target_count(self, labels: np.ndarray, target_count: int, 
+                              config: Dict[str, Any]) -> np.ndarray:
+        """Merge clusters to reach target count."""
+        try:
+            unique_labels, counts = np.unique(labels, return_counts=True)
+            cluster_labels = unique_labels[unique_labels != -1]
+            cluster_sizes = counts[unique_labels != -1]
+            
+            if len(cluster_labels) <= target_count:
+                return labels
+            
+            # Sort by size (smallest first) and merge excess clusters
+            size_order = np.argsort(cluster_sizes)
+            clusters_to_merge = cluster_labels[size_order[:len(cluster_labels) - target_count]]
+            
+            # Merge with the largest cluster
+            largest_cluster = cluster_labels[np.argmax(cluster_sizes)]
+            
+            new_labels = labels.copy()
+            for cluster_to_merge in clusters_to_merge:
+                merge_mask = new_labels == cluster_to_merge
+                new_labels[merge_mask] = largest_cluster
+            
+            return new_labels
+            
+        except Exception as e:
+            tprint(f"⚠️ Error merging to target count: {e}", "WARNING")
+            return labels
+
+    def _split_to_target_count(self, labels: np.ndarray, target_count: int, 
+                              config: Dict[str, Any]) -> np.ndarray:
+        """Split clusters to reach target count."""
+        try:
+            unique_labels, counts = np.unique(labels, return_counts=True)
+            cluster_labels = unique_labels[unique_labels != -1]
+            cluster_sizes = counts[unique_labels != -1]
+            
+            if len(cluster_labels) >= target_count:
+                return labels
+            
+            # Find the largest cluster to split
+            largest_cluster_idx = np.argmax(cluster_sizes)
+            largest_cluster = cluster_labels[largest_cluster_idx]
+            
+            splits_needed = target_count - len(cluster_labels)
+            large_mask = labels == largest_cluster
+            large_indices = np.where(large_mask)[0]
+            
+            split_size = len(large_indices) // (splits_needed + 1)
+            
+            new_labels = labels.copy()
+            for i in range(splits_needed):
+                start_idx = (i + 1) * split_size
+                end_idx = (i + 2) * split_size if i < splits_needed - 1 else len(large_indices)
+                split_indices = large_indices[start_idx:end_idx]
+                
+                new_cluster_id = np.max(unique_labels) + 1 + i
+                new_labels[split_indices] = new_cluster_id
+            
+            return new_labels
+            
+        except Exception as e:
+            tprint(f"⚠️ Error splitting to target count: {e}", "WARNING")
+            return labels
 
     def _advanced_cluster_optimization(self, labels: np.ndarray, config: Dict[str, Any]) -> np.ndarray:
         """
@@ -402,19 +717,25 @@ class RegimeClusteringStep(BaseStep):
             # Initialize iterative optimization
             optimizer = IterativeOptimization(verbose=True, k=None)
             
-            # Set up optimization parameters for aggressive noise reduction
-            optimizer.config.min_size_ratio = 0.02  # 2% minimum
-            optimizer.config.max_size_ratio = 0.10  # 10% maximum (very strict)
-            optimizer.config.max_rounds = 50  # More iterations for better optimization
-            optimizer.config.w_cv = 0.5  # Higher weight on CV optimization
-            optimizer.config.w_temp = 0.15  # Temporal consistency
-            optimizer.config.w_sil = 0.2  # Silhouette score
-            optimizer.config.w_bal = 0.15  # Cluster balance
-            optimizer.config.K_MIN = 5  # Minimum clusters (more clusters = less noise)
-            optimizer.config.K_MAX = 10  # Maximum clusters
-            optimizer.config.large_cluster_threshold = 50  # Lower threshold for large cluster detection
-            optimizer.config.split_size_threshold = 1.1  # Split clusters > 10% of data
-            optimizer.config.SOFT_CAP = int(len(labels) * 0.10)  # Hard cap at 10% of data
+            # Set up optimization parameters for STRICT cluster size constraints
+            optimizer.config.min_size_ratio = 0.03  # 3% minimum (increased from 2%)
+            optimizer.config.max_size_ratio = 0.08  # 8% maximum (stricter than 10%)
+            optimizer.config.max_rounds = 75  # More iterations for better optimization
+            optimizer.config.w_cv = 0.6  # Higher weight on CV optimization
+            optimizer.config.w_temp = 0.20  # Increased temporal consistency weight
+            optimizer.config.w_sil = 0.25  # Increased silhouette score weight
+            optimizer.config.w_bal = 0.25  # Increased cluster balance weight
+            optimizer.config.K_MIN = 4  # Minimum clusters (target 4-8 range)
+            optimizer.config.K_MAX = 8  # Maximum clusters (stricter range)
+            optimizer.config.large_cluster_threshold = 40  # Lower threshold for large cluster detection
+            optimizer.config.split_size_threshold = 1.05  # Split clusters > 5% of data (stricter)
+            optimizer.config.SOFT_CAP = int(len(labels) * 0.08)  # Hard cap at 8% of data (stricter)
+            
+            # Add additional strict constraints
+            optimizer.config.min_cluster_size = max(20, int(len(labels) * 0.03))  # Minimum 20 samples or 3% of data
+            optimizer.config.max_cluster_size = int(len(labels) * 0.08)  # Maximum 8% of data
+            optimizer.config.target_cluster_count = 6  # Target 6 clusters for optimal balance
+            optimizer.config.balance_tolerance = 0.15  # 15% tolerance for cluster balance
             
             # Run optimization
             tprint(f"🔧 Starting iterative optimization on {len(features)} features, {len(labels)} samples", "INFO")
@@ -427,6 +748,9 @@ class RegimeClusteringStep(BaseStep):
             
             # Post-optimization noise reduction
             optimized_labels = self._post_optimization_noise_reduction(optimized_labels, config)
+            
+            # Apply strict cluster size validation and correction
+            optimized_labels = self._apply_strict_cluster_constraints(optimized_labels, config)
             
             # Validate results
             unique_labels, counts = np.unique(optimized_labels, return_counts=True)
@@ -678,6 +1002,145 @@ class RegimeClusteringStep(BaseStep):
             
         except Exception as e:
             tprint(f"⚠️ Post-optimization noise reduction failed: {e}", "WARNING")
+            return labels
+
+    def _apply_strict_cluster_constraints(self, labels: np.ndarray, config: Dict[str, Any]) -> np.ndarray:
+        """
+        Apply strict cluster size constraints to ensure balanced clusters.
+        
+        Args:
+            labels: Cluster labels
+            config: Configuration dictionary
+            
+        Returns:
+            Labels with strict size constraints applied
+        """
+        try:
+            tprint("🔒 Applying strict cluster size constraints...", "INFO")
+            
+            total_samples = len(labels)
+            min_cluster_size = max(20, int(total_samples * 0.03))  # 3% minimum
+            max_cluster_size = int(total_samples * 0.08)  # 8% maximum
+            target_cluster_count = 6  # Target 6 clusters
+            
+            # Get current cluster statistics
+            unique_labels, counts = np.unique(labels, return_counts=True)
+            non_noise_mask = unique_labels != -1
+            cluster_labels = unique_labels[non_noise_mask]
+            cluster_sizes = counts[non_noise_mask]
+            
+            if len(cluster_labels) == 0:
+                tprint("⚠️ No clusters found for constraint application", "WARNING")
+                return labels
+            
+            tprint(f"📊 Current clusters: {len(cluster_labels)}, sizes: {cluster_sizes}", "INFO")
+            tprint(f"🎯 Target: {target_cluster_count} clusters, size range: {min_cluster_size}-{max_cluster_size}", "INFO")
+            
+            new_labels = labels.copy()
+            violations_found = False
+            
+            # Check for clusters that are too small
+            small_clusters = cluster_labels[cluster_sizes < min_cluster_size]
+            if len(small_clusters) > 0:
+                tprint(f"⚠️ Found {len(small_clusters)} clusters below minimum size ({min_cluster_size})", "WARNING")
+                violations_found = True
+                
+                # Merge small clusters with the largest cluster
+                largest_cluster = cluster_labels[np.argmax(cluster_sizes)]
+                for small_cluster in small_clusters:
+                    small_mask = new_labels == small_cluster
+                    new_labels[small_mask] = largest_cluster
+                    tprint(f"  • Merged cluster {small_cluster} (size: {np.sum(small_mask)}) into cluster {largest_cluster}", "INFO")
+            
+            # Check for clusters that are too large
+            large_clusters = cluster_labels[cluster_sizes > max_cluster_size]
+            if len(large_clusters) > 0:
+                tprint(f"⚠️ Found {len(large_clusters)} clusters above maximum size ({max_cluster_size})", "WARNING")
+                violations_found = True
+                
+                # Split large clusters
+                for large_cluster in large_clusters:
+                    large_mask = new_labels == large_cluster
+                    large_indices = np.where(large_mask)[0]
+                    
+                    # Split into two clusters
+                    mid_point = len(large_indices) // 2
+                    first_half = large_indices[:mid_point]
+                    second_half = large_indices[mid_point:]
+                    
+                    # Assign second half to a new cluster
+                    new_cluster_id = np.max(unique_labels) + 1
+                    new_labels[second_half] = new_cluster_id
+                    
+                    tprint(f"  • Split cluster {large_cluster} (size: {len(large_indices)}) into {len(first_half)} and {len(second_half)}", "INFO")
+            
+            # Check if we have too many clusters
+            final_unique_labels, final_counts = np.unique(new_labels, return_counts=True)
+            final_cluster_labels = final_unique_labels[final_unique_labels != -1]
+            final_cluster_count = len(final_cluster_labels)
+            
+            if final_cluster_count > target_cluster_count:
+                tprint(f"⚠️ Too many clusters ({final_cluster_count}), target is {target_cluster_count}", "WARNING")
+                violations_found = True
+                
+                # Merge smallest clusters
+                cluster_sizes = final_counts[final_unique_labels != -1]
+                size_order = np.argsort(cluster_sizes)
+                clusters_to_merge = final_cluster_labels[size_order[:final_cluster_count - target_cluster_count]]
+                
+                # Merge with the largest cluster
+                largest_cluster = final_cluster_labels[np.argmax(cluster_sizes)]
+                for cluster_to_merge in clusters_to_merge:
+                    merge_mask = new_labels == cluster_to_merge
+                    new_labels[merge_mask] = largest_cluster
+                    tprint(f"  • Merged cluster {cluster_to_merge} into cluster {largest_cluster}", "INFO")
+            
+            # Check if we have too few clusters
+            final_unique_labels, final_counts = np.unique(new_labels, return_counts=True)
+            final_cluster_labels = final_unique_labels[final_unique_labels != -1]
+            final_cluster_count = len(final_cluster_labels)
+            
+            if final_cluster_count < target_cluster_count:
+                tprint(f"⚠️ Too few clusters ({final_cluster_count}), target is {target_cluster_count}", "WARNING")
+                violations_found = True
+                
+                # Split the largest cluster
+                cluster_sizes = final_counts[final_unique_labels != -1]
+                largest_cluster_idx = np.argmax(cluster_sizes)
+                largest_cluster = final_cluster_labels[largest_cluster_idx]
+                
+                large_mask = new_labels == largest_cluster
+                large_indices = np.where(large_mask)[0]
+                
+                # Split into multiple clusters
+                splits_needed = target_cluster_count - final_cluster_count + 1
+                split_size = len(large_indices) // splits_needed
+                
+                for i in range(splits_needed - 1):
+                    start_idx = i * split_size
+                    end_idx = (i + 1) * split_size
+                    split_indices = large_indices[start_idx:end_idx]
+                    
+                    new_cluster_id = np.max(final_unique_labels) + 1 + i
+                    new_labels[split_indices] = new_cluster_id
+                    tprint(f"  • Split cluster {largest_cluster} into {len(split_indices)} samples", "INFO")
+            
+            if not violations_found:
+                tprint("✅ All cluster size constraints satisfied", "SUCCESS")
+            else:
+                tprint("✅ Applied strict cluster size constraints", "SUCCESS")
+            
+            # Final validation
+            final_unique_labels, final_counts = np.unique(new_labels, return_counts=True)
+            final_cluster_labels = final_unique_labels[final_unique_labels != -1]
+            final_cluster_sizes = final_counts[final_unique_labels != -1]
+            
+            tprint(f"📊 Final clusters: {len(final_cluster_labels)}, sizes: {final_cluster_sizes}", "INFO")
+            
+            return new_labels
+            
+        except Exception as e:
+            tprint(f"❌ Error applying strict cluster constraints: {e}", "ERROR")
             return labels
 
     def _basic_cluster_balancing(self, labels: np.ndarray, config: Dict[str, Any]) -> np.ndarray:

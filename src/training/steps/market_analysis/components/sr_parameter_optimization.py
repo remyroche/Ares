@@ -32,6 +32,47 @@ except ImportError:
     PANDAS_AVAILABLE = False
     pd = None
 
+# VectorBT imports
+try:
+    from src.vectorbt import (
+        vbt, rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max,
+        rolling_sum, rolling_apply, VECTORBT_AVAILABLE
+    )
+    from src.vectorbt.optimization import RollingOptimizer
+    VECTORBT_ROLLING_AVAILABLE = True
+except ImportError:
+    VECTORBT_AVAILABLE = False
+    VECTORBT_ROLLING_AVAILABLE = False
+    vbt = None
+    rolling_mean = None
+    rolling_std = None
+    rolling_var = None
+    rolling_min = None
+    rolling_max = None
+    rolling_sum = None
+    rolling_apply = None
+    RollingOptimizer = None
+
+# Hardware and vectorization imports
+try:
+    from src.utils.hardware.unified_hardware_manager import UnifiedHardwareManager
+    from src.utils.hardware.vectorization_manager import UnifiedVectorizationManager
+    HARDWARE_AVAILABLE = True
+except ImportError:
+    HARDWARE_AVAILABLE = False
+    UnifiedHardwareManager = None
+    UnifiedVectorizationManager = None
+
+# TPrint imports
+try:
+    from src.utils.tprint import tprint, tprint_data_preview, tprint_data_format
+    TPRINT_AVAILABLE = True
+except ImportError:
+    TPRINT_AVAILABLE = False
+    tprint = print
+    tprint_data_preview = lambda x, y: None
+    tprint_data_format = lambda x, y: None
+
 from src.training.steps.base_step import BaseStep
 from src.utils.logger import system_logger
 
@@ -339,10 +380,13 @@ class SRParameterOptimizationStep(BaseStep):
             - 'error': error message if step failed (optional)
         """
         self.logger.info('🎯 Starting Enhanced SR Parameter Optimization')
+        tprint("🚀 SR Parameter Optimization: Starting execution", "info")
 
         try:
             # Fetch required input artifacts from previous steps
+            tprint("📥 Fetching input artifacts", "info")
             input_artifacts = await self._fetch_input_artifacts(config)
+            tprint_data_preview(input_artifacts, "Input artifacts")
             if not input_artifacts['success']:
                 return {
                     'success': False,
@@ -578,81 +622,9 @@ class SRParameterOptimizationStep(BaseStep):
 
         return data
 
-    def _create_validated_param_config(self) -> Any:
-        """Create parameter optimization config with hardware capability validation."""
-        if not SR_CLUSTERING_AVAILABLE or ParameterOptimizationConfig is None:
-            raise RuntimeError("ParameterOptimizationConfig not available")
 
-        # Get current data for configuration
-        current_data = getattr(self, '_current_data', None)
-
-        # Check GPU availability
-        gpu_available = False
-        if TORCH_AVAILABLE:
-            gpu_available = torch.cuda.is_available() or torch.backends.mps.is_available()
-
-        # Determine optimal memory settings
-        memory_limit_gb = 4.0  # Conservative default
-        if PSUTIL_AVAILABLE:
-            available_memory_gb = psutil.virtual_memory().available / (1024**3)
-            memory_limit_gb = min(available_memory_gb * 0.5, 8.0)
-
-        return ParameterOptimizationConfig(
-            optimization_method='adaptive_grid_search',
-            min_samples_for_optimization=10,
-            adaptive_optimization=True,
-            objective_metric='composite',
-
-            # Hardware optimization settings
-            enable_hardware_optimization=True,
-            enable_parallel_processing=True,
-            max_parallel_workers=None,  # Auto-detect
-            enable_gpu_acceleration=gpu_available,
-            memory_limit_gb=memory_limit_gb,
-            chunk_size=min(1000, max(100, int(len(current_data) / 10) if current_data is not None else 100))
-        )
-
-    def _create_validated_backtest_config(self) -> Any:
-        """Create backtesting config with hardware capability validation."""
-        if not SR_CLUSTERING_AVAILABLE or BacktestConfig is None:
-            raise RuntimeError("BacktestConfig not available")
-
-        # Get current data for configuration
-        current_data = getattr(self, '_current_data', None)
-
-        # Check GPU availability
-        gpu_available = False
-        if TORCH_AVAILABLE:
-            gpu_available = torch.cuda.is_available() or torch.backends.mps.is_available()
-
-        # Determine optimal memory settings
-        memory_limit_gb = 4.0  # Conservative default
-        if PSUTIL_AVAILABLE:
-            available_memory_gb = psutil.virtual_memory().available / (1024**3)
-            memory_limit_gb = min(available_memory_gb * 0.5, 8.0)
-
-        return BacktestConfig(
-            enable_parameter_optimization=True,
-            parameter_optimization_method='adaptive_grid_search',
-            min_samples_for_optimization=10,
-
-            # Hardware optimization settings
-            enable_m1_optimizations=True,
-            enable_gpu_acceleration=gpu_available,
-            enable_memory_optimization=True,
-            memory_limit_gb=memory_limit_gb,
-            chunk_size=min(1000, max(100, int(len(current_data) / 10) if current_data is not None else 100)),
-
-            # Computation optimization settings
-            enable_parallel_processing=True,
-            enable_vectorized_operations=True,
-            enable_caching=True,
-            cache_size_mb=min(100, max(10, int(memory_limit_gb * 10))),
-            enable_numba_acceleration=True
-        )
-
-    def _split_data_for_optimization(self, market_data: Any) -> Tuple[Any, Any]:
-        """Split data properly to avoid data leakage during optimization."""
+    def _split_data_for_optimization(self, market_data: Any, temporal_gap_hours: int = 24) -> Tuple[Any, Any]:
+        """Split data properly to avoid data leakage during optimization with temporal gap."""
         if not PANDAS_AVAILABLE or not isinstance(market_data, pd.DataFrame):
             return market_data, market_data
 
@@ -660,12 +632,21 @@ class SRParameterOptimizationStep(BaseStep):
         split_point = int(len(market_data) * 0.7)
 
         if split_point < 100:
+            self.logger.warning("Insufficient data for proper splitting, using same data for train/test")
             return market_data, market_data
 
+        # Add temporal gap to prevent data leakage
+        gap_periods = max(1, int(temporal_gap_hours * 60 / 15))  # Assuming 15m timeframe
+        
         level_creation_data = market_data.iloc[:split_point]
-        backtest_data = market_data.iloc[split_point:]
+        backtest_data = market_data.iloc[split_point + gap_periods:]
 
-        self.logger.info(f"Data split: {len(level_creation_data)} rows for training, {len(backtest_data)} rows for testing")
+        if len(backtest_data) < 50:
+            self.logger.warning("Insufficient test data after gap, reducing gap")
+            gap_periods = max(1, int(gap_periods * 0.5))
+            backtest_data = market_data.iloc[split_point + gap_periods:]
+
+        self.logger.info(f"Data split: {len(level_creation_data)} train, {len(backtest_data)} test, {gap_periods} period gap")
         return level_creation_data, backtest_data
 
     def _get_current_data(self):
@@ -692,16 +673,19 @@ class SRParameterOptimizationStep(BaseStep):
             Optimization results dictionary
         """
         self.logger.info("🚀 Starting enhanced parameter optimization...")
+        tprint("🔧 Enhanced Parameter Optimization: Starting", "info")
         start_time = time.time()
         
         # Log input artifacts usage
         if input_artifacts:
             self.logger.info("📊 Using input artifacts from previous steps:")
+            tprint("📊 Using input artifacts from previous steps", "info")
             for artifact_name, artifact_data in input_artifacts.items():
                 if artifact_data is not None:
                     if artifact_name == 'sr_clustering_result':
                         clusters_count = artifact_data.get('total_clusters', 0)
                         self.logger.info(f"  - {artifact_name}: {clusters_count} clusters")
+                        tprint(f"  - {artifact_name}: {clusters_count} clusters", "info")
                     elif artifact_name == 'sr_levels_dictionary':
                         levels_count = len(artifact_data.get('levels', []))
                         self.logger.info(f"  - {artifact_name}: {levels_count} SR levels")
@@ -731,7 +715,7 @@ class SRParameterOptimizationStep(BaseStep):
             search_space = self._create_sr_search_space(input_artifacts)
             
             # Split data for optimization with temporal validation
-            train_data, test_data = self._split_data_with_validation(market_data, enhanced_config)
+            train_data, test_data = self._split_data_for_optimization(market_data, enhanced_config.temporal_gap_hours)
             
             # Run Bayesian HPO if enabled
             if enhanced_config.enable_bayesian_hpo and self.bayesian_optimizer:
@@ -785,47 +769,50 @@ class SRParameterOptimizationStep(BaseStep):
             return optimization_result
 
     def _create_sr_search_space(self, input_artifacts: Dict[str, Any] = None) -> Dict[str, Any]:
-        """Create enhanced search space for SR parameter optimization with comprehensive parameters."""
+        """Create adaptive search space for SR parameter optimization based on market data characteristics."""
         
-        # Default parameter bounds
+        # Get market data characteristics for adaptive ranges
+        market_characteristics = self._analyze_market_characteristics(input_artifacts)
+        
+        # Base parameter bounds with adaptive adjustments
         search_space = {
-            # Core SR detection parameters
-            'min_touches': {'type': 'int', 'low': 2, 'high': 15},
-            'strength_threshold': {'type': 'float', 'low': 0.1, 'high': 0.9},
-            'distance_threshold': {'type': 'float', 'low': 0.001, 'high': 0.05},
-            'lookback_periods': {'type': 'int', 'low': 20, 'high': 500},
-            'volume_threshold': {'type': 'float', 'low': 0.5, 'high': 3.0},
+            # Core SR detection parameters - adaptive based on market volatility
+            'min_touches': self._get_adaptive_range('min_touches', market_characteristics),
+            'strength_threshold': self._get_adaptive_range('strength_threshold', market_characteristics),
+            'distance_threshold': self._get_adaptive_range('distance_threshold', market_characteristics),
+            'lookback_periods': self._get_adaptive_range('lookback_periods', market_characteristics),
+            'volume_threshold': self._get_adaptive_range('volume_threshold', market_characteristics),
             
-            # Advanced SR parameters
-            'touch_tolerance': {'type': 'float', 'low': 0.001, 'high': 0.02},
-            'breakout_threshold': {'type': 'float', 'low': 0.01, 'high': 0.1},
-            'consolidation_periods': {'type': 'int', 'low': 5, 'high': 50},
-            'trend_strength_threshold': {'type': 'float', 'low': 0.3, 'high': 0.8},
+            # Advanced SR parameters - adaptive based on market structure
+            'touch_tolerance': self._get_adaptive_range('touch_tolerance', market_characteristics),
+            'breakout_threshold': self._get_adaptive_range('breakout_threshold', market_characteristics),
+            'consolidation_periods': self._get_adaptive_range('consolidation_periods', market_characteristics),
+            'trend_strength_threshold': self._get_adaptive_range('trend_strength_threshold', market_characteristics),
             
-            # Time-based parameters
-            'min_formation_time': {'type': 'int', 'low': 1, 'high': 30},
-            'max_formation_time': {'type': 'int', 'low': 30, 'high': 200},
-            'time_decay_factor': {'type': 'float', 'low': 0.8, 'high': 1.0},
+            # Time-based parameters - adaptive based on timeframe
+            'min_formation_time': self._get_adaptive_range('min_formation_time', market_characteristics),
+            'max_formation_time': self._get_adaptive_range('max_formation_time', market_characteristics),
+            'time_decay_factor': self._get_adaptive_range('time_decay_factor', market_characteristics),
             
-            # Volume-based parameters
-            'volume_spike_threshold': {'type': 'float', 'low': 1.5, 'high': 5.0},
-            'volume_consistency_threshold': {'type': 'float', 'low': 0.7, 'high': 1.0},
-            'volume_weight': {'type': 'float', 'low': 0.1, 'high': 0.5},
+            # Volume-based parameters - adaptive based on volume patterns
+            'volume_spike_threshold': self._get_adaptive_range('volume_spike_threshold', market_characteristics),
+            'volume_consistency_threshold': self._get_adaptive_range('volume_consistency_threshold', market_characteristics),
+            'volume_weight': self._get_adaptive_range('volume_weight', market_characteristics),
             
-            # Price action parameters
-            'wick_ratio_threshold': {'type': 'float', 'low': 0.1, 'high': 0.5},
-            'body_ratio_threshold': {'type': 'float', 'low': 0.3, 'high': 0.8},
-            'price_momentum_threshold': {'type': 'float', 'low': 0.1, 'high': 0.5},
+            # Price action parameters - adaptive based on price action patterns
+            'wick_ratio_threshold': self._get_adaptive_range('wick_ratio_threshold', market_characteristics),
+            'body_ratio_threshold': self._get_adaptive_range('body_ratio_threshold', market_characteristics),
+            'price_momentum_threshold': self._get_adaptive_range('price_momentum_threshold', market_characteristics),
             
-            # Risk management parameters
-            'stop_loss_multiplier': {'type': 'float', 'low': 1.0, 'high': 3.0},
-            'take_profit_multiplier': {'type': 'float', 'low': 1.5, 'high': 5.0},
-            'risk_reward_ratio': {'type': 'float', 'low': 1.0, 'high': 3.0},
+            # Risk management parameters - adaptive based on market risk
+            'stop_loss_multiplier': self._get_adaptive_range('stop_loss_multiplier', market_characteristics),
+            'take_profit_multiplier': self._get_adaptive_range('take_profit_multiplier', market_characteristics),
+            'risk_reward_ratio': self._get_adaptive_range('risk_reward_ratio', market_characteristics),
             
-            # Filtering parameters
-            'noise_filter_threshold': {'type': 'float', 'low': 0.01, 'high': 0.1},
-            'correlation_threshold': {'type': 'float', 'low': 0.3, 'high': 0.9},
-            'volatility_threshold': {'type': 'float', 'low': 0.01, 'high': 0.1}
+            # Filtering parameters - adaptive based on noise levels
+            'noise_filter_threshold': self._get_adaptive_range('noise_filter_threshold', market_characteristics),
+            'correlation_threshold': self._get_adaptive_range('correlation_threshold', market_characteristics),
+            'volatility_threshold': self._get_adaptive_range('volatility_threshold', market_characteristics)
         }
         
         # Enhance search space based on input artifacts
@@ -886,27 +873,137 @@ class SRParameterOptimizationStep(BaseStep):
         
         return search_space
 
-    async def _split_data_with_validation(
-        self, 
-        market_data: Any, 
-        enhanced_config: EnhancedSRConfig
-    ) -> Tuple[Any, Any]:
-        """Split data with temporal validation to prevent data leakage."""
-        if not PANDAS_AVAILABLE or not isinstance(market_data, pd.DataFrame):
-            return market_data, market_data
+    def _analyze_market_characteristics(self, input_artifacts: Dict[str, Any] = None) -> Dict[str, Any]:
+        """Analyze market characteristics to inform parameter ranges."""
+        characteristics = {
+            'volatility_level': 'medium',
+            'timeframe': '15m',
+            'market_structure': 'trending',
+            'volume_profile': 'normal',
+            'noise_level': 'medium'
+        }
         
-        # Use 70% for training and 30% for testing with temporal gap
-        split_point = int(len(market_data) * 0.7)
+        try:
+            # Analyze volatility from input artifacts
+            if input_artifacts and 'sr_clustering_result' in input_artifacts:
+                clustering_result = input_artifacts['sr_clustering_result']
+                if clustering_result:
+                    # Use clustering efficiency to determine market structure
+                    efficiency = clustering_result.get('clustering_efficiency', 0.5)
+                    if efficiency > 0.7:
+                        characteristics['market_structure'] = 'consolidated'
+                    elif efficiency < 0.3:
+                        characteristics['market_structure'] = 'choppy'
+            
+            # Analyze SR levels for market characteristics
+            if input_artifacts and 'sr_levels_dictionary' in input_artifacts:
+                levels_dict = input_artifacts['sr_levels_dictionary']
+                if levels_dict and 'levels' in levels_dict:
+                    levels = levels_dict['levels']
+                    if levels:
+                        # Analyze level characteristics
+                        avg_strength = sum(level.get('strength', 0) for level in levels) / len(levels)
+                        avg_touches = sum(level.get('touches', 0) for level in levels) / len(levels)
+                        
+                        # Determine volatility level based on level strength
+                        if avg_strength > 0.7:
+                            characteristics['volatility_level'] = 'low'
+                        elif avg_strength < 0.3:
+                            characteristics['volatility_level'] = 'high'
+                        
+                        # Determine noise level based on touches
+                        if avg_touches > 8:
+                            characteristics['noise_level'] = 'high'
+                        elif avg_touches < 3:
+                            characteristics['noise_level'] = 'low'
+            
+            self.logger.info(f"Market characteristics: {characteristics}")
+            return characteristics
+            
+        except Exception as e:
+            self.logger.warning(f"Failed to analyze market characteristics: {e}")
+            return characteristics
+
+    def _get_adaptive_range(self, param_name: str, characteristics: Dict[str, Any]) -> Dict[str, Any]:
+        """Get adaptive parameter range based on market characteristics."""
+        # Default ranges
+        default_ranges = {
+            'min_touches': {'type': 'int', 'low': 2, 'high': 15},
+            'strength_threshold': {'type': 'float', 'low': 0.1, 'high': 0.9},
+            'distance_threshold': {'type': 'float', 'low': 0.001, 'high': 0.05},
+            'lookback_periods': {'type': 'int', 'low': 20, 'high': 500},
+            'volume_threshold': {'type': 'float', 'low': 0.5, 'high': 3.0},
+            'touch_tolerance': {'type': 'float', 'low': 0.001, 'high': 0.02},
+            'breakout_threshold': {'type': 'float', 'low': 0.01, 'high': 0.1},
+            'consolidation_periods': {'type': 'int', 'low': 5, 'high': 50},
+            'trend_strength_threshold': {'type': 'float', 'low': 0.3, 'high': 0.8},
+            'min_formation_time': {'type': 'int', 'low': 1, 'high': 30},
+            'max_formation_time': {'type': 'int', 'low': 30, 'high': 200},
+            'time_decay_factor': {'type': 'float', 'low': 0.8, 'high': 1.0},
+            'volume_spike_threshold': {'type': 'float', 'low': 1.5, 'high': 5.0},
+            'volume_consistency_threshold': {'type': 'float', 'low': 0.7, 'high': 1.0},
+            'volume_weight': {'type': 'float', 'low': 0.1, 'high': 0.5},
+            'wick_ratio_threshold': {'type': 'float', 'low': 0.1, 'high': 0.5},
+            'body_ratio_threshold': {'type': 'float', 'low': 0.3, 'high': 0.8},
+            'price_momentum_threshold': {'type': 'float', 'low': 0.1, 'high': 0.5},
+            'stop_loss_multiplier': {'type': 'float', 'low': 1.0, 'high': 3.0},
+            'take_profit_multiplier': {'type': 'float', 'low': 1.5, 'high': 5.0},
+            'risk_reward_ratio': {'type': 'float', 'low': 1.0, 'high': 3.0},
+            'noise_filter_threshold': {'type': 'float', 'low': 0.01, 'high': 0.1},
+            'correlation_threshold': {'type': 'float', 'low': 0.3, 'high': 0.9},
+            'volatility_threshold': {'type': 'float', 'low': 0.01, 'high': 0.1}
+        }
         
-        # Add temporal gap to prevent data leakage
-        gap_hours = enhanced_config.temporal_gap_hours
-        gap_periods = max(1, int(gap_hours * 60 / 15))  # Assuming 15m timeframe
+        base_range = default_ranges.get(param_name, {'type': 'float', 'low': 0.0, 'high': 1.0})
+        range_copy = base_range.copy()
         
-        train_data = market_data.iloc[:split_point]
-        test_data = market_data.iloc[split_point + gap_periods:]
+        # Apply adaptive adjustments based on market characteristics
+        volatility_level = characteristics.get('volatility_level', 'medium')
+        market_structure = characteristics.get('market_structure', 'trending')
+        noise_level = characteristics.get('noise_level', 'medium')
         
-        self.logger.info(f"Data split: {len(train_data)} train, {len(test_data)} test, {gap_periods} period gap")
-        return train_data, test_data
+        # Adjust distance_threshold based on volatility
+        if param_name == 'distance_threshold':
+            if volatility_level == 'high':
+                range_copy['low'] = 0.005
+                range_copy['high'] = 0.03
+            elif volatility_level == 'low':
+                range_copy['low'] = 0.001
+                range_copy['high'] = 0.01
+        
+        # Adjust min_touches based on noise level
+        elif param_name == 'min_touches':
+            if noise_level == 'high':
+                range_copy['low'] = 4
+                range_copy['high'] = 12
+            elif noise_level == 'low':
+                range_copy['low'] = 2
+                range_copy['high'] = 8
+        
+        # Adjust strength_threshold based on market structure
+        elif param_name == 'strength_threshold':
+            if market_structure == 'consolidated':
+                range_copy['low'] = 0.3
+                range_copy['high'] = 0.8
+            elif market_structure == 'choppy':
+                range_copy['low'] = 0.1
+                range_copy['high'] = 0.6
+        
+        # Adjust lookback_periods based on timeframe
+        elif param_name == 'lookback_periods':
+            timeframe = characteristics.get('timeframe', '15m')
+            if timeframe in ['1m', '5m']:
+                range_copy['low'] = 50
+                range_copy['high'] = 200
+            elif timeframe in ['1h', '4h']:
+                range_copy['low'] = 20
+                range_copy['high'] = 100
+            else:  # daily or higher
+                range_copy['low'] = 10
+                range_copy['high'] = 50
+        
+        return range_copy
+
 
     async def _run_bayesian_optimization(
         self, 
@@ -955,12 +1052,27 @@ class SRParameterOptimizationStep(BaseStep):
                 )
                 return score
             
+            # Run VectorBT optimization if available
+            vectorbt_result = None
+            if VECTORBT_ROLLING_AVAILABLE and config.get('enable_vectorbt', True):
+                tprint("⚡ Running VectorBT Rolling Optimization", "info")
+                try:
+                    vectorbt_result = await self._run_vectorbt_optimization(
+                        market_data, search_space, enhanced_config, input_artifacts
+                    )
+                    tprint_data_preview(vectorbt_result, "VectorBT optimization result")
+                except Exception as e:
+                    self.logger.warning(f"VectorBT optimization failed: {e}")
+                    tprint(f"⚠️ VectorBT optimization failed: {e}", "warning")
+            
             # Run optimization with enhanced monitoring
+            tprint("🧠 Running Bayesian Optimization", "info")
             result = await self.bayesian_optimizer.optimize(
                 objective_function, 
                 search_space, 
                 opt_config
             )
+            tprint_data_preview(result, "Bayesian optimization result")
             
             # Generate explainability if available
             explainability_results = {}
@@ -1110,29 +1222,30 @@ class SRParameterOptimizationStep(BaseStep):
             return {'error': str(e)}
 
     def _evaluate_sr_parameters(self, params: Dict[str, Any], train_data: Any, test_data: Any) -> float:
-        """Evaluate SR parameters and return a score."""
+        """Evaluate SR parameters using real SR detection and backtesting."""
         try:
-            # Simple evaluation based on parameter quality
-            # In a real implementation, this would run actual SR detection and backtesting
+            # Validate parameters first
+            if not self._validate_parameters(params):
+                self.logger.warning("Invalid parameters provided for evaluation")
+                return 0.0
             
-            # Calculate a composite score based on parameters
-            score = 0.0
+            # Detect SR levels using the parameters
+            sr_levels = self._detect_sr_levels(train_data, params)
+            if not sr_levels or len(sr_levels) == 0:
+                self.logger.warning("No SR levels detected with given parameters")
+                return 0.0
             
-            # Touches score (more touches = better, but not too many)
-            touches_score = min(params.get('min_touches', 2) / 5.0, 1.0)
-            score += touches_score * 0.3
+            # Backtest the SR levels on test data
+            backtest_results = self._backtest_sr_levels(sr_levels, test_data, params)
+            if not backtest_results:
+                self.logger.warning("Backtest failed for SR levels")
+                return 0.0
             
-            # Strength threshold score (balanced threshold)
-            strength = params.get('strength_threshold', 0.5)
-            strength_score = 1.0 - abs(strength - 0.6) / 0.6  # Optimal around 0.6
-            score += max(0, strength_score) * 0.4
+            # Calculate composite score based on backtest results
+            score = self._calculate_composite_score(backtest_results, params)
             
-            # Distance threshold score (not too tight, not too loose)
-            distance = params.get('distance_threshold', 0.01)
-            distance_score = 1.0 - abs(distance - 0.01) / 0.01  # Optimal around 0.01
-            score += max(0, distance_score) * 0.3
-            
-            return min(score, 1.0)
+            self.logger.debug(f"Parameter evaluation completed: score={score:.4f}, levels={len(sr_levels)}")
+            return min(max(score, 0.0), 1.0)  # Clamp between 0 and 1
             
         except Exception as e:
             self.logger.error(f"Parameter evaluation failed: {e}")
@@ -1153,11 +1266,16 @@ class SRParameterOptimizationStep(BaseStep):
             # Enhanced evaluation with ML utilities
             enhanced_score = base_score
             
+            # Collect scores from different validation methods
+            validation_scores = {}
+            validation_weights = {}
+            
             # Add OOF validation if available
             if self.oof_manager and enhanced_config.enable_oof_validation:
                 try:
                     oof_score = await self._evaluate_with_oof_validation(params, train_data, test_data)
-                    enhanced_score = (enhanced_score + oof_score) / 2.0
+                    validation_scores['oof'] = oof_score
+                    validation_weights['oof'] = 0.3  # 30% weight for OOF
                 except Exception as e:
                     self.logger.warning(f"OOF validation failed: {e}")
             
@@ -1165,7 +1283,8 @@ class SRParameterOptimizationStep(BaseStep):
             if PURGED_CV_AVAILABLE and enhanced_config.enable_purged_cv:
                 try:
                     purged_score = await self._evaluate_with_purged_cv(params, train_data, test_data)
-                    enhanced_score = (enhanced_score + purged_score) / 2.0
+                    validation_scores['purged_cv'] = purged_score
+                    validation_weights['purged_cv'] = 0.3  # 30% weight for Purged CV
                 except Exception as e:
                     self.logger.warning(f"Purged CV validation failed: {e}")
             
@@ -1173,9 +1292,17 @@ class SRParameterOptimizationStep(BaseStep):
             if self.evaluator and enhanced_config.enable_unified_evaluation:
                 try:
                     evaluation_score = await self._evaluate_with_unified_evaluator(params, train_data, test_data)
-                    enhanced_score = (enhanced_score + evaluation_score) / 2.0
+                    validation_scores['unified'] = evaluation_score
+                    validation_weights['unified'] = 0.4  # 40% weight for unified evaluation
                 except Exception as e:
                     self.logger.warning(f"Unified evaluation failed: {e}")
+            
+            # Combine scores using weighted average
+            if validation_scores:
+                enhanced_score = self._combine_evaluation_scores(validation_scores, validation_weights)
+            else:
+                # Fallback to base score if no validation methods available
+                enhanced_score = base_score
             
             # Apply data leakage penalty if detected
             if self.leakage_detector and enhanced_config.enable_data_leakage_detection:
@@ -1199,14 +1326,39 @@ class SRParameterOptimizationStep(BaseStep):
         train_data: Any, 
         test_data: Any
     ) -> float:
-        """Evaluate parameters using OOF validation."""
+        """Evaluate parameters using proper OOF validation with temporal splits."""
         try:
-            # Create OOF splits
+            if not PANDAS_AVAILABLE or not isinstance(train_data, pd.DataFrame):
+                return 0.0
+            
             oof_scores = []
-            for fold in range(self.oof_config.n_splits):
-                # Simulate OOF evaluation (simplified)
-                fold_score = self._evaluate_sr_parameters(params, train_data, test_data)
+            n_splits = self.oof_config.n_splits
+            
+            # Create proper temporal splits for OOF validation
+            for fold in range(n_splits):
+                # Calculate split boundaries
+                fold_size = len(train_data) // n_splits
+                train_start = 0
+                train_end = fold_size * (fold + 1)
+                val_start = train_end
+                val_end = min(val_start + fold_size, len(train_data))
+                
+                if val_end <= val_start or train_end <= train_start:
+                    continue
+                
+                # Create fold-specific train/validation splits
+                fold_train_data = train_data.iloc[train_start:train_end]
+                fold_val_data = train_data.iloc[val_start:val_end]
+                
+                # Evaluate on this fold
+                fold_score = self._evaluate_sr_parameters(params, fold_train_data, fold_val_data)
                 oof_scores.append(fold_score)
+                
+                self.logger.debug(f"OOF fold {fold+1}/{n_splits}: score={fold_score:.4f}")
+            
+            if not oof_scores:
+                self.logger.warning("No valid OOF folds created")
+                return 0.0
             
             return np.mean(oof_scores)
         except Exception as e:
@@ -1219,14 +1371,43 @@ class SRParameterOptimizationStep(BaseStep):
         train_data: Any, 
         test_data: Any
     ) -> float:
-        """Evaluate parameters using purged cross-validation."""
+        """Evaluate parameters using purged cross-validation with temporal gaps."""
         try:
-            # Create purged CV splits
+            if not PANDAS_AVAILABLE or not isinstance(train_data, pd.DataFrame):
+                return 0.0
+            
             purged_scores = []
-            for fold in range(enhanced_config.purged_cv_n_splits):
-                # Simulate purged CV evaluation (simplified)
-                fold_score = self._evaluate_sr_parameters(params, train_data, test_data)
+            n_splits = 5  # Default number of splits
+            embargo_pct = 0.01  # 1% embargo period
+            
+            # Calculate embargo period in data points
+            embargo_periods = max(1, int(len(train_data) * embargo_pct))
+            
+            # Create purged CV splits with embargo
+            for fold in range(n_splits):
+                # Calculate split boundaries with embargo
+                fold_size = len(train_data) // n_splits
+                train_start = 0
+                train_end = fold_size * (fold + 1)
+                val_start = train_end + embargo_periods  # Add embargo gap
+                val_end = min(val_start + fold_size, len(train_data))
+                
+                if val_end <= val_start or train_end <= train_start:
+                    continue
+                
+                # Create fold-specific train/validation splits with embargo
+                fold_train_data = train_data.iloc[train_start:train_end]
+                fold_val_data = train_data.iloc[val_start:val_end]
+                
+                # Evaluate on this fold
+                fold_score = self._evaluate_sr_parameters(params, fold_train_data, fold_val_data)
                 purged_scores.append(fold_score)
+                
+                self.logger.debug(f"Purged CV fold {fold+1}/{n_splits}: score={fold_score:.4f}, embargo={embargo_periods}")
+            
+            if not purged_scores:
+                self.logger.warning("No valid purged CV folds created")
+                return 0.0
             
             return np.mean(purged_scores)
         except Exception as e:
@@ -1297,6 +1478,729 @@ class SRParameterOptimizationStep(BaseStep):
             self.logger.error(f"Explainability generation failed: {e}")
             return {}
 
+    def _validate_parameters(self, params: Dict[str, Any]) -> bool:
+        """Validate parameter values before optimization."""
+        required_params = ['min_touches', 'strength_threshold', 'distance_threshold']
+        
+        for param in required_params:
+            if param not in params:
+                self.logger.warning(f"Missing required parameter: {param}")
+                return False
+            
+            value = params[param]
+            if not isinstance(value, (int, float)) or value <= 0:
+                self.logger.warning(f"Invalid parameter value for {param}: {value}")
+                return False
+        
+        # Validate parameter relationships
+        if params['min_touches'] > 20:  # Unrealistic
+            self.logger.warning(f"min_touches too high: {params['min_touches']}")
+            return False
+        
+        if params['strength_threshold'] > 1.0 or params['strength_threshold'] < 0:
+            self.logger.warning(f"strength_threshold out of range: {params['strength_threshold']}")
+            return False
+        
+        return True
+
+    def _detect_sr_levels(self, data: Any, params: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Detect SR levels using multiple proven methods."""
+        tprint("🔍 SR Detection: Starting level detection", "info")
+        try:
+            if not PANDAS_AVAILABLE or not isinstance(data, pd.DataFrame):
+                tprint("❌ SR Detection: Pandas not available or invalid data", "error")
+                return []
+            
+            # Extract price data
+            high = data['high'].values
+            low = data['low'].values
+            close = data['close'].values
+            volume = data['volume'].values if 'volume' in data.columns else None
+            tprint_data_format(data, "SR detection input data")
+            
+            all_sr_levels = []
+            
+            # Method 1: Traditional local minima/maxima
+            traditional_levels = self._detect_traditional_sr_levels(high, low, close, volume, params)
+            all_sr_levels.extend(traditional_levels)
+            
+            # Method 2: High Volume Nodes (HVN)
+            hvn_levels = self._detect_hvn_levels(high, low, close, volume, params)
+            all_sr_levels.extend(hvn_levels)
+            
+            # Method 3: Price reversal patterns
+            reversal_levels = self._detect_reversal_levels(high, low, close, volume, params)
+            all_sr_levels.extend(reversal_levels)
+            
+            # Method 4: Fibonacci levels
+            fib_levels = self._detect_fibonacci_levels(high, low, close, params)
+            all_sr_levels.extend(fib_levels)
+            
+            # Method 5: Fractal-based levels
+            fractal_levels = self._detect_fractal_levels(high, low, close, volume, params)
+            all_sr_levels.extend(fractal_levels)
+            
+            # Method 6: Consolidation ranges
+            consolidation_levels = self._detect_consolidation_levels(high, low, close, volume, params)
+            all_sr_levels.extend(consolidation_levels)
+            
+            # Method 7: Pivot points
+            pivot_levels = self._detect_pivot_levels(high, low, close, params)
+            all_sr_levels.extend(pivot_levels)
+            
+            # Consolidate and merge similar levels
+            consolidated_levels = self._consolidate_sr_levels(all_sr_levels, params)
+            
+            self.logger.info(f"Detected {len(consolidated_levels)} SR levels using {len(all_sr_levels)} raw detections")
+            return consolidated_levels
+            
+        except Exception as e:
+            self.logger.error(f"SR level detection failed: {e}")
+            return []
+
+    def _detect_traditional_sr_levels(self, high: np.ndarray, low: np.ndarray, close: np.ndarray, 
+                                     volume: Optional[np.ndarray], params: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Detect traditional SR levels using local minima/maxima."""
+        sr_levels = []
+        min_touches = params.get('min_touches', 2)
+        strength_threshold = params.get('strength_threshold', 0.5)
+        distance_threshold = params.get('distance_threshold', 0.01)
+        lookback_periods = params.get('lookback_periods', 50)
+        
+        for i in range(lookback_periods, len(high)):
+            # Check for support level (local minimum)
+            if self._is_local_minimum(low, i, lookback_periods):
+                level = self._analyze_sr_level(
+                    high, low, close, volume, i, 'support', 
+                    min_touches, strength_threshold, distance_threshold, 'traditional'
+                )
+                if level:
+                    sr_levels.append(level)
+            
+            # Check for resistance level (local maximum)
+            if self._is_local_maximum(high, i, lookback_periods):
+                level = self._analyze_sr_level(
+                    high, low, close, volume, i, 'resistance',
+                    min_touches, strength_threshold, distance_threshold, 'traditional'
+                )
+                if level:
+                    sr_levels.append(level)
+        
+        return sr_levels
+
+    def _detect_hvn_levels(self, high: np.ndarray, low: np.ndarray, close: np.ndarray, 
+                          volume: Optional[np.ndarray], params: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Detect High Volume Node (HVN) levels."""
+        if volume is None:
+            return []
+        
+        sr_levels = []
+        volume_threshold = params.get('volume_threshold', 1.5)
+        lookback_periods = params.get('lookback_periods', 50)
+        
+        # Calculate volume moving average
+        volume_ma = self._rolling_mean(volume, lookback_periods)
+        
+        for i in range(lookback_periods, len(high)):
+            if volume[i] > volume_ma[i] * volume_threshold:
+                # Check if this is a significant price level
+                price_level = (high[i] + low[i]) / 2
+                level_type = 'support' if close[i] < price_level else 'resistance'
+                
+                level = self._analyze_sr_level(
+                    high, low, close, volume, i, level_type,
+                    params.get('min_touches', 2), params.get('strength_threshold', 0.5),
+                    params.get('distance_threshold', 0.01), 'hvn'
+                )
+                if level:
+                    level['volume_ratio'] = volume[i] / volume_ma[i]
+                    sr_levels.append(level)
+        
+        return sr_levels
+
+    def _detect_reversal_levels(self, high: np.ndarray, low: np.ndarray, close: np.ndarray, 
+                               volume: Optional[np.ndarray], params: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Detect price reversal pattern levels."""
+        sr_levels = []
+        reversal_threshold = params.get('reversal_threshold', 0.02)
+        min_reversal_strength = params.get('min_reversal_strength', 0.01)
+        
+        for i in range(2, len(high) - 2):
+            # Check for bullish reversal (hammer, doji, etc.)
+            if self._is_bullish_reversal(high, low, close, i):
+                level = self._analyze_sr_level(
+                    high, low, close, volume, i, 'support',
+                    params.get('min_touches', 2), min_reversal_strength,
+                    params.get('distance_threshold', 0.01), 'reversal'
+                )
+                if level:
+                    level['reversal_strength'] = self._calculate_reversal_strength(high, low, close, i)
+                    sr_levels.append(level)
+            
+            # Check for bearish reversal (shooting star, doji, etc.)
+            if self._is_bearish_reversal(high, low, close, i):
+                level = self._analyze_sr_level(
+                    high, low, close, volume, i, 'resistance',
+                    params.get('min_touches', 2), min_reversal_strength,
+                    params.get('distance_threshold', 0.01), 'reversal'
+                )
+                if level:
+                    level['reversal_strength'] = self._calculate_reversal_strength(high, low, close, i)
+                    sr_levels.append(level)
+        
+        return sr_levels
+
+    def _detect_fibonacci_levels(self, high: np.ndarray, low: np.ndarray, close: np.ndarray, 
+                                params: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Detect Fibonacci retracement and extension levels."""
+        sr_levels = []
+        lookback_periods = params.get('lookback_periods', 50)
+        
+        for i in range(lookback_periods, len(high)):
+            # Find recent swing high and low
+            swing_high_idx = self._find_swing_high(high, i, lookback_periods)
+            swing_low_idx = self._find_swing_low(low, i, lookback_periods)
+            
+            if swing_high_idx is not None and swing_low_idx is not None:
+                swing_high = high[swing_high_idx]
+                swing_low = low[swing_low_idx]
+                price_range = swing_high - swing_low
+                
+                # Calculate Fibonacci levels
+                fib_levels = {
+                    0.236: swing_low + price_range * 0.236,
+                    0.382: swing_low + price_range * 0.382,
+                    0.5: swing_low + price_range * 0.5,
+                    0.618: swing_low + price_range * 0.618,
+                    0.786: swing_low + price_range * 0.786,
+                    1.0: swing_high,
+                    1.272: swing_high + price_range * 0.272,
+                    1.414: swing_high + price_range * 0.414,
+                    1.618: swing_high + price_range * 0.618
+                }
+                
+                for fib_ratio, fib_price in fib_levels.items():
+                    if swing_low <= fib_price <= swing_high * 1.2:  # Within reasonable range
+                        level_type = 'support' if fib_price < close[i] else 'resistance'
+                        level = {
+                            'price': fib_price,
+                            'type': level_type,
+                            'method': 'fibonacci',
+                            'fib_ratio': fib_ratio,
+                            'touches': 1,  # Will be calculated in analyze_sr_level
+                            'strength': 0.5,  # Default strength
+                            'volume_confirmation': 1.0,
+                            'index': i,
+                            'quality_score': 0.6  # Fibonacci levels have moderate quality
+                        }
+                        sr_levels.append(level)
+        
+        return sr_levels
+
+    def _detect_fractal_levels(self, high: np.ndarray, low: np.ndarray, close: np.ndarray, 
+                              volume: Optional[np.ndarray], params: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Detect fractal-based SR levels."""
+        sr_levels = []
+        fractal_period = params.get('fractal_period', 5)
+        
+        for i in range(fractal_period, len(high) - fractal_period):
+            # Check for fractal high (resistance)
+            if self._is_fractal_high(high, i, fractal_period):
+                level = self._analyze_sr_level(
+                    high, low, close, volume, i, 'resistance',
+                    params.get('min_touches', 2), params.get('strength_threshold', 0.5),
+                    params.get('distance_threshold', 0.01), 'fractal'
+                )
+                if level:
+                    sr_levels.append(level)
+            
+            # Check for fractal low (support)
+            if self._is_fractal_low(low, i, fractal_period):
+                level = self._analyze_sr_level(
+                    high, low, close, volume, i, 'support',
+                    params.get('min_touches', 2), params.get('strength_threshold', 0.5),
+                    params.get('distance_threshold', 0.01), 'fractal'
+                )
+                if level:
+                    sr_levels.append(level)
+        
+        return sr_levels
+
+    def _detect_consolidation_levels(self, high: np.ndarray, low: np.ndarray, close: np.ndarray, 
+                                   volume: Optional[np.ndarray], params: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Detect consolidation range levels."""
+        sr_levels = []
+        consolidation_periods = params.get('consolidation_periods', 20)
+        max_range_pct = params.get('max_range_pct', 0.05)  # 5% max range for consolidation
+        
+        for i in range(consolidation_periods, len(high)):
+            # Check if this period represents a consolidation
+            period_high = np.max(high[i-consolidation_periods:i])
+            period_low = np.min(low[i-consolidation_periods:i])
+            period_range = (period_high - period_low) / period_low
+            
+            if period_range <= max_range_pct:
+                # This is a consolidation - add support and resistance levels
+                support_level = {
+                    'price': period_low,
+                    'type': 'support',
+                    'method': 'consolidation',
+                    'touches': consolidation_periods,
+                    'strength': 0.7,  # Consolidations are strong levels
+                    'volume_confirmation': 1.0,
+                    'index': i,
+                    'quality_score': 0.8,
+                    'consolidation_periods': consolidation_periods
+                }
+                sr_levels.append(support_level)
+                
+                resistance_level = {
+                    'price': period_high,
+                    'type': 'resistance',
+                    'method': 'consolidation',
+                    'touches': consolidation_periods,
+                    'strength': 0.7,
+                    'volume_confirmation': 1.0,
+                    'index': i,
+                    'quality_score': 0.8,
+                    'consolidation_periods': consolidation_periods
+                }
+                sr_levels.append(resistance_level)
+        
+        return sr_levels
+
+    def _detect_pivot_levels(self, high: np.ndarray, low: np.ndarray, close: np.ndarray, 
+                           params: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Detect pivot point levels."""
+        sr_levels = []
+        pivot_period = params.get('pivot_period', 20)
+        
+        for i in range(pivot_period, len(high) - pivot_period):
+            # Calculate pivot point
+            prev_high = np.max(high[i-pivot_period:i])
+            prev_low = np.min(low[i-pivot_period:i])
+            prev_close = close[i-1]
+            
+            pivot = (prev_high + prev_low + prev_close) / 3
+            
+            # Calculate support and resistance levels
+            r1 = 2 * pivot - prev_low
+            r2 = pivot + (prev_high - prev_low)
+            r3 = prev_high + 2 * (pivot - prev_low)
+            
+            s1 = 2 * pivot - prev_high
+            s2 = pivot - (prev_high - prev_low)
+            s3 = prev_low - 2 * (prev_high - pivot)
+            
+            # Add pivot levels
+            levels = [
+                (r3, 'resistance', 'pivot_r3'),
+                (r2, 'resistance', 'pivot_r2'),
+                (r1, 'resistance', 'pivot_r1'),
+                (pivot, 'support', 'pivot'),
+                (s1, 'support', 'pivot_s1'),
+                (s2, 'support', 'pivot_s2'),
+                (s3, 'support', 'pivot_s3')
+            ]
+            
+            for price, level_type, level_name in levels:
+                if prev_low <= price <= prev_high * 1.2:  # Within reasonable range
+                    level = {
+                        'price': price,
+                        'type': level_type,
+                        'method': 'pivot',
+                        'level_name': level_name,
+                        'touches': 1,
+                        'strength': 0.6,
+                        'volume_confirmation': 1.0,
+                        'index': i,
+                        'quality_score': 0.7
+                    }
+                    sr_levels.append(level)
+        
+        return sr_levels
+
+    def _consolidate_sr_levels(self, all_levels: List[Dict[str, Any]], params: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Consolidate and merge similar SR levels."""
+        if not all_levels:
+            return []
+        
+        # Sort levels by price
+        sorted_levels = sorted(all_levels, key=lambda x: x['price'])
+        consolidated = []
+        distance_threshold = params.get('distance_threshold', 0.01)
+        
+        i = 0
+        while i < len(sorted_levels):
+            current_level = sorted_levels[i]
+            merged_levels = [current_level]
+            
+            # Find levels within distance threshold
+            j = i + 1
+            while j < len(sorted_levels):
+                next_level = sorted_levels[j]
+                price_diff = abs(next_level['price'] - current_level['price']) / current_level['price']
+                
+                if price_diff <= distance_threshold and next_level['type'] == current_level['type']:
+                    merged_levels.append(next_level)
+                    j += 1
+                else:
+                    break
+            
+            # Merge the levels
+            if len(merged_levels) > 1:
+                merged_level = self._merge_sr_levels(merged_levels)
+                consolidated.append(merged_level)
+            else:
+                consolidated.append(current_level)
+            
+            i = j
+        
+        return consolidated
+
+    def _merge_sr_levels(self, levels: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Merge multiple similar SR levels into one."""
+        if not levels:
+            return {}
+        
+        # Calculate weighted average price
+        total_weight = sum(level.get('quality_score', 0.5) for level in levels)
+        weighted_price = sum(level['price'] * level.get('quality_score', 0.5) for level in levels) / total_weight
+        
+        # Sum touches and calculate average strength
+        total_touches = sum(level.get('touches', 1) for level in levels)
+        avg_strength = sum(level.get('strength', 0.5) for level in levels) / len(levels)
+        
+        # Get the best quality score
+        max_quality = max(level.get('quality_score', 0.5) for level in levels)
+        
+        # Combine methods
+        methods = list(set(level.get('method', 'unknown') for level in levels))
+        
+        return {
+            'price': weighted_price,
+            'type': levels[0]['type'],
+            'method': '+'.join(methods),
+            'touches': total_touches,
+            'strength': avg_strength,
+            'volume_confirmation': 1.0,
+            'index': levels[0]['index'],
+            'quality_score': max_quality,
+            'merged_from': len(levels)
+        }
+
+    def _is_local_minimum(self, low: np.ndarray, idx: int, window: int) -> bool:
+        """Check if index is a local minimum."""
+        start = max(0, idx - window // 2)
+        end = min(len(low), idx + window // 2 + 1)
+        return low[idx] == np.min(low[start:end])
+
+    def _is_local_maximum(self, high: np.ndarray, idx: int, window: int) -> bool:
+        """Check if index is a local maximum."""
+        start = max(0, idx - window // 2)
+        end = min(len(high), idx + window // 2 + 1)
+        return high[idx] == np.max(high[start:end])
+
+    def _rolling_mean(self, data: np.ndarray, window: int) -> np.ndarray:
+        """Calculate rolling mean."""
+        result = np.full_like(data, np.nan)
+        for i in range(window - 1, len(data)):
+            result[i] = np.mean(data[i - window + 1:i + 1])
+        return result
+
+    def _is_bullish_reversal(self, high: np.ndarray, low: np.ndarray, close: np.ndarray, idx: int) -> bool:
+        """Check for bullish reversal patterns (hammer, doji, etc.)."""
+        if idx < 2 or idx >= len(high) - 2:
+            return False
+        
+        # Hammer pattern
+        body = abs(close[idx] - high[idx])
+        lower_shadow = low[idx] - min(close[idx], high[idx])
+        upper_shadow = max(close[idx], high[idx]) - high[idx]
+        
+        # Hammer: small body, long lower shadow, small upper shadow
+        if body < (high[idx] - low[idx]) * 0.3 and lower_shadow > body * 2 and upper_shadow < body:
+            return True
+        
+        # Doji pattern
+        if body < (high[idx] - low[idx]) * 0.1:
+            return True
+        
+        return False
+
+    def _is_bearish_reversal(self, high: np.ndarray, low: np.ndarray, close: np.ndarray, idx: int) -> bool:
+        """Check for bearish reversal patterns (shooting star, doji, etc.)."""
+        if idx < 2 or idx >= len(high) - 2:
+            return False
+        
+        # Shooting star pattern
+        body = abs(close[idx] - high[idx])
+        lower_shadow = low[idx] - min(close[idx], high[idx])
+        upper_shadow = max(close[idx], high[idx]) - high[idx]
+        
+        # Shooting star: small body, long upper shadow, small lower shadow
+        if body < (high[idx] - low[idx]) * 0.3 and upper_shadow > body * 2 and lower_shadow < body:
+            return True
+        
+        # Doji pattern
+        if body < (high[idx] - low[idx]) * 0.1:
+            return True
+        
+        return False
+
+    def _calculate_reversal_strength(self, high: np.ndarray, low: np.ndarray, close: np.ndarray, idx: int) -> float:
+        """Calculate reversal pattern strength."""
+        if idx < 2 or idx >= len(high) - 2:
+            return 0.0
+        
+        # Calculate body size relative to total range
+        body_size = abs(close[idx] - high[idx])
+        total_range = high[idx] - low[idx]
+        
+        if total_range == 0:
+            return 0.0
+        
+        # Stronger reversal if body is smaller relative to range
+        body_ratio = body_size / total_range
+        return max(0.0, 1.0 - body_ratio)
+
+    def _find_swing_high(self, high: np.ndarray, idx: int, lookback: int) -> Optional[int]:
+        """Find the most recent swing high."""
+        start = max(0, idx - lookback)
+        end = idx
+        
+        if end - start < 3:
+            return None
+        
+        # Find local maximum in the range
+        local_max_idx = start
+        for i in range(start + 1, end):
+            if high[i] > high[local_max_idx]:
+                local_max_idx = i
+        
+        return local_max_idx
+
+    def _find_swing_low(self, low: np.ndarray, idx: int, lookback: int) -> Optional[int]:
+        """Find the most recent swing low."""
+        start = max(0, idx - lookback)
+        end = idx
+        
+        if end - start < 3:
+            return None
+        
+        # Find local minimum in the range
+        local_min_idx = start
+        for i in range(start + 1, end):
+            if low[i] < low[local_min_idx]:
+                local_min_idx = i
+        
+        return local_min_idx
+
+    def _is_fractal_high(self, high: np.ndarray, idx: int, period: int) -> bool:
+        """Check if index is a fractal high."""
+        if idx < period or idx >= len(high) - period:
+            return False
+        
+        # Check if current high is higher than all highs in the period
+        for i in range(idx - period, idx + period + 1):
+            if i != idx and high[i] >= high[idx]:
+                return False
+        
+        return True
+
+    def _is_fractal_low(self, low: np.ndarray, idx: int, period: int) -> bool:
+        """Check if index is a fractal low."""
+        if idx < period or idx >= len(low) - period:
+            return False
+        
+        # Check if current low is lower than all lows in the period
+        for i in range(idx - period, idx + period + 1):
+            if i != idx and low[i] <= low[idx]:
+                return False
+        
+        return True
+
+    def _analyze_sr_level(self, high: np.ndarray, low: np.ndarray, close: np.ndarray, 
+                         volume: Optional[np.ndarray], idx: int, level_type: str,
+                         min_touches: int, strength_threshold: float, 
+                         distance_threshold: float, method: str = 'unknown') -> Optional[Dict[str, Any]]:
+        """Analyze a potential SR level for quality."""
+        try:
+            level_price = low[idx] if level_type == 'support' else high[idx]
+            touches = 0
+            total_strength = 0.0
+            
+            # Count touches and calculate strength
+            for i in range(max(0, idx - 100), min(len(high), idx + 100)):
+                if i == idx:
+                    continue
+                
+                if level_type == 'support':
+                    if abs(low[i] - level_price) / level_price <= distance_threshold:
+                        touches += 1
+                        # Calculate bounce strength
+                        bounce_strength = (close[i] - low[i]) / low[i]
+                        total_strength += bounce_strength
+                else:  # resistance
+                    if abs(high[i] - level_price) / level_price <= distance_threshold:
+                        touches += 1
+                        # Calculate rejection strength
+                        rejection_strength = (high[i] - close[i]) / high[i]
+                        total_strength += rejection_strength
+            
+            if touches < min_touches:
+                return None
+            
+            avg_strength = total_strength / touches if touches > 0 else 0.0
+            
+            # Check if level meets strength threshold
+            if avg_strength < strength_threshold:
+                return None
+            
+            # Calculate volume confirmation if available
+            volume_confirmation = 1.0
+            if volume is not None:
+                avg_volume = np.mean(volume[max(0, idx-10):min(len(volume), idx+10)])
+                level_volume = volume[idx]
+                volume_confirmation = min(2.0, level_volume / avg_volume) if avg_volume > 0 else 1.0
+            
+            return {
+                'price': level_price,
+                'type': level_type,
+                'method': method,
+                'touches': touches,
+                'strength': avg_strength,
+                'volume_confirmation': volume_confirmation,
+                'index': idx,
+                'quality_score': self._calculate_level_quality(touches, avg_strength, volume_confirmation)
+            }
+            
+        except Exception as e:
+            self.logger.error(f"SR level analysis failed: {e}")
+            return None
+
+    def _calculate_level_quality(self, touches: int, strength: float, volume_confirmation: float) -> float:
+        """Calculate quality score for an SR level."""
+        # Normalize touches (2-10 range to 0-1)
+        touches_score = min(1.0, (touches - 2) / 8.0)
+        
+        # Normalize strength (0-0.1 range to 0-1)
+        strength_score = min(1.0, strength / 0.1)
+        
+        # Normalize volume confirmation (0.5-2.0 range to 0-1)
+        volume_score = min(1.0, max(0.0, (volume_confirmation - 0.5) / 1.5))
+        
+        # Weighted combination
+        return (touches_score * 0.4 + strength_score * 0.4 + volume_score * 0.2)
+
+    def _backtest_sr_levels(self, sr_levels: List[Dict[str, Any]], test_data: Any, 
+                           params: Dict[str, Any]) -> Dict[str, Any]:
+        """Backtest SR levels on test data."""
+        tprint("📊 Backtesting: Starting SR level backtesting", "info")
+        try:
+            if not PANDAS_AVAILABLE or not isinstance(test_data, pd.DataFrame):
+                tprint("❌ Backtesting: Pandas not available or invalid test data", "error")
+                return {}
+            
+            if not sr_levels:
+                tprint("⚠️ Backtesting: No SR levels to backtest", "warning")
+                return {}
+            
+            tprint(f"📊 Backtesting: Testing {len(sr_levels)} SR levels", "info")
+            
+            high = test_data['high'].values
+            low = test_data['low'].values
+            close = test_data['close'].values
+            
+            total_trades = 0
+            successful_trades = 0
+            total_pnl = 0.0
+            level_performance = []
+            
+            for level in sr_levels:
+                level_price = level['price']
+                level_type = level['type']
+                breakout_threshold = params.get('breakout_threshold', 0.02)
+                
+                # Find breakout opportunities
+                for i in range(len(close)):
+                    if level_type == 'support':
+                        # Look for breakdown
+                        if low[i] < level_price * (1 - breakout_threshold):
+                            total_trades += 1
+                            # Calculate PnL (simplified)
+                            pnl = (level_price - close[i]) / level_price
+                            total_pnl += pnl
+                            if pnl > 0:
+                                successful_trades += 1
+                            level_performance.append({
+                                'level_id': len(level_performance),
+                                'pnl': pnl,
+                                'success': pnl > 0
+                            })
+                            break
+                    else:  # resistance
+                        # Look for breakout
+                        if high[i] > level_price * (1 + breakout_threshold):
+                            total_trades += 1
+                            # Calculate PnL (simplified)
+                            pnl = (close[i] - level_price) / level_price
+                            total_pnl += pnl
+                            if pnl > 0:
+                                successful_trades += 1
+                            level_performance.append({
+                                'level_id': len(level_performance),
+                                'pnl': pnl,
+                                'success': pnl > 0
+                            })
+                            break
+            
+            success_rate = successful_trades / total_trades if total_trades > 0 else 0.0
+            avg_pnl = total_pnl / total_trades if total_trades > 0 else 0.0
+            
+            return {
+                'total_trades': total_trades,
+                'successful_trades': successful_trades,
+                'success_rate': success_rate,
+                'total_pnl': total_pnl,
+                'avg_pnl': avg_pnl,
+                'level_performance': level_performance
+            }
+            
+        except Exception as e:
+            self.logger.error(f"SR level backtesting failed: {e}")
+            return {}
+
+    def _calculate_composite_score(self, backtest_results: Dict[str, Any], 
+                                 params: Dict[str, Any]) -> float:
+        """Calculate composite score from backtest results."""
+        try:
+            if not backtest_results:
+                return 0.0
+            
+            success_rate = backtest_results.get('success_rate', 0.0)
+            avg_pnl = backtest_results.get('avg_pnl', 0.0)
+            total_trades = backtest_results.get('total_trades', 0)
+            
+            # Normalize PnL (assume 0-0.1 range is good)
+            pnl_score = min(1.0, max(0.0, avg_pnl / 0.1))
+            
+            # Trade frequency score (more trades = better, but not too many)
+            trade_frequency_score = min(1.0, total_trades / 10.0)
+            
+            # Composite score with weights
+            composite_score = (
+                success_rate * 0.5 +           # 50% weight on success rate
+                pnl_score * 0.3 +              # 30% weight on PnL
+                trade_frequency_score * 0.2    # 20% weight on trade frequency
+            )
+            
+            return composite_score
+            
+        except Exception as e:
+            self.logger.error(f"Composite score calculation failed: {e}")
+            return 0.0
+
     def _predict_with_params(self, params: Dict[str, Any], X: np.ndarray) -> np.ndarray:
         """Generate predictions using given parameters (simplified)."""
         # This is a simplified prediction method
@@ -1321,6 +2225,29 @@ class SRParameterOptimizationStep(BaseStep):
                 # Higher values indicate higher sensitivity
                 sensitivity[param_name] = min(1.0, abs(param_value) / 10.0)
         return sensitivity
+
+    def _combine_evaluation_scores(self, scores: Dict[str, float], weights: Dict[str, float]) -> float:
+        """Combine different evaluation scores with appropriate weights."""
+        try:
+            if not scores or not weights:
+                return 0.0
+            
+            # Normalize weights to sum to 1.0
+            total_weight = sum(weights.values())
+            if total_weight == 0:
+                return 0.0
+            
+            normalized_weights = {method: weight / total_weight for method, weight in weights.items()}
+            
+            # Calculate weighted sum
+            weighted_sum = sum(score * normalized_weights.get(method, 0) for method, score in scores.items())
+            
+            self.logger.debug(f"Score combination: {scores}, weights: {normalized_weights}, result: {weighted_sum:.4f}")
+            return weighted_sum
+            
+        except Exception as e:
+            self.logger.error(f"Score combination failed: {e}")
+            return 0.0
 
     def _generate_enhancement_summary(self) -> Dict[str, Any]:
         """Generate a comprehensive summary of all enhancements made to the SR parameter optimization."""
@@ -1550,6 +2477,146 @@ class SRParameterOptimizationStep(BaseStep):
                 'success': False,
                 'error': str(e),
                 'artifact_paths': {}
+            }
+
+    async def _run_vectorbt_optimization(
+        self, 
+        market_data: Any, 
+        search_space: Dict[str, Any], 
+        enhanced_config: EnhancedSRConfig,
+        input_artifacts: Dict[str, Any] = None
+    ) -> Dict[str, Any]:
+        """
+        Run VectorBT rolling optimization for SR parameters.
+        
+        Args:
+            market_data: Market data for optimization
+            search_space: Parameter search space
+            enhanced_config: Enhanced configuration
+            input_artifacts: Artifacts from previous steps
+            
+        Returns:
+            VectorBT optimization results
+        """
+        if not VECTORBT_ROLLING_AVAILABLE:
+            return {'success': False, 'error': 'VectorBT RollingOptimizer not available'}
+        
+        tprint("⚡ VectorBT Rolling Optimization: Starting", "info")
+        
+        try:
+            # Convert market data to VectorBT format
+            if not PANDAS_AVAILABLE:
+                return {'success': False, 'error': 'Pandas not available for VectorBT'}
+            
+            # Prepare data for VectorBT
+            data_df = market_data if isinstance(market_data, pd.DataFrame) else pd.DataFrame(market_data)
+            tprint_data_format(data_df, "Market data for VectorBT")
+            
+            # Create VectorBT data structure
+            vbt_data = vbt.Data(
+                data_df['close'].values,
+                index=data_df.index if hasattr(data_df, 'index') else None,
+                columns=['close']
+            )
+            
+            # Add OHLCV data if available
+            if all(col in data_df.columns for col in ['open', 'high', 'low', 'volume']):
+                vbt_data = vbt.Data(
+                    data_df[['open', 'high', 'low', 'close', 'volume']].values,
+                    index=data_df.index if hasattr(data_df, 'index') else None,
+                    columns=['open', 'high', 'low', 'close', 'volume']
+                )
+            
+            # Define VectorBT objective function
+            def vectorbt_objective(params):
+                """VectorBT objective function for SR parameter optimization."""
+                try:
+                    # Extract parameters
+                    min_touches = int(params.get('min_touches', 2))
+                    strength_threshold = float(params.get('strength_threshold', 0.5))
+                    distance_threshold = float(params.get('distance_threshold', 0.01))
+                    lookback_periods = int(params.get('lookback_periods', 50))
+                    
+                    # Use VectorBT for efficient SR detection
+                    if hasattr(vbt_data, 'close'):
+                        close_prices = vbt_data.close.values
+                    else:
+                        close_prices = vbt_data.values.flatten()
+                    
+                    # Calculate rolling statistics using VectorBT
+                    rolling_min_vals = rolling_min(close_prices, window=lookback_periods)
+                    rolling_max_vals = rolling_max(close_prices, window=lookback_periods)
+                    rolling_std_vals = rolling_std(close_prices, window=lookback_periods)
+                    
+                    # Detect SR levels using vectorized operations
+                    sr_levels = []
+                    
+                    # Find local minima (support levels)
+                    min_mask = close_prices == rolling_min_vals
+                    support_levels = close_prices[min_mask]
+                    
+                    # Find local maxima (resistance levels)  
+                    max_mask = close_prices == rolling_max_vals
+                    resistance_levels = close_prices[max_mask]
+                    
+                    # Calculate level quality using vectorized operations
+                    total_levels = len(support_levels) + len(resistance_levels)
+                    
+                    if total_levels == 0:
+                        return 0.0
+                    
+                    # Calculate average volatility for normalization
+                    avg_volatility = rolling_std_vals.mean() if rolling_std_vals is not None else 0.01
+                    
+                    # Score based on level count and volatility
+                    level_score = min(total_levels / 10.0, 1.0)  # Normalize to 0-1
+                    volatility_score = min(avg_volatility / 0.05, 1.0)  # Normalize volatility
+                    
+                    # Combined score
+                    combined_score = (level_score * 0.6 + volatility_score * 0.4)
+                    
+                    return min(max(combined_score, 0.0), 1.0)
+                    
+                except Exception as e:
+                    self.logger.error(f"VectorBT objective function error: {e}")
+                    return 0.0
+            
+            # Create VectorBT RollingOptimizer
+            rolling_optimizer = RollingOptimizer(
+                data=vbt_data,
+                objective_func=vectorbt_objective,
+                param_ranges=search_space,
+                n_trials=enhanced_config.n_trials // 2,  # Use half trials for VectorBT
+                rolling_window=enhanced_config.rolling_window,
+                step_size=enhanced_config.step_size
+            )
+            
+            # Run optimization
+            tprint("⚡ VectorBT: Running rolling optimization", "info")
+            optimization_result = rolling_optimizer.optimize()
+            
+            # Process results
+            best_params = optimization_result.get('best_params', {})
+            best_score = optimization_result.get('best_score', 0.0)
+            
+            tprint(f"⚡ VectorBT: Best score = {best_score:.4f}", "info")
+            tprint_data_preview(best_params, "VectorBT best parameters")
+            
+            return {
+                'success': True,
+                'best_params': best_params,
+                'best_score': best_score,
+                'optimization_result': optimization_result,
+                'method': 'vectorbt_rolling'
+            }
+            
+        except Exception as e:
+            self.logger.error(f"VectorBT optimization failed: {e}")
+            tprint(f"❌ VectorBT optimization failed: {e}", "error")
+            return {
+                'success': False,
+                'error': str(e),
+                'method': 'vectorbt_rolling'
             }
 
     async def run(self, config: Dict[str, Any]) -> Dict[str, Any]:

@@ -3,12 +3,13 @@ Enhanced Ensemble Training Integration
 
 This module provides meta-features optimized for ensemble training including:
 - Base model outputs (required)
-- Disagreement features between base models
+- Disagreement features between base models (including CV and max pairwise)
 - Entropy features derived from disagreements
+- Feature interaction analysis (PCA, mutual information, complementarity)
 - Overall feature disagreement measures
 
 Target: Meta-features optimized for ensemble training
-Focus: Base model disagreement and entropy analysis
+Focus: Base model disagreement, entropy analysis, and interaction patterns
 """
 
 import warnings
@@ -45,8 +46,9 @@ class EnhancedEnsembleTrainingIntegration:
     
     Provides meta-features optimized for meta-learner training including:
     - Base model outputs (required)
-    - Disagreement features between base models
+    - Disagreement features between base models (including CV and max pairwise)
     - Entropy features derived from disagreements
+    - Feature interaction analysis (PCA, mutual information, complementarity)
     - Overall feature disagreement measures
     """
     
@@ -121,6 +123,11 @@ class EnhancedEnsembleTrainingIntegration:
         meta_features.update(entropy_features['features'])
         meta_feature_names.extend(entropy_features['feature_names'])
         
+        # Interaction features
+        interaction_features = self._generate_interaction_features(data, meta_features, base_models)
+        meta_features.update(interaction_features['features'])
+        meta_feature_names.extend(interaction_features['feature_names'])
+        
         return {
             'features': meta_features,
             'feature_names': meta_feature_names,
@@ -128,6 +135,7 @@ class EnhancedEnsembleTrainingIntegration:
                 'base_outputs': base_models is not None,
                 'disagreement_features': len(disagreement_features['features']),
                 'entropy_features': len(entropy_features['features']),
+                'interaction_features': len(interaction_features['features']),
                 'total_meta_features': len(meta_feature_names)
             }
         }
@@ -206,11 +214,33 @@ class EnhancedEnsembleTrainingIntegration:
                 'feature_names': feature_names
             }
         
-        # Calculate disagreement between base model outputs
+        # Convert to numpy array for easier computation
         base_model_array = np.array(base_model_outputs)
+        
+        # Basic disagreement measures
         base_model_std = np.std(base_model_array, axis=0)
         features['base_model_disagreement'] = base_model_std
         feature_names.append('base_model_disagreement')
+        
+        # Coefficient of Variation (CV) - normalized disagreement
+        mean_predictions = np.mean(base_model_array, axis=0)
+        cv_disagreement = np.divide(base_model_std, np.abs(mean_predictions) + 1e-8)
+        features['cv_disagreement'] = cv_disagreement
+        feature_names.append('cv_disagreement')
+        
+        # Maximum pairwise disagreement
+        max_pairwise_disagreement = np.zeros(base_model_array.shape[1])
+        for i in range(base_model_array.shape[1]):
+            pairwise_diffs = []
+            for j in range(len(base_model_names)):
+                for k in range(j + 1, len(base_model_names)):
+                    diff = np.abs(base_model_array[j, i] - base_model_array[k, i])
+                    pairwise_diffs.append(diff)
+            if pairwise_diffs:
+                max_pairwise_disagreement[i] = np.max(pairwise_diffs)
+        
+        features['max_pairwise_disagreement'] = max_pairwise_disagreement
+        feature_names.append('max_pairwise_disagreement')
         
         # Calculate pairwise disagreements between models
         for i, name1 in enumerate(base_model_names):
@@ -299,6 +329,161 @@ class EnhancedEnsembleTrainingIntegration:
             'feature_names': feature_names
         }
     
+    def _generate_interaction_features(self, data: pd.DataFrame, 
+                                     base_features: Dict[str, np.ndarray],
+                                     base_models: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Generate feature interaction analysis features."""
+        features = {}
+        feature_names = []
+        
+        # Get base model outputs
+        base_model_outputs = []
+        base_model_names = []
+        for model_name in base_models.keys():
+            feature_name = f'base_model_{model_name}_output'
+            if feature_name in base_features:
+                base_model_outputs.append(base_features[feature_name])
+                base_model_names.append(model_name)
+        
+        if len(base_model_outputs) < 2:
+            return {
+                'features': features,
+                'feature_names': feature_names
+            }
+        
+        # Convert to numpy array for easier computation
+        base_model_array = np.array(base_model_outputs)
+        
+        # Model interaction matrix (correlation between model outputs)
+        if base_model_array.shape[0] >= 2:
+            # Calculate correlation matrix between models
+            model_correlations = np.corrcoef(base_model_array)
+            
+            # Extract upper triangular part (excluding diagonal)
+            upper_tri_indices = np.triu_indices_from(model_correlations, k=1)
+            interaction_strengths = model_correlations[upper_tri_indices]
+            
+            # Average interaction strength
+            avg_interaction_strength = np.mean(interaction_strengths)
+            features['avg_interaction_strength'] = np.full(base_model_array.shape[1], avg_interaction_strength)
+            feature_names.append('avg_interaction_strength')
+            
+            # Maximum interaction strength
+            max_interaction_strength = np.max(interaction_strengths)
+            features['max_interaction_strength'] = np.full(base_model_array.shape[1], max_interaction_strength)
+            feature_names.append('max_interaction_strength')
+            
+            # Interaction diversity (standard deviation of correlations)
+            interaction_diversity = np.std(interaction_strengths)
+            features['interaction_diversity'] = np.full(base_model_array.shape[1], interaction_diversity)
+            feature_names.append('interaction_diversity')
+        
+        # Principal Component Analysis of disagreements
+        if base_model_array.shape[0] >= 2:
+            try:
+                from sklearn.decomposition import PCA
+                
+                # Calculate pairwise disagreements
+                pairwise_disagreements = []
+                for i in range(len(base_model_names)):
+                    for j in range(i + 1, len(base_model_names)):
+                        disagreement = np.abs(base_model_array[i] - base_model_array[j])
+                        pairwise_disagreements.append(disagreement)
+                
+                if pairwise_disagreements:
+                    disagreement_matrix = np.array(pairwise_disagreements).T
+                    
+                    # Apply PCA to disagreement patterns
+                    pca = PCA(n_components=min(3, disagreement_matrix.shape[1]))
+                    pca_components = pca.fit_transform(disagreement_matrix)
+                    
+                    # First principal component (main disagreement pattern)
+                    features['pca_disagreement_1'] = pca_components[:, 0]
+                    feature_names.append('pca_disagreement_1')
+                    
+                    # Second principal component (secondary disagreement pattern)
+                    if pca_components.shape[1] > 1:
+                        features['pca_disagreement_2'] = pca_components[:, 1]
+                        feature_names.append('pca_disagreement_2')
+                    
+                    # Explained variance ratio
+                    features['pca_explained_variance_ratio'] = np.full(
+                        base_model_array.shape[1], 
+                        np.sum(pca.explained_variance_ratio_)
+                    )
+                    feature_names.append('pca_explained_variance_ratio')
+                    
+            except ImportError:
+                # Fallback if sklearn is not available
+                pass
+        
+        # Mutual information between model outputs
+        if base_model_array.shape[0] >= 2:
+            mutual_info_scores = []
+            for i in range(len(base_model_names)):
+                for j in range(i + 1, len(base_model_names)):
+                    # Calculate mutual information between model outputs
+                    mi_score = self._calculate_mutual_information(
+                        base_model_array[i], base_model_array[j]
+                    )
+                    mutual_info_scores.append(mi_score)
+            
+            if mutual_info_scores:
+                # Average mutual information
+                avg_mutual_info = np.mean(mutual_info_scores)
+                features['avg_mutual_information'] = np.full(base_model_array.shape[1], avg_mutual_info)
+                feature_names.append('avg_mutual_information')
+                
+                # Maximum mutual information
+                max_mutual_info = np.max(mutual_info_scores)
+                features['max_mutual_information'] = np.full(base_model_array.shape[1], max_mutual_info)
+                feature_names.append('max_mutual_information')
+        
+        # Model complementarity score
+        if base_model_array.shape[0] >= 2:
+            # Calculate how much models disagree (complementarity)
+            disagreement_matrix = np.zeros((len(base_model_names), len(base_model_names)))
+            for i in range(len(base_model_names)):
+                for j in range(len(base_model_names)):
+                    if i != j:
+                        disagreement = np.mean(np.abs(base_model_array[i] - base_model_array[j]))
+                        disagreement_matrix[i, j] = disagreement
+            
+            # Complementarity is the average disagreement
+            complementarity = np.mean(disagreement_matrix[disagreement_matrix > 0])
+            features['model_complementarity'] = np.full(base_model_array.shape[1], complementarity)
+            feature_names.append('model_complementarity')
+        
+        return {
+            'features': features,
+            'feature_names': feature_names
+        }
+    
+    def _calculate_mutual_information(self, x: np.ndarray, y: np.ndarray, bins: int = 20) -> float:
+        """Calculate mutual information between two arrays."""
+        try:
+            # Create histograms
+            hist_2d, x_edges, y_edges = np.histogram2d(x, y, bins=bins)
+            
+            # Normalize to get probabilities
+            p_xy = hist_2d / np.sum(hist_2d)
+            
+            # Marginal probabilities
+            p_x = np.sum(p_xy, axis=1)
+            p_y = np.sum(p_xy, axis=0)
+            
+            # Calculate mutual information
+            mi = 0.0
+            for i in range(len(p_x)):
+                for j in range(len(p_y)):
+                    if p_xy[i, j] > 0 and p_x[i] > 0 and p_y[j] > 0:
+                        mi += p_xy[i, j] * np.log2(p_xy[i, j] / (p_x[i] * p_y[j]))
+            
+            return mi
+            
+        except Exception:
+            # Fallback: return 0 if calculation fails
+            return 0.0
     
     def _get_feature_category_breakdown(self, features: Dict[str, np.ndarray]) -> Dict[str, int]:
         """Get breakdown of meta-features by category."""
@@ -306,6 +491,7 @@ class EnhancedEnsembleTrainingIntegration:
             'base_outputs': 0,
             'disagreement': 0,
             'entropy': 0,
+            'interaction': 0,
             'other': 0
         }
         
@@ -316,6 +502,8 @@ class EnhancedEnsembleTrainingIntegration:
                 breakdown['disagreement'] += 1
             elif 'entropy' in feature_name.lower():
                 breakdown['entropy'] += 1
+            elif any(keyword in feature_name.lower() for keyword in ['interaction', 'pca', 'mutual', 'complementarity']):
+                breakdown['interaction'] += 1
             else:
                 breakdown['other'] += 1
         
@@ -353,6 +541,11 @@ class EnhancedEnsembleTrainingIntegration:
             issues.append('No entropy features found')
             score -= 20
         
+        # Should have interaction features
+        if category_breakdown['interaction'] == 0:
+            issues.append('No interaction features found')
+            score -= 15
+        
         # Check feature quality
         quality_issues = 0
         for name, values in features.items():
@@ -374,6 +567,7 @@ class EnhancedEnsembleTrainingIntegration:
             'base_outputs': category_breakdown['base_outputs'],
             'disagreement_features': category_breakdown['disagreement'],
             'entropy_features': category_breakdown['entropy'],
+            'interaction_features': category_breakdown['interaction'],
             'quality_issues': quality_issues
         }
     

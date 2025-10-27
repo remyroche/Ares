@@ -184,8 +184,7 @@ class SimplifiedAresLauncher:
                 'feature_generation_final_validation_step'
             ],
             'MODEL_TRAINING': [
-                'analyst_base_training', 'analyst_ensemble_training',
-                'tactician_base_training', 'tactician_ensemble_training'
+                'unified_models_training'  # Unified step handles all training types
             ],
             'BACKTESTING': [
                 'basic_backtesting_pre', 'final_parameters_optimization',
@@ -499,23 +498,26 @@ async def main():
             print(f"Sub-pipeline '{args.sub_pipeline}' completed: {'✅ Success' if result.get('success') else '❌ Failed'}")
             
         elif any([args.train_analyst_base, args.train_analyst_ensemble, args.train_tactician_base, args.train_tactician_ensemble]):
-            # Model training execution
+            # Model training execution using unified training step
             if args.train_analyst_base:
-                step_name = 'analyst_base_training'
+                training_type = 'analyst_base'
                 config['execution_context'] = 'analyst'
             elif args.train_analyst_ensemble:
-                step_name = 'analyst_ensemble_training'
+                training_type = 'analyst_ensemble'
                 config['execution_context'] = 'analyst'
             elif args.train_tactician_base:
-                step_name = 'tactician_base_training'
+                training_type = 'tactician_base'
                 config['execution_context'] = 'tactician'
             elif args.train_tactician_ensemble:
-                step_name = 'tactician_ensemble_training'
+                training_type = 'tactician_ensemble'
                 config['execution_context'] = 'tactician'
             
-            logger.info(f"Running model training: {step_name}")
-            result = await launcher.run_step(step_name, config)
-            print(f"Model training '{step_name}' completed: {'✅ Success' if result.get('success') else '❌ Failed'}")
+            # Add training type to config
+            config['training_type'] = training_type
+            
+            logger.info(f"Running unified model training: {training_type}")
+            result = await launcher.run_step('unified_models_training', config)
+            print(f"Unified model training '{training_type}' completed: {'✅ Success' if result.get('success') else '❌ Failed'}")
             
         elif args.hdbscan_regime_discovery:
             # HDBSCAN regime discovery execution

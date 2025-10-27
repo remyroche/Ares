@@ -486,16 +486,15 @@ class SRClusteringComponent(BaseStep):
             # Load SR levels for clustering
             sr_levels = await self._load_sr_levels_for_clustering(symbol, timeframe, config)
             
+            # Enhanced input validation
             if not sr_levels:
-                self.logger.warning("No SR levels found for clustering")
-                return {
-                    'total_clusters': 0,
-                    'clustering_efficiency': 0.0,
-                    'clusters': [],
-                    'performance_metrics': {},
-                    'quality_metrics': {},
-                    'hardware_metrics': {}
-                }
+                self.logger.warning("No SR levels provided for clustering")
+                return await self._create_empty_clustering_result()
+            
+            # Validate input with enhanced error handling
+            if not await self._validate_clustering_input(sr_levels):
+                self.logger.error("Input validation failed")
+                return await self._create_empty_clustering_result()
             
             # Detect data leakage if enabled
             data_leakage_results = {}
@@ -902,18 +901,63 @@ class SRClusteringComponent(BaseStep):
             return await self._simple_proximity_clustering(sr_levels, enhanced_config)
 
     def _extract_clustering_features(self, sr_levels: List[Dict[str, Any]]) -> np.ndarray:
-        """Extract features for clustering."""
+        """Extract enhanced features for clustering with proper normalization."""
         try:
+            if not sr_levels:
+                return np.array([])
+            
             features = []
+            prices = [level.get('price', 0.0) for level in sr_levels if level.get('price', 0.0) > 0]
+            current_price = np.mean(prices) if prices else 1.0
+            
             for level in sr_levels:
+                price = level.get('price', 0.0)
+                
+                # Price-relative features (normalized)
+                price_ratio = price / current_price if current_price > 0 else 1.0
+                log_price = np.log(price) if price > 0 else 0
+                
+                # Normalized features (0-1 range)
+                strength_norm = min(level.get('strength', 0.0), 1.0)  # Cap at 1.0
+                confidence_norm = min(level.get('confidence', 0.0), 1.0)  # Cap at 1.0
+                touches_norm = min(level.get('touches', 0) / 10.0, 1.0)  # Normalize touches (cap at 10)
+                
+                # Temporal features
+                first_touch = level.get('first_touch', datetime.now())
+                last_touch = level.get('last_touch', datetime.now())
+                
+                # Calculate age and recency in normalized units
+                if isinstance(first_touch, datetime) and isinstance(last_touch, datetime):
+                    age_days = (datetime.now() - first_touch).days / 365.0  # Years, normalized
+                    recency_days = (datetime.now() - last_touch).days / 30.0  # Months, normalized
+                else:
+                    age_days = 0.0
+                    recency_days = 0.0
+                
+                # Type encoding (one-hot)
+                level_type = level.get('type', 'unknown').lower()
+                is_support = 1.0 if level_type == 'support' else 0.0
+                is_resistance = 1.0 if level_type == 'resistance' else 0.0
+                
+                # Additional features from features dict
+                features_dict = level.get('features', {})
+                volume_profile = min(features_dict.get('volume_profile', 0.0), 1.0)
+                price_action = min(features_dict.get('price_action', 0.0), 1.0)
+                technical_indicators = min(features_dict.get('technical_indicators', 0.0), 1.0)
+                
                 level_features = [
-                    level.get('price', 0.0),
-                    level.get('strength', 0.0),
-                    level.get('touches', 0),
-                    level.get('confidence', 0.0),
-                    level.get('features', {}).get('volume_profile', 0.0),
-                    level.get('features', {}).get('price_action', 0.0),
-                    level.get('features', {}).get('technical_indicators', 0.0)
+                    log_price,           # Log-transformed price (scale-invariant)
+                    price_ratio,         # Price relative to current (normalized)
+                    strength_norm,       # Normalized strength (0-1)
+                    confidence_norm,     # Normalized confidence (0-1)
+                    touches_norm,        # Normalized touches (0-1)
+                    age_days,           # Age in years (normalized)
+                    recency_days,       # Recency in months (normalized)
+                    is_support,         # Support indicator (0 or 1)
+                    is_resistance,      # Resistance indicator (0 or 1)
+                    volume_profile,     # Volume profile feature (0-1)
+                    price_action,       # Price action feature (0-1)
+                    technical_indicators # Technical indicators feature (0-1)
                 ]
                 features.append(level_features)
             
@@ -1012,20 +1056,21 @@ class SRClusteringComponent(BaseStep):
                 try:
                     features = self._extract_clustering_features(sr_levels)
                     if len(features) > 1:
-                        # Create cluster labels for silhouette calculation
-                        cluster_labels = []
-                        for i, level in enumerate(sr_levels):
-                            # Find which cluster this level belongs to
-                            cluster_id = -1
-                            for cluster in clusters:
-                                if level in cluster['levels']:
-                                    cluster_id = cluster['cluster_id']
-                                    break
-                            cluster_labels.append(cluster_id)
+                        # Create proper cluster labels for silhouette calculation
+                        cluster_labels = self._create_cluster_labels_for_silhouette(sr_levels, clusters)
                         
-                        if len(set(cluster_labels)) > 1:  # Need at least 2 clusters
+                        if len(set(cluster_labels)) > 1 and -1 not in cluster_labels:  # Need at least 2 clusters, no noise
                             silhouette_avg = silhouette_score(features, cluster_labels)
                             quality_metrics['silhouette_score'] = silhouette_avg
+                        elif len(set(cluster_labels)) > 1:  # Has clusters but also noise points
+                            # Filter out noise points for silhouette calculation
+                            valid_mask = np.array(cluster_labels) != -1
+                            if np.sum(valid_mask) > 1:
+                                valid_features = features[valid_mask]
+                                valid_labels = np.array(cluster_labels)[valid_mask]
+                                if len(set(valid_labels)) > 1:
+                                    silhouette_avg = silhouette_score(valid_features, valid_labels)
+                                    quality_metrics['silhouette_score'] = silhouette_avg
                 except Exception as e:
                     self.logger.warning(f"Silhouette score calculation failed: {e}")
             
@@ -1034,6 +1079,237 @@ class SRClusteringComponent(BaseStep):
         except Exception as e:
             self.logger.error(f"Quality metrics calculation failed: {e}")
             return {}
+
+    def _create_cluster_labels_for_silhouette(self, sr_levels: List[Dict[str, Any]], clusters: List[Dict[str, Any]]) -> List[int]:
+        """Create cluster labels for silhouette score calculation with proper level matching."""
+        try:
+            cluster_labels = []
+            
+            for level in sr_levels:
+                cluster_id = -1  # Default to noise
+                
+                # Find which cluster this level belongs to by matching key attributes
+                for cluster in clusters:
+                    for cluster_level in cluster['levels']:
+                        if self._level_matches_for_clustering(level, cluster_level):
+                            cluster_id = cluster['cluster_id']
+                            break
+                    if cluster_id != -1:
+                        break
+                
+                cluster_labels.append(cluster_id)
+            
+            return cluster_labels
+            
+        except Exception as e:
+            self.logger.error(f"Cluster label creation failed: {e}")
+            return [-1] * len(sr_levels)
+
+    def _level_matches_for_clustering(self, level1: Dict[str, Any], level2: Dict[str, Any]) -> bool:
+        """Check if two levels match for clustering purposes."""
+        try:
+            # Match by key attributes that should be unique
+            price1 = level1.get('price', 0.0)
+            price2 = level2.get('price', 0.0)
+            
+            # Allow small floating point differences
+            price_match = abs(price1 - price2) < 1e-10
+            
+            # Also match by type and strength for additional validation
+            type1 = level1.get('type', '')
+            type2 = level2.get('type', '')
+            type_match = type1 == type2
+            
+            strength1 = level1.get('strength', 0.0)
+            strength2 = level2.get('strength', 0.0)
+            strength_match = abs(strength1 - strength2) < 1e-6
+            
+            return price_match and type_match and strength_match
+            
+        except Exception as e:
+            self.logger.warning(f"Level matching failed: {e}")
+            return False
+
+    def _calculate_time_proximity(self, level1: Dict[str, Any], level2: Dict[str, Any]) -> float:
+        """Calculate time-based proximity between two levels (0-1, higher = closer in time)."""
+        try:
+            # Get timestamps
+            time1 = level1.get('first_touch') or level1.get('last_touch')
+            time2 = level2.get('first_touch') or level2.get('last_touch')
+            
+            if not time1 or not time2:
+                return 0.0  # No time information
+            
+            # Convert to datetime if needed
+            if isinstance(time1, str):
+                time1 = datetime.fromisoformat(time1.replace('Z', '+00:00'))
+            if isinstance(time2, str):
+                time2 = datetime.fromisoformat(time2.replace('Z', '+00:00'))
+            
+            # Calculate time difference in days
+            time_diff_days = abs((time1 - time2).total_seconds()) / (24 * 3600)
+            
+            # Convert to proximity (0-1 scale, closer in time = higher proximity)
+            # Use exponential decay: proximity = exp(-time_diff / decay_constant)
+            decay_constant = 30  # 30 days
+            proximity = np.exp(-time_diff_days / decay_constant)
+            
+            return min(proximity, 1.0)
+            
+        except Exception as e:
+            self.logger.warning(f"Time proximity calculation failed: {e}")
+            return 0.0
+
+    def _calculate_enhanced_cluster_representative(self, cluster_levels: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Calculate enhanced cluster representative with weighted aggregation."""
+        try:
+            if not cluster_levels:
+                return {}
+            
+            if len(cluster_levels) == 1:
+                return cluster_levels[0]
+            
+            # Calculate weights based on strength and confidence
+            weights = []
+            for level in cluster_levels:
+                strength = level.get('strength', 0.0)
+                confidence = level.get('confidence', 0.0)
+                touches = level.get('touches', 0)
+                
+                # Weighted combination: strength (40%), confidence (30%), touches (30%)
+                weight = (strength * 0.4 + confidence * 0.3 + min(touches / 10.0, 1.0) * 0.3)
+                weights.append(weight)
+            
+            # Normalize weights
+            total_weight = sum(weights)
+            if total_weight > 0:
+                weights = [w / total_weight for w in weights]
+            else:
+                weights = [1.0 / len(cluster_levels)] * len(cluster_levels)
+            
+            # Weighted aggregation
+            weighted_price = sum(level.get('price', 0.0) * weight for level, weight in zip(cluster_levels, weights))
+            weighted_strength = sum(level.get('strength', 0.0) * weight for level, weight in zip(cluster_levels, weights))
+            weighted_confidence = sum(level.get('confidence', 0.0) * weight for level, weight in zip(cluster_levels, weights))
+            
+            # Sum for counts
+            total_touches = sum(level.get('touches', 0) for level in cluster_levels)
+            
+            # Determine type (majority vote with strength weighting)
+            type_votes = {}
+            for level, weight in zip(cluster_levels, weights):
+                level_type = level.get('type', 'unknown')
+                type_votes[level_type] = type_votes.get(level_type, 0) + weight
+            
+            representative_type = max(type_votes.items(), key=lambda x: x[1])[0] if type_votes else 'mixed'
+            
+            # Find the strongest level for additional attributes
+            strongest_level = max(cluster_levels, key=lambda x: x.get('strength', 0.0))
+            
+            representative = {
+                'price': weighted_price,
+                'strength': weighted_strength,
+                'confidence': weighted_confidence,
+                'touches': total_touches,
+                'type': representative_type,
+                'cluster_size': len(cluster_levels),
+                'first_touch': min((level.get('first_touch') for level in cluster_levels if level.get('first_touch')), default=None),
+                'last_touch': max((level.get('last_touch') for level in cluster_levels if level.get('last_touch')), default=None),
+                'features': strongest_level.get('features', {}),
+                'metadata': {
+                    'weighted_aggregation': True,
+                    'cluster_weights': weights,
+                    'original_levels_count': len(cluster_levels)
+                }
+            }
+            
+            return representative
+            
+        except Exception as e:
+            self.logger.error(f"Enhanced representative calculation failed: {e}")
+            return cluster_levels[0] if cluster_levels else {}
+
+    async def _validate_clustering_input(self, sr_levels: List[Dict[str, Any]]) -> bool:
+        """Validate input for clustering with enhanced error handling."""
+        try:
+            if not sr_levels:
+                self.logger.warning("No SR levels provided for clustering")
+                return False
+            
+            if not isinstance(sr_levels, list):
+                self.logger.error(f"Expected list, got {type(sr_levels)}")
+                return False
+            
+            # Check for required fields and data quality
+            required_fields = ['price', 'strength', 'type']
+            valid_levels = 0
+            
+            for i, level in enumerate(sr_levels):
+                if not isinstance(level, dict):
+                    self.logger.warning(f"Level {i} is not a dictionary: {type(level)}")
+                    continue
+                
+                # Check required fields
+                missing_fields = [field for field in required_fields if field not in level]
+                if missing_fields:
+                    self.logger.warning(f"Level {i} missing required fields: {missing_fields}")
+                    continue
+                
+                # Validate data types and ranges
+                price = level.get('price', 0.0)
+                strength = level.get('strength', 0.0)
+                level_type = level.get('type', '')
+                
+                if not isinstance(price, (int, float)) or price <= 0:
+                    self.logger.warning(f"Level {i} has invalid price: {price}")
+                    continue
+                
+                if not isinstance(strength, (int, float)) or strength < 0:
+                    self.logger.warning(f"Level {i} has invalid strength: {strength}")
+                    continue
+                
+                if not isinstance(level_type, str) or level_type.lower() not in ['support', 'resistance', 'mixed']:
+                    self.logger.warning(f"Level {i} has invalid type: {level_type}")
+                    continue
+                
+                valid_levels += 1
+            
+            if valid_levels == 0:
+                self.logger.error("No valid levels found for clustering")
+                return False
+            
+            if valid_levels < len(sr_levels):
+                self.logger.warning(f"Only {valid_levels}/{len(sr_levels)} levels are valid")
+            
+            # Check for duplicate levels
+            seen_prices = set()
+            duplicates = 0
+            for level in sr_levels:
+                price = level.get('price', 0.0)
+                if price in seen_prices:
+                    duplicates += 1
+                else:
+                    seen_prices.add(price)
+            
+            if duplicates > 0:
+                self.logger.warning(f"Found {duplicates} duplicate price levels")
+            
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Input validation failed: {e}")
+            return False
+
+    async def _create_empty_clustering_result(self) -> Dict[str, Any]:
+        """Create an empty clustering result with proper structure."""
+        return {
+            'total_clusters': 0,
+            'clustering_efficiency': 0.0,
+            'clusters': [],
+            'performance_metrics': {},
+            'quality_metrics': {},
+            'hardware_metrics': {}
+        }
 
     async def _calculate_clustering_performance_metrics(
         self, 
@@ -1102,15 +1378,48 @@ class SRClusteringComponent(BaseStep):
         sr_levels: List[Dict[str, Any]],
         config: Any
     ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
-        """Perform simple proximity-based clustering."""
+        """Perform enhanced proximity-based clustering with adaptive thresholds."""
         try:
             start_time = datetime.now()
 
-            # Group levels by proximity
+            # Validate input
+            if not sr_levels:
+                return [], {'efficiency': 0.0, 'method': 'proximity', 'error': 'No levels provided'}
+            
+            if len(sr_levels) == 1:
+                cluster_info = {
+                    'cluster_id': 0,
+                    'levels': sr_levels,
+                    'representative': sr_levels[0],
+                    'size': 1,
+                    'type': sr_levels[0].get('type', 'mixed')
+                }
+                return [cluster_info], {'efficiency': 1.0, 'method': 'proximity', 'total_clusters': 1}
+
+            # Calculate adaptive distance threshold
+            prices = [level.get('price', 0.0) for level in sr_levels if level.get('price', 0.0) > 0]
+            if not prices:
+                return [], {'efficiency': 0.0, 'method': 'proximity', 'error': 'No valid prices'}
+            
+            price_range = max(prices) - min(prices)
+            base_threshold = getattr(config, 'eps', 0.01)
+            
+            # Adaptive threshold: use 1% of price range or base threshold, whichever is larger
+            adaptive_threshold = max(base_threshold, price_range * 0.01)
+            
+            # Use ATR-based distance if available
+            if hasattr(config, 'atr') and config.atr > 0:
+                adaptive_threshold = max(adaptive_threshold, config.atr * 2)
+            
+            self.logger.info(f"Using adaptive threshold: {adaptive_threshold:.6f} (base: {base_threshold}, price_range: {price_range:.6f})")
+
+            # Sort levels by strength for better clustering (strongest first)
+            sorted_levels = sorted(sr_levels, key=lambda x: x.get('strength', 0.0), reverse=True)
+            
             clusters = []
             used_indices = set()
 
-            for i, level in enumerate(sr_levels):
+            for i, level in enumerate(sorted_levels):
                 if i in used_indices:
                     continue
 
@@ -1119,37 +1428,48 @@ class SRClusteringComponent(BaseStep):
                 used_indices.add(i)
                 level_price = level.get('price', 0.0)
 
-                # Find nearby levels
-                for j, other_level in enumerate(sr_levels):
+                # Find nearby levels with enhanced distance calculation
+                for j, other_level in enumerate(sorted_levels):
                     if j in used_indices or j == i:
                         continue
 
                     other_price = other_level.get('price', 0.0)
-                    price_diff = abs(level_price - other_price) / level_price
+                    
+                    # Enhanced distance calculation with division by zero protection
+                    if level_price > 0:
+                        price_diff = abs(level_price - other_price) / level_price
+                    else:
+                        price_diff = float('inf')
+                    
+                    # Time-based proximity (if timestamps available)
+                    time_proximity = self._calculate_time_proximity(level, other_level)
+                    
+                    # Combined distance metric (price + time)
+                    combined_distance = price_diff * (1 - time_proximity * 0.3)
 
-                    # If within distance threshold, add to cluster
-                    distance_threshold = getattr(config, 'eps', 0.01)
-                    if price_diff <= distance_threshold:
+                    if combined_distance <= adaptive_threshold:
                         cluster.append(other_level)
                         used_indices.add(j)
 
                 # Only keep clusters that meet minimum size requirement
                 min_cluster_size = getattr(config, 'min_cluster_size', 2)
                 if len(cluster) >= min_cluster_size:
-                    # Calculate cluster representative (strongest level)
-                    best_level = max(cluster, key=lambda x: x.get('strength', 0.0))
+                    # Calculate enhanced cluster representative
+                    representative = self._calculate_enhanced_cluster_representative(cluster)
                     
                     cluster_info = {
                         'cluster_id': len(clusters),
                         'levels': cluster,
-                        'representative': best_level,
+                        'representative': representative,
                         'size': len(cluster),
-                        'type': best_level.get('type', 'mixed')
+                        'type': representative.get('type', 'mixed'),
+                        'adaptive_threshold_used': adaptive_threshold
                     }
                     clusters.append(cluster_info)
 
             # If no clusters meet minimum size, return all levels as individual clusters
             if not clusters:
+                self.logger.warning("No clusters met minimum size, creating individual clusters")
                 for i, level in enumerate(sr_levels):
                     cluster_info = {
                         'cluster_id': i,
@@ -1165,17 +1485,19 @@ class SRClusteringComponent(BaseStep):
 
             metrics = {
                 'efficiency': len(clusters) / len(sr_levels) if sr_levels else 0.0,
-                'method': 'proximity',
+                'method': 'enhanced_proximity',
                 'clustering_time': clustering_time,
                 'total_clusters': len(clusters),
                 'original_levels': len(sr_levels),
-                'reduction_ratio': len(clusters) / len(sr_levels) if sr_levels else 0.0
+                'reduction_ratio': len(clusters) / len(sr_levels) if sr_levels else 0.0,
+                'adaptive_threshold': adaptive_threshold,
+                'price_range': price_range
             }
 
             return clusters, metrics
 
         except Exception as e:
-            self.logger.error(f"Clustering process failed: {e}")
+            self.logger.error(f"Enhanced proximity clustering failed: {e}")
             return [], {'efficiency': 0.0, 'method': 'fallback', 'error': str(e)}
 
     def _create_sr_levels_dictionary(self, clustering_result: Dict[str, Any]) -> Dict[str, Any]:
@@ -1621,10 +1943,10 @@ class SRClusteringComponent(BaseStep):
                 labels = result['labels']
                 weight = config.ensemble_weights[config.ensemble_algorithms.index(algorithm_name)] if algorithm_name in config.ensemble_algorithms else 1.0 / n_algorithms
                 
-                # Add to consensus matrix
-                for i in range(n_levels):
-                    for j in range(n_levels):
-                        if labels[i] == labels[j] and labels[i] != -1:
+                # Add to consensus matrix with proper bounds checking
+                for i in range(min(n_levels, len(labels))):
+                    for j in range(min(n_levels, len(labels))):
+                        if i < len(labels) and j < len(labels) and labels[i] == labels[j] and labels[i] != -1:
                             consensus_matrix[i, j] += weight
             
             # Normalize consensus matrix

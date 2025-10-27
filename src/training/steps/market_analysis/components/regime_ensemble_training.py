@@ -463,13 +463,14 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
         tprint(f"✅ [REGIME_ENSEMBLE] Data prepared - X: {X.shape}, y: {y.shape}, regime_labels: {regime_labels.shape if regime_labels is not None else 'None'}", color="green")
         return X, y, regime_labels
 
-    def _create_enhanced_meta_features(self, meta_features: np.ndarray, y: np.ndarray) -> np.ndarray:
+    def _create_enhanced_meta_features(self, meta_features: np.ndarray, y: np.ndarray, base_model_predictions: Optional[np.ndarray] = None) -> np.ndarray:
         """
         Create enhanced meta-features for better ensemble performance.
 
         Args:
             meta_features: Base meta-features from base models
             y: Target labels
+            base_model_predictions: Raw predictions from base models for disagreement analysis
 
         Returns:
             Enhanced meta-features array
@@ -497,7 +498,45 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
             variance = np.var(meta_features, axis=1, keepdims=True)
             enhanced_features.append(variance)
 
-            # 5. Class-specific features
+            # 5. Disagreement features (if base model predictions available)
+            if base_model_predictions is not None and base_model_predictions.shape[1] > 1:
+                # Model disagreement (variance across base model predictions)
+                model_disagreement = np.var(base_model_predictions, axis=1, keepdims=True)
+                enhanced_features.append(model_disagreement)
+                
+                # Pairwise disagreement (max disagreement between any two models)
+                pairwise_disagreement = np.zeros((len(y), 1))
+                for i in range(base_model_predictions.shape[1]):
+                    for j in range(i+1, base_model_predictions.shape[1]):
+                        disagreement = np.abs(base_model_predictions[:, i] - base_model_predictions[:, j])
+                        pairwise_disagreement = np.maximum(pairwise_disagreement, disagreement.reshape(-1, 1))
+                enhanced_features.append(pairwise_disagreement)
+
+            # 6. Regime transition features
+            if len(y) > 1:
+                # Regime stability (consecutive same predictions)
+                regime_stability = np.zeros((len(y), 1))
+                for i in range(1, len(y)):
+                    if y[i] == y[i-1]:
+                        regime_stability[i] = regime_stability[i-1] + 1
+                enhanced_features.append(regime_stability)
+                
+                # Regime change indicator
+                regime_changes = np.zeros((len(y), 1))
+                regime_changes[1:] = (y[1:] != y[:-1]).astype(int).reshape(-1, 1)
+                enhanced_features.append(regime_changes)
+
+            # 7. Uncertainty quantification features
+            # Prediction confidence gap (difference between top 2 predictions)
+            sorted_probs = np.sort(meta_features, axis=1)
+            confidence_gap = sorted_probs[:, -1] - sorted_probs[:, -2]
+            enhanced_features.append(confidence_gap.reshape(-1, 1))
+            
+            # Prediction margin (distance to decision boundary)
+            prediction_margin = np.max(meta_features, axis=1) - np.mean(meta_features, axis=1)
+            enhanced_features.append(prediction_margin.reshape(-1, 1))
+
+            # 8. Class-specific features
             unique_classes = np.unique(y)
             for i, class_val in enumerate(unique_classes):
                 class_mask = (y == class_val)

@@ -3466,7 +3466,7 @@ class VolatilityAwareMultiHorizonLabeler:
             0.5 * np.abs(distance) / 0.75,  # Linear scaling from 0 to 0.5
             np.where(
                 np.abs(distance) >= 0.75,  # 75% and above
-                0.5 + 0.4 * (np.abs(distance) - 0.75),  # Linear scaling: 0.5 + 0.4 * (distance - 0.75)
+                0.5 + 2.0 * (np.abs(distance) - 0.75),  # Linear scaling: 0.5 + 0.4 * (distance - 0.75)
                 0.5  # Fallback
             )
         )
@@ -3521,7 +3521,7 @@ class VolatilityAwareMultiHorizonLabeler:
             0.5 * np.abs(distance) / 0.75,  # Linear scaling from 0 to 0.5
             np.where(
                 np.abs(distance) >= 0.75,  # 75% and above
-                0.5 + 0.4 * (np.abs(distance) - 0.75),  # Linear scaling: 0.5 + 0.4 * (distance - 0.75)
+                0.5 + 2.0 * (np.abs(distance) - 0.75),  # Linear scaling: 0.5 + 0.4 * (distance - 0.75)
                 0.5  # Fallback
             )
         )

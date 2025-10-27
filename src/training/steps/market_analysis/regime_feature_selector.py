@@ -855,14 +855,32 @@ class EnhancedRegimeFeatureSelector(BaseStep):
                 )
                 artifacts.append(metrics_path)
             
-            # Generate comprehensive report
+            # Generate comprehensive markdown report
+            markdown_report = self._generate_comprehensive_markdown_report(
+                symbol, exchange, timeframes, execution_mode, 
+                selection_results, performance_metrics,
+                features_data, target_data, regime_labels
+            )
+            
+            # Save markdown report to outcomes directory
+            timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+            report_filename = f"regime_feature_selection_report_{symbol}_{exchange}_{timestamp_str}.md"
+            outcomes_dir = Path("outcomes")
+            outcomes_dir.mkdir(exist_ok=True)
+            report_path = outcomes_dir / report_filename
+            
+            with open(report_path, 'w', encoding='utf-8') as f:
+                f.write(markdown_report)
+            
+            tprint_success(f"Comprehensive report saved: {report_path}")
+            
+            # Also save as artifact for consistency
             report_data = self._generate_execution_report(
                 symbol, exchange, timeframes, execution_mode, 
                 selection_results, performance_metrics
             )
             
-            # Save execution report
-            report_path = self._save_artifact(
+            artifact_report_path = self._save_artifact(
                 data=report_data,
                 artifact_name=f'feature_selection_report_{symbol}_{exchange}',
                 artifact_type='report',
@@ -874,7 +892,7 @@ class EnhancedRegimeFeatureSelector(BaseStep):
                     'timestamp': datetime.now().isoformat()
                 }
             )
-            artifacts.append(report_path)
+            artifacts.append(artifact_report_path)
             
             # Prepare execution result
             execution_result = {
@@ -890,7 +908,8 @@ class EnhancedRegimeFeatureSelector(BaseStep):
                 'selected_features': selection_results['selected_features'],
                 'feature_importance': selection_results.get('feature_importance', {}),
                 'regime_specific_results': selection_results.get('regime_specific_results', {}),
-                'report_path': report_path
+                'report_path': str(report_path),
+                'markdown_report_path': str(report_path)
             }
             
             tprint_success(f"Regime feature selection completed successfully for {symbol}")
@@ -1042,6 +1061,310 @@ class EnhancedRegimeFeatureSelector(BaseStep):
                 'use_explainability': self.config.use_explainability
             }
         }
+    
+    def _generate_comprehensive_markdown_report(
+        self,
+        symbol: str,
+        exchange: str,
+        timeframes: List[str],
+        execution_mode: str,
+        selection_results: Dict[str, Any],
+        performance_metrics: Dict[str, Any],
+        features_data: Optional[pd.DataFrame] = None,
+        target_data: Optional[pd.Series] = None,
+        regime_labels: Optional[pd.Series] = None
+    ) -> str:
+        """Generate comprehensive markdown report with per-feature metrics."""
+        try:
+            timestamp = datetime.now()
+            timestamp_str = timestamp.strftime("%Y%m%d_%H%M%S")
+            
+            # Calculate basic statistics
+            total_features = len(features_data.columns) if features_data is not None else 0
+            selected_features = selection_results.get('selected_features', [])
+            selected_count = len(selected_features)
+            selection_ratio = selected_count / max(1, total_features)
+            
+            # Get feature importance scores
+            feature_importance = selection_results.get('feature_importance', {})
+            
+            # Get regime-specific results
+            regime_specific_results = selection_results.get('regime_specific_results', {})
+            
+            # Calculate per-feature metrics if data is available
+            per_feature_metrics = {}
+            if features_data is not None and target_data is not None:
+                per_feature_metrics = self._calculate_per_feature_metrics(
+                    features_data, target_data, selected_features
+                )
+            
+            # Generate markdown content
+            markdown_content = f"""# Regime Feature Selection Comprehensive Report
+
+**Generated**: {timestamp.isoformat()}  
+**Symbol**: {symbol}  
+**Exchange**: {exchange}  
+**Timeframes**: {', '.join(timeframes)}  
+**Execution Mode**: {execution_mode}  
+**Selection Method**: {selection_results.get('selection_method', 'unknown')}  
+
+---
+
+## 📊 Executive Summary
+
+This report provides a comprehensive analysis of the regime feature selection process, including detailed metrics for each selected feature, regime-specific analysis, and performance assessments.
+
+### Key Results
+- **Total Features**: {total_features:,}
+- **Selected Features**: {selected_count:,}
+- **Selection Ratio**: {selection_ratio:.2%}
+- **Processing Time**: {performance_metrics.get('selection_time', 0):.2f} seconds
+- **Selection Method**: {selection_results.get('selection_method', 'unknown')}
+- **Regime-Specific Analysis**: {'✅ Available' if regime_specific_results else '❌ Not Available'}
+
+---
+
+## 🔍 Feature Selection Analysis
+
+### Selection Statistics
+
+| Metric | Value |
+|--------|-------|
+| **Total Features** | {total_features:,} |
+| **Selected Features** | {selected_count:,} |
+| **Selection Ratio** | {selection_ratio:.2%} |
+| **Min Importance Threshold** | {self.config.min_feature_importance:.4f} |
+| **Max Features Limit** | {self.config.max_features} |
+
+### Selection Method Details
+
+- **Primary Method**: {selection_results.get('selection_method', 'unknown')}
+- **TreeSHAP Available**: {'✅ Yes' if hasattr(self, 'treeshap_selector') and self.treeshap_selector is not None else '❌ No'}
+- **VectorBT Optimization**: {'✅ Yes' if hasattr(self, 'vectorbt_optimizer') and self.vectorbt_optimizer is not None else '❌ No'}
+- **Hardware Optimization**: {'✅ Yes' if hasattr(self, 'hardware_manager') and self.hardware_manager is not None else '❌ No'}
+
+---
+
+## 📈 Per-Feature Analysis
+
+### Top 20 Selected Features
+
+"""
+            
+            # Add top features table
+            if selected_features and feature_importance:
+                # Sort features by importance
+                sorted_features = sorted(
+                    feature_importance.items(), 
+                    key=lambda x: x[1], 
+                    reverse=True
+                )[:20]
+                
+                markdown_content += """
+| Rank | Feature Name | Importance Score | Category | Stability |
+|------|--------------|------------------|----------|-----------|
+"""
+                
+                for i, (feature_name, importance) in enumerate(sorted_features, 1):
+                    # Get additional metrics for this feature
+                    feature_metrics = per_feature_metrics.get(feature_name, {})
+                    category = feature_metrics.get('category', 'Unknown')
+                    stability = feature_metrics.get('stability', 0.0)
+                    
+                    markdown_content += f"| {i} | `{feature_name}` | {importance:.4f} | {category} | {stability:.3f} |\n"
+            else:
+                markdown_content += "No feature importance data available.\n"
+            
+            markdown_content += "\n### Complete Feature List\n\n"
+            
+            # Add complete feature list
+            if selected_features:
+                markdown_content += "The following features were selected for regime-based trading:\n\n"
+                for i, feature in enumerate(selected_features, 1):
+                    importance = feature_importance.get(feature, 0.0)
+                    feature_metrics = per_feature_metrics.get(feature, {})
+                    category = feature_metrics.get('category', 'Unknown')
+                    
+                    markdown_content += f"{i}. **{feature}**\n"
+                    markdown_content += f"   - Importance: {importance:.4f}\n"
+                    markdown_content += f"   - Category: {category}\n"
+                    if 'correlation' in feature_metrics:
+                        markdown_content += f"   - Target Correlation: {feature_metrics['correlation']:.4f}\n"
+                    if 'variance' in feature_metrics:
+                        markdown_content += f"   - Variance: {feature_metrics['variance']:.4f}\n"
+                    markdown_content += "\n"
+            else:
+                markdown_content += "No features were selected.\n"
+            
+            # Add regime-specific analysis
+            if regime_specific_results:
+                markdown_content += "---\n\n## 🎯 Regime-Specific Analysis\n\n"
+                markdown_content += "### Regime Distribution\n\n"
+                
+                for regime_name, regime_data in regime_specific_results.items():
+                    regime_features = regime_data.get('selected_features', [])
+                    regime_importance = regime_data.get('feature_importance', {})
+                    
+                    markdown_content += f"#### {regime_name.replace('_', ' ').title()}\n\n"
+                    markdown_content += f"- **Selected Features**: {len(regime_features)}\n"
+                    markdown_content += f"- **Top Features**: {', '.join(regime_features[:5]) if regime_features else 'None'}\n\n"
+                    
+                    if regime_importance:
+                        top_regime_features = sorted(
+                            regime_importance.items(), 
+                            key=lambda x: x[1], 
+                            reverse=True
+                        )[:5]
+                        
+                        markdown_content += "**Top Features by Importance:**\n"
+                        for feature, importance in top_regime_features:
+                            markdown_content += f"- `{feature}`: {importance:.4f}\n"
+                        markdown_content += "\n"
+            
+            # Add performance metrics
+            markdown_content += "---\n\n## ⚡ Performance Metrics\n\n"
+            markdown_content += "### Execution Performance\n\n"
+            markdown_content += f"- **Total Execution Time**: {performance_metrics.get('selection_time', 0):.2f} seconds\n"
+            markdown_content += f"- **Features Processed**: {performance_metrics.get('total_features', 0):,}\n"
+            markdown_content += f"- **Selection Efficiency**: {performance_metrics.get('selection_ratio', 0):.2%}\n"
+            markdown_content += f"- **Memory Usage**: {performance_metrics.get('memory_usage', 'N/A')}\n\n"
+            
+            # Add component status
+            markdown_content += "### Component Status\n\n"
+            markdown_content += f"- **TreeSHAP Integration**: {'✅ Active' if hasattr(self, 'treeshap_selector') and self.treeshap_selector is not None else '❌ Inactive'}\n"
+            markdown_content += f"- **VectorBT Optimization**: {'✅ Active' if hasattr(self, 'vectorbt_optimizer') and self.vectorbt_optimizer is not None else '❌ Inactive'}\n"
+            markdown_content += f"- **Hardware Optimization**: {'✅ Active' if hasattr(self, 'hardware_manager') and self.hardware_manager is not None else '❌ Inactive'}\n"
+            markdown_content += f"- **ML Common Utilities**: {'✅ Active' if hasattr(self, 'hpo_optimizer') and self.hpo_optimizer is not None else '❌ Inactive'}\n\n"
+            
+            # Add configuration details
+            markdown_content += "---\n\n## ⚙️ Configuration Details\n\n"
+            markdown_content += "### Feature Selection Parameters\n\n"
+            markdown_content += f"- **Max Features**: {self.config.max_features}\n"
+            markdown_content += f"- **Min Feature Importance**: {self.config.min_feature_importance:.4f}\n"
+            markdown_content += f"- **Selection Method**: {self.config.feature_selection_method}\n"
+            markdown_content += f"- **Use HPO**: {'Yes' if self.config.use_hpo else 'No'}\n"
+            markdown_content += f"- **Use Explainability**: {'Yes' if self.config.use_explainability else 'No'}\n"
+            markdown_content += f"- **Use Data Leakage Detection**: {'Yes' if self.config.use_data_leakage_detection else 'No'}\n\n"
+            
+            # Add recommendations
+            markdown_content += "---\n\n## 🎯 Recommendations\n\n"
+            markdown_content += "### For Trading Strategy\n"
+            markdown_content += f"- **Feature Count**: {selected_count} features selected for regime-based trading\n"
+            markdown_content += f"- **Selection Quality**: {'High' if selection_ratio < 0.5 else 'Moderate' if selection_ratio < 0.8 else 'Low'} (lower is better)\n"
+            markdown_content += f"- **Regime Coverage**: {'Comprehensive' if regime_specific_results else 'Basic'} regime-specific analysis\n\n"
+            
+            markdown_content += "### For Further Analysis\n"
+            markdown_content += "- **Feature Validation**: Consider cross-validation with different time periods\n"
+            markdown_content += "- **Regime Profiling**: Analyze regime-specific feature importance patterns\n"
+            markdown_content += "- **Temporal Stability**: Monitor feature importance over time\n"
+            markdown_content += "- **Interaction Analysis**: Investigate feature interactions within regimes\n\n"
+            
+            # Add artifact summary
+            markdown_content += "---\n\n## 📋 Artifact Summary\n\n"
+            markdown_content += "**Generated Artifacts:**\n"
+            markdown_content += f"- `selected_features_{symbol}_{exchange}`: Main selected features list\n"
+            markdown_content += f"- `feature_importance_{symbol}_{exchange}`: Feature importance scores\n"
+            if regime_specific_results:
+                markdown_content += f"- `regime_specific_features_{symbol}_{exchange}`: Regime-specific selections\n"
+            markdown_content += f"- `feature_selection_metrics_{symbol}_{exchange}`: Performance metrics\n"
+            markdown_content += f"- `feature_selection_report_{symbol}_{exchange}`: This comprehensive report\n\n"
+            
+            markdown_content += "**File Locations:**\n"
+            markdown_content += f"- **Artifacts**: `artifacts/market_analysis/{symbol}/{exchange}/regime_feature_selection/`\n"
+            markdown_content += f"- **Report**: `outcomes/regime_feature_selection_report_{symbol}_{exchange}_{timestamp_str}.md`\n\n"
+            
+            markdown_content += "---\n\n"
+            markdown_content += f"*Report generated by Ares Regime Feature Selector v1.0*\n"
+            markdown_content += f"*Generated on: {timestamp.isoformat()}*\n"
+            
+            return markdown_content
+            
+        except Exception as e:
+            tprint_error(f"Error generating comprehensive markdown report: {e}")
+            self.logger.error(f"Markdown report generation failed: {e}")
+            return f"# Error Generating Report\n\nError: {str(e)}\n\nGenerated: {datetime.now().isoformat()}"
+    
+    def _calculate_per_feature_metrics(
+        self,
+        features_data: pd.DataFrame,
+        target_data: pd.Series,
+        selected_features: List[str]
+    ) -> Dict[str, Dict[str, Any]]:
+        """Calculate detailed metrics for each selected feature."""
+        try:
+            per_feature_metrics = {}
+            
+            for feature in selected_features:
+                if feature not in features_data.columns:
+                    continue
+                
+                feature_data = features_data[feature]
+                
+                # Basic statistics
+                metrics = {
+                    'mean': float(feature_data.mean()),
+                    'std': float(feature_data.std()),
+                    'min': float(feature_data.min()),
+                    'max': float(feature_data.max()),
+                    'variance': float(feature_data.var()),
+                    'skewness': float(feature_data.skew()),
+                    'kurtosis': float(feature_data.kurtosis()),
+                    'correlation': float(feature_data.corr(target_data)) if not target_data.empty else 0.0,
+                    'missing_ratio': float(feature_data.isnull().sum() / len(feature_data)),
+                    'zero_ratio': float((feature_data == 0).sum() / len(feature_data))
+                }
+                
+                # Categorize feature based on name patterns
+                category = self._categorize_feature(feature)
+                metrics['category'] = category
+                
+                # Calculate stability (inverse of coefficient of variation)
+                if metrics['mean'] != 0:
+                    metrics['stability'] = 1.0 / (abs(metrics['std'] / metrics['mean']))
+                else:
+                    metrics['stability'] = 0.0
+                
+                # Calculate information content (entropy approximation)
+                try:
+                    # Discretize for entropy calculation
+                    discretized = pd.cut(feature_data, bins=10, duplicates='drop')
+                    value_counts = discretized.value_counts()
+                    probabilities = value_counts / len(discretized)
+                    entropy = -sum(p * np.log2(p) for p in probabilities if p > 0)
+                    metrics['entropy'] = float(entropy)
+                except:
+                    metrics['entropy'] = 0.0
+                
+                per_feature_metrics[feature] = metrics
+            
+            return per_feature_metrics
+            
+        except Exception as e:
+            tprint_warning(f"Error calculating per-feature metrics: {e}")
+            return {}
+    
+    def _categorize_feature(self, feature_name: str) -> str:
+        """Categorize feature based on name patterns."""
+        feature_lower = feature_name.lower()
+        
+        if any(indicator in feature_lower for indicator in ['rsi', 'stoch', 'williams', 'cci']):
+            return 'Momentum'
+        elif any(indicator in feature_lower for indicator in ['sma', 'ema', 'dema', 'tema', 'macd']):
+            return 'Trend'
+        elif any(indicator in feature_lower for indicator in ['volume', 'vol']):
+            return 'Volume'
+        elif any(indicator in feature_lower for indicator in ['returns', 'log_returns', 'simple_returns']):
+            return 'Returns'
+        elif any(indicator in feature_lower for indicator in ['volatility', 'std', 'var']):
+            return 'Volatility'
+        elif any(indicator in feature_lower for indicator in ['sharpe', 'skewness', 'kurtosis']):
+            return 'Risk'
+        elif any(indicator in feature_lower for indicator in ['entropy', 'ljung', 'ar_']):
+            return 'Statistical'
+        elif any(indicator in feature_lower for indicator in ['vwap', 'price']):
+            return 'Price'
+        else:
+            return 'Other'
 
 
 def create_enhanced_regime_feature_selector(

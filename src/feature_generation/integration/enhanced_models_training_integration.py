@@ -5,7 +5,7 @@ This module provides comprehensive models training integration that combines
 existing feature bank features (volume, trend, volatility, momentum) with
 regime-specific features for optimal ML model training.
 
-Target: 30-60 comprehensive features optimized for ML model training
+Target: Exactly 60 comprehensive features optimized for ML model training
 Uses LGBM-SHAP RFE for feature selection when > 60 features available
 """
 
@@ -62,22 +62,22 @@ class EnhancedModelsTrainingIntegration:
     """
     Enhanced Models Training Integration.
     
-    Provides 30-60 comprehensive features optimized for ML model training
+    Provides exactly 60 comprehensive features optimized for ML model training
     by combining existing feature bank features with regime-specific features.
-    Uses LGBM-SHAP for feature selection when > 60 features available.
+    Uses LGBM-SHAP RFE for feature selection when > 60 features available.
     """
     
     def __init__(self, 
-                 min_features: int = 30,
-                 max_features: int = 60,
+                 target_features: int = 60,
                  enable_comprehensive_features: bool = True,
                  enable_lgbm_shap_rfe: bool = True,
                  removal_percentage: float = 0.25,
                  lgbm_params: Optional[Dict[str, Any]] = None,
                  enable_detailed_logging: bool = True,
                  training_config: Optional[Dict[str, Any]] = None):
-        self.min_features = min_features
-        self.max_features = max_features
+        self.target_features = target_features
+        self.min_features = target_features  # Set min same as target for strict selection
+        self.max_features = target_features  # Set max same as target for strict selection
         self.enable_comprehensive_features = enable_comprehensive_features
         self.enable_lgbm_shap_rfe = enable_lgbm_shap_rfe and LGBM_SHAP_AVAILABLE
         self.removal_percentage = removal_percentage
@@ -88,8 +88,8 @@ class EnhancedModelsTrainingIntegration:
         if self.enable_comprehensive_features:
             # Configure for models training
             config = FeatureBankConfig()
-            config.models_training_min_features = min_features
-            config.models_training_max_features = max_features
+            config.models_training_min_features = self.target_features
+            config.models_training_max_features = self.target_features
             # Balanced weights for ML training
             config.models_training_weights = {
                 FeatureBankCategory.REGIME: 0.3,      # Regime features
@@ -105,7 +105,7 @@ class EnhancedModelsTrainingIntegration:
         # Initialize LGBM-SHAP RFE selector
         if self.enable_lgbm_shap_rfe:
             rfe_config = LGBMSHAPRFEConfig(
-                target_features=max_features,
+                target_features=self.target_features,
                 removal_percentage=removal_percentage,
                 enable_detailed_logging=enable_detailed_logging
             )
@@ -280,7 +280,7 @@ class EnhancedModelsTrainingIntegration:
         y = y[:min_length]
         
         # Apply LGBM-SHAP RFE feature selection if enabled and needed
-        if self.enable_lgbm_shap_rfe and len(feature_names) > self.max_features:
+        if self.enable_lgbm_shap_rfe and len(feature_names) > self.target_features:
             X, feature_names, selection_info = self._select_features_with_lgbm_shap_rfe(X, y, feature_names)
             feature_result['feature_selection'] = selection_info
         
@@ -291,7 +291,7 @@ class EnhancedModelsTrainingIntegration:
                 'nan_handled': True,
                 'feature_matrix_shape': X.shape,
                 'target_length': len(y),
-                'lgbm_shap_rfe_applied': self.enable_lgbm_shap_rfe and len(feature_names) > self.max_features
+                'lgbm_shap_rfe_applied': self.enable_lgbm_shap_rfe and len(feature_names) > self.target_features
             }
         })
         
@@ -355,7 +355,7 @@ class EnhancedModelsTrainingIntegration:
             X_aligned, 
             y_aligned, 
             feature_names_aligned,
-            target_features=self.max_features
+            target_features=self.target_features
         )
         
         if not selection_result['success']:
@@ -425,7 +425,7 @@ class EnhancedModelsTrainingIntegration:
         final_result = {
             'success': True,
             'timestamp': datetime.now().isoformat(),
-            'target_features': self.max_features,
+            'target_features': self.target_features,
             'removal_percentage': self.removal_percentage,
             'selected_features': {
                 'indices': selected_indices,
@@ -534,11 +534,11 @@ class EnhancedModelsTrainingIntegration:
         try:
             tprint("🔍 Starting LGBM-SHAP RFE feature selection")
             tprint(f"📊 Input: {X.shape[0]} samples, {X.shape[1]} features")
-            tprint(f"🎯 Target: {self.max_features} features")
+            tprint(f"🎯 Target: {self.target_features} features")
             
             # Run LGBM-SHAP RFE selection
             selection_result = self.rfe_selector.select_features(
-                X, y, feature_names, target_features=self.max_features
+                X, y, feature_names, target_features=self.target_features
             )
             
             if not selection_result['success']:
@@ -555,7 +555,7 @@ class EnhancedModelsTrainingIntegration:
                 'method': 'lgbm_shap_rfe',
                 'original_features': len(feature_names),
                 'selected_features': len(selected_feature_names),
-                'target_features': self.max_features,
+                'target_features': self.target_features,
                 'removal_percentage': self.removal_percentage,
                 'total_iterations': len(selection_result['selection_history']),
                 'removed_features': selection_result['removed_features'],
@@ -576,7 +576,7 @@ class EnhancedModelsTrainingIntegration:
         tprint("📊 Using variance-based feature selection (fallback)")
         
         feature_variances = np.var(X, axis=0)
-        top_indices = np.argsort(feature_variances)[-self.max_features:]
+        top_indices = np.argsort(feature_variances)[-self.target_features:]
         
         selected_X = X[:, top_indices]
         selected_feature_names = [feature_names[i] for i in top_indices]

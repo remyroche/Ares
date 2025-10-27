@@ -76,8 +76,7 @@ def test_lgbm_shap_rfe_integration():
     # Create integration with custom parameters
     print("\n🔧 Creating Enhanced Models Training Integration with LGBM-SHAP RFE...")
     integration = EnhancedModelsTrainingIntegration(
-        min_features=30,
-        max_features=60,
+        target_features=60,  # Strictly select 60 features
         enable_comprehensive_features=True,
         enable_lgbm_shap_rfe=True,
         removal_percentage=0.25,  # Remove 25% of features per iteration

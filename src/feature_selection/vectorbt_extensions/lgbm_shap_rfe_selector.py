@@ -149,7 +149,7 @@ class LGBMSHAPRFESelector:
         
         tprint(f"📊 Starting with {len(current_features)} features, target: {self.config.target_features}")
         
-        # Main RFE loop
+        # Main RFE loop - continue until we reach exactly the target features
         while len(current_features) > self.config.target_features and iteration < self.config.max_iterations:
             iteration += 1
             tprint(f"\n🔄 RFE Iteration {iteration}")
@@ -229,8 +229,28 @@ class LGBMSHAPRFESelector:
         final_features = current_features
         final_feature_names = current_feature_names
         
+        # Ensure we have exactly the target number of features
+        if len(final_features) > self.config.target_features:
+            # If we still have too many features, remove the least important ones
+            tprint(f"⚠️ Still have {len(final_features)} features, need exactly {self.config.target_features}")
+            
+            # Get final feature subset for final selection
+            X_final = X_processed[:, final_features]
+            model_final, _ = self._train_lgbm_model(X_final, y_processed)
+            importance_scores, shap_values = self._calculate_importance_and_shap(
+                model_final, X_final, y_processed, final_feature_names
+            )
+            combined_scores = self._combine_scores(importance_scores, shap_values)
+            
+            # Select exactly target_features
+            top_indices = np.argsort(combined_scores)[-self.config.target_features:]
+            final_features = [final_features[i] for i in top_indices]
+            final_feature_names = [final_feature_names[i] for i in top_indices]
+            
+            tprint(f"✅ Final selection: {len(final_features)} features")
+        
         tprint(f"\n🎉 RFE Complete!")
-        tprint(f"📊 Final features: {len(final_features)}")
+        tprint(f"📊 Final features: {len(final_features)} (target: {self.config.target_features})")
         tprint(f"📈 Total iterations: {iteration}")
         tprint(f"🗑️ Total features removed: {len(self.removed_features_history)}")
         

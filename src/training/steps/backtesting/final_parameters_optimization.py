@@ -42,6 +42,10 @@ from src.utils.nonlinear_optimization_helpers import (
     NonLinearConfig, NonLinearParameterSampler, apply_nonlinear_scoring,
     create_enhanced_search_space, convert_parameters_to_original_space
 )
+from src.utils.ml_common.optimization import (
+    HyperparameterOptimization, ParetoOptimizer, RegimeSpecificTPSLOptimizer,
+    HierarchicalHPO, HierarchicalHPOConfig, HPOPhaseConfig
+)
 from src.utils.ml_common.optimization.bayesian_tpe_optimizer import (
     BayesianTPEOptimizer, OptimizationConfig
 )
@@ -268,8 +272,7 @@ class FinalParametersOptimizer(BaseStep):
             tprint(f"📊 Loaded per-regime performance stats from {location}", "info")
             tprint(f"   • Regime performance modifier: {self.regime_performance_modifier:.4f}", "info")
 
-        # Initialize artifact and version managers
-        self.artifact_manager = get_artifact_manager()
+        # Initialize additional utilities (BaseStep already provides artifact_manager)
         self.pickup_utils = get_artifact_pickup_utils()
         self.version_manager = get_version_manager()
 
@@ -350,6 +353,9 @@ class FinalParametersOptimizer(BaseStep):
             exchange = config.get('exchange', 'binance')
             timeframe = config.get('timeframe', '15m')
             direction = config.get('direction', 'longs')
+            
+            # Detect execution mode using BaseStep method
+            self.execution_mode = self._detect_execution_mode(config)
             execution_mode = config.get('execution_mode', 'light')
             
             if not symbol:

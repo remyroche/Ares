@@ -47,7 +47,7 @@ import time
 from typing import TYPE_CHECKING, Any
 
 try:
-    from src.integration.paper_trading_integration import (
+    from exchanges.paper_trading_integration import (
         PaperTradingIntegration,
         setup_paper_trading_integration,
     )
@@ -81,6 +81,7 @@ class EnhancedTradingLauncher:
         # Launcher state
         self.is_initialized: bool = False
         self.current_mode: str = "none"  # "paper", "live", "backtest"
+        self.trading_mode: str = "TRADE"  # "TRADE" or "PAPER"
 
         # Configuration
         self.launcher_config = config.get("enhanced_trading_launcher", {})
@@ -97,6 +98,9 @@ class EnhancedTradingLauncher:
             "enable_detailed_reporting",
             True,
         )
+        
+        # Set trading mode from config
+        self.trading_mode = self.launcher_config.get("trading_mode", "TRADE")
 
     @handles_errors(
         error_handlers={
@@ -392,13 +396,21 @@ class EnhancedTradingLauncher:
                 return False
 
             if self.current_mode == "paper" and self.paper_trading_integration:
+                # Use the first available exchange for paper trading
+                exchanges = self.paper_trading_integration.wrappers.keys()
+                if not exchanges:
+                    self.logger.error("No exchanges registered for paper trading")
+                    return False
+                
+                exchange_name = list(exchanges)[0]  # Use first available exchange
                 return await self.paper_trading_integration.execute_trade(
+                    exchange_name=exchange_name,
                     symbol=symbol,
                     side=side,
                     quantity=quantity,
                     price=price,
-                    timestamp=timestamp,
-                    trade_metadata=trade_metadata,
+                    order_type="market",  # Default to market order
+                    **trade_metadata or {}
                 )
             if self.current_mode == "live":
                 # TODO: Implement live trading execution
@@ -539,11 +551,34 @@ class EnhancedTradingLauncher:
             self.logger.error(error(f"Error generating basic report: {e}"))
             return {}
 
+    def set_trading_mode(self, mode: str) -> bool:
+        """Set trading mode (TRADE or PAPER)."""
+        if mode.upper() in ["TRADE", "PAPER"]:
+            self.trading_mode = mode.upper()
+            self.logger.info(f"Trading mode set to: {self.trading_mode}")
+            return True
+        else:
+            self.logger.error(f"Invalid trading mode: {mode}. Must be 'TRADE' or 'PAPER'")
+            return False
+    
+    def get_trading_mode(self) -> str:
+        """Get current trading mode."""
+        return self.trading_mode
+    
+    def is_paper_mode(self) -> bool:
+        """Check if currently in paper trading mode."""
+        return self.trading_mode == "PAPER"
+    
+    def is_trade_mode(self) -> bool:
+        """Check if currently in live trading mode."""
+        return self.trading_mode == "TRADE"
+
     def get_launcher_status(self) -> dict[str, Any]:
         """Get launcher status."""
         return {
             "is_initialized": self.is_initialized,
             "current_mode": self.current_mode,
+            "trading_mode": self.trading_mode,
             "enable_paper_trading": self.enable_paper_trading,
             "enable_live_trading": self.enable_live_trading,
             "enable_backtesting": self.enable_backtesting,

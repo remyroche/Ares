@@ -27,6 +27,36 @@ except ImportError:
     SKLEARN_AVAILABLE = False
     warnings.warn("Scikit-learn not available. Some metrics will be disabled.")
 
+# VectorBT imports
+try:
+    import vectorbt as vbt
+    from vectorbt.records import Drawdowns
+    from vectorbt.portfolio import Portfolio
+    from vectorbt.indicators import RSI, MACD, BollingerBands
+    VECTORBT_AVAILABLE = True
+except ImportError:
+    VECTORBT_AVAILABLE = False
+    warnings.warn("VectorBT not available. Some optimizations will be disabled.")
+
+# Hardware acceleration imports
+try:
+    from src.utils.hardware import get_hardware_accelerator, HardwareAccelerator
+    from src.utils.hardware.gpu_acceleration import GPUAccelerator
+    from src.utils.hardware.vectorization import VectorizationManager
+    HARDWARE_AVAILABLE = True
+except ImportError:
+    HARDWARE_AVAILABLE = False
+    warnings.warn("Hardware acceleration not available. Using CPU-only computations.")
+
+# VectorBT rolling optimizer imports
+try:
+    from src.feature_generation.utils.vectorbt_rolling_optimizer import VectorBTRollingOptimizer
+    from src.feature_generation.utils.unified_optimization_system import UnifiedVectorizationManager
+    OPTIMIZATION_AVAILABLE = True
+except ImportError:
+    OPTIMIZATION_AVAILABLE = False
+    warnings.warn("VectorBT optimization not available. Using standard computations.")
+
 
 @dataclass
 class ClusterDistinctivenessConfig:
@@ -59,6 +89,17 @@ class ClusterDistinctivenessConfig:
     # Approximation settings
     use_approximate_silhouette: bool = True  # Use faster silhouette approximation
     silhouette_sample_ratio: float = 0.1  # Sample ratio for silhouette calculation
+    
+    # VectorBT optimization settings
+    enable_vectorbt_optimization: bool = True  # Enable VectorBT optimizations
+    enable_hardware_acceleration: bool = True  # Enable hardware acceleration
+    use_gpu: bool = False  # Use GPU acceleration if available
+    vectorbt_chunk_size: int = 10000  # Chunk size for VectorBT operations
+    
+    # Unified optimization settings
+    enable_unified_optimization: bool = True  # Enable unified optimization system
+    memory_limit_gb: float = 8.0  # Memory limit for operations
+    enable_parallel_processing: bool = True  # Enable parallel processing
 
 
 class ClusterDistinctivenessCalculator:
@@ -76,6 +117,58 @@ class ClusterDistinctivenessCalculator:
         # Performance optimization caches
         self._cluster_stats_cache = {} if self.config.enable_caching else None
         self._feature_stats_cache = {} if self.config.enable_caching else None
+        
+        # Initialize VectorBT optimizers
+        self.vectorbt_optimizer = None
+        self.unified_optimizer = None
+        self.hardware_accelerator = None
+        
+        if self.config.enable_vectorbt_optimization and VECTORBT_AVAILABLE:
+            self._initialize_vectorbt_optimizers()
+        
+        if self.config.enable_hardware_acceleration and HARDWARE_AVAILABLE:
+            self._initialize_hardware_accelerators()
+    
+    def _initialize_vectorbt_optimizers(self):
+        """Initialize VectorBT optimizers."""
+        try:
+            if OPTIMIZATION_AVAILABLE:
+                # Initialize VectorBT Rolling Optimizer
+                self.vectorbt_optimizer = VectorBTRollingOptimizer(
+                    enable_gpu=self.config.use_gpu,
+                    enable_parallel=self.config.enable_parallel_processing,
+                    memory_efficient=True,
+                    chunk_size=self.config.vectorbt_chunk_size
+                )
+                
+                # Initialize Unified Optimization System
+                from src.feature_generation.utils.unified_optimization_system import UnifiedOptimizationConfig
+                unified_config = UnifiedOptimizationConfig(
+                    enable_normalization=True,
+                    enable_scaling=True,
+                    enable_vectorization=True,
+                    enable_hardware_optimization=self.config.use_gpu,
+                    memory_limit_gb=self.config.memory_limit_gb
+                )
+                self.unified_optimizer = UnifiedVectorizationManager(unified_config)
+                
+                print("✅ VectorBT optimizers initialized successfully")
+            else:
+                print("⚠️ VectorBT optimization not available")
+        except Exception as e:
+            print(f"⚠️ VectorBT optimizer initialization failed: {e}")
+    
+    def _initialize_hardware_accelerators(self):
+        """Initialize hardware accelerators."""
+        try:
+            self.hardware_accelerator = get_hardware_accelerator(
+                use_gpu=self.config.use_gpu,
+                enable_parallel=self.config.enable_parallel_processing
+            )
+            print(f"✅ Hardware accelerator initialized: {type(self.hardware_accelerator).__name__}")
+        except Exception as e:
+            print(f"⚠️ Hardware accelerator initialization failed: {e}")
+            self.hardware_accelerator = None
     
     def calculate_feature_distinctiveness(self, 
                                         features: Dict[str, np.ndarray], 
@@ -233,9 +326,123 @@ class ClusterDistinctivenessCalculator:
     
     def _calculate_f_ratio_fast(self, feature_values: np.ndarray, cluster_labels: np.ndarray, 
                                cluster_stats: Dict[str, Any]) -> float:
-        """Fast F-ratio calculation using vectorized operations."""
+        """Fast F-ratio calculation using VectorBT and hardware acceleration."""
         unique_clusters = cluster_stats['unique_clusters']
         
+        # Use VectorBT optimization if available
+        if self.vectorbt_optimizer and VECTORBT_AVAILABLE:
+            return self._calculate_f_ratio_vectorbt(feature_values, cluster_labels, unique_clusters)
+        
+        # Use hardware acceleration if available
+        if self.hardware_accelerator:
+            return self._calculate_f_ratio_hardware_accelerated(feature_values, cluster_labels, unique_clusters)
+        
+        # Fallback to standard vectorized calculation
+        return self._calculate_f_ratio_standard_vectorized(feature_values, cluster_labels, unique_clusters)
+    
+    def _calculate_f_ratio_vectorbt(self, feature_values: np.ndarray, cluster_labels: np.ndarray, 
+                                   unique_clusters: List[int]) -> float:
+        """F-ratio calculation using VectorBT optimizations."""
+        try:
+            # Convert to pandas Series for VectorBT
+            feature_series = pd.Series(feature_values)
+            cluster_series = pd.Series(cluster_labels)
+            
+            # Use VectorBT rolling operations for cluster statistics
+            cluster_means = []
+            cluster_sizes = []
+            
+            for cluster_id in unique_clusters:
+                cluster_mask = cluster_series == cluster_id
+                cluster_vals = feature_series[cluster_mask]
+                
+                if len(cluster_vals) >= self.config.min_cluster_size:
+                    # Use VectorBT for efficient mean calculation
+                    cluster_mean = vbt.rolling_mean(cluster_vals, window=len(cluster_vals)).iloc[-1]
+                    cluster_means.append(cluster_mean)
+                    cluster_sizes.append(len(cluster_vals))
+            
+            if len(cluster_means) < 2:
+                return 0.0
+            
+            cluster_means = np.array(cluster_means)
+            cluster_sizes = np.array(cluster_sizes)
+            
+            # Overall mean using VectorBT
+            overall_mean = vbt.rolling_mean(feature_series, window=len(feature_series)).iloc[-1]
+            
+            # Vectorized between-cluster variance
+            between_var = np.sum(cluster_sizes * (cluster_means - overall_mean)**2)
+            
+            # Calculate within-cluster variance using VectorBT
+            within_var = 0
+            for i, cluster_id in enumerate(unique_clusters):
+                cluster_mask = cluster_series == cluster_id
+                cluster_vals = feature_series[cluster_mask]
+                
+                if len(cluster_vals) >= self.config.min_cluster_size:
+                    # Use VectorBT for variance calculation
+                    cluster_var = vbt.rolling_std(cluster_vals, window=len(cluster_vals)).iloc[-1]**2
+                    within_var += cluster_var * len(cluster_vals)
+            
+            # F-ratio
+            if within_var > 0:
+                f_ratio = between_var / within_var
+            else:
+                f_ratio = 0.0
+            
+            return float(f_ratio)
+            
+        except Exception as e:
+            print(f"⚠️ VectorBT F-ratio calculation failed: {e}")
+            return self._calculate_f_ratio_standard_vectorized(feature_values, cluster_labels, unique_clusters)
+    
+    def _calculate_f_ratio_hardware_accelerated(self, feature_values: np.ndarray, cluster_labels: np.ndarray, 
+                                               unique_clusters: List[int]) -> float:
+        """F-ratio calculation using hardware acceleration."""
+        try:
+            # Use hardware accelerator for cluster statistics
+            cluster_stats = self.hardware_accelerator.calculate_cluster_statistics(
+                feature_values, cluster_labels, unique_clusters
+            )
+            
+            cluster_means = cluster_stats['means']
+            cluster_sizes = cluster_stats['sizes']
+            
+            # Filter by minimum cluster size
+            valid_mask = cluster_sizes >= self.config.min_cluster_size
+            if np.sum(valid_mask) < 2:
+                return 0.0
+            
+            cluster_means = cluster_means[valid_mask]
+            cluster_sizes = cluster_sizes[valid_mask]
+            
+            # Overall mean
+            overall_mean = np.mean(feature_values)
+            
+            # Vectorized between-cluster variance
+            between_var = np.sum(cluster_sizes * (cluster_means - overall_mean)**2)
+            
+            # Calculate within-cluster variance using hardware acceleration
+            within_var = self.hardware_accelerator.calculate_within_cluster_variance(
+                feature_values, cluster_labels, cluster_means, unique_clusters
+            )
+            
+            # F-ratio
+            if within_var > 0:
+                f_ratio = between_var / within_var
+            else:
+                f_ratio = 0.0
+            
+            return float(f_ratio)
+            
+        except Exception as e:
+            print(f"⚠️ Hardware accelerated F-ratio calculation failed: {e}")
+            return self._calculate_f_ratio_standard_vectorized(feature_values, cluster_labels, unique_clusters)
+    
+    def _calculate_f_ratio_standard_vectorized(self, feature_values: np.ndarray, cluster_labels: np.ndarray, 
+                                             unique_clusters: List[int]) -> float:
+        """Standard vectorized F-ratio calculation."""
         # Vectorized cluster mean calculation
         cluster_means = np.array([np.mean(feature_values[cluster_labels == c]) 
                                  for c in unique_clusters])
@@ -256,7 +463,7 @@ class ClusterDistinctivenessCalculator:
         # Vectorized between-cluster variance
         between_var = np.sum(cluster_sizes * (cluster_means - overall_mean)**2)
         
-        # Vectorized within-cluster variance (approximation for speed)
+        # Vectorized within-cluster variance
         within_var = 0
         for i, cluster_id in enumerate(unique_clusters):
             if valid_mask[i]:
@@ -275,12 +482,121 @@ class ClusterDistinctivenessCalculator:
     
     def _calculate_separation_strength(self, feature_values: np.ndarray, 
                                      cluster_labels: np.ndarray) -> float:
-        """Calculate cluster separation strength."""
+        """Calculate cluster separation strength using VectorBT optimizations."""
         unique_clusters = [c for c in set(cluster_labels) if c != self.config.noise_label]
         
         if len(unique_clusters) < 2:
             return 0.0
         
+        # Use VectorBT optimization if available
+        if self.vectorbt_optimizer and VECTORBT_AVAILABLE:
+            return self._calculate_separation_strength_vectorbt(feature_values, cluster_labels, unique_clusters)
+        
+        # Use hardware acceleration if available
+        if self.hardware_accelerator:
+            return self._calculate_separation_strength_hardware_accelerated(feature_values, cluster_labels, unique_clusters)
+        
+        # Fallback to standard calculation
+        return self._calculate_separation_strength_standard(feature_values, cluster_labels, unique_clusters)
+    
+    def _calculate_separation_strength_vectorbt(self, feature_values: np.ndarray, 
+                                              cluster_labels: np.ndarray, 
+                                              unique_clusters: List[int]) -> float:
+        """Separation strength calculation using VectorBT."""
+        try:
+            # Convert to pandas Series for VectorBT
+            feature_series = pd.Series(feature_values)
+            cluster_series = pd.Series(cluster_labels)
+            
+            # Calculate cluster means using VectorBT
+            cluster_means = []
+            for cluster_id in unique_clusters:
+                cluster_mask = cluster_series == cluster_id
+                cluster_vals = feature_series[cluster_mask]
+                
+                if len(cluster_vals) >= self.config.min_cluster_size:
+                    cluster_mean = vbt.rolling_mean(cluster_vals, window=len(cluster_vals)).iloc[-1]
+                    cluster_means.append(cluster_mean)
+            
+            if len(cluster_means) < 2:
+                return 0.0
+            
+            # Calculate inter-cluster distance using VectorBT
+            cluster_means_series = pd.Series(cluster_means)
+            inter_cluster_dist = vbt.rolling_std(cluster_means_series, window=len(cluster_means_series)).iloc[-1]
+            
+            # Calculate intra-cluster spreads using VectorBT
+            intra_cluster_spreads = []
+            for cluster_id in unique_clusters:
+                cluster_mask = cluster_series == cluster_id
+                cluster_vals = feature_series[cluster_mask]
+                
+                if len(cluster_vals) >= self.config.min_cluster_size:
+                    cluster_std = vbt.rolling_std(cluster_vals, window=len(cluster_vals)).iloc[-1]
+                    intra_cluster_spreads.append(cluster_std)
+            
+            if not intra_cluster_spreads:
+                return 0.0
+            
+            # Calculate average intra-cluster spread using VectorBT
+            spreads_series = pd.Series(intra_cluster_spreads)
+            avg_intra_cluster_spread = vbt.rolling_mean(spreads_series, window=len(spreads_series)).iloc[-1]
+            
+            # Separation strength
+            if avg_intra_cluster_spread > 0:
+                separation_strength = inter_cluster_dist / avg_intra_cluster_spread
+            else:
+                separation_strength = 0.0
+            
+            return float(separation_strength)
+            
+        except Exception as e:
+            print(f"⚠️ VectorBT separation strength calculation failed: {e}")
+            return self._calculate_separation_strength_standard(feature_values, cluster_labels, unique_clusters)
+    
+    def _calculate_separation_strength_hardware_accelerated(self, feature_values: np.ndarray, 
+                                                          cluster_labels: np.ndarray, 
+                                                          unique_clusters: List[int]) -> float:
+        """Separation strength calculation using hardware acceleration."""
+        try:
+            # Use hardware accelerator for cluster statistics
+            cluster_stats = self.hardware_accelerator.calculate_cluster_statistics(
+                feature_values, cluster_labels, unique_clusters
+            )
+            
+            cluster_means = cluster_stats['means']
+            cluster_stds = cluster_stats['stds']
+            
+            # Filter by minimum cluster size
+            valid_mask = cluster_stats['sizes'] >= self.config.min_cluster_size
+            if np.sum(valid_mask) < 2:
+                return 0.0
+            
+            cluster_means = cluster_means[valid_mask]
+            cluster_stds = cluster_stds[valid_mask]
+            
+            # Calculate inter-cluster distance
+            inter_cluster_dist = np.std(cluster_means)
+            
+            # Calculate average intra-cluster spread
+            avg_intra_cluster_spread = np.mean(cluster_stds)
+            
+            # Separation strength
+            if avg_intra_cluster_spread > 0:
+                separation_strength = inter_cluster_dist / avg_intra_cluster_spread
+            else:
+                separation_strength = 0.0
+            
+            return float(separation_strength)
+            
+        except Exception as e:
+            print(f"⚠️ Hardware accelerated separation strength calculation failed: {e}")
+            return self._calculate_separation_strength_standard(feature_values, cluster_labels, unique_clusters)
+    
+    def _calculate_separation_strength_standard(self, feature_values: np.ndarray, 
+                                              cluster_labels: np.ndarray, 
+                                              unique_clusters: List[int]) -> float:
+        """Standard separation strength calculation."""
         # Calculate cluster means
         cluster_means = []
         for cluster_id in unique_clusters:

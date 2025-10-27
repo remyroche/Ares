@@ -22,6 +22,33 @@ from .cluster_distinctiveness_metrics import (
 )
 from ..integration.feature_bank_integration import FeatureBankCategory
 
+# VectorBT imports
+try:
+    import vectorbt as vbt
+    VECTORBT_AVAILABLE = True
+except ImportError:
+    VECTORBT_AVAILABLE = False
+    warnings.warn("VectorBT not available. Some optimizations will be disabled.")
+
+# Hardware acceleration imports
+try:
+    from src.utils.hardware import get_hardware_accelerator, HardwareAccelerator
+    from src.utils.hardware.gpu_acceleration import GPUAccelerator
+    from src.utils.hardware.vectorization import VectorizationManager
+    HARDWARE_AVAILABLE = True
+except ImportError:
+    HARDWARE_AVAILABLE = False
+    warnings.warn("Hardware acceleration not available. Using CPU-only computations.")
+
+# VectorBT rolling optimizer imports
+try:
+    from src.feature_generation.utils.vectorbt_rolling_optimizer import VectorBTRollingOptimizer
+    from src.feature_generation.utils.unified_optimization_system import UnifiedVectorizationManager
+    OPTIMIZATION_AVAILABLE = True
+except ImportError:
+    OPTIMIZATION_AVAILABLE = False
+    warnings.warn("VectorBT optimization not available. Using standard computations.")
+
 
 @dataclass
 class EnhancedFeatureSelectionConfig:
@@ -45,6 +72,17 @@ class EnhancedFeatureSelectionConfig:
     min_economic_relevance: float = 0.5
     min_cluster_distinctiveness: float = 0.2
     
+    # VectorBT optimization settings
+    enable_vectorbt_optimization: bool = True  # Enable VectorBT optimizations
+    enable_hardware_acceleration: bool = True  # Enable hardware acceleration
+    use_gpu: bool = False  # Use GPU acceleration if available
+    vectorbt_chunk_size: int = 10000  # Chunk size for VectorBT operations
+    
+    # Unified optimization settings
+    enable_unified_optimization: bool = True  # Enable unified optimization system
+    memory_limit_gb: float = 8.0  # Memory limit for operations
+    enable_parallel_processing: bool = True  # Enable parallel processing
+    
     def __post_init__(self):
         """Set default economic weights if not provided."""
         if self.economic_weights is None:
@@ -66,18 +104,77 @@ class EnhancedFeatureSelector:
     def __init__(self, config: Optional[EnhancedFeatureSelectionConfig] = None):
         self.config = config or EnhancedFeatureSelectionConfig()
         
-        # Initialize cluster distinctiveness calculator
+        # Initialize cluster distinctiveness calculator with VectorBT optimizations
         cluster_config = ClusterDistinctivenessConfig(
             enable_fast_proxies=True,
             enable_caching=self.config.enable_caching,
             batch_size=self.config.batch_size,
             use_approximate_silhouette=True,
-            silhouette_sample_ratio=0.1
+            silhouette_sample_ratio=0.1,
+            enable_vectorbt_optimization=self.config.enable_vectorbt_optimization,
+            enable_hardware_acceleration=self.config.enable_hardware_acceleration,
+            use_gpu=self.config.use_gpu,
+            vectorbt_chunk_size=self.config.vectorbt_chunk_size,
+            enable_unified_optimization=self.config.enable_unified_optimization,
+            memory_limit_gb=self.config.memory_limit_gb,
+            enable_parallel_processing=self.config.enable_parallel_processing
         )
         self.cluster_calculator = ClusterDistinctivenessCalculator(cluster_config)
         
+        # Initialize VectorBT optimizers
+        self.vectorbt_optimizer = None
+        self.unified_optimizer = None
+        self.hardware_accelerator = None
+        
+        if self.config.enable_vectorbt_optimization and VECTORBT_AVAILABLE:
+            self._initialize_vectorbt_optimizers()
+        
+        if self.config.enable_hardware_acceleration and HARDWARE_AVAILABLE:
+            self._initialize_hardware_accelerators()
+        
         # Cache for feature scores
         self._score_cache = {} if self.config.enable_caching else None
+    
+    def _initialize_vectorbt_optimizers(self):
+        """Initialize VectorBT optimizers."""
+        try:
+            if OPTIMIZATION_AVAILABLE:
+                # Initialize VectorBT Rolling Optimizer
+                self.vectorbt_optimizer = VectorBTRollingOptimizer(
+                    enable_gpu=self.config.use_gpu,
+                    enable_parallel=self.config.enable_parallel_processing,
+                    memory_efficient=True,
+                    chunk_size=self.config.vectorbt_chunk_size
+                )
+                
+                # Initialize Unified Optimization System
+                from src.feature_generation.utils.unified_optimization_system import UnifiedOptimizationConfig
+                unified_config = UnifiedOptimizationConfig(
+                    enable_normalization=True,
+                    enable_scaling=True,
+                    enable_vectorization=True,
+                    enable_hardware_optimization=self.config.use_gpu,
+                    memory_limit_gb=self.config.memory_limit_gb
+                )
+                self.unified_optimizer = UnifiedVectorizationManager(unified_config)
+                
+                print("✅ VectorBT optimizers initialized for EnhancedFeatureSelector")
+            else:
+                print("⚠️ VectorBT optimization not available for EnhancedFeatureSelector")
+        except Exception as e:
+            print(f"⚠️ VectorBT optimizer initialization failed for EnhancedFeatureSelector: {e}")
+    
+    def _initialize_hardware_accelerators(self):
+        """Initialize hardware accelerators."""
+        try:
+            self.hardware_accelerator = get_hardware_accelerator(
+                use_gpu=self.config.use_gpu,
+                enable_parallel=self.config.enable_parallel_processing
+            )
+            print(f"✅ Hardware accelerator initialized for EnhancedFeatureSelector: {type(self.hardware_accelerator).__name__}")
+        except Exception as e:
+            print(f"⚠️ Hardware accelerator initialization failed for EnhancedFeatureSelector: {e}")
+            self.hardware_accelerator = None
     
     def select_optimal_features(self, 
                               features: Dict[str, np.ndarray], 
@@ -186,10 +283,74 @@ class EnhancedFeatureSelector:
     
     def _calculate_temporal_stability(self, feature_values: np.ndarray, 
                                     stability_window: int = 20) -> float:
-        """Calculate temporal stability of feature values."""
+        """Calculate temporal stability of feature values using VectorBT optimizations."""
         if len(feature_values) < stability_window * 2:
             return 0.5  # Default moderate stability
         
+        # Use VectorBT optimization if available
+        if self.vectorbt_optimizer and VECTORBT_AVAILABLE:
+            return self._calculate_temporal_stability_vectorbt(feature_values, stability_window)
+        
+        # Use hardware acceleration if available
+        if self.hardware_accelerator:
+            return self._calculate_temporal_stability_hardware_accelerated(feature_values, stability_window)
+        
+        # Fallback to standard calculation
+        return self._calculate_temporal_stability_standard(feature_values, stability_window)
+    
+    def _calculate_temporal_stability_vectorbt(self, feature_values: np.ndarray, 
+                                             stability_window: int) -> float:
+        """Temporal stability calculation using VectorBT."""
+        try:
+            # Convert to pandas Series for VectorBT
+            feature_series = pd.Series(feature_values)
+            
+            # Calculate rolling standard deviation using VectorBT
+            rolling_std = vbt.rolling_std(feature_series, window=stability_window)
+            
+            # Lower rolling std = higher stability
+            stability_score = 1.0 / (1.0 + rolling_std.mean())
+            
+            # Check for trend stability using VectorBT
+            if len(feature_values) > 10:
+                # Calculate trend strength using VectorBT correlation
+                time_series = pd.Series(np.arange(len(feature_values)))
+                trend_strength = abs(feature_series.corr(time_series))
+                # Penalize features with strong trends
+                stability_score *= (1.0 - trend_strength)
+            
+            return max(0.0, min(1.0, stability_score))
+            
+        except Exception as e:
+            print(f"⚠️ VectorBT temporal stability calculation failed: {e}")
+            return self._calculate_temporal_stability_standard(feature_values, stability_window)
+    
+    def _calculate_temporal_stability_hardware_accelerated(self, feature_values: np.ndarray, 
+                                                         stability_window: int) -> float:
+        """Temporal stability calculation using hardware acceleration."""
+        try:
+            # Use hardware accelerator for rolling statistics
+            rolling_stats = self.hardware_accelerator.calculate_rolling_statistics(
+                feature_values, stability_window
+            )
+            
+            # Calculate stability score
+            stability_score = 1.0 / (1.0 + rolling_stats['std_mean'])
+            
+            # Check for trend stability
+            if len(feature_values) > 10:
+                trend_strength = self.hardware_accelerator.calculate_trend_strength(feature_values)
+                stability_score *= (1.0 - trend_strength)
+            
+            return max(0.0, min(1.0, stability_score))
+            
+        except Exception as e:
+            print(f"⚠️ Hardware accelerated temporal stability calculation failed: {e}")
+            return self._calculate_temporal_stability_standard(feature_values, stability_window)
+    
+    def _calculate_temporal_stability_standard(self, feature_values: np.ndarray, 
+                                             stability_window: int) -> float:
+        """Standard temporal stability calculation."""
         # Calculate rolling standard deviation
         rolling_std = pd.Series(feature_values).rolling(stability_window).std()
         

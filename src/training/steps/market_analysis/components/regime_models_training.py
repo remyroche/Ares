@@ -33,6 +33,7 @@ from src.utils.ml_common.optimization.hpo_utils import (
 from src.utils.ml_common.validation.universal_temporal_validation import (
     UniversalTemporalValidator, TemporalValidationConfig
 )
+from src.utils.ml_common.validation.temporal_cross_validation import temporal_cross_validation
 from src.utils.ml_common.utils.lookahead_protection import LookaheadProtection
 from src.utils.hardware.unified_hardware_manager import (
     UnifiedHardwareManager, HardwareConfig, WorkloadType, OptimizationLevel
@@ -40,6 +41,8 @@ from src.utils.hardware.unified_hardware_manager import (
 from src.utils.ml_common.evaluation.evaluation_utils import (
     EvaluationUtils
 )
+from src.utils.ml_common.explainability.model_explainability import ModelExplainability
+from src.utils.ml_common.explainability.shap_lime_integration import SHAPLIMEIntegration
 from src.utils.ml_common.post_training.model_validation import (
     ModelValidator, ValidationConfig
 )
@@ -96,6 +99,24 @@ try:
 except ImportError as e:
     ML_IMPORT_ERRORS.append(f"imodels (Greedy Rule Lists): {e}")
     tprint(f"❌ [REGIME_MODELS] Failed to import imodels: {e}", color="red")
+
+# Import XGBoost
+try:
+    import xgboost as xgb
+    ML_LIBRARY_VERSIONS['xgboost'] = xgb.__version__
+    tprint(f"✅ [REGIME_MODELS] XGBoost imported successfully (v{xgb.__version__})", color="green")
+except ImportError as e:
+    ML_IMPORT_ERRORS.append(f"XGBoost: {e}")
+    tprint(f"❌ [REGIME_MODELS] Failed to import XGBoost: {e}", color="red")
+
+# Import Random Forest
+try:
+    from sklearn.ensemble import RandomForestClassifier
+    ML_LIBRARY_VERSIONS['random_forest'] = sklearn.__version__
+    tprint(f"✅ [REGIME_MODELS] Random Forest imported successfully", color="green")
+except ImportError as e:
+    ML_IMPORT_ERRORS.append(f"Random Forest: {e}")
+    tprint(f"❌ [REGIME_MODELS] Failed to import Random Forest: {e}", color="red")
 
 # Check overall availability
 if not ML_IMPORT_ERRORS:
@@ -222,6 +243,28 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                     'learning_rate': 0.1,
                     'random_seed': 42,
                     'verbose': False
+                },
+                'XGBoost': {
+                    'n_estimators': 100,
+                    'max_depth': 6,
+                    'learning_rate': 0.1,
+                    'subsample': 0.8,
+                    'colsample_bytree': 0.8,
+                    'reg_alpha': 0.1,
+                    'reg_lambda': 0.1,
+                    'random_state': 42,
+                    'n_jobs': -1,
+                    'verbosity': 0
+                },
+                'Random Forest': {
+                    'n_estimators': 100,
+                    'max_depth': None,
+                    'min_samples_split': 2,
+                    'min_samples_leaf': 1,
+                    'max_features': 'sqrt',
+                    'bootstrap': True,
+                    'random_state': 42,
+                    'n_jobs': -1
                 },
                 'Greedy Rule Lists': {
                     'max_depth': 20,  # Increased for better complexity handling
@@ -369,6 +412,104 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
             except Exception as e:
                 tprint(f"❌ [REGIME_MODELS] ExtraTrees training failed: {e}", color="red")
 
+            # Train XGBoost with HPO
+            try:
+                tprint("🚀 [REGIME_MODELS] Training XGBoost with HPO", color="blue")
+                
+                def create_xgboost_model(trial):
+                    return xgb.XGBClassifier(
+                        n_estimators=trial.suggest_int('n_estimators', 50, 200),
+                        max_depth=trial.suggest_int('max_depth', 3, 10),
+                        learning_rate=trial.suggest_float('learning_rate', 0.01, 0.3),
+                        subsample=trial.suggest_float('subsample', 0.6, 1.0),
+                        colsample_bytree=trial.suggest_float('colsample_bytree', 0.6, 1.0),
+                        reg_alpha=trial.suggest_float('reg_alpha', 0, 1),
+                        reg_lambda=trial.suggest_float('reg_lambda', 0, 1),
+                        random_state=42,
+                        n_jobs=-1,
+                        verbosity=0
+                    )
+                
+                hpo_result = self.hpo_optimizer.optimize(
+                    model_factory=create_xgboost_model,
+                    X=X_train,
+                    y=y_train,
+                    cv_folds=3,
+                    scoring='accuracy',
+                    n_trials=15
+                )
+                
+                if hpo_result.success:
+                    trained_models['xgboost'] = hpo_result.best_model
+                    tprint(f"✅ [REGIME_MODELS] XGBoost HPO completed - Best score: {hpo_result.best_score:.4f}", color="green")
+                else:
+                    # Fallback to default parameters
+                    xgb_model = xgb.XGBClassifier(
+                        n_estimators=100,
+                        max_depth=6,
+                        learning_rate=0.1,
+                        subsample=0.8,
+                        colsample_bytree=0.8,
+                        reg_alpha=0.1,
+                        reg_lambda=0.1,
+                        random_state=42,
+                        n_jobs=-1,
+                        verbosity=0
+                    )
+                    xgb_model.fit(X_train, y_train)
+                    trained_models['xgboost'] = xgb_model
+                    tprint("⚠️ [REGIME_MODELS] XGBoost HPO failed, using default parameters", color="yellow")
+                    
+            except Exception as e:
+                tprint(f"❌ [REGIME_MODELS] XGBoost training failed: {e}", color="red")
+
+            # Train Random Forest with HPO
+            try:
+                tprint("🌳 [REGIME_MODELS] Training Random Forest with HPO", color="blue")
+                
+                def create_random_forest_model(trial):
+                    return RandomForestClassifier(
+                        n_estimators=trial.suggest_int('n_estimators', 50, 200),
+                        max_depth=trial.suggest_int('max_depth', 5, 20),
+                        min_samples_split=trial.suggest_int('min_samples_split', 2, 10),
+                        min_samples_leaf=trial.suggest_int('min_samples_leaf', 1, 5),
+                        max_features=trial.suggest_categorical('max_features', ['sqrt', 'log2', None]),
+                        bootstrap=trial.suggest_categorical('bootstrap', [True, False]),
+                        random_state=42,
+                        n_jobs=-1
+                    )
+                
+                hpo_result = self.hpo_optimizer.optimize(
+                    model_factory=create_random_forest_model,
+                    X=X_train,
+                    y=y_train,
+                    cv_folds=3,
+                    scoring='accuracy',
+                    n_trials=15
+                )
+                
+                if hpo_result.success:
+                    trained_models['random_forest'] = hpo_result.best_model
+                    tprint(f"✅ [REGIME_MODELS] Random Forest HPO completed - Best score: {hpo_result.best_score:.4f}", color="green")
+                else:
+                    # Fallback to default parameters
+                    rf_model = RandomForestClassifier(
+                        n_estimators=100,
+                        max_depth=None,
+                        min_samples_split=2,
+                        min_samples_leaf=1,
+                        max_features='sqrt',
+                        bootstrap=True,
+                        random_state=42,
+                        n_jobs=-1
+                    )
+                    rf_model.fit(X_train, y_train)
+                    trained_models['random_forest'] = rf_model
+                    tprint("⚠️ [REGIME_MODELS] Random Forest HPO failed, using default parameters", color="yellow")
+                    
+            except Exception as e:
+                tprint(f"❌ [REGIME_MODELS] Random Forest training failed: {e}", color="red")
+
             # Train Greedy Rule Lists (no HPO needed)
             try:
                 tprint("📋 [REGIME_MODELS] Training Greedy Rule Lists", color="blue")
@@ -384,8 +525,181 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
             except Exception as e:
                 tprint(f"❌ [REGIME_MODELS] Greedy Rule Lists training failed: {e}", color="red")
 
-        tprint(f"✅ [REGIME_MODELS] Model training completed - {len(trained_models)} models trained", color="green")
-        return trained_models
+        # Dynamic model selection based on performance
+        selected_models = self._select_best_models(trained_models, X_train, y_train)
+        
+        tprint(f"✅ [REGIME_MODELS] Model training completed - {len(trained_models)} models trained, {len(selected_models)} selected", color="green")
+        return selected_models
+
+    def _select_best_models(self, trained_models: Dict[str, Any], X_train: np.ndarray, y_train: np.ndarray) -> Dict[str, Any]:
+        """Select best models based on cross-validation performance."""
+        tprint("🎯 [REGIME_MODELS] Selecting best models based on CV performance", color="cyan")
+        
+        model_scores = {}
+        
+        for name, model in trained_models.items():
+            if model is not None:
+                try:
+                    # Use 3-fold CV for quick evaluation
+                    cv_scores = cross_val_score(model, X_train, y_train, cv=3, scoring='accuracy')
+                    avg_score = np.mean(cv_scores)
+                    std_score = np.std(cv_scores)
+                    model_scores[name] = {'score': avg_score, 'std': std_score}
+                    tprint(f"📊 [REGIME_MODELS] {name}: {avg_score:.4f} ± {std_score:.4f}", color="blue")
+                except Exception as e:
+                    tprint(f"❌ [REGIME_MODELS] CV failed for {name}: {e}", color="red")
+                    model_scores[name] = {'score': 0.0, 'std': 0.0}
+        
+        # Select top 3 models by score
+        sorted_models = sorted(model_scores.items(), key=lambda x: x[1]['score'], reverse=True)
+        selected_names = [name for name, _ in sorted_models[:3]]
+        
+        selected_models = {name: trained_models[name] for name in selected_names if name in trained_models}
+        
+        tprint(f"🏆 [REGIME_MODELS] Selected top 3 models: {list(selected_models.keys())}", color="green")
+        return selected_models
+
+    def _validate_models_advanced(self, models: Dict[str, Any], X: np.ndarray, y: np.ndarray) -> Dict[str, Any]:
+        """Perform advanced validation using ML common tools."""
+        tprint("🔍 [REGIME_MODELS] Performing advanced validation", color="cyan")
+        
+        validation_results = {}
+        
+        # Temporal validation configuration
+        temporal_config = TemporalValidationConfig(
+            enable_temporal_checks=True,
+            strict_temporal_order=True,
+            min_temporal_gap=1,
+            enable_walk_forward=True,
+            initial_train_size=0.6,
+            step_size=0.1,
+            min_test_size=0.1,
+            enable_leakage_detection=True,
+            n_splits=5,
+            test_size=0.2,
+            gap_size=1
+        )
+        
+        temporal_validator = UniversalTemporalValidator(temporal_config)
+        
+        for name, model in models.items():
+            if model is not None:
+                try:
+                    # Split data for temporal validation
+                    split_idx = int(len(X) * 0.8)
+                    X_train, X_test = X[:split_idx], X[split_idx:]
+                    y_train, y_test = y[:split_idx], y[split_idx:]
+                    
+                    # Temporal validation
+                    temporal_report = temporal_validator.validate_temporal_split(
+                        X_train, X_test, y_train, y_test, 
+                        model_name=name, model_type="regime_classifier"
+                    )
+                    
+                    # Purged cross-validation
+                    cv_results = temporal_cross_validation(
+                        model, X, y, n_splits=5, gap=1, test_size=0.2
+                    )
+                    
+                    # Regime-aware validation
+                    regime_validation = self._validate_regime_aware(model, X, y)
+                    
+                    validation_results[name] = {
+                        'temporal_validation': temporal_report,
+                        'purged_cv': cv_results,
+                        'regime_validation': regime_validation
+                    }
+                    
+                    tprint(f"✅ [REGIME_MODELS] Advanced validation completed for {name}", color="green")
+                    
+                except Exception as e:
+                    tprint(f"❌ [REGIME_MODELS] Advanced validation failed for {name}: {e}", color="red")
+                    validation_results[name] = {'error': str(e)}
+        
+        return validation_results
+
+    def _validate_regime_aware(self, model: Any, X: np.ndarray, y: np.ndarray) -> Dict[str, Any]:
+        """Validate model performance across different regimes."""
+        try:
+            unique_regimes = np.unique(y)
+            regime_performance = {}
+            
+            for regime in unique_regimes:
+                regime_mask = (y == regime)
+                regime_X = X[regime_mask]
+                regime_y = y[regime_mask]
+                
+                if len(regime_X) > 10:  # Minimum samples for validation
+                    # Cross-validation within regime
+                    cv_scores = cross_val_score(model, regime_X, regime_y, cv=3, scoring='accuracy')
+                    regime_performance[f'regime_{regime}'] = {
+                        'accuracy': np.mean(cv_scores),
+                        'std': np.std(cv_scores),
+                        'samples': len(regime_X)
+                    }
+            
+            return regime_performance
+            
+        except Exception as e:
+            return {'error': str(e)}
+
+    def _add_interpretability_features(self, models: Dict[str, Any], X: np.ndarray, y: np.ndarray) -> Dict[str, Any]:
+        """Add interpretability features and explanations."""
+        tprint("🔍 [REGIME_MODELS] Adding interpretability features", color="cyan")
+        
+        interpretability_results = {}
+        
+        for name, model in models.items():
+            if model is not None:
+                try:
+                    # Initialize explainability tools
+                    explainer = ModelExplainability()
+                    shap_lime = SHAPLIMEIntegration()
+                    
+                    # Feature importance
+                    if hasattr(model, 'feature_importances_'):
+                        feature_importance = model.feature_importances_
+                    elif hasattr(model, 'coef_'):
+                        feature_importance = np.abs(model.coef_[0]) if len(model.coef_.shape) > 1 else np.abs(model.coef_)
+                    else:
+                        feature_importance = None
+                    
+                    # SHAP explanations
+                    shap_explanations = None
+                    try:
+                        shap_explanations = shap_lime.get_shap_explanations(model, X[:100])  # Sample for performance
+                    except Exception as e:
+                        tprint(f"⚠️ [REGIME_MODELS] SHAP explanations failed for {name}: {e}", color="yellow")
+                    
+                    # LIME explanations
+                    lime_explanations = None
+                    try:
+                        lime_explanations = shap_lime.get_lime_explanations(model, X[:50])  # Sample for performance
+                    except Exception as e:
+                        tprint(f"⚠️ [REGIME_MODELS] LIME explanations failed for {name}: {e}", color="yellow")
+                    
+                    # Model decision boundaries
+                    decision_boundary = None
+                    if hasattr(model, 'decision_function'):
+                        try:
+                            decision_boundary = model.decision_function(X[:100])
+                        except Exception as e:
+                            tprint(f"⚠️ [REGIME_MODELS] Decision boundary failed for {name}: {e}", color="yellow")
+                    
+                    interpretability_results[name] = {
+                        'feature_importance': feature_importance,
+                        'shap_explanations': shap_explanations,
+                        'lime_explanations': lime_explanations,
+                        'decision_boundary': decision_boundary
+                    }
+                    
+                    tprint(f"✅ [REGIME_MODELS] Interpretability features added for {name}", color="green")
+                    
+                except Exception as e:
+                    tprint(f"❌ [REGIME_MODELS] Interpretability failed for {name}: {e}", color="red")
+                    interpretability_results[name] = {'error': str(e)}
+        
+        return interpretability_results
 
     async def _evaluate_models_enhanced(self, models: Dict[str, Any], X_test: np.ndarray, y_test: np.ndarray) -> Dict[str, Any]:
         """Evaluate models with enhanced evaluation utilities."""
@@ -1866,7 +2180,7 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                 if name == 'stacker_lgbm_calibrated':
                     # Meta-learner needs enhanced features as input
                     # Only use the same base models that were used during training
-                    base_model_names = ['CatBoost', 'Greedy Rule Lists', 'ExtraTrees']
+                    base_model_names = ['CatBoost', 'XGBoost', 'Random Forest', 'Greedy Rule Lists', 'ExtraTrees']
                     base_predictions = np.column_stack([
                         np.argmax(models[base_name].predict_proba(X_test_scaled), axis=1).reshape(-1, 1) if hasattr(models[base_name], 'predict_proba') else models[base_name].predict(X_test_scaled).reshape(-1, 1)
                         for base_name in base_model_names

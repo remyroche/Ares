@@ -18,18 +18,17 @@ def test_imports():
     
     try:
         # Test basic imports
-        from feature_generation.feature_selection.lgbm_shap_rfe_selector import (
+        from feature_selection.vectorbt_extensions.lgbm_shap_rfe_selector import (
             LGBMSHAPRFEConfig, 
             LGBMSHAPRFESelector,
             create_lgbm_shap_rfe_selector
         )
         print("✅ LGBM-SHAP RFE Selector imports successful")
         
-        from feature_generation.integration.lgbm_shap_rfe_integration import (
-            LGBMSHAPRFEIntegration,
-            create_lgbm_shap_rfe_integration
+        from feature_generation.integration.enhanced_models_training_integration import (
+            EnhancedModelsTrainingIntegration
         )
-        print("✅ LGBM-SHAP RFE Integration imports successful")
+        print("✅ Enhanced Models Training Integration imports successful")
         
         return True
         
@@ -70,7 +69,7 @@ def test_selector_creation():
     print("\n🔧 Testing selector creation...")
     
     try:
-        from feature_generation.feature_selection.lgbm_shap_rfe_selector import LGBMSHAPRFEConfig
+        from feature_selection.vectorbt_extensions.lgbm_shap_rfe_selector import LGBMSHAPRFEConfig
         
         # Test config creation
         config = LGBMSHAPRFEConfig(
@@ -95,7 +94,7 @@ def test_integration_creation():
     print("\n🔧 Testing integration creation...")
     
     try:
-        from feature_generation.integration.lgbm_shap_rfe_integration import create_lgbm_shap_rfe_integration
+        from feature_generation.integration.enhanced_models_training_integration import EnhancedModelsTrainingIntegration
         
         # Test integration creation (this will fail due to missing dependencies, but we can test the structure)
         print("✅ Integration module structure is correct")
@@ -112,8 +111,8 @@ def test_file_structure():
     print("\n📁 Testing file structure...")
     
     required_files = [
-        "/workspace/src/feature_generation/feature_selection/lgbm_shap_rfe_selector.py",
-        "/workspace/src/feature_generation/integration/lgbm_shap_rfe_integration.py",
+        "/workspace/src/feature_selection/vectorbt_extensions/lgbm_shap_rfe_selector.py",
+        "/workspace/src/feature_generation/integration/enhanced_models_training_integration.py",
         "/workspace/test_lgbm_shap_rfe_integration.py",
         "/workspace/simple_test_lgbm_shap_rfe.py"
     ]
@@ -135,8 +134,8 @@ def test_code_syntax():
     import ast
     
     files_to_check = [
-        "/workspace/src/feature_generation/feature_selection/lgbm_shap_rfe_selector.py",
-        "/workspace/src/feature_generation/integration/lgbm_shap_rfe_integration.py"
+        "/workspace/src/feature_selection/vectorbt_extensions/lgbm_shap_rfe_selector.py",
+        "/workspace/src/feature_generation/integration/enhanced_models_training_integration.py"
     ]
     
     all_valid = True

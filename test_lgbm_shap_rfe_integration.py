@@ -15,9 +15,9 @@ from datetime import datetime, timedelta
 # Add src to path
 sys.path.append('/workspace/src')
 
-# Import the integration
-from feature_generation.integration.lgbm_shap_rfe_integration import (
-    create_lgbm_shap_rfe_integration
+# Import the enhanced models training integration
+from feature_generation.integration.enhanced_models_training_integration import (
+    EnhancedModelsTrainingIntegration
 )
 
 def create_realistic_ohlcv_data(n_samples: int = 2000, 
@@ -74,9 +74,12 @@ def test_lgbm_shap_rfe_integration():
     data = create_realistic_ohlcv_data(n_samples=1500)
     
     # Create integration with custom parameters
-    print("\n🔧 Creating LGBM-SHAP RFE integration...")
-    integration = create_lgbm_shap_rfe_integration(
-        target_features=60,
+    print("\n🔧 Creating Enhanced Models Training Integration with LGBM-SHAP RFE...")
+    integration = EnhancedModelsTrainingIntegration(
+        min_features=30,
+        max_features=60,
+        enable_comprehensive_features=True,
+        enable_lgbm_shap_rfe=True,
         removal_percentage=0.25,  # Remove 25% of features per iteration
         lgbm_params={
             'objective': 'regression',

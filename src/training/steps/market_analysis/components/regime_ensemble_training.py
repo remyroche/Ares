@@ -416,14 +416,24 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
 
             # Save artifacts persistently using the artifact manager
             try:
-                save_report = await self.save_artifacts(results, {
+                # Prepare artifacts for downstream compatibility
+                artifacts_to_save = self._prepare_artifacts_for_saving(results)
+                
+                # Save main artifacts
+                save_report = await self.save_artifacts(artifacts_to_save, {
                     'component_type': 'regime_ensemble_training',
-                    'execution_time': (datetime.now() - start_time).total_seconds()
+                    'execution_time': (datetime.now() - start_time).total_seconds(),
+                    'artifacts_count': len(artifacts_to_save),
+                    'downstream_compatible': True
                 })
                 tprint(
-                    f"💾 [REGIME_ENSEMBLE] Artifacts saved persistently (correlation_id={save_report.correlation_id}): {list(save_report.paths.keys())}",
+                    f"💾 [REGIME_ENSEMBLE] Main artifacts saved (correlation_id={save_report.correlation_id}): {list(save_report.paths.keys())}",
                     color="green"
                 )
+                
+                # Save individual artifacts for better downstream access
+                await self._save_individual_artifacts(results, save_report.correlation_id)
+                
             except Exception as e:
                 tprint(f"⚠️ [REGIME_ENSEMBLE] Failed to save artifacts persistently: {e}", color="yellow")
 
@@ -1851,6 +1861,244 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
             tprint(f"❌ [REGIME_ENSEMBLE] Timeframe artifact creation failed: {e}", color="red")
             self.logger.error(f"Timeframe artifact creation failed: {e}", exc_info=True)
             return None
+
+    def _prepare_artifacts_for_saving(self, results: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Prepare artifacts for downstream compatibility and saving.
+        
+        Args:
+            results: Raw results from ensemble training
+            
+        Returns:
+            Dictionary of artifacts structured for downstream users
+        """
+        try:
+            tprint("🔧 [REGIME_ENSEMBLE] Preparing artifacts for downstream compatibility", color="cyan")
+            
+            artifacts = {}
+            
+            # 1. Core ensemble training results
+            if 'regime_ensemble_training_result' in results:
+                artifacts['ensemble_training_results'] = results['regime_ensemble_training_result']
+                tprint("✅ [REGIME_ENSEMBLE] Added ensemble training results", color="green")
+            
+            # 2. Tagged dataset (if available)
+            if 'tagged_dataset' in results:
+                tagged_data = results['tagged_dataset']
+                artifacts['tagged_dataset'] = {
+                    'data': tagged_data.get('tagged_dataset'),
+                    'summary': tagged_data.get('tagging_summary', {}),
+                    'prediction_result': tagged_data.get('prediction_result', {}),
+                    'metadata': {
+                        'n_samples': len(tagged_data.get('tagged_dataset', [])),
+                        'n_regimes': tagged_data.get('tagging_summary', {}).get('n_regimes_detected', 0),
+                        'creation_timestamp': datetime.now().isoformat(),
+                        'component': 'regime_ensemble_training'
+                    }
+                }
+                tprint("✅ [REGIME_ENSEMBLE] Added tagged dataset artifact", color="green")
+            
+            # 3. Timeframe artifacts (15m and 1h)
+            timeframe_artifacts = {}
+            for key, value in results.items():
+                if key.endswith('_artifacts'):
+                    timeframe_artifacts[key] = value
+                    tprint(f"✅ [REGIME_ENSEMBLE] Added {key} artifact", color="green")
+            
+            if timeframe_artifacts:
+                artifacts['timeframe_artifacts'] = timeframe_artifacts
+            
+            # 4. Ensemble model artifacts (for downstream model loading)
+            if 'regime_ensemble_training_result' in results:
+                ensemble_result = results['regime_ensemble_training_result']
+                if 'stacker_lgbm_calibrated' in ensemble_result:
+                    stacker_result = ensemble_result['stacker_lgbm_calibrated']
+                    artifacts['ensemble_model'] = {
+                        'model_type': 'stacker_lgbm_calibrated',
+                        'base_models': stacker_result.get('base_models', {}),
+                        'meta_learner': stacker_result.get('meta_learner'),
+                        'calibration_method': stacker_result.get('calibration_method', 'none'),
+                        'feature_names': stacker_result.get('feature_names', []),
+                        'model_metadata': {
+                            'training_timestamp': stacker_result.get('training_timestamp'),
+                            'n_features': stacker_result.get('meta_features_shape', (0, 0))[1],
+                            'n_base_models': len(stacker_result.get('base_models', {})),
+                            'calibration_enabled': stacker_result.get('calibration_method') != 'none'
+                        }
+                    }
+                    tprint("✅ [REGIME_ENSEMBLE] Added ensemble model artifact", color="green")
+            
+            # 5. Feature information
+            if 'feature_names' in results:
+                artifacts['feature_info'] = {
+                    'feature_names': results['feature_names'],
+                    'n_features': len(results['feature_names']),
+                    'feature_types': ['technical', 'statistical', 'regime_based'],
+                    'generation_method': 'enhanced_meta_features'
+                }
+                tprint("✅ [REGIME_ENSEMBLE] Added feature information artifact", color="green")
+            
+            # 6. Validation and performance metrics
+            if 'regime_ensemble_training_result' in results:
+                ensemble_result = results['regime_ensemble_training_result']
+                artifacts['validation_metrics'] = {
+                    'ensemble_metrics': ensemble_result.get('ensemble_metrics', {}),
+                    'validation_report': ensemble_result.get('validation_report', {}),
+                    'hardware_optimization': ensemble_result.get('hardware_optimization', {}),
+                    'lookahead_protection': ensemble_result.get('lookahead_protection', {}),
+                    'performance_summary': {
+                        'training_time': ensemble_result.get('training_time', 0),
+                        'execution_mode': ensemble_result.get('execution_mode', 'light'),
+                        'success': True
+                    }
+                }
+                tprint("✅ [REGIME_ENSEMBLE] Added validation metrics artifact", color="green")
+            
+            # 7. Configuration and metadata
+            artifacts['configuration'] = {
+                'symbol': self.config.symbol,
+                'exchange': self.config.exchange,
+                'timeframe': self.config.timeframe,
+                'execution_mode': getattr(self.config, 'execution_mode', 'light'),
+                'ensemble_config': self.ensemble_config,
+                'component_version': '1.0.0',
+                'compatibility_version': '1.0.0'
+            }
+            tprint("✅ [REGIME_ENSEMBLE] Added configuration artifact", color="green")
+            
+            # 8. Downstream usage guide
+            artifacts['usage_guide'] = {
+                'description': 'Regime Ensemble Training Artifacts',
+                'artifacts_available': list(artifacts.keys()),
+                'downstream_usage': {
+                    'tagged_dataset': 'Use for further analysis and model training',
+                    'ensemble_model': 'Load for prediction on new data',
+                    'timeframe_artifacts': 'Use for timeframe-specific analysis',
+                    'validation_metrics': 'Use for model evaluation and comparison',
+                    'feature_info': 'Use for feature engineering in downstream steps'
+                },
+                'loading_examples': {
+                    'load_tagged_data': 'artifacts["tagged_dataset"]["data"]',
+                    'load_ensemble_model': 'artifacts["ensemble_model"]',
+                    'get_feature_names': 'artifacts["feature_info"]["feature_names"]',
+                    'get_validation_metrics': 'artifacts["validation_metrics"]'
+                }
+            }
+            tprint("✅ [REGIME_ENSEMBLE] Added usage guide artifact", color="green")
+            
+            tprint(f"🎯 [REGIME_ENSEMBLE] Prepared {len(artifacts)} artifacts for downstream compatibility", color="green")
+            return artifacts
+            
+        except Exception as e:
+            tprint(f"❌ [REGIME_ENSEMBLE] Failed to prepare artifacts for saving: {e}", color="red")
+            self.logger.error(f"Artifact preparation failed: {e}", exc_info=True)
+            # Return basic artifacts if preparation fails
+            return {
+                'ensemble_training_results': results.get('regime_ensemble_training_result', {}),
+                'tagged_dataset': results.get('tagged_dataset', {}),
+                'timeframe_artifacts': {k: v for k, v in results.items() if k.endswith('_artifacts')},
+                'configuration': {
+                    'symbol': self.config.symbol,
+                    'exchange': self.config.exchange,
+                    'timeframe': self.config.timeframe,
+                    'component_version': '1.0.0'
+                }
+            }
+
+    async def _save_individual_artifacts(self, results: Dict[str, Any], correlation_id: str) -> None:
+        """
+        Save individual artifacts separately for better downstream access.
+        
+        Args:
+            results: Raw results from ensemble training
+            correlation_id: Correlation ID from main artifact save
+        """
+        try:
+            tprint("🔧 [REGIME_ENSEMBLE] Saving individual artifacts for downstream access", color="cyan")
+            
+            # 1. Save tagged dataset separately
+            if 'tagged_dataset' in results:
+                tagged_artifact = {
+                    'tagged_dataset': results['tagged_dataset'],
+                    'correlation_id': correlation_id,
+                    'artifact_type': 'tagged_dataset',
+                    'component': 'regime_ensemble_training',
+                    'timestamp': datetime.now().isoformat()
+                }
+                await self.save_artifacts(tagged_artifact, {
+                    'artifact_type': 'tagged_dataset',
+                    'correlation_id': correlation_id,
+                    'downstream_ready': True
+                })
+                tprint("✅ [REGIME_ENSEMBLE] Tagged dataset saved individually", color="green")
+            
+            # 2. Save timeframe artifacts separately
+            timeframe_artifacts = {k: v for k, v in results.items() if k.endswith('_artifacts')}
+            if timeframe_artifacts:
+                for timeframe, artifact_data in timeframe_artifacts.items():
+                    individual_artifact = {
+                        timeframe: artifact_data,
+                        'correlation_id': correlation_id,
+                        'artifact_type': 'timeframe_artifacts',
+                        'timeframe': artifact_data.get('timeframe', 'unknown'),
+                        'component': 'regime_ensemble_training',
+                        'timestamp': datetime.now().isoformat()
+                    }
+                    await self.save_artifacts(individual_artifact, {
+                        'artifact_type': 'timeframe_artifacts',
+                        'timeframe': artifact_data.get('timeframe', 'unknown'),
+                        'correlation_id': correlation_id,
+                        'downstream_ready': True
+                    })
+                    tprint(f"✅ [REGIME_ENSEMBLE] {timeframe} saved individually", color="green")
+            
+            # 3. Save ensemble model separately
+            if 'regime_ensemble_training_result' in results:
+                ensemble_result = results['regime_ensemble_training_result']
+                if 'stacker_lgbm_calibrated' in ensemble_result:
+                    model_artifact = {
+                        'ensemble_model': {
+                            'stacker_lgbm_calibrated': ensemble_result['stacker_lgbm_calibrated'],
+                            'ensemble_metrics': ensemble_result.get('ensemble_metrics', {}),
+                            'validation_report': ensemble_result.get('validation_report', {})
+                        },
+                        'correlation_id': correlation_id,
+                        'artifact_type': 'ensemble_model',
+                        'component': 'regime_ensemble_training',
+                        'timestamp': datetime.now().isoformat()
+                    }
+                    await self.save_artifacts(model_artifact, {
+                        'artifact_type': 'ensemble_model',
+                        'correlation_id': correlation_id,
+                        'downstream_ready': True
+                    })
+                    tprint("✅ [REGIME_ENSEMBLE] Ensemble model saved individually", color="green")
+            
+            # 4. Save feature information separately
+            if 'feature_names' in results:
+                feature_artifact = {
+                    'feature_info': {
+                        'feature_names': results['feature_names'],
+                        'n_features': len(results['feature_names']),
+                        'feature_types': ['technical', 'statistical', 'regime_based']
+                    },
+                    'correlation_id': correlation_id,
+                    'artifact_type': 'feature_info',
+                    'component': 'regime_ensemble_training',
+                    'timestamp': datetime.now().isoformat()
+                }
+                await self.save_artifacts(feature_artifact, {
+                    'artifact_type': 'feature_info',
+                    'correlation_id': correlation_id,
+                    'downstream_ready': True
+                })
+                tprint("✅ [REGIME_ENSEMBLE] Feature info saved individually", color="green")
+            
+            tprint("🎯 [REGIME_ENSEMBLE] All individual artifacts saved successfully", color="green")
+            
+        except Exception as e:
+            tprint(f"⚠️ [REGIME_ENSEMBLE] Failed to save individual artifacts: {e}", color="yellow")
+            self.logger.error(f"Individual artifact saving failed: {e}", exc_info=True)
 
 # VectorBT imports for native optimization
 try:

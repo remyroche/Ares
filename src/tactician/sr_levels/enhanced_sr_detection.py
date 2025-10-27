@@ -1,4 +1,15 @@
-from src.utils.tprint import tprint
+from src.utils.tprint import tprint, tprint_data_preview, tprint_data_format
+
+# VectorBT optimization imports
+try:
+    from src.training.steps.market_analysis.sr_detection.vectorbt_rolling_optimizer import VectorBTRollingOptimizer
+    from src.training.steps.market_analysis.sr_detection.unified_vectorization_manager import UnifiedVectorizationManager, VectorizationConfig
+    VECTORBT_OPTIMIZATION_AVAILABLE = True
+except ImportError:
+    VECTORBT_OPTIMIZATION_AVAILABLE = False
+    VectorBTRollingOptimizer = None
+    UnifiedVectorizationManager = None
+    VectorizationConfig = None
 
 from typing import Optional, Dict, List, Any, Tuple, Union
 import pandas as pd
@@ -27,6 +38,23 @@ from ...utils.logger import system_logger
 from ...core.decorators import handles_errors, traced
 # from ...utils.clustering_alternatives  # Module not found, commented out import get_clustering_manager
 # Circular import moved to local import within function
+
+# Import new error handling and validation modules
+try:
+    from src.training.steps.market_analysis.sr_error_handlers import (
+        handles_sr_detection_errors, handles_sr_data_validation, 
+        monitors_sr_performance, validates_sr_output
+    )
+    from src.training.steps.market_analysis.sr_data_validator import (
+        SRDataValidator, ValidationLevel
+    )
+    from src.training.steps.market_analysis.sr_performance_monitor import (
+        SRPerformanceMonitor, performance_monitor_decorator
+    )
+    ENHANCED_ERROR_HANDLING_AVAILABLE = True
+except ImportError as e:
+    ENHANCED_ERROR_HANDLING_AVAILABLE = False
+    print(f"Warning: Enhanced error handling not available: {e}")
 
 import hashlib
 import logging
@@ -453,6 +481,45 @@ class EnhancedSRDetector:
         """Initialize enhanced S/R detector with optimization features."""
         self.config = config
         self.logger = system_logger.getChild('EnhancedSRDetector')
+
+        # Initialize enhanced error handling and validation
+        if ENHANCED_ERROR_HANDLING_AVAILABLE:
+            self.data_validator = SRDataValidator(ValidationLevel.STANDARD)
+            self.performance_monitor = SRPerformanceMonitor()
+            self.performance_monitor.start_monitoring()
+            self.logger.info("Enhanced error handling and validation enabled")
+        else:
+            self.data_validator = None
+            self.performance_monitor = None
+            self.logger.warning("Enhanced error handling not available, using basic error handling")
+        
+        # Initialize VectorBT optimization components
+        if VECTORBT_OPTIMIZATION_AVAILABLE:
+            # Initialize VectorBT rolling optimizer
+            self.vectorbt_optimizer = VectorBTRollingOptimizer(
+                enable_vectorbt=True,
+                performance_threshold=config.get('vectorbt_threshold', 1000)
+            )
+            
+            # Initialize unified vectorization manager
+            vectorization_config = VectorizationConfig(
+                enable_vectorbt=True,
+                enable_parallel=config.get('enable_parallel', True),
+                max_workers=config.get('max_workers', None),
+                memory_threshold_mb=config.get('memory_threshold_mb', 1000),
+                performance_threshold=config.get('performance_threshold', 1000),
+                chunk_size=config.get('chunk_size', None),
+                use_numba=config.get('use_numba', True)
+            )
+            self.vectorization_manager = UnifiedVectorizationManager(vectorization_config)
+            
+            tprint("✅ VectorBT optimization components initialized", "SUCCESS")
+            self.logger.info("VectorBT optimization components initialized")
+        else:
+            self.vectorbt_optimizer = None
+            self.vectorization_manager = None
+            tprint("⚠️ VectorBT optimization not available - using standard operations", "WARNING")
+            self.logger.warning("VectorBT optimization not available, using standard operations")
 
         # Performance optimization settings
         self.use_optimized_fractals = config.get('use_optimized_fractals', True)
@@ -1217,17 +1284,43 @@ class EnhancedSRDetector:
         """
         try:
             start_time = time.time()
+            tprint("🔍 Starting enhanced S/R level detection...", "INFO")
             self.logger.info('🔍 Starting enhanced S/R level detection...')
+            
+            # Data preview and format validation
+            tprint_data_preview(market_data, "Market Data Input")
+            tprint_data_format(market_data, "Market Data Format")
 
-            # Enhanced data quality validation
-            self._validate_input_data_quality(market_data)
+            # Comprehensive data validation
+            if self.data_validator:
+                tprint("🔍 Performing comprehensive data validation...", "INFO")
+                validation_result = self.data_validator.validate_ohlcv_data(market_data)
+                if not validation_result.is_valid:
+                    tprint(f"❌ Data validation failed: {validation_result.issues}", "ERROR")
+                    self.logger.error(f"Data validation failed: {validation_result.issues}")
+                    return []
+                
+                if validation_result.warnings:
+                    tprint(f"⚠️ Data validation warnings: {validation_result.warnings}", "WARNING")
+                    self.logger.warning(f"Data validation warnings: {validation_result.warnings}")
+                
+                tprint(f"✅ Data quality score: {validation_result.quality_score:.2f}", "SUCCESS")
+                self.logger.info(f"Data quality score: {validation_result.quality_score:.2f}")
+            else:
+                # Fallback to basic validation
+                tprint("🔍 Performing basic data validation...", "INFO")
+                self._validate_input_data_quality(market_data)
 
             # Limit data size for performance with stratified sampling to maintain historical context
             sr_config = self.config.get('sr_detection', {})
             max_rows = sr_config.get('max_dataset_rows', 10000)
             enable_stratified = sr_config.get('enable_stratified_sampling', True)
+            
+            tprint(f"📊 Dataset size: {len(market_data)} rows, max_rows: {max_rows}", "INFO")
+            
             if len(market_data) > max_rows:
                 if enable_stratified:
+                    tprint(f'📊 Large dataset detected ({len(market_data)} rows), using stratified sample of {max_rows} rows for performance', "INFO")
                     self.logger.info(f'📊 Large dataset detected ({len(market_data)} rows), using stratified sample of {max_rows} rows for performance')
 
                     # Use stratified sampling to maintain historical context
@@ -1255,43 +1348,47 @@ class EnhancedSRDetector:
                     else:
                         market_data = recent_data
 
+                    tprint(f'🔧 Memory optimization: Stratified sampling completed, final dataset: {len(market_data)} rows', "SUCCESS")
                     self.logger.info(f'🔧 Memory optimization: Stratified sampling completed, final dataset: {len(market_data)} rows')
                 else:
+                    tprint(f'📊 Large dataset detected ({len(market_data)} rows), using simple sample of {max_rows} rows for performance', "INFO")
                     self.logger.info(f'📊 Large dataset detected ({len(market_data)} rows), using simple sample of {max_rows} rows for performance')
                     market_data = market_data.tail(max_rows)  # Use last max_rows rows (legacy behavior)
+                    tprint(f'🔧 Memory optimization: Simple sampling completed, final dataset: {len(market_data)} rows', "SUCCESS")
                     self.logger.info(f'🔧 Memory optimization: Simple sampling completed, final dataset: {len(market_data)} rows')
 
             # Detect fractal levels with multiple periods for more levels
-            tprint("🔍 Starting Fractal Level Detection...")
-            tprint("   📊 Fractal detection identifies local highs and lows where price reverses direction")
-            tprint("   📊 A fractal high is a point higher than N periods before and after it")
-            tprint("   📊 A fractal low is a point lower than N periods before and after it")
+            tprint("🔍 Starting Fractal Level Detection...", "INFO")
+            tprint("   📊 Fractal detection identifies local highs and lows where price reverses direction", "INFO")
+            tprint("   📊 A fractal high is a point higher than N periods before and after it", "INFO")
+            tprint("   📊 A fractal low is a point lower than N periods before and after it", "INFO")
             self.logger.info("🔍 Starting Fractal Level Detection...")
             self.logger.info("   📊 Fractal detection identifies local highs and lows where price reverses direction")
             self.logger.info("   📊 A fractal high is a point higher than N periods before and after it")
             self.logger.info("   📊 A fractal low is a point lower than N periods before and after it")
             fractal_levels = []
             for period in [3, 5, 7]:  # Multiple periods instead of single
-                tprint(f"   📊 Detecting fractals with period {period}...")
+                tprint(f"   🔍 Detecting fractals with period {period}...", "INFO")
                 self.logger.info(f"   📊 Detecting fractals with period {period}...")
                 temp_config = self.config.copy()
                 temp_config['fractal_period'] = period
                 temp_detector = EnhancedSRDetector(temp_config)
                 period_levels = temp_detector._detect_fractal_levels(market_data)
+                tprint(f"   ✅ Found {len(period_levels)} fractals for period {period}", "SUCCESS")
                 fractal_levels.extend(period_levels[:75])  # Increased limit per period for more levels
                 tprint(f"   ✅ Period {period}: Found {len(period_levels)} levels (kept {min(len(period_levels), 75)})")
                 self.logger.info(f"   ✅ Period {period}: Found {len(period_levels)} levels (kept {min(len(period_levels), 75)})")
             # Remove duplicates based on price proximity
             fractal_levels = self._deduplicate_levels(fractal_levels, tolerance=0.001)
-            tprint(f"📊 Fractal Detection Complete: {len(fractal_levels)} unique levels")
+            tprint(f"📊 Fractal Detection Complete: {len(fractal_levels)} unique levels", "SUCCESS")
             self.logger.info(f'📊 Fractal Detection Complete: {len(fractal_levels)} unique levels')
 
             # Detect pivot levels with multiple periods for more levels
-            tprint("🔍 Starting Pivot Point Detection...")
-            tprint("   📊 Pivot points calculate traditional support/resistance levels using OHLC data")
-            tprint("   📊 Standard pivot point formula: P = (H + L + C) / 3")
-            tprint("   📊 Support levels: S1 = 2*P - H, S2 = P - (H - L)")
-            tprint("   📊 Resistance levels: R1 = 2*P - L, R2 = P + (H - L)")
+            tprint("🔍 Starting Pivot Point Detection...", "INFO")
+            tprint("   📊 Pivot points calculate traditional support/resistance levels using OHLC data", "INFO")
+            tprint("   📊 Standard pivot point formula: P = (H + L + C) / 3", "INFO")
+            tprint("   📊 Support levels: S1 = 2*P - H, S2 = P - (H - L)", "INFO")
+            tprint("   📊 Resistance levels: R1 = 2*P - L, R2 = P + (H - L)", "INFO")
             self.logger.info("🔍 Starting Pivot Point Detection...")
             self.logger.info("   📊 Pivot points calculate traditional support/resistance levels using OHLC data")
             self.logger.info("   📊 Standard pivot point formula: P = (H + L + C) / 3")
@@ -1299,86 +1396,87 @@ class EnhancedSRDetector:
             self.logger.info("   📊 Resistance levels: R1 = 2*P - L, R2 = P + (H - L)")
             pivot_levels = []
             for period in [5, 7, 10]:  # Multiple periods instead of single
-                tprint(f"   📊 Detecting pivot points with period {period}...")
+                tprint(f"   🔍 Detecting pivot points with period {period}...", "INFO")
                 self.logger.info(f"   📊 Detecting pivot points with period {period}...")
                 temp_config = self.config.copy()
                 temp_config['pivot_period'] = period
                 temp_detector = EnhancedSRDetector(temp_config)
                 period_levels = temp_detector._detect_pivot_levels(market_data)
+                tprint(f"   ✅ Found {len(period_levels)} pivot points for period {period}", "SUCCESS")
                 pivot_levels.extend(period_levels[:75])  # Increased limit per period for more levels
                 tprint(f"   ✅ Period {period}: Found {len(period_levels)} levels (kept {min(len(period_levels), 75)})")
                 self.logger.info(f"   ✅ Period {period}: Found {len(period_levels)} levels (kept {min(len(period_levels), 75)})")
             # Remove duplicates based on price proximity
             pivot_levels = self._deduplicate_levels(pivot_levels, tolerance=0.001)
-            tprint(f"📊 Pivot Point Detection Complete: {len(pivot_levels)} unique levels")
+            tprint(f"📊 Pivot Point Detection Complete: {len(pivot_levels)} unique levels", "SUCCESS")
             self.logger.info(f'📊 Pivot Point Detection Complete: {len(pivot_levels)} unique levels')
 
-            tprint("🔍 Starting Volume-Based Level Detection...")
-            tprint("   📊 Volume-based detection finds price levels with high trading volume")
-            tprint("   📊 High volume areas often act as strong support/resistance levels")
-            tprint("   📊 Analyzes volume distribution across price ranges")
+            tprint("🔍 Starting Volume-Based Level Detection...", "INFO")
+            tprint("   📊 Volume-based detection finds price levels with high trading volume", "INFO")
+            tprint("   📊 High volume areas often act as strong support/resistance levels", "INFO")
+            tprint("   📊 Analyzes volume distribution across price ranges", "INFO")
             self.logger.info("🔍 Starting Volume-Based Level Detection...")
             self.logger.info("   📊 Volume-based detection finds price levels with high trading volume")
             self.logger.info("   📊 High volume areas often act as strong support/resistance levels")
             self.logger.info("   📊 Analyzes volume distribution across price ranges")
             volume_levels = self._detect_volume_levels(market_data)
-            tprint(f"📊 Volume-Based Detection Complete: {len(volume_levels)} levels")
+            tprint(f"📊 Volume-Based Detection Complete: {len(volume_levels)} levels", "SUCCESS")
             self.logger.info(f'📊 Volume-Based Detection Complete: {len(volume_levels)} levels')
 
-            tprint("🔍 Starting Statistical Level Detection...")
+            tprint("🔍 Starting Statistical Level Detection...", "INFO")
             self.logger.info("🔍 Starting Statistical Level Detection...")
             statistical_levels = self._detect_statistical_levels(market_data)
-            tprint(f"📊 Statistical Detection Complete: {len(statistical_levels)} levels")
+            tprint(f"📊 Statistical Detection Complete: {len(statistical_levels)} levels", "SUCCESS")
             self.logger.info(f'📊 Statistical Detection Complete: {len(statistical_levels)} levels')
 
-            tprint("🔍 Starting Psychological Level Detection...")
-            tprint("   📊 Psychological levels identify round numbers and key price levels")
-            tprint("   📊 Examples: $50,000, $100,000, $1.00, $10.00")
-            tprint("   📊 Traders often place orders at these psychologically significant levels")
+            tprint("🔍 Starting Psychological Level Detection...", "INFO")
+            tprint("   📊 Psychological levels identify round numbers and key price levels", "INFO")
+            tprint("   📊 Examples: $50,000, $100,000, $1.00, $10.00", "INFO")
+            tprint("   📊 Traders often place orders at these psychologically significant levels", "INFO")
             self.logger.info("🔍 Starting Psychological Level Detection...")
             self.logger.info("   📊 Psychological levels identify round numbers and key price levels")
             self.logger.info("   📊 Examples: $50,000, $100,000, $1.00, $10.00")
             self.logger.info("   📊 Traders often place orders at these psychologically significant levels")
             psychological_levels = self._detect_psychological_levels(market_data)
-            tprint(f"📊 Psychological Detection Complete: {len(psychological_levels)} levels")
+            tprint(f"📊 Psychological Detection Complete: {len(psychological_levels)} levels", "SUCCESS")
             self.logger.info(f'📊 Psychological Detection Complete: {len(psychological_levels)} levels')
 
-            tprint("🔍 Starting Fibonacci Level Detection...")
+            tprint("🔍 Starting Fibonacci Level Detection...", "INFO")
             self.logger.info("🔍 Starting Fibonacci Level Detection...")
             fibonacci_levels = self._detect_fibonacci_levels(market_data)
-            tprint(f"📊 Fibonacci Detection Complete: {len(fibonacci_levels)} levels")
+            tprint(f"📊 Fibonacci Detection Complete: {len(fibonacci_levels)} levels", "SUCCESS")
             self.logger.info(f'📊 Fibonacci Detection Complete: {len(fibonacci_levels)} levels')
 
-            tprint("🔍 Starting Trendline Level Detection...")
+            tprint("🔍 Starting Trendline Level Detection...", "INFO")
             self.logger.info("🔍 Starting Trendline Level Detection...")
             trendline_levels = self._detect_trendline_levels(market_data)
-            tprint(f"📊 Trendline Detection Complete: {len(trendline_levels)} levels")
+            tprint(f"📊 Trendline Detection Complete: {len(trendline_levels)} levels", "SUCCESS")
             self.logger.info(f'📊 Trendline Detection Complete: {len(trendline_levels)} levels')
 
-            tprint("🔍 Starting Channel Level Detection...")
+            tprint("🔍 Starting Channel Level Detection...", "INFO")
             self.logger.info('🔍 Starting Channel Level Detection...')
             channel_levels = self._detect_channel_levels(market_data)
-            tprint(f"📊 Channel Detection Complete: {len(channel_levels)} levels")
+            tprint(f"📊 Channel Detection Complete: {len(channel_levels)} levels", "SUCCESS")
             self.logger.info(f'📊 Channel Detection Complete: {len(channel_levels)} levels')
 
-            tprint("🔍 Starting Volume Profile Detection...")
+            tprint("🔍 Starting Volume Profile Detection...", "INFO")
             self.logger.info('🔍 Starting Volume Profile Detection...')
             volume_profile_levels = self._detect_volume_profile_levels(market_data)
-            tprint(f"📊 Volume Profile Detection Complete: {len(volume_profile_levels)} levels")
+            tprint(f"📊 Volume Profile Detection Complete: {len(volume_profile_levels)} levels", "SUCCESS")
             self.logger.info(f'📊 Volume Profile Detection Complete: {len(volume_profile_levels)} levels')
 
-            tprint("🔍 Starting Market Structure Detection...")
+            tprint("🔍 Starting Market Structure Detection...", "INFO")
             self.logger.info('🔍 Starting Market Structure Detection...')
             market_structure_levels = self._detect_market_structure_levels(market_data)
-            tprint(f"📊 Market Structure Detection Complete: {len(market_structure_levels)} levels")
+            tprint(f"📊 Market Structure Detection Complete: {len(market_structure_levels)} levels", "SUCCESS")
             self.logger.info(f'📊 Market Structure Detection Complete: {len(market_structure_levels)} levels')
 
             all_levels = volume_levels + psychological_levels + pivot_levels + fractal_levels + statistical_levels + fibonacci_levels + trendline_levels + channel_levels + volume_profile_levels + market_structure_levels
-            tprint(f"📊 Total levels before validation: {len(all_levels)}")
+            tprint(f"📊 Total levels before validation: {len(all_levels)}", "INFO")
             self.logger.info(f'📊 Total levels before validation: {len(all_levels)}')
 
             # Log breakdown of levels by detection method
-            tprint("📊 Method-by-Method Breakdown:")
+            tprint("📊 Method-by-Method Breakdown:", "INFO")
             self.logger.info("📊 Method-by-Method Breakdown:")
             method_counts = {}
             method_details = {}
@@ -1398,7 +1496,7 @@ class EnhancedSRDetector:
                 resistance_count = details['resistance']
                 prices = details['prices']
                 price_range = f"${min(prices):.2f}-${max(prices):.2f}" if prices else "N/A"
-                tprint(f"   🔍 {method.title()}: {count} levels ({support_count} support, {resistance_count} resistance) - Range: {price_range}")
+                tprint(f"   🔍 {method.title()}: {count} levels ({support_count} support, {resistance_count} resistance) - Range: {price_range}", "INFO")
                 self.logger.info(f"   🔍 {method.title()}: {count} levels ({support_count} support, {resistance_count} resistance) - Range: {price_range}")
 
                 # Show sample levels from each method
@@ -1411,23 +1509,31 @@ class EnhancedSRDetector:
                         tprint(f"         {i}. {level.type.title()}: ${level.price:.2f} (strength: {level.strength:.3f})")
                         self.logger.info(f"         {i}. {level.type.title()}: ${level.price:.2f} (strength: {level.strength:.3f})")
 
-            tprint(f"📊 Level sources summary: {method_counts}")
+            tprint(f"📊 Level sources summary: {method_counts}", "INFO")
             self.logger.info(f'📊 Level sources summary: {method_counts}')
 
+            tprint("🔍 Validating and merging levels...", "INFO")
             validated_levels = self._validate_and_merge_levels(all_levels, market_data)
+            tprint(f'📊 Levels after validation/merging: {len(validated_levels)} (reduced by {len(all_levels) - len(validated_levels)})', "SUCCESS")
             self.logger.info(f'📊 Levels after validation/merging: {len(validated_levels)} (reduced by {len(all_levels) - len(validated_levels)})')
 
+            tprint("🔍 Calculating enhanced metrics...", "INFO")
             enhanced_levels = self._calculate_enhanced_metrics(validated_levels, market_data)
+            tprint(f'📊 Levels after enhanced metrics: {len(enhanced_levels)}', "SUCCESS")
             self.logger.info(f'📊 Levels after enhanced metrics: {len(enhanced_levels)}')
 
             # Apply unified strength×prominence filtering to remove weak/non-prominent levels
+            tprint("🔍 Applying strength×prominence filtering...", "INFO")
             original_count = len(enhanced_levels)
             enhanced_levels = self._apply_unified_strength_prominence_filtering(enhanced_levels, market_data)
             filtered_count = len(enhanced_levels)
+            tprint(f'📊 Levels after strength×prominence filtering: {filtered_count} (removed {original_count - filtered_count})', "SUCCESS")
             self.logger.info(f'📊 Levels after strength×prominence filtering: {filtered_count} (removed {original_count - filtered_count})')
 
             # Enhance levels with ML-optimized features
+            tprint("🔍 Enhancing levels with ML features...", "INFO")
             enhanced_levels = self._enhance_levels_with_ml_features(enhanced_levels, market_data)
+            tprint(f'📊 Levels after ML feature enhancement: {len(enhanced_levels)}', "SUCCESS")
             self.logger.info(f'📊 Levels after ML feature enhancement: {len(enhanced_levels)}')
 
             # Apply DBSCAN clustering to avoid nearby levels (unless disabled)
@@ -1454,29 +1560,34 @@ class EnhancedSRDetector:
             support_count = len([level for level in enhanced_levels if level.type == 'support'])
             resistance_count = len([level for level in enhanced_levels if level.type == 'resistance'])
 
-            tprint(f"✅ Enhanced SR Detection Complete!")
-            tprint(f"   📊 Total levels: {len(enhanced_levels)} ({support_count} support, {resistance_count} resistance)")
-            tprint(f"   ⏱️ Processing time: {elapsed_time:.2f}s")
+            tprint(f"✅ Enhanced SR Detection Complete!", "SUCCESS")
+            tprint(f"   📊 Total levels: {len(enhanced_levels)} ({support_count} support, {resistance_count} resistance)", "SUCCESS")
+            tprint(f"   ⏱️ Processing time: {elapsed_time:.2f}s", "SUCCESS")
             self.logger.info(f'✅ Enhanced SR Detection Complete!')
             self.logger.info(f'   📊 Total levels: {len(enhanced_levels)} ({support_count} support, {resistance_count} resistance)')
             self.logger.info(f'   ⏱️ Processing time: {elapsed_time:.2f}s')
 
             # Show sample of strongest levels
             if enhanced_levels:
-                tprint("📊 Sample of Strongest Levels:")
+                tprint("📊 Sample of Strongest Levels:", "INFO")
                 self.logger.info("📊 Sample of Strongest Levels:")
                 sorted_levels = sorted(enhanced_levels, key=lambda x: x.strength, reverse=True)[:5]
                 for i, level in enumerate(sorted_levels, 1):
                     method = level.metadata.get('method', 'unknown') if hasattr(level, 'metadata') and level.metadata else 'unknown'
-                    tprint(f"   {i}. {level.type.title()}: ${level.price:.2f} (strength: {level.strength:.3f}, method: {method})")
+                    tprint(f"   {i}. {level.type.title()}: ${level.price:.2f} (strength: {level.strength:.3f}, method: {method})", "INFO")
                     self.logger.info(f"   {i}. {level.type.title()}: ${level.price:.2f} (strength: {level.strength:.3f}, method: {method})")
 
             # Return just the enhanced levels (maintain backward compatibility)
             return enhanced_levels
         except Exception as e:
+            tprint(f"❌ Enhanced S/R detection failed: {e}", "ERROR")
             self.logger.error(f'Enhanced S/R detection failed: {e}')
             return []
 
+    @handles_sr_detection_errors(default_return=[], use_fallback=True) if ENHANCED_ERROR_HANDLING_AVAILABLE else handles_errors(exceptions=(Exception,), default_return=[], context='fractal detection')
+    @handles_sr_data_validation(required_columns=['high', 'low'], min_rows=10) if ENHANCED_ERROR_HANDLING_AVAILABLE else lambda x: x
+    @monitors_sr_performance(method_name='fractal', threshold_seconds=5.0) if ENHANCED_ERROR_HANDLING_AVAILABLE else lambda x: x
+    @validates_sr_output(expected_type=list, min_items=0, max_items=100) if ENHANCED_ERROR_HANDLING_AVAILABLE else lambda x: x
     def _detect_fractal_levels(self, data: pd.DataFrame) -> List[SRLevel]:
         """Detect S/R levels using fractal analysis with advanced optimizations."""
         start_time = time.time()
@@ -1486,6 +1597,7 @@ class EnhancedSRDetector:
             start_memory = psutil.Process().memory_info().rss / 1024 / 1024
 
         try:
+            tprint(f"🔍 Detecting fractal levels with period {self.fractal_period}...", "INFO")
             levels = []
             high = data['high'].values
             low = data['low'].values
@@ -1506,12 +1618,15 @@ class EnhancedSRDetector:
 
             # Choose detection method based on optimization settings
             if self.use_optimized_fractals and NUMBA_AVAILABLE:
+                tprint("🚀 Using ultra-optimized fractal detection with vectorization", "INFO")
                 self.logger.info("🚀 Using ultra-optimized fractal detection with vectorization")
                 support_array, resistance_array = numba_fractal_detection_optimized(high, low, self.fractal_period)
             elif NUMBA_AVAILABLE:
+                tprint("🔍 Using Numba-optimized fractal detection", "INFO")
                 self.logger.info("🔍 Using Numba-optimized fractal detection")
                 support_array, resistance_array = numba_fractal_detection(high, low, self.fractal_period)
             else:
+                tprint("⚠️ Numba not available, using basic fractal detection", "WARNING")
                 self.logger.warning("⚠️ Numba not available, using basic fractal detection")
                 support_array, resistance_array = self._basic_fractal_detection(high, low, self.fractal_period)
 
@@ -1544,7 +1659,7 @@ class EnhancedSRDetector:
                     levels.append(level)
                     resistance_levels_found += 1
 
-            tprint(f"   🔍 Fractal Detection (period {self.fractal_period}): Found {support_levels_found} support, {resistance_levels_found} resistance levels")
+            tprint(f"   ✅ Fractal Detection (period {self.fractal_period}): Found {support_levels_found} support, {resistance_levels_found} resistance levels", "SUCCESS")
             self.logger.info(f"   🔍 Fractal Detection (period {self.fractal_period}): Found {support_levels_found} support, {resistance_levels_found} resistance levels")
 
             # Limit to configurable number of levels by strength
@@ -1581,15 +1696,18 @@ class EnhancedSRDetector:
             elif NUMBA_AVAILABLE:
                 optimization_info = " (Numba accelerated)"
 
+            tprint(f"✅ Fractal detection completed in {execution_time:.3f}s{memory_info}{cache_info}{optimization_info}", "SUCCESS")
             self.logger.info(f"✅ Fractal detection completed in {execution_time:.3f}s{memory_info}{cache_info}{optimization_info}")
 
             return levels
         except Exception as e:
+            tprint(f"❌ Fractal detection failed: {e}", "ERROR")
             self.logger.warning(f'Fractal detection failed: {e}')
             return []
 
     def _basic_fractal_detection(self, highs: np.ndarray, lows: np.ndarray, window: int) -> Tuple[np.ndarray, np.ndarray]:
         """Basic fractal detection for when Numba is not available."""
+        tprint(f"🔍 Using basic fractal detection (window={window})", "INFO")
         n = len(highs)
         if n < window * 2 + 1:
             return np.empty((0, 2), dtype=np.float64), np.empty((0, 2), dtype=np.float64)
@@ -1629,10 +1747,11 @@ class EnhancedSRDetector:
 
     def get_performance_stats(self) -> Dict[str, Any]:
         """Get performance statistics for optimization monitoring."""
+        tprint("📊 Getting performance statistics...", "INFO")
         total_cache_ops = self._cache_hits + self._cache_misses
         cache_hit_rate = self._cache_hits / total_cache_ops * 100 if total_cache_ops > 0 else 0
 
-        return {
+        stats = {
             'cache_hits': self._cache_hits,
             'cache_misses': self._cache_misses,
             'cache_hit_rate': cache_hit_rate,
@@ -1650,9 +1769,13 @@ class EnhancedSRDetector:
             },
             'numba_available': NUMBA_AVAILABLE
         }
+        
+        tprint(f"📊 Performance stats: {cache_hit_rate:.1f}% cache hit rate, {len(self._fractal_cache)} fractal cache entries", "SUCCESS")
+        return stats
 
     def _count_touches_optimized(self, level_price: float, prices: np.ndarray, threshold_pct: float) -> int:
         """Optimized touch counting with caching."""
+        tprint(f"🔍 Counting touches for level ${level_price:.2f} (threshold: {threshold_pct:.1%})", "INFO")
         if not self.use_optimized_touch_counting:
             return self._count_touches_standard(level_price, prices, threshold_pct)
 
@@ -1660,22 +1783,27 @@ class EnhancedSRDetector:
         cache_key = f"{level_price:.6f}_{threshold_pct:.6f}_{hash(prices.tobytes()):x}"
 
         if cache_key in self._touch_cache:
+            tprint(f"⚡ Touch counting cache hit for level ${level_price:.2f}", "SUCCESS")
             return self._touch_cache[cache_key]
 
         # Use optimized Numba function if available
         if NUMBA_AVAILABLE:
+            tprint(f"🚀 Using Numba-optimized touch counting for level ${level_price:.2f}", "INFO")
             touches = numba_touch_counting_optimized(level_price, prices, threshold_pct)
         else:
+            tprint(f"🔍 Using standard touch counting for level ${level_price:.2f}", "INFO")
             touches = self._count_touches_standard(level_price, prices, threshold_pct)
 
         # Cache result (limit cache size)
         if len(self._touch_cache) < 1000:
             self._touch_cache[cache_key] = touches
 
+        tprint(f"✅ Touch counting completed: {touches} touches for level ${level_price:.2f}", "SUCCESS")
         return touches
 
     def _count_touches_standard(self, level_price: float, prices: np.ndarray, threshold_pct: float) -> int:
         """Standard touch counting without optimization."""
+        tprint(f"🔍 Using standard touch counting for level ${level_price:.2f}", "INFO")
         threshold = level_price * threshold_pct
         touches = 0
 
@@ -1683,19 +1811,23 @@ class EnhancedSRDetector:
             if abs(price - level_price) <= threshold:
                 touches += 1
 
+        tprint(f"✅ Standard touch counting completed: {touches} touches for level ${level_price:.2f}", "SUCCESS")
         return touches
 
     def clear_caches(self) -> None:
         """Clear all performance caches to free memory."""
+        tprint("🧹 Clearing performance caches...", "INFO")
         self._fractal_cache.clear()
         self._pivot_cache.clear()
         self._touch_cache.clear()
         self._cache_hits = 0
         self._cache_misses = 0
+        tprint("✅ All performance caches cleared", "SUCCESS")
         self.logger.info("🧹 All performance caches cleared")
 
     def _detect_pivot_levels(self, data: pd.DataFrame) -> List[SRLevel]:
         """Detect S/R levels using pivot point analysis with advanced optimizations."""
+        tprint(f"🔍 Detecting pivot levels with period {self.pivot_period}...", "INFO")
         start_time = time.time()
         start_memory = 0
 
@@ -1722,12 +1854,15 @@ class EnhancedSRDetector:
 
             # Choose detection method based on optimization settings
             if self.use_optimized_fractals and NUMBA_AVAILABLE:  # Using same setting for pivot optimization
+                tprint("🚀 Using ultra-optimized pivot detection with vectorization", "INFO")
                 self.logger.info("🚀 Using ultra-optimized pivot detection with vectorization")
                 pivot_highs_array, pivot_lows_array = numba_pivot_detection_optimized(high, low, self.pivot_period)
             elif NUMBA_AVAILABLE:
+                tprint("🔍 Using Numba-optimized pivot detection", "INFO")
                 self.logger.info("🔍 Using Numba-optimized pivot detection")
                 pivot_highs_array, pivot_lows_array = numba_pivot_detection(high, low, self.pivot_period)
             else:
+                tprint("⚠️ Numba not available, using standard pivot processing", "WARNING")
                 self.logger.warning("⚠️ Numba not available, using standard pivot processing")
                 pivot_highs_array, pivot_lows_array = self._fallback_pivot_detection(high, low, self.pivot_period)
 
@@ -1758,6 +1893,7 @@ class EnhancedSRDetector:
 
             # Limit to top 30 levels by strength for more detection
             levels = sorted(levels, key=lambda x: x.strength, reverse=True)[:30]
+            tprint(f"✅ Pivot detection completed: {len(levels)} levels found", "SUCCESS")
 
             # Cache the results if caching is enabled
             if self.enable_fractal_caching and cache_key:  # Using same setting for pivot caching
@@ -1790,15 +1926,18 @@ class EnhancedSRDetector:
             elif NUMBA_AVAILABLE:
                 optimization_info = " (Numba accelerated)"
 
+            tprint(f"✅ Pivot detection completed in {execution_time:.3f}s{memory_info}{cache_info}{optimization_info}", "SUCCESS")
             self.logger.info(f"✅ Pivot detection completed in {execution_time:.3f}s{memory_info}{cache_info}{optimization_info}")
 
             return levels
         except Exception as e:
+            tprint(f"❌ Pivot detection failed: {e}", "ERROR")
             self.logger.warning(f'Pivot detection failed: {e}')
             return []
 
     def _detect_volume_levels(self, data: pd.DataFrame) -> List[SRLevel]:
         """Detect S/R levels based on volume spikes and price reactions with Numba optimizations."""
+        tprint("🔍 Detecting volume-based levels...", "INFO")
         start_time = time.time()
         start_memory = 0
 
@@ -1811,6 +1950,7 @@ class EnhancedSRDetector:
             low = data['low'].values
             volume = data['volume'].values
 
+            tprint(f"🔍 Detecting volume levels with {'Numba-optimized' if NUMBA_AVAILABLE else 'standard'} processing", "INFO")
             self.logger.info(f"🔍 Detecting volume levels with {'Numba-optimized' if NUMBA_AVAILABLE else 'standard'} processing")
 
             if NUMBA_AVAILABLE:
@@ -1905,6 +2045,7 @@ class EnhancedSRDetector:
 
             # Limit to top 30 levels by strength for more detection
             levels = sorted(levels, key=lambda x: x.strength, reverse=True)[:30]
+            tprint(f"✅ Volume detection completed: {len(levels)} levels found", "SUCCESS")
 
             # Performance monitoring
             end_time = time.time()
@@ -1917,15 +2058,18 @@ class EnhancedSRDetector:
                 memory_info = f", memory delta: {memory_delta:+.1f}MB"
 
             optimization_info = " (Numba accelerated)" if NUMBA_AVAILABLE else ""
+            tprint(f"✅ Volume detection completed in {execution_time:.3f}s{memory_info}{optimization_info}", "SUCCESS")
             self.logger.info(f"✅ Volume detection completed in {execution_time:.3f}s{memory_info}{optimization_info}")
 
             return levels
         except Exception as e:
+            tprint(f"❌ Volume detection failed: {e}", "ERROR")
             self.logger.warning(f'Volume detection failed: {e}')
             return []
 
     def _detect_statistical_levels(self, data: pd.DataFrame) -> List[SRLevel]:
         """Detect S/R levels using statistical analysis."""
+        tprint("🔍 Detecting statistical levels...", "INFO")
         try:
             levels = []
             close = data['close'].values
@@ -1939,13 +2083,16 @@ class EnhancedSRDetector:
                 levels.append(level)
                 level = SRLevel(price = lower_level, strength = 0.5 + std_multiple * 0.1, type='support', touch_count = 0, first_touch_time = data.index[0], last_touch_time = data.index[0], age_bars = len(data), avg_bounce_ratio = 0.0, max_bounce_ratio = 0.0, volume_confirmation_score = 0.0, consistency_score = 0.0, failure_count = 0, confidence_score = 0.5 + std_multiple * 0.1, confluence_score = 0.0, pivot_level = False, psychological_level = False, metadata={'method': 'statistical', 'std_multiple': std_multiple})
                 levels.append(level)
+            tprint(f"✅ Statistical detection completed: {len(levels)} levels found", "SUCCESS")
             return levels
         except Exception as e:
+            tprint(f"❌ Statistical detection failed: {e}", "ERROR")
             self.logger.warning(f'Statistical detection failed: {e}')
             return []
 
     def _detect_psychological_levels(self, data: pd.DataFrame) -> List[SRLevel]:
         """Detect psychological S/R levels (round numbers)."""
+        tprint("🔍 Detecting psychological levels...", "INFO")
         try:
             levels = []
             close = data['close'].values
@@ -1960,13 +2107,16 @@ class EnhancedSRDetector:
                 else:
                     level = SRLevel(price = level_price, strength = 0.4, type='support', touch_count = 0, first_touch_time = data.index[0], last_touch_time = data.index[0], age_bars = len(data), avg_bounce_ratio = 0.0, max_bounce_ratio = 0.0, volume_confirmation_score = 0.0, consistency_score = 0.0, failure_count = 0, confidence_score = 0.4, confluence_score = 0.0, pivot_level = False, psychological_level = True, metadata={'method': 'psychological', 'multiplier': multiplier})
                     levels.append(level)
+            tprint(f"✅ Psychological detection completed: {len(levels)} levels found", "SUCCESS")
             return levels
         except Exception as e:
+            tprint(f"❌ Psychological detection failed: {e}", "ERROR")
             self.logger.warning(f'Psychological detection failed: {e}')
             return []
 
     def _detect_fibonacci_levels(self, data: pd.DataFrame) -> List[SRLevel]:
         """Detect S/R levels using Fibonacci retracement analysis."""
+        tprint("🔍 Detecting Fibonacci levels...", "INFO")
         try:
             levels = []
             close = data['close'].values
@@ -2031,13 +2181,16 @@ class EnhancedSRDetector:
                     )
                     levels.append(level)
 
+            tprint(f"✅ Fibonacci detection completed: {len(levels)} levels found", "SUCCESS")
             return levels
         except Exception as e:
+            tprint(f"❌ Fibonacci detection failed: {e}", "ERROR")
             self.logger.warning(f'Fibonacci detection failed: {e}')
             return []
 
     def _detect_trendline_levels(self, data: pd.DataFrame) -> List[SRLevel]:
         """Detect S/R levels using trend line analysis with performance optimizations."""
+        tprint("🔍 Detecting trendline levels...", "INFO")
         start_time = time.time()
 
         try:
@@ -2072,16 +2225,19 @@ class EnhancedSRDetector:
             levels = sorted(levels, key=lambda x: x.strength, reverse=True)[:20]
 
             elapsed = time.time() - start_time
+            tprint(f"✅ Trendline analysis completed in {elapsed:.2f}s: {len(levels)} levels found", "SUCCESS")
             self.logger.info(f'📊 Trendline analysis completed in {elapsed:.2f}s')
 
             return levels
         except Exception as e:
             elapsed = time.time() - start_time
+            tprint(f"❌ Trendline detection failed after {elapsed:.2f}s: {e}", "ERROR")
             self.logger.warning(f'Trendline detection failed after {elapsed:.2f}s: {e}')
             return []
 
     def _find_swing_points(self, data: np.ndarray, point_type: str, period: int) -> tuple:
         """Find swing points for trend line analysis."""
+        tprint(f"🔍 Finding swing {point_type} points (period={period})...", "INFO")
         try:
             indices = []
             values = []
@@ -2096,12 +2252,15 @@ class EnhancedSRDetector:
                         indices.append(i)
                         values.append(data[i])
 
+            tprint(f"✅ Found {len(indices)} swing {point_type} points", "SUCCESS")
             return indices, values
         except Exception:
+            tprint(f"❌ Failed to find swing {point_type} points", "ERROR")
             return [], []
 
     def _generate_trend_lines(self, indices: List[int], values: List[float], line_type: str) -> List[SRLevel]:
         """Generate trend lines from swing points using linear regression."""
+        tprint(f"🔍 Generating {line_type} trend lines from {len(indices)} points...", "INFO")
         try:
             levels = []
 
@@ -2159,22 +2318,28 @@ class EnhancedSRDetector:
                     )
                     levels.append(level)
 
+            tprint(f"✅ Generated {len(levels)} {line_type} trend lines", "SUCCESS")
             return levels
         except Exception as e:
+            tprint(f"❌ Trend line generation failed: {e}", "ERROR")
             self.logger.warning(f'Trend line generation failed: {e}')
             return []
 
     def _linear_regression(self, x: List[int], y: List[float]) -> tuple:
         """Perform linear regression on trend line points."""
+        tprint(f"🔍 Performing linear regression on {len(x)} points...", "INFO")
         try:
             from scipy import stats
             slope, intercept, r_value, p_value, std_err = stats.linregress(x, y)
+            tprint(f"✅ Linear regression completed: slope={slope:.4f}, r²={r_value**2:.4f}", "SUCCESS")
             return slope, intercept, r_value, p_value, std_err
         except Exception:
+            tprint("❌ Linear regression failed", "ERROR")
             return 0, 0, 0, 1, 1
 
     def _detect_channel_levels(self, data: pd.DataFrame) -> List[SRLevel]:
         """Detect S/R levels using channel analysis."""
+        tprint("🔍 Detecting channel levels...", "INFO")
         try:
             channel_start = time.time()
 
@@ -2226,9 +2391,11 @@ class EnhancedSRDetector:
             levels = sorted(levels, key=lambda x: x.strength, reverse=True)[:30]
 
             channel_time = time.time() - channel_start
+            tprint(f"✅ Channel detection completed in {channel_time:.2f}s: {len(levels)} levels found", "SUCCESS")
             self.logger.info(f'✅ Channel detection completed in {channel_time:.2f}s')
             return levels
         except Exception as e:
+            tprint(f"❌ Channel detection failed: {e}", "ERROR")
             self.logger.warning(f'Channel detection failed: {e}')
             return []
 
@@ -2236,6 +2403,7 @@ class EnhancedSRDetector:
                                          low_indices: List[int], low_values: List[float],
                                          data: pd.DataFrame) -> List[SRLevel]:
         """Optimized parallel channel detection using vectorized operations and intelligent filtering."""
+        tprint(f"🔍 Finding parallel channels from {len(high_indices)} highs, {len(low_indices)} lows...", "INFO")
         try:
             start_time = time.time()
             levels = []
@@ -2362,17 +2530,21 @@ class EnhancedSRDetector:
             levels.extend(processed_levels)
 
             processing_time = time.time() - start_time
+            tprint(f"✅ Optimized channel detection completed in {processing_time:.2f}s: {len(levels)} levels", "SUCCESS")
             self.logger.info(f'✅ Optimized channel detection completed in {processing_time:.2f}s: {len(levels)} levels')
             return levels
 
         except Exception as e:
+            tprint(f"❌ Optimized channel detection failed: {e}", "ERROR")
             self.logger.error(f'Optimized channel detection failed: {e}')
             return []
 
     def _precompute_line_parameters(self, indices: List[int], values: List[float]) -> List[Dict]:
         """Pre-compute line parameters for all possible triplets using vectorized operations."""
+        tprint(f"🔍 Pre-computing line parameters for {len(indices)} points...", "INFO")
         try:
             if len(indices) < 3:
+                tprint("⚠️ Not enough points for line parameter computation", "WARNING")
                 return []
 
             params = []
@@ -2410,14 +2582,17 @@ class EnhancedSRDetector:
                     'quality_score': r2 * consistency
                 })
 
+            tprint(f"✅ Pre-computed {len(params)} line parameters", "SUCCESS")
             return params
 
         except Exception as e:
+            tprint(f"❌ Pre-computation failed: {e}", "ERROR")
             self.logger.warning(f'Pre-computation failed: {e}')
             return []
 
     def _calculate_line_params_vectorized(self, x_points: List[int], y_points: List[float]) -> Tuple[float, float, float]:
         """Vectorized line parameter calculation for better performance with advanced statistics."""
+        tprint(f"🔍 Calculating line parameters for {len(x_points)} points...", "INFO")
         try:
 
             if len(x_points) != len(y_points) or len(x_points) < 2:
@@ -2460,14 +2635,17 @@ class EnhancedSRDetector:
             if not np.isfinite(slope) or not np.isfinite(intercept):
                 return 0.0, 0.0, 0.0
 
+            tprint(f"✅ Line parameters calculated: slope={slope:.4f}, intercept={intercept:.4f}, r²={r2:.4f}", "SUCCESS")
             return float(slope), float(intercept), float(r2)
 
         except Exception as e:
+            tprint(f"❌ Vectorized line calculation failed: {e}", "ERROR")
             self.logger.warning(f'Vectorized line calculation failed: {e}')
             return 0.0, 0.0, 0.0
 
     def _batch_calculate_line_params(self, indices_list: List[List[int]], values_list: List[List[float]]) -> List[Tuple[float, float, float]]:
         """Batch calculate line parameters for multiple triplets using vectorized operations."""
+        tprint(f"🔍 Batch calculating line parameters for {len(indices_list)} triplets...", "INFO")
         try:
 
             if not indices_list or not values_list:
@@ -2485,9 +2663,11 @@ class EnhancedSRDetector:
                     slope, intercept, r2 = self._calculate_line_params_vectorized(x_points, y_points)
                     results.append((slope, intercept, r2))
 
+            tprint(f"✅ Batch line calculation completed: {len(results)} results", "SUCCESS")
             return results
 
         except Exception as e:
+            tprint(f"❌ Batch line calculation failed: {e}", "ERROR")
             self.logger.warning(f'Batch line calculation failed: {e}')
             return [(0.0, 0.0, 0.0)] * len(indices_list)
 
@@ -2495,6 +2675,7 @@ class EnhancedSRDetector:
                                            low_params: List[Dict],
                                            max_candidates: int = 50) -> List[Dict]:
         """Find best channel candidates using intelligent pairing with advanced quality filtering."""
+        tprint(f"🔍 Finding channel candidates from {len(high_params)} highs, {len(low_params)} lows...", "INFO")
         try:
 
             # Advanced quality filtering
@@ -2539,14 +2720,17 @@ class EnhancedSRDetector:
                     seen.add(key)
                     unique_candidates.append(candidate)
 
+            tprint(f"✅ Found {len(unique_candidates)} channel candidates", "SUCCESS")
             return unique_candidates[:max_candidates]
 
         except Exception as e:
+            tprint(f"❌ Intelligent candidate selection failed: {e}", "ERROR")
             self.logger.warning(f'Intelligent candidate selection failed: {e}')
             return []
 
     def _slope_based_clustering(self, high_params: List[Dict], low_params: List[Dict], max_count: int) -> List[Dict]:
         """Cluster lines by slope similarity for efficient pairing."""
+        tprint(f"🔍 Clustering lines by slope similarity (max_count={max_count})...", "INFO")
         try:
 
             candidates = []
@@ -2581,14 +2765,17 @@ class EnhancedSRDetector:
                         'method': 'slope_clustering'
                     })
 
+            tprint(f"✅ Slope-based clustering completed: {len(candidates)} candidates", "SUCCESS")
             return sorted(candidates, key=lambda x: x['composite_score'], reverse=True)[:max_count]
 
         except Exception as e:
+            tprint(f"❌ Slope-based clustering failed: {e}", "ERROR")
             self.logger.warning(f'Slope-based clustering failed: {e}')
             return []
 
     def _trend_strength_matching(self, high_params: List[Dict], low_params: List[Dict], max_count: int) -> List[Dict]:
         """Match lines based on trend strength compatibility."""
+        tprint(f"🔍 Matching lines by trend strength (max_count={max_count})...", "INFO")
         try:
             candidates = []
 
@@ -2619,14 +2806,17 @@ class EnhancedSRDetector:
                             'method': 'trend_strength'
                         })
 
+            tprint(f"✅ Trend strength matching completed: {len(candidates)} candidates", "SUCCESS")
             return sorted(candidates, key=lambda x: x['composite_score'], reverse=True)[:max_count]
 
         except Exception as e:
+            tprint(f"❌ Trend strength matching failed: {e}", "ERROR")
             self.logger.warning(f'Trend strength matching failed: {e}')
             return []
 
     def _geometric_similarity_matching(self, high_params: List[Dict], low_params: List[Dict], max_count: int) -> List[Dict]:
         """Match lines based on geometric similarity and channel formation potential."""
+        tprint(f"🔍 Matching lines by geometric similarity (max_count={max_count})...", "INFO")
         try:
 
             candidates = []
@@ -2665,14 +2855,17 @@ class EnhancedSRDetector:
                             'method': 'geometric'
                         })
 
+            tprint(f"✅ Geometric similarity matching completed: {len(candidates)} candidates", "SUCCESS")
             return sorted(candidates, key=lambda x: x['composite_score'], reverse=True)[:max_count]
 
         except Exception as e:
+            tprint(f"❌ Geometric similarity matching failed: {e}", "ERROR")
             self.logger.warning(f'Geometric similarity matching failed: {e}')
             return []
 
     def _advanced_quality_filter(self, params: List[Dict], line_type: str) -> List[Dict]:
         """Advanced quality filtering with multiple criteria and dynamic thresholds."""
+        tprint(f"🔍 Applying advanced quality filter to {len(params)} {line_type} lines...", "INFO")
         try:
             if not params:
                 return []
@@ -2711,16 +2904,19 @@ class EnhancedSRDetector:
                 x.get('consistency', 0) * 0.3
             ), reverse=True)
 
+            tprint(f"✅ Advanced quality filter completed: {len(filtered_params)} {line_type} lines passed", "SUCCESS")
             self.logger.info(f'📊 {line_type.title()} lines: {len(filtered_params)} passed quality filter (R²≥{r2_threshold:.2f}, quality≥{quality_threshold:.2f})')
             return filtered_params
 
         except Exception as e:
+            tprint(f"❌ Advanced quality filtering failed: {e}", "ERROR")
             self.logger.warning(f'Advanced quality filtering failed: {e}')
             # Fallback to basic filtering
             return [p for p in params if abs(p.get('r2', 0)) >= 0.5]
 
     def _select_significant_swings(self, indices: List[int], values: List[float], max_count: int, price_data: np.ndarray) -> Tuple[List[int], List[float]]:
         """Select the most significant swing points based on price movement and timing."""
+        tprint(f"🔍 Selecting {max_count} most significant swings from {len(indices)} points...", "INFO")
         try:
 
             if len(indices) <= max_count:
@@ -2764,26 +2960,32 @@ class EnhancedSRDetector:
             selected_indices = [idx for _, idx, _ in selected]
             selected_values = [val for _, _, val in selected]
 
+            tprint(f"✅ Selected {len(selected_indices)} most significant swings", "SUCCESS")
             return selected_indices, selected_values
 
         except Exception as e:
+            tprint(f"❌ Significant swing selection failed: {e}", "ERROR")
             self.logger.warning(f'Significant swing selection failed: {e}')
             # Fallback to simple selection
             return indices[:max_count], values[:max_count]
 
     def _calculate_line_params(self, points: List[tuple]) -> tuple:
         """Calculate slope, intercept, and R-squared for a line through points."""
+        tprint(f"🔍 Calculating line parameters for {len(points)} points...", "INFO")
         try:
             x = [p[0] for p in points]
             y = [p[1] for p in points]
 
             slope, intercept, r_value, p_value, std_err = self._linear_regression(x, y)
+            tprint(f"✅ Line parameters calculated: slope={slope:.4f}, intercept={intercept:.4f}, r²={r_value**2:.4f}", "SUCCESS")
             return slope, intercept, r_value
         except Exception:
+            tprint("❌ Line parameter calculation failed", "ERROR")
             return 0, 0, 0
 
     def _deduplicate_levels(self, levels: List[SRLevel], tolerance: float = 0.001) -> List[SRLevel]:
         """Remove duplicate levels based on price proximity."""
+        tprint(f"🔍 Deduplicating {len(levels)} levels (tolerance={tolerance})...", "INFO")
         try:
             if not levels:
                 return levels
@@ -2801,13 +3003,16 @@ class EnhancedSRDetector:
                 if not is_duplicate:
                     deduplicated.append(level)
 
+            tprint(f"✅ Deduplication completed: {len(deduplicated)} unique levels (removed {len(levels) - len(deduplicated)})", "SUCCESS")
             return deduplicated
         except Exception as e:
+            tprint(f"❌ Level deduplication failed: {e}", "ERROR")
             self.logger.warning(f'Level deduplication failed: {e}')
             return levels
 
     def _detect_volume_profile_levels(self, data: pd.DataFrame) -> List[SRLevel]:
         """Detect S/R levels using comprehensive volume profile analysis."""
+        tprint("🔍 Detecting volume profile levels...", "INFO")
         try:
             levels = []
 
@@ -2827,13 +3032,16 @@ class EnhancedSRDetector:
 
             # Limit to top 30 levels by strength for more detection
             levels = sorted(levels, key=lambda x: x.strength, reverse=True)[:30]
+            tprint(f"✅ Volume profile detection completed: {len(levels)} levels found", "SUCCESS")
             return levels
         except Exception as e:
+            tprint(f"❌ Volume profile detection failed: {e}", "ERROR")
             self.logger.warning(f'Volume profile detection failed: {e}')
             return []
 
     def _create_volume_profile(self, data: pd.DataFrame, bins: int = 100) -> Dict[str, Any]:
         """Create volume profile from price and volume data."""
+        tprint(f"🔍 Creating volume profile with {bins} bins...", "INFO")
         try:
             # Create price bins
             price_min = data['low'].min()
@@ -4695,12 +4903,12 @@ class EnhancedSRDetector:
         from skopt.space import Real, Integer
         from skopt.utils import use_named_args
 
-# VectorBT imports for native optimization
+# VectorBT imports for native optimization - Updated to use src.vectorbt module
 try:
-    import vectorbt as vbt
-    from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
-    from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
-    VECTORBT_AVAILABLE = True
+    from src.vectorbt import vbt, rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, VECTORBT_AVAILABLE
+    from src.vectorbt import rolling_corr, rolling_cov, scale, rank, zscore, winsorize, clip, quantile
+    if not VECTORBT_AVAILABLE:
+        raise ImportError("VectorBT not available in src.vectorbt module")
 except ImportError:
     VECTORBT_AVAILABLE = False
     vbt = None
@@ -5014,3 +5222,78 @@ except ImportError:
         except Exception as e:
             logger.warning(f"VectorBT rolling apply failed: {e}, using pandas fallback")
             return data.rolling(window=window).apply(func, **kwargs)
+    
+    def cleanup(self):
+        """Cleanup resources and stop monitoring."""
+        try:
+            if self.performance_monitor:
+                self.performance_monitor.stop_monitoring()
+                self.logger.info("Performance monitoring stopped")
+            
+            # Clear caches
+            self._fractal_cache.clear()
+            self._pivot_cache.clear()
+            self._touch_cache.clear()
+            
+            # Force garbage collection
+            import gc
+            gc.collect()
+            
+            self.logger.info("EnhancedSRDetector cleanup completed")
+        except Exception as e:
+            self.logger.error(f"Cleanup failed: {e}")
+    
+    def get_performance_summary(self) -> Dict[str, Any]:
+        """Get comprehensive performance summary."""
+        summary = {
+            'cache_stats': {
+                'fractal_cache_hits': self._cache_hits,
+                'fractal_cache_misses': self._cache_misses,
+                'cache_hit_rate': self._cache_hits / (self._cache_hits + self._cache_misses) if (self._cache_hits + self._cache_misses) > 0 else 0
+            },
+            'config': {
+                'use_optimized_fractals': self.use_optimized_fractals,
+                'use_optimized_touch_counting': self.use_optimized_touch_counting,
+                'enable_fractal_caching': self.enable_fractal_caching,
+                'chunk_size': self.chunk_size
+            }
+        }
+        
+        if self.performance_monitor:
+            summary['performance_metrics'] = self.performance_monitor.get_performance_summary()
+            summary['system_status'] = self.performance_monitor.get_system_status()
+        
+        return summary
+    
+    def get_adaptive_parameters(self, method_name: str) -> Dict[str, Any]:
+        """Get adaptive parameters for a specific detection method."""
+        if self.performance_monitor:
+            adaptive_params = self.performance_monitor.get_adaptive_parameters(method_name)
+            return {
+                'batch_size': adaptive_params.batch_size,
+                'max_memory_mb': adaptive_params.max_memory_mb,
+                'timeout_seconds': adaptive_params.timeout_seconds,
+                'enable_caching': adaptive_params.enable_caching,
+                'enable_parallel': adaptive_params.enable_parallel,
+                'max_workers': adaptive_params.max_workers,
+                'quality_threshold': adaptive_params.quality_threshold,
+                'performance_level': adaptive_params.performance_level.value
+            }
+        else:
+            return {
+                'batch_size': self.chunk_size,
+                'max_memory_mb': 1000,
+                'timeout_seconds': 30.0,
+                'enable_caching': self.enable_fractal_caching,
+                'enable_parallel': True,
+                'max_workers': 4,
+                'quality_threshold': 0.8,
+                'performance_level': 'good'
+            }
+    
+    def __del__(self):
+        """Destructor to ensure cleanup."""
+        try:
+            self.cleanup()
+        except:
+            pass  # Ignore errors during cleanup

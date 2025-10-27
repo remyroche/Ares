@@ -95,6 +95,23 @@ except ImportError as e:
     ENHANCED_OPTIMIZATION_AVAILABLE = False
     logger.warning(f"⚠️ Enhanced optimization utilities not available: {e}")
 
+# Enhanced error handling and validation imports
+try:
+    from src.training.steps.market_analysis.sr_error_handlers import (
+        handles_sr_detection_errors, handles_sr_data_validation
+    )
+    from src.training.steps.market_analysis.sr_data_validator import (
+        SRDataValidator, ValidationLevel
+    )
+    from src.training.steps.market_analysis.sr_logging_enhancer import (
+        SRLoggingEnhancer, create_sr_logger
+    )
+    ENHANCED_FEATURES_AVAILABLE = True
+    logger.info("✅ Enhanced error handling and validation available")
+except ImportError as e:
+    ENHANCED_FEATURES_AVAILABLE = False
+    logger.warning(f"⚠️ Enhanced features not available: {e}")
+
 # M1 Optimization Utilities - Now in hardware modules
 try:
     from src.utils.hardware.m1_gpu_utils import get_m1_gpu_manager
@@ -214,6 +231,15 @@ class SRDetectionStep(BaseStep):
             'tolerance_pct': 0.5,
             'lookback_periods': 100
         })
+        
+        # Initialize enhanced logging
+        if ENHANCED_FEATURES_AVAILABLE:
+            log_file = config.get('log_file', 'logs/sr_detection.log')
+            self.sr_logger = create_sr_logger(log_file=log_file, enable_structured=True)
+            self.logger.info("Enhanced logging initialized")
+        else:
+            self.sr_logger = None
+            self.logger.warning("Enhanced logging not available, using basic logging")
         
         # Initialize enhanced optimization components
         self._initialize_enhanced_components()
@@ -938,41 +964,6 @@ class SRDetectionStep(BaseStep):
 
     def validate_config(self) -> None:
         """Validate the configuration for the SR detection step."""
-        required_keys = ['symbol', 'exchange', 'timeframe']
-        for key in required_keys:
-            if key not in self.config:
-                raise ValueError(f"Missing required configuration key: {key}")
-
-        # Validate SR optimization config
-        sr_config = self.config.get('sr_optimization', {})
-        if not isinstance(sr_config, dict):
-            raise ValueError("sr_optimization must be a dictionary")
-
-        # Validate numeric parameters
-        numeric_params = ['min_touches', 'tolerance_pct', 'lookback_periods']
-        for param in numeric_params:
-            if param in sr_config:
-                value = sr_config[param]
-                if not isinstance(value, (int, float)) or value <= 0:
-                    raise ValueError(f"{param} must be a positive number")
-
-        self.logger.info("✅ SR detection configuration validated successfully")
-
-    def get_status(self) -> Dict[str, Any]:
-        """Get the current status and metrics of the SR detection step."""
-        return {
-            'step_name': 'SR Detection',
-            'status': 'ready',
-            'config_validated': True,
-            'sr_config': self.sr_optimization_config,
-            'memory_manager_active': hasattr(self, 'memory_manager'),
-            'proximity_threshold': self.proximity_threshold,
-            'sr_ratio_range': f"{self.min_sr_ratio:.2f} - {self.max_sr_ratio:.2f}",
-            'timestamp': get_current_datetime().isoformat()
-        }
-
-    def validate_config(self) -> None:
-        """Validate the configuration for the SR detection step."""
         try:
             # Validate required configuration parameters
             required_keys = ['sr_optimization']
@@ -982,14 +973,39 @@ class SRDetectionStep(BaseStep):
 
             # Validate SR optimization parameters
             sr_config = self.config.get('sr_optimization', {})
-            if 'min_touches' in sr_config and sr_config['min_touches'] < 1:
-                raise ValueError("min_touches must be >= 1")
+            if not isinstance(sr_config, dict):
+                raise ValueError("sr_optimization must be a dictionary")
 
-            if 'tolerance_pct' in sr_config and (sr_config['tolerance_pct'] <= 0 or sr_config['tolerance_pct'] > 1):
-                raise ValueError("tolerance_pct must be between 0 and 1")
+            # Validate numeric parameters with comprehensive checks
+            if 'min_touches' in sr_config:
+                if not isinstance(sr_config['min_touches'], (int, float)) or sr_config['min_touches'] < 1:
+                    raise ValueError("min_touches must be a positive number >= 1")
 
-            if 'lookback_periods' in sr_config and sr_config['lookback_periods'] < 1:
-                raise ValueError("lookback_periods must be >= 1")
+            if 'tolerance_pct' in sr_config:
+                if not isinstance(sr_config['tolerance_pct'], (int, float)) or sr_config['tolerance_pct'] <= 0 or sr_config['tolerance_pct'] > 1:
+                    raise ValueError("tolerance_pct must be a number between 0 and 1")
+
+            if 'lookback_periods' in sr_config:
+                if not isinstance(sr_config['lookback_periods'], (int, float)) or sr_config['lookback_periods'] < 1:
+                    raise ValueError("lookback_periods must be a positive number >= 1")
+
+            # Validate optional parameters
+            if 'proximity_threshold' in sr_config:
+                if not isinstance(sr_config['proximity_threshold'], (int, float)) or sr_config['proximity_threshold'] <= 0:
+                    raise ValueError("proximity_threshold must be a positive number")
+
+            if 'min_sr_ratio' in sr_config:
+                if not isinstance(sr_config['min_sr_ratio'], (int, float)) or sr_config['min_sr_ratio'] < 0 or sr_config['min_sr_ratio'] > 1:
+                    raise ValueError("min_sr_ratio must be a number between 0 and 1")
+
+            if 'max_sr_ratio' in sr_config:
+                if not isinstance(sr_config['max_sr_ratio'], (int, float)) or sr_config['max_sr_ratio'] < 0 or sr_config['max_sr_ratio'] > 1:
+                    raise ValueError("max_sr_ratio must be a number between 0 and 1")
+
+            # Validate ratio relationship
+            if 'min_sr_ratio' in sr_config and 'max_sr_ratio' in sr_config:
+                if sr_config['min_sr_ratio'] >= sr_config['max_sr_ratio']:
+                    raise ValueError("min_sr_ratio must be less than max_sr_ratio")
 
             self.logger.info("✅ SR detection configuration validated successfully")
 
@@ -999,7 +1015,7 @@ class SRDetectionStep(BaseStep):
 
     def get_status(self) -> Dict[str, Any]:
         """Get the current status and metrics of the SR detection step."""
-        return {
+        status = {
             'step_name': 'SRDetectionStep',
             'status': 'ready',
             'config_validated': True,
@@ -1008,5 +1024,63 @@ class SRDetectionStep(BaseStep):
             'proximity_threshold': self.proximity_threshold,
             'min_sr_ratio': self.min_sr_ratio,
             'max_sr_ratio': self.max_sr_ratio,
+            'sr_ratio_range': f"{self.min_sr_ratio:.2f} - {self.max_sr_ratio:.2f}",
             'timestamp': get_current_datetime().isoformat()
         }
+        
+        # Add enhanced logging status if available
+        if self.sr_logger:
+            status['enhanced_logging'] = True
+            status['log_events'] = len(self.sr_logger.events)
+            status['performance_summary'] = self.sr_logger.get_performance_summary()
+        else:
+            status['enhanced_logging'] = False
+        
+        return status
+    
+    def cleanup(self):
+        """Cleanup resources and stop monitoring."""
+        try:
+            # Stop memory monitoring
+            if hasattr(self, 'memory_manager') and self.memory_manager:
+                self.memory_manager.stop_monitoring()
+                self.logger.info("Memory monitoring stopped")
+            
+            # Stop enhanced logging
+            if self.sr_logger:
+                self.sr_logger.export_events('logs/sr_detection_events.json')
+                self.logger.info("Enhanced logging events exported")
+            
+            # Force garbage collection
+            import gc
+            gc.collect()
+            
+            self.logger.info("SRDetectionStep cleanup completed")
+        except Exception as e:
+            self.logger.error(f"Cleanup failed: {e}")
+    
+    def get_logging_summary(self) -> Dict[str, Any]:
+        """Get comprehensive logging summary."""
+        if not self.sr_logger:
+            return {"message": "Enhanced logging not available"}
+        
+        return self.sr_logger.get_performance_summary()
+    
+    def export_logs(self, filepath: str, format: str = 'json'):
+        """Export logs to file."""
+        if not self.sr_logger:
+            self.logger.warning("Enhanced logging not available, cannot export logs")
+            return
+        
+        try:
+            self.sr_logger.export_events(filepath, format)
+            self.logger.info(f"Logs exported to {filepath}")
+        except Exception as e:
+            self.logger.error(f"Failed to export logs: {e}")
+    
+    def __del__(self):
+        """Destructor to ensure cleanup."""
+        try:
+            self.cleanup()
+        except:
+            pass  # Ignore errors during cleanup

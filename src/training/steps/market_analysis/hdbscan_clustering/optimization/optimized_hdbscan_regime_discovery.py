@@ -52,10 +52,7 @@ from .features_common_integration import (
     create_features_common_hdbscan_integration
 )
 
-from .enhanced_regime_feature_engineering import (
-    EnhancedRegimeFeatureEngineering,
-    create_enhanced_regime_feature_engineering
-)
+# Enhanced regime features are now integrated into the main feature generation system
 
 # Import feature generation systems
 from src.feature_generation.categories.entropy import create_default_entropy_generators
@@ -329,16 +326,7 @@ class OptimizedHDBSCANRegimeDiscovery:
             regime_generators = create_default_regime_generators()
             self.feature_generators.extend(regime_generators)
         
-        # Enhanced regime feature engineering
-        self.enhanced_regime_feature_engineering = create_enhanced_regime_feature_engineering(
-            regime_window=20,
-            transition_threshold=0.1,
-            enable_regime_transition_features=True,
-            enable_regime_persistence_features=True,
-            enable_economic_regime_features=True,
-            enable_volatility_regime_features=True,
-            enable_volume_regime_features=True
-        )
+        # Enhanced regime features are now integrated into the main feature generation system
     
     def discover_regimes(self, data: pd.DataFrame, 
                         labels: Optional[np.ndarray] = None) -> OptimizedRegimeResult:
@@ -498,9 +486,7 @@ class OptimizedHDBSCANRegimeDiscovery:
         tprint(f"🔧 Generating features for chunk {chunk_num}...", "INFO")
         chunk_features = self._generate_optimized_features(chunk_data)
         
-        # Add enhanced regime-specific features
-        tprint(f"🎯 Adding enhanced regime features for chunk {chunk_num}...", "INFO")
-        chunk_features = self.enhanced_regime_feature_engineering.generate_regime_features(chunk_features)
+        # Enhanced regime features are now integrated into the main feature generation system
         
         chunk_features = self._normalize_features_for_hdbscan(chunk_features)
         
@@ -662,12 +648,7 @@ class OptimizedHDBSCANRegimeDiscovery:
         tprint("🔧 Generating optimized features...", "INFO")
         features_df = self._generate_optimized_features(data)
         
-        # Step 1.1: Add enhanced regime-specific features
-        tprint("🎯 Adding enhanced regime-specific features...", "INFO")
-        enhanced_features_start = time.time()
-        features_df = self.enhanced_regime_feature_engineering.generate_regime_features(features_df)
-        enhanced_features_time = time.time() - enhanced_features_start
-        tprint(f"✅ Enhanced regime features added in {enhanced_features_time:.2f}s", "SUCCESS")
+        # Enhanced regime features are now integrated into the main feature generation system
         
         feature_generation_time = time.time() - start_time
         self.performance_stats['feature_generation_time'] += feature_generation_time

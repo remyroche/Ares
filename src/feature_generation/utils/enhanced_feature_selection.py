@@ -22,6 +22,30 @@ from .cluster_distinctiveness_metrics import (
 )
 from ..integration.feature_bank_integration import FeatureBankCategory
 
+# Import tprint utilities for comprehensive logging
+try:
+    from src.utils.tprint import (
+        tprint, tprint_info, tprint_debug, tprint_warning, tprint_error, 
+        tprint_success, tprint_performance, tprint_progress, tprint_data_preview, 
+        tprint_data_format, tprint_logged, tprint_timer
+    )
+    TPRINT_AVAILABLE = True
+except ImportError:
+    TPRINT_AVAILABLE = False
+    # Fallback functions
+    def tprint(*args, **kwargs): print(*args, **kwargs)
+    def tprint_info(*args, **kwargs): print(f"INFO: {args[0] if args else ''}")
+    def tprint_debug(*args, **kwargs): print(f"DEBUG: {args[0] if args else ''}")
+    def tprint_warning(*args, **kwargs): print(f"WARNING: {args[0] if args else ''}")
+    def tprint_error(*args, **kwargs): print(f"ERROR: {args[0] if args else ''}")
+    def tprint_success(*args, **kwargs): print(f"SUCCESS: {args[0] if args else ''}")
+    def tprint_performance(*args, **kwargs): print(f"PERFORMANCE: {args[0] if args else ''}")
+    def tprint_progress(*args, **kwargs): print(f"PROGRESS: {args[0] if args else ''}")
+    def tprint_data_preview(*args, **kwargs): print(f"DATA PREVIEW: {args[0] if args else ''}")
+    def tprint_data_format(*args, **kwargs): print(f"DATA FORMAT: {args[0] if args else ''}")
+    def tprint_logged(*args, **kwargs): return lambda func: func
+    def tprint_timer(*args, **kwargs): return lambda func: func
+
 # VectorBT imports
 try:
     import vectorbt as vbt
@@ -102,9 +126,13 @@ class EnhancedFeatureSelector:
     """
     
     def __init__(self, config: Optional[EnhancedFeatureSelectionConfig] = None):
+        tprint_info("🚀 Initializing EnhancedFeatureSelector")
+        
         self.config = config or EnhancedFeatureSelectionConfig()
+        tprint_debug(f"Configuration: {self.config}")
         
         # Initialize cluster distinctiveness calculator with VectorBT optimizations
+        tprint_info("🔧 Setting up ClusterDistinctivenessCalculator with optimizations")
         cluster_config = ClusterDistinctivenessConfig(
             enable_fast_proxies=True,
             enable_caching=self.config.enable_caching,
@@ -120,6 +148,7 @@ class EnhancedFeatureSelector:
             enable_parallel_processing=self.config.enable_parallel_processing
         )
         self.cluster_calculator = ClusterDistinctivenessCalculator(cluster_config)
+        tprint_success("✅ ClusterDistinctivenessCalculator initialized")
         
         # Initialize VectorBT optimizers
         self.vectorbt_optimizer = None
@@ -127,13 +156,25 @@ class EnhancedFeatureSelector:
         self.hardware_accelerator = None
         
         if self.config.enable_vectorbt_optimization and VECTORBT_AVAILABLE:
+            tprint_info("🔧 Initializing VectorBT optimizers for EnhancedFeatureSelector...")
             self._initialize_vectorbt_optimizers()
+        elif self.config.enable_vectorbt_optimization and not VECTORBT_AVAILABLE:
+            tprint_warning("⚠️ VectorBT optimization requested but VectorBT not available")
         
         if self.config.enable_hardware_acceleration and HARDWARE_AVAILABLE:
+            tprint_info("⚡ Initializing hardware accelerators for EnhancedFeatureSelector...")
             self._initialize_hardware_accelerators()
+        elif self.config.enable_hardware_acceleration and not HARDWARE_AVAILABLE:
+            tprint_warning("⚠️ Hardware acceleration requested but not available")
         
         # Cache for feature scores
         self._score_cache = {} if self.config.enable_caching else None
+        if self.config.enable_caching:
+            tprint_info("✅ Score caching enabled")
+        else:
+            tprint_info("ℹ️ Score caching disabled")
+        
+        tprint_success("✅ EnhancedFeatureSelector initialized successfully")
     
     def _initialize_vectorbt_optimizers(self):
         """Initialize VectorBT optimizers."""
@@ -176,6 +217,7 @@ class EnhancedFeatureSelector:
             print(f"⚠️ Hardware accelerator initialization failed for EnhancedFeatureSelector: {e}")
             self.hardware_accelerator = None
     
+    @tprint_logged(include_args=True, include_result=False)
     def select_optimal_features(self, 
                               features: Dict[str, np.ndarray], 
                               cluster_labels: np.ndarray,
@@ -193,31 +235,55 @@ class EnhancedFeatureSelector:
         Returns:
             Dictionary of selected features
         """
+        tprint_info("🎯 Starting optimal feature selection")
+        
         if not features or len(cluster_labels) == 0:
+            tprint_warning("⚠️ No features provided or empty cluster labels")
             return {}
         
+        tprint_info(f"📊 Processing {len(features)} features, selecting top {max_features}")
+        tprint_data_preview(features, "Input Features", max_rows=3, max_cols=5)
+        tprint_data_format(cluster_labels, "Cluster Labels", check_compatibility=True)
+        
         # 1. Calculate cluster distinctiveness scores
-        distinctiveness_metrics = self.cluster_calculator.calculate_feature_distinctiveness(
-            features, cluster_labels
-        )
+        tprint_info("🔍 Calculating cluster distinctiveness scores...")
+        with tprint_timer("Cluster distinctiveness calculation"):
+            distinctiveness_metrics = self.cluster_calculator.calculate_feature_distinctiveness(
+                features, cluster_labels
+            )
+        tprint_success(f"✅ Calculated distinctiveness for {len(distinctiveness_metrics)} features")
         
         # 2. Calculate economic relevance scores
-        economic_scores = self._calculate_economic_relevance_scores(
-            features, feature_categories
-        )
+        tprint_info("💰 Calculating economic relevance scores...")
+        with tprint_timer("Economic relevance calculation"):
+            economic_scores = self._calculate_economic_relevance_scores(
+                features, feature_categories
+            )
+        tprint_success(f"✅ Calculated economic relevance for {len(economic_scores)} features")
         
         # 3. Calculate temporal stability scores (using existing quality scoring)
-        stability_scores = self._calculate_temporal_stability_scores(features)
+        tprint_info("⏰ Calculating temporal stability scores...")
+        with tprint_timer("Temporal stability calculation"):
+            stability_scores = self._calculate_temporal_stability_scores(features)
+        tprint_success(f"✅ Calculated temporal stability for {len(stability_scores)} features")
         
         # 4. Combine scores
-        combined_scores = self._combine_scores(
-            distinctiveness_metrics, economic_scores, stability_scores
-        )
+        tprint_info("🔄 Combining scores with weights...")
+        with tprint_timer("Score combination"):
+            combined_scores = self._combine_scores(
+                distinctiveness_metrics, economic_scores, stability_scores
+            )
+        tprint_success(f"✅ Combined scores for {len(combined_scores)} features")
         
         # 5. Select top features
-        selected_features = self._select_top_features(
-            features, combined_scores, max_features
-        )
+        tprint_info("🏆 Selecting top features...")
+        with tprint_timer("Feature selection"):
+            selected_features = self._select_top_features(
+                features, combined_scores, max_features
+            )
+        
+        tprint_success(f"✅ Selected {len(selected_features)} optimal features")
+        tprint_data_preview(selected_features, "Selected Features", max_rows=3, max_cols=5)
         
         return selected_features
     

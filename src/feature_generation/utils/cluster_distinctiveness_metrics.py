@@ -19,6 +19,30 @@ from typing import Dict, List, Tuple, Optional, Any
 from dataclasses import dataclass
 import warnings
 
+# Import tprint utilities for comprehensive logging
+try:
+    from src.utils.tprint import (
+        tprint, tprint_info, tprint_debug, tprint_warning, tprint_error, 
+        tprint_success, tprint_performance, tprint_progress, tprint_data_preview, 
+        tprint_data_format, tprint_logged, tprint_timer
+    )
+    TPRINT_AVAILABLE = True
+except ImportError:
+    TPRINT_AVAILABLE = False
+    # Fallback functions
+    def tprint(*args, **kwargs): print(*args, **kwargs)
+    def tprint_info(*args, **kwargs): print(f"INFO: {args[0] if args else ''}")
+    def tprint_debug(*args, **kwargs): print(f"DEBUG: {args[0] if args else ''}")
+    def tprint_warning(*args, **kwargs): print(f"WARNING: {args[0] if args else ''}")
+    def tprint_error(*args, **kwargs): print(f"ERROR: {args[0] if args else ''}")
+    def tprint_success(*args, **kwargs): print(f"SUCCESS: {args[0] if args else ''}")
+    def tprint_performance(*args, **kwargs): print(f"PERFORMANCE: {args[0] if args else ''}")
+    def tprint_progress(*args, **kwargs): print(f"PROGRESS: {args[0] if args else ''}")
+    def tprint_data_preview(*args, **kwargs): print(f"DATA PREVIEW: {args[0] if args else ''}")
+    def tprint_data_format(*args, **kwargs): print(f"DATA FORMAT: {args[0] if args else ''}")
+    def tprint_logged(*args, **kwargs): return lambda func: func
+    def tprint_timer(*args, **kwargs): return lambda func: func
+
 try:
     from sklearn.metrics import silhouette_score, calinski_harabasz_score, davies_bouldin_score
     from sklearn.preprocessing import StandardScaler
@@ -111,12 +135,25 @@ class ClusterDistinctivenessCalculator:
     """
     
     def __init__(self, config: Optional[ClusterDistinctivenessConfig] = None):
+        tprint_info("🚀 Initializing ClusterDistinctivenessCalculator")
+        
         self.config = config or ClusterDistinctivenessConfig()
+        tprint_debug(f"Configuration: {self.config}")
+        
         self.scaler = StandardScaler() if self.config.enable_scaling else None
+        if self.scaler:
+            tprint_info("✅ StandardScaler enabled for feature scaling")
+        else:
+            tprint_info("ℹ️ Feature scaling disabled")
         
         # Performance optimization caches
         self._cluster_stats_cache = {} if self.config.enable_caching else None
         self._feature_stats_cache = {} if self.config.enable_caching else None
+        
+        if self.config.enable_caching:
+            tprint_info("✅ Caching enabled for performance optimization")
+        else:
+            tprint_info("ℹ️ Caching disabled")
         
         # Initialize VectorBT optimizers
         self.vectorbt_optimizer = None
@@ -124,13 +161,22 @@ class ClusterDistinctivenessCalculator:
         self.hardware_accelerator = None
         
         if self.config.enable_vectorbt_optimization and VECTORBT_AVAILABLE:
+            tprint_info("🔧 Initializing VectorBT optimizers...")
             self._initialize_vectorbt_optimizers()
+        elif self.config.enable_vectorbt_optimization and not VECTORBT_AVAILABLE:
+            tprint_warning("⚠️ VectorBT optimization requested but VectorBT not available")
         
         if self.config.enable_hardware_acceleration and HARDWARE_AVAILABLE:
+            tprint_info("⚡ Initializing hardware accelerators...")
             self._initialize_hardware_accelerators()
+        elif self.config.enable_hardware_acceleration and not HARDWARE_AVAILABLE:
+            tprint_warning("⚠️ Hardware acceleration requested but not available")
+        
+        tprint_success("✅ ClusterDistinctivenessCalculator initialized successfully")
     
     def _initialize_vectorbt_optimizers(self):
         """Initialize VectorBT optimizers."""
+        tprint_debug("🔧 Setting up VectorBT Rolling Optimizer...")
         try:
             if OPTIMIZATION_AVAILABLE:
                 # Initialize VectorBT Rolling Optimizer
@@ -140,8 +186,10 @@ class ClusterDistinctivenessCalculator:
                     memory_efficient=True,
                     chunk_size=self.config.vectorbt_chunk_size
                 )
+                tprint_success("✅ VectorBT Rolling Optimizer initialized")
                 
                 # Initialize Unified Optimization System
+                tprint_debug("🔧 Setting up Unified Optimization System...")
                 from src.feature_generation.utils.unified_optimization_system import UnifiedOptimizationConfig
                 unified_config = UnifiedOptimizationConfig(
                     enable_normalization=True,
@@ -151,25 +199,32 @@ class ClusterDistinctivenessCalculator:
                     memory_limit_gb=self.config.memory_limit_gb
                 )
                 self.unified_optimizer = UnifiedVectorizationManager(unified_config)
+                tprint_success("✅ Unified Optimization System initialized")
                 
-                print("✅ VectorBT optimizers initialized successfully")
+                tprint_success("✅ VectorBT optimizers initialized successfully")
             else:
-                print("⚠️ VectorBT optimization not available")
+                tprint_warning("⚠️ VectorBT optimization not available")
         except Exception as e:
-            print(f"⚠️ VectorBT optimizer initialization failed: {e}")
+            tprint_error(f"VectorBT optimizer initialization failed: {e}")
+            tprint_debug(f"Exception details: {type(e).__name__}: {str(e)}")
     
     def _initialize_hardware_accelerators(self):
         """Initialize hardware accelerators."""
+        tprint_debug("⚡ Setting up hardware accelerator...")
         try:
             self.hardware_accelerator = get_hardware_accelerator(
                 use_gpu=self.config.use_gpu,
                 enable_parallel=self.config.enable_parallel_processing
             )
-            print(f"✅ Hardware accelerator initialized: {type(self.hardware_accelerator).__name__}")
+            accelerator_type = type(self.hardware_accelerator).__name__
+            tprint_success(f"✅ Hardware accelerator initialized: {accelerator_type}")
+            tprint_debug(f"Hardware accelerator configuration: GPU={self.config.use_gpu}, Parallel={self.config.enable_parallel_processing}")
         except Exception as e:
-            print(f"⚠️ Hardware accelerator initialization failed: {e}")
+            tprint_error(f"Hardware accelerator initialization failed: {e}")
+            tprint_debug(f"Exception details: {type(e).__name__}: {str(e)}")
             self.hardware_accelerator = None
     
+    @tprint_logged(include_args=True, include_result=False)
     def calculate_feature_distinctiveness(self, 
                                         features: Dict[str, np.ndarray], 
                                         cluster_labels: np.ndarray) -> Dict[str, Dict[str, float]]:
@@ -183,74 +238,118 @@ class ClusterDistinctivenessCalculator:
         Returns:
             Dictionary mapping feature names to their distinctiveness metrics
         """
+        tprint_info("🔍 Starting feature distinctiveness calculation")
+        
         if not features or len(cluster_labels) == 0:
+            tprint_warning("⚠️ No features or empty cluster labels provided")
             return {}
         
         # Validate cluster labels
         unique_clusters = [c for c in set(cluster_labels) if c != self.config.noise_label]
+        tprint_debug(f"Found {len(unique_clusters)} unique clusters (excluding noise label {self.config.noise_label})")
+        
         if len(unique_clusters) < self.config.min_clusters:
-            warnings.warn(f"Insufficient clusters for distinctiveness calculation: {len(unique_clusters)}")
+            tprint_warning(f"⚠️ Insufficient clusters for distinctiveness calculation: {len(unique_clusters)} < {self.config.min_clusters}")
             return {}
+        
+        tprint_info(f"📊 Processing {len(features)} features with {len(cluster_labels)} samples")
         
         results = {}
         
         # Batch processing for large feature sets
         feature_items = list(features.items())
         batch_size = self.config.batch_size
+        total_batches = (len(feature_items) + batch_size - 1) // batch_size
+        
+        tprint_info(f"📦 Processing features in {total_batches} batches (batch size: {batch_size})")
         
         for i in range(0, len(feature_items), batch_size):
             batch = feature_items[i:i + batch_size]
+            batch_num = i // batch_size + 1
+            
+            tprint_progress(batch_num, total_batches, f"Processing batch {batch_num}/{total_batches}")
             
             # Process batch
             for feature_name, feature_values in batch:
                 try:
+                    tprint_debug(f"Processing feature: {feature_name}")
+                    
                     # Validate feature
                     if not self._validate_feature(feature_values):
+                        tprint_debug(f"⚠️ Feature '{feature_name}' failed validation, using zero metrics")
                         results[feature_name] = self._get_zero_metrics()
                         continue
                     
                     # Calculate distinctiveness metrics
-                    metrics = self._calculate_single_feature_distinctiveness(
-                        feature_values, cluster_labels
-                    )
+                    with tprint_timer(f"Distinctiveness calculation for '{feature_name}'"):
+                        metrics = self._calculate_single_feature_distinctiveness(
+                            feature_values, cluster_labels
+                        )
                     results[feature_name] = metrics
                     
+                    tprint_debug(f"Feature '{feature_name}' distinctiveness: {metrics['combined_score']:.4f}")
+                    
                 except Exception as e:
-                    warnings.warn(f"Failed to calculate distinctiveness for {feature_name}: {e}")
+                    tprint_error(f"Failed to calculate distinctiveness for {feature_name}: {e}")
                     results[feature_name] = self._get_zero_metrics()
         
+        tprint_success(f"✅ Feature distinctiveness calculation completed for {len(results)} features")
         return results
     
+    @tprint_logged(include_args=False, include_result=False)
     def _calculate_single_feature_distinctiveness(self, 
                                                 feature_values: np.ndarray, 
                                                 cluster_labels: np.ndarray) -> Dict[str, float]:
         """Calculate distinctiveness metrics for a single feature."""
+        tprint_debug(f"Calculating distinctiveness for feature with {len(feature_values)} values")
+        
         metrics = {}
         
         # Basic F-ratio
-        metrics['f_ratio'] = self._calculate_f_ratio(feature_values, cluster_labels)
+        tprint_debug("Calculating F-ratio")
+        with tprint_timer("F-ratio calculation"):
+            metrics['f_ratio'] = self._calculate_f_ratio(feature_values, cluster_labels)
+        tprint_debug(f"F-ratio: {metrics['f_ratio']:.4f}")
         
         # Cluster separation strength
-        metrics['separation_strength'] = self._calculate_separation_strength(
-            feature_values, cluster_labels
-        )
+        tprint_debug("Calculating separation strength")
+        with tprint_timer("Separation strength calculation"):
+            metrics['separation_strength'] = self._calculate_separation_strength(
+                feature_values, cluster_labels
+            )
+        tprint_debug(f"Separation strength: {metrics['separation_strength']:.4f}")
         
         # Inter-cluster distance
-        metrics['inter_cluster_distance'] = self._calculate_inter_cluster_distance(
-            feature_values, cluster_labels
-        )
+        tprint_debug("Calculating inter-cluster distance")
+        with tprint_timer("Inter-cluster distance calculation"):
+            metrics['inter_cluster_distance'] = self._calculate_inter_cluster_distance(
+                feature_values, cluster_labels
+            )
+        tprint_debug(f"Inter-cluster distance: {metrics['inter_cluster_distance']:.4f}")
         
         # Cluster compactness
-        metrics['cluster_compactness'] = self._calculate_cluster_compactness(
-            feature_values, cluster_labels
-        )
+        tprint_debug("Calculating cluster compactness")
+        with tprint_timer("Cluster compactness calculation"):
+            metrics['cluster_compactness'] = self._calculate_cluster_compactness(
+                feature_values, cluster_labels
+            )
+        tprint_debug(f"Cluster compactness: {metrics['cluster_compactness']:.4f}")
         
         # Advanced metrics (if sklearn available)
         if SKLEARN_AVAILABLE and self.config.enable_advanced_metrics:
-            metrics.update(self._calculate_advanced_metrics(feature_values, cluster_labels))
+            tprint_debug("Calculating advanced metrics")
+            with tprint_timer("Advanced metrics calculation"):
+                advanced_metrics = self._calculate_advanced_metrics(feature_values, cluster_labels)
+                metrics.update(advanced_metrics)
+            tprint_debug(f"Advanced metrics: {list(advanced_metrics.keys())}")
+        else:
+            tprint_debug("Advanced metrics disabled or sklearn not available")
         
         # Combined distinctiveness score
-        metrics['combined_score'] = self._calculate_combined_score(metrics)
+        tprint_debug("Calculating combined score")
+        with tprint_timer("Combined score calculation"):
+            metrics['combined_score'] = self._calculate_combined_score(metrics)
+        tprint_debug(f"Combined distinctiveness score: {metrics['combined_score']:.4f}")
         
         return metrics
     

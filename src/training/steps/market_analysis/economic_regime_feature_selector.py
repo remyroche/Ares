@@ -210,12 +210,11 @@ class EconomicFeatureSelectorConfig:
     min_feature_count: int = 15
     max_feature_count: int = 35
     
-    # Economic scoring weights
-    economic_significance_weight: float = 0.30  # Increased back to make room
+    # Economic scoring weights (redistributed after removing mRMR)
+    economic_significance_weight: float = 0.35  # Increased to compensate for mRMR removal
     regime_discrimination_weight: float = 0.25  # Kept same
-    clustering_quality_weight: float = 0.15     # Kept same
-    stability_weight: float = 0.10              # Kept same
-    mrmr_weight: float = 0.08                   # Further reduced to allow more feature diversity
+    clustering_quality_weight: float = 0.20     # Increased to compensate for mRMR removal
+    stability_weight: float = 0.15              # Increased to compensate for mRMR removal
     regime_transition_weight: float = 0.05      # Kept same
     
     # Validation parameters
@@ -230,8 +229,8 @@ class EconomicFeatureSelectorConfig:
     min_sharpe_variance: float = 0.1  # Reduced threshold for better economic distinctiveness calculation
     max_noise_ratio: float = 0.30
     
-    # mRMR parameters
-    enable_mrmr: bool = True
+    # TreeSHAP parameters
+    enable_treeshap: bool = True
     protect_categories: List[str] = field(default_factory=lambda: ['volatility', 'volume'])  # Categories to protect from redundancy filtering
     
     # Regime transition feature parameters
@@ -260,7 +259,7 @@ class FeatureScore:
     regime_discrimination: float
     clustering_quality: float
     stability_score: float
-    mrmr_score: float
+    # mrmr_score removed - using TreeSHAP instead
     regime_transition_score: float = 0.0  # New regime transition detection score
     composite_score: float = 0.0
     category: str = ""
@@ -316,7 +315,7 @@ class EconomicRegimeFeatureSelector(BaseStep):
         # Initialize cache for expensive calculations
         self._correlation_cache = {}
         self._silhouette_cache = {}
-        self._mrmr_cache = {}
+        # mRMR cache removed - using TreeSHAP instead
         self._precomputed_indices = {}
         self._optimized_data_types = {}
         
@@ -440,8 +439,8 @@ class EconomicRegimeFeatureSelector(BaseStep):
                     else:
                         tprint_warning(f"⚠️ Config key not found: {key}")
                 
-                # Debug: Check if mRMR parameters are loaded
-                tprint_info(f"🔍 mRMR enabled: {getattr(config, 'enable_mrmr', 'NOT_FOUND')}")
+                # Debug: Check if TreeSHAP parameters are loaded
+                tprint_info(f"🔍 TreeSHAP enabled: {getattr(config, 'enable_treeshap', 'NOT_FOUND')}")
                 tprint_info(f"🔍 protect_categories: {getattr(config, 'protect_categories', 'NOT_FOUND')}")
                 tprint_info(f"🔍 max_transition_features_ratio: {getattr(config, 'max_transition_features_ratio', 'NOT_FOUND')}")
                 
@@ -578,13 +577,9 @@ class EconomicRegimeFeatureSelector(BaseStep):
                 for i, feature_score in enumerate(top_features, 1):
                     tprint_info(f"   {i:2d}. {feature_score.feature_name}: {feature_score.composite_score:.4f}")
             
-            # Select features (using incremental mRMR if enabled, otherwise standard method)
-            if self.config.enable_mrmr:
-                tprint_info("🎯 Selecting features using incremental mRMR with hardware optimization...")
-                selected_features = self._select_optimal_features_incremental_mrmr(filtered_features, labels_df, feature_scores, transition_features)
-            else:
-                tprint_info("🎯 Selecting optimal features with regime transition prioritization...")
-                selected_features = self._select_optimal_features(feature_scores, transition_features)
+            # Select features using adaptive thresholds with TreeSHAP integration
+            tprint_info("🎯 Selecting optimal features with adaptive thresholds...")
+            selected_features = self._select_optimal_features(feature_scores, transition_features)
             
             selected_feature_count = len(selected_features)
             tprint_feature_counts(filtered_feature_count, selected_feature_count, "Final Feature Selection")
@@ -593,8 +588,8 @@ class EconomicRegimeFeatureSelector(BaseStep):
             
             # Validate selection
             tprint_info("🔍 Validating feature selection quality...")
-            validation_metrics = self._validate_feature_selection(
-                filtered_features[selected_features], labels_df, economic_metrics
+            validation_metrics = self._validate_multi_target_selection(
+                selected_features, filtered_features, labels_df
             )
             tprint_success(f"✅ Validation completed: {validation_metrics}")
             
@@ -1384,27 +1379,10 @@ class EconomicRegimeFeatureSelector(BaseStep):
                     if treeshap_result['success'] and treeshap_result['selected_features']:
                         tprint_success("✅ TreeSHAP scoring completed successfully")
                         
-                        # Convert TreeSHAP results to FeatureScore format
-                        feature_scores = []
-                        for feature_name in treeshap_result['selected_features']:
-                            treeshap_score = treeshap_result['treeshap_scores'].get(feature_name, 0.0)
-                            correlation_score = treeshap_result['correlation_scores'].get(feature_name, 0.0)
-                            diversity_score = treeshap_result['diversity_scores'].get(feature_name, 0.0)
-                            composite_score = treeshap_result['feature_scores'].get(feature_name, 0.0)
-                            
-                            feature_scores.append(FeatureScore(
-                                feature_name=feature_name,
-                                economic_significance=correlation_score,
-                                regime_discrimination=0.0,  # Not calculated in TreeSHAP
-                                clustering_quality=0.0,    # Not calculated in TreeSHAP
-                                stability_score=0.0,       # Not calculated in TreeSHAP
-                                mrmr_score=0.0,            # Not calculated in TreeSHAP
-                                regime_transition_score=0.0,  # Not calculated in TreeSHAP
-                                composite_score=composite_score,
-                                treeshap_importance=treeshap_score,
-                                diversity_score=diversity_score,
-                                selected=True
-                            ))
+                        # Convert TreeSHAP results to FeatureScore format with enhanced scoring
+                        feature_scores = self._enhance_treeshap_scores(
+                            treeshap_result, features_df, labels_df
+                        )
                         
                         return feature_scores
                     else:
@@ -1492,7 +1470,7 @@ class EconomicRegimeFeatureSelector(BaseStep):
             weighted_regime_discrimination = 0.0
             weighted_clustering_quality = 0.0
             weighted_stability_score = 0.0
-            weighted_mrmr_score = 0.0
+            # mRMR score removed - using TreeSHAP instead
             weighted_regime_transition_score = 0.0
             
             total_weight = 0.0
@@ -1530,12 +1508,7 @@ class EconomicRegimeFeatureSelector(BaseStep):
                     feature_aligned, target_aligned
                 )
                 
-                # Calculate mRMR score (relevance - redundancy)
-                # For multi-target approach, use a simplified redundancy calculation
-                # that doesn't require previously selected features
-                mrmr_score = self._calculate_mrmr_cheap(
-                    feature_aligned, target_aligned, [], features_df
-                )
+                # mRMR calculation removed - using TreeSHAP instead
                 
                 # Calculate regime transition detection score for this target
                 regime_transition_score = self._calculate_regime_transition_detection(
@@ -1547,7 +1520,7 @@ class EconomicRegimeFeatureSelector(BaseStep):
                 weighted_regime_discrimination += regime_discrimination * target_weight
                 weighted_clustering_quality += clustering_quality * target_weight
                 weighted_stability_score += stability_score * target_weight
-                weighted_mrmr_score += mrmr_score * target_weight
+                # mRMR weighting removed - using TreeSHAP instead
                 weighted_regime_transition_score += regime_transition_score * target_weight
                 
                 total_weight += target_weight
@@ -1560,7 +1533,7 @@ class EconomicRegimeFeatureSelector(BaseStep):
             regime_discrimination = weighted_regime_discrimination / total_weight
             clustering_quality = weighted_clustering_quality / total_weight
             stability_score = weighted_stability_score / total_weight
-            mrmr_score = weighted_mrmr_score / total_weight
+            # mRMR score removed - using TreeSHAP instead
             regime_transition_score = weighted_regime_transition_score / total_weight
             
             # Calculate composite score using weights from config
@@ -1569,7 +1542,7 @@ class EconomicRegimeFeatureSelector(BaseStep):
                 regime_discrimination * self.config.regime_discrimination_weight +
                 clustering_quality * self.config.clustering_quality_weight +
                 stability_score * self.config.stability_weight +
-                mrmr_score * self.config.mrmr_weight +
+                # mRMR weight removed - using TreeSHAP instead
                 regime_transition_score * self.config.regime_transition_weight
             )
             
@@ -1582,7 +1555,7 @@ class EconomicRegimeFeatureSelector(BaseStep):
                 regime_discrimination=regime_discrimination,
                 clustering_quality=clustering_quality,
                 stability_score=stability_score,
-                mrmr_score=mrmr_score,
+                # mrmr_score removed - using TreeSHAP instead
                 regime_transition_score=regime_transition_score,
                 composite_score=composite_score,
                 category=category
@@ -1593,139 +1566,131 @@ class EconomicRegimeFeatureSelector(BaseStep):
             return None
     
     def _score_features_sequential(self, features_df: pd.DataFrame, labels_df: pd.DataFrame, multi_target_metrics: Dict) -> List[FeatureScore]:
-        """Fallback sequential scoring when parallel processing fails."""
+        """Optimized sequential scoring with pre-aligned data and TreeSHAP focus."""
         feature_scores = []
         
-        for i, feature_name in enumerate(features_df.columns):
-                try:
-                    tprint_info(f"📈 Scoring feature {i+1}/{len(features_df.columns)}: {feature_name}")
-                    
-                    # Get feature data
-                    feature_data = features_df[feature_name].dropna()
-                    
-                    # Calculate weighted scores across all targets
-                    weighted_economic_significance = 0.0
-                    weighted_regime_discrimination = 0.0
-                    weighted_clustering_quality = 0.0
-                    weighted_stability_score = 0.0
-                    weighted_mrmr_score = 0.0
-                    
-                    total_weight = 0.0
-                    
-                    for target_col, target_weight in self.config.target_weights.items():
-                        if target_col not in multi_target_metrics:
-                            continue
-                        
-                        # Align feature with target
-                        common_index = feature_data.index.intersection(labels_df.index)
-                        feature_aligned = feature_data.loc[common_index]
-                        labels_aligned = labels_df.loc[common_index, target_col]
-                        
-                        if len(feature_aligned) < 50:
-                            continue
-                        
-                        # Calculate scores for this target
-                        target_data = multi_target_metrics[target_col]
-                        target_aligned = target_data.loc[common_index]
-                        
-                        economic_significance = self._calculate_economic_significance_cheap(
-                            feature_aligned, target_aligned, target_aligned
-                        )
-                        
-                        regime_discrimination = self._calculate_regime_discrimination(
-                            feature_aligned, target_aligned
-                        )
-                        
-                        # For clustering quality, use target data directly
-                        clustering_quality = self._calculate_clustering_quality_cheap(
-                            feature_aligned, target_aligned
-                        )
-                        
-                        stability_score = self._calculate_stability_cheap(
-                            feature_aligned, target_aligned
-                        )
-                        
-                        # Calculate mRMR score (relevance - redundancy)
-                        # For multi-target approach, use a simplified redundancy calculation
-                        # that doesn't require previously selected features
-                        mrmr_score = self._calculate_mrmr_cheap(
-                            feature_aligned, target_aligned, [], features_df
-                        )
-                        
-                        # Weight the scores
-                        weighted_economic_significance += economic_significance * target_weight
-                        weighted_regime_discrimination += regime_discrimination * target_weight
-                        weighted_clustering_quality += clustering_quality * target_weight
-                        weighted_stability_score += stability_score * target_weight
-                        weighted_mrmr_score += mrmr_score * target_weight
-                        
-                        total_weight += target_weight
-                    
-                    if total_weight == 0:
+        # Pre-align all data once for efficiency
+        common_index = features_df.index.intersection(labels_df.index)
+        features_aligned = features_df.loc[common_index]
+        labels_aligned = labels_df.loc[common_index]
+        
+        tprint_info(f"📊 Processing {len(features_df.columns)} features with {len(common_index)} aligned samples")
+        
+        for i, feature_name in enumerate(features_aligned.columns):
+            try:
+                tprint_info(f"📈 Scoring feature {i+1}/{len(features_aligned.columns)}: {feature_name}")
+                
+                # Get feature data (already aligned)
+                feature_data = features_aligned[feature_name].dropna()
+                
+                if len(feature_data) < 50:
+                    tprint_debug(f"Skipping {feature_name}: insufficient data ({len(feature_data)})")
+                    continue
+                
+                # Calculate weighted scores across all targets
+                weighted_economic_significance = 0.0
+                weighted_regime_discrimination = 0.0
+                weighted_stability_score = 0.0
+                
+                total_weight = 0.0
+                
+                for target_col, target_weight in self.config.target_weights.items():
+                    if target_col not in multi_target_metrics or target_col not in labels_aligned.columns:
                         continue
                     
-                    # Normalize by total weight
-                    weighted_economic_significance /= total_weight
-                    weighted_regime_discrimination /= total_weight
-                    weighted_clustering_quality /= total_weight
-                    weighted_stability_score /= total_weight
-                    weighted_mrmr_score /= total_weight
+                    # Use pre-aligned data
+                    target_data = labels_aligned[target_col]
                     
-                    # Calculate regime transition detection score (average across targets)
-                    weighted_regime_transition_score = 0.0
-                    transition_weight = 0.0
+                    # Skip if insufficient data for this target
+                    if len(target_data.dropna()) < 50:
+                        continue
                     
-                    for target_col, target_weight in self.config.target_weights.items():
-                        if target_col not in multi_target_metrics:
-                            continue
-                        
-                        # Align feature with target
-                        common_index = feature_data.index.intersection(labels_df.index)
-                        feature_aligned = feature_data.loc[common_index]
-                        labels_aligned = labels_df.loc[common_index, target_col]
-                        
-                        if len(feature_aligned) < 50:
-                            continue
-                        
-                        # Calculate regime transition detection score for this target
-                        regime_transition_score = self._calculate_regime_transition_detection(
-                            feature_aligned, target_aligned
-                        )
-                        
-                        weighted_regime_transition_score += target_weight * regime_transition_score
-                        transition_weight += target_weight
-                    
-                    if transition_weight > 0:
-                        weighted_regime_transition_score /= transition_weight
-                    
-                    # Calculate composite score with regime transition detection
-                    composite_score = (
-                        self.config.economic_significance_weight * weighted_economic_significance +
-                        self.config.regime_discrimination_weight * weighted_regime_discrimination +
-                        self.config.clustering_quality_weight * weighted_clustering_quality +
-                        self.config.stability_weight * weighted_stability_score +
-                        self.config.mrmr_weight * weighted_mrmr_score +
-                        self.config.regime_transition_weight * weighted_regime_transition_score
+                    # Calculate scores for this target
+                    economic_significance = self._calculate_economic_significance_cheap(
+                        feature_data, target_data, target_data
                     )
                     
-                    # Determine category
-                    category = self._determine_feature_category(feature_name)
+                    regime_discrimination = self._calculate_regime_discrimination(
+                        feature_data, target_data
+                    )
                     
-                    feature_scores.append(FeatureScore(
-                        feature_name=feature_name,
-                        economic_significance=weighted_economic_significance,
-                        regime_discrimination=weighted_regime_discrimination,
-                        clustering_quality=weighted_clustering_quality,
-                        stability_score=weighted_stability_score,
-                        mrmr_score=weighted_mrmr_score,
-                        regime_transition_score=weighted_regime_transition_score,
-                        composite_score=composite_score,
-                        category=category
-                    ))
+                    stability_score = self._calculate_stability_cheap(
+                        feature_data, target_data
+                    )
+                        
+                    # Weight the scores
+                    weighted_economic_significance += economic_significance * target_weight
+                    weighted_regime_discrimination += regime_discrimination * target_weight
+                    weighted_stability_score += stability_score * target_weight
                     
-                except Exception as e:
-                    tprint_warning(f"Error scoring feature {feature_name}: {e}")
+                    total_weight += target_weight
+                
+                if total_weight == 0:
+                    tprint_debug(f"Skipping {feature_name}: no valid targets")
                     continue
+                
+                # Normalize by total weight
+                weighted_economic_significance /= total_weight
+                weighted_regime_discrimination /= total_weight
+                weighted_stability_score /= total_weight
+                
+                # Calculate clustering quality using regime labels (not economic targets)
+                clustering_quality = self._calculate_clustering_quality_for_multi_target(
+                    feature_data, labels_aligned
+                )
+                
+                # Calculate regime transition detection score (average across targets)
+                weighted_regime_transition_score = 0.0
+                transition_weight = 0.0
+                
+                for target_col, target_weight in self.config.target_weights.items():
+                    if target_col not in multi_target_metrics or target_col not in labels_aligned.columns:
+                        continue
+                    
+                    # Use pre-aligned data
+                    target_data = labels_aligned[target_col]
+                    
+                    if len(target_data.dropna()) < 50:
+                        continue
+                    
+                    # Calculate regime transition detection score for this target
+                    regime_transition_score = self._calculate_regime_transition_detection(
+                        feature_data, target_data
+                    )
+                    
+                    weighted_regime_transition_score += target_weight * regime_transition_score
+                    transition_weight += target_weight
+                
+                if transition_weight > 0:
+                    weighted_regime_transition_score /= transition_weight
+                
+                # Calculate composite score with regime transition detection
+                composite_score = (
+                    self.config.economic_significance_weight * weighted_economic_significance +
+                    self.config.regime_discrimination_weight * weighted_regime_discrimination +
+                    self.config.clustering_quality_weight * clustering_quality +
+                    self.config.stability_weight * weighted_stability_score +
+                    self.config.regime_transition_weight * weighted_regime_transition_score
+                )
+                
+                # Determine category
+                category = self._determine_feature_category(feature_name)
+                
+                feature_scores.append(FeatureScore(
+                    feature_name=feature_name,
+                    economic_significance=weighted_economic_significance,
+                    regime_discrimination=weighted_regime_discrimination,
+                    clustering_quality=clustering_quality,
+                    stability_score=weighted_stability_score,
+                    mrmr_score=0.0,  # No longer using mRMR
+                    regime_transition_score=weighted_regime_transition_score,
+                    composite_score=composite_score,
+                    category=category
+                ))
+                
+            except Exception as e:
+                tprint_warning(f"Error scoring feature {feature_name}: {e}")
+                continue
             
         tprint_success(f"🏆 Multi-target feature scoring completed: {len(feature_scores)} features scored")
         return feature_scores
@@ -2173,6 +2138,155 @@ class EconomicRegimeFeatureSelector(BaseStep):
             tprint_warning(f"Error calculating regime discrimination: {e}")
             return 0.0
     
+    def _enhance_treeshap_scores(self, treeshap_result: Dict, features_df: pd.DataFrame, labels_df: pd.DataFrame) -> List[FeatureScore]:
+        """Enhance TreeSHAP results with additional scoring metrics."""
+        try:
+            feature_scores = []
+            
+            for feature_name in treeshap_result['selected_features']:
+                if feature_name not in features_df.columns:
+                    continue
+                    
+                feature_data = features_df[feature_name].dropna()
+                
+                if len(feature_data) < 50:
+                    continue
+                
+                # Calculate missing scores using pre-aligned data
+                common_index = feature_data.index.intersection(labels_df.index)
+                if len(common_index) < 50:
+                    continue
+                
+                feature_aligned = feature_data.loc[common_index]
+                labels_aligned = labels_df.loc[common_index]
+                
+                # Calculate regime discrimination using first target
+                first_target = labels_aligned.columns[0]
+                regime_discrimination = self._calculate_regime_discrimination(
+                    feature_aligned, labels_aligned[first_target]
+                )
+                
+                # Calculate clustering quality using regime labels
+                clustering_quality = self._calculate_clustering_quality_for_multi_target(
+                    feature_aligned, labels_aligned
+                )
+                
+                # Calculate stability score using first target
+                stability_score = self._calculate_stability_cheap(
+                    feature_aligned, labels_aligned[first_target]
+                )
+                
+                # Calculate regime transition score
+                regime_transition_score = 0.0
+                transition_weight = 0.0
+                
+                for target_col, target_weight in self.config.target_weights.items():
+                    if target_col in labels_aligned.columns:
+                        target_data = labels_aligned[target_col]
+                        if len(target_data.dropna()) >= 50:
+                            score = self._calculate_regime_transition_detection(feature_aligned, target_data)
+                            regime_transition_score += score * target_weight
+                            transition_weight += target_weight
+                
+                if transition_weight > 0:
+                    regime_transition_score /= transition_weight
+                
+                # Determine category
+                category = self._determine_feature_category(feature_name)
+                
+                feature_scores.append(FeatureScore(
+                    feature_name=feature_name,
+                    economic_significance=treeshap_result['correlation_scores'].get(feature_name, 0.0),
+                    regime_discrimination=regime_discrimination,
+                    clustering_quality=clustering_quality,
+                    stability_score=stability_score,
+                    mrmr_score=0.0,  # No longer using mRMR
+                    regime_transition_score=regime_transition_score,
+                    composite_score=treeshap_result['feature_scores'].get(feature_name, 0.0),
+                    treeshap_importance=treeshap_result['treeshap_scores'].get(feature_name, 0.0),
+                    diversity_score=treeshap_result['diversity_scores'].get(feature_name, 0.0),
+                    selected=True,
+                    category=category
+                ))
+            
+            tprint_success(f"✅ Enhanced TreeSHAP scores for {len(feature_scores)} features")
+            return feature_scores
+            
+        except Exception as e:
+            tprint_warning(f"Error enhancing TreeSHAP scores: {e}")
+            # Fallback to basic TreeSHAP scores
+            return self._create_basic_treeshap_scores(treeshap_result)
+
+    def _create_basic_treeshap_scores(self, treeshap_result: Dict) -> List[FeatureScore]:
+        """Create basic TreeSHAP scores as fallback."""
+        feature_scores = []
+        for feature_name in treeshap_result['selected_features']:
+            feature_scores.append(FeatureScore(
+                feature_name=feature_name,
+                economic_significance=treeshap_result['correlation_scores'].get(feature_name, 0.0),
+                regime_discrimination=0.0,
+                clustering_quality=0.0,
+                stability_score=0.0,
+                mrmr_score=0.0,
+                regime_transition_score=0.0,
+                composite_score=treeshap_result['feature_scores'].get(feature_name, 0.0),
+                treeshap_importance=treeshap_result['treeshap_scores'].get(feature_name, 0.0),
+                diversity_score=treeshap_result['diversity_scores'].get(feature_name, 0.0),
+                selected=True
+            ))
+        return feature_scores
+
+    def _create_synthetic_regime_labels(self, labels_df: pd.DataFrame) -> pd.Series:
+        """Create synthetic regime labels based on economic target patterns."""
+        try:
+            # Use the first target column as the primary regime indicator
+            primary_target = self.config.target_columns[0] if self.config.target_columns else labels_df.columns[0]
+            
+            if primary_target not in labels_df.columns:
+                # Fallback to first available column
+                primary_target = labels_df.columns[0]
+            
+            target_data = labels_df[primary_target].dropna()
+            
+            # Create 3 regimes based on quantiles
+            q33 = target_data.quantile(0.33)
+            q67 = target_data.quantile(0.67)
+            
+            regime_labels = pd.Series(index=target_data.index, dtype=int)
+            regime_labels[target_data <= q33] = 0  # Low regime
+            regime_labels[(target_data > q33) & (target_data <= q67)] = 1  # Medium regime
+            regime_labels[target_data > q67] = 2  # High regime
+            
+            return regime_labels
+            
+        except Exception as e:
+            tprint_warning(f"Error creating synthetic regime labels: {e}")
+            # Fallback: create random regime labels
+            return pd.Series(np.random.choice([0, 1, 2], len(labels_df)), index=labels_df.index)
+
+    def _calculate_clustering_quality_for_multi_target(self, feature_data: pd.Series, labels_df: pd.DataFrame) -> float:
+        """Calculate clustering quality using regime labels, not economic targets."""
+        try:
+            # Use regime labels if available, otherwise create synthetic regimes
+            if 'regime_labels' in labels_df.columns:
+                regime_labels = labels_df['regime_labels']
+            else:
+                # Create synthetic regimes based on economic target patterns
+                regime_labels = self._create_synthetic_regime_labels(labels_df)
+            
+            # Align feature data with regime labels
+            common_index = feature_data.index.intersection(regime_labels.index)
+            if len(common_index) < 10:
+                return 0.0
+            
+            feature_aligned = feature_data.loc[common_index]
+            regime_aligned = regime_labels.loc[common_index]
+            
+            return self._calculate_clustering_quality_cheap(feature_aligned, regime_aligned)
+        except Exception as e:
+            tprint_warning(f"Error calculating clustering quality for multi-target: {e}")
+            return 0.0
+
     def _calculate_clustering_quality_cheap(self, feature_data: pd.Series, labels: pd.Series) -> float:
         """Calculate clustering quality using improved cheap proxy with better sampling."""
         try:
@@ -2489,55 +2603,6 @@ class EconomicRegimeFeatureSelector(BaseStep):
             tprint_warning(f"Sampled redundancy calculation failed: {e}")
             return 0.0
 
-    def _calculate_mrmr_cheap(self, feature_data: pd.Series, labels: pd.Series, selected_features: List[str], features_df: pd.DataFrame) -> float:
-        """Calculate improved mRMR proxy with better debugging and thresholds."""
-        try:
-            if len(feature_data) < 20:
-                tprint_debug(f"mRMR: insufficient data ({len(feature_data)})")
-                return 0.0
-            
-            # Calculate relevance (correlation with labels)
-            relevance = abs(feature_data.corr(labels))
-            if pd.isna(relevance):
-                tprint_debug(f"mRMR: NaN relevance for feature")
-                relevance = 0.0
-            
-            # Calculate redundancy penalty (average correlation with already selected features)
-            redundancy_penalty = 0.0
-            redundancy_correlations = []
-            
-            if selected_features:
-                for selected_feature in selected_features:
-                    if selected_feature in features_df.columns:
-                        try:
-                            corr = abs(feature_data.corr(features_df[selected_feature]))
-                            if not pd.isna(corr):
-                                redundancy_correlations.append(corr)
-                        except Exception as e:
-                            tprint_debug(f"mRMR: correlation calculation failed for {selected_feature}: {e}")
-                            continue
-                
-                if redundancy_correlations:
-                    redundancy_penalty = np.mean(redundancy_correlations)
-                    # Apply penalty scaling to avoid over-penalization - reduced for better diversity
-                    redundancy_penalty = min(redundancy_penalty * 0.6, 0.5)  # Scale down and cap at 0.5
-            
-            # mRMR score = relevance - redundancy_penalty
-            mrmr_score = relevance - redundancy_penalty
-            
-            # Apply minimum threshold to avoid very small scores
-            min_threshold = 0.01
-            if mrmr_score < min_threshold:
-                mrmr_score = 0.0
-            
-            # Debug logging
-            tprint_debug(f"mRMR: relevance={relevance:.4f}, penalty={redundancy_penalty:.4f}, score={mrmr_score:.4f}")
-            
-            return max(0.0, mrmr_score)  # Ensure non-negative
-            
-        except Exception as e:
-            tprint_warning(f"Error calculating mRMR: {e}")
-            return 0.0
 
     def _calculate_stability_cheap(self, feature_data: pd.Series, labels: pd.Series) -> float:
         """Calculate stability using cheap proxy (time-based variance)."""
@@ -2803,296 +2868,56 @@ class EconomicRegimeFeatureSelector(BaseStep):
             tprint_error(f"❌ Error identifying regime transition features: {e}")
             return [], {}
     
-    def _select_optimal_features_incremental_mrmr(self, features_df: pd.DataFrame, labels_df: pd.DataFrame, feature_scores: List[FeatureScore], transition_features: List[str]) -> List[str]:
-        """Select optimal features using incremental mRMR selection with hardware optimization."""
-        try:
-            tprint_info("🎯 Starting incremental mRMR feature selection...")
-            tprint_info(f"🎯 Target feature count: {self.config.target_feature_count}")
-            tprint_info(f"🎯 Total features available: {len(features_df.columns)}")
-            
-            # Optimize hardware for feature selection
-            if HARDWARE_AVAILABLE and self.hardware_manager:
-                from src.utils.hardware.unified_hardware_manager import WorkloadType
-                self.hardware_manager.optimize_for_workload(WorkloadType.FEATURE_ENGINEERING)
-                tprint_info("⚡ Hardware optimized for incremental mRMR")
-            
-            # Optimize data types
-            features_df = self._optimize_data_types(features_df)
-            
-            # Pre-compute common operations
-            precomputed = self._precompute_common_operations(features_df, labels_df)
-            features_aligned = precomputed['features_aligned']
-            labels_aligned = precomputed['labels_aligned']
-            correlation_matrix = precomputed['correlation_matrix']
-            
-            # Sort features by composite score for initial ranking
-            sorted_scores = sorted(feature_scores, key=lambda x: x.composite_score, reverse=True)
-            
-            selected_features = []
-            remaining_features = [score.feature_name for score in sorted_scores]
-            
-            # First, add regime transition features
-            for transition_feature in transition_features:
-                if transition_feature in remaining_features:
-                    selected_features.append(transition_feature)
-                    remaining_features.remove(transition_feature)
-                    tprint_info(f"✅ Added regime transition feature: {transition_feature}")
-            
-            tprint_info(f"🎯 After transition features: {len(selected_features)} selected, {len(remaining_features)} remaining")
-            
-            # Then iteratively add features using incremental mRMR
-            iteration = 0
-            while len(selected_features) < self.config.target_feature_count and remaining_features:
-                iteration += 1
-                tprint_info(f"🎯 mRMR iteration {iteration}: {len(selected_features)}/{self.config.target_feature_count} selected")
-                
-                best_candidate = None
-                best_mrmr_score = -float('inf')
-                
-                # Use VectorBT for batch correlation calculation if available
-                if self.vectorization_manager and correlation_matrix is not None:
-                    best_candidate, best_mrmr_score = self._find_best_candidate_vectorized(
-                        remaining_features, selected_features, features_aligned, labels_aligned, correlation_matrix
-                    )
-                else:
-                    # Fallback to individual evaluation
-                    for feature_name in remaining_features[:50]:  # Limit to top 50 candidates
-                        if feature_name not in features_aligned.columns:
-                            continue
-                        
-                        mrmr_score = self._calculate_incremental_mrmr_score(
-                            feature_name, selected_features, features_aligned, labels_aligned
-                        )
-                        
-                        if mrmr_score > best_mrmr_score:
-                            best_mrmr_score = mrmr_score
-                            best_candidate = feature_name
-                
-                if best_candidate:
-                    selected_features.append(best_candidate)
-                    remaining_features.remove(best_candidate)
-                    tprint_info(f"✅ Added feature {len(selected_features)}/{self.config.target_feature_count}: {best_candidate} (mRMR: {best_mrmr_score:.4f})")
-                else:
-                    tprint_warning("⚠️ No suitable candidate found, stopping selection")
-                    break
-            
-            tprint_success(f"✅ Incremental mRMR selection completed: {len(selected_features)} features selected")
-            return selected_features
-            
-        except Exception as e:
-            tprint_error(f"Error in incremental mRMR selection: {e}")
-            return self._select_optimal_features_mrmr(features_df, labels_df, feature_scores, transition_features)
     
-    def _find_best_candidate_vectorized(self, remaining_features: List[str], selected_features: List[str], 
-                                       features_aligned: pd.DataFrame, labels_aligned: pd.DataFrame, 
-                                       correlation_matrix: pd.DataFrame) -> Tuple[Optional[str], float]:
-        """Find best candidate using vectorized operations."""
+    def _select_features_adaptive_thresholds(self, feature_scores: List[FeatureScore], transition_features: List[str]) -> List[str]:
+        """Select features with adaptive thresholds that relax if needed."""
         try:
-            if not remaining_features:
-                return None, -float('inf')
+            # Start with strict thresholds
+            thresholds = {
+                'economic_significance': self.config.min_economic_significance,
+                'regime_discrimination': self.config.min_regime_discrimination,
+                'clustering_quality': self.config.min_clustering_quality,
+                'stability_score': self.config.min_stability_score
+            }
             
-            # Calculate relevance scores for all remaining features
-            relevance_scores = {}
-            for feature_name in remaining_features:
-                if feature_name in features_aligned.columns:
-                    # Use cached correlation if available
-                    cached_corr = self._get_cached_correlation(features_aligned[feature_name], labels_aligned.iloc[:, 0])
-                    if cached_corr is not None:
-                        relevance_scores[feature_name] = abs(cached_corr)
-                    else:
-                        relevance = abs(features_aligned[feature_name].corr(labels_aligned.iloc[:, 0]))
-                        self._set_cached_correlation(features_aligned[feature_name], labels_aligned.iloc[:, 0], relevance)
-                        relevance_scores[feature_name] = relevance
+            tprint_info(f"Starting with strict thresholds: {thresholds}")
             
-            tprint_debug(f"🔍 Vectorized search: {len(remaining_features)} remaining features, {len(selected_features)} selected")
-            tprint_debug(f"🔍 Calculated relevance scores for {len(relevance_scores)} features")
-            
-            # Calculate redundancy penalties using correlation matrix
-            best_candidate = None
-            best_mrmr_score = -float('inf')
-            
-            for feature_name in remaining_features:
-                if feature_name not in relevance_scores:
-                    continue
+            # Try different threshold combinations
+            for relaxation_level in [0.0, 0.1, 0.2, 0.3, 0.5]:
+                relaxed_thresholds = {k: max(0.0, v - relaxation_level) for k, v in thresholds.items()}
                 
-                relevance = relevance_scores[feature_name]
+                filtered_scores = [
+                    score for score in feature_scores
+                    if all(getattr(score, attr) >= relaxed_thresholds[attr] for attr in thresholds)
+                ]
                 
-                # Calculate redundancy penalty using correlation matrix
-                redundancy_penalty = 0.0
-                if selected_features and feature_name in correlation_matrix.index:
-                    selected_correlations = []
-                    for selected_feature in selected_features:
-                        if selected_feature in correlation_matrix.columns:
-                            corr = abs(correlation_matrix.loc[feature_name, selected_feature])
-                            if not pd.isna(corr):
-                                selected_correlations.append(corr)
-                    
-                    if selected_correlations:
-                        redundancy_penalty = np.mean(selected_correlations)
-                        redundancy_penalty = min(redundancy_penalty, 0.8)  # Cap penalty
+                tprint_info(f"Relaxation level {relaxation_level}: {len(filtered_scores)} features pass thresholds")
                 
-                # Calculate mRMR score
-                mrmr_score = relevance - redundancy_penalty
-                
-                if mrmr_score > best_mrmr_score:
-                    best_mrmr_score = mrmr_score
-                    best_candidate = feature_name
+                if len(filtered_scores) >= self.config.min_feature_count:
+                    tprint_success(f"Found sufficient features with relaxation level {relaxation_level}")
+                    return self._prioritize_features(filtered_scores, transition_features)
             
-            tprint_debug(f"🔍 Best candidate: {best_candidate}, mRMR score: {best_mrmr_score:.4f}")
-            return best_candidate, best_mrmr_score
+            # If still no features, use top-ranked features
+            tprint_warning("No features pass thresholds, using top-ranked features")
+            return self._select_top_features(feature_scores, transition_features)
             
         except Exception as e:
-            tprint_warning(f"Vectorized candidate selection failed: {e}")
-            return None, -float('inf')
+            tprint_error(f"Error in adaptive threshold selection: {e}")
+            return []
     
-    def _calculate_incremental_mrmr_score(self, feature_name: str, selected_features: List[str], 
-                                         features_aligned: pd.DataFrame, labels_aligned: pd.DataFrame) -> float:
-        """Calculate mRMR score for incremental selection."""
+    def _prioritize_features(self, filtered_scores: List[FeatureScore], transition_features: List[str]) -> List[str]:
+        """Prioritize features with regime transition features first."""
         try:
-            feature_data = features_aligned[feature_name]
+            # Sort by composite score
+            filtered_scores.sort(key=lambda x: x.composite_score, reverse=True)
             
-            # Calculate relevance
-            cached_corr = self._get_cached_correlation(feature_data, labels_aligned.iloc[:, 0])
-            if cached_corr is not None:
-                relevance = abs(cached_corr)
-            else:
-                relevance = abs(feature_data.corr(labels_aligned.iloc[:, 0]))
-                self._set_cached_correlation(feature_data, labels_aligned.iloc[:, 0], relevance)
-            
-            # Calculate redundancy penalty
-            redundancy_penalty = 0.0
-            if selected_features:
-                redundancy_correlations = []
-                for selected_feature in selected_features:
-                    if selected_feature in features_aligned.columns:
-                        cached_corr = self._get_cached_correlation(feature_data, features_aligned[selected_feature])
-                        if cached_corr is not None:
-                            redundancy_correlations.append(abs(cached_corr))
-                        else:
-                            corr = abs(feature_data.corr(features_aligned[selected_feature]))
-                            self._set_cached_correlation(feature_data, features_aligned[selected_feature], corr)
-                            redundancy_correlations.append(corr)
-                
-                if redundancy_correlations:
-                    redundancy_penalty = np.mean(redundancy_correlations)
-                    redundancy_penalty = min(redundancy_penalty, 0.8)  # Cap penalty
-            
-            # Calculate mRMR score
-            mrmr_score = relevance - redundancy_penalty
-            tprint_debug(f"🔍 mRMR for {feature_name}: relevance={relevance:.4f}, penalty={redundancy_penalty:.4f}, score={mrmr_score:.4f}")
-            return max(0.0, mrmr_score)  # Ensure non-negative
-            
-        except Exception as e:
-            tprint_warning(f"Error calculating incremental mRMR score for {feature_name}: {e}")
-            return 0.0
-    
-    def _select_optimal_features_mrmr(self, features_df: pd.DataFrame, labels_df: pd.DataFrame, feature_scores: List[FeatureScore], transition_features: List[str]) -> List[str]:
-        """Select optimal features using mRMR-based iterative selection."""
-        try:
-            tprint_info("🎯 Selecting features using mRMR-based iterative selection...")
-            
-            # Sort features by composite score
-            sorted_scores = sorted(feature_scores, key=lambda x: x.composite_score, reverse=True)
-            
-            selected_features = []
-            remaining_features = [score.feature_name for score in sorted_scores]
-            
-            # First, add the best feature from each protected category
-            protected_added = set()
-            for category in self.config.protect_categories:
-                category_features = [score for score in sorted_scores if category in score.category.lower()]
-                if category_features:
-                    best_feature = category_features[0]
-                    if best_feature.feature_name not in selected_features:
-                        selected_features.append(best_feature.feature_name)
-                        remaining_features.remove(best_feature.feature_name)
-                        protected_added.add(category)
-                        tprint_info(f"✅ Added protected {category} feature: {best_feature.feature_name}")
-            
-            # Then iteratively add features using mRMR
-            while len(selected_features) < self.config.target_feature_count and remaining_features:
-                best_candidate = None
-                best_mrmr_score = -float('inf')
-                
-                for feature_name in remaining_features:
-                    if feature_name not in features_df.columns:
-                        continue
-                    
-                    feature_data = features_df[feature_name]
-                    
-                    # Calculate mRMR score for each target
-                    total_mrmr = 0.0
-                    total_weight = 0.0
-                    
-                    for target_col, target_weight in self.config.target_weights.items():
-                        if target_col not in labels_df.columns:
-                            continue
-                        
-                        labels_aligned = labels_df[target_col]
-                        common_index = feature_data.index.intersection(labels_aligned.index)
-                        
-                        if len(common_index) < 20:
-                            continue
-                        
-                        feature_aligned = feature_data.loc[common_index]
-                        labels_aligned = labels_aligned.loc[common_index]
-                        
-                        mrmr_score = self._calculate_mrmr_cheap(
-                            feature_aligned, labels_aligned, selected_features, features_df
-                        )
-                        
-                        total_mrmr += mrmr_score * target_weight
-                        total_weight += target_weight
-                    
-                    if total_weight > 0:
-                        avg_mrmr = total_mrmr / total_weight
-                        
-                        # No hard threshold - let mRMR handle redundancy naturally
-                        # The gradual redundancy penalty in mRMR calculation will naturally discourage redundant features
-                        
-                        if avg_mrmr > best_mrmr_score:
-                            best_mrmr_score = avg_mrmr
-                            best_candidate = feature_name
-                
-                if best_candidate:
-                    selected_features.append(best_candidate)
-                    remaining_features.remove(best_candidate)
-                    tprint_info(f"✅ Added feature: {best_candidate} (mRMR: {best_mrmr_score:.3f})")
-                else:
-                    break
-            
-            tprint_success(f"🎯 Selected {len(selected_features)} features using mRMR")
-            return selected_features
-            
-        except Exception as e:
-            tprint_error(f"Error in mRMR feature selection: {e}")
-            # Fallback to original method
-            return self._select_optimal_features(feature_scores, transition_features)
-
-    def _select_optimal_features(self, feature_scores: List[FeatureScore], transition_features: List[str]) -> List[str]:
-        """Select optimal features based on scores and thresholds, prioritizing regime transition features."""
-        try:
-            tprint_info("Selecting optimal features with regime transition prioritization...")
-            
-            # Filter features by thresholds
-            filtered_scores = [
-                score for score in feature_scores
-                if (score.economic_significance >= self.config.min_economic_significance and
-                    score.regime_discrimination >= self.config.min_regime_discrimination and
-                    score.clustering_quality >= self.config.min_clustering_quality and
-                    score.stability_score >= self.config.min_stability_score)
-            ]
-            
-            tprint_info(f"Features passing thresholds: {len(filtered_scores)}")
-            
-            # Prioritize regime transition features
+            # Separate transition and non-transition features
             transition_scores = [score for score in filtered_scores if score.feature_name in transition_features]
             non_transition_scores = [score for score in filtered_scores if score.feature_name not in transition_features]
             
             tprint_info(f"Regime transition features: {len(transition_scores)}")
             tprint_info(f"Other features: {len(non_transition_scores)}")
             
-            # Select features with regime transition priority
             selected_features = []
             
             # First, add regime transition features (up to configured ratio of target)
@@ -3106,32 +2931,167 @@ class EconomicRegimeFeatureSelector(BaseStep):
                 selected_other = non_transition_scores[:remaining_slots]
                 selected_features.extend([score.feature_name for score in selected_other])
             
-            # If we still need more features, relax criteria
-            if len(selected_features) < self.config.min_feature_count:
-                tprint_warning("Not enough features selected, relaxing criteria...")
-                
-                # Add more transition features if available
-                if len(transition_scores) > len(selected_transition):
-                    additional_transition = transition_scores[len(selected_transition):]
-                    selected_features.extend([score.feature_name for score in additional_transition])
-                
-                # Add more features from relaxed criteria
-                if len(selected_features) < self.config.min_feature_count:
-                    relaxed_scores = [
-                        score for score in feature_scores
-                        if score.feature_name not in selected_features
-                    ]
-                    needed_features = self.config.min_feature_count - len(selected_features)
-                    additional_features = relaxed_scores[:needed_features]
-                    selected_features.extend([score.feature_name for score in additional_features])
+            return selected_features
             
-            tprint_success(f"Selected {len(selected_features)} features ({len(selected_transition)} regime transition features)")
+        except Exception as e:
+            tprint_error(f"Error prioritizing features: {e}")
+            return []
+
+    def _select_top_features(self, feature_scores: List[FeatureScore], transition_features: List[str]) -> List[str]:
+        """Select top-ranked features when thresholds fail."""
+        try:
+            # Sort by composite score
+            feature_scores.sort(key=lambda x: x.composite_score, reverse=True)
+            
+            # Select top features up to target count
+            selected_features = [score.feature_name for score in feature_scores[:self.config.target_feature_count]]
+            
+            tprint_warning(f"Selected top {len(selected_features)} features by composite score")
+            return selected_features
+            
+        except Exception as e:
+            tprint_error(f"Error selecting top features: {e}")
+            return []
+    
+    def _select_optimal_features(self, feature_scores: List[FeatureScore], transition_features: List[str]) -> List[str]:
+        """Select optimal features using adaptive thresholds with regime transition prioritization."""
+        try:
+            tprint_info("Selecting optimal features with adaptive thresholds...")
+            
+            # Use adaptive threshold logic
+            selected_features = self._select_features_adaptive_thresholds(feature_scores, transition_features)
+            
+            tprint_success(f"Selected {len(selected_features)} features using adaptive thresholds")
             return selected_features
             
         except Exception as e:
             tprint_error(f"Error selecting optimal features: {e}")
             return []
+
+    def _select_features_adaptive_thresholds(self, feature_scores: List[FeatureScore], transition_features: List[str]) -> List[str]:
+        """Select features with adaptive thresholds that relax if needed."""
+        try:
+            # Start with strict thresholds
+            thresholds = {
+                'economic_significance': self.config.min_economic_significance,
+                'regime_discrimination': self.config.min_regime_discrimination,
+                'clustering_quality': self.config.min_clustering_quality,
+                'stability_score': self.config.min_stability_score
+            }
+            
+            tprint_info(f"Starting with strict thresholds: {thresholds}")
+            
+            # Try different threshold combinations
+            for relaxation_level in [0.0, 0.1, 0.2, 0.3, 0.5]:
+                relaxed_thresholds = {k: max(0.0, v - relaxation_level) for k, v in thresholds.items()}
+                
+                filtered_scores = [
+                    score for score in feature_scores
+                    if all(getattr(score, attr) >= relaxed_thresholds[attr] for attr in thresholds)
+                ]
+                
+                tprint_info(f"Relaxation level {relaxation_level}: {len(filtered_scores)} features pass thresholds")
+                
+                if len(filtered_scores) >= self.config.min_feature_count:
+                    tprint_success(f"Found sufficient features with relaxation level {relaxation_level}")
+                    return self._prioritize_features(filtered_scores, transition_features)
+            
+            # If still no features, use top-ranked features
+            tprint_warning("No features pass thresholds, using top-ranked features")
+            return self._select_top_features(feature_scores, transition_features)
+            
+        except Exception as e:
+            tprint_error(f"Error in adaptive threshold selection: {e}")
+            return []
+
+    def _prioritize_features(self, filtered_scores: List[FeatureScore], transition_features: List[str]) -> List[str]:
+        """Prioritize features with regime transition features first."""
+        try:
+            # Sort by composite score
+            filtered_scores.sort(key=lambda x: x.composite_score, reverse=True)
+            
+            # Separate transition and non-transition features
+            transition_scores = [score for score in filtered_scores if score.feature_name in transition_features]
+            non_transition_scores = [score for score in filtered_scores if score.feature_name not in transition_features]
+            
+            tprint_info(f"Regime transition features: {len(transition_scores)}")
+            tprint_info(f"Other features: {len(non_transition_scores)}")
+            
+            selected_features = []
+            
+            # First, add regime transition features (up to configured ratio of target)
+            max_transition_features = max(3, int(self.config.target_feature_count * self.config.max_transition_features_ratio))
+            selected_transition = transition_scores[:max_transition_features]
+            selected_features.extend([score.feature_name for score in selected_transition])
+            
+            # Then add other high-quality features
+            remaining_slots = self.config.target_feature_count - len(selected_features)
+            if remaining_slots > 0:
+                selected_other = non_transition_scores[:remaining_slots]
+                selected_features.extend([score.feature_name for score in selected_other])
+            
+            return selected_features
+            
+        except Exception as e:
+            tprint_error(f"Error prioritizing features: {e}")
+            return []
+
+    def _select_top_features(self, feature_scores: List[FeatureScore], transition_features: List[str]) -> List[str]:
+        """Select top-ranked features when thresholds fail."""
+        try:
+            # Sort by composite score
+            feature_scores.sort(key=lambda x: x.composite_score, reverse=True)
+            
+            # Select top features up to target count
+            selected_features = [score.feature_name for score in feature_scores[:self.config.target_feature_count]]
+            
+            tprint_warning(f"Selected top {len(selected_features)} features by composite score")
+            return selected_features
+            
+        except Exception as e:
+            tprint_error(f"Error selecting top features: {e}")
+            return []
     
+    def _validate_multi_target_selection(self, selected_features: List[str], features_df: pd.DataFrame, labels_df: pd.DataFrame) -> Dict[str, Any]:
+        """Validate multi-target feature selection quality."""
+        try:
+            validation_results = {
+                'feature_count': len(selected_features),
+                'target_coverage': {},
+                'score_distribution': {},
+                'correlation_analysis': {},
+                'overall_quality': 0.0
+            }
+            
+            # Check target coverage
+            for target_col in self.config.target_columns:
+                if target_col in labels_df.columns:
+                    target_data = labels_df[target_col]
+                    feature_target_correlations = []
+                    
+                    for feature_name in selected_features:
+                        if feature_name in features_df.columns:
+                            corr = features_df[feature_name].corr(target_data)
+                            if not pd.isna(corr):
+                                feature_target_correlations.append(abs(corr))
+                    
+                    validation_results['target_coverage'][target_col] = {
+                        'avg_correlation': np.mean(feature_target_correlations) if feature_target_correlations else 0.0,
+                        'max_correlation': np.max(feature_target_correlations) if feature_target_correlations else 0.0,
+                        'features_with_correlation': len([c for c in feature_target_correlations if c > 0.1])
+                    }
+            
+            # Calculate overall quality score
+            avg_correlations = [v['avg_correlation'] for v in validation_results['target_coverage'].values()]
+            validation_results['overall_quality'] = np.mean(avg_correlations) if avg_correlations else 0.0
+            
+            tprint_success(f"✅ Validation completed: overall quality = {validation_results['overall_quality']:.3f}")
+            return validation_results
+            
+        except Exception as e:
+            tprint_error(f"Error validating multi-target selection: {e}")
+            return {'overall_quality': 0.0}
+
     def _validate_feature_selection(self, selected_features_df: pd.DataFrame, labels_df: pd.DataFrame, economic_metrics: List[EconomicMetrics]) -> Dict[str, float]:
         """Validate feature selection quality."""
         try:

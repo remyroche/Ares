@@ -2,8 +2,8 @@ from src.utils.tprint import tprint, tprint_data_preview, tprint_data_format
 
 # VectorBT optimization imports
 try:
-    from src.training.steps.market_analysis.vectorbt_rolling_optimizer import VectorBTRollingOptimizer
-    from src.training.steps.market_analysis.unified_vectorization_manager import UnifiedVectorizationManager, VectorizationConfig
+    from src.training.steps.market_analysis.sr_detection.vectorbt_rolling_optimizer import VectorBTRollingOptimizer
+    from src.training.steps.market_analysis.sr_detection.unified_vectorization_manager import UnifiedVectorizationManager, VectorizationConfig
     VECTORBT_OPTIMIZATION_AVAILABLE = True
 except ImportError:
     VECTORBT_OPTIMIZATION_AVAILABLE = False

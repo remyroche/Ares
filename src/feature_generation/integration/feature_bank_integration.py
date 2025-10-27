@@ -23,20 +23,20 @@ import numpy as np
 import pandas as pd
 
 # Import existing feature generators
-from .volume import (
+from ..categories.volume import (
     VolumeFeatureGenerator, VolumeSMAGenerator, VolumeEMAGenerator,
     VolumeRatioGenerator, VolumeROCGenerator, VolumeStdGenerator,
     VolumePercentileGenerator, VolumeTrendStrengthGenerator,
     VolumeOscillatorGenerator, VolumeMomentumGenerator
 )
 
-from .trend import (
+from ..categories.trend import (
     TrendFeatureGenerator, ADXGenerator, DirectionalSignalGenerator,
     TrendScoreGenerator, SMAGenerator, EMAGenerator, WMAGenerator,
     create_default_trend_generators
 )
 
-from .volatility import (
+from ..categories.volatility import (
     VolatilityFeatureGenerator, VectorBTVolatilityFeatureGenerator,
     VectorBTBollingerBandsGenerator, VectorBTAverageTrueRangeGenerator,
     VectorBTGarmanKlassVolatilityGenerator, VectorBTParkinsonVolatilityGenerator,
@@ -44,7 +44,7 @@ from .volatility import (
     create_default_volatility_generators
 )
 
-from .momentum import (
+from ..categories.momentum import (
     MomentumFeatureGenerator, AnalystMomentum5mGenerator, AnalystMomentum15mGenerator,
     AnalystMomentum1hGenerator, AnalystMomentumAlignmentGenerator,
     RSIGenerator, MACDGenerator, StochasticGenerator, WilliamsRGenerator,
@@ -52,7 +52,7 @@ from .momentum import (
 )
 
 # Import regime features
-from .regime_features import (
+from ..categories.regime_features import (
     RegimeStatisticalFeatureGenerator, RegimeStructuralTrendFeatureGenerator,
     RegimeVolatilityFeatureGenerator, RegimeVolumeFeatureGenerator,
     RegimeEntropyGenerator, RegimeComplexityGenerator,
@@ -62,7 +62,7 @@ from .regime_features import (
 )
 
 # Import clustering features
-from .clustering_features import (
+from ..categories.clustering_features import (
     ClusteringDistanceGenerator, ClusteringSeparationGenerator,
     ClusteringStabilityGenerator, ClusteringIntegration
 )

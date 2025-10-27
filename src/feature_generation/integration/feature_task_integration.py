@@ -26,7 +26,7 @@ import numpy as np
 import pandas as pd
 
 # Import feature categorization system
-from .regime_feature_categorization import (
+from ..categories.regime_feature_categorization import (
     RegimeFeatureCategorizer,
     FeatureUseCase,
     get_hdbscan_features,
@@ -36,7 +36,7 @@ from .regime_feature_categorization import (
 )
 
 # Import feature generators
-from .regime_features import (
+from ..categories.regime_features import (
     RegimeStatisticalFeatureGenerator,
     RegimeStructuralTrendFeatureGenerator,
     RegimeVolatilityFeatureGenerator,
@@ -51,7 +51,7 @@ from .regime_features import (
     RegimeFeatureIntegration
 )
 
-from .clustering_features import (
+from ..categories.clustering_features import (
     ClusteringDistanceGenerator,
     ClusteringSeparationGenerator,
     ClusteringStabilityGenerator,

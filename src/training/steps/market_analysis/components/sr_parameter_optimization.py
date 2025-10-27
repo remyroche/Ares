@@ -158,14 +158,15 @@ class EnhancedSRConfig:
     enable_explainability: bool = True
     enable_time_series_validation: bool = True
     
-    # Algorithm selection - simplified
-    primary_algorithm: OptimizationAlgorithm = OptimizationAlgorithm.BAYESIAN_TPE
+    # Staged optimization settings - single entry point
+    enable_staged_optimization: bool = True
     fallback_algorithms: List[OptimizationAlgorithm] = None
     
-    # Bayesian TPE settings - simplified
-    n_trials: int = 100
-    enable_grid_search_fallback: bool = True
-    grid_search_points: int = 5  # 5x5 grid for 2D search space
+    # Staged optimization parameters
+    coarse_grid_points: int = 3  # 3x3 coarse grid for initial exploration
+    fine_grid_points: int = 5    # 5x5 fine grid for refinement
+    bayesian_trials: int = 50    # Bayesian TPE trials after grid stages
+    enable_bayesian_refinement: bool = True
     
     # VectorBT optimization settings
     enable_vectorbt_rolling: bool = True
@@ -199,7 +200,6 @@ class EnhancedSRConfig:
         """Initialize default fallback algorithms if not provided."""
         if self.fallback_algorithms is None:
             self.fallback_algorithms = [
-                OptimizationAlgorithm.GRID_SEARCH,
                 OptimizationAlgorithm.VECTORBT_OPTIMIZATION
             ]
 
@@ -686,27 +686,19 @@ class SRParameterOptimizationStep(BaseStep):
             # Split data for optimization with temporal validation
             train_data, test_data = self._split_data_with_validation(market_data, enhanced_config)
             
-            # Run optimization using selected algorithm (Bayesian TPE or Grid Search)
-            algorithm_result = await self._run_algorithm_optimization(
-                enhanced_config.primary_algorithm,
-                search_space, train_data, test_data, enhanced_config
-            )
-            optimization_result.update(algorithm_result)
-            
-            # Run grid search fallback if Bayesian TPE failed and fallback is enabled
-            if (enhanced_config.enable_grid_search_fallback and 
-                enhanced_config.primary_algorithm == OptimizationAlgorithm.BAYESIAN_TPE and
-                not algorithm_result.get('success', True)):
-                self.logger.info("🔄 Running grid search fallback...")
-                grid_result = await self._run_algorithm_optimization(
-                    OptimizationAlgorithm.GRID_SEARCH,
+            # Run staged optimization: Coarse Grid → Fine Grid → Bayesian TPE
+            if enhanced_config.enable_staged_optimization:
+                algorithm_result = await self._run_staged_optimization(
                     search_space, train_data, test_data, enhanced_config
                 )
-                # Use grid search result if it's better or Bayesian TPE failed
-                if (grid_result.get('best_score', 0) > algorithm_result.get('best_score', 0) or
-                    not algorithm_result.get('success', True)):
-                    optimization_result.update(grid_result)
-                    optimization_result['grid_search_fallback_used'] = True
+            else:
+                # Fallback to simple algorithm selection
+                algorithm_result = await self._run_algorithm_optimization(
+                    OptimizationAlgorithm.BAYESIAN_TPE,
+                    search_space, train_data, test_data, enhanced_config
+                )
+            
+            optimization_result.update(algorithm_result)
             
             # Apply hardware optimization if enabled
             if enhanced_config.enable_hardware_optimization and self.hardware_manager:
@@ -865,30 +857,30 @@ class SRParameterOptimizationStep(BaseStep):
             self.logger.error(f"VectorBT optimization failed: {e}")
             return {'error': str(e)}
 
-    async def _run_grid_search_optimization(
+    async def _run_coarse_grid_search(
         self, 
         search_space: Dict[str, Any], 
         train_data: Any, 
         test_data: Any, 
         enhanced_config: EnhancedSRConfig
     ) -> Dict[str, Any]:
-        """Run simplified grid search optimization for SR parameters."""
+        """Run coarse grid search for initial parameter exploration."""
         try:
             best_score = 0.0
             best_params = {}
             total_combinations = 0
             
-            # Simplified grid search with configurable points
-            grid_points = enhanced_config.grid_search_points
+            # Coarse grid search with fewer points for initial exploration
+            grid_points = enhanced_config.coarse_grid_points
             
-            # Create parameter grids
-            min_touches_values = list(range(2, 8))[:grid_points]
-            strength_thresholds = [0.3, 0.4, 0.5, 0.6, 0.7, 0.8][:grid_points]
-            distance_thresholds = [0.005, 0.01, 0.015, 0.02, 0.025][:grid_points]
-            lookback_periods = [30, 50, 75, 100, 150][:grid_points]
-            volume_thresholds = [0.8, 1.0, 1.2, 1.5, 2.0][:grid_points]
+            # Create coarse parameter grids - wider ranges, fewer points
+            min_touches_values = [2, 4, 6]  # 3 points
+            strength_thresholds = [0.3, 0.5, 0.7]  # 3 points
+            distance_thresholds = [0.01, 0.02, 0.03]  # 3 points
+            lookback_periods = [50, 100, 150]  # 3 points
+            volume_thresholds = [1.0, 1.5, 2.0]  # 3 points
             
-            self.logger.info(f"🔍 Running grid search with {grid_points}x{grid_points} grid...")
+            self.logger.info(f"🔍 Coarse grid search: {grid_points}x{grid_points} grid ({grid_points**5} combinations)")
             
             for min_touches in min_touches_values:
                 for strength_threshold in strength_thresholds:
@@ -910,19 +902,303 @@ class SRParameterOptimizationStep(BaseStep):
                                     best_score = score
                                     best_params = params
             
-            self.logger.info(f"✅ Grid search completed: {total_combinations} combinations tested")
+            self.logger.info(f"✅ Coarse grid completed: {total_combinations} combinations, best score: {best_score:.4f}")
             
             return {
                 'optimized_parameters': best_params,
                 'best_score': best_score,
                 'total_combinations_tested': total_combinations,
-                'algorithm_used': 'grid_search',
+                'stage': 'coarse_grid',
+                'success': True
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Coarse grid search failed: {e}")
+            return {'error': str(e), 'success': False}
+
+    async def _run_fine_grid_search(
+        self, 
+        search_space: Dict[str, Any], 
+        train_data: Any, 
+        test_data: Any, 
+        enhanced_config: EnhancedSRConfig,
+        coarse_result: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Run fine grid search around the best coarse result."""
+        try:
+            best_score = coarse_result.get('best_score', 0.0)
+            best_params = coarse_result.get('optimized_parameters', {})
+            total_combinations = 0
+            
+            # Fine grid search around best coarse result
+            grid_points = enhanced_config.fine_grid_points
+            coarse_params = coarse_result.get('optimized_parameters', {})
+            
+            # Create fine parameter grids around coarse best
+            min_touches_center = coarse_params.get('min_touches', 4)
+            strength_center = coarse_params.get('strength_threshold', 0.5)
+            distance_center = coarse_params.get('distance_threshold', 0.02)
+            lookback_center = coarse_params.get('lookback_periods', 100)
+            volume_center = coarse_params.get('volume_threshold', 1.5)
+            
+            # Create fine grids with smaller steps around center
+            min_touches_values = [max(2, min_touches_center - 1), min_touches_center, min(7, min_touches_center + 1)]
+            strength_thresholds = [max(0.1, strength_center - 0.1), strength_center, min(0.9, strength_center + 0.1)]
+            distance_thresholds = [max(0.005, distance_center - 0.005), distance_center, min(0.05, distance_center + 0.005)]
+            lookback_periods = [max(30, lookback_center - 25), lookback_center, min(200, lookback_center + 25)]
+            volume_thresholds = [max(0.5, volume_center - 0.3), volume_center, min(3.0, volume_center + 0.3)]
+            
+            self.logger.info(f"🔍 Fine grid search: {grid_points}x{grid_points} grid around best coarse result")
+            
+            for min_touches in min_touches_values:
+                for strength_threshold in strength_thresholds:
+                    for distance_threshold in distance_thresholds:
+                        for lookback_period in lookback_periods:
+                            for volume_threshold in volume_thresholds:
+                                params = {
+                                    'min_touches': min_touches,
+                                    'strength_threshold': strength_threshold,
+                                    'distance_threshold': distance_threshold,
+                                    'lookback_periods': lookback_period,
+                                    'volume_threshold': volume_threshold
+                                }
+                                
+                                score = self._evaluate_sr_parameters(params, train_data, test_data)
+                                total_combinations += 1
+                                
+                                if score > best_score:
+                                    best_score = score
+                                    best_params = params
+            
+            improvement = best_score - coarse_result.get('best_score', 0.0)
+            self.logger.info(f"✅ Fine grid completed: {total_combinations} combinations, improvement: {improvement:.4f}")
+            
+            return {
+                'optimized_parameters': best_params,
+                'best_score': best_score,
+                'total_combinations_tested': total_combinations,
+                'stage': 'fine_grid',
+                'improvement_over_coarse': improvement,
+                'success': True
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Fine grid search failed: {e}")
+            return {'error': str(e), 'success': False}
+
+    async def _run_bayesian_refinement(
+        self, 
+        search_space: Dict[str, Any], 
+        train_data: Any, 
+        test_data: Any, 
+        enhanced_config: EnhancedSRConfig,
+        fine_result: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Run Bayesian TPE refinement around the best fine grid result."""
+        try:
+            if not self.bayesian_optimizer:
+                raise RuntimeError("Bayesian optimizer not available")
+            
+            # Create focused search space around fine result
+            fine_params = fine_result.get('optimized_parameters', {})
+            
+            # Define narrower search space around fine result
+            focused_search_space = {
+                'min_touches': {
+                    'type': 'int',
+                    'low': max(2, fine_params.get('min_touches', 4) - 2),
+                    'high': min(8, fine_params.get('min_touches', 4) + 2)
+                },
+                'strength_threshold': {
+                    'type': 'float',
+                    'low': max(0.1, fine_params.get('strength_threshold', 0.5) - 0.2),
+                    'high': min(0.9, fine_params.get('strength_threshold', 0.5) + 0.2)
+                },
+                'distance_threshold': {
+                    'type': 'float',
+                    'low': max(0.005, fine_params.get('distance_threshold', 0.02) - 0.01),
+                    'high': min(0.05, fine_params.get('distance_threshold', 0.02) + 0.01)
+                },
+                'lookback_periods': {
+                    'type': 'int',
+                    'low': max(30, fine_params.get('lookback_periods', 100) - 50),
+                    'high': min(200, fine_params.get('lookback_periods', 100) + 50)
+                },
+                'volume_threshold': {
+                    'type': 'float',
+                    'low': max(0.5, fine_params.get('volume_threshold', 1.5) - 0.5),
+                    'high': min(3.0, fine_params.get('volume_threshold', 1.5) + 0.5)
+                }
+            }
+            
+            # Create optimization config
+            opt_config = OptimizationConfig(
+                n_trials=enhanced_config.bayesian_trials,
+                enable_staged_optimization=False,
+                enable_hardware_optimization=enhanced_config.enable_hardware_optimization,
+                workload_type=enhanced_config.workload_type,
+                optimization_level=enhanced_config.optimization_level
+            )
+            
+            # Define objective function
+            def objective_function(trial):
+                params = {}
+                for param_name, param_config in focused_search_space.items():
+                    if param_config['type'] == 'int':
+                        params[param_name] = trial.suggest_int(
+                            param_name, param_config['low'], param_config['high']
+                        )
+                    elif param_config['type'] == 'float':
+                        params[param_name] = trial.suggest_float(
+                            param_name, param_config['low'], param_config['high']
+                        )
+                
+                score = self._evaluate_sr_parameters(params, train_data, test_data)
+                return score
+            
+            # Run Bayesian optimization
+            result = await self.bayesian_optimizer.optimize(
+                objective_function, 
+                focused_search_space, 
+                opt_config
+            )
+            
+            improvement = result.best_value - fine_result.get('best_score', 0.0)
+            self.logger.info(f"✅ Bayesian refinement completed: {result.n_trials} trials, improvement: {improvement:.4f}")
+            
+            return {
+                'optimized_parameters': result.best_params,
+                'best_score': result.best_value,
+                'bayesian_trials': result.n_trials,
+                'stage': 'bayesian_refinement',
+                'improvement_over_fine': improvement,
+                'algorithm_used': 'bayesian_tpe',
+                'success': True
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Bayesian refinement failed: {e}")
+            return {'error': str(e), 'success': False}
+
+    async def _run_grid_search_optimization(
+        self, 
+        search_space: Dict[str, Any], 
+        train_data: Any, 
+        test_data: Any, 
+        enhanced_config: EnhancedSRConfig
+    ) -> Dict[str, Any]:
+        """Run simplified grid search optimization for SR parameters (fallback method)."""
+        try:
+            best_score = 0.0
+            best_params = {}
+            total_combinations = 0
+            
+            # Simplified grid search with configurable points
+            grid_points = enhanced_config.fine_grid_points  # Use fine grid points for fallback
+            
+            # Create parameter grids
+            min_touches_values = list(range(2, 8))[:grid_points]
+            strength_thresholds = [0.3, 0.4, 0.5, 0.6, 0.7, 0.8][:grid_points]
+            distance_thresholds = [0.005, 0.01, 0.015, 0.02, 0.025][:grid_points]
+            lookback_periods = [30, 50, 75, 100, 150][:grid_points]
+            volume_thresholds = [0.8, 1.0, 1.2, 1.5, 2.0][:grid_points]
+            
+            self.logger.info(f"🔍 Running fallback grid search with {grid_points}x{grid_points} grid...")
+            
+            for min_touches in min_touches_values:
+                for strength_threshold in strength_thresholds:
+                    for distance_threshold in distance_thresholds:
+                        for lookback_period in lookback_periods:
+                            for volume_threshold in volume_thresholds:
+                                params = {
+                                    'min_touches': min_touches,
+                                    'strength_threshold': strength_threshold,
+                                    'distance_threshold': distance_threshold,
+                                    'lookback_periods': lookback_period,
+                                    'volume_threshold': volume_threshold
+                                }
+                                
+                                score = self._evaluate_sr_parameters(params, train_data, test_data)
+                                total_combinations += 1
+                                
+                                if score > best_score:
+                                    best_score = score
+                                    best_params = params
+            
+            self.logger.info(f"✅ Fallback grid search completed: {total_combinations} combinations tested")
+            
+            return {
+                'optimized_parameters': best_params,
+                'best_score': best_score,
+                'total_combinations_tested': total_combinations,
+                'algorithm_used': 'grid_search_fallback',
                 'success': True
             }
             
         except Exception as e:
             self.logger.error(f"Grid search optimization failed: {e}")
             return {'error': str(e), 'success': False}
+
+    async def _run_staged_optimization(
+        self,
+        search_space: Dict[str, Any],
+        train_data: Any,
+        test_data: Any,
+        enhanced_config: EnhancedSRConfig
+    ) -> Dict[str, Any]:
+        """Run staged optimization: Coarse Grid → Fine Grid → Bayesian TPE."""
+        try:
+            self.logger.info("🚀 Starting staged optimization: Coarse Grid → Fine Grid → Bayesian TPE")
+            
+            # Stage 1: Coarse Grid Search
+            self.logger.info(f"🔍 Stage 1: Coarse grid search ({enhanced_config.coarse_grid_points}x{enhanced_config.coarse_grid_points})")
+            coarse_result = await self._run_coarse_grid_search(
+                search_space, train_data, test_data, enhanced_config
+            )
+            
+            if not coarse_result.get('success', False):
+                self.logger.warning("⚠️ Coarse grid search failed, trying fallback algorithms")
+                return await self._run_fallback_optimization(
+                    search_space, train_data, test_data, enhanced_config
+                )
+            
+            # Stage 2: Fine Grid Search around best coarse result
+            self.logger.info(f"🔍 Stage 2: Fine grid search ({enhanced_config.fine_grid_points}x{enhanced_config.fine_grid_points})")
+            fine_result = await self._run_fine_grid_search(
+                search_space, train_data, test_data, enhanced_config, coarse_result
+            )
+            
+            if not fine_result.get('success', False):
+                self.logger.warning("⚠️ Fine grid search failed, using coarse result")
+                fine_result = coarse_result
+            
+            # Stage 3: Bayesian TPE refinement
+            if enhanced_config.enable_bayesian_refinement:
+                self.logger.info(f"🧠 Stage 3: Bayesian TPE refinement ({enhanced_config.bayesian_trials} trials)")
+                bayesian_result = await self._run_bayesian_refinement(
+                    search_space, train_data, test_data, enhanced_config, fine_result
+                )
+                
+                if bayesian_result.get('success', False):
+                    # Use Bayesian result if it's better
+                    if bayesian_result.get('best_score', 0) > fine_result.get('best_score', 0):
+                        self.logger.info("✅ Bayesian TPE improved the result")
+                        return bayesian_result
+                    else:
+                        self.logger.info("ℹ️ Bayesian TPE didn't improve, using fine grid result")
+                        return fine_result
+                else:
+                    self.logger.warning("⚠️ Bayesian TPE failed, using fine grid result")
+                    return fine_result
+            else:
+                self.logger.info("ℹ️ Bayesian refinement disabled, using fine grid result")
+                return fine_result
+                
+        except Exception as e:
+            self.logger.error(f"Staged optimization failed: {e}")
+            return await self._run_fallback_optimization(
+                search_space, train_data, test_data, enhanced_config
+            )
 
     async def _run_algorithm_optimization(
         self,
@@ -954,19 +1230,28 @@ class SRParameterOptimizationStep(BaseStep):
                 )
         except Exception as e:
             self.logger.error(f"Algorithm {algorithm.value} optimization failed: {e}")
-            # Try fallback algorithms
-            for fallback_algorithm in enhanced_config.fallback_algorithms:
-                try:
-                    self.logger.info(f"🔄 Trying fallback algorithm: {fallback_algorithm.value}")
-                    return await self._run_algorithm_optimization(
-                        fallback_algorithm, search_space, train_data, test_data, enhanced_config
-                    )
-                except Exception as fallback_error:
-                    self.logger.warning(f"Fallback {fallback_algorithm.value} also failed: {fallback_error}")
-                    continue
-            
-            # All algorithms failed
-            return {'error': f"All optimization algorithms failed: {e}", 'success': False}
+            return {'error': str(e), 'success': False}
+
+    async def _run_fallback_optimization(
+        self,
+        search_space: Dict[str, Any],
+        train_data: Any,
+        test_data: Any,
+        enhanced_config: EnhancedSRConfig
+    ) -> Dict[str, Any]:
+        """Run fallback optimization algorithms."""
+        for fallback_algorithm in enhanced_config.fallback_algorithms:
+            try:
+                self.logger.info(f"🔄 Trying fallback algorithm: {fallback_algorithm.value}")
+                return await self._run_algorithm_optimization(
+                    fallback_algorithm, search_space, train_data, test_data, enhanced_config
+                )
+            except Exception as fallback_error:
+                self.logger.warning(f"Fallback {fallback_algorithm.value} also failed: {fallback_error}")
+                continue
+        
+        # All algorithms failed
+        return {'error': "All optimization algorithms failed", 'success': False}
 
     def _evaluate_sr_parameters(self, params: Dict[str, Any], train_data: Any, test_data: Any) -> float:
         """Enhanced evaluation of SR parameters with actual backtesting."""

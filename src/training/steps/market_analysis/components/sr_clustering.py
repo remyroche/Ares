@@ -282,7 +282,42 @@ class SRClusteringComponent(BaseStep):
 
     def get_required_artifacts(self) -> List[str]:
         """Get list of required artifacts this component must produce."""
-        return ['sr_clustering_result']
+        return ['sr_clustering_result', 'sr_levels_dictionary']
+    
+    async def _load_artifacts_from_previous_stage(self, previous_component_name: str, artifact_names: List[str]) -> Dict[str, Any]:
+        """
+        Load artifacts from a previous pipeline stage using BaseStep integration.
+        
+        Args:
+            previous_component_name: Name of the previous component
+            artifact_names: List of artifact names to load
+            
+        Returns:
+            Dictionary of loaded artifacts
+        """
+        try:
+            # Use BaseStep's artifact manager to load from previous stage
+            loaded_artifacts = {}
+            
+            for artifact_name in artifact_names:
+                try:
+                    # Try to get artifact using BaseStep method
+                    artifact_data = self._get_artifact(
+                        artifact_name=artifact_name,
+                        artifact_type='data'
+                    )
+                    if artifact_data is not None:
+                        loaded_artifacts[artifact_name] = artifact_data
+                        self.logger.info(f"Loaded artifact {artifact_name} from previous stage")
+                except Exception as e:
+                    self.logger.debug(f"Could not load artifact {artifact_name}: {e}")
+                    continue
+            
+            return loaded_artifacts
+            
+        except Exception as e:
+            self.logger.error(f"Failed to load artifacts from previous stage: {e}")
+            return {}
 
     async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -300,6 +335,20 @@ class SRClusteringComponent(BaseStep):
         self.logger.info('🔗 Starting Enhanced SR Clustering')
 
         try:
+            # Validate BaseStep integration
+            integration_validation = self._validate_basestep_integration()
+            if not integration_validation['integration_valid']:
+                self.logger.error(f"BaseStep integration validation failed: {integration_validation}")
+                return {
+                    'success': False,
+                    'artifacts': [],
+                    'metrics': {},
+                    'error': 'BaseStep integration validation failed',
+                    'integration_validation': integration_validation
+                }
+            
+            self.logger.info("✅ BaseStep integration validated successfully")
+            
             # Create enhanced configuration
             enhanced_config = EnhancedSRClusteringConfig()
             
@@ -323,12 +372,14 @@ class SRClusteringComponent(BaseStep):
             artifacts = []
             metrics = {}
             
-            # Set up artifact manager context
+            # Set up artifact manager context using BaseStep integration
             self.artifact_manager.set_context(
                 symbol=symbol,
                 exchange=exchange,
                 direction=direction,
-                model='Analyst'
+                model='Analyst',
+                step_name=self.step_name,
+                datetime=datetime.now()
             )
             
             # Perform enhanced SR clustering
@@ -376,7 +427,13 @@ class SRClusteringComponent(BaseStep):
                 },
                 'performance_metrics': clustering_result.get('performance_metrics', {}),
                 'quality_metrics': clustering_result.get('quality_metrics', {}),
-                'hardware_metrics': clustering_result.get('hardware_metrics', {})
+                'hardware_metrics': clustering_result.get('hardware_metrics', {}),
+                'basestep_integration': {
+                    'integration_valid': integration_validation['integration_valid'],
+                    'artifacts_saved': len(artifacts),
+                    'required_artifacts': self.get_required_artifacts(),
+                    'step_name': self.step_name
+                }
             })
 
             self.logger.info(f'✅ Enhanced SR Clustering completed: {metrics["total_clusters"]} clusters created')
@@ -547,10 +604,69 @@ class SRClusteringComponent(BaseStep):
             }
 
     async def _load_sr_levels_for_clustering(self, symbol: str, timeframe: str, config: Dict[str, Any]) -> List[Dict[str, Any]]:
-        """Load SR levels for clustering."""
+        """Load SR levels for clustering using BaseStep integration."""
         try:
-            # In a real implementation, this would load actual SR levels
-            # For demonstration, create sample SR levels
+            # First, try to load existing SR levels from artifacts using BaseStep method
+            try:
+                sr_levels_dict = self._get_sr_levels(
+                    symbol=symbol,
+                    exchange=config.get('exchange', 'binance'),
+                    timeframe=timeframe,
+                    direction=config.get('direction', 'longs')
+                )
+                
+                if sr_levels_dict and not sr_levels_dict.get('error') and sr_levels_dict.get('levels'):
+                    self.logger.info(f"Loaded {len(sr_levels_dict['levels'])} existing SR levels from artifacts")
+                    return sr_levels_dict['levels']
+                    
+            except Exception as e:
+                self.logger.debug(f"Could not load existing SR levels from artifacts: {e}")
+            
+            # Try to load from previous stage artifacts
+            try:
+                previous_artifacts = await self._load_artifacts_from_previous_stage(
+                    previous_component_name='sr_detection',
+                    artifact_names=['sr_levels', 'sr_levels_dictionary']
+                )
+                
+                if previous_artifacts:
+                    # Check for sr_levels_dictionary first
+                    if 'sr_levels_dictionary' in previous_artifacts:
+                        sr_levels_dict = previous_artifacts['sr_levels_dictionary']
+                        if sr_levels_dict and sr_levels_dict.get('levels'):
+                            self.logger.info(f"Loaded {len(sr_levels_dict['levels'])} SR levels from previous stage")
+                            return sr_levels_dict['levels']
+                    
+                    # Check for sr_levels directly
+                    if 'sr_levels' in previous_artifacts:
+                        sr_levels = previous_artifacts['sr_levels']
+                        if sr_levels and isinstance(sr_levels, list):
+                            self.logger.info(f"Loaded {len(sr_levels)} SR levels from previous stage")
+                            return sr_levels
+                            
+            except Exception as e:
+                self.logger.debug(f"Could not load SR levels from previous stage: {e}")
+            
+            # Fallback: Try to load from feature bank
+            try:
+                from src.feature_generation.core.feature_bank import get_global_feature_bank
+                feature_bank = get_global_feature_bank()
+                sr_levels_dict = feature_bank.get_sr_levels(
+                    symbol=symbol,
+                    exchange=config.get('exchange', 'binance'),
+                    timeframe=timeframe,
+                    direction=config.get('direction', 'longs')
+                )
+                
+                if sr_levels_dict and not sr_levels_dict.get('error') and sr_levels_dict.get('levels'):
+                    self.logger.info(f"Loaded {len(sr_levels_dict['levels'])} SR levels from feature bank")
+                    return sr_levels_dict['levels']
+                    
+            except Exception as e:
+                self.logger.debug(f"Could not load SR levels from feature bank: {e}")
+            
+            # Final fallback: Create sample SR levels for demonstration
+            self.logger.warning("No existing SR levels found, creating sample levels for demonstration")
             sample_levels = [
                 {
                     'price': 1.2000, 
@@ -1232,6 +1348,43 @@ class SRClusteringComponent(BaseStep):
         for user_key, config_key in config_mapping.items():
             if user_key in config:
                 setattr(enhanced_config, config_key, config[user_key])
+    
+    def _validate_basestep_integration(self) -> Dict[str, Any]:
+        """
+        Validate that the component is properly integrated with BaseStep.
+        
+        Returns:
+            Dictionary containing validation results
+        """
+        validation_results = {
+            'is_basestep_inherited': isinstance(self, BaseStep),
+            'has_artifact_manager': hasattr(self, 'artifact_manager'),
+            'has_save_artifact_method': hasattr(self, '_save_artifact'),
+            'has_get_artifact_method': hasattr(self, '_get_artifact'),
+            'has_get_sr_levels_method': hasattr(self, '_get_sr_levels'),
+            'has_required_artifacts_method': hasattr(self, 'get_required_artifacts'),
+            'step_name_set': hasattr(self, 'step_name') and self.step_name is not None,
+            'logger_available': hasattr(self, 'logger') and self.logger is not None
+        }
+        
+        # Check if all required methods are available
+        validation_results['all_required_methods_available'] = all([
+            validation_results['has_artifact_manager'],
+            validation_results['has_save_artifact_method'],
+            validation_results['has_get_artifact_method'],
+            validation_results['has_get_sr_levels_method'],
+            validation_results['has_required_artifacts_method']
+        ])
+        
+        # Overall validation status
+        validation_results['integration_valid'] = (
+            validation_results['is_basestep_inherited'] and
+            validation_results['all_required_methods_available'] and
+            validation_results['step_name_set'] and
+            validation_results['logger_available']
+        )
+        
+        return validation_results
 
     async def _detect_data_leakage(self, sr_levels: List[Dict[str, Any]], config: EnhancedSRClusteringConfig) -> Dict[str, Any]:
         """Detect data leakage in SR levels."""

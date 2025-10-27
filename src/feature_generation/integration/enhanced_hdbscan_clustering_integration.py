@@ -27,11 +27,12 @@ except ImportError:
     HDBSCAN_AVAILABLE = False
     warnings.warn("HDBSCAN not available. Install with: pip install hdbscan")
 
-# Import clustering algorithms
+# Import clustering algorithms and dimensionality reduction
 try:
     from sklearn.cluster import KMeans, DBSCAN, AgglomerativeClustering
     from sklearn.metrics import silhouette_score, calinski_harabasz_score, davies_bouldin_score
     from sklearn.preprocessing import StandardScaler
+    from sklearn.decomposition import PCA
     SKLEARN_AVAILABLE = True
 except ImportError:
     SKLEARN_AVAILABLE = False
@@ -42,18 +43,27 @@ class EnhancedHDBSCANClusteringIntegration:
     """
     Enhanced HDBSCAN Clustering Integration.
     
-    Provides 50-100 comprehensive features optimized for density-based clustering
-    by combining existing feature bank features with clustering-specific features.
+    Provides 100-150 comprehensive features optimized for density-based clustering
+    by combining existing feature bank features with clustering-specific features,
+    then reduces dimensionality using PCA to 10-25 components for optimal performance.
+    
+    Pipeline: Feature Generation → Feature Selection (100-150) → PCA (10-25) → HDBSCAN
     """
     
     def __init__(self, 
-                 min_features: int = 50,
-                 max_features: int = 100,
+                 min_features: int = 100,
+                 max_features: int = 150,
                  enable_comprehensive_features: bool = True,
+                 enable_pca_reduction: bool = True,
+                 pca_components: int = 15,
+                 pca_variance_threshold: float = 0.95,
                  clustering_config: Optional[Dict[str, Any]] = None):
         self.min_features = min_features
         self.max_features = max_features
         self.enable_comprehensive_features = enable_comprehensive_features
+        self.enable_pca_reduction = enable_pca_reduction
+        self.pca_components = pca_components
+        self.pca_variance_threshold = pca_variance_threshold
         self.clustering_config = clustering_config or {}
         
         # Initialize feature bank integrator
@@ -195,7 +205,9 @@ class EnhancedHDBSCANClusteringIntegration:
     
     def prepare_data_for_clustering(self, data: pd.DataFrame) -> Tuple[np.ndarray, List[str], Dict[str, Any]]:
         """
-        Prepare data for HDBSCAN clustering with comprehensive features.
+        Prepare data for HDBSCAN clustering with comprehensive features and PCA reduction.
+        
+        Pipeline: Feature Generation → Feature Selection (100-150) → PCA (10-25) → HDBSCAN
         
         Args:
             data: Market data DataFrame
@@ -219,9 +231,28 @@ class EnhancedHDBSCANClusteringIntegration:
         feature_matrix = np.nan_to_num(feature_matrix, nan=0.0, posinf=1e6, neginf=-1e6)
         
         # Standardize features for clustering
+        scaler = None
         if SKLEARN_AVAILABLE:
             scaler = StandardScaler()
             feature_matrix = scaler.fit_transform(feature_matrix)
+        
+        # Apply PCA reduction if enabled
+        pca = None
+        original_shape = feature_matrix.shape
+        if self.enable_pca_reduction and SKLEARN_AVAILABLE and feature_matrix.shape[1] > self.pca_components:
+            # Determine PCA components based on variance threshold or fixed number
+            if self.pca_variance_threshold < 1.0:
+                # Use variance threshold
+                pca = PCA(n_components=self.pca_variance_threshold)
+            else:
+                # Use fixed number of components
+                pca = PCA(n_components=min(self.pca_components, feature_matrix.shape[1]))
+            
+            # Apply PCA
+            feature_matrix = pca.fit_transform(feature_matrix)
+            
+            # Update feature names for PCA components
+            feature_names = [f'pca_component_{i+1}' for i in range(feature_matrix.shape[1])]
         
         # Add preprocessing metadata
         metadata = feature_result.copy()
@@ -229,7 +260,12 @@ class EnhancedHDBSCANClusteringIntegration:
             'preprocessing': {
                 'scaled': SKLEARN_AVAILABLE,
                 'nan_handled': True,
-                'feature_matrix_shape': feature_matrix.shape
+                'original_shape': original_shape,
+                'final_shape': feature_matrix.shape,
+                'pca_applied': pca is not None,
+                'pca_components': feature_matrix.shape[1] if pca is not None else original_shape[1],
+                'pca_explained_variance_ratio': pca.explained_variance_ratio_.tolist() if pca is not None else None,
+                'pca_cumulative_variance': np.cumsum(pca.explained_variance_ratio_).tolist() if pca is not None else None
             }
         })
         
@@ -453,15 +489,34 @@ class EnhancedHDBSCANClusteringIntegration:
 
 
 # Convenience functions
-def get_enhanced_hdbscan_features(data: pd.DataFrame) -> Dict[str, Any]:
-    """Get enhanced comprehensive features for HDBSCAN clustering."""
-    integrator = EnhancedHDBSCANClusteringIntegration()
+def get_enhanced_hdbscan_features(data: pd.DataFrame, 
+                                min_features: int = 100,
+                                max_features: int = 150,
+                                enable_pca_reduction: bool = True,
+                                pca_components: int = 15) -> Dict[str, Any]:
+    """Get enhanced comprehensive features for HDBSCAN clustering with PCA optimization."""
+    integrator = EnhancedHDBSCANClusteringIntegration(
+        min_features=min_features,
+        max_features=max_features,
+        enable_pca_reduction=enable_pca_reduction,
+        pca_components=pca_components
+    )
     return integrator.get_comprehensive_clustering_features(data)
 
 
-def perform_enhanced_hdbscan_clustering(data: pd.DataFrame, **kwargs) -> Dict[str, Any]:
-    """Perform enhanced HDBSCAN clustering with comprehensive features."""
-    integrator = EnhancedHDBSCANClusteringIntegration()
+def perform_enhanced_hdbscan_clustering(data: pd.DataFrame, 
+                                      min_features: int = 100,
+                                      max_features: int = 150,
+                                      enable_pca_reduction: bool = True,
+                                      pca_components: int = 15,
+                                      **kwargs) -> Dict[str, Any]:
+    """Perform enhanced HDBSCAN clustering with comprehensive features and PCA optimization."""
+    integrator = EnhancedHDBSCANClusteringIntegration(
+        min_features=min_features,
+        max_features=max_features,
+        enable_pca_reduction=enable_pca_reduction,
+        pca_components=pca_components
+    )
     return integrator.cluster_with_enhanced_hdbscan(data, **kwargs)
 
 

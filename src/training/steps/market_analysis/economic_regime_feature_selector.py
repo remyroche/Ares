@@ -173,6 +173,38 @@ except ImportError:
     MUTUAL_INFO_SELECTOR_AVAILABLE = False
     mutual_info_selector = None
 
+# NEW: Advanced feature selection methods
+try:
+    from sklearn.feature_selection import SelectFromModel, RFE, RFECV
+    from sklearn.linear_model import LassoCV, ElasticNetCV, RidgeCV
+    from sklearn.ensemble import RandomForestClassifier, ExtraTreesClassifier
+    from sklearn.metrics import mutual_info_classif, f_classif, chi2
+    from sklearn.preprocessing import StandardScaler
+    SKLEARN_FEATURE_SELECTION_AVAILABLE = True
+except ImportError:
+    SKLEARN_FEATURE_SELECTION_AVAILABLE = False
+    SelectFromModel = None
+    RFE = None
+    RFECV = None
+    LassoCV = None
+    ElasticNetCV = None
+    RidgeCV = None
+    mutual_info_classif = None
+    f_classif = None
+    chi2 = None
+    StandardScaler = None
+
+# NEW: TreeSHAP integration
+try:
+    import shap
+    from shap import TreeExplainer, LinearExplainer
+    SHAP_AVAILABLE = True
+except ImportError:
+    SHAP_AVAILABLE = False
+    TreeExplainer = None
+    LinearExplainer = None
+    shap = None
+
 # Features common - specific imports only
 try:
     from src.features_common.transforms import BaseScaler
@@ -233,6 +265,14 @@ class EconomicFeatureSelectorConfig:
     # mRMR parameters
     enable_mrmr: bool = True
     protect_categories: List[str] = field(default_factory=lambda: ['volatility', 'volume'])  # Categories to protect from redundancy filtering
+    
+    # NEW: Advanced feature selection methods
+    enable_advanced_feature_selection: bool = True
+    enable_lasso_selection: bool = True
+    enable_elastic_net_selection: bool = True
+    enable_treeshap_selection: bool = True
+    enable_rfe_selection: bool = True
+    enable_ensemble_selection: bool = True
     
     # Regime transition feature parameters
     transition_score_threshold: float = 0.95  # Increased significantly to be very discriminating
@@ -575,7 +615,16 @@ class EconomicRegimeFeatureSelector(BaseStep):
                     tprint_info(f"   {i:2d}. {feature_score.feature_name}: {feature_score.composite_score:.4f}")
             
             # Select features (using incremental mRMR if enabled, otherwise standard method)
-            if self.config.enable_mrmr:
+            # Choose feature selection method based on configuration
+            if getattr(self.config, 'enable_advanced_feature_selection', False):
+                tprint_info("🎯 Using advanced ensemble feature selection methods...")
+                selected_features = self._select_features_ensemble_method(filtered_features, labels_df)
+                
+                # Fallback to mRMR if ensemble fails
+                if not selected_features:
+                    tprint_warning("🎯 Ensemble selection failed, falling back to mRMR...")
+                    selected_features = self._select_optimal_features_incremental_mrmr(filtered_features, labels_df, feature_scores, transition_features)
+            elif self.config.enable_mrmr:
                 tprint_info("🎯 Selecting features using incremental mRMR with hardware optimization...")
                 selected_features = self._select_optimal_features_incremental_mrmr(filtered_features, labels_df, feature_scores, transition_features)
             else:
@@ -3055,6 +3104,254 @@ class EconomicRegimeFeatureSelector(BaseStep):
             tprint_error(f"Error selecting optimal features: {e}")
             return []
     
+    def _select_features_with_lasso(self, features_df: pd.DataFrame, labels_df: pd.DataFrame) -> List[str]:
+        """Select features using LASSO regularization."""
+        try:
+            if not SKLEARN_FEATURE_SELECTION_AVAILABLE:
+                tprint_warning("LASSO feature selection not available - sklearn not installed")
+                return []
+            
+            tprint_info("🎯 Starting LASSO feature selection...")
+            
+            # Align and clean data
+            common_index = features_df.index.intersection(labels_df.index)
+            features_aligned = features_df.loc[common_index]
+            labels_aligned = labels_df.loc[common_index]
+            
+            valid_mask = labels_aligned != -1
+            features_clean = features_aligned[valid_mask]
+            labels_clean = labels_aligned[valid_mask]
+            
+            if len(features_clean) < 50:
+                tprint_warning(f"Insufficient data for LASSO: {len(features_clean)} samples")
+                return []
+            
+            # Standardize features
+            scaler = StandardScaler()
+            features_scaled = scaler.fit_transform(features_clean)
+            
+            # Apply LASSO with cross-validation
+            lasso = LassoCV(cv=5, random_state=42, max_iter=1000)
+            lasso.fit(features_scaled, labels_clean)
+            
+            # Get selected features
+            selected_mask = lasso.coef_ != 0
+            selected_features = features_clean.columns[selected_mask].tolist()
+            
+            tprint_info(f"🎯 LASSO selected {len(selected_features)} features")
+            tprint_info(f"🎯 LASSO alpha: {lasso.alpha_:.6f}")
+            
+            return selected_features
+            
+        except Exception as e:
+            tprint_error(f"Error in LASSO feature selection: {e}")
+            return []
+    
+    def _select_features_with_treeshap(self, features_df: pd.DataFrame, labels_df: pd.DataFrame) -> List[str]:
+        """Select features using TreeSHAP importance."""
+        try:
+            if not SHAP_AVAILABLE or not SKLEARN_FEATURE_SELECTION_AVAILABLE:
+                tprint_warning("TreeSHAP feature selection not available - shap or sklearn not installed")
+                return []
+            
+            tprint_info("🎯 Starting TreeSHAP feature selection...")
+            
+            # Align and clean data
+            common_index = features_df.index.intersection(labels_df.index)
+            features_aligned = features_df.loc[common_index]
+            labels_aligned = labels_df.loc[common_index]
+            
+            valid_mask = labels_aligned != -1
+            features_clean = features_aligned[valid_mask]
+            labels_clean = labels_aligned[valid_mask]
+            
+            if len(features_clean) < 50:
+                tprint_warning(f"Insufficient data for TreeSHAP: {len(features_clean)} samples")
+                return []
+            
+            # Train Random Forest for SHAP
+            rf = RandomForestClassifier(n_estimators=100, random_state=42, n_jobs=-1)
+            rf.fit(features_clean, labels_clean)
+            
+            # Calculate SHAP values
+            explainer = TreeExplainer(rf)
+            shap_values = explainer.shap_values(features_clean)
+            
+            # Calculate feature importance from SHAP values
+            if isinstance(shap_values, list):
+                # Multi-class case
+                shap_importance = np.abs(shap_values).mean(axis=0).mean(axis=0)
+            else:
+                # Binary case
+                shap_importance = np.abs(shap_values).mean(axis=0)
+            
+            # Select top features
+            feature_importance = pd.Series(shap_importance, index=features_clean.columns)
+            feature_importance = feature_importance.sort_values(ascending=False)
+            
+            # Select top features (top 50% or minimum 10)
+            n_features = max(10, len(feature_importance) // 2)
+            selected_features = feature_importance.head(n_features).index.tolist()
+            
+            tprint_info(f"🎯 TreeSHAP selected {len(selected_features)} features")
+            tprint_info(f"🎯 Top 5 features: {selected_features[:5]}")
+            
+            return selected_features
+            
+        except Exception as e:
+            tprint_error(f"Error in TreeSHAP feature selection: {e}")
+            return []
+    
+    def _select_features_with_elastic_net(self, features_df: pd.DataFrame, labels_df: pd.DataFrame) -> List[str]:
+        """Select features using Elastic Net regularization."""
+        try:
+            if not SKLEARN_FEATURE_SELECTION_AVAILABLE:
+                tprint_warning("Elastic Net feature selection not available - sklearn not installed")
+                return []
+            
+            tprint_info("🎯 Starting Elastic Net feature selection...")
+            
+            # Align and clean data
+            common_index = features_df.index.intersection(labels_df.index)
+            features_aligned = features_df.loc[common_index]
+            labels_aligned = labels_df.loc[common_index]
+            
+            valid_mask = labels_aligned != -1
+            features_clean = features_aligned[valid_mask]
+            labels_clean = labels_aligned[valid_mask]
+            
+            if len(features_clean) < 50:
+                tprint_warning(f"Insufficient data for Elastic Net: {len(features_clean)} samples")
+                return []
+            
+            # Standardize features
+            scaler = StandardScaler()
+            features_scaled = scaler.fit_transform(features_clean)
+            
+            # Apply Elastic Net with cross-validation
+            elastic_net = ElasticNetCV(cv=5, random_state=42, max_iter=1000)
+            elastic_net.fit(features_scaled, labels_clean)
+            
+            # Get selected features
+            selected_mask = elastic_net.coef_ != 0
+            selected_features = features_clean.columns[selected_mask].tolist()
+            
+            tprint_info(f"🎯 Elastic Net selected {len(selected_features)} features")
+            tprint_info(f"🎯 Elastic Net alpha: {elastic_net.alpha_:.6f}, l1_ratio: {elastic_net.l1_ratio_:.6f}")
+            
+            return selected_features
+            
+        except Exception as e:
+            tprint_error(f"Error in Elastic Net feature selection: {e}")
+            return []
+    
+    def _select_features_with_rfe(self, features_df: pd.DataFrame, labels_df: pd.DataFrame) -> List[str]:
+        """Select features using Recursive Feature Elimination."""
+        try:
+            if not SKLEARN_FEATURE_SELECTION_AVAILABLE:
+                tprint_warning("RFE feature selection not available - sklearn not installed")
+                return []
+            
+            tprint_info("🎯 Starting RFE feature selection...")
+            
+            # Align and clean data
+            common_index = features_df.index.intersection(labels_df.index)
+            features_aligned = features_df.loc[common_index]
+            labels_aligned = labels_df.loc[common_index]
+            
+            valid_mask = labels_aligned != -1
+            features_clean = features_aligned[valid_mask]
+            labels_clean = labels_aligned[valid_mask]
+            
+            if len(features_clean) < 50:
+                tprint_warning(f"Insufficient data for RFE: {len(features_clean)} samples")
+                return []
+            
+            # Use ExtraTrees as base estimator
+            estimator = ExtraTreesClassifier(n_estimators=100, random_state=42, n_jobs=-1)
+            
+            # Determine number of features to select
+            n_features = min(self.config.target_feature_count, len(features_clean.columns) // 2)
+            n_features = max(10, n_features)
+            
+            # Apply RFE
+            rfe = RFE(estimator=estimator, n_features_to_select=n_features)
+            rfe.fit(features_clean, labels_clean)
+            
+            # Get selected features
+            selected_features = features_clean.columns[rfe.support_].tolist()
+            
+            tprint_info(f"🎯 RFE selected {len(selected_features)} features")
+            tprint_info(f"🎯 RFE ranking: {rfe.ranking_[:10]}")
+            
+            return selected_features
+            
+        except Exception as e:
+            tprint_error(f"Error in RFE feature selection: {e}")
+            return []
+    
+    def _select_features_ensemble_method(self, features_df: pd.DataFrame, labels_df: pd.DataFrame) -> List[str]:
+        """Select features using ensemble of multiple methods."""
+        try:
+            tprint_info("🎯 Starting ensemble feature selection...")
+            
+            all_selections = {}
+            
+            # LASSO selection
+            lasso_features = self._select_features_with_lasso(features_df, labels_df)
+            if lasso_features:
+                all_selections['lasso'] = lasso_features
+            
+            # Elastic Net selection
+            elastic_features = self._select_features_with_elastic_net(features_df, labels_df)
+            if elastic_features:
+                all_selections['elastic_net'] = elastic_features
+            
+            # TreeSHAP selection
+            shap_features = self._select_features_with_treeshap(features_df, labels_df)
+            if shap_features:
+                all_selections['treeshap'] = shap_features
+            
+            # RFE selection
+            rfe_features = self._select_features_with_rfe(features_df, labels_df)
+            if rfe_features:
+                all_selections['rfe'] = rfe_features
+            
+            if not all_selections:
+                tprint_warning("No feature selection methods available")
+                return []
+            
+            # Combine selections using voting
+            feature_votes = {}
+            for method, features in all_selections.items():
+                for feature in features:
+                    if feature not in feature_votes:
+                        feature_votes[feature] = 0
+                    feature_votes[feature] += 1
+            
+            # Select features with majority vote
+            n_methods = len(all_selections)
+            majority_threshold = n_methods // 2 + 1
+            
+            selected_features = [
+                feature for feature, votes in feature_votes.items() 
+                if votes >= majority_threshold
+            ]
+            
+            # If no majority, select top features by vote count
+            if not selected_features:
+                sorted_features = sorted(feature_votes.items(), key=lambda x: x[1], reverse=True)
+                selected_features = [f for f, v in sorted_features[:self.config.target_feature_count]]
+            
+            tprint_info(f"🎯 Ensemble selected {len(selected_features)} features")
+            tprint_info(f"🎯 Methods used: {list(all_selections.keys())}")
+            
+            return selected_features
+            
+        except Exception as e:
+            tprint_error(f"Error in ensemble feature selection: {e}")
+            return []
+
     def _validate_feature_selection(self, selected_features_df: pd.DataFrame, labels_df: pd.DataFrame, economic_metrics: List[EconomicMetrics]) -> Dict[str, float]:
         """Validate feature selection quality."""
         try:

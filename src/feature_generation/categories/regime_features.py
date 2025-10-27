@@ -4909,6 +4909,603 @@ class AnalystRegimeStabilityGenerator(VectorizedFeatureGenerator):
         return stability_series
 
 
+# NEW: Enhanced Regime Clustering Generators
+
+class EnhancedRegimeClusteringGenerator(VectorizedFeatureGenerator):
+    """Enhanced regime clustering features for better regime separation and detection."""
+    
+    def __init__(self, config: Optional[FeatureConfig] = None):
+        if config is None:
+            config = self._create_default_config()
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+        
+    @classmethod
+    def _create_default_config(cls) -> FeatureConfig:
+        return FeatureConfig(
+            name="enhanced_regime_clustering",
+            category=FeatureCategory.REGIME,
+            description="Enhanced regime clustering features for better separation",
+            required_columns=["close"],
+            optional_columns=["high", "low", "open", "volume"],
+            default_lookback=20,
+            min_lookback=5,
+            max_lookback=50
+        )
+    
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate enhanced regime clustering features."""
+        try:
+            features = self.generate_features(data, **kwargs)
+            if features:
+                first_feature = list(features.keys())[0]
+                return pd.Series(features[first_feature], index=data.index[:len(features[first_feature])])
+            else:
+                return pd.Series(np.zeros(len(data)), index=data.index)
+        except Exception as e:
+            tprint(f"Enhanced regime clustering feature generation failed: {e}")
+            return pd.Series(np.zeros(len(data)), index=data.index)
+    
+    def generate_features(self, data: pd.DataFrame, **kwargs) -> Dict[str, np.ndarray]:
+        """Generate enhanced regime clustering features."""
+        features = {}
+        
+        if 'close' not in data.columns:
+            return features
+            
+        close_prices = data['close'].values
+        if len(close_prices) < 10:
+            return features
+        
+        # Regime separation strength
+        features['regime_separation_strength'] = self._calculate_regime_separation_strength(close_prices)
+        
+        # Regime boundary clarity
+        features['regime_boundary_clarity'] = self._calculate_regime_boundary_clarity(close_prices)
+        
+        # Regime clustering quality
+        features['regime_clustering_quality'] = self._calculate_regime_clustering_quality(close_prices)
+        
+        # Regime discrimination power
+        features['regime_discrimination_power'] = self._calculate_regime_discrimination_power(close_prices)
+        
+        return features
+    
+    def _calculate_regime_separation_strength(self, prices: np.ndarray) -> np.ndarray:
+        """Calculate regime separation strength using variance ratio."""
+        if len(prices) < 20:
+            return np.zeros(len(prices))
+        
+        result = np.zeros(len(prices))
+        window = 20
+        
+        for i in range(window, len(prices)):
+            segment = prices[i-window:i]
+            returns = np.diff(segment)
+            
+            # Calculate variance ratio
+            short_var = np.var(returns)
+            long_var = np.var(segment)
+            
+            if long_var > 0:
+                variance_ratio = short_var / long_var
+                result[i] = min(1.0, variance_ratio)
+            else:
+                result[i] = 0.0
+        
+        return result
+    
+    def _calculate_regime_boundary_clarity(self, prices: np.ndarray) -> np.ndarray:
+        """Calculate regime boundary clarity using gradient analysis."""
+        if len(prices) < 15:
+            return np.zeros(len(prices))
+        
+        result = np.zeros(len(prices))
+        window = 15
+        
+        for i in range(window, len(prices)):
+            segment = prices[i-window:i]
+            
+            # Calculate gradient magnitude
+            gradient = np.gradient(segment)
+            gradient_magnitude = np.abs(gradient)
+            
+            # Calculate clarity as inverse of gradient variance
+            if np.var(gradient_magnitude) > 0:
+                clarity = 1.0 / (1.0 + np.var(gradient_magnitude))
+                result[i] = clarity
+            else:
+                result[i] = 1.0
+        
+        return result
+    
+    def _calculate_regime_clustering_quality(self, prices: np.ndarray) -> np.ndarray:
+        """Calculate regime clustering quality using silhouette-like metric."""
+        if len(prices) < 20:
+            return np.zeros(len(prices))
+        
+        result = np.zeros(len(prices))
+        window = 20
+        
+        for i in range(window, len(prices)):
+            segment = prices[i-window:i]
+            
+            # Simple clustering quality proxy
+            mean_val = np.mean(segment)
+            distances = np.abs(segment - mean_val)
+            
+            # Quality based on distance distribution
+            if np.std(distances) > 0:
+                quality = 1.0 / (1.0 + np.std(distances) / np.mean(distances))
+                result[i] = quality
+            else:
+                result[i] = 1.0
+        
+        return result
+    
+    def _calculate_regime_discrimination_power(self, prices: np.ndarray) -> np.ndarray:
+        """Calculate regime discrimination power using F-ratio-like metric."""
+        if len(prices) < 30:
+            return np.zeros(len(prices))
+        
+        result = np.zeros(len(prices))
+        window = 30
+        
+        for i in range(window, len(prices)):
+            segment = prices[i-window:i]
+            
+            # Split into two halves
+            mid = len(segment) // 2
+            first_half = segment[:mid]
+            second_half = segment[mid:]
+            
+            if len(first_half) > 0 and len(second_half) > 0:
+                # Calculate F-ratio
+                between_var = np.var([np.mean(first_half), np.mean(second_half)])
+                within_var = (np.var(first_half) + np.var(second_half)) / 2
+                
+                if within_var > 0:
+                    f_ratio = between_var / within_var
+                    result[i] = min(1.0, f_ratio)
+                else:
+                    result[i] = 0.0
+            else:
+                result[i] = 0.0
+        
+        return result
+
+
+class RegimePhaseTransitionGenerator(VectorizedFeatureGenerator):
+    """Generator for regime phase transition detection features."""
+    
+    def __init__(self, config: Optional[FeatureConfig] = None):
+        if config is None:
+            config = self._create_default_config()
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+        
+    @classmethod
+    def _create_default_config(cls) -> FeatureConfig:
+        return FeatureConfig(
+            name="regime_phase_transition",
+            category=FeatureCategory.REGIME,
+            description="Regime phase transition detection features",
+            required_columns=["close"],
+            optional_columns=["high", "low", "volume"],
+            default_lookback=25,
+            min_lookback=10,
+            max_lookback=50
+        )
+    
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate regime phase transition features."""
+        try:
+            features = self.generate_features(data, **kwargs)
+            if features:
+                first_feature = list(features.keys())[0]
+                return pd.Series(features[first_feature], index=data.index[:len(features[first_feature])])
+            else:
+                return pd.Series(np.zeros(len(data)), index=data.index)
+        except Exception as e:
+            tprint(f"Regime phase transition feature generation failed: {e}")
+            return pd.Series(np.zeros(len(data)), index=data.index)
+    
+    def generate_features(self, data: pd.DataFrame, **kwargs) -> Dict[str, np.ndarray]:
+        """Generate regime phase transition features."""
+        features = {}
+        
+        if 'close' not in data.columns:
+            return features
+            
+        close_prices = data['close'].values
+        if len(close_prices) < 15:
+            return features
+        
+        # Phase transition probability
+        features['phase_transition_probability'] = self._calculate_phase_transition_probability(close_prices)
+        
+        # Regime transition smoothness
+        features['regime_transition_smoothness'] = self._calculate_regime_transition_smoothness(close_prices)
+        
+        # Regime persistence strength
+        features['regime_persistence_strength'] = self._calculate_regime_persistence_strength(close_prices)
+        
+        return features
+    
+    def _calculate_phase_transition_probability(self, prices: np.ndarray) -> np.ndarray:
+        """Calculate phase transition probability using change point detection."""
+        if len(prices) < 15:
+            return np.zeros(len(prices))
+        
+        result = np.zeros(len(prices))
+        window = 15
+        
+        for i in range(window, len(prices)):
+            segment = prices[i-window:i]
+            returns = np.diff(segment)
+            
+            # Calculate change point probability
+            if len(returns) > 2:
+                # Use variance change as proxy for phase transition
+                mid = len(returns) // 2
+                var1 = np.var(returns[:mid])
+                var2 = np.var(returns[mid:])
+                
+                if var1 > 0 and var2 > 0:
+                    change_ratio = abs(var1 - var2) / max(var1, var2)
+                    result[i] = min(1.0, change_ratio)
+                else:
+                    result[i] = 0.0
+            else:
+                result[i] = 0.0
+        
+        return result
+    
+    def _calculate_regime_transition_smoothness(self, prices: np.ndarray) -> np.ndarray:
+        """Calculate regime transition smoothness."""
+        if len(prices) < 10:
+            return np.zeros(len(prices))
+        
+        result = np.zeros(len(prices))
+        window = 10
+        
+        for i in range(window, len(prices)):
+            segment = prices[i-window:i]
+            
+            # Calculate smoothness as inverse of second derivative variance
+            if len(segment) > 2:
+                second_derivative = np.diff(segment, 2)
+                if len(second_derivative) > 0:
+                    smoothness = 1.0 / (1.0 + np.var(second_derivative))
+                    result[i] = smoothness
+                else:
+                    result[i] = 1.0
+            else:
+                result[i] = 1.0
+        
+        return result
+    
+    def _calculate_regime_persistence_strength(self, prices: np.ndarray) -> np.ndarray:
+        """Calculate regime persistence strength using autocorrelation."""
+        if len(prices) < 20:
+            return np.zeros(len(prices))
+        
+        result = np.zeros(len(prices))
+        window = 20
+        
+        for i in range(window, len(prices)):
+            segment = prices[i-window:i]
+            returns = np.diff(segment)
+            
+            if len(returns) > 5:
+                # Calculate autocorrelation at lag 1
+                if len(returns) > 1:
+                    autocorr = np.corrcoef(returns[:-1], returns[1:])[0, 1]
+                    if not np.isnan(autocorr):
+                        result[i] = abs(autocorr)
+                    else:
+                        result[i] = 0.0
+                else:
+                    result[i] = 0.0
+            else:
+                result[i] = 0.0
+        
+        return result
+
+
+class RegimeBoundaryDetectionGenerator(VectorizedFeatureGenerator):
+    """Generator for regime boundary detection features."""
+    
+    def __init__(self, config: Optional[FeatureConfig] = None):
+        if config is None:
+            config = self._create_default_config()
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+        
+    @classmethod
+    def _create_default_config(cls) -> FeatureConfig:
+        return FeatureConfig(
+            name="regime_boundary_detection",
+            category=FeatureCategory.REGIME,
+            description="Regime boundary detection features",
+            required_columns=["close"],
+            optional_columns=["high", "low"],
+            default_lookback=20,
+            min_lookback=10,
+            max_lookback=40
+        )
+    
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate regime boundary detection features."""
+        try:
+            features = self.generate_features(data, **kwargs)
+            if features:
+                first_feature = list(features.keys())[0]
+                return pd.Series(features[first_feature], index=data.index[:len(features[first_feature])])
+            else:
+                return pd.Series(np.zeros(len(data)), index=data.index)
+        except Exception as e:
+            tprint(f"Regime boundary detection feature generation failed: {e}")
+            return pd.Series(np.zeros(len(data)), index=data.index)
+    
+    def generate_features(self, data: pd.DataFrame, **kwargs) -> Dict[str, np.ndarray]:
+        """Generate regime boundary detection features."""
+        features = {}
+        
+        if 'close' not in data.columns:
+            return features
+            
+        close_prices = data['close'].values
+        if len(close_prices) < 15:
+            return features
+        
+        # Boundary detection strength
+        features['boundary_detection_strength'] = self._calculate_boundary_detection_strength(close_prices)
+        
+        # Boundary sharpness
+        features['boundary_sharpness'] = self._calculate_boundary_sharpness(close_prices)
+        
+        # Boundary stability
+        features['boundary_stability'] = self._calculate_boundary_stability(close_prices)
+        
+        return features
+    
+    def _calculate_boundary_detection_strength(self, prices: np.ndarray) -> np.ndarray:
+        """Calculate boundary detection strength using edge detection."""
+        if len(prices) < 15:
+            return np.zeros(len(prices))
+        
+        result = np.zeros(len(prices))
+        window = 15
+        
+        for i in range(window, len(prices)):
+            segment = prices[i-window:i]
+            
+            # Calculate edge strength using gradient
+            gradient = np.gradient(segment)
+            edge_strength = np.max(np.abs(gradient))
+            
+            # Normalize
+            if np.std(segment) > 0:
+                normalized_strength = edge_strength / np.std(segment)
+                result[i] = min(1.0, normalized_strength)
+            else:
+                result[i] = 0.0
+        
+        return result
+    
+    def _calculate_boundary_sharpness(self, prices: np.ndarray) -> np.ndarray:
+        """Calculate boundary sharpness using second derivative."""
+        if len(prices) < 15:
+            return np.zeros(len(prices))
+        
+        result = np.zeros(len(prices))
+        window = 15
+        
+        for i in range(window, len(prices)):
+            segment = prices[i-window:i]
+            
+            # Calculate second derivative
+            if len(segment) > 2:
+                second_derivative = np.diff(segment, 2)
+                sharpness = np.max(np.abs(second_derivative))
+                
+                # Normalize
+                if np.std(segment) > 0:
+                    normalized_sharpness = sharpness / np.std(segment)
+                    result[i] = min(1.0, normalized_sharpness)
+                else:
+                    result[i] = 0.0
+            else:
+                result[i] = 0.0
+        
+        return result
+    
+    def _calculate_boundary_stability(self, prices: np.ndarray) -> np.ndarray:
+        """Calculate boundary stability using consistency of boundaries."""
+        if len(prices) < 20:
+            return np.zeros(len(prices))
+        
+        result = np.zeros(len(prices))
+        window = 20
+        
+        for i in range(window, len(prices)):
+            segment = prices[i-window:i]
+            
+            # Calculate boundary consistency
+            gradient = np.gradient(segment)
+            gradient_changes = np.diff(np.sign(gradient))
+            
+            # Stability is inverse of boundary changes
+            if len(gradient_changes) > 0:
+                stability = 1.0 / (1.0 + np.sum(np.abs(gradient_changes)))
+                result[i] = stability
+            else:
+                result[i] = 1.0
+        
+        return result
+
+
+class MultiScaleRegimeConsistencyGenerator(VectorizedFeatureGenerator):
+    """Generator for multi-scale regime consistency features."""
+    
+    def __init__(self, config: Optional[FeatureConfig] = None):
+        if config is None:
+            config = self._create_default_config()
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+        
+    @classmethod
+    def _create_default_config(cls) -> FeatureConfig:
+        return FeatureConfig(
+            name="multi_scale_regime_consistency",
+            category=FeatureCategory.REGIME,
+            description="Multi-scale regime consistency features",
+            required_columns=["close"],
+            optional_columns=["high", "low", "volume"],
+            default_lookback=30,
+            min_lookback=15,
+            max_lookback=60
+        )
+    
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate multi-scale regime consistency features."""
+        try:
+            features = self.generate_features(data, **kwargs)
+            if features:
+                first_feature = list(features.keys())[0]
+                return pd.Series(features[first_feature], index=data.index[:len(features[first_feature])])
+            else:
+                return pd.Series(np.zeros(len(data)), index=data.index)
+        except Exception as e:
+            tprint(f"Multi-scale regime consistency feature generation failed: {e}")
+            return pd.Series(np.zeros(len(data)), index=data.index)
+    
+    def generate_features(self, data: pd.DataFrame, **kwargs) -> Dict[str, np.ndarray]:
+        """Generate multi-scale regime consistency features."""
+        features = {}
+        
+        if 'close' not in data.columns:
+            return features
+            
+        close_prices = data['close'].values
+        if len(close_prices) < 20:
+            return features
+        
+        # Multi-scale regime consistency
+        features['multi_scale_regime_consistency'] = self._calculate_multi_scale_regime_consistency(close_prices)
+        
+        # Regime scale hierarchy
+        features['regime_scale_hierarchy'] = self._calculate_regime_scale_hierarchy(close_prices)
+        
+        # Cross-scale regime correlation
+        features['cross_scale_regime_correlation'] = self._calculate_cross_scale_regime_correlation(close_prices)
+        
+        return features
+    
+    def _calculate_multi_scale_regime_consistency(self, prices: np.ndarray) -> np.ndarray:
+        """Calculate multi-scale regime consistency."""
+        if len(prices) < 30:
+            return np.zeros(len(prices))
+        
+        result = np.zeros(len(prices))
+        window = 30
+        
+        for i in range(window, len(prices)):
+            segment = prices[i-window:i]
+            
+            # Calculate consistency across different scales
+            scales = [5, 10, 15]
+            consistencies = []
+            
+            for scale in scales:
+                if len(segment) >= scale * 2:
+                    # Calculate regime consistency at this scale
+                    sub_segments = [segment[j:j+scale] for j in range(0, len(segment)-scale+1, scale)]
+                    if len(sub_segments) >= 2:
+                        # Calculate variance of means
+                        means = [np.mean(sub_seg) for sub_seg in sub_segments]
+                        if len(means) > 1:
+                            consistency = 1.0 / (1.0 + np.var(means))
+                            consistencies.append(consistency)
+            
+            if consistencies:
+                result[i] = np.mean(consistencies)
+            else:
+                result[i] = 0.5
+        
+        return result
+    
+    def _calculate_regime_scale_hierarchy(self, prices: np.ndarray) -> np.ndarray:
+        """Calculate regime scale hierarchy."""
+        if len(prices) < 25:
+            return np.zeros(len(prices))
+        
+        result = np.zeros(len(prices))
+        window = 25
+        
+        for i in range(window, len(prices)):
+            segment = prices[i-window:i]
+            
+            # Calculate hierarchy based on different time scales
+            short_scale = 5
+            long_scale = 15
+            
+            if len(segment) >= long_scale:
+                short_trend = np.mean(segment[-short_scale:]) - np.mean(segment[-short_scale*2:-short_scale])
+                long_trend = np.mean(segment[-long_scale:]) - np.mean(segment[-long_scale*2:-long_scale])
+                
+                # Hierarchy strength based on trend alignment
+                if abs(long_trend) > 0:
+                    hierarchy = abs(short_trend / long_trend)
+                    result[i] = min(1.0, hierarchy)
+                else:
+                    result[i] = 0.0
+            else:
+                result[i] = 0.0
+        
+        return result
+    
+    def _calculate_cross_scale_regime_correlation(self, prices: np.ndarray) -> np.ndarray:
+        """Calculate cross-scale regime correlation."""
+        if len(prices) < 30:
+            return np.zeros(len(prices))
+        
+        result = np.zeros(len(prices))
+        window = 30
+        
+        for i in range(window, len(prices)):
+            segment = prices[i-window:i]
+            
+            # Calculate correlation between different scales
+            scale1 = 5
+            scale2 = 15
+            
+            if len(segment) >= scale2:
+                # Create scale representations
+                scale1_data = []
+                scale2_data = []
+                
+                for j in range(0, len(segment)-scale1+1, scale1):
+                    if j + scale1 <= len(segment):
+                        scale1_data.append(np.mean(segment[j:j+scale1]))
+                
+                for j in range(0, len(segment)-scale2+1, scale2):
+                    if j + scale2 <= len(segment):
+                        scale2_data.append(np.mean(segment[j:j+scale2]))
+                
+                # Calculate correlation
+                if len(scale1_data) > 1 and len(scale2_data) > 1:
+                    min_len = min(len(scale1_data), len(scale2_data))
+                    corr = np.corrcoef(scale1_data[:min_len], scale2_data[:min_len])[0, 1]
+                    if not np.isnan(corr):
+                        result[i] = abs(corr)
+                    else:
+                        result[i] = 0.0
+                else:
+                    result[i] = 0.0
+            else:
+                result[i] = 0.0
+        
+        return result
+
+
 # Convenience function for easy integration
 def generate_regime_features(data: pd.DataFrame,
                            config: Optional[RegimeFeatureConfig] = None) -> Tuple[Dict[str, np.ndarray], Dict[str, Any]]:
@@ -4941,6 +5538,11 @@ __all__ = [
     'RegimeFractalDimensionGenerator',
     'RegimeHurstExponentGenerator',
     'RegimeMemoryStrengthGenerator',
+    # NEW: Enhanced regime clustering generators
+    'EnhancedRegimeClusteringGenerator',
+    'RegimePhaseTransitionGenerator',
+    'RegimeBoundaryDetectionGenerator',
+    'MultiScaleRegimeConsistencyGenerator',
     'RegimeFeatureConfig',
     'RegimeFeatureIntegration',
     'AnalystRegimeProbTrendingGenerator',
@@ -4957,7 +5559,7 @@ __all__ = [
     'StatisticalRegimeFeatureGenerator',
     'StructuralTrendRegimeFeatureGenerator',
     'VolatilityRegimeFeatureGenerator',
-    'VolumeRegimeFeatureGenerator'
+    'VolumeRegimeFeatureGenerator',
     'AdvancedRegimeFeatureGenerator'
 ]
 

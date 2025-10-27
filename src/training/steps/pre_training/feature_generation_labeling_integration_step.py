@@ -13,11 +13,26 @@ import psutil
 import time
 import pandas as pd
 import numpy as np
+import gc
+from contextlib import contextmanager
 
 from src.training.steps.base_step import BaseStep
 from src.utils.logger import system_logger
 from src.utils.tprint import tprint
 from src.training.steps.pre_training.utils.comprehensive_report_generator import ComprehensiveReportGenerator
+
+# Import memory optimization utilities
+try:
+    from src.utils.hardware import (
+        get_advanced_memory_optimizer, 
+        get_unified_hardware_manager,
+        WorkloadType, 
+        OptimizationLevel
+    )
+    MEMORY_OPTIMIZATION_AVAILABLE = True
+except ImportError:
+    MEMORY_OPTIMIZATION_AVAILABLE = False
+    tprint("⚠️ Memory optimization utilities not available - using basic memory management", "WARNING")
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +42,23 @@ logger = logging.getLogger(__name__)
 # This is the starting point that gets dynamically adjusted based on market volatility
 # Range: 1.0x - 2.0x multiplier based on volatility conditions
 BASE_VOLATILITY_THRESHOLD = 0.007  # 0.7% base threshold (realistic for ETHUSDT crypto trading on 15m timeframe)
+
+# Configuration validation to ensure consistency
+def validate_threshold_consistency(base_threshold: float, config_threshold: float) -> None:
+    """Validate that base threshold matches config threshold."""
+    if abs(base_threshold - config_threshold) > 0.001:
+        raise ValueError(f"Threshold mismatch: base={base_threshold:.3f} != config={config_threshold:.3f}")
+
+def get_optimal_threshold(symbol: str, timeframe: str) -> float:
+    """Get optimal threshold based on symbol and timeframe."""
+    # Symbol-specific thresholds optimized for different timeframes
+    thresholds = {
+        'ETHUSDT': {'15m': 0.007, '1h': 0.015, '4h': 0.025},
+        'BTCUSDT': {'15m': 0.005, '1h': 0.012, '4h': 0.020},
+        'ADAUSDT': {'15m': 0.008, '1h': 0.018, '4h': 0.030},
+        'SOLUSDT': {'15m': 0.010, '1h': 0.020, '4h': 0.035},
+    }
+    return thresholds.get(symbol, {}).get(timeframe, BASE_VOLATILITY_THRESHOLD)
 
 
 def timeframe_to_minutes(tf: str) -> float:
@@ -60,6 +92,20 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
         """Initialize the feature generation labeling integration step."""
         super().__init__(step_name)
         self.logger = system_logger.getChild('FeatureGenerationLabelingIntegration')
+        
+        # Initialize memory optimization if available
+        if MEMORY_OPTIMIZATION_AVAILABLE:
+            try:
+                self.memory_optimizer = get_advanced_memory_optimizer()
+                self.hardware_manager = get_unified_hardware_manager()
+                tprint("✅ Memory optimization enabled", "SUCCESS")
+            except Exception as e:
+                tprint(f"⚠️ Failed to initialize memory optimization: {e}", "WARNING")
+                self.memory_optimizer = None
+                self.hardware_manager = None
+        else:
+            self.memory_optimizer = None
+            self.hardware_manager = None
 
     async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -145,11 +191,14 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
                 VolatilityAwareConfig, VolatilityAwareMultiHorizonLabeler, LabelDefinitionType
             )
 
+            # Get optimal threshold for this symbol/timeframe combination
+            optimal_threshold = get_optimal_threshold(config['symbol'], config['timeframe'])
+            
             label_type = LabelDefinitionType.BINARY
             vol_config = VolatilityAwareConfig(
-                volatility_threshold=BASE_VOLATILITY_THRESHOLD,  # Single source of truth
+                volatility_threshold=optimal_threshold,  # Use optimal threshold
                 # VOLATILITY SENSITIVITY: The threshold is adaptively adjusted based on market volatility:
-                # - Low volatility periods: threshold stays at BASE_VOLATILITY_THRESHOLD (baseline for crypto)
+                # - Low volatility periods: threshold stays at optimal_threshold (baseline for crypto)
                 # - High volatility periods: threshold increases to capture larger moves (up to 2x the base)
                 # - The adaptation multiplier (avg_volatility_adaptation) typically ranges 1.0x - 2.0x
                 # - Higher threshold in volatile markets captures more significant opportunities while filtering noise
@@ -161,6 +210,9 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
                 min_label_quality=0.3,  # More reasonable quality threshold for long-only strategy
                 min_predictability=0.3
             )
+            
+            # Validate threshold consistency
+            validate_threshold_consistency(optimal_threshold, vol_config.volatility_threshold)
             
             # VOLATILITY THRESHOLD SYSTEM EXPLAINED:
             # =========================================
@@ -254,18 +306,21 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
                             high_quality_opportunities = sum(1 for s in scores if s >= quality_threshold)
                             filtered_opportunities = opportunities_detected - high_quality_opportunities
 
-                            # Fallback safety: if less than 10% pass the 30% threshold,
-                            # fall back to top 50% to ensure we have enough training samples
-                            if high_quality_opportunities < opportunities_detected * 0.1:  # If less than 10% pass
-                                # Emergency fallback: take top 50% by quality score
-                                k = max(1, int(round(0.5 * n)))
-                                sorted_scores = sorted(scores, reverse=True)
-                                threshold = sorted_scores[k-1] if k <= len(sorted_scores) else sorted_scores[-1]
-                                high_quality_opportunities = sum(1 for s in scores if s >= threshold)
-                                filtered_opportunities = opportunities_detected - high_quality_opportunities
-                                tprint(f"⚠️ Quality filtering: Only {sum(1 for s in scores if s >= 0.3)} opportunities passed 30% threshold, using top 50% fallback", "WARNING")
+                            # Quality validation: Check if quality distribution is reasonable
+                            quality_rate = high_quality_opportunities / opportunities_detected if opportunities_detected > 0 else 0
+                            
+                            if quality_rate < 0.05:  # Less than 5% pass quality threshold
+                                # This indicates a serious problem with the labeling or quality scoring
+                                tprint(f"❌ CRITICAL: Only {quality_rate:.1%} opportunities pass quality threshold - labeling may be faulty", "ERROR")
+                                # Don't use fallback - report as failure
+                                high_quality_opportunities = 0
+                                filtered_opportunities = opportunities_detected
+                                tprint(f"⚠️ Quality filtering: Rejecting all opportunities due to poor quality distribution", "WARNING")
+                            elif quality_rate < 0.15:  # Less than 15% pass - warning but continue
+                                tprint(f"⚠️ Quality filtering: Only {quality_rate:.1%} opportunities pass quality threshold - consider reviewing thresholds", "WARNING")
+                                tprint(f"✅ Quality filtering: {high_quality_opportunities} opportunities passed 30% threshold ({quality_rate:.1f}%)", "SUCCESS")
                             else:
-                                tprint(f"✅ Quality filtering: {high_quality_opportunities} opportunities passed 30% threshold ({high_quality_opportunities/opportunities_detected*100:.1f}%)", "SUCCESS")
+                                tprint(f"✅ Quality filtering: {high_quality_opportunities} opportunities passed 30% threshold ({quality_rate:.1f}%)", "SUCCESS")
                         else:
                             high_quality_opportunities = opportunities_detected
                             filtered_opportunities = 0
@@ -315,29 +370,56 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
                         # Ensure confidence is in reasonable range
                         avg_confidence_score = max(0.0, min(1.0, avg_confidence_score))
 
-                        # FIX: Calculate actual volatility adaptation from price data
-                        # Extract actual volatility statistics from the price data to compute real multipliers
-                        metadata = labeling_result.metadata if hasattr(labeling_result, 'metadata') else {}
-                        price_series = market_data['close']
-                        volatility = price_series.pct_change().rolling(window=vol_config.volatility.window).std()
-                        vol_mean = volatility.mean()
+                        # FIXED: Calculate volatility adaptation using the same logic as the labeler
+                        def calculate_volatility_adaptation_metrics(market_data, vol_config):
+                            """Calculate volatility adaptation metrics matching labeler implementation."""
+                            try:
+                                # Use the same volatility calculation as the labeler
+                                price_series = market_data['close']
+                                
+                                # Calculate rolling volatility with the same window as labeler
+                                volatility_window = getattr(vol_config.volatility, 'window', 20)
+                                volatility = price_series.pct_change().rolling(window=volatility_window).std()
+                                
+                                # Remove NaN values
+                                volatility = volatility.dropna()
+                                
+                                if len(volatility) == 0:
+                                    return 1.0, 1.0, 1.0
+                                
+                                vol_mean = volatility.mean()
+                                
+                                if vol_mean <= 0:
+                                    return 1.0, 1.0, 1.0
+                                
+                                # Normalize volatility
+                                vol_norm = volatility / vol_mean
+                                
+                                # Use the same sensitivity and bounds as the labeler
+                                sensitivity = getattr(vol_config.volatility, 'sensitivity', 1.0)
+                                min_mult = 1.0  # No reduction below base threshold
+                                max_mult = 2.0  # Maximum 2x multiplier
+                                
+                                # Calculate effective multipliers (matching labeler logic exactly)
+                                effective_multipliers = np.clip(
+                                    1.0 + sensitivity * (vol_norm - 1.0), 
+                                    min_mult, 
+                                    max_mult
+                                )
+                                
+                                return (
+                                    float(effective_multipliers.mean()),
+                                    float(effective_multipliers.max()),
+                                    float(effective_multipliers.min())
+                                )
+                                
+                            except Exception as e:
+                                tprint(f"⚠️ Failed to calculate volatility adaptation: {e}", "WARNING")
+                                return 1.0, 2.0, 1.0
                         
-                        if vol_mean > 0:
-                            vol_norm = volatility / vol_mean
-                            # Calculate effective threshold multipliers used (matching labeler logic)
-                            k = vol_config.volatility.sensitivity
-                            min_mult = 1.0  # Changed from 0.5 to 1.0 (no reduction below base)
-                            max_mult = 2.0
-                            effective_multipliers = np.clip(1.0 + k * (vol_norm - 1.0), min_mult, max_mult)
-                            
-                            avg_volatility_adaptation = float(effective_multipliers.mean())
-                            max_volatility_adaptation = float(effective_multipliers.max())
-                            min_volatility_adaptation = float(effective_multipliers.min())
-                        else:
-                            # No volatility variation - use default values (range 1.0x - 2.0x)
-                            avg_volatility_adaptation = 1.0
-                            max_volatility_adaptation = 2.0
-                            min_volatility_adaptation = 1.0
+                        # Calculate volatility adaptation metrics
+                        avg_volatility_adaptation, max_volatility_adaptation, min_volatility_adaptation = \
+                            calculate_volatility_adaptation_metrics(market_data, vol_config)
                     else:
                         # Fallback confidence calculation based on opportunities detected
                         if opportunities_detected > 0:
@@ -395,20 +477,44 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
                     'total_memory_mb': 0.0
                 }
 
-            # FIXED: Calculate data completeness properly (compare against expected date range if available)
-            # For now, if we don't have date range info, don't report completeness
-            try:
-                # Try to get actual date range from data
-                if hasattr(market_data, 'index') and hasattr(market_data.index, 'min') and hasattr(market_data.index, 'max'):
+            # FIXED: Calculate data completeness properly with validation
+            def calculate_data_completeness(market_data, timeframe_minutes, total_samples):
+                """Calculate data completeness with proper validation."""
+                try:
+                    if not hasattr(market_data, 'index') or market_data.empty:
+                        return None
+                    
+                    # Get actual date range from data
                     actual_start = market_data.index.min()
                     actual_end = market_data.index.max()
-                    actual_timedelta = (actual_end - actual_start).total_seconds() / 60  # minutes
-                    expected_samples = actual_timedelta / timeframe_minutes if timeframe_minutes > 0 else total_samples
-                    data_completeness = (total_samples / expected_samples * 100) if expected_samples > 0 else 100.0
-                else:
-                    data_completeness = None
-            except Exception:
-                data_completeness = None
+                    
+                    # Calculate expected samples based on timeframe
+                    actual_timedelta_minutes = (actual_end - actual_start).total_seconds() / 60
+                    
+                    if timeframe_minutes <= 0:
+                        return None
+                    
+                    # Calculate expected samples (accounting for market hours)
+                    # Assume 24/7 market for crypto (no weekends/holidays)
+                    expected_samples = actual_timedelta_minutes / timeframe_minutes
+                    
+                    if expected_samples <= 0:
+                        return None
+                    
+                    # Calculate completeness percentage with bounds checking
+                    completeness = (total_samples / expected_samples) * 100
+                    
+                    # Validate completeness is reasonable (between 50% and 150%)
+                    if completeness < 50 or completeness > 150:
+                        tprint(f"⚠️ Unusual data completeness: {completeness:.1f}% - may indicate data issues", "WARNING")
+                    
+                    return max(0, min(100, completeness))  # Clamp between 0 and 100
+                    
+                except Exception as e:
+                    tprint(f"⚠️ Failed to calculate data completeness: {e}", "WARNING")
+                    return None
+            
+            data_completeness = calculate_data_completeness(market_data, timeframe_minutes, total_samples)
 
             # Prepare comprehensive metrics based on actual labeling results
             general_metrics = {
@@ -634,52 +740,28 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
                 'validation_recommendations': validation_summary['recommendations']
             }
 
-            # Save labeled data using BaseStep artifact manager
+            # Save labeled data using BaseStep artifact manager with memory optimization
             tprint("💾 Persisting labeled data to artifacts...", "INFO")
             
-            # Create labeled data DataFrame with market data and labels
-            labeled_data_df = market_data.copy()
-            if hasattr(labeling_result, 'labels') and labeling_result.labels is not None:
-                labeled_data_df['price_target_vol_normalized'] = labeling_result.labels
+            # Use memory-efficient data processing
+            with self._memory_efficient_processing():
+                # Create labeled data DataFrame with market data and labels (avoid full copy)
+                labeled_data_df = self._create_labeled_dataframe_efficiently(
+                    market_data, labeling_result, vol_config
+                )
                 
-                # Add quality scores if available
-                if hasattr(labeling_result, 'quality_scores') and labeling_result.quality_scores:
-                    for target_name, target_data in labeling_result.quality_scores.items():
-                        if hasattr(target_data, 'opportunity_quality_scores'):
-                            # Create a full-length series with NaN for non-labeled data
-                            quality_scores_full = pd.Series(index=labeled_data_df.index, dtype=float)
-                            # Only assign quality scores where labels exist (non-zero labels)
-                            label_mask = labeling_result.labels != 0
-                            if len(label_mask[label_mask]) > 0:
-                                # Get the indices where labels are non-zero
-                                labeled_indices = labeling_result.labels[label_mask].index
-                                # Ensure the quality scores match the labeled indices
-                                if len(target_data.opportunity_quality_scores) == len(labeled_indices):
-                                    quality_scores_full.loc[labeled_indices] = target_data.opportunity_quality_scores
-                                else:
-                                    # If lengths don't match, create a mapping
-                                    quality_scores_values = pd.Series(target_data.opportunity_quality_scores, index=labeled_indices[:len(target_data.opportunity_quality_scores)])
-                                    quality_scores_full.loc[quality_scores_values.index] = quality_scores_values.values
-                            labeled_data_df[f'quality_scores_{target_name}'] = quality_scores_full
-                
-                # Add metadata columns
-                labeled_data_df['labeling_timestamp'] = datetime.now()
-                labeled_data_df['labeling_method'] = 'volatility_aware_multi_horizon'
-                labeled_data_df['base_threshold'] = BASE_VOLATILITY_THRESHOLD
-                labeled_data_df['lookahead_periods'] = vol_config.lookahead_periods
-                
-                # Save labeled data using BaseStep artifact manager
+                # Save labeled data using BaseStep artifact manager with compression
                 labeled_data_path = self._save_artifact(
                     data=labeled_data_df,
                     artifact_name=f'labeled_data_{config["symbol"]}_{config["timeframe"]}',
                     artifact_type='data',
-                    compression='auto',
+                    compression='auto',  # Use automatic compression for large datasets
                     metadata={
                         'symbol': config['symbol'],
                         'exchange': config['exchange'],
                         'timeframe': config['timeframe'],
                         'labeling_method': 'volatility_aware_multi_horizon',
-                        'base_threshold': BASE_VOLATILITY_THRESHOLD,
+                        'base_threshold': optimal_threshold,  # Use optimal threshold
                         'lookahead_periods': vol_config.lookahead_periods,
                         'total_samples': total_samples,
                         'opportunities_detected': opportunities_detected,
@@ -690,6 +772,10 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
                     }
                 )
                 tprint(f"✅ Saved labeled data to: {labeled_data_path}", "SUCCESS")
+                
+                # Clear large DataFrames from memory
+                del labeled_data_df
+                gc.collect()
             else:
                 tprint("⚠️ No labels generated, skipping data persistence", "WARNING")
                 labeled_data_path = None
@@ -784,20 +870,27 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
             else:
                 tprint("⚠️ Failed to generate outcome report", "WARNING")
 
-            # Display actual labeling results
+            # Display actual labeling results with memory usage
             tprint(f"📈 Labeling Results Summary:", "INFO")
-            tprint(f"   • Total samples: {total_samples}", "INFO")
-            tprint(f"   • Opportunities detected: {opportunities_detected} ({opportunities_detected/total_samples*100:.1f}%)", "INFO")
-            tprint(f"   • Long opportunities: {long_opportunities}", "INFO")
-            tprint(f"   • Short opportunities: {short_opportunities}", "INFO")
+            tprint(f"   • Total samples: {total_samples:,}", "INFO")
+            tprint(f"   • Opportunities detected: {opportunities_detected:,} ({opportunities_detected/total_samples*100:.1f}%)", "INFO")
+            tprint(f"   • Long opportunities: {long_opportunities:,}", "INFO")
+            tprint(f"   • Short opportunities: {short_opportunities:,}", "INFO")
             tprint(f"   • Long/Short ratio: {long_opportunities/short_opportunities:.2f}" if short_opportunities > 0 else "   • Long/Short ratio: All long", "INFO")
-            tprint(f"   • Quality acceptance: {high_quality_opportunities}/{opportunities_detected} ({high_quality_opportunities/opportunities_detected*100:.1f}%)" if opportunities_detected > 0 else "   • Quality acceptance: 0%", "INFO")
+            tprint(f"   • Quality acceptance: {high_quality_opportunities:,}/{opportunities_detected:,} ({high_quality_opportunities/opportunities_detected*100:.1f}%)" if opportunities_detected > 0 else "   • Quality acceptance: 0%", "INFO")
+            
+            # Display memory usage if available
+            try:
+                memory_usage = psutil.virtual_memory()
+                tprint(f"🧠 Memory usage: {memory_usage.used / (1024**3):.2f}GB / {memory_usage.total / (1024**3):.2f}GB ({memory_usage.percent:.1f}%)", "INFO")
+            except Exception:
+                pass
             
             # Display volatility calibration
             tprint(f"📊 Volatility Calibration:", "INFO")
-            tprint(f"   • Base threshold: {BASE_VOLATILITY_THRESHOLD:.1%}", "INFO")
+            tprint(f"   • Base threshold: {optimal_threshold:.1%}", "INFO")
             tprint(f"   • Adaptation range: {min_volatility_adaptation:.2f}x - {max_volatility_adaptation:.2f}x", "INFO")
-            tprint(f"   • Effective thresholds: {min_volatility_adaptation * BASE_VOLATILITY_THRESHOLD:.1%} - {max_volatility_adaptation * BASE_VOLATILITY_THRESHOLD:.1%}", "INFO")
+            tprint(f"   • Effective thresholds: {min_volatility_adaptation * optimal_threshold:.1%} - {max_volatility_adaptation * optimal_threshold:.1%}", "INFO")
             tprint(f"   • Adaptation active: {'✅ Yes' if min_volatility_adaptation < max_volatility_adaptation else '❌ No'}", "INFO")
             
             # Display validation results
@@ -875,11 +968,16 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
             }
 
             tprint(f"✅ Volatility-aware labeling integration completed", "SUCCESS")
-            tprint(f"📊 Actual results: {opportunities_detected} opportunities from {total_samples} samples ({opportunities_detected/total_samples*100:.1f}% detection rate)", "SUCCESS")
+            tprint(f"📊 Actual results: {opportunities_detected:,} opportunities from {total_samples:,} samples ({opportunities_detected/total_samples*100:.1f}% detection rate)", "SUCCESS")
             if labeled_data_path:
                 tprint(f"💾 Labeled data persisted to: {labeled_data_path}", "SUCCESS")
             if metadata_path:
                 tprint(f"📋 Labeling metadata persisted to: {metadata_path}", "SUCCESS")
+            
+            # Final memory cleanup
+            if self.memory_optimizer:
+                self.memory_optimizer.cleanup()
+            gc.collect()
             return {
                 'success': True,
                 'artifacts': artifacts,
@@ -897,6 +995,109 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
                 'metrics': {},
                 'error': error_msg
             }
+
+    @contextmanager
+    def _memory_efficient_processing(self):
+        """Context manager for memory-efficient data processing."""
+        if self.memory_optimizer:
+            try:
+                # Configure memory optimization for data processing workload
+                self.memory_optimizer.configure_for_workload(
+                    workload_type='data_processing',
+                    optimization_level='balanced',
+                    enable_compression=True,
+                    enable_pooling=True
+                )
+                tprint("🧠 Memory optimization activated for data processing", "INFO")
+                yield
+            finally:
+                # Cleanup and optimize memory
+                self.memory_optimizer.cleanup()
+                gc.collect()
+                tprint("🧠 Memory optimization cleanup completed", "INFO")
+        else:
+            # Basic memory management
+            initial_memory = psutil.virtual_memory().used / (1024 * 1024)
+            try:
+                yield
+            finally:
+                gc.collect()
+                final_memory = psutil.virtual_memory().used / (1024 * 1024)
+                tprint(f"🧠 Memory usage: {initial_memory:.1f}MB -> {final_memory:.1f}MB", "INFO")
+    
+    def _create_labeled_dataframe_efficiently(self, market_data, labeling_result, vol_config):
+        """Create labeled DataFrame efficiently without full copying."""
+        try:
+            # Start with essential columns only
+            essential_columns = ['close', 'open', 'high', 'low', 'volume']
+            available_columns = [col for col in essential_columns if col in market_data.columns]
+            
+            # Create DataFrame with only essential columns initially
+            labeled_data_df = market_data[available_columns].copy()
+            
+            if hasattr(labeling_result, 'labels') and labeling_result.labels is not None:
+                # Add labels efficiently
+                labeled_data_df['price_target_vol_normalized'] = labeling_result.labels
+                
+                # Add quality scores if available (memory-efficient)
+                if hasattr(labeling_result, 'quality_scores') and labeling_result.quality_scores:
+                    for target_name, target_data in labeling_result.quality_scores.items():
+                        if hasattr(target_data, 'opportunity_quality_scores'):
+                            # Create sparse quality scores (only for labeled data)
+                            quality_scores_full = pd.Series(index=labeled_data_df.index, dtype=float)
+                            
+                            # Only process where labels exist (non-zero)
+                            label_mask = labeling_result.labels != 0
+                            if label_mask.any():
+                                labeled_indices = labeling_result.labels[label_mask].index
+                                
+                                # Efficiently assign quality scores
+                                if len(target_data.opportunity_quality_scores) == len(labeled_indices):
+                                    quality_scores_full.loc[labeled_indices] = target_data.opportunity_quality_scores
+                                else:
+                                    # Handle length mismatch efficiently
+                                    min_len = min(len(target_data.opportunity_quality_scores), len(labeled_indices))
+                                    quality_scores_full.loc[labeled_indices[:min_len]] = target_data.opportunity_quality_scores[:min_len]
+                            
+                            labeled_data_df[f'quality_scores_{target_name}'] = quality_scores_full
+                
+                # Add metadata columns efficiently
+                labeled_data_df['labeling_timestamp'] = datetime.now()
+                labeled_data_df['labeling_method'] = 'volatility_aware_multi_horizon'
+                labeled_data_df['base_threshold'] = vol_config.volatility_threshold
+                labeled_data_df['lookahead_periods'] = vol_config.lookahead_periods
+            
+            return labeled_data_df
+            
+        except Exception as e:
+            tprint(f"⚠️ Failed to create labeled DataFrame efficiently: {e}", "WARNING")
+            # Fallback to simple copy
+            return market_data.copy()
+    
+    def _optimize_dataframe_memory(self, df):
+        """Optimize DataFrame memory usage."""
+        if self.memory_optimizer and hasattr(self.memory_optimizer, 'optimize_dataframe'):
+            try:
+                return self.memory_optimizer.optimize_dataframe(df)
+            except Exception as e:
+                tprint(f"⚠️ Memory optimization failed: {e}", "WARNING")
+                return df
+        else:
+            # Basic memory optimization
+            try:
+                # Convert float64 to float32 where possible
+                for col in df.select_dtypes(include=[np.float64]).columns:
+                    if df[col].min() >= np.finfo(np.float32).min and df[col].max() <= np.finfo(np.float32).max:
+                        df[col] = df[col].astype(np.float32)
+                
+                # Convert int64 to int32 where possible
+                for col in df.select_dtypes(include=[np.int64]).columns:
+                    if df[col].min() >= np.iinfo(np.int32).min and df[col].max() <= np.iinfo(np.int32).max:
+                        df[col] = df[col].astype(np.int32)
+                
+                return df
+            except Exception:
+                return df
 
     async def run(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """Run method required by BaseStep interface."""

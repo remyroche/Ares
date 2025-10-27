@@ -109,6 +109,20 @@ regime_detection_features:
     - regime_nonlinearity
     - regime_chaos_indicators
     - regime_phase_transitions
+    # NEW: Enhanced regime clustering features
+    - regime_separation_strength
+    - regime_boundary_clarity
+    - regime_clustering_quality
+    - regime_discrimination_power
+    - phase_transition_probability
+    - regime_transition_smoothness
+    - regime_persistence_strength
+    - multi_scale_regime_consistency
+    - regime_scale_hierarchy
+    - cross_scale_regime_correlation
+    - boundary_detection_strength
+    - boundary_sharpness
+    - boundary_stability
 
   # Cross-timeframe correlation features (basic regime relationships)
   cross_timeframe_regime_features:

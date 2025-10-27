@@ -20,7 +20,7 @@ class TacticianBaseTrainingStep(BaseStep):
     """
     Tactician Base Training Step.
 
-    Trains base tactician models for trading strategy optimization.
+    Trains base tactician models for entry timing prediction.
     """
 
     def __init__(self, step_name: str = "tactician_base_training"):
@@ -49,49 +49,18 @@ class TacticianBaseTrainingStep(BaseStep):
         tprint(f"🧠 Starting tactician base training for {config.get('symbol', 'UNKNOWN')}", "INFO")
 
         try:
-            artifacts = {
-                'tactician_base_model': {
-                    'model_type': 'extra_trees_base',
-                    'target': 'strategy_optimization',
-                    'features': ['regime_features', 'market_microstructure', 'order_flow', 'liquidity'],
-                    'training_samples': 8000,
-                    'validation_samples': 2500,
-                    'test_samples': 1500,
-                    'accuracy': 0.82,
-                    'sharpe_ratio': 1.45,
-                    'model_params': {
-                        'n_estimators': 500,
-                        'max_depth': 8,
-                        'min_samples_split': 10
-                    },
-                    'metadata': {
-                        'symbol': config['symbol'],
-                        'exchange': config['exchange'],
-                        'timeframe': config['timeframe'],
-                        'direction': config.get('direction', 'longs'),
-                        'created_at': datetime.now().isoformat()
-                    }
-                }
-            }
-
-            metrics = {
-                'model_type': 'extra_trees_base',
-                'training_samples': 8000,
-                'validation_samples': 2500,
-                'test_samples': 1500,
-                'accuracy': 0.82,
-                'sharpe_ratio': 1.45,
-                'training_time': 98.3,
-                'direction': config.get('direction', 'longs'),
-                'success': True
-            }
-
-            tprint(f"✅ Tactician base training completed: {metrics['accuracy']:.1%} accuracy, Sharpe {metrics['sharpe_ratio']:.2f}", "SUCCESS")
-            return {
-                'success': True,
-                'artifacts': artifacts,
-                'metrics': metrics
-            }
+            # Import and call unified training step
+            from .unified_models_training_step import UnifiedModelsTrainingStep
+            
+            # Set training type for unified step
+            config['training_type'] = 'tactician_base'
+            config['execution_context'] = 'tactician'
+            
+            # Create and execute unified training step
+            unified_step = UnifiedModelsTrainingStep()
+            result = await unified_step.execute(config)
+            
+            return result
 
         except Exception as e:
             error_msg = f"Tactician base training failed: {str(e)}"

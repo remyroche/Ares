@@ -111,7 +111,8 @@ class ModelTrainer(BaseTrainer):
                 
                 # Create and train model
                 model = self._create_model(model_type)
-                if model is None:
+                # Allow None for models that are created during training (TCN, Neural Networks)
+                if model is None and model_type not in [ModelType.TCN, ModelType.NEURAL_NETWORK]:
                     self.logger.error(f"Failed to create {model_type.value} model")
                     continue
                 
@@ -192,6 +193,8 @@ class ModelTrainer(BaseTrainer):
             # Model-specific training
             if model_type == ModelType.LIGHTGBM:
                 return await self._train_lightgbm_model(model, data, targets)
+            elif model_type == ModelType.TCN:
+                return await self._train_tcn_model(model, data, targets)
             elif model_type == ModelType.CATBOOST:
                 return await self._train_catboost_model(model, data, targets)
             elif model_type == ModelType.NEURAL_NETWORK:
@@ -265,12 +268,18 @@ class ModelTrainer(BaseTrainer):
         try:
             # Import LightGBM
             import lightgbm as lgb
+            from sklearn.model_selection import train_test_split
+            
+            # Split data for validation (required for early stopping)
+            X_train, X_val, y_train, y_val = train_test_split(
+                data, targets, test_size=0.2, random_state=42
+            )
             
             # Role-specific parameters
             if self.config.role == TrainingRole.ANALYST:
                 params = {
-                    'objective': 'binary',
-                    'metric': 'binary_logloss',
+                    'objective': 'regression',  # Changed from binary to regression
+                    'metric': 'rmse',  # Changed from binary_logloss to rmse
                     'boosting_type': 'gbdt',
                     'num_leaves': 31,
                     'learning_rate': 0.05,
@@ -292,39 +301,30 @@ class ModelTrainer(BaseTrainer):
                     'verbose': -1
                 }
             
-            # Create dataset
-            train_data = lgb.Dataset(data, label=targets)
+            # Create datasets
+            train_data = lgb.Dataset(X_train, label=y_train)
+            valid_data = lgb.Dataset(X_val, label=y_val, reference=train_data)
             
-            # Train model
+            # Train model with validation set for early stopping
             model = lgb.train(
                 params,
                 train_data,
                 num_boost_round=1000,
-                callbacks=[lgb.early_stopping(stopping_rounds=50)]
+                valid_sets=[valid_data],
+                callbacks=[lgb.early_stopping(stopping_rounds=50, verbose=False)]
             )
             
-            # Get predictions and metrics
+            # Get predictions and metrics (use all data for prediction evaluation)
             predictions = model.predict(data)
             
-            if self.config.role == TrainingRole.ANALYST:
-                # Binary classification metrics
-                from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
-                binary_predictions = (predictions > 0.5).astype(int)
-                metrics = {
-                    'accuracy': accuracy_score(targets, binary_predictions),
-                    'precision': precision_score(targets, binary_predictions),
-                    'recall': recall_score(targets, binary_predictions),
-                    'f1_score': f1_score(targets, binary_predictions)
-                }
-            else:
-                # Regression metrics
-                from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
-                metrics = {
-                    'mse': mean_squared_error(targets, predictions),
-                    'mae': mean_absolute_error(targets, predictions),
-                    'r2': r2_score(targets, predictions),
-                    'rmse': np.sqrt(mean_squared_error(targets, predictions))
-                }
+            # Use regression metrics for all roles (targets are continuous)
+            from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
+            metrics = {
+                'mse': mean_squared_error(targets, predictions),
+                'mae': mean_absolute_error(targets, predictions),
+                'r2': r2_score(targets, predictions),
+                'rmse': np.sqrt(mean_squared_error(targets, predictions))
+            }
             
             # Get feature importance
             feature_importance = dict(zip(data.columns, model.feature_importance()))
@@ -344,16 +344,22 @@ class ModelTrainer(BaseTrainer):
         """Train CatBoost model with role-specific parameters."""
         try:
             # Import CatBoost
-            from catboost import CatBoostClassifier, CatBoostRegressor
+            from catboost import CatBoostRegressor
+            from sklearn.model_selection import train_test_split
             
-            # Role-specific model creation
+            # Split data for validation (required for early stopping)
+            X_train, X_val, y_train, y_val = train_test_split(
+                data, targets, test_size=0.2, random_state=42
+            )
+            
+            # Create regressor for all roles (targets are continuous)
             if self.config.role == TrainingRole.ANALYST:
-                model = CatBoostClassifier(
+                model = CatBoostRegressor(
                     iterations=1000,
                     learning_rate=0.05,
                     depth=6,
-                    loss_function='Logloss',
-                    eval_metric='AUC',
+                    loss_function='RMSE',
+                    eval_metric='RMSE',
                     verbose=False
                 )
             else:  # Tactician
@@ -366,31 +372,20 @@ class ModelTrainer(BaseTrainer):
                     verbose=False
                 )
             
-            # Train model
-            model.fit(data, targets, eval_set=(data, targets), early_stopping_rounds=50)
+            # Train model with validation set
+            model.fit(X_train, y_train, eval_set=(X_val, y_val), early_stopping_rounds=50, verbose=False)
             
-            # Get predictions and metrics
+            # Get predictions and metrics (on full data)
             predictions = model.predict(data)
             
-            if self.config.role == TrainingRole.ANALYST:
-                # Binary classification metrics
-                from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
-                binary_predictions = (predictions > 0.5).astype(int)
-                metrics = {
-                    'accuracy': accuracy_score(targets, binary_predictions),
-                    'precision': precision_score(targets, binary_predictions),
-                    'recall': recall_score(targets, binary_predictions),
-                    'f1_score': f1_score(targets, binary_predictions)
-                }
-            else:
-                # Regression metrics
-                from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
-                metrics = {
-                    'mse': mean_squared_error(targets, predictions),
-                    'mae': mean_absolute_error(targets, predictions),
-                    'r2': r2_score(targets, predictions),
-                    'rmse': np.sqrt(mean_squared_error(targets, predictions))
-                }
+            # Use regression metrics for all roles
+            from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
+            metrics = {
+                'mse': mean_squared_error(targets, predictions),
+                'mae': mean_absolute_error(targets, predictions),
+                'r2': r2_score(targets, predictions),
+                'rmse': np.sqrt(mean_squared_error(targets, predictions))
+            }
             
             # Get feature importance
             feature_importance = dict(zip(data.columns, model.get_feature_importance()))
@@ -404,6 +399,79 @@ class ModelTrainer(BaseTrainer):
             
         except Exception as e:
             self.logger.error(f"CatBoost training failed: {e}")
+            return TrainingResult(success=False, error_message=str(e))
+    
+    async def _train_tcn_model(self, model: Any, data: pd.DataFrame, targets: pd.Series) -> TrainingResult:
+        """Train Temporal Convolutional Network model with role-specific parameters."""
+        try:
+            # Import TCN model
+            from src.models.causal_dilated_tcn import CausalDilatedTCNModel, CausalTCNConfig
+            from sklearn.model_selection import train_test_split
+            
+            # Split data for validation
+            X_train, X_val, y_train, y_val = train_test_split(
+                data, targets, test_size=0.2, random_state=42
+            )
+            
+            # Role-specific TCN configuration
+            if self.config.role == TrainingRole.ANALYST:
+                tcn_config = CausalTCNConfig(
+                    num_filters=64,
+                    num_layers=4,
+                    kernel_size=3,
+                    dilation_base=2,
+                    dropout=0.2,
+                    learning_rate=0.001,
+                    batch_size=32,
+                    epochs=100,
+                    early_stopping_patience=10
+                )
+            else:  # Tactician
+                tcn_config = CausalTCNConfig(
+                    num_filters=64,
+                    num_layers=4,
+                    kernel_size=3,
+                    dilation_base=2,
+                    dropout=0.1,
+                    learning_rate=0.001,
+                    batch_size=32,
+                    epochs=100,
+                    early_stopping_patience=10
+                )
+            
+            # Create and train TCN model
+            model = CausalDilatedTCNModel(config=tcn_config)
+            model.fit(X_train.values if isinstance(X_train, pd.DataFrame) else X_train, 
+                     y_train.values if isinstance(y_train, pd.Series) else y_train)
+            
+            # Get predictions on full data
+            predictions = model.predict(data.values if isinstance(data, pd.DataFrame) else data)
+            
+            # Calculate regression metrics
+            from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
+            metrics = {
+                'mse': mean_squared_error(targets, predictions),
+                'mae': mean_absolute_error(targets, predictions),
+                'r2': r2_score(targets, predictions),
+                'rmse': np.sqrt(mean_squared_error(targets, predictions))
+            }
+            
+            self.logger.info(f"✅ TCN model trained successfully - R2: {metrics['r2']:.4f}, RMSE: {metrics['rmse']:.4f}")
+            
+            return TrainingResult(
+                success=True,
+                model=model,
+                metrics=metrics,
+                feature_importance=None  # TCN doesn't provide feature importance directly
+            )
+            
+        except ImportError as e:
+            self.logger.error(f"TCN training failed - missing dependencies: {e}")
+            return TrainingResult(success=False, error_message=f"Missing dependencies: {e}")
+        except Exception as e:
+            self.logger.error(f"TCN training failed: {e}")
+            import traceback
+            traceback.print_exc()
             return TrainingResult(success=False, error_message=str(e))
     
     async def _train_neural_network_model(self, model: Any, data: pd.DataFrame, targets: pd.Series) -> TrainingResult:
@@ -509,6 +577,9 @@ class ModelTrainer(BaseTrainer):
             if model_type == ModelType.LIGHTGBM:
                 import lightgbm as lgb
                 return lgb.LGBMClassifier() if self.config.role == TrainingRole.ANALYST else lgb.LGBMRegressor()
+            elif model_type == ModelType.TCN:
+                # Return None, will be created in training method
+                return None
             elif model_type == ModelType.CATBOOST:
                 from catboost import CatBoostClassifier, CatBoostRegressor
                 return CatBoostClassifier() if self.config.role == TrainingRole.ANALYST else CatBoostRegressor()

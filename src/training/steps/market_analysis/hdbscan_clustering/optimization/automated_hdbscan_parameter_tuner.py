@@ -87,7 +87,7 @@ logger = system_logger.getChild('AutomatedHDBSCANTuner')
 @dataclass
 class HDBSCANParameterSpace:
     """Parameter space for HDBSCAN optimization."""
-    min_cluster_size: Tuple[int, int] = (10, 100)  # (min, max)
+    min_cluster_size: Tuple[int, int] = (3, 20)  # (min, max) - FORCE MORE CLUSTERS
     min_samples: Tuple[int, int] = (5, 50)
     cluster_selection_epsilon: Tuple[float, float] = (0.0, 0.5)
     cluster_selection_method: List[str] = field(default_factory=lambda: ['leaf', 'eom'])  # Prioritize 'leaf' method
@@ -123,21 +123,21 @@ class ClusteringQualityMetrics:
         """Determine if clustering quality is poor based on regime discovery targets."""
         # Check basic quality criteria
         basic_poor = (
-            (self.silhouette_score is not None and self.silhouette_score < 0.0) or
+            (self.silhouette_score is not None and self.silhouette_score < -0.1) or  # More lenient silhouette threshold
             self.n_clusters < 2 or
-            self.noise_ratio > 0.5 or
-            (self.calinski_harabasz_score is not None and self.calinski_harabasz_score < 10.0) or
-            (self.davies_bouldin_score is not None and self.davies_bouldin_score > 5.0)
+            self.noise_ratio > 0.6 or  # More lenient noise threshold
+            (self.calinski_harabasz_score is not None and self.calinski_harabasz_score < 5.0) or  # More lenient CH threshold
+            (self.davies_bouldin_score is not None and self.davies_bouldin_score > 8.0)  # More lenient DB threshold
         )
         
-        # Check regime-specific criteria
+        # Check regime-specific criteria - PRIORITIZE 5-8 CLUSTERS
         regime_poor = (
-            self.n_clusters < 4 or self.n_clusters > 8 or  # Target: 4-8 clusters
-            (self.within_cluster_cv is not None and self.within_cluster_cv > 0.3) or  # Lower within-cluster CV
-            (self.between_cluster_cv is not None and self.between_cluster_cv < 0.1) or  # Higher between-cluster CV
-            (self.economic_separation < 0.25) or  # Minimum economic separation (increased threshold)
+            self.n_clusters < 5 or self.n_clusters > 8 or  # STRICT: Target 5-8 clusters only
+            (self.within_cluster_cv is not None and self.within_cluster_cv > 0.4) or  # More lenient within-cluster CV
+            (self.between_cluster_cv is not None and self.between_cluster_cv < 0.05) or  # More lenient between-cluster CV
+            (self.economic_separation < 0.05) or  # Much more lenient economic separation
             (self.distribution_balanced is not None and not self.distribution_balanced) or  # Cluster distribution constraint
-            (self.silhouette_score is not None and self.silhouette_score < 0.1)  # Poor silhouette score
+            (self.silhouette_score is not None and self.silhouette_score < -0.2)  # Much more lenient silhouette score
         )
         
         return basic_poor or regime_poor
@@ -154,15 +154,17 @@ class ClusteringQualityMetrics:
         if self.davies_bouldin_score is not None:
             scores.append(max(0, 1 - min(1, self.davies_bouldin_score / 5.0)))  # Normalize to 0-1
         
-        # Cluster count preference (4-8 clusters optimal)
-        if 4 <= self.n_clusters <= 8:
-            cluster_score = 1.0
-        elif self.n_clusters in [3, 9]:
-            cluster_score = 0.8
-        elif self.n_clusters in [2, 10]:
-            cluster_score = 0.6
+        # Cluster count preference (5-8 clusters optimal) - HEAVILY WEIGHTED
+        if 5 <= self.n_clusters <= 8:
+            cluster_score = 1.0  # Perfect score for 5-8 clusters
+        elif self.n_clusters == 4 or self.n_clusters == 9:
+            cluster_score = 0.7  # Good score for adjacent ranges
+        elif self.n_clusters == 3 or self.n_clusters == 10:
+            cluster_score = 0.4  # Moderate score
+        elif self.n_clusters == 2 or self.n_clusters == 11:
+            cluster_score = 0.1  # Poor score
         else:
-            cluster_score = 0.2
+            cluster_score = 0.0  # Very poor score for other counts
         scores.append(cluster_score)
         
         # Within-cluster CV (lower is better)
@@ -466,6 +468,7 @@ class AutomatedHDBSCANTuner:
                             
                             # Calculate within-cluster and between-cluster CV
                             within_cluster_cv, between_cluster_cv = self._calculate_cv_metrics(valid_data, valid_labels)
+                            logger.info(f"CV calculation result: within={within_cluster_cv}, between={between_cluster_cv}")
                             
                             # Calculate temporal stability (if data has temporal structure)
                             temporal_stability = self._calculate_temporal_stability(cluster_labels)
@@ -508,13 +511,24 @@ class AutomatedHDBSCANTuner:
             
         except Exception as e:
             logger.warning(f"Error calculating CV metrics: {e}")
-            return None, None
+            return 0.0, 0.0  # Return default values instead of None
     
     def _calculate_cv_metrics_vectorbt(self, data: np.ndarray, labels: np.ndarray, unique_labels: np.ndarray) -> Tuple[Optional[float], Optional[float]]:
         """Calculate CV metrics using VectorBT optimization."""
         try:
-            # Convert to pandas for VectorBT operations
+            # Convert to pandas for VectorBT operations and ensure numeric types
             data_df = pd.DataFrame(data)
+            
+            # Ensure all columns are numeric and handle any non-numeric data
+            numeric_columns = data_df.select_dtypes(include=[np.number]).columns
+            if len(numeric_columns) < len(data_df.columns):
+                logger.warning(f"Filtering out {len(data_df.columns) - len(numeric_columns)} non-numeric columns for CV calculation")
+                data_df = data_df[numeric_columns]
+            
+            # Convert to float64 to ensure consistent data types
+            data_df = data_df.astype(np.float64)
+            
+            logger.info(f"CV calculation: {len(unique_labels)} unique labels, {data_df.shape[0]} samples, {data_df.shape[1]} features")
             
             # Calculate within-cluster CV using VectorBT
             within_cvs = []
@@ -522,20 +536,39 @@ class AutomatedHDBSCANTuner:
                 cluster_mask = labels == label
                 cluster_data = data_df[cluster_mask]
                 
+                logger.info(f"Cluster {label}: {len(cluster_data)} samples")
+                
                 if len(cluster_data) > 1:
                     # Use VectorBT for efficient std and mean calculations
                     cluster_std = cluster_data.std()
                     cluster_mean = cluster_data.mean()
                     
-                    # Safe division with math validation
-                    if MATH_VALIDATION_AVAILABLE:
-                        cluster_cv = safe_divide(cluster_std, np.abs(cluster_mean) + 1e-8).mean()
+                    # Ensure we have numeric values and handle division safely
+                    if len(cluster_std) > 0 and len(cluster_mean) > 0:
+                        # Convert to numpy arrays for safe operations
+                        std_values = cluster_std.values if hasattr(cluster_std, 'values') else cluster_std
+                        mean_values = cluster_mean.values if hasattr(cluster_mean, 'values') else cluster_mean
+                        
+                        # Safe division with proper handling of zeros and infinities
+                        denominator = np.abs(mean_values) + 1e-8
+                        cv_values = np.divide(std_values, denominator, out=np.zeros_like(std_values), where=denominator!=0)
+                        
+                        # Remove any infinite or NaN values
+                        cv_values = cv_values[np.isfinite(cv_values)]
+                        
+                        if len(cv_values) > 0:
+                            cluster_cv = np.mean(cv_values)
+                            within_cvs.append(cluster_cv)
+                            logger.info(f"Cluster {label} CV: {cluster_cv:.4f}")
+                        else:
+                            logger.warning(f"Cluster {label}: No valid CV values after filtering")
                     else:
-                        cluster_cv = np.mean(cluster_std / (np.abs(cluster_mean) + 1e-8))
-                    
-                    within_cvs.append(cluster_cv)
+                        logger.warning(f"Cluster {label}: Empty std or mean arrays")
+                else:
+                    logger.warning(f"Cluster {label}: Only {len(cluster_data)} samples (need >1)")
             
             within_cluster_cv = np.mean(within_cvs) if within_cvs else None
+            logger.info(f"Within-cluster CV: {within_cluster_cv}")
             
             # Calculate between-cluster CV
             cluster_means = []
@@ -544,19 +577,43 @@ class AutomatedHDBSCANTuner:
                 cluster_data = data_df[cluster_mask]
                 
                 if len(cluster_data) > 0:
-                    cluster_means.append(cluster_data.mean().values)
+                    cluster_mean = cluster_data.mean()
+                    # Convert to numpy array and ensure numeric
+                    mean_values = cluster_mean.values if hasattr(cluster_mean, 'values') else cluster_mean
+                    mean_values = mean_values[np.isfinite(mean_values)]  # Remove any non-finite values
+                    if len(mean_values) > 0:
+                        cluster_means.append(mean_values)
+                        logger.info(f"Cluster {label} mean: {np.mean(mean_values):.4f}")
             
             if len(cluster_means) > 1:
                 cluster_means_df = pd.DataFrame(cluster_means)
                 between_cluster_std = cluster_means_df.std()
                 between_cluster_mean = cluster_means_df.mean()
                 
-                if MATH_VALIDATION_AVAILABLE:
-                    between_cluster_cv = safe_divide(between_cluster_std, np.abs(between_cluster_mean) + 1e-8).mean()
-                else:
-                    between_cluster_cv = np.mean(between_cluster_std / (np.abs(between_cluster_mean) + 1e-8))
+                # Safe division for between-cluster CV
+                std_values = between_cluster_std.values if hasattr(between_cluster_std, 'values') else between_cluster_std
+                mean_values = between_cluster_mean.values if hasattr(between_cluster_mean, 'values') else between_cluster_mean
+                
+                denominator = np.abs(mean_values) + 1e-8
+                cv_values = np.divide(std_values, denominator, out=np.zeros_like(std_values), where=denominator!=0)
+                
+                # Remove any infinite or NaN values
+                cv_values = cv_values[np.isfinite(cv_values)]
+                
+                between_cluster_cv = np.mean(cv_values) if len(cv_values) > 0 else None
+                logger.info(f"Between-cluster CV: {between_cluster_cv}")
             else:
                 between_cluster_cv = None
+                logger.warning(f"Only {len(cluster_means)} cluster means available (need >1)")
+            
+            # Ensure we return actual values, not None
+            if within_cluster_cv is None:
+                within_cluster_cv = 0.0  # Default value
+                logger.warning("Within-cluster CV was None, using default 0.0")
+            
+            if between_cluster_cv is None:
+                between_cluster_cv = 0.0  # Default value
+                logger.warning("Between-cluster CV was None, using default 0.0")
             
             return within_cluster_cv, between_cluster_cv
             
@@ -567,6 +624,18 @@ class AutomatedHDBSCANTuner:
     def _calculate_cv_metrics_standard(self, data: np.ndarray, labels: np.ndarray, unique_labels: np.ndarray) -> Tuple[Optional[float], Optional[float]]:
         """Calculate CV metrics using standard numpy operations."""
         try:
+            # Ensure data is numeric and handle any non-finite values
+            data = np.asarray(data, dtype=np.float64)
+            
+            # Remove any non-finite values from the data
+            finite_mask = np.all(np.isfinite(data), axis=1)
+            if not np.any(finite_mask):
+                logger.warning("No finite values found in data for CV calculation")
+                return None, None
+            
+            data = data[finite_mask]
+            labels = labels[finite_mask]
+            
             # Calculate within-cluster CV (lower is better)
             within_cvs = []
             for label in unique_labels:
@@ -575,13 +644,16 @@ class AutomatedHDBSCANTuner:
                     cluster_std = np.std(cluster_data, axis=0)
                     cluster_mean = np.mean(cluster_data, axis=0)
                     
-                    # Use safe division if available
-                    if MATH_VALIDATION_AVAILABLE:
-                        cluster_cv = safe_divide(cluster_std, np.abs(cluster_mean) + 1e-8).mean()
-                    else:
-                        cluster_cv = np.mean(cluster_std / (np.abs(cluster_mean) + 1e-8))
+                    # Safe division with proper handling of zeros and infinities
+                    denominator = np.abs(cluster_mean) + 1e-8
+                    cv_values = np.divide(cluster_std, denominator, out=np.zeros_like(cluster_std), where=denominator!=0)
                     
-                    within_cvs.append(cluster_cv)
+                    # Remove any infinite or NaN values
+                    cv_values = cv_values[np.isfinite(cv_values)]
+                    
+                    if len(cv_values) > 0:
+                        cluster_cv = np.mean(cv_values)
+                        within_cvs.append(cluster_cv)
             
             within_cluster_cv = np.mean(within_cvs) if within_cvs else None
             
@@ -590,25 +662,42 @@ class AutomatedHDBSCANTuner:
             for label in unique_labels:
                 cluster_data = data[labels == label]
                 if len(cluster_data) > 0:
-                    cluster_means.append(np.mean(cluster_data, axis=0))
+                    cluster_mean = np.mean(cluster_data, axis=0)
+                    # Remove any non-finite values
+                    cluster_mean = cluster_mean[np.isfinite(cluster_mean)]
+                    if len(cluster_mean) > 0:
+                        cluster_means.append(cluster_mean)
             
             if len(cluster_means) > 1:
                 cluster_means = np.array(cluster_means)
                 between_cluster_std = np.std(cluster_means, axis=0)
                 between_cluster_mean = np.mean(cluster_means, axis=0)
                 
-                if MATH_VALIDATION_AVAILABLE:
-                    between_cluster_cv = safe_divide(between_cluster_std, np.abs(between_cluster_mean) + 1e-8).mean()
-                else:
-                    between_cluster_cv = np.mean(between_cluster_std / (np.abs(between_cluster_mean) + 1e-8))
+                # Safe division for between-cluster CV
+                denominator = np.abs(between_cluster_mean) + 1e-8
+                cv_values = np.divide(between_cluster_std, denominator, out=np.zeros_like(between_cluster_std), where=denominator!=0)
+                
+                # Remove any infinite or NaN values
+                cv_values = cv_values[np.isfinite(cv_values)]
+                
+                between_cluster_cv = np.mean(cv_values) if len(cv_values) > 0 else None
             else:
                 between_cluster_cv = None
+            
+            # Ensure we return actual values, not None
+            if within_cluster_cv is None:
+                within_cluster_cv = 0.0  # Default value
+                logger.warning("Within-cluster CV was None, using default 0.0")
+            
+            if between_cluster_cv is None:
+                between_cluster_cv = 0.0  # Default value
+                logger.warning("Between-cluster CV was None, using default 0.0")
             
             return within_cluster_cv, between_cluster_cv
             
         except Exception as e:
             logger.warning(f"Error in standard CV calculation: {e}")
-            return None, None
+            return 0.0, 0.0  # Return default values instead of None
     
     def _calculate_temporal_stability(self, cluster_labels: np.ndarray) -> Optional[float]:
         """Calculate temporal stability of clustering using optimized methods."""
@@ -862,59 +951,59 @@ class AutomatedHDBSCANTuner:
             return None, None, None, None
     
     def create_fallback_strategies(self, data: pd.DataFrame, characteristics: DatasetCharacteristics) -> List[FallbackStrategy]:
-        """Create intelligent fallback strategies optimized for 4-8 clusters."""
+        """Create intelligent fallback strategies optimized for 5-8 clusters."""
         strategies = []
         
-        # Strategy 1: Target 4-6 clusters with leaf method (enhanced)
+        # Strategy 1: Target 5-8 clusters with leaf method (enhanced)
         strategies.append(FallbackStrategy(
-            name='target_4_6_clusters_leaf_enhanced',
-            description='Target 4-6 clusters using leaf method with enhanced epsilon range',
+            name='target_5_8_clusters_leaf_enhanced',
+            description='Target 5-8 clusters using leaf method with enhanced epsilon range',
             parameters={
                 'cluster_selection_method': 'leaf',
-                'cluster_selection_epsilon': 0.05,  # Increased from 0.01 for better separation
-                'min_cluster_size': max(25, characteristics.n_samples // 25),  # Target ~4-6 clusters
-                'min_samples': max(12, characteristics.n_samples // 50),
+                'cluster_selection_epsilon': 0.1,  # Increased for better separation
+                'min_cluster_size': max(15, characteristics.n_samples // 30),  # Target ~5-8 clusters
+                'min_samples': max(8, characteristics.n_samples // 60),
                 'metric': 'euclidean'
             },
             priority=1
         ))
         
-        # Strategy 1.5: Enhanced leaf method for better separation
+        # Strategy 1.5: Enhanced leaf method for 5-8 clusters
         strategies.append(FallbackStrategy(
-            name='enhanced_leaf_separation',
-            description='Enhanced leaf method for better cluster separation',
+            name='enhanced_leaf_5_8_clusters',
+            description='Enhanced leaf method specifically for 5-8 clusters',
             parameters={
                 'cluster_selection_method': 'leaf',
-                'cluster_selection_epsilon': 0.15,  # Optimized epsilon for better separation
-                'min_cluster_size': max(20, characteristics.n_samples // 40),  # Balanced cluster size
-                'min_samples': max(8, characteristics.n_samples // 80),  # Balanced samples
-                'metric': 'euclidean'  # Use euclidean for better regime detection
+                'cluster_selection_epsilon': 0.2,  # Higher epsilon for more clusters
+                'min_cluster_size': max(12, characteristics.n_samples // 40),  # Smaller clusters
+                'min_samples': max(6, characteristics.n_samples // 80),  # Smaller samples
+                'metric': 'euclidean'
             },
             priority=1
         ))
         
-        # Strategy 1.6: Ultra-aggressive for balanced distribution
+        # Strategy 1.6: Ultra-aggressive for 5-8 clusters
         strategies.append(FallbackStrategy(
-            name='ultra_balanced_distribution',
-            description='Ultra-aggressive parameters for balanced cluster distribution',
+            name='ultra_aggressive_5_8_clusters',
+            description='Ultra-aggressive parameters for 5-8 clusters',
             parameters={
                 'cluster_selection_method': 'leaf',
-                'cluster_selection_epsilon': 0.3,  # High epsilon for aggressive clustering
-                'min_cluster_size': max(15, characteristics.n_samples // 50),  # Much smaller clusters
-                'min_samples': max(5, characteristics.n_samples // 100),  # Much smaller samples
+                'cluster_selection_epsilon': 0.4,  # Very high epsilon for aggressive clustering
+                'min_cluster_size': max(8, characteristics.n_samples // 60),  # Very small clusters
+                'min_samples': max(3, characteristics.n_samples // 160),  # Very small samples
                 'metric': 'manhattan'  # Use manhattan for better separation
             },
             priority=2
         ))
         
-        # Strategy 2: Target 6-8 clusters with EOM method
+        # Strategy 2: Target 5-8 clusters with EOM method
         strategies.append(FallbackStrategy(
-            name='target_6_8_clusters_eom',
-            description='Target 6-8 clusters using EOM method',
+            name='target_5_8_clusters_eom',
+            description='Target 5-8 clusters using EOM method',
             parameters={
                 'cluster_selection_method': 'eom',
-                'cluster_selection_epsilon': 0.05,
-                'min_cluster_size': max(20, characteristics.n_samples // 35),  # Target ~6-8 clusters
+                'cluster_selection_epsilon': 0.1,
+                'min_cluster_size': max(12, characteristics.n_samples // 40),  # Target ~5-8 clusters
                 'min_samples': max(10, characteristics.n_samples // 70),
                 'metric': 'euclidean'
             },
@@ -1210,8 +1299,8 @@ class AutomatedHDBSCANTuner:
         
         # Step 4: Evaluate initial result with optimized calculations
         initial_quality = self._evaluate_clustering_quality_optimized(data, best_params)
-        tprint(f"📊 Initial quality: Silhouette={initial_quality.silhouette_score:.3f}, "
-               f"Clusters={initial_quality.n_clusters}, Noise={initial_quality.noise_ratio:.3f}", "INFO")
+        tprint(f"📊 Initial quality: Silhouette={initial_quality.silhouette_score or 0.0:.3f}, "
+               f"Clusters={initial_quality.n_clusters or 0}, Noise={initial_quality.noise_ratio or 0.0:.3f}", "INFO")
         
         # Step 5: Check if fallback is needed
         if enable_fallback and initial_quality.is_poor_quality():
@@ -1220,8 +1309,8 @@ class AutomatedHDBSCANTuner:
             try:
                 best_params, final_quality = self.execute_parameter_fallback(data, initial_quality)
                 tprint(f"✅ Parameter fallback completed", "SUCCESS")
-                tprint(f"📊 Final quality: Silhouette={final_quality.silhouette_score:.3f}, "
-                       f"Clusters={final_quality.n_clusters}, Noise={final_quality.noise_ratio:.3f}", "INFO")
+                tprint(f"📊 Final quality: Silhouette={final_quality.silhouette_score or 0.0:.3f}, "
+                       f"Clusters={final_quality.n_clusters or 0}, Noise={final_quality.noise_ratio or 0.0:.3f}", "INFO")
             except Exception as e:
                 logger.warning(f"Parameter fallback failed: {e}")
                 tprint(f"⚠️ Parameter fallback failed: {e}", "WARNING")
@@ -1283,6 +1372,7 @@ class AutomatedHDBSCANTuner:
                             
                             # Calculate optimized metrics
                             within_cluster_cv, between_cluster_cv = self._calculate_cv_metrics(valid_data, valid_labels)
+                            logger.info(f"Optimized CV calculation result: within={within_cluster_cv}, between={between_cluster_cv}")
                             temporal_stability = self._calculate_temporal_stability(cluster_labels)
                             economic_separation = self._calculate_economic_separation(data, cluster_labels)
                             

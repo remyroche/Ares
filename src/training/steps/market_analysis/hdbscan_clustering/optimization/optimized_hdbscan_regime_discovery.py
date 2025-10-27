@@ -106,9 +106,9 @@ class OptimizedRegimeResult:
 @dataclass
 class OptimizedHDBSCANRegimeDiscoveryConfig:
     """Configuration for optimized HDBSCAN regime discovery."""
-    # Core HDBSCAN parameters
-    min_cluster_size: int = 10
-    min_samples: int = 5
+    # Core HDBSCAN parameters - FORCE MORE CLUSTERS
+    min_cluster_size: int = 3
+    min_samples: int = 2
     cluster_selection_epsilon: float = 0.0
     cluster_selection_method: str = 'eom'
     metric: str = 'euclidean'
@@ -1383,10 +1383,10 @@ class OptimizedHDBSCANRegimeDiscovery:
         if hdbscan_params is None:
             tprint("⚠️ No optimized parameters found, using default parameters", "WARNING")
             hdbscan_params = {
-                'min_cluster_size': 10,
-                'min_samples': 5,
-                'cluster_selection_epsilon': 0.0,
-                'cluster_selection_method': 'eom',
+                'min_cluster_size': 2,  # Minimum possible to force more clusters
+                'min_samples': 2,       # Minimum possible
+                'cluster_selection_epsilon': 0.3,  # Higher epsilon for more separation
+                'cluster_selection_method': 'leaf',  # Leaf method preserves all clusters
                 'metric': 'euclidean',
                 'alpha': 1.0
             }
@@ -1650,9 +1650,9 @@ class OptimizedHDBSCANRegimeDiscovery:
 
 # Convenience function
 def create_optimized_hdbscan_regime_discovery(
-    min_cluster_size: int = 10,
-    min_samples: int = 5,
-    cluster_selection_epsilon: float = 0.0,
+    min_cluster_size: int = 2,  # Minimum possible to force more clusters
+    min_samples: int = 2,       # Minimum possible
+    cluster_selection_epsilon: float = 0.3,  # Higher epsilon for more separation
     cluster_selection_method: str = 'eom',
     metric: str = 'euclidean',
     enable_hyperparameter_optimization: bool = True,

@@ -9,6 +9,8 @@ import asyncio
 import logging
 import yaml
 import os
+import pandas as pd
+import numpy as np
 from typing import Any, Dict, List, Optional
 from datetime import datetime
 from pathlib import Path
@@ -16,7 +18,14 @@ from pathlib import Path
 from src.training.steps.base_step import BaseStep
 from src.utils.logger import system_logger
 from src.utils.tprint import tprint, tprint_info, tprint_success, tprint_error
-from src.training.steps.models_training.unified_training_pipeline import UnifiedTrainingPipeline
+
+# Try to import unified training pipeline if it exists, otherwise use placeholder
+try:
+    from src.training.steps.models_training.unified_training_pipeline import UnifiedTrainingPipeline
+    UNIFIED_PIPELINE_AVAILABLE = True
+except ImportError:
+    UNIFIED_PIPELINE_AVAILABLE = False
+    tprint_info("UnifiedTrainingPipeline not available, using placeholder")
 
 
 class UnifiedModelsTrainingStep(BaseStep):
@@ -61,6 +70,17 @@ class UnifiedModelsTrainingStep(BaseStep):
         tprint_info(f"🚀 Starting unified {training_type} training for {symbol} {timeframe} {direction}")
 
         try:
+            # Check if unified pipeline is available
+            if not UNIFIED_PIPELINE_AVAILABLE:
+                tprint_error("UnifiedTrainingPipeline not available - cannot train models")
+                return {
+                    'success': False,
+                    'artifacts': {},
+                    'metrics': {},
+                    'error': "UnifiedTrainingPipeline not available",
+                    'training_type': training_type
+                }
+            
             # Initialize unified training pipeline
             self.unified_pipeline = UnifiedTrainingPipeline(self.logger)
             
@@ -103,15 +123,20 @@ class UnifiedModelsTrainingStep(BaseStep):
                 }
 
         except Exception as e:
+            import traceback
             error_msg = f"Unified {training_type} training failed: {str(e)}"
+            traceback_str = traceback.format_exc()
             tprint_error(f"❌ {error_msg}")
+            tprint_error(f"Traceback:\n{traceback_str}")
             self.logger.error(error_msg)
+            self.logger.error(traceback_str)
 
             return {
                 'success': False,
                 'artifacts': {},
                 'metrics': {},
                 'error': error_msg,
+                'traceback': traceback_str,
                 'training_type': training_type
             }
 
@@ -208,6 +233,23 @@ class UnifiedModelsTrainingStep(BaseStep):
         
         return yaml_config
 
+    def _apply_light_mode_filter(self, training_data: pd.DataFrame, config: Dict[str, Any], timeframe: str) -> pd.DataFrame:
+        """Apply light mode filtering to training data if needed."""
+        try:
+            execution_mode = config.get('execution_mode', 'light')
+            
+            if execution_mode == 'light' and training_data is not None:
+                # Limit to 1000 samples in light mode
+                if len(training_data) > 1000:
+                    tprint_info(f"Light mode: Limiting training data from {len(training_data)} to 1000 samples")
+                    training_data = training_data.tail(1000)
+            
+            return training_data
+            
+        except Exception as e:
+            self.logger.warning(f"Error applying light mode filter: {e}")
+            return training_data
+    
     async def _retrieve_training_data(self, config: Dict[str, Any]) -> tuple:
         """Retrieve training data and targets from artifacts."""
         try:
@@ -240,8 +282,6 @@ class UnifiedModelsTrainingStep(BaseStep):
             # If no data found, create dummy data for testing
             if training_data is None:
                 tprint_info("No training data found, creating dummy data for testing")
-                import pandas as pd
-                import numpy as np
                 
                 # Create dummy training data
                 n_samples = 1000 if config.get('execution_mode') == 'light' else 10000

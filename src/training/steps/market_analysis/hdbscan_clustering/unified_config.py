@@ -117,10 +117,10 @@ class UnifiedHDBSCANConfig:
         self.temporal_stability = temporal_stability or TemporalStabilityConfig()
         self.chunk_processing = chunk_processing or ChunkProcessingConfig()
         
-        # Core HDBSCAN parameters (will be set adaptively)
-        self.min_cluster_size: int = 15
-        self.min_samples: int = 5
-        self.cluster_selection_epsilon: float = 0.0
+        # Core HDBSCAN parameters (will be set adaptively) - TARGETING 5-8 CLUSTERS
+        self.min_cluster_size: int = 5   # Reduced from 15 to target 5-8 clusters
+        self.min_samples: int = 3        # Reduced from 5 to allow more clusters
+        self.cluster_selection_epsilon: float = 0.1  # Increased from 0.0 to allow more separation
         self.cluster_selection_method: ClusterSelectionMethod = ClusterSelectionMethod.EOM
         self.metric: DistanceMetric = DistanceMetric.EUCLIDEAN
         self.alpha: float = 1.0
@@ -166,7 +166,7 @@ class UnifiedHDBSCANConfig:
             
         elif self.execution_mode == ExecutionMode.BLANK:
             # Blank mode: minimal execution for testing
-            self.adaptive_scaling.min_cluster_size_factor = 0.1   # 10% of data
+            self.adaptive_scaling.min_cluster_size_factor = 0.02   # 2% of data (was 10%) - more aggressive for 5-8 clusters
             self.adaptive_scaling.min_samples_factor = 0.05       # 5% of data
             self.feature_engineering.max_features = 20
             self.feature_engineering.enable_entropy_features = False

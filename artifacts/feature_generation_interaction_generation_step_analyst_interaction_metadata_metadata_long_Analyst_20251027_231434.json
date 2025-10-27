@@ -1,0 +1,23 @@
+{
+  "created_at": "2025-10-27T23:15:00.882888",
+  "total_features": 110,
+  "category_coverage": {
+    "trend": 18,
+    "oscillator": 24,
+    "momentum": 0,
+    "returns": 0,
+    "volatility": 36,
+    "volume": 18,
+    "acceleration": 0,
+    "advanced_statistical": 0,
+    "candlestick_pattern": 6,
+    "entropy": 0,
+    "spectral_wavelet": 2
+  },
+  "artifact_name": "analyst_interaction_metadata",
+  "artifact_type": "metadata",
+  "file_path": "artifacts/pre_training/long/Analyst/feature_generation_interaction_generation_step/feature_generation_interaction_generation_step_analyst_interaction_metadata_long_Analyst_20251027_231434.parquet",
+  "file_size": 129541,
+  "timestamp": "2025-10-27T23:15:00.896787",
+  "compression": "auto"
+}

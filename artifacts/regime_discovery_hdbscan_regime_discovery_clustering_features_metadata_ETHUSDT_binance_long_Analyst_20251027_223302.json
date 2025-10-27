@@ -1,0 +1,12 @@
+{
+  "symbol": "ETHUSDT",
+  "timeframe": "1h",
+  "n_samples": 480,
+  "n_features": 24,
+  "artifact_name": "clustering_features",
+  "artifact_type": "data",
+  "file_path": "artifacts/market_analysis/ETHUSDT/binance/long/Analyst/hdbscan_regime_discovery/regime_discovery_hdbscan_regime_discovery_clustering_features_ETHUSDT_binance_long_Analyst_20251027_223302.pkl",
+  "file_size": 100510,
+  "timestamp": "2025-10-27T22:33:02.183224",
+  "compression": "auto"
+}

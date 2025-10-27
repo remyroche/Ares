@@ -823,7 +823,7 @@ class EnhancedHyperparameterOptimizer:
             cluster_count_score = max(0.0, cluster_count_score)
             
             # Parameter-based scoring (prefer certain parameter ranges)
-            min_cluster_size = params.get('min_cluster_size', 10)
+            min_cluster_size = params.get('min_cluster_size', 5)  # Reduced from 10 to target 5-8 clusters
             min_samples = params.get('min_samples', 5)
             epsilon = params.get('cluster_selection_epsilon', 0.0)
             
@@ -882,7 +882,7 @@ class EnhancedHyperparameterOptimizer:
             noise_score = 1.0 - noise_ratio
             
             # Enhanced parameter-based scoring for better differentiation
-            min_cluster_size = params.get('min_cluster_size', 10)
+            min_cluster_size = params.get('min_cluster_size', 5)  # Reduced from 10 to target 5-8 clusters
             min_samples = params.get('min_samples', 5)
             epsilon = params.get('cluster_selection_epsilon', 0.0)
             

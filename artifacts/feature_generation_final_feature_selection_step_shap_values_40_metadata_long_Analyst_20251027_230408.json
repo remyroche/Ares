@@ -1,0 +1,8 @@
+{
+  "artifact_name": "shap_values_40",
+  "artifact_type": "data",
+  "file_path": "artifacts/pre_training/long/Analyst/feature_generation_final_feature_selection_step/feature_generation_final_feature_selection_step_shap_values_40_long_Analyst_20251027_230408.parquet",
+  "file_size": 77184,
+  "timestamp": "2025-10-27T23:04:23.492139",
+  "compression": "auto"
+}

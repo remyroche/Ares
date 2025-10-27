@@ -6,6 +6,7 @@ This step performs regime clustering using HDBSCAN or other clustering methods.
 
 import asyncio
 import logging
+import os
 from typing import Any, Dict, List, Optional
 from datetime import datetime
 
@@ -176,7 +177,8 @@ class RegimeClusteringStep(BaseStep):
         """
         try:
             # Try to load regime artifacts (full artifacts)
-            regime_artifacts = self._get_artifact("regime_artifacts", artifact_type="data")
+            # Force loading the most recent artifacts by searching for the latest timestamp
+            regime_artifacts = self._get_most_recent_hdbscan_artifacts()
             if regime_artifacts is not None and not (hasattr(regime_artifacts, 'empty') and regime_artifacts.empty):
                 tprint("✅ Loaded HDBSCAN regime artifacts", "SUCCESS")
                 
@@ -186,13 +188,56 @@ class RegimeClusteringStep(BaseStep):
                     tprint(f"📊 Extracted regime labels: {len(regime_labels)} samples", "INFO")
                     
                     # Return properly structured artifacts
-                    return {
+                    artifacts = {
                         'regime_labels': regime_labels,
                         'regime_probabilities': regime_artifacts.get('regime_probabilities', {}).iloc[0] if 'regime_probabilities' in regime_artifacts.columns else None,
                         'economic_profiles': regime_artifacts.get('economic_profiles', {}).iloc[0] if 'economic_profiles' in regime_artifacts.columns else None,
                         'validation_metrics': {col: regime_artifacts[col].iloc[0] for col in regime_artifacts.columns if col.startswith('validation_metrics')},
                         'metadata': {col: regime_artifacts[col].iloc[0] for col in regime_artifacts.columns if col.startswith('metadata')}
                     }
+                    
+                    # Load clustering features from separate artifact
+                    # Search directly for clustering_features in HDBSCAN directories
+                    try:
+                        import glob
+                        import os
+                        import pickle
+                        
+                        # Search for clustering_features files in HDBSCAN regime discovery directories
+                        search_patterns = [
+                            "artifacts/Analyst/hdbscan_regime_discovery/*clustering_features*.pkl",
+                            "artifacts/long/Analyst/hdbscan_regime_discovery/*clustering_features*.pkl",
+                            "artifacts/binance/long/Analyst/hdbscan_regime_discovery/*clustering_features*.pkl",
+                            "artifacts/**/hdbscan_regime_discovery/*clustering_features*.pkl"
+                        ]
+                        
+                        clustering_features_files = []
+                        for pattern in search_patterns:
+                            files = glob.glob(pattern, recursive=True)
+                            clustering_features_files.extend(files)
+                        
+                        if clustering_features_files:
+                            # Sort by modification time (most recent first)
+                            clustering_features_files.sort(key=lambda x: os.path.getmtime(x), reverse=True)
+                            most_recent_file = clustering_features_files[0]
+                            
+                            tprint(f"📁 Loading clustering features from: {most_recent_file}", "INFO")
+                            
+                            # Load the clustering features
+                            with open(most_recent_file, 'rb') as f:
+                                clustering_features = pickle.load(f)
+                            
+                            artifacts['clustering_features'] = clustering_features
+                            if hasattr(clustering_features, 'shape'):
+                                tprint(f"📊 Loaded clustering features: {clustering_features.shape[0]} samples, {clustering_features.shape[1]} features", "INFO")
+                            else:
+                                tprint(f"📊 Loaded clustering features: {len(clustering_features)} samples", "INFO")
+                        else:
+                            tprint("⚠️ No clustering features artifact found", "WARNING")
+                    except Exception as e:
+                        tprint(f"⚠️ Failed to load clustering features: {e}", "WARNING")
+                    
+                    return artifacts
                 else:
                     tprint("⚠️ No regime_labels column found in HDBSCAN artifacts", "WARNING")
                     return None
@@ -212,6 +257,49 @@ class RegimeClusteringStep(BaseStep):
             
         except Exception as e:
             tprint(f"⚠️ Failed to load HDBSCAN artifacts: {e}", "WARNING")
+            return None
+    
+    def _get_most_recent_hdbscan_artifacts(self) -> Optional[Any]:
+        """
+        Get the most recent HDBSCAN regime artifacts by searching for the latest timestamp.
+        
+        Returns:
+            Most recent regime artifacts or None if not found
+        """
+        try:
+            import glob
+            import os
+            from pathlib import Path
+            
+            # Search for regime_artifacts files in the HDBSCAN regime discovery directory
+            # Try multiple search patterns to handle different artifact storage structures
+            search_patterns = [
+                "artifacts/long/Analyst/hdbscan_regime_discovery/*regime_artifacts*.parquet",
+                "artifacts/binance/long/Analyst/hdbscan_regime_discovery/*regime_artifacts*.parquet",
+                "artifacts/**/hdbscan_regime_discovery/*regime_artifacts*.parquet"
+            ]
+            
+            matching_files = []
+            for pattern in search_patterns:
+                files = glob.glob(pattern, recursive=True)
+                matching_files.extend(files)
+            
+            if not matching_files:
+                tprint("⚠️ No HDBSCAN regime artifacts found", "WARNING")
+                return None
+            
+            # Sort by modification time (most recent first)
+            matching_files.sort(key=lambda x: os.path.getmtime(x), reverse=True)
+            most_recent_file = matching_files[0]
+            
+            tprint(f"📁 Loading most recent HDBSCAN artifacts: {most_recent_file}", "INFO")
+            
+            # Load the most recent artifact
+            import pandas as pd
+            return pd.read_parquet(most_recent_file)
+            
+        except Exception as e:
+            tprint(f"❌ Failed to find most recent HDBSCAN artifacts: {e}", "ERROR")
             return None
 
     def _load_selected_features(self, config: Dict[str, Any]) -> Optional[List[str]]:
@@ -356,8 +444,9 @@ class RegimeClusteringStep(BaseStep):
                 tprint(f"📊 Quality issues: {quality_targets['issues']}", "INFO")
                 
                 # Try iterative optimization as fallback
+                # Use original regime_labels (before merging) to give more clusters to work with
                 iterative_result = self._run_iterative_optimization_fallback(
-                    hdbscan_artifacts, refined_labels, config
+                    hdbscan_artifacts, regime_labels, config
                 )
                 
                 if iterative_result is not None:
@@ -875,15 +964,15 @@ class RegimeClusteringStep(BaseStep):
         try:
             # Save regime clusters
             self._save_artifact(
-                "regime_clusters", 
                 artifacts['regime_clusters'], 
+                "regime_clusters", 
                 artifact_type="data"
             )
             
             # Save regime artifacts
             self._save_artifact(
-                "regime_artifacts", 
                 artifacts['regime_artifacts'], 
+                "regime_artifacts", 
                 artifact_type="data"
             )
             
@@ -994,25 +1083,29 @@ class RegimeClusteringStep(BaseStep):
                 cv_score = metrics.get('cv_score')
                 cv_target = targets.get('min_cv_score', 0.3)
                 cv_status = "✅" if cv_score and cv_score >= cv_target else "❌"
-                report_content += f"| CV Score | {cv_score:.3f if cv_score else 'N/A'} | ≥{cv_target} | {cv_status} |\n"
+                cv_display = f"{cv_score:.3f}" if cv_score is not None else "N/A"
+                report_content += f"| CV Score | {cv_display} | ≥{cv_target} | {cv_status} |\n"
                 
                 # Silhouette Score
                 sil_score = metrics.get('silhouette_score')
                 sil_target = targets.get('min_silhouette_score', 0.2)
                 sil_status = "✅" if sil_score and sil_score >= sil_target else "❌"
-                report_content += f"| Silhouette | {sil_score:.3f if sil_score else 'N/A'} | ≥{sil_target} | {sil_status} |\n"
+                sil_display = f"{sil_score:.3f}" if sil_score is not None else "N/A"
+                report_content += f"| Silhouette | {sil_display} | ≥{sil_target} | {sil_status} |\n"
                 
                 # DBI Score
                 dbi_score = metrics.get('dbi_score')
                 dbi_target = targets.get('min_dbi_score', 0.5)
                 dbi_status = "✅" if dbi_score and dbi_score <= dbi_target else "❌"
-                report_content += f"| DBI Score | {dbi_score:.3f if dbi_score else 'N/A'} | ≤{dbi_target} | {dbi_status} |\n"
+                dbi_display = f"{dbi_score:.3f}" if dbi_score is not None else "N/A"
+                report_content += f"| DBI Score | {dbi_display} | ≤{dbi_target} | {dbi_status} |\n"
                 
                 # Temporal Smoothness
                 temp_smooth = metrics.get('temporal_smoothness')
                 temp_target = targets.get('min_temporal_smoothness', 0.6)
                 temp_status = "✅" if temp_smooth and temp_smooth >= temp_target else "❌"
-                report_content += f"| Temporal Smoothness | {temp_smooth:.3f if temp_smooth else 'N/A'} | ≥{temp_target} | {temp_status} |\n"
+                temp_display = f"{temp_smooth:.3f}" if temp_smooth is not None else "N/A"
+                report_content += f"| Temporal Smoothness | {temp_display} | ≥{temp_target} | {temp_status} |\n"
             
             report_content += f"\n## Cluster Analysis\n"
             
@@ -1342,6 +1435,439 @@ class RegimeClusteringStep(BaseStep):
         except Exception:
             return 0.0
 
+    def _load_regime_clustering_config(self, base_config: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Load regime clustering configuration from YAML file and merge with base config.
+        
+        Args:
+            base_config: Base configuration dictionary
+            
+        Returns:
+            Merged configuration dictionary
+        """
+        try:
+            import yaml
+            config_path = "config/regime_clustering_config.yaml"
+            
+            if not os.path.exists(config_path):
+                tprint(f"ℹ️ No config file found at {config_path}, using base config", "INFO")
+                return base_config
+            
+            with open(config_path, 'r') as f:
+                yaml_config = yaml.safe_load(f)
+            
+            if yaml_config:
+                # Merge YAML config with base config (YAML takes precedence)
+                merged_config = {**base_config, **yaml_config}
+                tprint(f"✅ Loaded configuration from {config_path}", "SUCCESS")
+                return merged_config
+            else:
+                return base_config
+                
+        except Exception as e:
+            tprint(f"⚠️ Failed to load config file: {e}, using base config", "WARNING")
+            return base_config
+    
+    def _load_cached_tuning_results(self, config: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """
+        Load cached tuning results if available and not too old.
+        
+        Args:
+            config: Configuration dictionary
+            
+        Returns:
+            Cached parameters or None
+        """
+        try:
+            import glob
+            import json
+            from datetime import timedelta
+            
+            # Look for recent tuning results
+            pattern = f"artifacts/hyperparameter_tuning/auto_tuning_results_{config['symbol']}_*.json"
+            result_files = glob.glob(pattern)
+            
+            if not result_files:
+                tprint("📭 No cached tuning results found", "INFO")
+                return None
+            
+            # Sort by modification time (most recent first)
+            result_files.sort(key=lambda x: os.path.getmtime(x), reverse=True)
+            most_recent = result_files[0]
+            
+            # Check if cache is too old
+            max_age_hours = config.get('cached_tuning_max_age_hours', 24)
+            file_age = datetime.now() - datetime.fromtimestamp(os.path.getmtime(most_recent))
+            
+            if file_age.total_seconds() / 3600 > max_age_hours:
+                tprint(f"⏰ Cached results too old ({file_age.total_seconds()/3600:.1f}h > {max_age_hours}h)", "WARNING")
+                return None
+            
+            # Load cached results
+            with open(most_recent, 'r') as f:
+                cached_results = json.load(f)
+            
+            if 'best_params' not in cached_results:
+                tprint("⚠️ Cached results missing best_params", "WARNING")
+                return None
+            
+            tprint(f"📦 Loaded cached tuning results from {most_recent} (age: {file_age.total_seconds()/3600:.1f}h)", "INFO")
+            
+            # Convert to config format
+            best_params = cached_results['best_params']
+            converted_params = {
+                'min_clusters': best_params.get('K_MIN', 4),
+                'max_clusters': best_params.get('K_MAX', 8),
+                'iterative_max_iterations': best_params.get('max_rounds', 25),
+                'iterative_min_frac': best_params.get('MIN_FRAC', 0.03),
+                'iterative_max_frac': best_params.get('MAX_FRAC', 0.20),
+                'iterative_w_cv': best_params.get('w_cv', 0.70),
+                'iterative_w_sil': best_params.get('w_sil', 0.10),
+                'iterative_w_temp': best_params.get('w_temp', 0.20),
+                'iterative_w_bal': best_params.get('w_bal', 0.05),
+                'iterative_eps_std_step1': best_params.get('eps_std_step1', -0.20),
+                'iterative_sil_guard': best_params.get('sil_guard', -0.08),
+                'iterative_temporal_bonus': best_params.get('temporal_bonus', 0.25),
+                'iterative_eps_cv': best_params.get('eps_cv', 1e-5),
+                'iterative_eps_sil': best_params.get('eps_sil', 1e-4),
+                'iterative_eps_temp': best_params.get('eps_temp', 1e-4),
+                'iterative_local_churn_cap': best_params.get('local_churn_cap', 5000),
+                'iterative_knn_size': best_params.get('knn_size', 25),
+                'iterative_size_gate_base': best_params.get('size_gate_base', 1e-4),
+                'iterative_size_gate_alpha': best_params.get('size_gate_alpha', 0.02),
+                'iterative_size_gate_beta': best_params.get('size_gate_beta', 0.05),
+            }
+            
+            # Show cached metrics
+            if 'best_metrics' in cached_results:
+                metrics = cached_results['best_metrics']
+                tprint(f"📊 Cached metrics: CV={metrics.get('cv_score', 'N/A'):.4f}, Sil={metrics.get('silhouette_score', 'N/A'):.4f}, DBI={metrics.get('dbi_score', 'N/A'):.4f}", "INFO")
+            
+            return converted_params
+            
+        except Exception as e:
+            tprint(f"⚠️ Failed to load cached results: {e}", "WARNING")
+            return None
+
+    def _run_automated_tuning(self, config: Dict[str, Any], n_trials: int = 20) -> Optional[Dict[str, Any]]:
+        """
+        Run automated hyperparameter tuning for iterative optimization.
+        
+        Args:
+            config: Configuration dictionary
+            n_trials: Number of tuning trials
+            
+        Returns:
+            Dictionary with best parameters or None if tuning fails
+        """
+        try:
+            from src.training.steps.market_analysis.clusters.iterative_optimization_tuner import IterativeOptimizationTuner
+            import os
+            
+            tprint("🎯 Starting automated hyperparameter tuning...", "INFO")
+            
+            # Load features for tuning
+            features = self._load_feature_data_for_optimization(config)
+            if features is None:
+                tprint("❌ Failed to load features for tuning", "ERROR")
+                return None
+            
+            # Load initial labels (original HDBSCAN labels)
+            # Get from current execution context
+            selected_features = self._load_selected_features(config)
+            if selected_features is None:
+                tprint("❌ Failed to load selected features for tuning", "ERROR")
+                return None
+            
+            # Load HDBSCAN labels
+            self.artifact_manager.set_context(
+                step_name="hdbscan_regime_discovery",
+                symbol=config['symbol'],
+                exchange=config['exchange'],
+                datetime=datetime.now(),
+                information="regime_discovery",
+                direction="long",
+                model="Analyst"
+            )
+            
+            regime_labels_df = self._get_artifact("regime_labels", artifact_type="data")
+            
+            # Restore context
+            self.artifact_manager.set_context(
+                step_name="regime_clustering",
+                symbol=config['symbol'],
+                exchange=config['exchange'],
+                datetime=datetime.now(),
+                information="regime_clustering",
+                direction="long",
+                model="Analyst"
+            )
+            
+            if regime_labels_df is None or (hasattr(regime_labels_df, 'empty') and regime_labels_df.empty):
+                tprint("❌ Failed to load regime labels for tuning", "ERROR")
+                return None
+            
+            # Extract labels
+            if 'regime_label' in regime_labels_df.columns:
+                initial_labels = regime_labels_df['regime_label'].values
+            elif 'label' in regime_labels_df.columns:
+                initial_labels = regime_labels_df['label'].values
+            else:
+                initial_labels = regime_labels_df.iloc[:, 0].values
+            
+            # Load market data
+            self.artifact_manager.set_context(
+                step_name="feature_generation_feature_generation_step",
+                symbol=config['symbol'],
+                exchange=config['exchange'],
+                datetime=datetime.now(),
+                information="feature_generation",
+                direction="long",
+                model="Analyst"
+            )
+            
+            market_data = self._get_artifact("generated_features_15m", artifact_type="data")
+            
+            # Restore context
+            self.artifact_manager.set_context(
+                step_name="regime_clustering",
+                symbol=config['symbol'],
+                exchange=config['exchange'],
+                datetime=datetime.now(),
+                information="regime_clustering",
+                direction="long",
+                model="Analyst"
+            )
+            
+            if market_data is None or (hasattr(market_data, 'empty') and market_data.empty):
+                tprint("❌ Failed to load market data for tuning", "ERROR")
+                return None
+            
+            # Resample market data to match labels length if needed
+            if len(market_data) != len(initial_labels):
+                tprint(f"🔧 Resampling market data from {len(market_data)} to {len(initial_labels)} samples", "INFO")
+                # Resample to 1h if needed
+                if not isinstance(market_data.index, pd.DatetimeIndex):
+                    if 'open_time' in market_data.columns:
+                        market_data = market_data.set_index('open_time')
+                market_data = market_data.resample('1H').last()
+                market_data = market_data.dropna(how='all')
+            
+            # Align features and labels
+            min_len = min(len(features), len(initial_labels), len(market_data))
+            features = features[:min_len]
+            initial_labels = initial_labels[:min_len]
+            market_data = market_data.iloc[:min_len]
+            
+            tprint(f"📊 Tuning dataset: {features.shape[0]} samples × {features.shape[1]} features", "INFO")
+            
+            # Create tuner
+            tuner = IterativeOptimizationTuner(
+                features=features,
+                initial_labels=initial_labels,
+                market_data=market_data,
+                verbose=False  # Reduce noise during automated tuning
+            )
+            
+            # Run Bayesian optimization
+            tprint(f"🚀 Running Bayesian optimization ({n_trials} trials)...", "INFO")
+            results = tuner.optimize_bayesian(n_trials=n_trials)
+            
+            if results is None or 'best_params' not in results:
+                tprint("❌ Tuning failed to produce results", "ERROR")
+                return None
+            
+            # Save tuning results
+            output_dir = "artifacts/hyperparameter_tuning/"
+            os.makedirs(output_dir, exist_ok=True)
+            
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            results_path = os.path.join(output_dir, f"auto_tuning_results_{config['symbol']}_{timestamp}.json")
+            report_path = os.path.join(output_dir, f"auto_tuning_report_{config['symbol']}_{timestamp}.md")
+            
+            tuner.save_results(results, results_path)
+            tuner.generate_report(results, report_path)
+            
+            tprint(f"✅ Tuning results saved to: {results_path}", "SUCCESS")
+            tprint(f"📊 Tuning report saved to: {report_path}", "SUCCESS")
+            
+            # Extract best parameters
+            best_params = results['best_params']
+            best_metrics = results['best_metrics']
+            
+            tprint("🏆 Best tuned parameters:", "SUCCESS")
+            tprint(f"   • CV Score: {best_metrics.cv_score:.4f}", "INFO")
+            tprint(f"   • Silhouette: {best_metrics.silhouette_score:.4f}", "INFO")
+            tprint(f"   • DBI: {best_metrics.dbi_score:.4f}", "INFO")
+            tprint(f"   • Clusters: {best_metrics.n_clusters}", "INFO")
+            
+            # Convert tuner params to iterative optimization config params
+            converted_params = {
+                'min_clusters': best_params['K_MIN'],
+                'max_clusters': best_params['K_MAX'],
+                'iterative_max_iterations': best_params['max_rounds'],
+                'iterative_min_frac': best_params['MIN_FRAC'],
+                'iterative_max_frac': best_params['MAX_FRAC'],
+                'iterative_w_cv': best_params['w_cv'],
+                'iterative_w_sil': best_params['w_sil'],
+                'iterative_w_temp': best_params['w_temp'],
+                'iterative_w_bal': best_params['w_bal'],
+                'iterative_eps_std_step1': best_params['eps_std_step1'],
+                'iterative_sil_guard': best_params['sil_guard'],
+                'iterative_temporal_bonus': best_params['temporal_bonus'],
+                'iterative_eps_cv': best_params['eps_cv'],
+                'iterative_eps_sil': best_params['eps_sil'],
+                'iterative_eps_temp': best_params['eps_temp'],
+                'iterative_local_churn_cap': best_params['local_churn_cap'],
+                'iterative_knn_size': best_params['knn_size'],
+                'iterative_size_gate_base': best_params['size_gate_base'],
+                'iterative_size_gate_alpha': best_params['size_gate_alpha'],
+                'iterative_size_gate_beta': best_params['size_gate_beta'],
+            }
+            
+            # Save best params as artifact for future reference
+            self._save_artifact(
+                data=best_params,
+                artifact_name="tuned_iterative_opt_params",
+                artifact_type="config",
+                metadata={
+                    'symbol': config['symbol'],
+                    'timestamp': timestamp,
+                    'metrics': {
+                        'cv_score': best_metrics.cv_score,
+                        'silhouette_score': best_metrics.silhouette_score,
+                        'dbi_score': best_metrics.dbi_score,
+                        'balance_score': best_metrics.balance_score,
+                        'temporal_smoothness': best_metrics.temporal_smoothness,
+                        'n_clusters': best_metrics.n_clusters
+                    }
+                }
+            )
+            
+            return converted_params
+            
+        except Exception as e:
+            tprint(f"❌ Automated tuning failed: {e}", "ERROR")
+            import traceback
+            traceback.print_exc()
+            return None
+
+    def _load_feature_data_for_optimization(self, config: Dict[str, Any]) -> Optional[np.ndarray]:
+        """
+        Load feature data from regime_feature_selection for iterative optimization.
+        
+        This method loads the market data and selected features, then creates
+        the feature matrix needed for iterative optimization.
+        
+        Args:
+            config: Configuration dictionary
+            
+        Returns:
+            Feature matrix as NumPy array (n_samples, n_features) or None if loading fails
+        """
+        try:
+            import pandas as pd
+            
+            # Load market data from pre_training artifacts using BaseStep's method
+            tprint("📥 Loading market data from pre_training artifacts...", "INFO")
+            
+            # Set context to feature_generation_feature_generation_step to load the freshly generated features
+            # Use regime_timeframe (1h) instead of trading timeframe (15m)
+            regime_timeframe = config.get('regime_timeframe', '1h')
+            tprint(f"📊 Loading features for regime timeframe: {regime_timeframe}", "INFO")
+            
+            self.artifact_manager.set_context(
+                step_name="feature_generation_feature_generation_step",
+                symbol=config['symbol'],
+                exchange=config['exchange'],
+                datetime=datetime.now(),
+                information="feature_generation",
+                direction="long",
+                model="Analyst"
+            )
+            
+            # Try to get the generated features for the regime timeframe (1h)
+            # Note: The artifact name should match the timeframe used
+            artifact_name = f"generated_features_{regime_timeframe}"
+            market_data_with_features = self._get_artifact(artifact_name, artifact_type="data")
+            
+            # If 1h features don't exist, try to resample from 15m
+            if market_data_with_features is None or (hasattr(market_data_with_features, 'empty') and market_data_with_features.empty):
+                tprint(f"⚠️ No {regime_timeframe} features found, attempting to load and resample from 15m", "WARNING")
+                market_data_15m = self._get_artifact("generated_features_15m", artifact_type="data")
+                
+                if market_data_15m is not None and not (hasattr(market_data_15m, 'empty') and market_data_15m.empty):
+                    # Resample 15m to 1h
+                    tprint("🔄 Resampling 15m features to 1h...", "INFO")
+                    # Ensure index is datetime
+                    if not isinstance(market_data_15m.index, pd.DatetimeIndex):
+                        if 'open_time' in market_data_15m.columns:
+                            market_data_15m = market_data_15m.set_index('open_time')
+                        elif 'timestamp' in market_data_15m.columns:
+                            market_data_15m = market_data_15m.set_index('timestamp')
+                    
+                    # Resample to 1h (use last value for each hour)
+                    market_data_with_features = market_data_15m.resample('1H').last()
+                    market_data_with_features = market_data_with_features.dropna(how='all')
+                    tprint(f"✅ Resampled features from {len(market_data_15m)} (15m) to {len(market_data_with_features)} (1h) samples", "SUCCESS")
+                else:
+                    tprint("❌ Failed to load 15m features for resampling", "ERROR")
+                    market_data_with_features = None
+            
+            # Restore context
+            self.artifact_manager.set_context(
+                step_name="regime_clustering",
+                symbol=config['symbol'],
+                exchange=config['exchange'],
+                datetime=datetime.now(),
+                information="regime_clustering",
+                direction="long",
+                model="Analyst"
+            )
+            
+            if market_data_with_features is None or (hasattr(market_data_with_features, 'empty') and market_data_with_features.empty):
+                tprint("❌ Failed to load market data with features from pre_training", "ERROR")
+                return None
+            
+            # Load selected features from regime_feature_selection (already loaded earlier in execution)
+            selected_features = self._load_selected_features(config)
+            if selected_features is None or len(selected_features) == 0:
+                tprint("❌ No selected features available", "ERROR")
+                return None
+            
+            tprint(f"📊 Loaded {len(selected_features)} selected features from regime_feature_selection", "INFO")
+            
+            # Extract the feature columns from market data
+            missing_features = [f for f in selected_features if f not in market_data_with_features.columns]
+            if missing_features:
+                tprint(f"⚠️ Missing {len(missing_features)} features in market data: {missing_features[:5]}...", "WARNING")
+                # Use only available features
+                available_features = [f for f in selected_features if f in market_data_with_features.columns]
+                if len(available_features) == 0:
+                    tprint("❌ No features available in market data", "ERROR")
+                    return None
+                selected_features = available_features
+            
+            # Create feature matrix
+            feature_matrix = market_data_with_features[selected_features].values
+            
+            # Handle any remaining NaN values
+            if np.isnan(feature_matrix).any():
+                tprint("🔧 Handling NaN values in feature matrix", "INFO")
+                # Fill NaN with column mean
+                from sklearn.impute import SimpleImputer
+                imputer = SimpleImputer(strategy='mean')
+                feature_matrix = imputer.fit_transform(feature_matrix)
+            
+            tprint(f"✅ Created feature matrix: {feature_matrix.shape[0]} samples × {feature_matrix.shape[1]} features", "SUCCESS")
+            return feature_matrix
+            
+        except Exception as e:
+            tprint(f"❌ Error loading feature data: {e}", "ERROR")
+            import traceback
+            traceback.print_exc()
+            return None
+
     def _run_iterative_optimization_fallback(self, hdbscan_artifacts: Dict[str, Any], initial_labels: np.ndarray, config: Dict[str, Any]) -> Optional[np.ndarray]:
         """
         Run iterative optimization as fallback when quality targets are not met.
@@ -1361,15 +1887,76 @@ class RegimeClusteringStep(BaseStep):
             
             tprint("🔄 Starting iterative optimization fallback...", "INFO")
             
-            # Get features from artifacts
-            features = hdbscan_artifacts.get('features')
+            # Load configuration from YAML if available
+            config = self._load_regime_clustering_config(config)
+            
+            # Check if automatic hyperparameter tuning is enabled
+            auto_tune = config.get('auto_tune_iterative_opt', False)
+            use_cached = config.get('use_cached_tuning', False)
+            tuning_trials = config.get('tuning_trials', 20)
+            
+            tuned_params = None
+            
+            # Try to use cached tuning results first
+            if use_cached and not auto_tune:
+                tprint("📦 Attempting to load cached tuning results...", "INFO")
+                cached_params = self._load_cached_tuning_results(config)
+                if cached_params:
+                    tprint("✅ Using cached tuning results", "SUCCESS")
+                    tuned_params = cached_params
+                else:
+                    tprint("⚠️ No valid cached results found", "WARNING")
+            
+            # Run fresh tuning if enabled and no cached results
+            if auto_tune and tuned_params is None:
+                tprint("🎯 Automatic hyperparameter tuning enabled!", "INFO")
+                tprint(f"📊 Running {tuning_trials} tuning trials before optimization...", "INFO")
+                
+                # Run automated tuning
+                tuned_params = self._run_automated_tuning(config, tuning_trials)
+                
+                if tuned_params:
+                    tprint("✅ Tuning completed - applying best parameters", "SUCCESS")
+                else:
+                    tprint("⚠️ Tuning failed - using default parameters", "WARNING")
+            
+            # Apply tuned parameters if available
+            if tuned_params:
+                config.update(tuned_params)
+            
+            # Load features from regime_feature_selection (NOT from HDBSCAN)
+            # The features for regime clustering should come from regime_feature_selection
+            tprint("📥 Loading feature data from regime_feature_selection for iterative optimization...", "INFO")
+            features = self._load_feature_data_for_optimization(config)
+            
             if features is None:
-                tprint("⚠️ No features available for iterative optimization", "WARNING")
+                tprint("❌ Failed to load feature data from regime_feature_selection", "ERROR")
                 return None
+            
+            if not isinstance(features, np.ndarray):
+                tprint(f"⚠️ Unexpected feature format: {type(features)}", "WARNING")
+                return None
+            
+            tprint(f"📊 Using {features.shape[0]} samples with {features.shape[1]} features for iterative optimization", "INFO")
+            
+            # Filter out noise labels (-1) before iterative optimization
+            # Iterative optimization expects non-negative cluster IDs only
+            noise_mask = initial_labels >= 0
+            if not np.any(noise_mask):
+                tprint("❌ All labels are noise (-1), cannot run iterative optimization", "ERROR")
+                return None
+            
+            # Filter features and labels to exclude noise points
+            filtered_features = features[noise_mask]
+            filtered_labels = initial_labels[noise_mask]
+            
+            noise_count = np.sum(~noise_mask)
+            if noise_count > 0:
+                tprint(f"🔧 Filtered out {noise_count} noise points, using {len(filtered_labels)} samples for optimization", "INFO")
             
             # Create clustering context for iterative optimization
             context = self._create_clustering_context_for_iterative_optimization(
-                features, initial_labels, config
+                filtered_features, filtered_labels, config
             )
             
             # Configure iterative optimization
@@ -1384,28 +1971,117 @@ class RegimeClusteringStep(BaseStep):
             # Run iterative optimization
             optimizer = IterativeOptimization(verbose=True)
             
+            # Apply tuned parameters if auto-tuning was run
+            if config.get('auto_tune_iterative_opt', False):
+                tprint("🔧 Applying tuned parameters to optimizer...", "INFO")
+                
+                # Update optimizer config with tuned parameters
+                if 'iterative_min_frac' in config:
+                    optimizer.config.MIN_FRAC = config['iterative_min_frac']
+                if 'iterative_max_frac' in config:
+                    optimizer.config.MAX_FRAC = config['iterative_max_frac']
+                if 'iterative_w_cv' in config:
+                    optimizer.config.w_cv = config['iterative_w_cv']
+                if 'iterative_w_sil' in config:
+                    optimizer.config.w_sil = config['iterative_w_sil']
+                if 'iterative_w_temp' in config:
+                    optimizer.config.w_temp = config['iterative_w_temp']
+                if 'iterative_w_bal' in config:
+                    optimizer.config.w_bal = config['iterative_w_bal']
+                if 'iterative_eps_std_step1' in config:
+                    optimizer.config.eps_std_step1 = config['iterative_eps_std_step1']
+                if 'iterative_sil_guard' in config:
+                    optimizer.config.sil_guard = config['iterative_sil_guard']
+                if 'iterative_temporal_bonus' in config:
+                    optimizer.config.temporal_bonus = config['iterative_temporal_bonus']
+                if 'iterative_eps_cv' in config:
+                    optimizer.config.eps_cv = config['iterative_eps_cv']
+                if 'iterative_eps_sil' in config:
+                    optimizer.config.eps_sil = config['iterative_eps_sil']
+                if 'iterative_eps_temp' in config:
+                    optimizer.config.eps_temp = config['iterative_eps_temp']
+                if 'iterative_local_churn_cap' in config:
+                    optimizer.config.local_churn_cap = config['iterative_local_churn_cap']
+                if 'iterative_knn_size' in config:
+                    optimizer.config.knn_size = config['iterative_knn_size']
+                if 'iterative_size_gate_base' in config:
+                    optimizer.config.size_gate_base = config['iterative_size_gate_base']
+                if 'iterative_size_gate_alpha' in config:
+                    optimizer.config.size_gate_alpha = config['iterative_size_gate_alpha']
+                if 'iterative_size_gate_beta' in config:
+                    optimizer.config.size_gate_beta = config['iterative_size_gate_beta']
+                
+                tprint("✅ Tuned parameters applied to optimizer", "SUCCESS")
+            
             # Use asyncio to run the async method
+            # Handle event loop properly (support nested loops)
             import asyncio
             try:
-                loop = asyncio.get_event_loop()
-            except RuntimeError:
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
+                # Try to use nest_asyncio to allow nested event loops
+                import nest_asyncio
+                nest_asyncio.apply()
+                tprint("✅ nest_asyncio applied - nested event loops enabled", "INFO")
+            except ImportError:
+                tprint("⚠️ nest_asyncio not available - trying alternative approach", "WARNING")
             
-            optimized_context = loop.run_until_complete(
-                optimizer.execute_optimization_loop(
-                    context, iterative_config, 
-                    max_iterations=iterative_config['max_iterations'],
-                    enable_risk_mitigation=iterative_config['enable_risk_mitigation']
+            try:
+                # Try to get existing event loop
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    # Event loop is already running - create new task
+                    tprint("🔄 Event loop already running - using asyncio.create_task", "INFO")
+                    # We can't use run_until_complete on a running loop, so we'll run synchronously
+                    # Create a new event loop in a different thread or use sync approach
+                    import concurrent.futures
+                    with concurrent.futures.ThreadPoolExecutor() as executor:
+                        future = executor.submit(
+                            asyncio.run,
+                            optimizer.execute_optimization_loop(
+                                context, iterative_config,
+                                max_iterations=iterative_config['max_iterations'],
+                                enable_risk_mitigation=iterative_config['enable_risk_mitigation']
+                            )
+                        )
+                        optimized_context = future.result()
+                else:
+                    # Loop exists but not running
+                    optimized_context = loop.run_until_complete(
+                        optimizer.execute_optimization_loop(
+                            context, iterative_config,
+                            max_iterations=iterative_config['max_iterations'],
+                            enable_risk_mitigation=iterative_config['enable_risk_mitigation']
+                        )
+                    )
+            except RuntimeError:
+                # No event loop exists - create one
+                optimized_context = asyncio.run(
+                    optimizer.execute_optimization_loop(
+                        context, iterative_config,
+                        max_iterations=iterative_config['max_iterations'],
+                        enable_risk_mitigation=iterative_config['enable_risk_mitigation']
+                    )
                 )
-            )
             
             # Extract optimized labels
-            optimized_labels = optimized_context.assignments
+            # Check if optimized_assignments is available (updated during optimization)
+            if hasattr(optimized_context, 'optimized_assignments') and optimized_context.optimized_assignments is not None:
+                optimized_labels_filtered = optimized_context.optimized_assignments
+            elif hasattr(optimized_context, 'assignments') and optimized_context.assignments is not None:
+                optimized_labels_filtered = optimized_context.assignments
+            else:
+                tprint("❌ No optimized assignments found in context", "ERROR")
+                return None
             
-            tprint(f"✅ Iterative optimization completed: {len(np.unique(optimized_labels))} clusters", "SUCCESS")
+            tprint(f"✅ Iterative optimization completed: {len(np.unique(optimized_labels_filtered))} clusters", "SUCCESS")
             
-            return optimized_labels
+            # Map the optimized labels back to include noise points
+            # Create full labels array with noise points restored
+            optimized_labels_full = np.full(len(initial_labels), -1, dtype=np.int32)
+            optimized_labels_full[noise_mask] = optimized_labels_filtered
+            
+            tprint(f"📊 Final labels: {len(np.unique(optimized_labels_full))} unique labels (including noise)", "INFO")
+            
+            return optimized_labels_full
             
         except Exception as e:
             tprint(f"⚠️ Iterative optimization fallback failed: {e}", "WARNING")
@@ -1427,13 +2103,47 @@ class RegimeClusteringStep(BaseStep):
             # Import the ClusteringContext class
             from src.training.steps.market_analysis.clusters.step1_feature_preparation import ClusteringContext
             
-            # Create context with required attributes
-            context = ClusteringContext()
-            context.features = features
+            # Load market data for context (needed by ClusteringContext)
+            # Set context to feature_generation to load the generated features with market data
+            self.artifact_manager.set_context(
+                step_name="feature_generation_feature_generation_step",
+                symbol=config['symbol'],
+                exchange=config['exchange'],
+                datetime=datetime.now(),
+                information="feature_generation",
+                direction="long",
+                model="Analyst"
+            )
+            
+            market_data = self._get_artifact("generated_features_15m", artifact_type="data")
+            
+            # Restore context
+            self.artifact_manager.set_context(
+                step_name="regime_clustering",
+                symbol=config['symbol'],
+                exchange=config['exchange'],
+                datetime=datetime.now(),
+                information="regime_clustering",
+                direction="long",
+                model="Analyst"
+            )
+            
+            # Create context with required arguments
+            context = ClusteringContext(
+                original_features=features,
+                market_data=market_data if market_data is not None else pd.DataFrame()
+            )
+            
+            # Set initial assignments (required by iterative optimization)
+            context.initial_assignments = labels.copy()
             context.assignments = labels
             context.optimal_k = len(np.unique(labels[labels != -1]))
             context.n_samples = len(features)
             context.n_features = features.shape[1] if len(features.shape) > 1 else 1
+            
+            # Set optimized_features (required by iterative optimization)
+            context.optimized_features = features
+            context.optimized_feature_names = None  # Will be set by iterative optimization
             
             # Add any additional context attributes that might be needed
             context.symbol = config.get('symbol', 'UNKNOWN')

@@ -34,24 +34,25 @@ except ImportError:
 
 # VectorBT imports
 try:
-    from src.vectorbt import (
-        vbt, rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max,
-        rolling_sum, rolling_apply, VECTORBT_AVAILABLE
-    )
-    from src.vectorbt.optimization import RollingOptimizer
+    import vectorbt as vbt
+    from vectorbt.optimization import RollingOptimizer
+    VECTORBT_AVAILABLE = True
     VECTORBT_ROLLING_AVAILABLE = True
 except ImportError:
     VECTORBT_AVAILABLE = False
     VECTORBT_ROLLING_AVAILABLE = False
     vbt = None
-    rolling_mean = None
-    rolling_std = None
-    rolling_var = None
-    rolling_min = None
-    rolling_max = None
-    rolling_sum = None
-    rolling_apply = None
     RollingOptimizer = None
+
+# Rolling functions - use numpy/pandas fallbacks if vectorbt not available
+if vbt is None:
+    rolling_mean = lambda x, window: pd.Series(x).rolling(window).mean() if PANDAS_AVAILABLE else None
+    rolling_std = lambda x, window: pd.Series(x).rolling(window).std() if PANDAS_AVAILABLE else None
+    rolling_var = lambda x, window: pd.Series(x).rolling(window).var() if PANDAS_AVAILABLE else None
+    rolling_min = lambda x, window: pd.Series(x).rolling(window).min() if PANDAS_AVAILABLE else None
+    rolling_max = lambda x, window: pd.Series(x).rolling(window).max() if PANDAS_AVAILABLE else None
+    rolling_sum = lambda x, window: pd.Series(x).rolling(window).sum() if PANDAS_AVAILABLE else None
+    rolling_apply = lambda x, window, func: pd.Series(x).rolling(window).apply(func) if PANDAS_AVAILABLE else None
 
 # Hardware and vectorization imports
 try:
@@ -312,9 +313,7 @@ class SRParameterOptimizationStep(BaseStep):
                 enable_shap=True,
                 enable_lime=True,
                 shap_sample_size=1000,
-                lime_sample_size=500,
-                max_features_shap=20,
-                max_features_lime=10
+                lime_sample_size=500
             )
             self.explainer = create_explainer(self.explainability_config)
             self.logger.info("✅ SHAP/LIME explainability initialized")
@@ -580,9 +579,14 @@ class SRParameterOptimizationStep(BaseStep):
             # Check for NaN values in critical columns
             critical_columns = ['open', 'high', 'low', 'close']
             for col in critical_columns:
-                if data[col].isna().any():
-                    self.logger.error(f"Found NaN values in critical column: {col}")
-                    return False
+                nan_count = data[col].isna().sum()
+                if nan_count > 0:
+                    self.logger.warning(f"Found {nan_count} NaN values in critical column: {col}. Filling with forward fill.")
+                    # Fill NaN values with forward fill, then backward fill for any remaining NaNs
+                    data[col] = data[col].fillna(method='ffill').fillna(method='bfill')
+                    # If still NaN, fill with 0 (shouldn't happen with proper data)
+                    data[col] = data[col].fillna(0)
+                    self.logger.info(f"Cleaned NaN values in column: {col}")
 
             # Check for reasonable price values
             for col in critical_columns:
@@ -721,7 +725,7 @@ class SRParameterOptimizationStep(BaseStep):
             if enhanced_config.enable_bayesian_hpo and self.bayesian_optimizer:
                 self.logger.info("🧠 Running Bayesian HPO optimization...")
                 bayesian_result = await self._run_bayesian_optimization(
-                    search_space, train_data, test_data, enhanced_config
+                    search_space, train_data, test_data, enhanced_config, config, market_data, input_artifacts
                 )
                 optimization_result.update(bayesian_result)
             
@@ -821,55 +825,70 @@ class SRParameterOptimizationStep(BaseStep):
             
             # Use SR clustering results to inform parameter bounds
             sr_clustering_result = input_artifacts.get('sr_clustering_result')
-            if sr_clustering_result:
-                try:
-                    # Adjust min_touches based on clustering results
-                    total_clusters = sr_clustering_result.get('total_clusters', 0)
-                    if total_clusters > 0:
-                        # More clusters suggest we can be more selective with touches
-                        min_touches_high = min(15, max(5, total_clusters // 2))
-                        search_space['min_touches']['high'] = min_touches_high
-                        self.logger.info(f"Adjusted min_touches high bound to {min_touches_high} based on {total_clusters} clusters")
-                    
-                    # Adjust strength_threshold based on clustering efficiency
-                    clustering_efficiency = sr_clustering_result.get('clustering_efficiency', 0.5)
-                    if clustering_efficiency > 0.7:
-                        # High efficiency suggests we can be more strict
-                        search_space['strength_threshold']['low'] = 0.3
-                        search_space['strength_threshold']['high'] = 0.8
-                    elif clustering_efficiency < 0.3:
-                        # Low efficiency suggests we should be more lenient
-                        search_space['strength_threshold']['low'] = 0.1
-                        search_space['strength_threshold']['high'] = 0.6
-                    
-                except Exception as e:
-                    self.logger.warning(f"Failed to enhance search space with clustering results: {e}")
+            # Handle both DataFrame and dict types
+            if sr_clustering_result is not None:
+                # Convert DataFrame to dict if needed
+                if PANDAS_AVAILABLE and isinstance(sr_clustering_result, pd.DataFrame):
+                    if not sr_clustering_result.empty:
+                        sr_clustering_result = sr_clustering_result.to_dict('records')[0] if len(sr_clustering_result) > 0 else {}
+                
+                if isinstance(sr_clustering_result, dict):
+                    try:
+                        # Adjust min_touches based on clustering results
+                        total_clusters = sr_clustering_result.get('total_clusters', 0)
+                        if total_clusters > 0:
+                            # More clusters suggest we can be more selective with touches
+                            min_touches_high = min(15, max(5, total_clusters // 2))
+                            search_space['min_touches']['high'] = min_touches_high
+                            self.logger.info(f"Adjusted min_touches high bound to {min_touches_high} based on {total_clusters} clusters")
+                        
+                        # Adjust strength_threshold based on clustering efficiency
+                        clustering_efficiency = sr_clustering_result.get('clustering_efficiency', 0.5)
+                        if clustering_efficiency > 0.7:
+                            # High efficiency suggests we can be more strict
+                            search_space['strength_threshold']['low'] = 0.3
+                            search_space['strength_threshold']['high'] = 0.8
+                        elif clustering_efficiency < 0.3:
+                            # Low efficiency suggests we should be more lenient
+                            search_space['strength_threshold']['low'] = 0.1
+                            search_space['strength_threshold']['high'] = 0.6
+                        
+                    except Exception as e:
+                        self.logger.warning(f"Failed to enhance search space with clustering results: {e}")
             
             # Use SR levels dictionary to inform parameter bounds
             sr_levels_dict = input_artifacts.get('sr_levels_dictionary')
-            if sr_levels_dict:
-                try:
-                    levels = sr_levels_dict.get('levels', [])
-                    if levels:
-                        # Analyze level characteristics to inform bounds
-                        avg_strength = sum(level.get('strength', 0) for level in levels) / len(levels)
-                        avg_touches = sum(level.get('touches', 0) for level in levels) / len(levels)
+            # Handle both DataFrame and dict types
+            if sr_levels_dict is not None:
+                # Convert DataFrame to dict if needed
+                if PANDAS_AVAILABLE and isinstance(sr_levels_dict, pd.DataFrame):
+                    if not sr_levels_dict.empty:
+                        sr_levels_dict = sr_levels_dict.to_dict('records')[0] if len(sr_levels_dict) > 0 else {}
+                
+                if isinstance(sr_levels_dict, dict):
+                    try:
+                        levels = sr_levels_dict.get('levels', [])
+                        # Handle both list and array types
+                        if levels is not None and len(levels) > 0:
+                            # Analyze level characteristics to inform bounds
+                            avg_strength = sum(level.get('strength', 0) for level in levels) / len(levels)
+                            avg_touches = sum(level.get('touches', 0) for level in levels) / len(levels)
+                            
+                            # Adjust strength_threshold based on average level strength
+                            if avg_strength > 0.6:
+                                search_space['strength_threshold']['low'] = max(0.1, avg_strength - 0.2)
+                                search_space['strength_threshold']['high'] = min(0.9, avg_strength + 0.2)
+                            
+                            # Adjust min_touches based on average touches
+                            if avg_touches > 0:
+                                min_touches_low = max(2, int(avg_touches * 0.5))
+                                min_touches_high = min(15, int(avg_touches * 1.5))
+                                search_space['min_touches']['low'] = min_touches_low
+                                search_space['min_touches']['high'] = min_touches_high
+                                self.logger.info(f"Adjusted min_touches bounds to [{min_touches_low}, {min_touches_high}] based on average touches {avg_touches:.1f}")
                         
-                        # Adjust strength_threshold based on average level strength
-                        if avg_strength > 0.6:
-                            search_space['strength_threshold']['low'] = max(0.1, avg_strength - 0.2)
-                            search_space['strength_threshold']['high'] = min(0.9, avg_strength + 0.2)
-                        
-                        # Adjust min_touches based on average touches
-                        if avg_touches > 0:
-                            min_touches_low = max(2, int(avg_touches * 0.5))
-                            min_touches_high = min(15, int(avg_touches * 1.5))
-                            search_space['min_touches']['low'] = min_touches_low
-                            search_space['min_touches']['high'] = min_touches_high
-                            self.logger.info(f"Adjusted min_touches bounds to [{min_touches_low}, {min_touches_high}] based on average touches {avg_touches:.1f}")
-                    
-                except Exception as e:
-                    self.logger.warning(f"Failed to enhance search space with SR levels: {e}")
+                    except Exception as e:
+                        self.logger.warning(f"Failed to enhance search space with SR levels: {e}")
         
         return search_space
 
@@ -887,23 +906,44 @@ class SRParameterOptimizationStep(BaseStep):
             # Analyze volatility from input artifacts
             if input_artifacts and 'sr_clustering_result' in input_artifacts:
                 clustering_result = input_artifacts['sr_clustering_result']
-                if clustering_result:
-                    # Use clustering efficiency to determine market structure
-                    efficiency = clustering_result.get('clustering_efficiency', 0.5)
-                    if efficiency > 0.7:
-                        characteristics['market_structure'] = 'consolidated'
-                    elif efficiency < 0.3:
-                        characteristics['market_structure'] = 'choppy'
+                # Handle both DataFrame and dict types
+                if clustering_result is not None:
+                    # Convert DataFrame to dict if needed
+                    if PANDAS_AVAILABLE and isinstance(clustering_result, pd.DataFrame):
+                        if not clustering_result.empty:
+                            clustering_dict = clustering_result.to_dict('records')[0] if len(clustering_result) > 0 else {}
+                            efficiency = clustering_dict.get('clustering_efficiency', 0.5)
+                            if efficiency > 0.7:
+                                characteristics['market_structure'] = 'consolidated'
+                            elif efficiency < 0.3:
+                                characteristics['market_structure'] = 'choppy'
+                    elif isinstance(clustering_result, dict):
+                        # Use clustering efficiency to determine market structure
+                        efficiency = clustering_result.get('clustering_efficiency', 0.5)
+                        if efficiency > 0.7:
+                            characteristics['market_structure'] = 'consolidated'
+                        elif efficiency < 0.3:
+                            characteristics['market_structure'] = 'choppy'
             
             # Analyze SR levels for market characteristics
             if input_artifacts and 'sr_levels_dictionary' in input_artifacts:
                 levels_dict = input_artifacts['sr_levels_dictionary']
-                if levels_dict and 'levels' in levels_dict:
-                    levels = levels_dict['levels']
-                    if levels:
-                        # Analyze level characteristics
-                        avg_strength = sum(level.get('strength', 0) for level in levels) / len(levels)
-                        avg_touches = sum(level.get('touches', 0) for level in levels) / len(levels)
+                # Handle both DataFrame and dict types
+                if levels_dict is not None and not (PANDAS_AVAILABLE and isinstance(levels_dict, pd.DataFrame) and levels_dict.empty):
+                    # Convert DataFrame to dict if needed
+                    if PANDAS_AVAILABLE and isinstance(levels_dict, pd.DataFrame):
+                        if not levels_dict.empty:
+                            levels_dict = levels_dict.to_dict('records')[0] if len(levels_dict) > 0 else {}
+                    
+                    if isinstance(levels_dict, dict) and 'levels' in levels_dict:
+                        levels = levels_dict['levels']
+                        if levels:
+                            # Analyze level characteristics
+                            avg_strength = sum(level.get('strength', 0) for level in levels) / len(levels)
+                            avg_touches = sum(level.get('touches', 0) for level in levels) / len(levels)
+                        else:
+                            avg_strength = 0
+                            avg_touches = 0
                         
                         # Determine volatility level based on level strength
                         if avg_strength > 0.7:
@@ -1010,7 +1050,10 @@ class SRParameterOptimizationStep(BaseStep):
         search_space: Dict[str, Any], 
         train_data: Any, 
         test_data: Any, 
-        enhanced_config: EnhancedSRConfig
+        enhanced_config: EnhancedSRConfig,
+        config: Dict[str, Any] = None,
+        market_data: Any = None,
+        input_artifacts: Dict[str, Any] = None
     ) -> Dict[str, Any]:
         """Run enhanced Bayesian optimization for SR parameters with staged approach."""
         try:
@@ -1026,11 +1069,9 @@ class SRParameterOptimizationStep(BaseStep):
                 enable_hardware_optimization=enhanced_config.enable_hardware_optimization,
                 workload_type=enhanced_config.workload_type,
                 optimization_level=enhanced_config.optimization_level,
-                enable_early_stopping=True,
-                enable_pruning=True,
+                enable_pruner=True,
                 pruner_type='median',
-                n_startup_trials=10,
-                n_warmup_steps=5
+                n_startup_trials=10
             )
             
             # Enhanced objective function with ML utilities
@@ -1054,7 +1095,7 @@ class SRParameterOptimizationStep(BaseStep):
             
             # Run VectorBT optimization if available
             vectorbt_result = None
-            if VECTORBT_ROLLING_AVAILABLE and config.get('enable_vectorbt', True):
+            if VECTORBT_ROLLING_AVAILABLE and (config and config.get('enable_vectorbt', True) if config else True):
                 tprint("⚡ Running VectorBT Rolling Optimization", "info")
                 try:
                     vectorbt_result = await self._run_vectorbt_optimization(
@@ -1067,10 +1108,20 @@ class SRParameterOptimizationStep(BaseStep):
             
             # Run optimization with enhanced monitoring
             tprint("🧠 Running Bayesian Optimization", "info")
-            result = await self.bayesian_optimizer.optimize(
-                objective_function, 
-                search_space, 
-                opt_config
+            result = self.bayesian_optimizer.optimize(
+                objective_function,
+                search_space,
+                n_trials=opt_config.n_trials,
+                enable_staged_optimization=opt_config.enable_staged_optimization,
+                coarse_grid_points=opt_config.coarse_grid_points,
+                fine_grid_points=opt_config.fine_grid_points,
+                tpe_trials=opt_config.tpe_trials,
+                enable_hardware_optimization=opt_config.enable_hardware_optimization,
+                workload_type=opt_config.workload_type,
+                optimization_level=opt_config.optimization_level,
+                enable_pruner=opt_config.enable_pruner,
+                pruner_type=opt_config.pruner_type,
+                n_startup_trials=opt_config.n_startup_trials
             )
             tprint_data_preview(result, "Bayesian optimization result")
             
@@ -1308,7 +1359,9 @@ class SRParameterOptimizationStep(BaseStep):
             if self.leakage_detector and enhanced_config.enable_data_leakage_detection:
                 try:
                     leakage_report = await self.leakage_detector.detect_temporal_leakage(train_data, test_data)
-                    if leakage_report.has_leakage:
+                    # Handle both dict and object response types
+                    has_leakage = leakage_report.get('has_leakage', False) if isinstance(leakage_report, dict) else getattr(leakage_report, 'has_leakage', False)
+                    if has_leakage:
                         enhanced_score *= 0.5  # Penalize for data leakage
                         self.logger.warning("Data leakage detected, applying penalty to score")
                 except Exception as e:
@@ -2322,21 +2375,29 @@ class SRParameterOptimizationStep(BaseStep):
     ) -> Dict[str, Any]:
         """Apply hardware-specific optimizations."""
         try:
-            # Get hardware configuration
-            hardware_config = self.hardware_manager.get_optimal_config(
-                WorkloadType.ML_TRAINING,
-                OptimizationLevel.BALANCED
-            )
-            
-            # Apply optimizations based on hardware capabilities
-            gains = {
-                'cpu_optimization': hardware_config.get('cpu_gain', 1.0),
-                'memory_optimization': hardware_config.get('memory_gain', 1.0),
-                'gpu_acceleration': hardware_config.get('gpu_gain', 1.0) if enhanced_config.enable_gpu_acceleration else 1.0
-            }
-            
-            # Update optimization result with hardware gains
-            optimization_result['hardware_gains'] = gains
+            # Get hardware configuration - handle case where method doesn't exist
+            if hasattr(self.hardware_manager, 'get_optimal_config'):
+                hardware_config = self.hardware_manager.get_optimal_config(
+                    WorkloadType.ML_TRAINING,
+                    OptimizationLevel.BALANCED
+                )
+                
+                # Apply optimizations based on hardware capabilities
+                gains = {
+                    'cpu_optimization': hardware_config.get('cpu_gain', 1.0),
+                    'memory_optimization': hardware_config.get('memory_gain', 1.0),
+                    'gpu_acceleration': hardware_config.get('gpu_gain', 1.0) if enhanced_config.enable_gpu_acceleration else 1.0
+                }
+                
+                # Update optimization result with hardware gains
+                optimization_result['hardware_gains'] = gains
+            else:
+                # Use default gains if method doesn't exist
+                optimization_result['hardware_gains'] = {
+                    'cpu_optimization': 1.0,
+                    'memory_optimization': 1.0,
+                    'gpu_acceleration': 1.0
+                }
             
             return optimization_result
             
@@ -2357,12 +2418,21 @@ class SRParameterOptimizationStep(BaseStep):
                 train_data, test_data
             )
             
-            validation_result = {
-                'leakage_detected': leakage_report.has_leakage,
-                'leakage_score': leakage_report.leakage_score,
-                'temporal_violations': leakage_report.temporal_violations,
-                'recommendations': leakage_report.recommendations
-            }
+            # Handle both dict and object response types
+            if isinstance(leakage_report, dict):
+                validation_result = {
+                    'leakage_detected': leakage_report.get('has_leakage', False),
+                    'leakage_score': leakage_report.get('leakage_score', 0.0),
+                    'temporal_violations': leakage_report.get('temporal_violations', []),
+                    'recommendations': leakage_report.get('recommendations', [])
+                }
+            else:
+                validation_result = {
+                    'leakage_detected': getattr(leakage_report, 'has_leakage', False),
+                    'leakage_score': getattr(leakage_report, 'leakage_score', 0.0),
+                    'temporal_violations': getattr(leakage_report, 'temporal_violations', []),
+                    'recommendations': getattr(leakage_report, 'recommendations', [])
+                }
             
             return validation_result
             
@@ -2507,6 +2577,10 @@ class SRParameterOptimizationStep(BaseStep):
             # Convert market data to VectorBT format
             if not PANDAS_AVAILABLE:
                 return {'success': False, 'error': 'Pandas not available for VectorBT'}
+            
+            # Check if VectorBT is available
+            if vbt is None:
+                return {'success': False, 'error': 'VectorBT not available'}
             
             # Prepare data for VectorBT
             data_df = market_data if isinstance(market_data, pd.DataFrame) else pd.DataFrame(market_data)

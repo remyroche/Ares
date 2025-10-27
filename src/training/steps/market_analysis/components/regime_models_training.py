@@ -41,8 +41,8 @@ from src.utils.hardware.unified_hardware_manager import (
 from src.utils.ml_common.evaluation.evaluation_utils import (
     EvaluationUtils
 )
-from src.utils.ml_common.explainability.model_explainability import ModelExplainability
-from src.utils.ml_common.explainability.shap_lime_integration import SHAPLIMEIntegration
+from src.utils.ml_common.explainability.model_explainability import ModelExplainabilityManager
+from src.utils.ml_common.explainability.shap_lime_integration import SHAPLIMEExplainer as SHAPLIMEIntegration
 from src.utils.ml_common.post_training.model_validation import (
     ModelValidator, ValidationConfig
 )
@@ -718,7 +718,7 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
             if model is not None:
                 try:
                     # Initialize explainability tools
-                    explainer = ModelExplainability()
+                    explainer = ModelExplainabilityManager()
                     shap_lime = SHAPLIMEIntegration()
                     
                     # Feature importance

@@ -1279,26 +1279,353 @@ class StabilityWeightedSelector:
         }
 
 class CompositeFeatureScorer:
-    """Composite feature scoring combining multiple methods."""
+    """
+    Composite feature scoring combining multiple methods with RFE-style iterative removal.
+    
+    Combines 5 scoring methods with equal 20% weight each:
+    1. Mutual Information (MI) - Relevance to target
+    2. Redundancy (Correlation) - Diversity from selected features  
+    3. LGBM Feature Importance - Model-based importance
+    4. SHAP Values - Explainable importance
+    5. Stability Score - Consistency across time windows
+    
+    Uses RFE-style approach: iteratively removes bottom 33% until reaching target.
+    """
 
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         """Initialize composite feature scorer."""
         self.config = config or {}
         self.logger = logger.getChild('CompositeFeatureScorer')
+        
+        # Scoring weights (must sum to 1.0)
+        self.weights = {
+            'mi': 0.20,           # Mutual Information
+            'redundancy': 0.20,   # Low redundancy (MRMR-style)
+            'lgbm': 0.20,         # LGBM feature importance
+            'shap': 0.20,         # SHAP values
+            'stability': 0.20     # Temporal stability
+        }
+        
+        # RFE parameters
+        self.rfe_removal_rate = self.config.get('rfe_removal_rate', 0.33)  # Remove 33% per round
+        self.min_features_per_round = self.config.get('min_features_per_round', 10)
+        
         _LOGGER.info("🔍 CompositeFeatureScorer initialized")
+        _LOGGER.info(f"⚙️ Scoring weights: {self.weights}")
+        _LOGGER.info(f"⚙️ RFE removal rate: {self.rfe_removal_rate:.0%} per round")
 
     def select_features(self, X: np.ndarray, y: np.ndarray, feature_names: List[str],
                        n_features: int) -> Dict[str, Any]:
-        """Perform composite feature scoring."""
-        # Implementation would go here
-        _LOGGER.warning("⚠️ CompositeFeatureScorer not yet implemented")
-        return {
-            'selected_features': [],
-            'selected_indices': [],
-            'method': 'composite_scoring',
-            'error': 'Not implemented',
-            'success': False
-        }
+        """
+        Perform composite feature scoring with RFE-style iterative removal.
+        
+        Args:
+            X: Feature matrix (n_samples, n_features)
+            y: Target vector (n_samples,)
+            feature_names: List of feature names
+            n_features: Target number of features to select
+            
+        Returns:
+            Dict with selected features, scores, and metadata
+        """
+        start_time = time.time()
+        _LOGGER.info(f"🔍 Starting composite feature selection with RFE...")
+        _LOGGER.info(f"📊 Initial features: {len(feature_names)}, Target: {n_features}")
+        
+        try:
+            # Validate inputs
+            if not SKLEARN_AVAILABLE:
+                raise ImportError("Scikit-learn required for composite scoring")
+            
+            if len(feature_names) <= n_features:
+                _LOGGER.info("📊 Already at or below target, returning all features")
+                return {
+                    'selected_features': feature_names,
+                    'selected_indices': list(range(len(feature_names))),
+                    'scores': {name: 1.0 for name in feature_names},
+                    'method': 'composite_scoring_rfe',
+                    'rounds': 0,
+                    'success': True
+                }
+            
+            # Preprocess data
+            X_processed = preprocess_features_for_ml(X, "composite_scoring", feature_names)
+            
+            # RFE-style iterative removal
+            current_features = feature_names.copy()
+            current_X = X_processed.copy()
+            round_num = 0
+            removal_history = []
+            
+            while len(current_features) > n_features:
+                round_num += 1
+                excess = len(current_features) - n_features
+                
+                # Calculate how many to remove this round (33% of excess, min 1)
+                to_remove = max(1, min(int(excess * self.rfe_removal_rate), excess))
+                
+                _LOGGER.info(f"🔄 Round {round_num}: {len(current_features)} features → removing {to_remove}")
+                
+                # Calculate composite scores for current features
+                composite_scores = self._calculate_composite_scores(
+                    current_X, y, current_features
+                )
+                
+                # Sort by score (lowest first)
+                sorted_features = sorted(composite_scores.items(), key=lambda x: x[1])
+                
+                # Remove bottom features
+                features_to_remove = [feat for feat, score in sorted_features[:to_remove]]
+                features_to_keep = [feat for feat in current_features if feat not in features_to_remove]
+                
+                # Update for next round
+                remove_indices = [current_features.index(f) for f in features_to_remove]
+                keep_indices = [i for i in range(len(current_features)) if i not in remove_indices]
+                
+                current_X = current_X[:, keep_indices]
+                current_features = features_to_keep
+                
+                removal_history.append({
+                    'round': round_num,
+                    'removed': len(features_to_remove),
+                    'remaining': len(current_features),
+                    'worst_score': sorted_features[0][1] if sorted_features else 0.0,
+                    'best_score': sorted_features[-1][1] if sorted_features else 0.0
+                })
+                
+                _LOGGER.info(f"  ✅ Round {round_num}: {len(current_features)} features remaining")
+            
+            # Get final scores
+            final_scores = self._calculate_composite_scores(current_X, y, current_features)
+            
+            # Get indices in original feature list
+            final_indices = [feature_names.index(f) for f in current_features]
+            
+            elapsed_time = time.time() - start_time
+            
+            _LOGGER.info(f"✅ Composite RFE selection completed in {elapsed_time:.3f}s")
+            _LOGGER.info(f"📊 Selected {len(current_features)} features in {round_num} rounds")
+            
+            return {
+                'selected_features': current_features,
+                'selected_indices': final_indices,
+                'scores': final_scores,
+                'method': 'composite_scoring_rfe',
+                'rounds': round_num,
+                'removal_history': removal_history,
+                'execution_time': elapsed_time,
+                'success': True
+            }
+            
+        except Exception as e:
+            elapsed_time = time.time() - start_time
+            _LOGGER.error(f"❌ Composite scoring failed: {e}")
+            return {
+                'selected_features': [],
+                'selected_indices': [],
+                'method': 'composite_scoring_rfe',
+                'error': str(e),
+                'execution_time': elapsed_time,
+                'success': False
+            }
+    
+    def _calculate_composite_scores(self, X: np.ndarray, y: np.ndarray, 
+                                    feature_names: List[str]) -> Dict[str, float]:
+        """
+        Calculate composite scores combining 5 methods with equal 20% weight each.
+        
+        Returns:
+            Dict mapping feature_name -> composite_score (0-1)
+        """
+        n_features = len(feature_names)
+        
+        # 1. Calculate MI scores (20% weight)
+        mi_scores = self._calculate_mi_scores(X, y, feature_names)
+        
+        # 2. Calculate redundancy scores (20% weight)
+        redundancy_scores = self._calculate_redundancy_scores(X, feature_names)
+        
+        # 3. Calculate LGBM importance (20% weight)
+        lgbm_scores = self._calculate_lgbm_importance(X, y, feature_names)
+        
+        # 4. Calculate SHAP values (20% weight)
+        shap_scores = self._calculate_shap_importance(X, y, feature_names)
+        
+        # 5. Calculate stability scores (20% weight)
+        stability_scores = self._calculate_stability_scores(X, y, feature_names)
+        
+        # Combine with equal weights
+        composite_scores = {}
+        for feat in feature_names:
+            composite_scores[feat] = (
+                self.weights['mi'] * mi_scores.get(feat, 0.0) +
+                self.weights['redundancy'] * redundancy_scores.get(feat, 0.0) +
+                self.weights['lgbm'] * lgbm_scores.get(feat, 0.0) +
+                self.weights['shap'] * shap_scores.get(feat, 0.0) +
+                self.weights['stability'] * stability_scores.get(feat, 0.0)
+            )
+        
+        return composite_scores
+    
+    def _calculate_mi_scores(self, X: np.ndarray, y: np.ndarray, 
+                            feature_names: List[str]) -> Dict[str, float]:
+        """Calculate mutual information scores (normalized to 0-1)."""
+        try:
+            if not SKLEARN_AVAILABLE:
+                return {name: 0.5 for name in feature_names}
+            
+            mi_scores = mutual_info_regression(X, y, random_state=42, n_neighbors=3)
+            
+            # Normalize to 0-1
+            if mi_scores.max() > 0:
+                mi_scores = mi_scores / mi_scores.max()
+            
+            return {feature_names[i]: mi_scores[i] for i in range(len(feature_names))}
+        except Exception as e:
+            _LOGGER.warning(f"⚠️ MI calculation failed: {e}")
+            return {name: 0.5 for name in feature_names}
+    
+    def _calculate_redundancy_scores(self, X: np.ndarray, 
+                                     feature_names: List[str]) -> Dict[str, float]:
+        """
+        Calculate redundancy scores (1 - average_correlation with other features).
+        Low redundancy = high diversity = better score.
+        Normalized to 0-1.
+        """
+        try:
+            # Calculate correlation matrix
+            corr_matrix = np.corrcoef(X, rowvar=False)
+            
+            redundancy_scores = {}
+            for i, feat in enumerate(feature_names):
+                # Average absolute correlation with all other features
+                other_corrs = [abs(corr_matrix[i, j]) for j in range(len(feature_names)) if i != j]
+                avg_corr = np.mean(other_corrs) if other_corrs else 0.0
+                
+                # Invert so low redundancy = high score
+                redundancy_scores[feat] = 1.0 - min(avg_corr, 1.0)
+            
+            return redundancy_scores
+        except Exception as e:
+            _LOGGER.warning(f"⚠️ Redundancy calculation failed: {e}")
+            return {name: 0.5 for name in feature_names}
+    
+    def _calculate_lgbm_importance(self, X: np.ndarray, y: np.ndarray,
+                                   feature_names: List[str]) -> Dict[str, float]:
+        """Calculate LGBM feature importance (normalized to 0-1)."""
+        try:
+            if not LIGHTGBM_AVAILABLE:
+                _LOGGER.warning("⚠️ LightGBM not available, using RandomForest")
+                # Fallback to RandomForest
+                from sklearn.ensemble import RandomForestRegressor
+                model = RandomForestRegressor(
+                    n_estimators=50, max_depth=5, random_state=42, n_jobs=-1
+                )
+                model.fit(X, y)
+                importances = model.feature_importances_
+            else:
+                # Use LightGBM
+                import lightgbm as lgb
+                model = lgb.LGBMRegressor(
+                    n_estimators=100,
+                    max_depth=5,
+                    num_leaves=31,
+                    learning_rate=0.05,
+                    random_state=42,
+                    verbose=-1
+                )
+                model.fit(X, y)
+                importances = model.feature_importances_
+            
+            # Normalize to 0-1
+            if importances.max() > 0:
+                importances = importances / importances.max()
+            
+            return {feature_names[i]: importances[i] for i in range(len(feature_names))}
+        except Exception as e:
+            _LOGGER.warning(f"⚠️ LGBM importance calculation failed: {e}")
+            return {name: 0.5 for name in feature_names}
+    
+    def _calculate_shap_importance(self, X: np.ndarray, y: np.ndarray,
+                                   feature_names: List[str]) -> Dict[str, float]:
+        """Calculate SHAP importance scores (normalized to 0-1)."""
+        try:
+            if not SHAP_AVAILABLE or not LIGHTGBM_AVAILABLE:
+                _LOGGER.warning("⚠️ SHAP/LGBM not available, skipping SHAP scores")
+                return {name: 0.5 for name in feature_names}
+            
+            import lightgbm as lgb
+            import shap
+            
+            # Train LGBM model
+            model = lgb.LGBMRegressor(
+                n_estimators=50,
+                max_depth=4,
+                num_leaves=15,
+                random_state=42,
+                verbose=-1
+            )
+            model.fit(X, y)
+            
+            # Calculate SHAP values
+            explainer = shap.TreeExplainer(model)
+            shap_values = explainer.shap_values(X)
+            
+            # Calculate mean absolute SHAP value per feature
+            shap_importance = np.abs(shap_values).mean(axis=0)
+            
+            # Normalize to 0-1
+            if shap_importance.max() > 0:
+                shap_importance = shap_importance / shap_importance.max()
+            
+            return {feature_names[i]: shap_importance[i] for i in range(len(feature_names))}
+        except Exception as e:
+            _LOGGER.warning(f"⚠️ SHAP calculation failed: {e}")
+            return {name: 0.5 for name in feature_names}
+    
+    def _calculate_stability_scores(self, X: np.ndarray, y: np.ndarray,
+                                   feature_names: List[str]) -> Dict[str, float]:
+        """
+        Calculate stability scores using time-based windows.
+        Measures consistency of feature values across time.
+        Normalized to 0-1.
+        """
+        try:
+            stability_scores = {}
+            window_size = max(50, len(X) // 10)
+            
+            for i, feat in enumerate(feature_names):
+                feature_data = X[:, i]
+                
+                # Calculate rolling statistics
+                rolling_means = []
+                rolling_stds = []
+                
+                for start in range(0, len(feature_data) - window_size, window_size // 2):
+                    end = start + window_size
+                    window_data = feature_data[start:end]
+                    rolling_means.append(np.mean(window_data))
+                    rolling_stds.append(np.std(window_data))
+                
+                if len(rolling_means) > 1:
+                    # Stability = 1 - coefficient of variation of rolling means
+                    mean_of_means = np.mean(rolling_means)
+                    std_of_means = np.std(rolling_means)
+                    
+                    if abs(mean_of_means) > 1e-8:
+                        cv = std_of_means / abs(mean_of_means)
+                        stability = 1.0 / (1.0 + cv)  # Higher stability for lower CV
+                    else:
+                        stability = 0.5
+                else:
+                    stability = 0.5
+                
+                stability_scores[feat] = max(0.0, min(1.0, stability))
+            
+            return stability_scores
+        except Exception as e:
+            _LOGGER.warning(f"⚠️ Stability calculation failed: {e}")
+            return {name: 0.5 for name in feature_names}
 
 class CrossValidatedSelector:
     """Cross-validated feature selection."""

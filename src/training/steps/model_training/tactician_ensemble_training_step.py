@@ -20,7 +20,7 @@ class TacticianEnsembleTrainingStep(BaseStep):
     """
     Tactician Ensemble Training Step.
 
-    Trains ensemble tactician models for trading strategy optimization.
+    Trains ensemble tactician models using outputs from base models.
     """
 
     def __init__(self, step_name: str = "tactician_ensemble_training"):
@@ -46,57 +46,21 @@ class TacticianEnsembleTrainingStep(BaseStep):
             - 'metrics': dict of performance metrics
             - 'error': error message if step failed (optional)
         """
-        tprint(f"🎯 Starting tactician ensemble training for {config.get('symbol', 'UNKNOWN')}", "INFO")
+        tprint(f"🧠 Starting tactician ensemble training for {config.get('symbol', 'UNKNOWN')}", "INFO")
 
         try:
-            artifacts = {
-                'tactician_ensemble_model': {
-                    'model_type': 'meta_ensemble',
-                    'base_models': ['extra_trees', 'gradient_boosting', 'neural_network', 'rule_based'],
-                    'meta_learner': 'lightgbm_calibrated',
-                    'target': 'strategy_optimization',
-                    'features': ['regime_features', 'market_microstructure', 'order_flow', 'liquidity'],
-                    'training_samples': 12000,
-                    'validation_samples': 4000,
-                    'test_samples': 2500,
-                    'accuracy': 0.88,
-                    'sharpe_ratio': 1.78,
-                    'calibration_score': 0.91,
-                    'model_params': {
-                        'ensemble_method': 'stacking',
-                        'calibration_method': 'isotonic',
-                        'cross_validation_folds': 5
-                    },
-                    'metadata': {
-                        'symbol': config['symbol'],
-                        'exchange': config['exchange'],
-                        'timeframe': config['timeframe'],
-                        'direction': config.get('direction', 'longs'),
-                        'created_at': datetime.now().isoformat()
-                    }
-                }
-            }
-
-            metrics = {
-                'model_type': 'meta_ensemble',
-                'base_models': 4,
-                'training_samples': 12000,
-                'validation_samples': 4000,
-                'test_samples': 2500,
-                'accuracy': 0.88,
-                'sharpe_ratio': 1.78,
-                'calibration_score': 0.91,
-                'training_time': 312.7,
-                'direction': config.get('direction', 'longs'),
-                'success': True
-            }
-
-            tprint(f"✅ Tactician ensemble training completed: {metrics['accuracy']:.1%} accuracy, Sharpe {metrics['sharpe_ratio']:.2f}", "SUCCESS")
-            return {
-                'success': True,
-                'artifacts': artifacts,
-                'metrics': metrics
-            }
+            # Import and call unified training step
+            from .unified_models_training_step import UnifiedModelsTrainingStep
+            
+            # Set training type for unified step
+            config['training_type'] = 'tactician_ensemble'
+            config['execution_context'] = 'tactician'
+            
+            # Create and execute unified training step
+            unified_step = UnifiedModelsTrainingStep()
+            result = await unified_step.execute(config)
+            
+            return result
 
         except Exception as e:
             error_msg = f"Tactician ensemble training failed: {str(e)}"

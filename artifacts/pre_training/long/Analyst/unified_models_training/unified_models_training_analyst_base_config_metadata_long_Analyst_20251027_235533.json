@@ -1,0 +1,10 @@
+{
+  "training_type": "analyst_base",
+  "created_at": "2025-10-27T23:55:35.268635",
+  "artifact_name": "analyst_base_config",
+  "artifact_type": "metadata",
+  "file_path": "artifacts/pre_training/long/Analyst/unified_models_training/unified_models_training_analyst_base_config_long_Analyst_20251027_235533.parquet",
+  "file_size": 4836,
+  "timestamp": "2025-10-27T23:55:35.270003",
+  "compression": "auto"
+}

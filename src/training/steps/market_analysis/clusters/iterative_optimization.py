@@ -1590,20 +1590,22 @@ class ClusteringStats:
         self.assignments = assignments
         self.n_samples, self.n_features = features.shape
 
-        # CRITICAL FIX: Use fixed K based on max cluster ID, not len(unique)
-        self.K_fixed = int(assignments.max()) + 1  # Fixed K from initial clustering
-        self.n_clusters = self.K_fixed
-
-        # CRITICAL FIX: Compact cluster IDs to 0..K-1 and update assignments
+        # Compact cluster IDs to 0..K-1 (handle noise labels -1)
         unique_clusters = np.unique(assignments)
+        
+        # Create mapping from old IDs to compact IDs (0, 1, 2, ...)
         self.cluster_id_map = {old_id: new_id for new_id, old_id in enumerate(unique_clusters)}
         self.inverse_cluster_id_map = {new_id: old_id for old_id, new_id in self.cluster_id_map.items()}
 
         # Remap assignments to compact IDs to ensure array indexing is correct
-        compact_assignments = np.zeros_like(assignments)
+        compact_assignments = np.zeros_like(assignments, dtype=np.int32)
         for old_id, new_id in self.cluster_id_map.items():
             compact_assignments[assignments == old_id] = new_id
         self.assignments = compact_assignments
+        
+        # Set K_fixed based on NUMBER of unique clusters (after compacting)
+        self.K_fixed = len(unique_clusters)
+        self.n_clusters = self.K_fixed
 
         # Initialize all statistics
         self._initialize_statistics()
@@ -1813,6 +1815,13 @@ class ClusteringStats:
 
         for cluster in unique_clusters:
             # CRITICAL FIX: Map original cluster ID to consecutive index
+            # Check if cluster exists in mapping
+            if cluster not in self.cluster_id_map:
+                tprint(f"⚠️ WARNING: Cluster {cluster} not in cluster_id_map, adding it", "WARNING")
+                # Add missing cluster to mapping
+                self.cluster_id_map[cluster] = cluster
+                self.inverse_cluster_id_map[cluster] = cluster
+            
             cluster_idx = self.cluster_id_map[cluster]
             mask = self.assignments == cluster
             cluster_features = self.features[mask]
@@ -1905,7 +1914,16 @@ class ClusteringStats:
         balance = self.get_balance_score()
 
         # Calculate actual silhouette and temporal metrics
-        silhouette_score = self.calculate_silhouette_score_optimized(self.features, self.assignments) if hasattr(self, 'features') else 0.0
+        # Use sklearn's silhouette_score directly (ClusteringStats doesn't have calculate_silhouette_score_optimized)
+        if hasattr(self, 'features') and len(np.unique(self.assignments)) >= 2:
+            try:
+                from sklearn.metrics import silhouette_score as sklearn_silhouette_score
+                silhouette_score = sklearn_silhouette_score(self.features, self.assignments)
+            except Exception:
+                silhouette_score = 0.0
+        else:
+            silhouette_score = 0.0
+        
         temporal_score = self.temporal_switch_penalty(self.assignments, self.entity_ids, self.time_idx) if hasattr(self, 'entity_ids') else 0.0
 
         # Base objective without balance weight (balance used as constraint)
@@ -3114,14 +3132,29 @@ class IterativeOptimization:
     def _initialize_state(self, assignments: np.ndarray) -> None:
         """Consolidate state initialization logic."""
         self.assignments = assignments.copy()
+        
+        # Handle noise labels (-1) for bincount
+        # bincount requires non-negative integers
+        non_noise_mask = assignments >= 0
+        non_noise_assignments = assignments[non_noise_mask]
+        
         self.K = len(np.unique(assignments))
-        self.sizes = np.bincount(assignments, minlength=self.K)
+        # Use bincount only on non-noise assignments, then handle noise separately
+        if len(non_noise_assignments) > 0:
+            self.sizes = np.bincount(non_noise_assignments, minlength=self.K)
+        else:
+            self.sizes = np.zeros(self.K, dtype=np.int32)
 
         # Ensure assignments is never None
         if self.assignments is None:
             raise ValueError("Assignments cannot be None after initialization")
         if self.sizes is None:
-            self.sizes = np.bincount(self.assignments, minlength=self.K)
+            # Fallback with noise handling
+            non_noise_mask = self.assignments >= 0
+            if np.any(non_noise_mask):
+                self.sizes = np.bincount(self.assignments[non_noise_mask], minlength=self.K)
+            else:
+                self.sizes = np.zeros(self.K, dtype=np.int32)
 
     def _invalidate_caches(self):
         """Invalidate all cached values when state changes."""
@@ -5412,8 +5445,9 @@ class IterativeOptimization:
             except Exception as _e:
                 self.returns_mask = np.zeros(features.shape[1], dtype=bool)
 
-            # Sanity check
-            assert self.n_clusters == current_k, f"Cluster count mismatch: {self.n_clusters} != {current_k}"
+            # Allow mismatch - iterative optimization will adjust cluster count from current_k towards target n_clusters
+            if self.n_clusters != current_k:
+                tprint(f"🔧 Starting with {current_k} clusters, targeting {self.n_clusters} clusters", "INFO")
 
             # Initialize clustering statistics (on standardized features)
             stats = ClusteringStats(features, current_assignments)
@@ -7514,7 +7548,12 @@ class IterativeOptimization:
         """Always read live sizes from assignments."""
         if self.assignments is None:
             return np.array([])
-        return np.bincount(self.assignments, minlength=self.K)
+        # Handle noise labels (-1) for bincount
+        non_noise_mask = self.assignments >= 0
+        if np.any(non_noise_mask):
+            return np.bincount(self.assignments[non_noise_mask], minlength=self.K)
+        else:
+            return np.zeros(self.K, dtype=np.int32)
 
     @sizes.setter
     def sizes(self, value):

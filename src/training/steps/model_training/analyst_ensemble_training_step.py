@@ -20,7 +20,7 @@ class AnalystEnsembleTrainingStep(BaseStep):
     """
     Analyst Ensemble Training Step.
 
-    Trains ensemble analyst models for price prediction.
+    Trains ensemble analyst models using outputs from base models.
     """
 
     def __init__(self, step_name: str = "analyst_ensemble_training"):
@@ -46,54 +46,21 @@ class AnalystEnsembleTrainingStep(BaseStep):
             - 'metrics': dict of performance metrics
             - 'error': error message if step failed (optional)
         """
-        tprint(f"🎯 Starting analyst ensemble training for {config.get('symbol', 'UNKNOWN')}", "INFO")
+        tprint(f"🧠 Starting analyst ensemble training for {config.get('symbol', 'UNKNOWN')}", "INFO")
 
         try:
-            artifacts = {
-                'analyst_ensemble_model': {
-                    'model_type': 'stacked_ensemble',
-                    'base_models': ['catboost', 'xgboost', 'lightgbm', 'neural_network'],
-                    'meta_learner': 'linear_regression',
-                    'target': 'price_prediction',
-                    'features': ['returns', 'volatility', 'volume', 'momentum', 'trend'],
-                    'training_samples': 15000,
-                    'validation_samples': 5000,
-                    'test_samples': 3000,
-                    'accuracy': 0.85,
-                    'diversity_score': 0.92,
-                    'model_params': {
-                        'stacking_method': 'probability_averaging',
-                        'cross_validation_folds': 5
-                    },
-                    'metadata': {
-                        'symbol': config['symbol'],
-                        'exchange': config['exchange'],
-                        'timeframe': config['timeframe'],
-                        'direction': config.get('direction', 'longs'),
-                        'created_at': datetime.now().isoformat()
-                    }
-                }
-            }
-
-            metrics = {
-                'model_type': 'stacked_ensemble',
-                'base_models': 4,
-                'training_samples': 15000,
-                'validation_samples': 5000,
-                'test_samples': 3000,
-                'accuracy': 0.85,
-                'diversity_score': 0.92,
-                'training_time': 245.8,
-                'direction': config.get('direction', 'longs'),
-                'success': True
-            }
-
-            tprint(f"✅ Analyst ensemble training completed: {metrics['accuracy']:.1%} accuracy", "SUCCESS")
-            return {
-                'success': True,
-                'artifacts': artifacts,
-                'metrics': metrics
-            }
+            # Import and call unified training step
+            from .unified_models_training_step import UnifiedModelsTrainingStep
+            
+            # Set training type for unified step
+            config['training_type'] = 'analyst_ensemble'
+            config['execution_context'] = 'analyst'
+            
+            # Create and execute unified training step
+            unified_step = UnifiedModelsTrainingStep()
+            result = await unified_step.execute(config)
+            
+            return result
 
         except Exception as e:
             error_msg = f"Analyst ensemble training failed: {str(e)}"

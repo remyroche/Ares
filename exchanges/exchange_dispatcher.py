@@ -34,6 +34,12 @@ class ExchangeType(Enum):
     PHEMEX = "phemex"
 
 
+class TradingMode(Enum):
+    """Trading execution modes."""
+    TRADE = "trade"  # Execute on real exchange
+    PAPER = "paper"  # Simulate trades
+
+
 @dataclass
 class ExchangeConfig:
     """Exchange configuration."""
@@ -44,6 +50,7 @@ class ExchangeConfig:
     subaccount_id: Optional[str] = None
     use_testnet: bool = True
     trade_symbol: str = "BTCUSDT"
+    mode: TradingMode = TradingMode.PAPER  # Default to paper trading
     additional_config: Dict[str, Any] = None
     
     def __post_init__(self):
@@ -80,9 +87,23 @@ class ExchangeDispatcher:
         self.balance_manager: Optional[BalanceManager] = None
         self.rate_limit_manager: Optional[RateLimitManager] = None
         
+        # Simulator callback for paper trading (dependency injection)
+        self._simulator_callback: Optional[Callable] = None
+        
         # Initialization state
         self._initialized = False
         self._initializing = False
+    
+    def set_simulator_callback(self, callback: Callable) -> None:
+        """
+        Set simulator callback for paper trading mode.
+        
+        Args:
+            callback: Async function that simulates order execution
+                     Signature: async def(symbol, side, order_type, quantity, price, order_book, metadata)
+        """
+        self._simulator_callback = callback
+        self.logger.info("Simulator callback configured for paper trading")
         
     async def initialize(self) -> bool:
         """
@@ -277,12 +298,42 @@ class ExchangeDispatcher:
         quantity: float,
         price: Optional[float] = None,
         stop_price: Optional[float] = None,
-        client_order_id: Optional[str] = None
+        client_order_id: Optional[str] = None,
+        trading_signal_metadata: Optional[Dict[str, Any]] = None
     ) -> Optional[Dict[str, Any]]:
-        """Create order."""
+        """
+        Create order.
+        
+        In PAPER mode, routes to simulator. In TRADE mode, executes on exchange.
+        """
         if not self._ensure_initialized():
             return None
+        
+        # Check if we're in paper trading mode with simulator
+        if self.config.mode == TradingMode.PAPER and self._simulator_callback:
+            # Fetch order book for simulation
+            order_book = await self.get_order_book(symbol, limit=20)
+            if not order_book:
+                self.logger.error(f"Failed to fetch order book for {symbol}")
+                return None
             
+            # Call simulator
+            try:
+                result = await self._simulator_callback(
+                    symbol=symbol,
+                    side=side,
+                    order_type=order_type,
+                    quantity=quantity,
+                    price=price,
+                    order_book=order_book,
+                    trading_signal_metadata=trading_signal_metadata
+                )
+                return result
+            except Exception as e:
+                self.logger.error(f"Simulator error: {e}")
+                return None
+        
+        # TRADE mode - execute on real exchange
         if hasattr(self.exchange, 'create_order_enhanced'):
             return await self.exchange.create_order_enhanced(
                 symbol, side, order_type, quantity, price, stop_price, client_order_id

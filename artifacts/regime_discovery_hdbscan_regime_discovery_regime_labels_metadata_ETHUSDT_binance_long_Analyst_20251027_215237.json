@@ -1,0 +1,12 @@
+{
+  "symbol": "ETHUSDT",
+  "timeframe": "1h",
+  "n_regimes": 3,
+  "execution_mode": "light",
+  "artifact_name": "regime_labels",
+  "artifact_type": "data",
+  "file_path": "artifacts/market_analysis/ETHUSDT/binance/long/Analyst/hdbscan_regime_discovery/regime_discovery_hdbscan_regime_discovery_regime_labels_ETHUSDT_binance_long_Analyst_20251027_215237.parquet",
+  "file_size": 4464,
+  "timestamp": "2025-10-27T21:52:37.842235",
+  "compression": "auto"
+}

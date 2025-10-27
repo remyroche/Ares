@@ -1,0 +1,115 @@
+# Regime Clustering Configuration
+
+# Clustering parameters
+min_clusters: 4
+max_clusters: 8
+regime_timeframe: "1h"  # Timeframe for regime analysis
+
+# Quality targets
+min_silhouette_score: 0.2
+min_cv_score: 0.3
+max_dbi_score: 2.5
+min_temporal_smoothness: 0.85
+min_balance_score: 0.5
+
+# Iterative optimization settings
+iterative_enable_risk_mitigation: true
+iterative_max_iterations: 25
+iterative_convergence_threshold: 0.001
+
+# ============================================================================
+# AUTOMATIC HYPERPARAMETER TUNING
+# ============================================================================
+# Enable this to automatically tune iterative optimization parameters
+# to improve CV, Silhouette, and DBI scores
+
+auto_tune_iterative_opt: true  # Set to true to enable auto-tuning
+tuning_trials: 20  # Number of tuning trials (10-50 recommended)
+# Note: 20 trials ≈ 10-15 minutes, 50 trials ≈ 30-40 minutes
+
+# ============================================================================
+# TUNING STRATEGY
+# ============================================================================
+# When auto_tune_iterative_opt is enabled, the system will:
+# 1. Run Bayesian optimization to find best parameters
+# 2. Test multiple configurations with different trade-offs
+# 3. Select the best configuration that maximizes:
+#    - CV Score (variance separation)
+#    - Silhouette Score (cluster cohesion)
+#    - DBI Score (cluster separation - lower is better)
+# 4. While maintaining:
+#    - Balance Score >= 0.5
+#    - Temporal Smoothness >= 0.85
+#    - Cluster count in range [min_clusters, max_clusters]
+# 5. Automatically apply the best parameters
+# 6. Save tuning results to artifacts/hyperparameter_tuning/
+
+# ============================================================================
+# ADVANCED TUNING OPTIONS (optional)
+# ============================================================================
+# Override these only if you want to customize the tuning behavior
+
+# Tuning method: 'bayesian' (faster, single best) or 'multiobjective' (Pareto front)
+tuning_method: "bayesian"
+
+# Tuning constraints (relaxed from defaults for more flexibility)
+tuning_min_balance: 0.45  # Minimum balance score to accept (default: 0.5)
+tuning_min_temporal: 0.80  # Minimum temporal smoothness to accept (default: 0.85)
+tuning_target_clusters: [5, 9]  # Acceptable cluster range (default: [6, 8])
+
+# Tuning weights for composite score
+tuning_weights:
+  cv: 0.30  # Weight for CV in composite score
+  silhouette: 0.25  # Weight for Silhouette
+  dbi: 0.20  # Weight for DBI (inverted)
+  balance: 0.15  # Weight for Balance
+  temporal: 0.10  # Weight for Temporal
+
+# ============================================================================
+# CACHED TUNING RESULTS
+# ============================================================================
+# Enable this to reuse previous tuning results instead of re-tuning
+use_cached_tuning: false
+cached_tuning_max_age_hours: 24  # Maximum age of cached results to use
+
+# ============================================================================
+# MANUAL PARAMETER OVERRIDES (from tuning)
+# ============================================================================
+# When you've run tuning and found good parameters, you can:
+# Option 1: Paste them here and set auto_tune_iterative_opt: false
+# Option 2: Leave auto_tune_iterative_opt: true to keep tuning
+# Option 3: Use use_cached_tuning: true to reuse previous results
+
+# Example (uncomment and fill in after tuning):
+# iterative_min_frac: 0.03
+# iterative_max_frac: 0.20
+# iterative_w_cv: 0.65
+# iterative_w_sil: 0.15
+# iterative_w_temp: 0.15
+# iterative_w_bal: 0.05
+# iterative_eps_std_step1: -0.22
+# iterative_sil_guard: -0.07
+# iterative_temporal_bonus: 0.28
+# iterative_local_churn_cap: 5500
+# iterative_knn_size: 25
+
+# ============================================================================
+# USAGE EXAMPLES
+# ============================================================================
+# 
+# Quick test (no tuning):
+#   python3 src/launcher/ares_launcher.py --step regime_clustering --symbol ETHUSDT --execution-mode light
+#
+# With automatic tuning (20 trials):
+#   Edit this file: set auto_tune_iterative_opt: true
+#   python3 src/launcher/ares_launcher.py --step regime_clustering --symbol ETHUSDT --execution-mode light
+#
+# With comprehensive tuning (50 trials):
+#   Edit this file: set auto_tune_iterative_opt: true, tuning_trials: 50
+#   python3 src/launcher/ares_launcher.py --step regime_clustering --symbol ETHUSDT --execution-mode light
+#
+# Using cached tuning results:
+#   Edit this file: set use_cached_tuning: true
+#   python3 src/launcher/ares_launcher.py --step regime_clustering --symbol ETHUSDT --execution-mode light
+#
+

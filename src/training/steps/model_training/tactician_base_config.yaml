@@ -55,23 +55,6 @@ tactician_config:
         dropout: 0.1
         sequence_length: 50
   
-  # Meta-learner configuration
-  meta_learner:
-    model_type: "stacker_lgbm_calibrated"
-    params:
-      n_estimators: 500
-      learning_rate: 0.05
-      max_depth: 6
-      num_leaves: 63
-      subsample: 0.9
-      colsample_bytree: 0.9
-      random_state: 42
-      verbosity: -1
-      n_jobs: -1
-    calibration:
-      method: "isotonic"
-      enable_temperature_scaling: true
-  
   # Training configuration
   training:
     training_samples: 8000

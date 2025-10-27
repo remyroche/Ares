@@ -1,0 +1,13 @@
+{
+  "training_type": "analyst_base",
+  "symbol": "ETHUSDT",
+  "timeframe": "15m",
+  "direction": "longs",
+  "created_at": "2025-10-27T23:54:18.413950",
+  "artifact_name": "analyst_base_metrics",
+  "artifact_type": "metadata",
+  "file_path": "artifacts/pre_training/long/Analyst/unified_models_training/unified_models_training_analyst_base_metrics_long_Analyst_20251027_235417.parquet",
+  "file_size": 5468,
+  "timestamp": "2025-10-27T23:54:18.469394",
+  "compression": "auto"
+}

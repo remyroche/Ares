@@ -1,0 +1,10 @@
+{
+  "feature_count": 25,
+  "selection_method": "economic_regime_selection",
+  "timestamp": "2025-10-27T20:38:05.191816",
+  "artifact_name": "selected_features",
+  "artifact_type": "data",
+  "file_path": "artifacts/pre_training/long/Analyst/regime_feature_selection/regime_feature_selection_selected_features_long_Analyst_20251027_203620.parquet",
+  "file_size": 2443,
+  "compression": "auto"
+}

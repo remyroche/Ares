@@ -35,10 +35,10 @@ except ImportError as e:
     logging.warning(f"Auto-tuner not available: {e}")
 
 # Import regime feature selector
-from src.training.steps.market_analysis.hdbscan_clustering.optimization.regime_feature_selector import (
-    RegimeFeatureSelector,
-    RegimeFeatureSelectorConfig,
-    create_regime_feature_selector
+from src.training.steps.market_analysis.hdbscan_clustering.optimization.efficient_regime_feature_selector import (
+    EfficientRegimeFeatureSelector as RegimeFeatureSelector,
+    EfficientFeatureSelectionConfig as RegimeFeatureSelectorConfig,
+    create_efficient_regime_feature_selector as create_regime_feature_selector
 )
 
 # Import utilities
@@ -331,17 +331,17 @@ class HDBSCANRegimeDiscoveryStep(BaseStep):
             tprint("🔧 Light mode: Using optimized parameters without data limiting", "INFO")
             
             return RegimeDiscoveryConfig(
-                # Core HDBSCAN parameters - ULTRA AGGRESSIVE to subdivide large regime & recluster noise
-                # Goal 1: Force subdivision of the 48.3% regime and recluster the 38.3% noise
-                min_cluster_size_pct=0.01,  # 1% to force more granular clusters
-                min_cluster_size_floor=10,  # Very low floor to allow fine-grained clusters
+                # Core HDBSCAN parameters - FORCE 5-8 REGIMES
+                # Goal: Create 5-8 meaningful market regimes for ETHUSDT
+                min_cluster_size_pct=0.005,  # 0.5% of samples (~2-3 samples for 480 samples)
+                min_cluster_size_floor=3,   # Very low floor to allow 5-8 clusters
                 
                 # Goal 2: Much more flexible clustering to capture subtle differences
-                min_samples_options=[5],  # Very low min_samples for maximum flexibility
+                min_samples_options=[2],  # Very low min_samples for maximum flexibility
                 
                 # Cluster selection - use leaf for balanced clusters that don't merge
                 cluster_selection_method_options=['leaf'],  # Leaf method to preserve all clusters
-                cluster_selection_epsilon=0.001,  # Extremely tight epsilon to prevent cluster merging
+                cluster_selection_epsilon=0.05,  # Higher epsilon to allow some merging but not too much
                 metric='cosine',  # Try cosine for normalized data (more stable than manhattan)
 
                 # Dimensionality reduction - use all 26 selected features
@@ -361,8 +361,8 @@ class HDBSCANRegimeDiscoveryStep(BaseStep):
                 max_optimization_rounds=5,  # Increased from 3 to 5
                 use_condensed_tree=True,  # Enable condensed tree for better cluster selection
 
-                # Economic validation - STRICT for meaningful regime discovery
-                min_economic_separation_pct=0.25,  # Much higher threshold for meaningful economic separation
+                # Economic validation - VERY LOW for 5-8 regime discovery
+                min_economic_separation_pct=0.05,  # Very low threshold to allow more regimes
                 interpretable_axes=["trend_pc", "vol_pc", "breadth", "skew", "liquidity_stress", "momentum_strength"],
                 
                 # Temporal stabilization - More sensitive
@@ -687,6 +687,73 @@ class HDBSCANRegimeDiscoveryStep(BaseStep):
                     'max_inter_cluster_distance': np.max(inter_cluster_distances)
                 }
             
+            # Calculate CV metrics (Coefficient of Variation)
+            if len(set(labels_clean)) > 1:
+                try:
+                    # Calculate within-cluster CV
+                    within_cvs = []
+                    for cluster_id in set(labels_clean):
+                        cluster_mask = labels_clean == cluster_id
+                        cluster_data = features_clean[cluster_mask]
+                        
+                        if len(cluster_data) > 1:
+                            cluster_std = cluster_data.std()
+                            cluster_mean = cluster_data.mean()
+                            
+                            # Safe division with proper handling of zeros and infinities
+                            denominator = np.abs(cluster_mean) + 1e-8
+                            cv_values = np.divide(cluster_std, denominator, out=np.zeros_like(cluster_std), where=denominator!=0)
+                            
+                            # Remove any infinite or NaN values
+                            cv_values = cv_values[np.isfinite(cv_values)]
+                            
+                            if len(cv_values) > 0:
+                                cluster_cv = np.mean(cv_values)
+                                within_cvs.append(cluster_cv)
+                    
+                    within_cluster_cv = np.mean(within_cvs) if within_cvs else 0.0
+                    
+                    # Calculate between-cluster CV
+                    cluster_means = []
+                    for cluster_id in set(labels_clean):
+                        cluster_mask = labels_clean == cluster_id
+                        cluster_data = features_clean[cluster_mask]
+                        
+                        if len(cluster_data) > 0:
+                            cluster_mean = cluster_data.mean()
+                            # Remove any non-finite values
+                            cluster_mean = cluster_mean[np.isfinite(cluster_mean)]
+                            if len(cluster_mean) > 0:
+                                cluster_means.append(cluster_mean)
+                    
+                    if len(cluster_means) > 1:
+                        cluster_means_array = np.array(cluster_means)
+                        between_cluster_std = np.std(cluster_means_array, axis=0)
+                        between_cluster_mean = np.mean(cluster_means_array, axis=0)
+                        
+                        # Safe division for between-cluster CV
+                        denominator = np.abs(between_cluster_mean) + 1e-8
+                        cv_values = np.divide(between_cluster_std, denominator, out=np.zeros_like(between_cluster_std), where=denominator!=0)
+                        
+                        # Remove any infinite or NaN values
+                        cv_values = cv_values[np.isfinite(cv_values)]
+                        
+                        between_cluster_cv = np.mean(cv_values) if len(cv_values) > 0 else 0.0
+                    else:
+                        between_cluster_cv = 0.0
+                    
+                    metrics['within_cluster_cv'] = within_cluster_cv
+                    metrics['between_cluster_cv'] = between_cluster_cv
+                    tprint(f"🔍 CV metrics calculated: within={within_cluster_cv:.4f}, between={between_cluster_cv:.4f}", "INFO")
+                    
+                except Exception as e:
+                    tprint(f"⚠️ Failed to calculate CV metrics: {e}", "WARNING")
+                    metrics['within_cluster_cv'] = 0.0
+                    metrics['between_cluster_cv'] = 0.0
+            else:
+                metrics['within_cluster_cv'] = 0.0
+                metrics['between_cluster_cv'] = 0.0
+            
             return metrics
             
         except Exception as e:
@@ -702,8 +769,8 @@ class HDBSCANRegimeDiscoveryStep(BaseStep):
                 'regime_probabilities': regime_result.probabilities,
                 'cluster_persistence': regime_result.cluster_persistence,
                 
-                # Original features used for clustering (NEW)
-                'clustering_features': features_df.values.tolist(),  # Convert to list for Parquet compatibility
+                # Original features used for clustering (NEW) - save as separate artifact
+                'clustering_features': features_df.values,  # Keep as numpy array for proper serialization
                 'feature_names': features_df.columns.tolist(),  # Save feature names
                 
                 # Economic profiles
@@ -794,14 +861,19 @@ class HDBSCANRegimeDiscoveryStep(BaseStep):
                 )
                 tprint(f"✅ Regime labels saved: {labels_path}", "SUCCESS")
 
-            # Save full artifacts (compressed pickle) - exclude CondensedTree for Parquet compatibility
-            # Create a copy of artifacts without CondensedTree for Parquet serialization
+            # Save full artifacts (compressed pickle) - exclude CondensedTree and clustering_features for Parquet compatibility
+            # Create a copy of artifacts without CondensedTree and clustering_features for Parquet serialization
             artifacts_for_parquet = artifacts.copy()
             if 'metadata' in artifacts_for_parquet and 'condensed_tree' in artifacts_for_parquet['metadata']:
                 # Remove CondensedTree from metadata to avoid serialization issues
                 artifacts_for_parquet['metadata'] = artifacts_for_parquet['metadata'].copy()
                 del artifacts_for_parquet['metadata']['condensed_tree']
                 tprint("🔧 Removed CondensedTree from artifacts for Parquet compatibility", "INFO")
+            
+            # Remove clustering_features from artifacts_for_parquet (saved separately)
+            if 'clustering_features' in artifacts_for_parquet:
+                del artifacts_for_parquet['clustering_features']
+                tprint("🔧 Removed clustering_features from artifacts for Parquet compatibility", "INFO")
             
             artifacts_path = self._save_artifact(
                 data=artifacts_for_parquet,
@@ -831,6 +903,22 @@ class HDBSCANRegimeDiscoveryStep(BaseStep):
                     }
                 )
                 tprint(f"✅ Economic profiles saved: {profiles_path}", "SUCCESS")
+
+            # Save clustering features as separate artifact (numpy array)
+            if 'clustering_features' in artifacts:
+                features_path = self._save_artifact(
+                    data=artifacts['clustering_features'],
+                    artifact_name="clustering_features",
+                    artifact_type="data",
+                    compression="auto",
+                    metadata={
+                        'symbol': config['symbol'],
+                        'timeframe': config['timeframe'],
+                        'n_samples': artifacts['clustering_features'].shape[0] if hasattr(artifacts['clustering_features'], 'shape') else len(artifacts['clustering_features']),
+                        'n_features': artifacts['clustering_features'].shape[1] if hasattr(artifacts['clustering_features'], 'shape') else 0
+                    }
+                )
+                tprint(f"✅ Clustering features saved: {features_path}", "SUCCESS")
 
         except Exception as e:
             tprint(f"⚠️ Failed to save artifacts: {e}", "WARNING")
@@ -1421,7 +1509,9 @@ regime_discovery_config:
                 davies_bouldin_score=initial_result.validation_metrics.get('davies_bouldin_score'),
                 n_clusters=initial_result.validation_metrics.get('n_regimes'),
                 n_noise_points=initial_result.validation_metrics.get('noise_points', 0),
-                noise_ratio=initial_result.validation_metrics.get('noise_ratio', 0.0)
+                noise_ratio=initial_result.validation_metrics.get('noise_ratio', 0.0),
+                within_cluster_cv=initial_result.validation_metrics.get('within_cluster_cv'),
+                between_cluster_cv=initial_result.validation_metrics.get('between_cluster_cv')
             )
             
             # Goal 3: Enhanced metrics display
@@ -1453,11 +1543,11 @@ regime_discovery_config:
                 )
                 
                 tprint(f"✅ Auto-tuning completed:", "SUCCESS")
-                tprint(f"   • Silhouette: {tuned_quality.silhouette_score:.4f}", "SUCCESS")
-                tprint(f"   • DBI: {tuned_quality.davies_bouldin_score:.4f}", "SUCCESS")
-                tprint(f"   • CH: {tuned_quality.calinski_harabasz_score:.4f}", "SUCCESS")
-                tprint(f"   • Clusters: {tuned_quality.n_clusters}", "SUCCESS")
-                tprint(f"   • Noise: {tuned_quality.noise_ratio:.1%}", "SUCCESS")
+                tprint(f"   • Silhouette: {tuned_quality.silhouette_score or 0.0:.4f}", "SUCCESS")
+                tprint(f"   • DBI: {tuned_quality.davies_bouldin_score or 0.0:.4f}", "SUCCESS")
+                tprint(f"   • CH: {tuned_quality.calinski_harabasz_score or 0.0:.4f}", "SUCCESS")
+                tprint(f"   • Clusters: {tuned_quality.n_clusters or 0}", "SUCCESS")
+                tprint(f"   • Noise: {tuned_quality.noise_ratio or 0.0:.1%}", "SUCCESS")
                 
                 # If quality improved, apply the tuned parameters
                 if tuned_quality.calculate_composite_score() > current_quality.calculate_composite_score():
@@ -1489,12 +1579,12 @@ regime_discovery_config:
         
         # Check regime count - ENHANCED suggestions for getting more regimes
         if quality.n_clusters < 4:
-            suggestions.append("🎯 Too few regimes: Current parameters create only 2 clusters")
-            suggestions.append("📋 Try: min_cluster_size_pct=0.01 (1%), min_cluster_size_floor=20")
-            suggestions.append("🔧 Alternative: Use 'manhattan' or 'cosine' distance metric")
+            suggestions.append("🎯 Too few regimes: Current parameters create only 2 clusters - need 5-8 clusters")
+            suggestions.append("📋 Try: min_cluster_size_pct=0.005 (0.5%), min_cluster_size_floor=5")
+            suggestions.append("🔧 Alternative: Use 'leaf' method with higher cluster_selection_epsilon")
             suggestions.append("⚙️ Try cluster_selection_method='leaf' for more balanced clusters")
         elif quality.n_clusters > 8:
-            suggestions.append("🎯 Too many regimes: Increase min_cluster_size to get 4-8 clusters")
+            suggestions.append("🎯 Too many regimes: Increase min_cluster_size to get 5-8 clusters")
         
         # Check noise ratio
         if quality.noise_ratio > 0.3:

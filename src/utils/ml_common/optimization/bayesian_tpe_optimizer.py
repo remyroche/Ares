@@ -1540,7 +1540,9 @@ class BayesianTPEOptimizer:
 
                     for params in batch_params:
                         try:
-                            value = objective(params)
+                            # Create a mock trial object for grid evaluation
+                            # Grid search passes dicts directly, not Trial objects
+                            value = self._evaluate_params_dict(objective, params)
                             batch_results.append(value)
                         except Exception as e:
                             self.logger.warning(f"⚠️ Batch evaluation {i} failed: {e}")
@@ -1554,7 +1556,8 @@ class BayesianTPEOptimizer:
                 for i, params in enumerate(grid_points):
                     trial_start = time.time()
                     try:
-                        value = objective(params)
+                        # Create a mock trial object for grid evaluation
+                        value = self._evaluate_params_dict(objective, params)
                         results.append(value)
                     except Exception as e:
                         self.logger.warning(f"⚠️ Batch evaluation {i} failed: {e}")
@@ -1609,6 +1612,30 @@ class BayesianTPEOptimizer:
         except Exception as e:
             self.logger.error(f"❌ Batch evaluation failed: {e}")
             return None
+
+    def _evaluate_params_dict(self, objective: Callable, params: Dict[str, Any]) -> float:
+        """
+        Evaluate a parameter dictionary with an objective function.
+        
+        Handles both cases:
+        1. Objective expects a dict directly (grid search)
+        2. Objective expects an Optuna Trial object (TPE)
+        
+        For case 1, we pass the dict directly.
+        For case 2, this will fail, so we catch it and return -inf/inf.
+        """
+        try:
+            # Try calling objective with dict directly
+            return objective(params)
+        except (AttributeError, TypeError) as e:
+            # If objective expects Trial object with suggest_* methods
+            if 'suggest_int' in str(e) or 'suggest_float' in str(e):
+                # Grid search doesn't use Optuna trials, so objective must handle dicts
+                # Return worst value to skip this configuration
+                return float('-inf') if self.config.direction == 'maximize' else float('inf')
+            else:
+                # Re-raise other errors
+                raise
 
     def _sequential_evaluate_grid(self, objective: Callable, grid_points: List[Dict[str, Any]],
                                 stage: str) -> Dict[str, Any]:
@@ -1818,7 +1845,39 @@ class BayesianTPEOptimizer:
             if len(param_values) > 1 and self._should_use_vectorbt_combinations(param_values):
                 combinations = self._vectorbt_generate_combinations(param_values)
             else:
-                combinations = list(itertools.product(*[param_values[name] for name in param_names]))
+                # Use itertools product with memory limiting
+                total_combinations = 1
+                for name in param_names:
+                    total_combinations *= len(param_values[name])
+                
+                max_combinations = 10000
+                if total_combinations > max_combinations:
+                    self.logger.warning(f"⚠️ Too many combinations ({total_combinations}), using random sampling (max {max_combinations})")
+                    # Use random sampling instead of full product
+                    import random
+                    combinations = []
+                    # Convert numpy arrays to lists for random.choice
+                    param_values_lists = {}
+                    for name in param_names:
+                        vals = param_values[name]
+                        if hasattr(vals, 'tolist'):
+                            param_values_lists[name] = vals.tolist()
+                        else:
+                            param_values_lists[name] = list(vals)
+                    
+                    for _ in range(min(max_combinations, int(total_combinations))):
+                        combo = tuple(random.choice(param_values_lists[name]) for name in param_names)
+                        combinations.append(combo)
+                else:
+                    # Convert to lists for itertools.product
+                    param_lists = []
+                    for name in param_names:
+                        vals = param_values[name]
+                        if hasattr(vals, 'tolist'):
+                            param_lists.append(vals.tolist())
+                        else:
+                            param_lists.append(list(vals))
+                    combinations = list(itertools.product(*param_lists))
 
             grid_points_list = [dict(zip(param_names, combo)) for combo in combinations]
 
@@ -1839,7 +1898,9 @@ class BayesianTPEOptimizer:
         for values in param_values.values():
             total_combinations *= len(values)
 
-        return total_combinations > 1000
+        # Use VectorBT for parameter spaces with 100-10000 combinations
+        # Above 10000, we'll use random sampling instead
+        return 100 < total_combinations <= 10000
 
     def _vectorbt_generate_combinations(self, param_values: Dict[str, List]) -> List[Tuple]:
         """Generate combinations using VectorBT vectorized operations."""
@@ -1866,8 +1927,38 @@ class BayesianTPEOptimizer:
 
         except Exception as e:
             self.logger.warning(f"VectorBT combination generation failed: {e}, using itertools")
-            # Fallback to itertools
-            return list(itertools.product(*param_values.values()))
+            # Fallback to itertools with memory limit
+            total_combinations = 1
+            for values in param_values.values():
+                total_combinations *= len(values)
+            
+            max_combinations = 10000
+            if total_combinations > max_combinations:
+                self.logger.warning(f"⚠️ Too many combinations ({total_combinations}), using random sampling (max {max_combinations})")
+                # Use random sampling instead of full product
+                import random
+                combinations = []
+                # Convert to lists for random sampling
+                param_lists = []
+                for values in param_values.values():
+                    if hasattr(values, 'tolist'):
+                        param_lists.append(values.tolist())
+                    else:
+                        param_lists.append(list(values))
+                
+                for _ in range(min(max_combinations, int(total_combinations))):
+                    combo = tuple(random.choice(vals) for vals in param_lists)
+                    combinations.append(combo)
+                return combinations
+            else:
+                # Convert to lists for itertools.product
+                param_lists = []
+                for values in param_values.values():
+                    if hasattr(values, 'tolist'):
+                        param_lists.append(values.tolist())
+                    else:
+                        param_lists.append(list(values))
+                return list(itertools.product(*param_lists))
 
     def _standard_vectorbt_coarse_grid(self, search_space: Dict[str, Any], grid_points: int) -> List[Dict[str, Any]]:
         """Generate coarse grid using standard VectorBT operations."""
@@ -1925,8 +2016,25 @@ class BayesianTPEOptimizer:
                     param_values.append(values)
                     param_names.append(param_list[0][0])
 
-                # Use itertools.product for grid generation
-                combinations = list(itertools.product(*param_values))
+                # Calculate total combinations to avoid memory issues
+                total_combinations = 1
+                for values in param_values:
+                    total_combinations *= len(values)
+                
+                # Limit combinations to avoid memory issues (max 10,000 combinations)
+                max_combinations = 10000
+                if total_combinations > max_combinations:
+                    self.logger.warning(f"⚠️ Too many combinations ({total_combinations}), using random sampling (max {max_combinations})")
+                    # Use random sampling instead of full product
+                    import random
+                    combinations = []
+                    for _ in range(min(max_combinations, total_combinations)):
+                        combo = tuple(random.choice(values) for values in param_values)
+                        combinations.append(combo)
+                else:
+                    # Use itertools.product for grid generation
+                    combinations = list(itertools.product(*param_values))
+                
                 return [dict(zip(param_names, combo)) for combo in combinations]
             else:
                 # Single parameter case

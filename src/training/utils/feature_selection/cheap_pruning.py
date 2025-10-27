@@ -1081,12 +1081,66 @@ class OptimizedCheapPruningPipeline:
         target_retention = 0.15  # Keep 15% of features for interaction generation (100-150 from 876)
         target_count = max(100, int(initial_count * target_retention))  # At least 100 features
         
+        # DETAILED CROSS-TIMEFRAME TRACKING - BEFORE CLUSTERING
+        cross_timeframe_before = [f for f in features_df.columns if 
+                                 ('cross_timeframe' in f.lower() or 
+                                  '_3x_ratio' in f or 
+                                  '_6x_ratio' in f or 
+                                  '_9x_ratio' in f or 
+                                  '_27x_ratio' in f)]
+        
+        tprint_info("="*80)
+        tprint_info("📊 CROSS-TIMEFRAME FEATURE TRACKING - PRUNING ENTRY POINT")
+        tprint_info("="*80)
+        tprint_info(f"  📈 Total features at entry: {initial_count}")
+        tprint_info(f"  📈 Cross-timeframe features at entry: {len(cross_timeframe_before)}")
+        tprint_info(f"  📈 Cross-timeframe ratio: {len(cross_timeframe_before)/initial_count:.1%}")
+        if cross_timeframe_before:
+            tprint_info(f"  📈 Sample cross-timeframe features:")
+            for f in cross_timeframe_before[:5]:
+                score = composite_scores.get(f, 0.0)
+                tprint_info(f"      - {f} (score: {score:.4f})")
+        
+        # Analyze cross-timeframe feature scores
+        if cross_timeframe_before:
+            ct_scores = [composite_scores.get(f, 0.0) for f in cross_timeframe_before]
+            all_scores = [composite_scores.get(f, 0.0) for f in features_df.columns]
+            tprint_info(f"  📊 Cross-timeframe score statistics:")
+            tprint_info(f"      Min: {min(ct_scores):.4f}, Max: {max(ct_scores):.4f}, Mean: {np.mean(ct_scores):.4f}")
+            tprint_info(f"  📊 All features score statistics:")
+            tprint_info(f"      Min: {min(all_scores):.4f}, Max: {max(all_scores):.4f}, Mean: {np.mean(all_scores):.4f}")
+            
+            # Check if cross-timeframe features have lower scores
+            ct_mean = np.mean(ct_scores)
+            all_mean = np.mean(all_scores)
+            if ct_mean < all_mean * 0.8:
+                tprint_warning(f"  ⚠️ Cross-timeframe features have significantly lower scores!")
+                tprint_warning(f"      CT mean: {ct_mean:.4f} vs All mean: {all_mean:.4f}")
+                tprint_warning(f"      This may cause aggressive pruning!")
+        
         tprint_info(f"🎯 Target: Keep {target_count} features ({target_retention:.0%} retention)")
         
         # Pre-process features to remove zero variance and constant features
         features_df_clean = self._remove_problematic_features(features_df)
+        
+        # Track cross-timeframe after problematic removal
+        cross_timeframe_after_clean = [f for f in features_df_clean.columns if 
+                                      ('cross_timeframe' in f.lower() or 
+                                       '_3x_ratio' in f or 
+                                       '_6x_ratio' in f or 
+                                       '_9x_ratio' in f or 
+                                       '_27x_ratio' in f)]
+        
         if len(features_df_clean.columns) != len(features_df.columns):
-            tprint_info(f"  🧹 Removed {len(features_df.columns) - len(features_df_clean.columns)} problematic features before clustering")
+            removed_problematic = len(features_df.columns) - len(features_df_clean.columns)
+            ct_removed_problematic = len(cross_timeframe_before) - len(cross_timeframe_after_clean)
+            tprint_info(f"  🧹 Removed {removed_problematic} problematic features before clustering")
+            tprint_info(f"  🧹 Cross-timeframe features removed: {ct_removed_problematic}")
+            if ct_removed_problematic > 0:
+                tprint_warning(f"  ⚠️ {ct_removed_problematic} cross-timeframe features were problematic (zero variance/constant)")
+                ct_removed = set(cross_timeframe_before) - set(cross_timeframe_after_clean)
+                for f in list(ct_removed)[:5]:
+                    tprint_warning(f"      - {f}")
         
         # Use memory-efficient correlation matrix calculation
         corr_matrix = self._calculate_correlation_matrix(features_df_clean)
@@ -1170,9 +1224,51 @@ class OptimizedCheapPruningPipeline:
         # If we still have too many features, apply additional pruning
         if len(remaining_features.columns) > target_count:
             tprint_info(f"  🔧 Still have {len(remaining_features.columns)} features, need to reduce to {target_count}")
+            
+            # Track cross-timeframe before final selection
+            ct_before_final = [f for f in remaining_features.columns if 
+                             ('cross_timeframe' in f.lower() or 
+                              '_3x_ratio' in f or 
+                              '_6x_ratio' in f or 
+                              '_9x_ratio' in f or 
+                              '_27x_ratio' in f)]
+            
+            tprint_info("="*80)
+            tprint_info("📊 FINAL SELECTION BY COMPOSITE SCORE")
+            tprint_info("="*80)
+            tprint_info(f"  📈 Cross-timeframe features before final selection: {len(ct_before_final)}")
+            
             # Sort all remaining features by composite score and keep the best ones
             all_scores = [(f, composite_scores.get(f, 0.0)) for f in remaining_features.columns]
             all_scores.sort(key=lambda x: x[1], reverse=True)  # Sort by score (highest first)
+            
+            # Analyze cross-timeframe ranking
+            ct_rankings = []
+            for idx, (f, score) in enumerate(all_scores):
+                if f in ct_before_final:
+                    ct_rankings.append((idx, f, score))
+            
+            if ct_rankings:
+                tprint_info(f"  📊 Cross-timeframe feature rankings:")
+                tprint_info(f"      Best ranking: #{ct_rankings[0][0]+1} - {ct_rankings[0][1]} (score: {ct_rankings[0][2]:.4f})")
+                tprint_info(f"      Worst ranking: #{ct_rankings[-1][0]+1} - {ct_rankings[-1][1]} (score: {ct_rankings[-1][2]:.4f})")
+                tprint_info(f"      Median ranking: #{ct_rankings[len(ct_rankings)//2][0]+1}")
+                tprint_info(f"      Cutoff position: #{target_count}")
+                
+                # Check how many would survive the cut
+                ct_above_cutoff = [r for r in ct_rankings if r[0] < target_count]
+                ct_below_cutoff = [r for r in ct_rankings if r[0] >= target_count]
+                
+                tprint_info(f"  📊 Cross-timeframe features above cutoff: {len(ct_above_cutoff)}")
+                tprint_info(f"  📊 Cross-timeframe features below cutoff: {len(ct_below_cutoff)}")
+                
+                if len(ct_above_cutoff) == 0:
+                    tprint_warning("  ⚠️ ALL cross-timeframe features are ranked below cutoff!")
+                    tprint_warning("  ⚠️ This means they all have lower composite scores than other features")
+                    tprint_warning("  ⚠️ Consider:")
+                    tprint_warning("      1. Improving cross-timeframe feature calculation")
+                    tprint_warning("      2. Adding explicit protection for cross-timeframe category")
+                    tprint_warning("      3. Using different scoring metrics")
             
             # Keep the top features up to target count
             features_to_keep = [f for f, _ in all_scores[:target_count]]
@@ -1181,19 +1277,28 @@ class OptimizedCheapPruningPipeline:
             # Track cross-timeframe features in final selection
             final_cross_timeframe = [f for f in features_to_keep if 
                                    ('cross_timeframe' in f.lower() or 
-                                    '_ratio_' in f or 
                                     '_3x_ratio' in f or 
+                                    '_6x_ratio' in f or 
                                     '_9x_ratio' in f or 
                                     '_27x_ratio' in f)]
             
+            tprint_info("="*80)
+            tprint_info("📊 FINAL SELECTION RESULTS")
+            tprint_info("="*80)
             tprint_info(f"  ✅ Selected top {len(features_to_keep)} features by composite score")
-            tprint_info(f"  🔍 Cross-timeframe features in final selection: {len(final_cross_timeframe)}")
+            tprint_info(f"  📊 Cross-timeframe features in final selection: {len(final_cross_timeframe)}")
+            tprint_info(f"  📊 Cross-timeframe survival rate: {len(final_cross_timeframe)/len(ct_before_final):.1%}")
+            
             if final_cross_timeframe:
-                tprint_info(f"    Cross-timeframe features kept:")
-                for f in final_cross_timeframe[:5]:  # Show first 5
-                    tprint_info(f"      - {f}")
-                if len(final_cross_timeframe) > 5:
-                    tprint_info(f"      ... and {len(final_cross_timeframe) - 5} more")
+                tprint_success(f"  ✅ Cross-timeframe features kept:")
+                for f in final_cross_timeframe[:10]:  # Show first 10
+                    score = composite_scores.get(f, 0.0)
+                    tprint_success(f"      - {f} (score: {score:.4f})")
+                if len(final_cross_timeframe) > 10:
+                    tprint_success(f"      ... and {len(final_cross_timeframe) - 10} more")
+            else:
+                tprint_error("  ❌ NO cross-timeframe features kept!")
+                tprint_error("  ❌ All cross-timeframe features were pruned in final selection")
         
         # Track results
         removed_count = len(features_to_remove)

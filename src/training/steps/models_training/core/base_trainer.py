@@ -49,6 +49,7 @@ class TrainingRole(Enum):
 class ModelType(Enum):
     """Types of ML models."""
     LIGHTGBM = "lightgbm"
+    TCN = "tcn"  # Temporal Convolutional Network
     CATBOOST = "catboost"
     NEURAL_NETWORK = "neural_network"
     ENSEMBLE = "ensemble"
@@ -369,7 +370,6 @@ class BaseTrainer(ABC):
         default_return=None,
         context="data preprocessing"
     )
-    @memory_checkpoint
     def _preprocess_data(self, data: pd.DataFrame, targets: Optional[pd.Series] = None) -> Tuple[pd.DataFrame, pd.Series]:
         """
         Preprocess data for training using our utilities.
@@ -436,7 +436,7 @@ class BaseTrainer(ABC):
             memory_delta = final_memory['rss'] - initial_memory['rss']
             
             tprint_success(f"✅ Data preprocessed: {data.shape[0]} samples, {data.shape[1]} features")
-            tprint_performance(f"📊 Memory delta: {memory_delta:.2f} MB")
+            tprint_info(f"📊 Memory delta: {memory_delta:.2f} MB")
             
             return data, targets
             

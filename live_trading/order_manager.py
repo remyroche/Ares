@@ -68,9 +68,10 @@ class Order:
 class OrderManager:
     """Manages order lifecycle and execution"""
     
-    def __init__(self, config: TradingConfig, exchange_client: Any):
+    def __init__(self, config: TradingConfig, exchange_client: Any, simulator: Any = None):
         self.config = config
         self.exchange_client = exchange_client
+        self.simulator = simulator  # PaperTradingSimulator instance for paper mode
         self.logger = logging.getLogger(__name__)
         
         # Order storage
@@ -250,36 +251,77 @@ class OrderManager:
         return orders[:limit]
     
     async def _execute_paper_order(self, order: Order) -> None:
-        """Execute order in paper trading mode"""
+        """Execute order in paper trading mode using the simulator"""
         try:
-            # Simulate order execution
-            await asyncio.sleep(0.1)  # Simulate network delay
-            
-            # For paper trading, we'll fill the order immediately at market price
-            if order.order_type == OrderType.MARKET:
-                # Get current market price
-                ticker = await self.exchange_client.get_ticker(order.symbol)
-                if ticker and "last" in ticker:
-                    order.average_price = float(ticker["last"])
+            # If simulator is available, use it for realistic paper trading
+            if self.simulator:
+                # Fetch order book for accurate simulation
+                order_book = await self.exchange_client.get_order_book(order.symbol, limit=20)
+                if not order_book:
+                    raise Exception(f"Failed to fetch order book for {order.symbol}")
+                
+                # Extract trading signal metadata from order metadata if present
+                trading_signal_metadata = order.metadata.get("trading_signal", {})
+                
+                # Simulate order using the simulator
+                result = await self.simulator.simulate_order(
+                    symbol=order.symbol,
+                    side=order.side.value,
+                    order_type=order.order_type.value,
+                    quantity=order.quantity,
+                    price=order.price,
+                    order_book=order_book,
+                    trading_signal_metadata=trading_signal_metadata
+                )
+                
+                # Update order from simulator response
+                if result.get("status") == "FILLED":
+                    order.average_price = result.get("avgPrice", result.get("fillPrice", order.price or 0))
+                    order.filled_quantity = result.get("filledQuantity", order.quantity)
+                    order.status = OrderStatus.FILLED
+                    order.commission = result.get("fee", 0.0)
+                    order.exchange_order_id = result.get("orderId")
+                    
+                    # Remove from active orders
+                    if order.id in self.active_orders:
+                        del self.active_orders[order.id]
+                    
+                    # Notify handlers
+                    await self._notify_handlers("on_order_filled", order)
+                    
+                    self.logger.info(f"Paper order filled via simulator: {order.id} @ {order.average_price}")
+                elif result.get("status") == "REJECTED":
+                    order.status = OrderStatus.REJECTED
+                    order.error_message = result.get("rejectedReason", "Order rejected by simulator")
+                    await self._notify_handlers("on_order_failed", order)
+                    self.logger.warning(f"Paper order rejected: {order.error_message}")
                 else:
-                    order.average_price = order.price or 50000.0  # Fallback price
-                
-                order.filled_quantity = order.quantity
-                order.status = OrderStatus.FILLED
-                order.updated_at = datetime.now()
-                
-                # Remove from active orders
-                if order.id in self.active_orders:
-                    del self.active_orders[order.id]
-                
-                # Notify handlers
-                await self._notify_handlers("on_order_filled", order)
-                
-                self.logger.info(f"Paper order filled: {order.id} @ {order.average_price}")
+                    order.status = OrderStatus.SUBMITTED
+                    order.updated_at = datetime.now()
+            
             else:
-                # For limit orders, mark as submitted
-                order.status = OrderStatus.SUBMITTED
-                order.updated_at = datetime.now()
+                # Fallback to simple simulation if no simulator
+                await asyncio.sleep(0.1)  # Simulate network delay
+                
+                if order.order_type == OrderType.MARKET:
+                    ticker = await self.exchange_client.get_ticker(order.symbol)
+                    if ticker and "last" in ticker:
+                        order.average_price = float(ticker["last"])
+                    else:
+                        order.average_price = order.price or 50000.0
+                    
+                    order.filled_quantity = order.quantity
+                    order.status = OrderStatus.FILLED
+                    order.updated_at = datetime.now()
+                    
+                    if order.id in self.active_orders:
+                        del self.active_orders[order.id]
+                    
+                    await self._notify_handlers("on_order_filled", order)
+                    self.logger.info(f"Paper order filled (simple): {order.id} @ {order.average_price}")
+                else:
+                    order.status = OrderStatus.SUBMITTED
+                    order.updated_at = datetime.now()
                 
         except Exception as e:
             self.logger.error(f"❌ Failed to execute paper order {order.id}: {e}")

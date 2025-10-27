@@ -221,6 +221,26 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             # Perform feature selection for different set sizes
             feature_sets = self._perform_multi_size_selection(combined_features_df, targets, config)
 
+            # Perform enhanced analysis on the largest feature set
+            if feature_sets:
+                largest_set_key = max([k for k in feature_sets.keys() if k.startswith('selected_features_')], 
+                                     key=lambda x: int(x.split('_')[-1]))
+                largest_features = feature_sets[largest_set_key]
+                
+                tprint_info("🔍 Performing enhanced feature analysis...")
+                
+                # Separate features from targets for analysis
+                feature_cols = [col for col in combined_features_df.columns 
+                               if col not in ['target', 'label', 'return', 'timestamp', 'price_target_vol_normalized']]
+                X = combined_features_df[feature_cols]
+                y = combined_features_df[targets.name] if hasattr(targets, 'name') else combined_features_df.iloc[:, -1]
+                
+                # Perform comprehensive analysis
+                enhanced_analysis = self._perform_enhanced_analysis(X, y, largest_features)
+                
+                # Store analysis results in feature_sets for report generation
+                feature_sets['enhanced_analysis'] = enhanced_analysis
+
             # Generate SHAP values for interpretability
             shap_values = self._generate_shap_values(feature_sets, combined_features_df, targets, config)
 
@@ -936,6 +956,79 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
         
         return is_tactician_mode
 
+    def _perform_enhanced_analysis(self, X: pd.DataFrame, y: pd.Series, selected_features: List[str]) -> Dict[str, Any]:
+        """
+        Perform comprehensive enhanced analysis on selected features.
+        
+        Args:
+            X: Feature matrix
+            y: Target variable
+            selected_features: List of selected features
+            
+        Returns:
+            Dictionary containing all enhanced analysis results
+        """
+        try:
+            tprint_info("🔍 Starting enhanced feature analysis...")
+            
+            # Create a temporary component for analysis
+            temp_config = FinalFeatureSelectionConfig(
+                max_features=len(selected_features),
+                min_features=5,
+                selection_method='mutual_info',
+                scoring_threshold=0.01,
+                use_tree_based=True
+            )
+            temp_component = FinalFeatureSelectionComponent(temp_config)
+            
+            # Perform all enhanced analyses
+            analysis_results = {}
+            
+            # Get method results if available
+            method_results = getattr(temp_component, 'method_results', None)
+            
+            # 1. Correlation Analysis
+            tprint_info("📊 Performing correlation analysis...")
+            correlation_analysis = temp_component.analyze_feature_correlations(X, selected_features)
+            analysis_results['correlation_analysis'] = correlation_analysis
+            
+            # 2. Redundancy Detection
+            tprint_info("🔍 Detecting redundant features...")
+            redundancy_analysis = temp_component.detect_redundant_features(X, selected_features)
+            analysis_results['redundancy_analysis'] = redundancy_analysis
+            
+            # 3. Stability Analysis
+            tprint_info("⏰ Analyzing feature stability across time windows...")
+            stability_analysis = temp_component.analyze_feature_stability(X, y, selected_features, n_windows=5)
+            analysis_results['stability_analysis'] = stability_analysis
+            
+            # 4. Cross-validation Analysis
+            tprint_info("🔄 Performing cross-validation analysis...")
+            cv_analysis = temp_component.cross_validate_feature_selection(X, y, selected_features, cv_folds=5)
+            analysis_results['cv_analysis'] = cv_analysis
+            
+            # 5. Baseline Comparison
+            tprint_info("📈 Comparing with baseline random selection...")
+            baseline_analysis = temp_component.compare_with_baseline(X, y, selected_features)
+            analysis_results['baseline_analysis'] = baseline_analysis
+            
+            # 6. Method Results Analysis (if available)
+            if method_results:
+                tprint_info("🔍 Analyzing method-specific results...")
+                analysis_results['method_analysis'] = {
+                    'methods_used': list(method_results.keys()),
+                    'method_results': method_results,
+                    'lgbm_shap_available': 'lgbm_shap' in method_results and 'error' not in method_results.get('lgbm_shap', {}),
+                    'shap_scores': method_results.get('lgbm_shap', {}).get('scores', []) if 'lgbm_shap' in method_results else []
+                }
+            
+            tprint_success("✅ Enhanced analysis completed successfully")
+            return analysis_results
+            
+        except Exception as e:
+            tprint_error(f"❌ Error in enhanced analysis: {e}")
+            return {"error": str(e)}
+
     def _perform_cmi_aware_selection(self, features_df: pd.DataFrame, targets: pd.Series, 
                                    config: Dict[str, Any], feature_set_sizes: List[int]) -> Dict[str, List[str]]:
         """
@@ -1544,7 +1637,82 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
                     
                     report += "\n"
             
-            # Add performance metrics
+            # Add enhanced analysis results
+            if 'enhanced_analysis' in feature_sets:
+                enhanced_analysis = feature_sets['enhanced_analysis']
+                report += f"\n## Enhanced Feature Analysis\n\n"
+                
+                # Correlation Analysis
+                if 'correlation_analysis' in enhanced_analysis and 'error' not in enhanced_analysis['correlation_analysis']:
+                    corr_analysis = enhanced_analysis['correlation_analysis']
+                    report += f"### Correlation Analysis\n\n"
+                    report += f"- **Average Correlation:** {corr_analysis.get('average_correlation', 'N/A'):.4f}\n"
+                    report += f"- **Max Correlation:** {corr_analysis.get('max_correlation', 'N/A'):.4f}\n"
+                    report += f"- **Min Correlation:** {corr_analysis.get('min_correlation', 'N/A'):.4f}\n"
+                    report += f"- **High Correlation Pairs:** {len(corr_analysis.get('high_correlation_pairs', []))}\n"
+                    report += f"- **Correlation Threshold:** {corr_analysis.get('correlation_threshold', 'N/A')}\n\n"
+                
+                # Redundancy Analysis
+                if 'redundancy_analysis' in enhanced_analysis and 'error' not in enhanced_analysis['redundancy_analysis']:
+                    red_analysis = enhanced_analysis['redundancy_analysis']
+                    report += f"### Redundancy Detection\n\n"
+                    report += f"- **Redundancy Score:** {red_analysis.get('redundancy_score', 'N/A'):.4f}\n"
+                    report += f"- **Redundant Features:** {red_analysis.get('redundant_features', 'N/A')}\n"
+                    report += f"- **Total Features:** {red_analysis.get('total_features', 'N/A')}\n"
+                    report += f"- **Correlation Redundant Pairs:** {len(red_analysis.get('redundancy_results', {}).get('correlation_redundant', []))}\n"
+                    report += f"- **Mutual Info Redundant Pairs:** {len(red_analysis.get('redundancy_results', {}).get('mutual_info_redundant', []))}\n"
+                    report += f"- **Low Variance Features:** {len(red_analysis.get('redundancy_results', {}).get('variance_redundant', []))}\n\n"
+                
+                # Stability Analysis
+                if 'stability_analysis' in enhanced_analysis and 'error' not in enhanced_analysis['stability_analysis']:
+                    stab_analysis = enhanced_analysis['stability_analysis']
+                    report += f"### Stability Analysis\n\n"
+                    report += f"- **Average Stability:** {stab_analysis.get('average_stability', 'N/A'):.4f}\n"
+                    report += f"- **Stable Features:** {len(stab_analysis.get('stable_features', []))}\n"
+                    report += f"- **Stability Threshold:** {stab_analysis.get('stability_threshold', 'N/A')}\n"
+                    report += f"- **Time Windows:** {stab_analysis.get('n_windows', 'N/A')}\n\n"
+                
+                # Cross-validation Analysis
+                if 'cv_analysis' in enhanced_analysis and 'error' not in enhanced_analysis['cv_analysis']:
+                    cv_analysis = enhanced_analysis['cv_analysis']
+                    report += f"### Cross-Validation Analysis\n\n"
+                    report += f"- **Average Consistency:** {cv_analysis.get('average_consistency', 'N/A'):.4f}\n"
+                    report += f"- **Consistent Features:** {len(cv_analysis.get('consistent_features', []))}\n"
+                    report += f"- **Consistency Threshold:** {cv_analysis.get('consistency_threshold', 'N/A')}\n"
+                    report += f"- **CV Folds:** {cv_analysis.get('cv_folds', 'N/A')}\n\n"
+                
+                # Baseline Comparison
+                if 'baseline_analysis' in enhanced_analysis and 'error' not in enhanced_analysis['baseline_analysis']:
+                    base_analysis = enhanced_analysis['baseline_analysis']
+                    report += f"### Baseline Comparison\n\n"
+                    report += f"- **Improvement Ratio:** {base_analysis.get('improvement_ratio', 'N/A'):.2f}x\n"
+                    report += f"- **Selected Features Avg Score:** {base_analysis.get('average_selected_score', 'N/A'):.6f}\n"
+                    report += f"- **Baseline Avg Score:** {base_analysis.get('average_baseline_score', 'N/A'):.6f}\n"
+                    report += f"- **Baseline Trials:** {base_analysis.get('n_baseline_trials', 'N/A')}\n"
+                    report += f"- **Features Compared:** {base_analysis.get('n_features', 'N/A')}\n\n"
+                
+                # Method Analysis
+                if 'method_analysis' in enhanced_analysis:
+                    method_analysis = enhanced_analysis['method_analysis']
+                    report += f"### Multi-Method Selection Analysis\n\n"
+                    report += f"- **Methods Used:** {', '.join(method_analysis.get('methods_used', []))}\n"
+                    report += f"- **LGBM-SHAP Available:** {'Yes' if method_analysis.get('lgbm_shap_available', False) else 'No'}\n"
+                    
+                    if method_analysis.get('lgbm_shap_available', False):
+                        shap_scores = method_analysis.get('shap_scores', [])
+                        if shap_scores:
+                            report += f"- **SHAP Scores Range:** {min(shap_scores):.6f} - {max(shap_scores):.6f}\n"
+                            report += f"- **Average SHAP Score:** {np.mean(shap_scores):.6f}\n"
+                            report += f"- **Top SHAP Features:** {len([s for s in shap_scores if s > np.mean(shap_scores)])}\n"
+                    
+                    # Method-specific results
+                    method_results = method_analysis.get('method_results', {})
+                    for method_name, method_data in method_results.items():
+                        if 'error' not in method_data:
+                            report += f"- **{method_name.title()} Features:** {len(method_data.get('features', []))}\n"
+                    report += f"\n"
+            
+            # Add performance metrics (removed inappropriate model metrics)
             report += f"## Performance Metrics\n\n"
             if isinstance(outcome_report, dict):
                 report += f"- **Execution Time:** {outcome_report.get('execution_time', 'N/A')} seconds\n"

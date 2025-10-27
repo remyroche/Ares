@@ -110,7 +110,7 @@ except ImportError as e:
 
 # Advanced clustering imports
 try:
-    from sklearn.cluster import HDBSCAN, DBSCAN, KMeans, SpectralClustering, GaussianMixture
+    from sklearn.cluster import HDBSCAN, DBSCAN, KMeans, SpectralClustering
     from sklearn.metrics import silhouette_score, calinski_harabasz_score, davies_bouldin_score
     from sklearn.preprocessing import StandardScaler, RobustScaler
     from sklearn.decomposition import PCA
@@ -741,6 +741,12 @@ class SRClusteringComponent(BaseStep):
                         self.logger.info(f"Loaded {len(sr_levels_dict['levels'])} SR levels from feature bank")
                         return sr_levels_dict['levels']
                         
+                except TypeError as e:
+                    # Handle missing argument errors from set_context
+                    if 'set_context' in str(e):
+                        self.logger.debug(f"Feature bank requires updated context call: {e}")
+                    else:
+                        self.logger.debug(f"Could not load SR levels from feature bank: {e}")
                 except Exception as e:
                     self.logger.debug(f"Could not load SR levels from feature bank: {e}")
                 
@@ -832,7 +838,11 @@ class SRClusteringComponent(BaseStep):
                 optimized_level = level.copy()
                 # Add hardware optimization metadata
                 optimized_level['hardware_optimized'] = True
-                optimized_level['optimization_gains'] = hardware_config.get('gains', {})
+                gains = hardware_config.get('gains', {})
+                # Ensure gains dict has at least one field for Parquet compatibility
+                if not gains:
+                    gains = {'cpu_gain': 1.0}
+                optimized_level['optimization_gains'] = gains
                 optimized_levels.append(optimized_level)
             
             return optimized_levels
@@ -1776,7 +1786,8 @@ class SRClusteringComponent(BaseStep):
                 'optimization_gains': {
                     'vectorbt_speedup': 2.0 if enhanced_config.enable_vectorbt_optimization else 1.0,
                     'hardware_optimization': 1.3 if enhanced_config.enable_hardware_optimization else 1.0,
-                    'memory_optimization': 1.2 if enhanced_config.enable_memory_optimization else 1.0
+                    'memory_optimization': 1.2 if enhanced_config.enable_memory_optimization else 1.0,
+                    'total_gain': 1.0  # Ensure at least one field exists
                 }
             }
             
@@ -1800,7 +1811,16 @@ class SRClusteringComponent(BaseStep):
             
             if self.hardware_manager:
                 try:
-                    hardware_caps = self.hardware_manager.get_hardware_capabilities()
+                    # Use hasattr to check if method exists before calling
+                    if hasattr(self.hardware_manager, 'get_hardware_capabilities'):
+                        hardware_caps = self.hardware_manager.get_hardware_capabilities()
+                    else:
+                        # Fallback: get basic hardware info
+                        hardware_caps = {
+                            'cpu_cores': 4,  # Default
+                            'gpu_available': False,
+                            'memory_gb': 8.0
+                        }
                     hardware_metrics.update({
                         'cpu_cores': hardware_caps.get('cpu_cores', 0),
                         'gpu_available': hardware_caps.get('gpu_available', False),
@@ -2443,6 +2463,12 @@ class SRClusteringComponent(BaseStep):
             
             # Extract features for explanation
             features = self._extract_clustering_features(sr_levels)
+            
+            # Ensure we have at least 2 samples for model fitting
+            if features.shape[0] < 2:
+                self.logger.warning(f"Not enough samples ({features.shape[0]}) for explainability, need at least 2")
+                return {}
+            
             feature_names = [f"feature_{i}" for i in range(features.shape[1])]
             
             # Create a simple model for explanation (clustering doesn't have a traditional model)
@@ -2455,6 +2481,11 @@ class SRClusteringComponent(BaseStep):
                         cluster_id = cluster['cluster_id']
                         break
                 cluster_labels.append(cluster_id)
+            
+            # Verify features and labels have same length
+            if len(cluster_labels) != features.shape[0]:
+                self.logger.warning(f"Sample mismatch: features={features.shape[0]}, labels={len(cluster_labels)}")
+                return {}
             
             # Create a simple classifier for explanation
             from sklearn.ensemble import RandomForestClassifier

@@ -153,9 +153,9 @@ def get_balanced_config(symbol: str = "ETHUSDT") -> Dict[str, Any]:
     """Get balanced configuration for good performance and reasonable resource usage."""
     return get_optimized_hdbscan_config(
         symbol=symbol,
-        min_cluster_size=10,
-        min_samples=5,
-        cluster_selection_epsilon=0.0,
+        min_cluster_size=5,  # Reduced from 10 to target 5-8 clusters
+        min_samples=3,        # Reduced from 5 to allow more clusters
+        cluster_selection_epsilon=0.1,  # Increased to allow more separation
         enable_hyperparameter_optimization=True,
         enable_memory_optimization=True,
         enable_vectorized_processing=True,
@@ -171,9 +171,9 @@ def get_fast_config(symbol: str = "ETHUSDT") -> Dict[str, Any]:
     """Get fast configuration for quick processing with minimal optimization."""
     return get_optimized_hdbscan_config(
         symbol=symbol,
-        min_cluster_size=8,
-        min_samples=3,
-        cluster_selection_epsilon=0.0,
+        min_cluster_size=3,  # Very aggressive for 5-8 clusters
+        min_samples=2,       # Very aggressive for more clusters
+        cluster_selection_epsilon=0.2,  # Higher epsilon for more separation
         enable_hyperparameter_optimization=False,
         enable_memory_optimization=True,
         enable_vectorized_processing=True,

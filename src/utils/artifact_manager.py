@@ -723,7 +723,7 @@ class ArtifactManager:
 		if isinstance(data, dict):
 			processed = {}
 			for key, value in data.items():
-				if key in ['confidence_intervals', 'radar_plot_data', 'transitions', 'works_best_for', 'risk_caveats']:
+				if key in ['confidence_intervals', 'radar_plot_data', 'transitions', 'works_best_for', 'risk_caveats', 'score_distribution']:
 					# Handle problematic struct fields by converting to string or removing
 					if isinstance(value, dict) and not value:
 						# Empty struct - remove it

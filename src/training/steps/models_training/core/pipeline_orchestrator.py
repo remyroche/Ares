@@ -315,7 +315,7 @@ class TrainingPipelineOrchestrator:
             # Default analyst configuration
             analyst_config = TrainingConfig(
                 role=TrainingRole.ANALYST,
-                model_types=[ModelType.LIGHTGBM, ModelType.CATBOOST],
+                model_types=[ModelType.LIGHTGBM, ModelType.TCN, ModelType.CATBOOST],
                 timeframe=self.config.timeframe,
                 symbol=self.config.symbol,
                 enable_ensemble=False,  # Individual models only
@@ -543,10 +543,11 @@ class TrainingPipelineOrchestrator:
                 tprint_success("✅ Analyst base models trained successfully")
                 return {
                     'success': True,
-                    'models': result.models,
-                    'predictions': result.predictions,
+                    'model': result.model,  # Changed from models to model
                     'metrics': result.metrics,
                     'training_time': result.training_time,
+                    'validation_metrics': result.validation_metrics,
+                    'feature_importance': result.feature_importance,
                     'metadata': result.metadata
                 }
             else:

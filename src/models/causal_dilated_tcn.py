@@ -16,6 +16,30 @@ import warnings
 from sklearn.preprocessing import StandardScaler
 from sklearn.base import BaseEstimator, RegressorMixin, ClassifierMixin
 
+# Try to import PyTorch - gracefully handle if not available
+try:
+    import torch
+    import torch.nn as nn
+    import torch.optim as optim
+    from torch.utils.data import DataLoader, TensorDataset
+    PYTORCH_AVAILABLE = True
+except ImportError:
+    PYTORCH_AVAILABLE = False
+    # Create dummy nn module for class definitions
+    class nn:
+        class Module:
+            pass
+        class Conv1d:
+            pass
+        class Dropout:
+            pass
+        class ReLU:
+            pass
+        class Sequential:
+            pass
+        class MSELoss:
+            pass
+
 # Suppress warnings
 warnings.filterwarnings('ignore')
 

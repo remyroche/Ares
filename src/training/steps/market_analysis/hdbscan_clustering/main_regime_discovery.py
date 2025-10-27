@@ -84,12 +84,12 @@ class HDBSCANRegimeDiscovery:
         if self.use_optimized:
             # Use optimized implementation by default
             self.optimized_discovery = create_optimized_hdbscan_regime_discovery(
-                min_cluster_size=getattr(config, 'min_cluster_size', 10),
-                min_samples=getattr(config, 'min_samples', 5),
-                cluster_selection_epsilon=getattr(config, 'cluster_selection_epsilon', 0.0),
+                min_cluster_size=getattr(config, 'min_cluster_size', 2),  # Minimum possible to force more clusters
+                min_samples=getattr(config, 'min_samples', 2),           # Minimum possible
+                cluster_selection_epsilon=getattr(config, 'cluster_selection_epsilon', 0.3),  # Higher epsilon for more separation
                 cluster_selection_method=getattr(config, 'cluster_selection_method', 'eom'),
                 metric=getattr(config, 'metric', 'euclidean'),
-                enable_hyperparameter_optimization=False,
+                enable_hyperparameter_optimization=True,  # Enable optimization to use our 5-8 cluster parameters
                 enable_memory_optimization=True,
                 enable_vectorized_processing=True,
                 enable_features_common=True,

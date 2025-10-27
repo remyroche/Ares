@@ -151,7 +151,8 @@ except ImportError:
 
 # Feature bank integration
 try:
-    from src.feature_generation import get_feature_bank, list_available_categories
+    from src.feature_generation import get_feature_bank
+    from src.feature_generation.core.factory import list_available_categories
     FEATURE_BANK_AVAILABLE = True
 except ImportError:
     FEATURE_BANK_AVAILABLE = False
@@ -791,9 +792,29 @@ class EconomicRegimeFeatureSelector(BaseStep):
                     
                     tprint_info(f"🔍 Processing exclude category: {category_name}")
                     
-                    if category_name in available_categories:
+                    # Check if category exists in available categories (handle both enum and string)
+                    category_exists = False
+                    for available_cat in available_categories:
+                        if hasattr(available_cat, 'value'):
+                            if available_cat.value == category_name:
+                                category_exists = True
+                                break
+                        elif str(available_cat) == category_name:
+                            category_exists = True
+                            break
+                    
+                    if category_exists:
                         # Remove features from excluded category
-                        category_features = [col for col in features_df.columns if category_name in col.lower()]
+                        # For support_resistance, also check for specific SR feature patterns
+                        if category_name == 'support_resistance':
+                            category_features = [col for col in features_df.columns if 
+                                             any(pattern in col.lower() for pattern in [
+                                                 'support_level', 'resistance_level', 'fibonacci_', 
+                                                 'pivot_', 'sr_', 'support_', 'resistance_'
+                                             ])]
+                        else:
+                            category_features = [col for col in features_df.columns if category_name in col.lower()]
+                        
                         if category_features:
                             filtered_features = filtered_features.drop(columns=category_features, errors='ignore')
                             excluded_count += len(category_features)

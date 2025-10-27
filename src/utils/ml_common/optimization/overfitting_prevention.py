@@ -621,10 +621,180 @@ class OverfittingPrevention:
 
         return summary
 
+class OverfittingPreventionManager:
+    """
+    Manager class for overfitting prevention across multiple models and training sessions.
+    
+    This class provides a higher-level interface for managing overfitting prevention
+    across different models and training phases, with session tracking and reporting.
+    """
+    
+    def __init__(self, config: Optional[OverfittingPreventionConfig] = None):
+        """Initialize the overfitting prevention manager."""
+        self.config = config or OverfittingPreventionConfig()
+        self.logger = logger.getChild('OverfittingPreventionManager')
+        
+        # Initialize the core prevention system
+        self.prevention = OverfittingPrevention(self.config)
+        
+        # Session tracking
+        self.active_sessions = {}
+        self.session_history = []
+        
+        self.logger.info("✅ Overfitting Prevention Manager initialized")
+    
+    def start_session(self, session_id: str, model_name: str) -> Dict[str, Any]:
+        """Start a new overfitting prevention session."""
+        session_info = {
+            'session_id': session_id,
+            'model_name': model_name,
+            'start_time': datetime.now(),
+            'prevention_applied': [],
+            'performance_records': [],
+            'overfitting_detected': False
+        }
+        
+        self.active_sessions[session_id] = session_info
+        self.logger.info(f"🔄 Started overfitting prevention session: {session_id} for {model_name}")
+        
+        return session_info
+    
+    def end_session(self, session_id: str) -> Dict[str, Any]:
+        """End an overfitting prevention session and generate summary."""
+        if session_id not in self.active_sessions:
+            self.logger.warning(f"⚠️ Session {session_id} not found")
+            return {}
+        
+        session_info = self.active_sessions[session_id]
+        session_info['end_time'] = datetime.now()
+        session_info['duration'] = (session_info['end_time'] - session_info['start_time']).total_seconds()
+        
+        # Generate session summary
+        summary = self._generate_session_summary(session_info)
+        session_info['summary'] = summary
+        
+        # Move to history
+        self.session_history.append(session_info)
+        del self.active_sessions[session_id]
+        
+        self.logger.info(f"✅ Ended overfitting prevention session: {session_id}")
+        return summary
+    
+    def apply_prevention_to_model(self, session_id: str, model: Any, model_type: str) -> Any:
+        """Apply overfitting prevention to a model within a session."""
+        if session_id not in self.active_sessions:
+            self.logger.warning(f"⚠️ Session {session_id} not found")
+            return model
+        
+        # Apply regularization
+        model = self.prevention.apply_regularization(model, model_type)
+        
+        # Record prevention applied
+        self.active_sessions[session_id]['prevention_applied'].append({
+            'type': 'regularization',
+            'model_type': model_type,
+            'timestamp': datetime.now()
+        })
+        
+        return model
+    
+    def monitor_session_performance(self, session_id: str, model: Any, 
+                                  X_train: np.ndarray, y_train: np.ndarray,
+                                  X_val: np.ndarray, y_val: np.ndarray) -> Dict[str, Any]:
+        """Monitor performance for a specific session."""
+        if session_id not in self.active_sessions:
+            self.logger.warning(f"⚠️ Session {session_id} not found")
+            return {}
+        
+        session_info = self.active_sessions[session_id]
+        model_name = session_info['model_name']
+        
+        # Use the core prevention system for monitoring
+        performance_record = self.prevention.monitor_performance(
+            model, X_train, y_train, X_val, y_val, model_name
+        )
+        
+        # Record in session
+        session_info['performance_records'].append(performance_record)
+        
+        # Update session overfitting status
+        if performance_record.get('overfitting_detected', False):
+            session_info['overfitting_detected'] = True
+        
+        return performance_record
+    
+    def _generate_session_summary(self, session_info: Dict[str, Any]) -> Dict[str, Any]:
+        """Generate a summary for a completed session."""
+        summary = {
+            'session_id': session_info['session_id'],
+            'model_name': session_info['model_name'],
+            'duration_seconds': session_info['duration'],
+            'prevention_applied_count': len(session_info['prevention_applied']),
+            'performance_records_count': len(session_info['performance_records']),
+            'overfitting_detected': session_info['overfitting_detected'],
+            'avg_performance_gap': 0.0,
+            'recommendations': []
+        }
+        
+        # Calculate average performance gap
+        if session_info['performance_records']:
+            mse_gaps = [record.get('mse_gap', 0) for record in session_info['performance_records']]
+            r2_gaps = [record.get('r2_gap', 0) for record in session_info['performance_records']]
+            summary['avg_performance_gap'] = float(np.mean(mse_gaps + r2_gaps))
+        
+        # Generate recommendations
+        if session_info['overfitting_detected']:
+            summary['recommendations'].extend([
+                "Increase regularization strength",
+                "Reduce model complexity",
+                "Use early stopping more aggressively"
+            ])
+        
+        if summary['avg_performance_gap'] > 0.05:
+            summary['recommendations'].append("Consider ensemble methods")
+        
+        return summary
+    
+    def get_global_summary(self) -> Dict[str, Any]:
+        """Get a global summary across all sessions."""
+        summary = {
+            'total_sessions': len(self.session_history),
+            'active_sessions': len(self.active_sessions),
+            'sessions_with_overfitting': 0,
+            'avg_session_duration': 0.0,
+            'total_prevention_applied': 0,
+            'global_recommendations': []
+        }
+        
+        if self.session_history:
+            # Calculate statistics
+            durations = [s['duration'] for s in self.session_history]
+            summary['avg_session_duration'] = float(np.mean(durations))
+            
+            overfitting_sessions = [s for s in self.session_history if s['overfitting_detected']]
+            summary['sessions_with_overfitting'] = len(overfitting_sessions)
+            
+            total_prevention = sum(len(s['prevention_applied']) for s in self.session_history)
+            summary['total_prevention_applied'] = total_prevention
+            
+            # Generate global recommendations
+            overfitting_rate = len(overfitting_sessions) / len(self.session_history)
+            if overfitting_rate > 0.3:
+                summary['global_recommendations'].append("High overfitting rate detected - review model architecture")
+            
+            if summary['avg_session_duration'] > 3600:  # More than 1 hour
+                summary['global_recommendations'].append("Consider optimizing training efficiency")
+        
+        return summary
+
 # Convenience functions
 def create_overfitting_prevention(config: Optional[OverfittingPreventionConfig] = None) -> OverfittingPrevention:
     """Create overfitting prevention instance."""
     return OverfittingPrevention(config)
+
+def create_overfitting_prevention_manager(config: Optional[OverfittingPreventionConfig] = None) -> OverfittingPreventionManager:
+    """Create overfitting prevention manager instance."""
+    return OverfittingPreventionManager(config)
 
 def apply_comprehensive_regularization(
     model: Any,

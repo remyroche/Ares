@@ -49,47 +49,18 @@ class AnalystBaseTrainingStep(BaseStep):
         tprint(f"🧠 Starting analyst base training for {config.get('symbol', 'UNKNOWN')}", "INFO")
 
         try:
-            artifacts = {
-                'analyst_base_model': {
-                    'model_type': 'catboost_base',
-                    'target': 'price_prediction',
-                    'features': ['returns', 'volatility', 'volume', 'momentum', 'trend'],
-                    'training_samples': 10000,
-                    'validation_samples': 3000,
-                    'test_samples': 2000,
-                    'accuracy': 0.78,
-                    'model_params': {
-                        'iterations': 1000,
-                        'depth': 6,
-                        'learning_rate': 0.1
-                    },
-                    'metadata': {
-                        'symbol': config['symbol'],
-                        'exchange': config['exchange'],
-                        'timeframe': config['timeframe'],
-                        'direction': config.get('direction', 'longs'),
-                        'created_at': datetime.now().isoformat()
-                    }
-                }
-            }
-
-            metrics = {
-                'model_type': 'catboost_base',
-                'training_samples': 10000,
-                'validation_samples': 3000,
-                'test_samples': 2000,
-                'accuracy': 0.78,
-                'training_time': 125.5,
-                'direction': config.get('direction', 'longs'),
-                'success': True
-            }
-
-            tprint(f"✅ Analyst base training completed: {metrics['accuracy']:.1%} accuracy", "SUCCESS")
-            return {
-                'success': True,
-                'artifacts': artifacts,
-                'metrics': metrics
-            }
+            # Import and call unified training step
+            from .unified_models_training_step import UnifiedModelsTrainingStep
+            
+            # Set training type for unified step
+            config['training_type'] = 'analyst_base'
+            config['execution_context'] = 'analyst'
+            
+            # Create and execute unified training step
+            unified_step = UnifiedModelsTrainingStep()
+            result = await unified_step.execute(config)
+            
+            return result
 
         except Exception as e:
             error_msg = f"Analyst base training failed: {str(e)}"

@@ -36,6 +36,23 @@ if TYPE_CHECKING:
 import logging
 import time
 
+# Enhanced optimization imports
+try:
+    from src.utils.ml_common.unified_vectorization_manager import (
+        UnifiedVectorizationManager, OperationType, OptimizationStrategy
+    )
+    from src.utils.ml_common.optimization.regime_hpo_wrapper import RegimeHPOWrapper
+    from src.utils.ml_common.explainability.shap_lime_integration import (
+        SHAPLIMEExplainer, ExplanationConfig
+    )
+    from src.utils.hardware.unified_hardware_manager import (
+        UnifiedHardwareManager, WorkloadType, OptimizationLevel
+    )
+    ENHANCED_OPTIMIZATION_AVAILABLE = True
+except ImportError as e:
+    ENHANCED_OPTIMIZATION_AVAILABLE = False
+    tprint(f"Warning: Enhanced optimization not available: {e}")
+
 @dataclass
 class OptimizationResult:
     """Result of S/R detection optimization."""
@@ -98,6 +115,9 @@ class SRDetectionOptimizer:
         self.optimization_history: list[dict[str, Any]] = []
         self.sr_predictor: SRBreakoutPredictor | None = None
         self.data_integration: SRDataIntegrationSimple | None = None
+        
+        # Initialize enhanced optimization components
+        self._initialize_enhanced_optimization()
         self.training_data: pd.DataFrame | None = None
         self.validation_data: pd.DataFrame | None = None
         self.multi_timeframe_data: dict[str, pd.DataFrame] | None = None
@@ -117,6 +137,51 @@ class SRDetectionOptimizer:
         self._operation_count = 0
         self._memory_warning_threshold = 0.8
         self._memory_critical_threshold = 0.9
+
+    def _initialize_enhanced_optimization(self):
+        """Initialize enhanced optimization components."""
+        if not ENHANCED_OPTIMIZATION_AVAILABLE:
+            self.logger.warning("⚠️ Enhanced optimization not available")
+            return
+        
+        try:
+            # Initialize VectorBT optimization
+            self.vectorization_manager = UnifiedVectorizationManager()
+            self.logger.info("✅ VectorBT optimization manager initialized")
+        except Exception as e:
+            self.logger.warning(f"⚠️ VectorBT optimization failed: {e}")
+            self.vectorization_manager = None
+        
+        try:
+            # Initialize HPO wrapper
+            self.hpo_wrapper = RegimeHPOWrapper()
+            self.logger.info("✅ HPO wrapper initialized")
+        except Exception as e:
+            self.logger.warning(f"⚠️ HPO wrapper failed: {e}")
+            self.hpo_wrapper = None
+        
+        try:
+            # Initialize explainability
+            explanation_config = ExplanationConfig(
+                enable_shap=True,
+                enable_lime=True,
+                shap_sample_size=100,
+                lime_sample_size=1000
+            )
+            self.explainer = SHAPLIMEExplainer(explanation_config)
+            self.logger.info("✅ SHAP/LIME explainer initialized")
+        except Exception as e:
+            self.logger.warning(f"⚠️ SHAP/LIME explainer failed: {e}")
+            self.explainer = None
+        
+        try:
+            # Initialize hardware manager
+            self.hardware_manager = UnifiedHardwareManager()
+            self.hardware_manager.initialize()
+            self.logger.info("✅ Hardware optimization manager initialized")
+        except Exception as e:
+            self.logger.warning(f"⚠️ Hardware manager failed: {e}")
+            self.hardware_manager = None
 
     def _setup_default_config(self) -> None:
         """Setup default configuration when YAML config is not available."""

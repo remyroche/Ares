@@ -31,6 +31,22 @@ from ...core.decorators import handles_errors, traced
 import hashlib
 import logging
 
+# Enhanced optimization imports
+try:
+    from src.utils.ml_common.unified_vectorization_manager import (
+        UnifiedVectorizationManager, OperationType, OptimizationStrategy
+    )
+    from src.utils.hardware.unified_hardware_manager import (
+        UnifiedHardwareManager, WorkloadType, OptimizationLevel
+    )
+    from src.utils.ml_common.explainability.shap_lime_integration import (
+        SHAPLIMEExplainer, ExplanationConfig
+    )
+    ENHANCED_OPTIMIZATION_AVAILABLE = True
+except ImportError as e:
+    ENHANCED_OPTIMIZATION_AVAILABLE = False
+    print(f"Warning: Enhanced optimization not available: {e}")
+
 """
 Enhanced S/R Detection Module with Advanced Performance Optimizations.
 

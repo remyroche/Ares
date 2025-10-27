@@ -28,7 +28,6 @@ class StepValidationInitializer:
             'step01_data_collection': {'module': 'src.training.steps.data_collection.sub_pipeline', 'class': 'DataCollectionSubPipeline', 'priority': 1},
             'step02_data_reading': {'module': 'src.training.steps.data_collection.step02_data_reading', 'class': 'DataReadingStep', 'priority': 2},
             'step2_5_sr_optimization': {'module': 'src.training.steps.market_analysis.sub_pipeline', 'class': 'MarketAnalysisSubPipeline', 'priority': 3},
-            'step04_regime_data_splitting': {'module': 'src.training.steps.market_analysis.regime_data_splitting.main', 'class': 'RegimeDataSplittingStep', 'priority': 5},
             'step05_labeling': {'module': 'src.training.steps.step5_labeling', 'class': 'LabelingStep', 'priority': 6},
             'step06_advanced_feature_engineering': {'module': 'src.training.steps.data_collection.feature_generation.utils.step06_feature_engineering', 'class': 'FeatureEngineeringStep', 'priority': 7},
             'step08_advanced_feature_selection': {'module': 'src.training.steps.data_collection.feature_generation.utils.step08_advanced_feature_selection', 'class': 'FeatureSelectionStep', 'priority': 8},

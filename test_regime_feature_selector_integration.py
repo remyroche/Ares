@@ -186,7 +186,7 @@ def test_ares_launcher_integration():
                 'sr_parameter_optimization', 'sr_detection', 'sr_clustering',
                 'hdbscan_regime_discovery',
                 'regime_feature_selection',  # Should be here
-                'regime_models_training', 'regime_ensemble_training', 'regime_data_splitting'
+                'regime_models_training', 'regime_ensemble_training'
             ]
         }
         

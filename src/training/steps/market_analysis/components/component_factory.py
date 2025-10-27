@@ -639,7 +639,6 @@ class ComponentFactory:
         'regime_ensemble_training': RegimeEnsembleTrainingComponent,  # Regime detection ensemble training
         # 'hmm_models_training': HMMModelsTrainingComponent,  # Moved to hmm_models_training module
         # 'hmm_ensemble_training': HMMEnsembleTrainingComponent,  # Removed
-        # 'regime_data_splitting': RegimeDataSplittingComponent,  # Imported lazily to avoid circular imports
         # 'triple_barrier_labeling': TripleBarrierLabelingComponent,  # Moved to triple_barrier_labeling package
         'cross_timeframe_analysis': CrossTimeframeAnalysisComponent,  # Now uses PID-based feature generation
         # Feature engineering components moved to pre_training stage:
@@ -667,15 +666,6 @@ class ComponentFactory:
         """
         tprint(f"🏭 [COMPONENT_FACTORY] Creating component: {component_name}", color="cyan")
         # Handle lazy imports for components that might cause circular imports
-        if component_name == 'regime_data_splitting':
-            try:
-                tprint("🔧 [COMPONENT_FACTORY] Loading RegimeDataSplittingComponent", color="yellow")
-                from .regime_data_splitting import RegimeDataSplittingComponent
-                component = RegimeDataSplittingComponent(config)
-                tprint(f"✅ [COMPONENT_FACTORY] Created RegimeDataSplittingComponent", color="green")
-                return component
-            except ImportError as e:
-                raise ValueError(f"Failed to import RegimeDataSplittingComponent: {e}")
 
         # Multi-horizon profit labeler moved to pre_training stage
         # Handle HMM training components (DEPRECATED - removed)
@@ -688,7 +678,7 @@ class ComponentFactory:
             raise ValueError("HMM ensemble training is deprecated and no longer available")
 
         if component_name not in self._components:
-            available_components = list(self._components.keys()) + ['regime_data_splitting']
+            available_components = list(self._components.keys())
             tprint(f"❌ [COMPONENT_FACTORY] Unknown component: {component_name}", color="red")
             tprint(f"📊 [COMPONENT_FACTORY] Available components: {available_components}", color="cyan")
             raise ValueError(
@@ -789,7 +779,7 @@ except ImportError:
         
         # Get the component class
         if component_name not in self._components:
-            available_components = list(self._components.keys()) + ['regime_data_splitting']
+            available_components = list(self._components.keys())
             tprint(f"❌ [COMPONENT_FACTORY] Unknown component: {component_name}", color="red")
             tprint(f"📊 [COMPONENT_FACTORY] Available components: {available_components}", color="cyan")
             raise ValueError(f"Unknown component: {component_name}")
@@ -815,9 +805,7 @@ except ImportError:
         Returns:
             List of component names
         """
-        # Include both registered components and lazy-loaded components
-        lazy_components = ['regime_data_splitting']
-        return list(self._components.keys()) + lazy_components
+        return list(self._components.keys())
 
     @classmethod
     def is_component_available(self, component_name: str) -> bool:
@@ -830,9 +818,7 @@ except ImportError:
         Returns:
             True if component is available
         """
-        # Check both registered components and lazy-loaded components
-        lazy_components = ['regime_data_splitting']
-        return component_name in self._components or component_name in lazy_components
+        return component_name in self._components
 
     def _should_use_vectorbt(self, data) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""

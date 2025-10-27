@@ -4908,6 +4908,7 @@ class AnalystRegimeStabilityGenerator(VectorizedFeatureGenerator):
         stability_series = pd.Series([stability] * len(data), index=data.index, name=self.config.name)
         return stability_series
 
+
 # Convenience function for easy integration
 def generate_regime_features(data: pd.DataFrame,
                            config: Optional[RegimeFeatureConfig] = None) -> Tuple[Dict[str, np.ndarray], Dict[str, Any]]:

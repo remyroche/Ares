@@ -52,6 +52,8 @@ from .features_common_integration import (
     create_features_common_hdbscan_integration
 )
 
+# Enhanced regime features are now integrated into the main feature generation system
+
 # Import feature generation systems
 from src.feature_generation.categories.entropy import create_default_entropy_generators
 from src.feature_generation.categories.spectral_wavelet import create_default_spectral_wavelet_generators
@@ -323,6 +325,8 @@ class OptimizedHDBSCANRegimeDiscovery:
         if self.config.enable_regime_features:
             regime_generators = create_default_regime_generators()
             self.feature_generators.extend(regime_generators)
+        
+        # Enhanced regime features are now integrated into the main feature generation system
     
     def discover_regimes(self, data: pd.DataFrame, 
                         labels: Optional[np.ndarray] = None) -> OptimizedRegimeResult:
@@ -481,6 +485,9 @@ class OptimizedHDBSCANRegimeDiscovery:
         # Generate features for chunk
         tprint(f"🔧 Generating features for chunk {chunk_num}...", "INFO")
         chunk_features = self._generate_optimized_features(chunk_data)
+        
+        # Enhanced regime features are now integrated into the main feature generation system
+        
         chunk_features = self._normalize_features_for_hdbscan(chunk_features)
         
         # Memory-efficient clustering with reduced cluster count
@@ -640,6 +647,9 @@ class OptimizedHDBSCANRegimeDiscovery:
         # Step 1: Feature generation with optimization
         tprint("🔧 Generating optimized features...", "INFO")
         features_df = self._generate_optimized_features(data)
+        
+        # Enhanced regime features are now integrated into the main feature generation system
+        
         feature_generation_time = time.time() - start_time
         self.performance_stats['feature_generation_time'] += feature_generation_time
         tprint(f"✅ Feature generation completed in {feature_generation_time:.2f}s", "SUCCESS")

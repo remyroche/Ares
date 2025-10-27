@@ -386,6 +386,34 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
             except Exception as e:
                 tprint(f"⚠️ [REGIME_ENSEMBLE] Failed to generate regime probability report: {e}", color="yellow")
 
+            # Automatically tag the whole dataset with ensemble outputs and probabilities
+            try:
+                tprint("🏷️ [REGIME_ENSEMBLE] Automatically tagging dataset with ensemble outputs", color="cyan")
+                tagged_data = await self._tag_dataset_with_ensemble_outputs(
+                    protected_data, results, X_processed, feature_names
+                )
+                if tagged_data is not None:
+                    results['tagged_dataset'] = tagged_data
+                    tprint("✅ [REGIME_ENSEMBLE] Dataset tagged successfully with ensemble outputs", color="green")
+                else:
+                    tprint("⚠️ [REGIME_ENSEMBLE] Dataset tagging failed", color="yellow")
+            except Exception as e:
+                tprint(f"⚠️ [REGIME_ENSEMBLE] Failed to tag dataset: {e}", color="yellow")
+
+            # Create artifacts for 15m and 1h timeframes
+            try:
+                tprint("📦 [REGIME_ENSEMBLE] Creating artifacts for 15m and 1h timeframes", color="cyan")
+                timeframe_artifacts = await self._create_timeframe_artifacts(
+                    results, protected_data, X_processed, feature_names
+                )
+                if timeframe_artifacts:
+                    results.update(timeframe_artifacts)
+                    tprint("✅ [REGIME_ENSEMBLE] Timeframe artifacts created successfully", color="green")
+                else:
+                    tprint("⚠️ [REGIME_ENSEMBLE] Timeframe artifact creation failed", color="yellow")
+            except Exception as e:
+                tprint(f"⚠️ [REGIME_ENSEMBLE] Failed to create timeframe artifacts: {e}", color="yellow")
+
             # Save artifacts persistently using the artifact manager
             try:
                 save_report = await self.save_artifacts(results, {
@@ -1591,6 +1619,238 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
                 'regime_consistency': 0.0,
                 'dominance': dominance
             }
+
+    async def _tag_dataset_with_ensemble_outputs(
+        self,
+        data: pd.DataFrame,
+        training_results: Dict[str, Any],
+        X: np.ndarray,
+        feature_names: List[str]
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Automatically tag the whole dataset with ensemble outputs and probabilities.
+        
+        Args:
+            data: Original market data DataFrame
+            training_results: Results from ensemble training
+            X: Feature matrix used for training
+            feature_names: List of feature names
+            
+        Returns:
+            Dictionary containing tagged dataset with ensemble outputs
+        """
+        try:
+            tprint("🏷️ [REGIME_ENSEMBLE] Starting dataset tagging with ensemble outputs", color="cyan")
+            
+            # Get the trained ensemble model
+            ensemble_result = training_results.get('regime_ensemble_training_result', {})
+            stacker_result = ensemble_result.get('stacker_lgbm_calibrated')
+            
+            if not stacker_result:
+                tprint("❌ [REGIME_ENSEMBLE] No trained ensemble model found for tagging", color="red")
+                return None
+            
+            # Generate predictions for the entire dataset
+            tprint("🔮 [REGIME_ENSEMBLE] Generating ensemble predictions for entire dataset", color="blue")
+            prediction_result = self.predict_regimes_with_probabilities(
+                stacker_result=stacker_result,
+                X=X,
+                feature_names=feature_names,
+                scaler=None
+            )
+            
+            if not prediction_result:
+                tprint("❌ [REGIME_ENSEMBLE] Failed to generate predictions for tagging", color="red")
+                return None
+            
+            # Extract prediction data
+            regime_labels = prediction_result.get('regime_labels', np.array([]))
+            regime_probabilities = prediction_result.get('regime_probabilities', np.array([]))
+            confidence_scores = prediction_result.get('confidence_score', 0.0)
+            stability_scores = prediction_result.get('stability_score', 0.0)
+            dominance = prediction_result.get('dominance', np.array([]))
+            
+            # Create tagged dataset
+            tagged_data = data.copy()
+            
+            # Add ensemble prediction columns
+            tagged_data['ensemble_regime_label'] = regime_labels
+            tagged_data['ensemble_confidence_score'] = confidence_scores
+            tagged_data['ensemble_stability_score'] = stability_scores
+            tagged_data['ensemble_dominance'] = dominance
+            
+            # Add individual regime probabilities
+            n_regimes = regime_probabilities.shape[1] if len(regime_probabilities.shape) > 1 else 1
+            for i in range(n_regimes):
+                tagged_data[f'ensemble_regime_{i}_probability'] = regime_probabilities[:, i]
+            
+            # Add ensemble metadata
+            tagged_data['ensemble_prediction_timestamp'] = datetime.now().isoformat()
+            tagged_data['ensemble_model_type'] = 'stacker_lgbm_calibrated'
+            tagged_data['ensemble_n_regimes'] = n_regimes
+            
+            # Calculate additional ensemble metrics
+            max_probs = np.max(regime_probabilities, axis=1)
+            tagged_data['ensemble_max_probability'] = max_probs
+            tagged_data['ensemble_entropy'] = -np.sum(regime_probabilities * np.log(regime_probabilities + 1e-10), axis=1)
+            
+            # Add regime transition indicators
+            if len(regime_labels) > 1:
+                regime_changes = np.zeros(len(regime_labels))
+                regime_changes[1:] = (regime_labels[1:] != regime_labels[:-1]).astype(int)
+                tagged_data['ensemble_regime_change'] = regime_changes
+            else:
+                tagged_data['ensemble_regime_change'] = 0
+            
+            # Create comprehensive tagging summary
+            tagging_summary = {
+                'total_samples_tagged': len(tagged_data),
+                'n_regimes_detected': n_regimes,
+                'regime_distribution': {
+                    f'regime_{i}': int(np.sum(regime_labels == i)) for i in range(n_regimes)
+                },
+                'confidence_statistics': {
+                    'mean': float(np.mean(max_probs)),
+                    'std': float(np.std(max_probs)),
+                    'min': float(np.min(max_probs)),
+                    'max': float(np.max(max_probs))
+                },
+                'entropy_statistics': {
+                    'mean': float(np.mean(tagged_data['ensemble_entropy'])),
+                    'std': float(np.std(tagged_data['ensemble_entropy']))
+                },
+                'regime_changes': int(np.sum(tagged_data['ensemble_regime_change'])),
+                'tagging_timestamp': datetime.now().isoformat(),
+                'ensemble_model_info': {
+                    'model_type': 'stacker_lgbm_calibrated',
+                    'calibration_method': stacker_result.get('calibration_method', 'none'),
+                    'base_models_count': len(stacker_result.get('base_models', {})),
+                    'meta_features_shape': stacker_result.get('meta_features_shape', (0, 0))
+                }
+            }
+            
+            tprint(f"✅ [REGIME_ENSEMBLE] Dataset tagged successfully: {len(tagged_data)} samples, {n_regimes} regimes", color="green")
+            tprint(f"📊 [REGIME_ENSEMBLE] Regime distribution: {tagging_summary['regime_distribution']}", color="blue")
+            
+            return {
+                'tagged_dataset': tagged_data,
+                'tagging_summary': tagging_summary,
+                'prediction_result': prediction_result
+            }
+            
+        except Exception as e:
+            tprint(f"❌ [REGIME_ENSEMBLE] Dataset tagging failed: {e}", color="red")
+            self.logger.error(f"Dataset tagging failed: {e}", exc_info=True)
+            return None
+
+    async def _create_timeframe_artifacts(
+        self,
+        training_results: Dict[str, Any],
+        data: pd.DataFrame,
+        X: np.ndarray,
+        feature_names: List[str]
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Create artifacts for 15m and 1h timeframes.
+        
+        Args:
+            training_results: Results from ensemble training
+            data: Original market data DataFrame
+            X: Feature matrix used for training
+            feature_names: List of feature names
+            
+        Returns:
+            Dictionary containing timeframe-specific artifacts
+        """
+        try:
+            tprint("📦 [REGIME_ENSEMBLE] Creating timeframe artifacts for 15m and 1h", color="cyan")
+            
+            timeframe_artifacts = {}
+            timeframes = ['15m', '1h']
+            
+            for timeframe in timeframes:
+                tprint(f"🔧 [REGIME_ENSEMBLE] Processing {timeframe} timeframe", color="blue")
+                
+                # Create timeframe-specific artifact
+                timeframe_artifact = {
+                    'timeframe': timeframe,
+                    'creation_timestamp': datetime.now().isoformat(),
+                    'base_training_results': training_results.get('regime_ensemble_training_result', {}),
+                    'data_info': {
+                        'original_data_shape': data.shape,
+                        'feature_matrix_shape': X.shape,
+                        'feature_names': feature_names,
+                        'data_columns': list(data.columns)
+                    },
+                    'ensemble_metrics': training_results.get('regime_ensemble_training_result', {}).get('ensemble_metrics', {}),
+                    'validation_report': training_results.get('regime_ensemble_training_result', {}).get('validation_report', {}),
+                    'hardware_optimization': training_results.get('regime_ensemble_training_result', {}).get('hardware_optimization', {}),
+                    'lookahead_protection': training_results.get('regime_ensemble_training_result', {}).get('lookahead_protection', {}),
+                    'metadata': training_results.get('regime_ensemble_training_result', {}).get('metadata', {})
+                }
+                
+                # Add timeframe-specific predictions if tagged dataset is available
+                tagged_dataset = training_results.get('tagged_dataset', {})
+                if tagged_dataset and 'tagged_dataset' in tagged_dataset:
+                    tagged_data = tagged_dataset['tagged_dataset']
+                    
+                    # Create timeframe-specific predictions
+                    timeframe_predictions = {
+                        'ensemble_regime_labels': tagged_data['ensemble_regime_label'].tolist(),
+                        'ensemble_confidence_scores': tagged_data['ensemble_confidence_score'].tolist(),
+                        'ensemble_stability_scores': tagged_data['ensemble_stability_score'].tolist(),
+                        'ensemble_dominance': tagged_data['ensemble_dominance'].tolist(),
+                        'ensemble_max_probabilities': tagged_data['ensemble_max_probability'].tolist(),
+                        'ensemble_entropy': tagged_data['ensemble_entropy'].tolist(),
+                        'ensemble_regime_changes': tagged_data['ensemble_regime_change'].tolist()
+                    }
+                    
+                    # Add individual regime probabilities
+                    regime_prob_cols = [col for col in tagged_data.columns if col.startswith('ensemble_regime_') and col.endswith('_probability')]
+                    for col in regime_prob_cols:
+                        timeframe_predictions[col] = tagged_data[col].tolist()
+                    
+                    timeframe_artifact['predictions'] = timeframe_predictions
+                    timeframe_artifact['prediction_summary'] = tagged_dataset.get('tagging_summary', {})
+                
+                # Add timeframe-specific configuration
+                timeframe_artifact['configuration'] = {
+                    'symbol': self.config.symbol,
+                    'exchange': self.config.exchange,
+                    'timeframe': timeframe,
+                    'execution_mode': getattr(self.config, 'execution_mode', 'light'),
+                    'ensemble_config': self.ensemble_config,
+                    'feature_generation_enabled': True,
+                    'probability_calibration_enabled': True,
+                    'hardware_optimization_enabled': True,
+                    'lookahead_protection_enabled': True
+                }
+                
+                # Add performance metrics
+                ensemble_result = training_results.get('regime_ensemble_training_result', {})
+                timeframe_artifact['performance_metrics'] = {
+                    'training_time': ensemble_result.get('training_time', 0),
+                    'execution_time': training_results.get('metadata', {}).get('execution_time', 0),
+                    'data_processing_time': 0,  # Could be calculated if needed
+                    'model_complexity': {
+                        'n_features': X.shape[1],
+                        'n_samples': X.shape[0],
+                        'n_base_models': len(ensemble_result.get('base_models', {})),
+                        'meta_learner_type': 'stacker_lgbm_calibrated'
+                    }
+                }
+                
+                # Store the artifact
+                timeframe_artifacts[f'{timeframe}_artifacts'] = timeframe_artifact
+                tprint(f"✅ [REGIME_ENSEMBLE] {timeframe} artifacts created successfully", color="green")
+            
+            tprint(f"✅ [REGIME_ENSEMBLE] All timeframe artifacts created: {list(timeframe_artifacts.keys())}", color="green")
+            return timeframe_artifacts
+            
+        except Exception as e:
+            tprint(f"❌ [REGIME_ENSEMBLE] Timeframe artifact creation failed: {e}", color="red")
+            self.logger.error(f"Timeframe artifact creation failed: {e}", exc_info=True)
+            return None
 
 # VectorBT imports for native optimization
 try:

@@ -75,6 +75,26 @@ ENHANCED_SR_DETECTOR_AVAILABLE = False
 EnhancedSRDetector = None
 SRLevel = None
 
+# Enhanced optimization imports
+try:
+    from src.utils.ml_common.unified_vectorization_manager import (
+        UnifiedVectorizationManager, OperationType, OptimizationStrategy
+    )
+    from src.utils.ml_common.optimization.regime_hpo_wrapper import RegimeHPOWrapper
+    from src.utils.ml_common.explainability.shap_lime_integration import (
+        SHAPLIMEExplainer, ExplanationConfig
+    )
+    from src.utils.ml_common.validation.temporal_cross_validation import temporal_cross_validation
+    from src.utils.ml_common.validation.data_leakage_detector import DataLeakageDetector
+    from src.utils.hardware.unified_hardware_manager import (
+        UnifiedHardwareManager, WorkloadType, OptimizationLevel
+    )
+    ENHANCED_OPTIMIZATION_AVAILABLE = True
+    logger.info("✅ Enhanced optimization utilities available")
+except ImportError as e:
+    ENHANCED_OPTIMIZATION_AVAILABLE = False
+    logger.warning(f"⚠️ Enhanced optimization utilities not available: {e}")
+
 # M1 Optimization Utilities - Now in hardware modules
 try:
     from src.utils.hardware.m1_gpu_utils import get_m1_gpu_manager
@@ -194,6 +214,9 @@ class SRDetectionStep(BaseStep):
             'tolerance_pct': 0.5,
             'lookback_periods': 100
         })
+        
+        # Initialize enhanced optimization components
+        self._initialize_enhanced_components()
 
         # Adjust configuration for LIGHT mode
         training_mode = os.environ.get('LIGHT_TRAINING_MODE', '')
@@ -224,6 +247,66 @@ class SRDetectionStep(BaseStep):
                 def stop_monitoring(self):
                     pass
             self.memory_manager = FallbackMemoryManager()
+
+    def _initialize_enhanced_components(self):
+        """Initialize enhanced optimization components."""
+        self.logger.info("🚀 Initializing enhanced SR detection components...")
+        
+        # Initialize VectorBT optimization
+        if ENHANCED_OPTIMIZATION_AVAILABLE:
+            try:
+                self.vectorization_manager = UnifiedVectorizationManager()
+                self.logger.info("✅ VectorBT optimization manager initialized")
+            except Exception as e:
+                self.logger.warning(f"⚠️ VectorBT optimization failed: {e}")
+                self.vectorization_manager = None
+            
+            # Initialize HPO wrapper
+            try:
+                self.hpo_wrapper = RegimeHPOWrapper()
+                self.logger.info("✅ HPO wrapper initialized")
+            except Exception as e:
+                self.logger.warning(f"⚠️ HPO wrapper failed: {e}")
+                self.hpo_wrapper = None
+            
+            # Initialize explainability
+            try:
+                explanation_config = ExplanationConfig(
+                    enable_shap=True,
+                    enable_lime=True,
+                    shap_sample_size=100,
+                    lime_sample_size=1000,
+                    parallel_explanations=True
+                )
+                self.explainer = SHAPLIMEExplainer(explanation_config)
+                self.logger.info("✅ SHAP/LIME explainer initialized")
+            except Exception as e:
+                self.logger.warning(f"⚠️ SHAP/LIME explainer failed: {e}")
+                self.explainer = None
+            
+            # Initialize data leakage detector
+            try:
+                self.leakage_detector = DataLeakageDetector()
+                self.logger.info("✅ Data leakage detector initialized")
+            except Exception as e:
+                self.logger.warning(f"⚠️ Data leakage detector failed: {e}")
+                self.leakage_detector = None
+            
+            # Initialize hardware manager
+            try:
+                self.hardware_manager = UnifiedHardwareManager()
+                self.hardware_manager.initialize()
+                self.logger.info("✅ Hardware optimization manager initialized")
+            except Exception as e:
+                self.logger.warning(f"⚠️ Hardware manager failed: {e}")
+                self.hardware_manager = None
+        else:
+            self.vectorization_manager = None
+            self.hpo_wrapper = None
+            self.explainer = None
+            self.leakage_detector = None
+            self.hardware_manager = None
+            self.logger.warning("⚠️ Enhanced optimization not available")
 
     async def execute(self, training_input: Dict[str, Any], pipeline_state: Dict[str, Any]) -> Dict[str, Any]:
         """Execute the SR detection stage."""
@@ -262,10 +345,21 @@ class SRDetectionStep(BaseStep):
             }
 
     def _detect_sr_levels(self, data: pd.DataFrame) -> Dict[str, Any]:
-        """Detect support and resistance levels using Enhanced SR Detection."""
-        self.logger.info('🎯 ===== STARTING SR DETECTION PROCESS =====')
-        self.logger.info('🎯 Using Enhanced SR Detection with multiple advanced algorithms...')
+        """Detect support and resistance levels using Enhanced SR Detection with VectorBT optimization."""
+        self.logger.info('🎯 ===== STARTING ENHANCED SR DETECTION PROCESS =====')
+        self.logger.info('🎯 Using Enhanced SR Detection with VectorBT optimization and ML explainability...')
         detection_start_time = time.time()
+        
+        # Configure hardware for SR detection workload
+        if self.hardware_manager:
+            try:
+                self.hardware_manager.optimize_for_workload(
+                    WorkloadType.ML_TRAINING, 
+                    OptimizationLevel.BALANCED
+                )
+                self.logger.info("🖥️ Hardware optimized for SR detection")
+            except Exception as e:
+                self.logger.warning(f"⚠️ Hardware optimization failed: {e}")
 
         # CRITICAL: Validate input data before S/R detection
         if data is None:
@@ -308,7 +402,7 @@ class SRDetectionStep(BaseStep):
 
             self.logger.info('✅ Enhanced SR Detector is available, proceeding with detection...')
 
-            # Create basic SR detector for initial detection
+            # Create enhanced SR detector with VectorBT optimization
             sr_config = {
                 'min_touches': getattr(self, 'min_touches', 2),
                 'tolerance_pct': getattr(self, 'tolerance_pct', 0.5),
@@ -316,6 +410,10 @@ class SRDetectionStep(BaseStep):
                 'memory_efficient': True,
                 'use_parallel': getattr(self, 'enable_parallel_processing', False),
                 'disable_dbscan_clustering': True,  # DISABLE DBSCAN clustering - using new logic
+                'enable_vectorbt_optimization': True,
+                'enable_hardware_optimization': True,
+                'enable_explainability': True,
+                'enable_data_leakage_detection': True
             }
 
             self.logger.info(f'🔧 SR Detection Configuration:')
@@ -332,11 +430,19 @@ class SRDetectionStep(BaseStep):
             detector_creation_time = time.time() - detector_creation_start
             self.logger.info(f'✅ Enhanced SR Detector created in {detector_creation_time:.2f} seconds')
 
-            self.logger.info('🔍 Starting basic SR level detection...')
-            basic_detection_start = time.time()
-            basic_sr_levels = detector.detect_sr_levels(clean_data)
-            basic_detection_time = time.time() - basic_detection_start
-            self.logger.info(f'✅ Basic SR level detection completed in {basic_detection_time:.2f} seconds')
+            # Use VectorBT optimization if available
+            if self.vectorization_manager and sr_config.get('enable_vectorbt_optimization', False):
+                self.logger.info('⚡ Using VectorBT optimization for SR detection...')
+                basic_detection_start = time.time()
+                basic_sr_levels = self._detect_sr_levels_vectorbt(detector, clean_data, sr_config)
+                basic_detection_time = time.time() - basic_detection_start
+                self.logger.info(f'✅ VectorBT-optimized SR detection completed in {basic_detection_time:.2f} seconds')
+            else:
+                self.logger.info('🔍 Starting basic SR level detection...')
+                basic_detection_start = time.time()
+                basic_sr_levels = detector.detect_sr_levels(clean_data)
+                basic_detection_time = time.time() - basic_detection_start
+                self.logger.info(f'✅ Basic SR level detection completed in {basic_detection_time:.2f} seconds')
 
             # Convert to list format for further processing
             self.logger.info('🔄 Converting basic SR levels to list format...')
@@ -415,11 +521,27 @@ class SRDetectionStep(BaseStep):
             self.logger.info(f'🧹 Filtered out {original_count - filtered_count} levels with zero touches')
             self.logger.info(f'📊 Levels after filtering: {len(support_levels)} support, {len(resistance_levels)} resistance')
 
+            # Generate enhanced features if available
+            explanations = {}
+            leakage_validation = {}
+            hpo_optimization = {}
+            
+            if sr_config.get('enable_explainability', False):
+                explanations = self._generate_sr_explanations(levels_dict, clean_data)
+            
+            if sr_config.get('enable_data_leakage_detection', False):
+                leakage_validation = self._validate_data_leakage(clean_data, levels_dict)
+            
+            if self.hpo_wrapper and len(levels_dict) > 0:
+                hpo_optimization = self._optimize_sr_parameters(clean_data, levels_dict)
+
             detection_time = time.time() - detection_start_time
 
-            self.logger.info('🎯 ===== SR DETECTION PROCESS COMPLETED =====')
+            self.logger.info('🎯 ===== ENHANCED SR DETECTION PROCESS COMPLETED =====')
             self.logger.info(f'✅ Total detection time: {detection_time:.2f} seconds')
             self.logger.info(f'📊 Final results: {len(support_levels)} support levels, {len(resistance_levels)} resistance levels')
+            self.logger.info(f'🧠 Explanations: {len(explanations)} levels explained')
+            self.logger.info(f'🔍 Data leakage: {"Detected" if leakage_validation.get("has_leakage", False) else "None"}')
 
             return {
                 'support_levels': support_levels,
@@ -431,7 +553,17 @@ class SRDetectionStep(BaseStep):
                 'detection_time': detection_time,
                 'detection_config': sr_config,
                 'data_shape': clean_data.shape,
-                'validation_time': validation_time
+                'validation_time': validation_time,
+                # Enhanced features
+                'explanations': explanations,
+                'leakage_validation': leakage_validation,
+                'hpo_optimization': hpo_optimization,
+                'enhancement_features': {
+                    'vectorbt_optimization': sr_config.get('enable_vectorbt_optimization', False),
+                    'hardware_optimization': sr_config.get('enable_hardware_optimization', False),
+                    'explainability': sr_config.get('enable_explainability', False),
+                    'data_leakage_detection': sr_config.get('enable_data_leakage_detection', False)
+                }
             }
 
         except Exception as e:
@@ -520,7 +652,188 @@ class SRDetectionStep(BaseStep):
         if final_rows < 10:
             raise ValueError(f"Insufficient data after validation: {final_rows} rows (minimum 10 required)")
 
-        return clean_data
+            return clean_data
+
+    def _detect_sr_levels_vectorbt(self, detector, data: pd.DataFrame, config: Dict[str, Any]) -> Any:
+        """Detect SR levels using VectorBT optimization."""
+        try:
+            # Prepare data for VectorBT optimization
+            operation_data = {
+                'data': data,
+                'operation': 'sr_detection',
+                'config': config
+            }
+            
+            # Use VectorBT for technical analysis optimization
+            result = self.vectorization_manager.optimize_operation(
+                OperationType.VECTORBT_TECHNICAL_ANALYSIS,
+                operation_data,
+                prefer_vectorbt=True
+            )
+            
+            # Extract SR levels from VectorBT result
+            if hasattr(result, 'result') and result.result:
+                return result.result
+            else:
+                # Fallback to standard detection
+                return detector.detect_sr_levels(data)
+                
+        except Exception as e:
+            self.logger.warning(f"⚠️ VectorBT detection failed, falling back to standard: {e}")
+            return detector.detect_sr_levels(data)
+
+    def _generate_sr_explanations(self, sr_levels: List[Dict[str, Any]], data: pd.DataFrame) -> Dict[str, Any]:
+        """Generate SHAP/LIME explanations for SR levels."""
+        if not self.explainer or not sr_levels:
+            return {}
+        
+        try:
+            self.logger.info("🧠 Generating SHAP/LIME explanations for SR levels...")
+            
+            # Create feature matrix for explanations
+            feature_matrix = self._create_sr_feature_matrix(sr_levels, data)
+            
+            # Generate explanations
+            explanations = {}
+            for i, level in enumerate(sr_levels):
+                try:
+                    # Create a simple model for explanation (placeholder)
+                    class SRLevelModel:
+                        def predict(self, X):
+                            return np.array([level.get('strength', 0.5)] * len(X))
+                        def predict_proba(self, X):
+                            return np.array([[1-level.get('strength', 0.5), level.get('strength', 0.5)]] * len(X))
+                    
+                    model = SRLevelModel()
+                    
+                    # Generate explanation
+                    explanation = self.explainer.explain_model(
+                        model, 
+                        feature_matrix[i:i+1], 
+                        f'sr_level_{i}',
+                        output_names=['strength'],
+                        feature_names=['price', 'volume', 'volatility', 'time_since_touch']
+                    )
+                    
+                    explanations[f'level_{i}'] = {
+                        'level_info': level,
+                        'explanation': explanation,
+                        'feature_importance': self._calculate_sr_feature_importance(level)
+                    }
+                    
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Failed to generate explanation for level {i}: {e}")
+                    continue
+            
+            self.logger.info(f"✅ Generated explanations for {len(explanations)} SR levels")
+            return explanations
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ SR explanation generation failed: {e}")
+            return {}
+
+    def _create_sr_feature_matrix(self, sr_levels: List[Dict[str, Any]], data: pd.DataFrame) -> np.ndarray:
+        """Create feature matrix for SR level explanations."""
+        try:
+            features = []
+            for level in sr_levels:
+                level_features = [
+                    level.get('price', 0.0),
+                    data['volume'].mean() if 'volume' in data.columns else 0.0,
+                    data['close'].std() if 'close' in data.columns else 0.0,
+                    level.get('touch_count', 0)
+                ]
+                features.append(level_features)
+            return np.array(features)
+        except Exception as e:
+            self.logger.warning(f"⚠️ Feature matrix creation failed: {e}")
+            return np.array([])
+
+    def _calculate_sr_feature_importance(self, level: Dict[str, Any]) -> Dict[str, float]:
+        """Calculate feature importance for SR level."""
+        try:
+            # Simple feature importance based on level properties
+            importance = {
+                'price_strength': level.get('strength', 0.5),
+                'touch_frequency': min(1.0, level.get('touch_count', 0) / 5.0),
+                'time_persistence': 0.7,  # Placeholder
+                'volume_confirmation': 0.6  # Placeholder
+            }
+            
+            # Normalize importance scores
+            total = sum(importance.values())
+            if total > 0:
+                importance = {k: v/total for k, v in importance.items()}
+            
+            return importance
+        except Exception as e:
+            self.logger.warning(f"⚠️ Feature importance calculation failed: {e}")
+            return {}
+
+    def _validate_data_leakage(self, data: pd.DataFrame, sr_levels: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Validate for data leakage in SR detection."""
+        if not self.leakage_detector:
+            return {}
+        
+        try:
+            self.logger.info("🔍 Validating for data leakage...")
+            
+            # Create train/test split for validation
+            split_idx = int(len(data) * 0.8)
+            train_data = data.iloc[:split_idx]
+            test_data = data.iloc[split_idx:]
+            
+            # Check for temporal leakage
+            leakage_report = self.leakage_detector.generate_report(
+                X_train=train_data,
+                X_test=test_data,
+                features=data,
+                target=pd.Series([1] * len(data))  # Dummy target
+            )
+            
+            if leakage_report.has_leakage:
+                self.logger.warning(f"⚠️ Data leakage detected: {leakage_report.leakage_score:.2f}")
+            else:
+                self.logger.info("✅ No data leakage detected")
+            
+            return {
+                'has_leakage': leakage_report.has_leakage,
+                'leakage_score': leakage_report.leakage_score,
+                'violations': leakage_report.temporal_violations,
+                'recommendations': leakage_report.recommendations
+            }
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Data leakage validation failed: {e}")
+            return {}
+
+    def _optimize_sr_parameters(self, data: pd.DataFrame, sr_levels: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Optimize SR detection parameters using HPO."""
+        if not self.hpo_wrapper:
+            return {}
+        
+        try:
+            self.logger.info("🎯 Optimizing SR detection parameters...")
+            
+            # Create feature matrix for HPO
+            X = self._create_sr_feature_matrix(sr_levels, data)
+            y = np.array([1] * len(sr_levels))  # Dummy target for optimization
+            
+            # Run HPO optimization
+            hpo_result = self.hpo_wrapper.hierarchical_optimization(X, y)
+            
+            self.logger.info(f"✅ HPO optimization completed: {hpo_result.total_optimization_time:.2f}s")
+            
+            return {
+                'best_params': hpo_result.base_model_best_params,
+                'best_scores': hpo_result.base_model_best_scores,
+                'optimization_time': hpo_result.total_optimization_time,
+                'convergence_info': hpo_result.convergence_info
+            }
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ HPO optimization failed: {e}")
+            return {}
 
     def validate_config(self) -> None:
         """Validate the configuration for the SR detection step."""

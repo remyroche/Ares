@@ -1896,7 +1896,7 @@ class ClusteringStats:
         # Ensure caches are up to date
         return float(getattr(self, 'variance_ratio', 0.0))
 
-    def get_objective_value(self, w_cv: float = 0.50, w_temp: float = 0.30,
+    def get_objective_value(self, w_cv: float = 0.50, w_temp: float = 0.40,
                            w_sil: float = 0.10, w_bal: float = 0.10,
                            k_complexity_penalty: float = 0.15, k_max: int = 20,
                            constraints: "NAgosticConstraints" = None) -> float:
@@ -1915,11 +1915,19 @@ class ClusteringStats:
             w_temp * temporal_score
         )
 
-        # Apply balance as soft constraint penalty (RELAXED - softer than before)
+        # Apply balance as soft constraint penalty (ENHANCED - more realistic)
         balance_penalty = 0.0
-        if balance < 0.6:  # RELAXED: Only penalize severe imbalance (was 0.8)
-            balance_penalty = 0.02 * (0.6 - balance)  # RELAXED: Reduced penalty weight (was 0.05)
+        if balance < 0.8:  # ENHANCED: Penalize moderate imbalance (was 0.6)
+            balance_penalty = 0.1 * (0.8 - balance)  # ENHANCED: 5x stronger penalty (was 0.02)
         objective -= balance_penalty
+        
+        # Add economic meaningfulness constraint to prevent artificial balancing
+        # Penalize clusters that are too similar in size (unrealistic for financial markets)
+        if len(self.cluster_sizes) > 1:
+            size_cv = np.std(self.cluster_sizes) / np.mean(self.cluster_sizes)
+            if size_cv < 0.2:  # Too balanced (CV < 20%)
+                artificial_balance_penalty = 0.05 * (0.2 - size_cv)  # Penalize artificial balance
+                objective -= artificial_balance_penalty
 
         # Add k-complexity penalty to prevent runaway splitting
         k_penalty = k_complexity_penalty * (self.n_clusters - 1) / k_max
@@ -1959,12 +1967,12 @@ class ClusteringStats:
         # CV = std / mean, so higher CV = more imbalance
         cv = np.std(sizes) / mean_size
 
-        # RELAXED: Convert to balance score with more tolerance for imbalance
-        # Use square root scaling to reduce penalty for moderate imbalance
+        # ENHANCED: Convert to balance score with realistic tolerance for imbalance
+        # Use linear scaling to properly penalize imbalance
         # Perfect balance (CV=0) = 1.0
-        # Moderate imbalance (CV=0.5) ≈ 0.7 (was 0.5)
-        # High imbalance (CV=1.0) ≈ 0.0 (was 0.0)
-        balance_score = max(0.0, 1.0 - np.sqrt(cv))
+        # Moderate imbalance (CV=0.5) = 0.5 (realistic)
+        # High imbalance (CV=1.0) = 0.0 (unacceptable)
+        balance_score = max(0.0, 1.0 - cv)
 
         return balance_score
 
@@ -3796,7 +3804,7 @@ class IterativeOptimization:
             }
 
     def temporal_switch_penalty(self, labels: np.ndarray, entity_ids: np.ndarray, time_idx: np.ndarray) -> float:
-        """Calculate temporal smoothness penalty (lower is better)."""
+        """Calculate enhanced temporal smoothness penalty with regime persistence constraints."""
         if entity_ids is None or time_idx is None or len(labels) < 2:
             return 0.0
 
@@ -3819,11 +3827,17 @@ class IterativeOptimization:
             # Enhanced temporal smoothness: penalize cluster fragmentation
             # Count how fragmented each entity's sequence is
             entity_switches = []
+            entity_durations = []
+            
             for entity_id in np.unique(eid):
                 entity_mask = eid == entity_id
                 if np.sum(entity_mask) > 1:
                     entity_labels = lid[entity_mask]
                     entity_switches.append(np.sum(entity_labels[1:] != entity_labels[:-1]))
+                    
+                    # Calculate regime durations for this entity
+                    regime_durations = self._calculate_regime_durations(entity_labels)
+                    entity_durations.extend(regime_durations)
 
             if entity_switches:
                 avg_entity_fragmentation = np.mean(entity_switches)
@@ -3831,10 +3845,112 @@ class IterativeOptimization:
                 fragmentation_penalty = min(0.5, avg_entity_fragmentation / max(1, np.mean([np.sum(eid == e) for e in np.unique(eid)])))
                 base_penalty += fragmentation_penalty
 
+            # Add regime persistence penalty
+            if entity_durations:
+                persistence_penalty = self._calculate_persistence_penalty(entity_durations)
+                base_penalty += persistence_penalty
+
+            # Add regime transition penalty
+            transition_penalty = self._calculate_transition_penalty(lid, eid)
+            base_penalty += transition_penalty
+
             return min(1.0, base_penalty)  # Cap at 1.0
 
         except Exception as e:
-            tprint(f"⚠️ Temporal switch penalty calculation failed: {e}", "WARNING")
+            tprint(f"⚠️ Enhanced temporal smoothness calculation failed: {e}", "WARNING")
+            return 0.0
+    
+    def _calculate_regime_durations(self, labels: np.ndarray) -> List[int]:
+        """Calculate durations of consecutive regime assignments."""
+        try:
+            if len(labels) < 2:
+                return []
+            
+            durations = []
+            current_regime = labels[0]
+            current_duration = 1
+            
+            for i in range(1, len(labels)):
+                if labels[i] == current_regime:
+                    current_duration += 1
+                else:
+                    durations.append(current_duration)
+                    current_regime = labels[i]
+                    current_duration = 1
+            
+            # Add the last duration
+            durations.append(current_duration)
+            return durations
+            
+        except Exception:
+            return []
+    
+    def _calculate_persistence_penalty(self, durations: List[int]) -> float:
+        """Calculate penalty for short regime durations."""
+        try:
+            if not durations:
+                return 0.0
+            
+            # Penalize regimes that are too short (less than 5 periods)
+            short_durations = [d for d in durations if d < 5]
+            if not short_durations:
+                return 0.0
+            
+            # Calculate penalty based on proportion of short durations
+            short_ratio = len(short_durations) / len(durations)
+            
+            # Additional penalty for very short durations (1-2 periods)
+            very_short_durations = [d for d in durations if d <= 2]
+            very_short_ratio = len(very_short_durations) / len(durations)
+            
+            # Combined penalty
+            persistence_penalty = 0.3 * short_ratio + 0.5 * very_short_ratio
+            
+            return min(0.3, persistence_penalty)  # Cap at 0.3
+            
+        except Exception:
+            return 0.0
+    
+    def _calculate_transition_penalty(self, labels: np.ndarray, entity_ids: np.ndarray) -> float:
+        """Calculate penalty for frequent regime transitions."""
+        try:
+            if len(labels) < 2:
+                return 0.0
+            
+            # Count transitions per entity
+            entity_transitions = {}
+            for i in range(len(labels) - 1):
+                if entity_ids[i] == entity_ids[i + 1] and labels[i] != labels[i + 1]:
+                    entity_id = entity_ids[i]
+                    if entity_id not in entity_transitions:
+                        entity_transitions[entity_id] = 0
+                    entity_transitions[entity_id] += 1
+            
+            if not entity_transitions:
+                return 0.0
+            
+            # Calculate average transitions per entity
+            avg_transitions = np.mean(list(entity_transitions.values()))
+            
+            # Calculate entity lengths
+            entity_lengths = {}
+            for entity_id in np.unique(entity_ids):
+                entity_lengths[entity_id] = np.sum(entity_ids == entity_id)
+            
+            avg_length = np.mean(list(entity_lengths.values()))
+            
+            if avg_length == 0:
+                return 0.0
+            
+            # Transition rate (transitions per period)
+            transition_rate = avg_transitions / avg_length
+            
+            # Penalty increases exponentially with transition rate
+            transition_penalty = min(0.2, transition_rate * 2)
+            
+            return transition_penalty
+            
+        except Exception:
             return 0.0
 
     def evaluate_metrics(self, X: np.ndarray, labels: np.ndarray, entity_ids: np.ndarray = None,
@@ -4777,7 +4893,7 @@ class IterativeOptimization:
         # ENHANCED objective function weights - MAXIMUM CV optimization focus
         # Prioritizing CV ratio for maximum regime separation quality
         self.w_cv = 0.70     # Primary: variance ratio (CV) - MAXIMIZED for regime separation
-        self.w_temp = 0.20   # Secondary: temporal smoothness - reduced to focus on CV
+        self.w_temp = 0.35   # Enhanced: temporal smoothness - increased for better regime persistence
         self.w_sil = 0.10    # Tertiary: cluster cohesion (Silhouette) - reduced
         self.w_bal = 0.05    # Minimal: balance constraint (soft penalty)
         self.lambda_switch = 1e-5  # Reduced by 10x from 1e-4 to 1e-5

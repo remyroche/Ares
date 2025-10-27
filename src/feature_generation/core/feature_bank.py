@@ -2389,6 +2389,100 @@ class FeatureBank:
 
         return summary
 
+    def get_sr_levels(self, symbol: str = None, exchange: str = None, 
+                     timeframe: str = None, direction: str = None) -> Dict[str, Any]:
+        """
+        Get SR levels dictionary from the artifact manager.
+        
+        This method provides access to the SR levels dictionary that was saved
+        by the SR clustering component, making it available to feature generators
+        and training scripts.
+        
+        Args:
+            symbol: Trading symbol to filter by (optional)
+            exchange: Exchange to filter by (optional)
+            timeframe: Timeframe to filter by (optional)
+            direction: Trading direction to filter by (optional)
+            
+        Returns:
+            Dictionary containing SR levels with scores and metadata
+        """
+        try:
+            from src.utils.artifact_manager import ArtifactManager
+            
+            # Initialize artifact manager
+            artifact_manager = ArtifactManager(config={})
+            
+            # Set context for artifact retrieval
+            if symbol:
+                artifact_manager.set_context(symbol=symbol)
+            if exchange:
+                artifact_manager.set_context(exchange=exchange)
+            if direction:
+                artifact_manager.set_context(direction=direction)
+            
+            # Retrieve the SR levels dictionary
+            sr_levels_dict = artifact_manager.get_artifact(
+                artifact_name='sr_levels_dictionary',
+                artifact_type='data'
+            )
+            
+            if not sr_levels_dict:
+                self.logger.warning("SR levels dictionary not found in artifacts")
+                return {
+                    'levels': [],
+                    'summary': {'total_levels': 0, 'total_clusters': 0},
+                    'error': 'SR levels dictionary not found'
+                }
+            
+            # Apply filters if specified
+            if any([symbol, exchange, timeframe, direction]):
+                filtered_levels = []
+                for level in sr_levels_dict.get('levels', []):
+                    level_metadata = level.get('metadata', {})
+                    
+                    # Check filters
+                    if symbol and level_metadata.get('symbol') != symbol:
+                        continue
+                    if exchange and level_metadata.get('exchange') != exchange:
+                        continue
+                    if timeframe and level_metadata.get('timeframe') != timeframe:
+                        continue
+                    if direction and level_metadata.get('direction') != direction:
+                        continue
+                    
+                    filtered_levels.append(level)
+                
+                # Update the dictionary with filtered levels
+                sr_levels_dict = sr_levels_dict.copy()
+                sr_levels_dict['levels'] = filtered_levels
+                sr_levels_dict['summary']['total_levels'] = len(filtered_levels)
+            
+            self.logger.info(f"Retrieved SR levels dictionary with {len(sr_levels_dict.get('levels', []))} levels")
+            return sr_levels_dict
+            
+        except Exception as e:
+            self.logger.error(f"Failed to get SR levels: {e}")
+            return {
+                'levels': [],
+                'summary': {'total_levels': 0, 'total_clusters': 0},
+                'error': str(e)
+            }
+
+    def get_sr_levels_summary(self) -> Dict[str, Any]:
+        """
+        Get a summary of available SR levels without loading the full dictionary.
+        
+        Returns:
+            Dictionary containing summary information about SR levels
+        """
+        try:
+            sr_levels = self.get_sr_levels()
+            return sr_levels.get('summary', {})
+        except Exception as e:
+            self.logger.error(f"Failed to get SR levels summary: {e}")
+            return {'error': str(e)}
+
     def create_auto_optimized_generator(self, name: str, category: FeatureCategory,
                                       required_columns: List[str],
                                       optimization_level: Optional[str] = None,

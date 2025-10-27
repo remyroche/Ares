@@ -166,6 +166,69 @@ class BaseStep(ABC):
         except Exception as e:
             self.logger.warning(f"Failed to apply light mode filter: {e}")
             return data
+
+    def _get_sr_levels(self, symbol: str = None, exchange: str = None, 
+                      timeframe: str = None, direction: str = None) -> Dict[str, Any]:
+        """
+        Get SR levels dictionary for use in training scripts.
+        
+        This method provides easy access to the SR levels dictionary that was saved
+        by the SR clustering component, making it available to all training scripts
+        in pre_training and models_training directories.
+        
+        Args:
+            symbol: Trading symbol to filter by (optional)
+            exchange: Exchange to filter by (optional)
+            timeframe: Timeframe to filter by (optional)
+            direction: Trading direction to filter by (optional)
+            
+        Returns:
+            Dictionary containing SR levels with scores and metadata
+        """
+        try:
+            # Try to get from artifact manager first
+            try:
+                sr_levels_dict = self._get_artifact(
+                    artifact_name='sr_levels_dictionary',
+                    artifact_type='data'
+                )
+                if sr_levels_dict:
+                    self.logger.info(f"Retrieved SR levels from artifacts: {len(sr_levels_dict.get('levels', []))} levels")
+                    return sr_levels_dict
+            except Exception as e:
+                self.logger.debug(f"SR levels not found in artifacts: {e}")
+            
+            # Fallback to feature bank
+            try:
+                from src.feature_generation.core.feature_bank import get_global_feature_bank
+                feature_bank = get_global_feature_bank()
+                sr_levels_dict = feature_bank.get_sr_levels(
+                    symbol=symbol,
+                    exchange=exchange,
+                    timeframe=timeframe,
+                    direction=direction
+                )
+                if sr_levels_dict and not sr_levels_dict.get('error'):
+                    self.logger.info(f"Retrieved SR levels from feature bank: {len(sr_levels_dict.get('levels', []))} levels")
+                    return sr_levels_dict
+            except Exception as e:
+                self.logger.debug(f"SR levels not available from feature bank: {e}")
+            
+            # Return empty result if not found
+            self.logger.warning("SR levels dictionary not found in artifacts or feature bank")
+            return {
+                'levels': [],
+                'summary': {'total_levels': 0, 'total_clusters': 0},
+                'error': 'SR levels dictionary not found'
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Failed to get SR levels: {e}")
+            return {
+                'levels': [],
+                'summary': {'total_levels': 0, 'total_clusters': 0},
+                'error': str(e)
+            }
     
     
     async def run(self, config: Dict[str, Any]) -> Dict[str, Any]:

@@ -218,6 +218,25 @@ class SRClusteringComponent(BaseStep):
             )
             artifacts.append(artifact_path)
             
+            # Save SR levels dictionary for feature bank and training scripts access
+            sr_levels_dict = self._create_sr_levels_dictionary(clustering_result)
+            sr_levels_artifact_path = self._save_artifact(
+                sr_levels_dict,
+                'sr_levels_dictionary',
+                'data',
+                metadata={
+                    'symbol': symbol,
+                    'exchange': exchange,
+                    'timeframe': timeframe,
+                    'direction': direction,
+                    'total_levels': len(sr_levels_dict.get('levels', [])),
+                    'total_clusters': clustering_result.get('total_clusters', 0),
+                    'created_at': datetime.now().isoformat(),
+                    'purpose': 'feature_bank_and_training_access'
+                }
+            )
+            artifacts.append(sr_levels_artifact_path)
+            
             # Record enhanced metrics
             metrics.update({
                 'total_clusters': clustering_result.get('total_clusters', 0),
@@ -870,6 +889,108 @@ class SRClusteringComponent(BaseStep):
         except Exception as e:
             self.logger.error(f"Clustering process failed: {e}")
             return [], {'efficiency': 0.0, 'method': 'fallback', 'error': str(e)}
+
+    def _create_sr_levels_dictionary(self, clustering_result: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Create a comprehensive SR levels dictionary for feature bank and training scripts access.
+        
+        This dictionary contains all SR levels with their scores, metadata, and cluster information
+        in a format that's easily accessible by the feature bank and training scripts.
+        
+        Args:
+            clustering_result: The clustering result from _perform_enhanced_sr_clustering
+            
+        Returns:
+            Dictionary containing SR levels with scores and metadata
+        """
+        try:
+            clusters = clustering_result.get('clusters', [])
+            metadata = clustering_result.get('metadata', {})
+            
+            # Extract all levels from clusters
+            all_levels = []
+            level_id = 0
+            
+            for cluster in clusters:
+                cluster_id = cluster.get('cluster_id', 0)
+                cluster_levels = cluster.get('levels', [])
+                cluster_representative = cluster.get('representative', {})
+                cluster_type = cluster.get('type', 'mixed')
+                
+                for level in cluster_levels:
+                    # Create comprehensive level dictionary with all metadata
+                    level_dict = {
+                        'id': level_id,
+                        'cluster_id': cluster_id,
+                        'price': level.get('price', 0.0),
+                        'type': level.get('type', level.get('level_type', 'unknown')),
+                        'strength': level.get('strength', 0.0),
+                        'confidence': level.get('confidence', 0.0),
+                        'touches': level.get('touches', level.get('touch_count', 0)),
+                        'first_touch': level.get('first_touch', level.get('first_touch_time', datetime.now())),
+                        'last_touch': level.get('last_touch', level.get('last_touch_time', datetime.now())),
+                        'features': level.get('features', {}),
+                        'cluster_info': {
+                            'cluster_id': cluster_id,
+                            'cluster_type': cluster_type,
+                            'cluster_size': cluster.get('size', 0),
+                            'cluster_representative': cluster_representative
+                        },
+                        'metadata': {
+                            'symbol': metadata.get('symbol', ''),
+                            'timeframe': metadata.get('timeframe', ''),
+                            'direction': metadata.get('direction', ''),
+                            'execution_mode': metadata.get('execution_mode', ''),
+                            'enhancement_version': metadata.get('enhancement_version', '1.0'),
+                            'created_at': datetime.now().isoformat()
+                        }
+                    }
+                    all_levels.append(level_dict)
+                    level_id += 1
+            
+            # Create the comprehensive dictionary
+            sr_levels_dictionary = {
+                'levels': all_levels,
+                'summary': {
+                    'total_levels': len(all_levels),
+                    'total_clusters': len(clusters),
+                    'clustering_efficiency': clustering_result.get('clustering_efficiency', 0.0),
+                    'support_levels': len([l for l in all_levels if l.get('type', '').lower() == 'support']),
+                    'resistance_levels': len([l for l in all_levels if l.get('type', '').lower() == 'resistance']),
+                    'mixed_levels': len([l for l in all_levels if l.get('type', '').lower() not in ['support', 'resistance']])
+                },
+                'clustering_metrics': clustering_result.get('clustering_metrics', {}),
+                'quality_metrics': clustering_result.get('quality_metrics', {}),
+                'performance_metrics': clustering_result.get('performance_metrics', {}),
+                'hardware_metrics': clustering_result.get('hardware_metrics', {}),
+                'metadata': metadata,
+                'access_info': {
+                    'purpose': 'feature_bank_and_training_access',
+                    'format_version': '2.0',
+                    'created_at': datetime.now().isoformat(),
+                    'access_methods': [
+                        'feature_bank.get_sr_levels()',
+                        'artifact_manager.get_artifact("sr_levels_dictionary")',
+                        'BaseStep._get_artifact("sr_levels_dictionary")'
+                    ]
+                }
+            }
+            
+            self.logger.info(f"Created SR levels dictionary with {len(all_levels)} levels from {len(clusters)} clusters")
+            return sr_levels_dictionary
+            
+        except Exception as e:
+            self.logger.error(f"Failed to create SR levels dictionary: {e}")
+            return {
+                'levels': [],
+                'summary': {'total_levels': 0, 'total_clusters': 0},
+                'error': str(e),
+                'access_info': {
+                    'purpose': 'feature_bank_and_training_access',
+                    'format_version': '2.0',
+                    'created_at': datetime.now().isoformat()
+                }
+            }
 
     async def _perform_sr_clustering(self, symbol: str, timeframe: str, 
                                    direction: str, execution_mode: str) -> Dict[str, Any]:

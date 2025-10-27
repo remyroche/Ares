@@ -16,6 +16,7 @@ from src.utils.tprint import (
 
 from ..shared_utils import get_logger
 from .step1_feature_preparation import ClusteringContext
+from .enhanced_cv import EnhancedCrossValidation
 
 class ValidationStep:
     """Step 8: Clustering validation and robustness testing."""
@@ -73,7 +74,7 @@ class ValidationStep:
             validation_results['stability_analysis'] = stability_analysis
 
             # Cross-validation metrics
-            cv_metrics = await self._compute_cross_validation_metrics(features, assignments)
+            cv_metrics = await self._compute_cross_validation_metrics(features, assignments, market_data)
             validation_results['cv_metrics'] = cv_metrics
 
             # Temporal consistency
@@ -249,29 +250,37 @@ class ValidationStep:
     async def _compute_cross_validation_metrics(
         self,
         features: np.ndarray,
-        assignments: np.ndarray
+        assignments: np.ndarray,
+        market_data: Optional[pd.DataFrame] = None
     ) -> Dict[str, Any]:
-        """Compute cross-validation metrics."""
+        """Compute enhanced cross-validation metrics with purging."""
         try:
-            tprint("Computing cross-validation metrics...", "INFO")
+            tprint("Computing enhanced cross-validation metrics...", "INFO")
 
-            # Calculate within-cluster and between-cluster coefficients of variation
-            within_cv = await self._calculate_within_cluster_cv(features, assignments)
-            between_cv = await self._calculate_between_cluster_cv(features, assignments)
-
-            cv_ratio = between_cv / within_cv if within_cv > 0 else 0.0
-
-            cv_metrics = {
-                'within_cluster_cv': within_cv,
-                'between_cluster_cv': between_cv,
-                'cv_ratio': cv_ratio,
-                'cv_quality': 'Excellent' if cv_ratio > 1.5 else 'Good' if cv_ratio > 1.0 else 'Fair' if cv_ratio > 0.7 else 'Poor'
-            }
+            # Create enhanced CV instance
+            enhanced_cv = EnhancedCrossValidation(cv_folds=5, purged_pct=0.1)
+            
+            # Compute comprehensive CV metrics
+            cv_metrics = enhanced_cv.compute_cv_metrics(features, assignments, market_data)
+            
+            # Add quality assessment
+            if 'cv_ratio_mean' in cv_metrics:
+                cv_ratio = cv_metrics['cv_ratio_mean']
+                cv_metrics['cv_quality'] = 'Excellent' if cv_ratio > 1.5 else 'Good' if cv_ratio > 1.0 else 'Fair' if cv_ratio > 0.7 else 'Poor'
+            else:
+                cv_metrics['cv_quality'] = 'Unknown'
+            
+            # Add economic quality if available
+            if 'economic_cv_score' in cv_metrics:
+                economic_score = cv_metrics['economic_cv_score']
+                cv_metrics['economic_quality'] = 'Excellent' if economic_score > 0.7 else 'Good' if economic_score > 0.5 else 'Fair' if economic_score > 0.3 else 'Poor'
+            else:
+                cv_metrics['economic_quality'] = 'Unknown'
 
             return cv_metrics
 
         except Exception as e:
-            tprint(f"Cross-validation metrics computation failed: {e}", "ERROR")
+            tprint(f"Enhanced cross-validation metrics computation failed: {e}", "ERROR")
             return {'error': str(e)}
 
     async def _compute_temporal_consistency(

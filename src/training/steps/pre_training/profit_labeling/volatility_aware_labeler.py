@@ -32,7 +32,13 @@ except Exception:
     system_logger = logging.getLogger("system")
 
 # Robust piecewise linear mapping for proximity-based confidence
-def proximity_mapping(ratio: np.ndarray, min_thresh: float = 0.75, cap: float = 1.5) -> np.ndarray:
+def proximity_mapping(
+    ratio: np.ndarray, 
+    min_thresh: float = 0.75, 
+    cap: float = 1.5,
+    adaptive_clip: bool = True,
+    clip_percentile: float = 99.9
+) -> np.ndarray:
     """
     Compute proximity-based confidence using piecewise linear mapping.
     
@@ -40,12 +46,20 @@ def proximity_mapping(ratio: np.ndarray, min_thresh: float = 0.75, cap: float = 
         ratio: actual_move / target_move (can be negative for opposite direction)
         min_thresh: Minimum threshold below which confidence is 0 (default: 0.75)
         cap: Maximum confidence cap (default: 1.5)
+        adaptive_clip: Use percentile-based clipping instead of fixed threshold
+        clip_percentile: Percentile for adaptive clipping (default: 99.9)
     
     Returns:
         proximity (float) in [0, cap] with preserved sign
     """
-    # Handle outliers by clipping extreme values
-    ratio = np.clip(ratio, -10.0, 10.0)
+    # Handle outliers with adaptive or fixed clipping
+    if adaptive_clip and len(ratio) > 0:
+        # Use percentile-based clipping for better adaptation to data distribution
+        clip_value = np.percentile(np.abs(ratio), clip_percentile)
+        ratio = np.clip(ratio, -clip_value, clip_value)
+    else:
+        # Fixed clipping as fallback
+        ratio = np.clip(ratio, -10.0, 10.0)
     
     absd = np.abs(ratio)
     prox = np.zeros_like(absd, dtype=float)
@@ -53,6 +67,15 @@ def proximity_mapping(ratio: np.ndarray, min_thresh: float = 0.75, cap: float = 
     # Below minimum threshold -> 0 confidence
     mask_below = absd < min_thresh
     prox[mask_below] = 0.0
+    
+    # Edge continuity: smooth transition near 0.75 threshold
+    # Use a small ramp to avoid label discontinuity
+    ramp_start = min_thresh - 0.05  # Start ramp at 0.70
+    mask_ramp = (absd >= ramp_start) & (absd < min_thresh)
+    if np.any(mask_ramp):
+        # Linear ramp from 0 to 0.5 over 0.05 range
+        ramp_factor = (absd[mask_ramp] - ramp_start) / (min_thresh - ramp_start)
+        prox[mask_ramp] = 0.5 * ramp_factor
     
     # 0.75 <= absd < 1.0 -> linear from 0.5 at 0.75 to 1.0 at 1.0
     mask_mid = (absd >= min_thresh) & (absd < 1.0)
@@ -66,8 +89,8 @@ def proximity_mapping(ratio: np.ndarray, min_thresh: float = 0.75, cap: float = 
     mask_above = absd > 2.0
     prox[mask_above] = cap
     
-    # Preserve sign for directional information
-    sign = np.sign(ratio)
+    # Handle signed-zero deterministically: treat exactly zero as positive
+    sign = np.where(ratio == 0, 1, np.sign(ratio))
     return sign * prox
 
 # Import the missing function from multi_horizon_profit_labeler
@@ -3608,7 +3631,9 @@ class VolatilityAwareMultiHorizonLabeler:
         future_returns: pd.Series,
         effective_threshold: pd.Series,
         vol_normalized: pd.Series,
-        quality_scores: Optional[pd.Series] = None
+        quality_scores: Optional[pd.Series] = None,
+        weight_transform: str = 'linear',
+        soft_threshold: bool = False
     ) -> Tuple[pd.Series, pd.Series]:
         """
         Generate proximity-based regression labels with sample weights.
@@ -3623,17 +3648,23 @@ class VolatilityAwareMultiHorizonLabeler:
             effective_threshold: Volatility-adjusted threshold series
             vol_normalized: Normalized volatility series
             quality_scores: Optional quality scores for additional weighting
+            weight_transform: Weight transformation ('linear', 'sqrt', 'power_0.75')
+            soft_threshold: Use soft thresholding instead of hard cutoff
             
         Returns:
             Tuple of (labels, sample_weights) where:
             - labels: Regression targets in [-1, 1] range
             - sample_weights: Confidence-based weights in [0, 1] range
         """
+        # LEAKAGE CHECK: Ensure future_returns uses only out-of-sample data
+        # This is already handled by the calling method using shift(-lookahead_periods)
+        
         # Calculate ratio = actual_move / target_move (directional)
         ratio = future_returns / effective_threshold
         
-        # Apply robust piecewise linear mapping
-        proximity = proximity_mapping(ratio, min_thresh=0.75, cap=1.5)
+        # Apply robust piecewise linear mapping with soft threshold option
+        min_thresh = 0.70 if soft_threshold else 0.75
+        proximity = proximity_mapping(ratio, min_thresh=min_thresh, cap=1.5, adaptive_clip=True)
         
         # Normalize proximity to [0, 1] range for stability
         proximity_norm = np.abs(proximity) / 1.5
@@ -3641,9 +3672,13 @@ class VolatilityAwareMultiHorizonLabeler:
         # Create regression targets: sign(ratio) * proximity_norm (range [-1, 1])
         labels = np.sign(ratio) * proximity_norm
         
-        # Sample weights: proximity_norm (or sqrt for dampening extremes)
-        sample_weights = proximity_norm
-        # Alternative: sample_weights = np.sqrt(proximity_norm)  # To dampen extremes
+        # Apply weight transformation to reduce overfitting
+        if weight_transform == 'sqrt':
+            sample_weights = np.sqrt(proximity_norm)
+        elif weight_transform == 'power_0.75':
+            sample_weights = np.power(proximity_norm, 0.75)
+        else:  # 'linear'
+            sample_weights = proximity_norm
         
         # Apply quality weighting if available
         if quality_scores is not None:
@@ -3688,6 +3723,131 @@ class VolatilityAwareMultiHorizonLabeler:
         if hasattr(self, '_sample_weights'):
             return self._sample_weights.copy()
         return {}
+
+    def get_coverage_stats(self) -> Dict[str, float]:
+        """
+        Get coverage statistics for tracking dropped samples.
+        
+        Returns:
+            Dictionary with coverage statistics
+        """
+        if not hasattr(self, '_sample_weights'):
+            return {}
+        
+        stats = {}
+        for target_name, weights in self._sample_weights.items():
+            total_samples = len(weights)
+            zero_weight_samples = (weights == 0).sum()
+            coverage_rate = 1.0 - (zero_weight_samples / total_samples) if total_samples > 0 else 0.0
+            
+            stats[f'{target_name}_coverage_rate'] = coverage_rate
+            stats[f'{target_name}_dropped_samples'] = zero_weight_samples
+            stats[f'{target_name}_total_samples'] = total_samples
+        
+        return stats
+
+    def compute_calibration_metrics(
+        self, 
+        predictions: pd.Series, 
+        realized_returns: pd.Series,
+        n_bins: int = 10
+    ) -> Dict[str, float]:
+        """
+        Compute calibration metrics for predicted confidence vs realized returns.
+        
+        Args:
+            predictions: Model predictions (signed confidence)
+            realized_returns: Actual realized returns
+            n_bins: Number of calibration bins
+            
+        Returns:
+            Dictionary with calibration metrics
+        """
+        # Align data
+        pred_aligned, ret_aligned = _align_like(predictions, realized_returns)
+        
+        # Create bins based on absolute prediction values
+        abs_pred = np.abs(pred_aligned)
+        bin_edges = np.linspace(0, 1, n_bins + 1)
+        bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
+        
+        calibration_data = []
+        for i in range(n_bins):
+            mask = (abs_pred >= bin_edges[i]) & (abs_pred < bin_edges[i + 1])
+            if i == n_bins - 1:  # Include upper bound for last bin
+                mask = (abs_pred >= bin_edges[i]) & (abs_pred <= bin_edges[i + 1])
+            
+            if mask.sum() > 0:
+                avg_pred = abs_pred[mask].mean()
+                avg_realized = np.abs(ret_aligned[mask]).mean()
+                sample_count = mask.sum()
+                
+                calibration_data.append({
+                    'bin_center': bin_centers[i],
+                    'avg_pred': avg_pred,
+                    'avg_realized': avg_realized,
+                    'sample_count': sample_count
+                })
+        
+        # Calculate calibration error (MSE between predicted and realized)
+        if calibration_data:
+            pred_values = [d['avg_pred'] for d in calibration_data]
+            realized_values = [d['avg_realized'] for d in calibration_data]
+            calibration_error = np.mean((np.array(pred_values) - np.array(realized_values)) ** 2)
+        else:
+            calibration_error = np.nan
+        
+        return {
+            'calibration_error': calibration_error,
+            'n_bins': len(calibration_data),
+            'calibration_data': calibration_data
+        }
+
+    def compute_rank_metrics(
+        self, 
+        predictions: pd.Series, 
+        realized_returns: pd.Series
+    ) -> Dict[str, float]:
+        """
+        Compute rank-based metrics for model evaluation.
+        
+        Args:
+            predictions: Model predictions (signed confidence)
+            realized_returns: Actual realized returns
+            
+        Returns:
+            Dictionary with rank metrics
+        """
+        from scipy.stats import spearmanr, pearsonr
+        
+        # Align data
+        pred_aligned, ret_aligned = _align_like(predictions, realized_returns)
+        
+        # Remove NaN values
+        valid_mask = ~(np.isnan(pred_aligned) | np.isnan(ret_aligned))
+        pred_clean = pred_aligned[valid_mask]
+        ret_clean = ret_aligned[valid_mask]
+        
+        if len(pred_clean) < 2:
+            return {'spearman_correlation': np.nan, 'pearson_correlation': np.nan}
+        
+        # Spearman correlation (rank-based)
+        spearman_corr, spearman_p = spearmanr(pred_clean, ret_clean)
+        
+        # Pearson correlation (linear)
+        pearson_corr, pearson_p = pearsonr(pred_clean, ret_clean)
+        
+        # Information Coefficient (IC) - commonly used in quant finance
+        ic = spearman_corr  # Often used interchangeably with Spearman
+        
+        return {
+            'spearman_correlation': spearman_corr,
+            'spearman_p_value': spearman_p,
+            'pearson_correlation': pearson_corr,
+            'pearson_p_value': pearson_p,
+            'information_coefficient': ic,
+            'n_samples': len(pred_clean)
+        }
 
 
     @staticmethod

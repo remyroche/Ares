@@ -187,16 +187,7 @@ class FeatureBankIntegrator:
         ]
         
         # Volatility generators
-        generators[FeatureBankCategory.VOLATILITY] = [
-            VolatilityFeatureGenerator(),
-            VectorBTVolatilityFeatureGenerator(),
-            VectorBTBollingerBandsGenerator(),
-            VectorBTAverageTrueRangeGenerator(),
-            VectorBTGarmanKlassVolatilityGenerator(),
-            VectorBTParkinsonVolatilityGenerator(),
-            VectorBTRogersSatchellVolatilityGenerator(),
-            VectorBTYangZhangVolatilityGenerator()
-        ]
+        generators[FeatureBankCategory.VOLATILITY] = create_default_volatility_generators()
         
         # Momentum generators
         generators[FeatureBankCategory.MOMENTUM] = [

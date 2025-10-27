@@ -70,6 +70,11 @@ from ..categories.clustering_features import (
 # Import task integration
 from .feature_task_integration import MLTask, FeatureTaskIntegrator
 
+# Import cluster distinctiveness metrics
+from ..utils.cluster_distinctiveness_metrics import (
+    ClusterDistinctivenessCalculator, ClusterDistinctivenessConfig
+)
+
 
 class FeatureBankCategory(Enum):
     """Enumeration of feature bank categories."""
@@ -103,7 +108,7 @@ class FeatureBankConfig:
     
     # Feature selection settings
     enable_feature_selection: bool = True
-    selection_method: str = "variance"  # "variance", "correlation", "mutual_info"
+    selection_method: str = "variance"  # "variance", "correlation", "mutual_info", "cluster_distinctiveness"
     
     def __post_init__(self):
         """Set default weights for each task."""
@@ -385,6 +390,8 @@ class FeatureBankIntegrator:
             return self._select_by_variance(features, max_features)
         elif self.config.selection_method == "correlation":
             return self._select_by_correlation(features, max_features)
+        elif self.config.selection_method == "cluster_distinctiveness":
+            return self._select_by_cluster_distinctiveness(features, max_features, task_config)
         else:
             return self._select_by_variance(features, max_features)
     
@@ -409,6 +416,46 @@ class FeatureBankIntegrator:
         # This is a simplified correlation-based selection
         # In practice, you'd want to correlate with a target variable
         return self._select_by_variance(features, max_features)
+    
+    def _select_by_cluster_distinctiveness(self, features: Dict[str, np.ndarray], 
+                                         max_features: int, task_config: Dict[str, Any]) -> Dict[str, np.ndarray]:
+        """Select features by cluster distinctiveness (requires cluster labels)."""
+        # For cluster distinctiveness, we need cluster labels
+        # This method is designed to be used after initial clustering
+        # For now, fall back to variance-based selection
+        # In practice, this would be called with actual cluster labels
+        warnings.warn("Cluster distinctiveness selection requires cluster labels. Falling back to variance selection.")
+        return self._select_by_variance(features, max_features)
+    
+    def select_features_by_cluster_distinctiveness(self, features: Dict[str, np.ndarray], 
+                                                 cluster_labels: np.ndarray, 
+                                                 max_features: int) -> Dict[str, np.ndarray]:
+        """
+        Select features based on cluster distinctiveness metrics.
+        
+        Args:
+            features: Dictionary of feature names to feature values
+            cluster_labels: Cluster labels for each sample
+            max_features: Maximum number of features to select
+            
+        Returns:
+            Dictionary of selected features
+        """
+        # Initialize cluster distinctiveness calculator
+        config = ClusterDistinctivenessConfig(
+            min_cluster_size=3,
+            min_clusters=2,
+            enable_advanced_metrics=True,
+            enable_scaling=True
+        )
+        calculator = ClusterDistinctivenessCalculator(config)
+        
+        # Get top distinctive features
+        selected_features = calculator.get_top_distinctive_features(
+            features, cluster_labels, max_features
+        )
+        
+        return selected_features
     
     def get_feature_breakdown_by_category(self, task: MLTask, data: pd.DataFrame) -> Dict[str, Any]:
         """Get detailed breakdown of features by category for a task."""

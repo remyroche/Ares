@@ -19,6 +19,11 @@ from .feature_bank_integration import (
     get_comprehensive_regime_clustering_features
 )
 
+# Import enhanced feature selection
+from ..utils.cluster_feature_selection import (
+    EnhancedFeatureSelector, EnhancedFeatureSelectionConfig
+)
+
 # Import clustering algorithms
 try:
     from sklearn.cluster import KMeans, DBSCAN, AgglomerativeClustering
@@ -44,10 +49,12 @@ class EnhancedRegimeClusteringIntegration:
                  min_features: int = 40,
                  max_features: int = 80,
                  enable_comprehensive_features: bool = True,
+                 enable_enhanced_selection: bool = True,
                  clustering_config: Optional[Dict[str, Any]] = None):
         self.min_features = min_features
         self.max_features = max_features
         self.enable_comprehensive_features = enable_comprehensive_features
+        self.enable_enhanced_selection = enable_enhanced_selection
         self.clustering_config = clustering_config or {}
         
         # Initialize feature bank integrator
@@ -67,6 +74,24 @@ class EnhancedRegimeClusteringIntegration:
             self.feature_integrator = FeatureBankIntegrator(config)
         else:
             self.feature_integrator = None
+        
+        # Initialize enhanced feature selector
+        if self.enable_enhanced_selection:
+            enhanced_config = EnhancedFeatureSelectionConfig(
+                economic_weights={
+                    FeatureBankCategory.REGIME: 0.4,
+                    FeatureBankCategory.VOLUME: 0.2,
+                    FeatureBankCategory.TREND: 0.2,
+                    FeatureBankCategory.VOLATILITY: 0.15,
+                    FeatureBankCategory.MOMENTUM: 0.05
+                },
+                cluster_distinctiveness_weight=0.4,
+                economic_relevance_weight=0.4,
+                temporal_stability_weight=0.2
+            )
+            self.enhanced_selector = EnhancedFeatureSelector(enhanced_config)
+        else:
+            self.enhanced_selector = None
     
     def get_comprehensive_regime_features(self, data: pd.DataFrame) -> Dict[str, Any]:
         """
@@ -96,6 +121,77 @@ class EnhancedRegimeClusteringIntegration:
         else:
             # Fallback to basic regime features
             return self._get_basic_regime_features(data)
+    
+    def get_enhanced_regime_features(self, data: pd.DataFrame, 
+                                   cluster_labels: Optional[np.ndarray] = None) -> Dict[str, Any]:
+        """
+        Get enhanced regime features using cluster distinctiveness and economic relevance.
+        
+        Args:
+            data: Market data DataFrame with OHLCV columns
+            cluster_labels: Optional cluster labels for enhanced selection
+            
+        Returns:
+            Dictionary containing enhanced features and metadata
+        """
+        if not self.enable_enhanced_selection:
+            # Fallback to standard comprehensive features
+            return self.get_comprehensive_regime_features(data)
+        
+        # Get comprehensive features first
+        comprehensive_result = self.get_comprehensive_regime_features(data)
+        features = comprehensive_result['features']
+        
+        if not features:
+            return comprehensive_result
+        
+        # If cluster labels are provided, use enhanced selection
+        if cluster_labels is not None and len(cluster_labels) == len(data):
+            # Create feature categories mapping
+            feature_categories = self._create_feature_categories_mapping(features)
+            
+            # Use enhanced selection
+            selected_features = self.enhanced_selector.select_optimal_features(
+                features, cluster_labels, feature_categories, self.max_features
+            )
+            
+            # Update result with selected features
+            comprehensive_result['features'] = selected_features
+            comprehensive_result['feature_names'] = list(selected_features.keys())
+            comprehensive_result['feature_count'] = len(selected_features)
+            comprehensive_result['enhanced_selection'] = True
+            comprehensive_result['selection_method'] = 'enhanced_cluster_distinctiveness'
+            
+            # Add selection report
+            comprehensive_result['selection_report'] = self.enhanced_selector.get_feature_selection_report(
+                features, cluster_labels, feature_categories
+            )
+        
+        return comprehensive_result
+    
+    def _create_feature_categories_mapping(self, features: Dict[str, np.ndarray]) -> Dict[str, FeatureBankCategory]:
+        """Create feature categories mapping based on feature names."""
+        feature_categories = {}
+        
+        for feature_name in features.keys():
+            feature_name_lower = feature_name.lower()
+            
+            # Categorize based on feature name patterns
+            if any(keyword in feature_name_lower for keyword in ['regime', 'entropy', 'complexity', 'hurst', 'fractal', 'memory']):
+                feature_categories[feature_name] = FeatureBankCategory.REGIME
+            elif any(keyword in feature_name_lower for keyword in ['volume', 'obv', 'ad', 'mfi', 'vwap']):
+                feature_categories[feature_name] = FeatureBankCategory.VOLUME
+            elif any(keyword in feature_name_lower for keyword in ['trend', 'sma', 'ema', 'adx', 'directional']):
+                feature_categories[feature_name] = FeatureBankCategory.TREND
+            elif any(keyword in feature_name_lower for keyword in ['volatility', 'bollinger', 'atr', 'vol']):
+                feature_categories[feature_name] = FeatureBankCategory.VOLATILITY
+            elif any(keyword in feature_name_lower for keyword in ['rsi', 'macd', 'stochastic', 'momentum']):
+                feature_categories[feature_name] = FeatureBankCategory.MOMENTUM
+            else:
+                # Default to regime category for unknown features
+                feature_categories[feature_name] = FeatureBankCategory.REGIME
+        
+        return feature_categories
     
     def _get_basic_regime_features(self, data: pd.DataFrame) -> Dict[str, Any]:
         """Fallback to basic regime features if comprehensive features are disabled."""
@@ -240,6 +336,7 @@ class EnhancedRegimeClusteringIntegration:
     def cluster_with_enhanced_regime_clustering(self, data: pd.DataFrame, 
                                               algorithm: str = 'kmeans',
                                               n_clusters: Optional[int] = None,
+                                              use_enhanced_selection: bool = True,
                                               **kwargs) -> Dict[str, Any]:
         """
         Perform enhanced regime clustering with comprehensive features.
@@ -248,6 +345,7 @@ class EnhancedRegimeClusteringIntegration:
             data: Market data DataFrame
             algorithm: Clustering algorithm ('kmeans', 'dbscan', 'gmm', 'agglomerative')
             n_clusters: Number of clusters (auto-determined if None)
+            use_enhanced_selection: Whether to use enhanced feature selection
             **kwargs: Additional parameters for clustering algorithm
             
         Returns:
@@ -266,10 +364,42 @@ class EnhancedRegimeClusteringIntegration:
         if n_clusters is None:
             n_clusters = self._determine_optimal_clusters(feature_matrix, algorithm)
         
-        # Perform clustering
+        # Perform initial clustering
         clusterer, cluster_labels = self._perform_clustering(
             feature_matrix, algorithm, n_clusters, **kwargs
         )
+        
+        # If enhanced selection is enabled, refine features based on clustering
+        if use_enhanced_selection and self.enable_enhanced_selection:
+            # Get enhanced features using cluster labels
+            enhanced_result = self.get_enhanced_regime_features(data, cluster_labels)
+            
+            if enhanced_result.get('enhanced_selection', False):
+                # Update feature matrix with enhanced selection
+                enhanced_features = enhanced_result['features']
+                enhanced_feature_names = enhanced_result['feature_names']
+                
+                if enhanced_features:
+                    # Convert to numpy array
+                    enhanced_matrix = np.column_stack([enhanced_features[name] for name in enhanced_feature_names])
+                    enhanced_matrix = np.nan_to_num(enhanced_matrix, nan=0.0, posinf=1e6, neginf=-1e6)
+                    
+                    # Use robust scaling
+                    if SKLEARN_AVAILABLE:
+                        from sklearn.preprocessing import RobustScaler
+                        scaler = RobustScaler()
+                        enhanced_matrix = scaler.fit_transform(enhanced_matrix)
+                    
+                    # Re-cluster with enhanced features
+                    clusterer, cluster_labels = self._perform_clustering(
+                        enhanced_matrix, algorithm, n_clusters, **kwargs
+                    )
+                    
+                    # Update metadata
+                    feature_matrix = enhanced_matrix
+                    feature_names = enhanced_feature_names
+                    metadata['enhanced_selection'] = True
+                    metadata['selection_report'] = enhanced_result.get('selection_report', {})
         
         # Calculate clustering metrics
         n_clusters_found = len(set(cluster_labels)) - (1 if -1 in cluster_labels else 0)
@@ -290,6 +420,7 @@ class EnhancedRegimeClusteringIntegration:
             'clustering_parameters': {
                 'algorithm': algorithm,
                 'n_clusters': n_clusters,
+                'use_enhanced_selection': use_enhanced_selection,
                 **kwargs
             }
         }
@@ -595,16 +726,22 @@ class EnhancedRegimeClusteringIntegration:
 
 
 # Convenience functions
-def get_enhanced_regime_clustering_features(data: pd.DataFrame) -> Dict[str, Any]:
+def get_enhanced_regime_clustering_features(data: pd.DataFrame, 
+                                          cluster_labels: Optional[np.ndarray] = None) -> Dict[str, Any]:
     """Get enhanced comprehensive features for regime clustering."""
     integrator = EnhancedRegimeClusteringIntegration()
-    return integrator.get_comprehensive_regime_features(data)
+    return integrator.get_enhanced_regime_features(data, cluster_labels)
 
 
-def perform_enhanced_regime_clustering(data: pd.DataFrame, algorithm: str = 'kmeans', **kwargs) -> Dict[str, Any]:
+def perform_enhanced_regime_clustering(data: pd.DataFrame, 
+                                     algorithm: str = 'kmeans', 
+                                     use_enhanced_selection: bool = True,
+                                     **kwargs) -> Dict[str, Any]:
     """Perform enhanced regime clustering with comprehensive features."""
     integrator = EnhancedRegimeClusteringIntegration()
-    return integrator.cluster_with_enhanced_regime_clustering(data, algorithm, **kwargs)
+    return integrator.cluster_with_enhanced_regime_clustering(
+        data, algorithm, use_enhanced_selection=use_enhanced_selection, **kwargs
+    )
 
 
 __all__ = [

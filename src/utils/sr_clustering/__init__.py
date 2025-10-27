@@ -70,3 +70,5 @@ __all__ = [
     'TradingSignal',
     'get_trading_ml_integration'
 ]
+
+# Enhanced SR Clustering components are now integrated into the main SRClusteringComponent

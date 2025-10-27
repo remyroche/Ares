@@ -101,15 +101,8 @@ except ImportError as e:
     EXPLAINABILITY_AVAILABLE = False
     print(f"Warning: SHAP/LIME explainability not available: {e}")
 
-# Additional optimization algorithms
-try:
-    from src.utils.ml_common.optimization.evolutionary_search import (
-        GeneticAlgorithmOptimizer, ParticleSwarmOptimizer
-    )
-    EVOLUTIONARY_AVAILABLE = True
-except ImportError as e:
-    EVOLUTIONARY_AVAILABLE = False
-    print(f"Warning: Evolutionary optimization not available: {e}")
+# Removed evolutionary algorithms to simplify HPO
+EVOLUTIONARY_AVAILABLE = False
 
 # Time series specific validation
 try:
@@ -147,21 +140,17 @@ except ImportError as e:
     ParameterOptimizationConfig = None
     print(f"Warning: SR clustering components not available: {e}")
 
-# Enhanced optimization algorithms enum
+# Simplified optimization algorithms enum
 class OptimizationAlgorithm(Enum):
-    """Available optimization algorithms."""
+    """Available optimization algorithms - simplified to focus on core methods."""
     BAYESIAN_TPE = "bayesian_tpe"
-    VECTORBT_OPTIMIZATION = "vectorbt_optimization"
-    GENETIC_ALGORITHM = "genetic_algorithm"
-    PARTICLE_SWARM = "particle_swarm"
     GRID_SEARCH = "grid_search"
-    RANDOM_SEARCH = "random_search"
-    HYBRID = "hybrid"
+    VECTORBT_OPTIMIZATION = "vectorbt_optimization"
 
 @dataclass
 class EnhancedSRConfig:
-    """Enhanced configuration for SR parameter optimization."""
-    # Optimization settings
+    """Simplified configuration for SR parameter optimization focusing on Bayesian TPE + Grid Search."""
+    # Core optimization settings
     enable_bayesian_hpo: bool = True
     enable_vectorbt_optimization: bool = True
     enable_hardware_optimization: bool = True
@@ -169,17 +158,14 @@ class EnhancedSRConfig:
     enable_explainability: bool = True
     enable_time_series_validation: bool = True
     
-    # Algorithm selection
+    # Algorithm selection - simplified
     primary_algorithm: OptimizationAlgorithm = OptimizationAlgorithm.BAYESIAN_TPE
-    enable_hybrid_optimization: bool = True
     fallback_algorithms: List[OptimizationAlgorithm] = None
     
-    # Bayesian HPO settings
+    # Bayesian TPE settings - simplified
     n_trials: int = 100
-    enable_staged_optimization: bool = True
-    coarse_grid_points: int = 5
-    fine_grid_points: int = 5
-    tpe_trials: int = 50
+    enable_grid_search_fallback: bool = True
+    grid_search_points: int = 5  # 5x5 grid for 2D search space
     
     # VectorBT optimization settings
     enable_vectorbt_rolling: bool = True
@@ -213,8 +199,8 @@ class EnhancedSRConfig:
         """Initialize default fallback algorithms if not provided."""
         if self.fallback_algorithms is None:
             self.fallback_algorithms = [
-                OptimizationAlgorithm.VECTORBT_OPTIMIZATION,
-                OptimizationAlgorithm.GRID_SEARCH
+                OptimizationAlgorithm.GRID_SEARCH,
+                OptimizationAlgorithm.VECTORBT_OPTIMIZATION
             ]
 
 class SRParameterOptimizationStep(BaseStep):
@@ -297,15 +283,9 @@ class SRParameterOptimizationStep(BaseStep):
             self.shap_lime_explainer = None
             self.logger.warning("⚠️ SHAP/LIME explainability not available")
         
-        # Initialize evolutionary optimization algorithms
-        if EVOLUTIONARY_AVAILABLE:
-            self.genetic_optimizer = GeneticAlgorithmOptimizer()
-            self.particle_swarm_optimizer = ParticleSwarmOptimizer()
-            self.logger.info("✅ Evolutionary optimization algorithms initialized")
-        else:
-            self.genetic_optimizer = None
-            self.particle_swarm_optimizer = None
-            self.logger.warning("⚠️ Evolutionary optimization not available")
+        # Evolutionary algorithms removed to simplify HPO
+        self.genetic_optimizer = None
+        self.particle_swarm_optimizer = None
         
         # Initialize time series validation
         if TIME_SERIES_VALIDATION_AVAILABLE:
@@ -706,25 +686,27 @@ class SRParameterOptimizationStep(BaseStep):
             # Split data for optimization with temporal validation
             train_data, test_data = self._split_data_with_validation(market_data, enhanced_config)
             
-            # Run optimization using selected algorithm
+            # Run optimization using selected algorithm (Bayesian TPE or Grid Search)
             algorithm_result = await self._run_algorithm_optimization(
                 enhanced_config.primary_algorithm,
                 search_space, train_data, test_data, enhanced_config
             )
             optimization_result.update(algorithm_result)
             
-            # Run hybrid optimization if enabled and primary algorithm completed
-            if (enhanced_config.enable_hybrid_optimization and 
-                algorithm_result.get('success', False) and
-                enhanced_config.primary_algorithm != OptimizationAlgorithm.HYBRID):
-                self.logger.info("🔄 Running hybrid optimization refinement...")
-                hybrid_result = await self._run_hybrid_optimization(
-                    search_space, train_data, test_data, enhanced_config, algorithm_result
+            # Run grid search fallback if Bayesian TPE failed and fallback is enabled
+            if (enhanced_config.enable_grid_search_fallback and 
+                enhanced_config.primary_algorithm == OptimizationAlgorithm.BAYESIAN_TPE and
+                not algorithm_result.get('success', True)):
+                self.logger.info("🔄 Running grid search fallback...")
+                grid_result = await self._run_algorithm_optimization(
+                    OptimizationAlgorithm.GRID_SEARCH,
+                    search_space, train_data, test_data, enhanced_config
                 )
-                # Merge results, preferring hybrid if better
-                if hybrid_result.get('best_score', 0) > algorithm_result.get('best_score', 0):
-                    optimization_result.update(hybrid_result)
-                    optimization_result['hybrid_improvement'] = True
+                # Use grid search result if it's better or Bayesian TPE failed
+                if (grid_result.get('best_score', 0) > algorithm_result.get('best_score', 0) or
+                    not algorithm_result.get('success', True)):
+                    optimization_result.update(grid_result)
+                    optimization_result['grid_search_fallback_used'] = True
             
             # Apply hardware optimization if enabled
             if enhanced_config.enable_hardware_optimization and self.hardware_manager:
@@ -792,15 +774,15 @@ class SRParameterOptimizationStep(BaseStep):
         test_data: Any, 
         enhanced_config: EnhancedSRConfig
     ) -> Dict[str, Any]:
-        """Run Bayesian optimization for SR parameters."""
+        """Run simplified Bayesian TPE optimization for SR parameters."""
         try:
-            # Create optimization config
+            if not self.bayesian_optimizer:
+                raise RuntimeError("Bayesian optimizer not available")
+            
+            # Create simplified optimization config
             opt_config = OptimizationConfig(
                 n_trials=enhanced_config.n_trials,
-                enable_staged_optimization=enhanced_config.enable_staged_optimization,
-                coarse_grid_points=enhanced_config.coarse_grid_points,
-                fine_grid_points=enhanced_config.fine_grid_points,
-                tpe_trials=enhanced_config.tpe_trials,
+                enable_staged_optimization=False,  # Simplified - no staged optimization
                 enable_hardware_optimization=enhanced_config.enable_hardware_optimization,
                 workload_type=enhanced_config.workload_type,
                 optimization_level=enhanced_config.optimization_level
@@ -834,12 +816,13 @@ class SRParameterOptimizationStep(BaseStep):
                 'optimized_parameters': result.best_params,
                 'best_score': result.best_value,
                 'bayesian_trials': result.n_trials,
-                'bayesian_efficiency': result.efficiency_score if hasattr(result, 'efficiency_score') else 0.0
+                'algorithm_used': 'bayesian_tpe',
+                'success': True
             }
             
         except Exception as e:
             self.logger.error(f"Bayesian optimization failed: {e}")
-            return {'error': str(e)}
+            return {'error': str(e), 'success': False}
 
     async def _run_vectorbt_optimization(
         self, 
@@ -882,151 +865,32 @@ class SRParameterOptimizationStep(BaseStep):
             self.logger.error(f"VectorBT optimization failed: {e}")
             return {'error': str(e)}
 
-    async def _run_genetic_algorithm_optimization(
-        self,
-        search_space: Dict[str, Any],
-        train_data: Any,
-        test_data: Any,
-        enhanced_config: EnhancedSRConfig
-    ) -> Dict[str, Any]:
-        """Run genetic algorithm optimization for SR parameters."""
-        try:
-            if not self.genetic_optimizer:
-                raise RuntimeError("Genetic algorithm optimizer not available")
-            
-            # Define objective function for genetic algorithm
-            def objective_function(params_dict):
-                return self._evaluate_sr_parameters(params_dict, train_data, test_data)
-            
-            # Run genetic algorithm optimization
-            result = self.genetic_optimizer.optimize(
-                objective_function=objective_function,
-                search_space=search_space,
-                population_size=50,
-                generations=100,
-                mutation_rate=0.1,
-                crossover_rate=0.8
-            )
-            
-            return {
-                'optimized_parameters': result.best_params,
-                'best_score': result.best_fitness,
-                'total_combinations_tested': result.total_evaluations,
-                'algorithm_used': 'genetic_algorithm'
-            }
-            
-        except Exception as e:
-            self.logger.error(f"Genetic algorithm optimization failed: {e}")
-            return {'error': str(e)}
-
-    async def _run_particle_swarm_optimization(
-        self,
-        search_space: Dict[str, Any],
-        train_data: Any,
-        test_data: Any,
-        enhanced_config: EnhancedSRConfig
-    ) -> Dict[str, Any]:
-        """Run particle swarm optimization for SR parameters."""
-        try:
-            if not self.particle_swarm_optimizer:
-                raise RuntimeError("Particle swarm optimizer not available")
-            
-            # Define objective function for particle swarm
-            def objective_function(params_dict):
-                return self._evaluate_sr_parameters(params_dict, train_data, test_data)
-            
-            # Run particle swarm optimization
-            result = self.particle_swarm_optimizer.optimize(
-                objective_function=objective_function,
-                search_space=search_space,
-                swarm_size=30,
-                max_iterations=100,
-                inertia_weight=0.9,
-                cognitive_weight=2.0,
-                social_weight=2.0
-            )
-            
-            return {
-                'optimized_parameters': result.best_params,
-                'best_score': result.best_fitness,
-                'total_combinations_tested': result.total_evaluations,
-                'algorithm_used': 'particle_swarm'
-            }
-            
-        except Exception as e:
-            self.logger.error(f"Particle swarm optimization failed: {e}")
-            return {'error': str(e)}
-
-    async def _run_hybrid_optimization(
-        self,
-        search_space: Dict[str, Any],
-        train_data: Any,
-        test_data: Any,
-        enhanced_config: EnhancedSRConfig,
-        initial_result: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        """Run hybrid optimization combining multiple algorithms."""
-        try:
-            self.logger.info("🔄 Running hybrid optimization...")
-            
-            # Start with initial result if available
-            best_result = initial_result.copy() if initial_result else {}
-            best_score = best_result.get('best_score', 0.0)
-            
-            # Run multiple algorithms and combine results
-            algorithms_to_try = [
-                OptimizationAlgorithm.BAYESIAN_TPE,
-                OptimizationAlgorithm.VECTORBT_OPTIMIZATION,
-                OptimizationAlgorithm.GENETIC_ALGORITHM
-            ]
-            
-            for algorithm in algorithms_to_try:
-                try:
-                    self.logger.info(f"🔄 Trying {algorithm.value} in hybrid optimization...")
-                    result = await self._run_algorithm_optimization(
-                        algorithm, search_space, train_data, test_data, enhanced_config
-                    )
-                    
-                    if result.get('best_score', 0) > best_score:
-                        best_score = result.get('best_score', 0)
-                        best_result = result
-                        best_result['hybrid_algorithm'] = algorithm.value
-                        
-                except Exception as e:
-                    self.logger.warning(f"Algorithm {algorithm.value} failed in hybrid: {e}")
-                    continue
-            
-            # Add hybrid metadata
-            best_result['hybrid_optimization'] = True
-            best_result['algorithms_tried'] = [alg.value for alg in algorithms_to_try]
-            
-            return best_result
-            
-        except Exception as e:
-            self.logger.error(f"Hybrid optimization failed: {e}")
-            return {'error': str(e)}
-
-    async def _run_traditional_optimization(
+    async def _run_grid_search_optimization(
         self, 
         search_space: Dict[str, Any], 
         train_data: Any, 
         test_data: Any, 
         enhanced_config: EnhancedSRConfig
     ) -> Dict[str, Any]:
-        """Run traditional grid search optimization."""
+        """Run simplified grid search optimization for SR parameters."""
         try:
             best_score = 0.0
             best_params = {}
             total_combinations = 0
             
-            # Enhanced grid search with more comprehensive parameter ranges
-            min_touches_range = range(2, 8)
-            strength_thresholds = [0.3, 0.4, 0.5, 0.6, 0.7, 0.8]
-            distance_thresholds = [0.005, 0.01, 0.015, 0.02, 0.025]
-            lookback_periods = [30, 50, 75, 100, 150]
-            volume_thresholds = [0.8, 1.0, 1.2, 1.5, 2.0]
+            # Simplified grid search with configurable points
+            grid_points = enhanced_config.grid_search_points
             
-            for min_touches in min_touches_range:
+            # Create parameter grids
+            min_touches_values = list(range(2, 8))[:grid_points]
+            strength_thresholds = [0.3, 0.4, 0.5, 0.6, 0.7, 0.8][:grid_points]
+            distance_thresholds = [0.005, 0.01, 0.015, 0.02, 0.025][:grid_points]
+            lookback_periods = [30, 50, 75, 100, 150][:grid_points]
+            volume_thresholds = [0.8, 1.0, 1.2, 1.5, 2.0][:grid_points]
+            
+            self.logger.info(f"🔍 Running grid search with {grid_points}x{grid_points} grid...")
+            
+            for min_touches in min_touches_values:
                 for strength_threshold in strength_thresholds:
                     for distance_threshold in distance_thresholds:
                         for lookback_period in lookback_periods:
@@ -1046,16 +910,19 @@ class SRParameterOptimizationStep(BaseStep):
                                     best_score = score
                                     best_params = params
             
+            self.logger.info(f"✅ Grid search completed: {total_combinations} combinations tested")
+            
             return {
                 'optimized_parameters': best_params,
                 'best_score': best_score,
                 'total_combinations_tested': total_combinations,
-                'algorithm_used': 'grid_search'
+                'algorithm_used': 'grid_search',
+                'success': True
             }
             
         except Exception as e:
-            self.logger.error(f"Traditional optimization failed: {e}")
-            return {'error': str(e)}
+            self.logger.error(f"Grid search optimization failed: {e}")
+            return {'error': str(e), 'success': False}
 
     async def _run_algorithm_optimization(
         self,
@@ -1065,7 +932,7 @@ class SRParameterOptimizationStep(BaseStep):
         test_data: Any,
         enhanced_config: EnhancedSRConfig
     ) -> Dict[str, Any]:
-        """Run optimization using the specified algorithm."""
+        """Run optimization using the specified algorithm - simplified to Bayesian TPE, Grid Search, and VectorBT."""
         try:
             if algorithm == OptimizationAlgorithm.BAYESIAN_TPE:
                 return await self._run_bayesian_optimization(
@@ -1075,21 +942,14 @@ class SRParameterOptimizationStep(BaseStep):
                 return await self._run_vectorbt_optimization(
                     search_space, train_data, test_data, enhanced_config
                 )
-            elif algorithm == OptimizationAlgorithm.GENETIC_ALGORITHM:
-                return await self._run_genetic_algorithm_optimization(
+            elif algorithm == OptimizationAlgorithm.GRID_SEARCH:
+                return await self._run_grid_search_optimization(
                     search_space, train_data, test_data, enhanced_config
-                )
-            elif algorithm == OptimizationAlgorithm.PARTICLE_SWARM:
-                return await self._run_particle_swarm_optimization(
-                    search_space, train_data, test_data, enhanced_config
-                )
-            elif algorithm == OptimizationAlgorithm.HYBRID:
-                return await self._run_hybrid_optimization(
-                    search_space, train_data, test_data, enhanced_config, {}
                 )
             else:
-                # Fallback to traditional optimization
-                return await self._run_traditional_optimization(
+                # Fallback to grid search
+                self.logger.warning(f"Unknown algorithm {algorithm.value}, falling back to grid search")
+                return await self._run_grid_search_optimization(
                     search_space, train_data, test_data, enhanced_config
                 )
         except Exception as e:

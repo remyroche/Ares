@@ -267,11 +267,9 @@ class ValidatorOrchestrator:
             'step01_5_data_converter': 'step01_5_data_converter_validator',
             'step02_data_reading': 'step02_data_reading_validator',
             'step02_5_sr_optimization': 'step02_5_sr_optimization_validator',
-            'step04_regime_data_splitting': 'regime_data_splitting.validator',
             'step04_5_triple_barrier_method': 'step04_5_triple_barrier_method_validator',
             'step05_labeling': 'step05_labeling_validator',
             'step06_feature_engineering': 'step06_feature_engineering_validator',
-            'step08_regime_data_splitting': 'step08_regime_data_splitting_validator',
             # Simplified model training steps
             'analyst_model_training': 'analyst_model_training_validator',
             'tactician_model_training': 'tactician_model_training_validator',
@@ -295,7 +293,6 @@ class ValidatorOrchestrator:
             'step2_data_reading': 'step02_data_reading_validator',
             'step2_5_sr_optimization': 'step02_5_sr_optimization_validator',
             'step3_hmm_regime_discovery': 'step03_hmm_regime_discovery_validator',
-            'step8_regime_data_splitting': 'step08_regime_data_splitting_validator',
         }
         validator_module_name = validator_mapping.get(step_name)
         if not validator_module_name:

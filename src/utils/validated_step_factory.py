@@ -18,7 +18,7 @@ class ValidatedStepFactory:
         self.logger = system_logger.getChild('ValidatedStepFactory')
         self.standards = PipelineStandards(self.logger)
         self.validation_history = []
-        self.step_schemas = {'data_reading': 'unified', 'sr_optimization': 'unified', 'hmm_regime_discovery': 'unified', 'regime_data_splitting': 'unified', 'labeling': 'unified', 'feature_engineering': 'unified', 'matrix_operations': 'unified', 'feature_selection': 'unified', 'hmm_training': 'unified', 'regime_intelligence': 'unified', 'analyst_creation': 'unified', 'analyst_enhancement': 'unified', 'analyst_ensemble': 'unified', 'tactician_labeling': 'unified', 'tactician_training': 'unified', 'confidence_calibration': 'unified', 'parameter_optimization': 'unified', 'walk_forward_validation': 'unified', 'monte_carlo_validation': 'unified', 'ab_testing': 'unified', 'model_persistence': 'unified'}
+        self.step_schemas = {'data_reading': 'unified', 'sr_optimization': 'unified', 'hmm_regime_discovery': 'unified', 'labeling': 'unified', 'feature_engineering': 'unified', 'matrix_operations': 'unified', 'feature_selection': 'unified', 'hmm_training': 'unified', 'regime_intelligence': 'unified', 'analyst_creation': 'unified', 'analyst_enhancement': 'unified', 'analyst_ensemble': 'unified', 'tactician_labeling': 'unified', 'tactician_training': 'unified', 'confidence_calibration': 'unified', 'parameter_optimization': 'unified', 'walk_forward_validation': 'unified', 'monte_carlo_validation': 'unified', 'ab_testing': 'unified', 'model_persistence': 'unified'}
 
     def create_validated_step(self, step_class: Type, step_name: str, step_type: str = None) -> Type:
         """
@@ -123,10 +123,6 @@ class ValidatedStepFactory:
                 elif self.step_type == 'hmm_training':
                     if 'regime_labels' not in pipeline_state:
                         validation_result['warnings'].append('No regime labels found in pipeline state')
-                elif self.step_type == 'regime_data_splitting':
-                    if 'regime_discovery' not in pipeline_state:
-                        validation_result['passed'] = False
-                        validation_result['issues'].append('No regime discovery results found')
                 return validation_result
 
             def _apply_pipeline_standards_fixes(self, data: pd.DataFrame) -> pd.DataFrame:
@@ -170,7 +166,6 @@ class ValidatedStepFactory:
             'step02_data_reading': ('src.training.steps.data_collection.step02_data_reading', 'DataReadingStep'),
             'step02_5_sr_optimization': ('src.training.steps.market_analysis.sub_pipeline', 'MarketAnalysisSubPipeline'),
             'step2_5_sr_optimization': ('src.training.steps.market_analysis.sub_pipeline', 'MarketAnalysisSubPipeline'),
-            'step04_regime_data_splitting': ('src.training.steps.market_analysis.regime_data_splitting.main', 'RegimeDataSplittingStep'),
             'step05_labeling': ('src.training.steps.step5_labeling', 'LabelingStep'),
             'step06_advanced_feature_engineering': ('src.training.steps.data_collection.feature_generation.utils.step06_feature_engineering', 'FeatureEngineeringStep'),
             'step08_advanced_feature_selection': ('src.training.steps.data_collection.feature_generation.utils.step08_advanced_feature_selection', 'FeatureSelectionStep'),
@@ -215,8 +210,6 @@ class ValidatedStepFactory:
             return 'sr_optimization'
         elif 'hmm_regime_discovery' in step_name:
             return 'hmm_regime_discovery'
-        elif 'regime_data_splitting' in step_name:
-            return 'regime_data_splitting'
         elif 'labeling' in step_name:
             return 'labeling'
         elif 'feature_engineering' in step_name:

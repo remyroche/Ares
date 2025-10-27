@@ -176,7 +176,6 @@ class StepOrchestratorWrapper:
         mapping = {
             # Legacy -> Current
             "step2_market_regime_classification": "step2_processing_labeling_feature_engineering",
-            "step3_regime_data_splitting": "step4_regime_data_splitting",
             "step4_analyst_labeling_feature_engineering": "step2_processing_labeling_feature_engineering",
         }
 

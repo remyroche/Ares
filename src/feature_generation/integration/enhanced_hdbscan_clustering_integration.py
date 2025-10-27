@@ -13,6 +13,14 @@ from typing import Dict, List, Optional, Tuple, Any
 import numpy as np
 import pandas as pd
 
+# Import tprint utilities for comprehensive logging
+from src.utils.tprint import (
+    tprint, tprint_info, tprint_success, tprint_warning, tprint_error, 
+    tprint_debug, tprint_performance, tprint_progress, tprint_structured,
+    tprint_data_preview, tprint_data_format, tprint_feature_counts,
+    tprint_timer, tprint_logged
+)
+
 # Import feature bank integration
 from .feature_bank_integration import (
     FeatureBankIntegrator, FeatureBankConfig, FeatureBankCategory,
@@ -58,6 +66,8 @@ class EnhancedHDBSCANClusteringIntegration:
                  pca_components: int = 15,
                  pca_variance_threshold: float = 0.95,
                  clustering_config: Optional[Dict[str, Any]] = None):
+        tprint_info("🚀 Initializing Enhanced HDBSCAN Clustering Integration")
+        
         self.min_features = min_features
         self.max_features = max_features
         self.enable_comprehensive_features = enable_comprehensive_features
@@ -66,8 +76,20 @@ class EnhancedHDBSCANClusteringIntegration:
         self.pca_variance_threshold = pca_variance_threshold
         self.clustering_config = clustering_config or {}
         
+        # Log configuration
+        tprint_structured({
+            "min_features": min_features,
+            "max_features": max_features,
+            "enable_comprehensive_features": enable_comprehensive_features,
+            "enable_pca_reduction": enable_pca_reduction,
+            "pca_components": pca_components,
+            "pca_variance_threshold": pca_variance_threshold
+        }, level="INFO")
+        
         # Initialize feature bank integrator
         if self.enable_comprehensive_features:
+            tprint_info("🔧 Configuring Feature Bank Integrator for HDBSCAN clustering")
+            
             # Configure for HDBSCAN clustering
             config = FeatureBankConfig()
             config.hdbscan_min_features = min_features
@@ -80,8 +102,16 @@ class EnhancedHDBSCANClusteringIntegration:
                 FeatureBankCategory.VOLATILITY: 0.15, # Volatility clustering
                 FeatureBankCategory.MOMENTUM: 0.1     # Momentum patterns
             }
+            
+            tprint_structured({
+                "feature_weights": config.hdbscan_weights,
+                "target_range": (min_features, max_features)
+            }, level="INFO")
+            
             self.feature_integrator = FeatureBankIntegrator(config)
+            tprint_success("✅ Feature Bank Integrator initialized")
         else:
+            tprint_warning("⚠️ Comprehensive features disabled - using basic clustering features")
             self.feature_integrator = None
     
     def get_comprehensive_clustering_features(self, data: pd.DataFrame) -> Dict[str, Any]:
@@ -94,24 +124,51 @@ class EnhancedHDBSCANClusteringIntegration:
         Returns:
             Dictionary containing comprehensive features and metadata
         """
-        if self.enable_comprehensive_features:
-            # Use comprehensive feature bank integration
-            result = self.feature_integrator.get_comprehensive_features_for_task(
-                'hdbscan_clustering', data
-            )
-            
-            # Add clustering-specific metadata
-            result.update({
-                'clustering_optimized': True,
-                'comprehensive_features': True,
-                'feature_categories': self._get_feature_category_breakdown(result['features']),
-                'clustering_readiness': self._assess_clustering_readiness(result['features'])
-            })
-            
-            return result
-        else:
-            # Fallback to basic clustering features
-            return self._get_basic_clustering_features(data)
+        tprint_info("🔍 Generating comprehensive clustering features")
+        tprint_data_preview(data, "Input Market Data", max_rows=3, max_cols=8)
+        
+        with tprint_timer("Feature Generation", level="PERFORMANCE"):
+            if self.enable_comprehensive_features:
+                tprint_info("📊 Using comprehensive feature bank integration")
+                
+                # Use comprehensive feature bank integration
+                result = self.feature_integrator.get_comprehensive_features_for_task(
+                    'hdbscan_clustering', data
+                )
+                
+                tprint_info(f"✅ Generated {len(result.get('feature_names', []))} features")
+                
+                # Add clustering-specific metadata
+                feature_categories = self._get_feature_category_breakdown(result['features'])
+                clustering_readiness = self._assess_clustering_readiness(result['features'])
+                
+                result.update({
+                    'clustering_optimized': True,
+                    'comprehensive_features': True,
+                    'feature_categories': feature_categories,
+                    'clustering_readiness': clustering_readiness
+                })
+                
+                # Log feature breakdown
+                tprint_structured({
+                    "feature_categories": feature_categories,
+                    "clustering_readiness": clustering_readiness
+                }, level="INFO")
+                
+                # Preview generated features
+                if result.get('features'):
+                    tprint_data_preview(
+                        pd.DataFrame(result['features']), 
+                        "Generated Features", 
+                        max_rows=2, 
+                        max_cols=5
+                    )
+                
+                return result
+            else:
+                tprint_warning("⚠️ Using basic clustering features (comprehensive disabled)")
+                # Fallback to basic clustering features
+                return self._get_basic_clustering_features(data)
     
     def _get_basic_clustering_features(self, data: pd.DataFrame) -> Dict[str, Any]:
         """Fallback to basic clustering features if comprehensive features are disabled."""
@@ -215,61 +272,106 @@ class EnhancedHDBSCANClusteringIntegration:
         Returns:
             Tuple of (feature_matrix, feature_names, metadata)
         """
-        # Get comprehensive features
-        feature_result = self.get_comprehensive_clustering_features(data)
-        features = feature_result['features']
-        feature_names = feature_result['feature_names']
+        tprint_info("🔧 Preparing data for HDBSCAN clustering")
+        tprint_info(f"📊 Pipeline: Feature Generation → Feature Selection ({self.min_features}-{self.max_features}) → PCA ({self.pca_components}) → HDBSCAN")
         
-        if not features:
-            # Return empty arrays if no features
-            return np.array([]).reshape(len(data), 0), [], feature_result
-        
-        # Convert to numpy array
-        feature_matrix = np.column_stack([features[name] for name in feature_names])
-        
-        # Handle NaN values
-        feature_matrix = np.nan_to_num(feature_matrix, nan=0.0, posinf=1e6, neginf=-1e6)
-        
-        # Standardize features for clustering
-        scaler = None
-        if SKLEARN_AVAILABLE:
-            scaler = StandardScaler()
-            feature_matrix = scaler.fit_transform(feature_matrix)
-        
-        # Apply PCA reduction if enabled
-        pca = None
-        original_shape = feature_matrix.shape
-        if self.enable_pca_reduction and SKLEARN_AVAILABLE and feature_matrix.shape[1] > self.pca_components:
-            # Determine PCA components based on variance threshold or fixed number
-            if self.pca_variance_threshold < 1.0:
-                # Use variance threshold
-                pca = PCA(n_components=self.pca_variance_threshold)
+        with tprint_timer("Data Preparation", level="PERFORMANCE"):
+            # Get comprehensive features
+            feature_result = self.get_comprehensive_clustering_features(data)
+            features = feature_result['features']
+            feature_names = feature_result['feature_names']
+            
+            tprint_info(f"📈 Generated {len(feature_names)} features from {len(features)} feature arrays")
+            
+            if not features:
+                tprint_warning("⚠️ No features generated - returning empty arrays")
+                return np.array([]).reshape(len(data), 0), [], feature_result
+            
+            # Convert to numpy array
+            tprint_info("🔄 Converting features to numpy array")
+            feature_matrix = np.column_stack([features[name] for name in feature_names])
+            tprint_data_format(feature_matrix, "Feature Matrix", check_compatibility=True)
+            
+            # Handle NaN values
+            tprint_info("🧹 Handling NaN values")
+            nan_count_before = np.isnan(feature_matrix).sum()
+            feature_matrix = np.nan_to_num(feature_matrix, nan=0.0, posinf=1e6, neginf=-1e6)
+            nan_count_after = np.isnan(feature_matrix).sum()
+            
+            if nan_count_before > 0:
+                tprint_info(f"✅ Replaced {nan_count_before} NaN values with 0.0")
+            
+            # Standardize features for clustering
+            scaler = None
+            if SKLEARN_AVAILABLE:
+                tprint_info("📏 Standardizing features for clustering")
+                scaler = StandardScaler()
+                feature_matrix = scaler.fit_transform(feature_matrix)
+                tprint_success("✅ Features standardized")
             else:
-                # Use fixed number of components
-                pca = PCA(n_components=min(self.pca_components, feature_matrix.shape[1]))
+                tprint_warning("⚠️ Scikit-learn not available - skipping standardization")
             
-            # Apply PCA
-            feature_matrix = pca.fit_transform(feature_matrix)
+            # Apply PCA reduction if enabled
+            pca = None
+            original_shape = feature_matrix.shape
             
-            # Update feature names for PCA components
-            feature_names = [f'pca_component_{i+1}' for i in range(feature_matrix.shape[1])]
-        
-        # Add preprocessing metadata
-        metadata = feature_result.copy()
-        metadata.update({
-            'preprocessing': {
-                'scaled': SKLEARN_AVAILABLE,
-                'nan_handled': True,
-                'original_shape': original_shape,
-                'final_shape': feature_matrix.shape,
-                'pca_applied': pca is not None,
-                'pca_components': feature_matrix.shape[1] if pca is not None else original_shape[1],
-                'pca_explained_variance_ratio': pca.explained_variance_ratio_.tolist() if pca is not None else None,
-                'pca_cumulative_variance': np.cumsum(pca.explained_variance_ratio_).tolist() if pca is not None else None
-            }
-        })
-        
-        return feature_matrix, feature_names, metadata
+            if self.enable_pca_reduction and SKLEARN_AVAILABLE and feature_matrix.shape[1] > self.pca_components:
+                tprint_info(f"🔬 Applying PCA reduction: {original_shape[1]} → {self.pca_components} components")
+                
+                # Determine PCA components based on variance threshold or fixed number
+                if self.pca_variance_threshold < 1.0:
+                    tprint_info(f"📊 Using variance threshold: {self.pca_variance_threshold}")
+                    pca = PCA(n_components=self.pca_variance_threshold)
+                else:
+                    tprint_info(f"📊 Using fixed components: {self.pca_components}")
+                    pca = PCA(n_components=min(self.pca_components, feature_matrix.shape[1]))
+                
+                # Apply PCA
+                feature_matrix = pca.fit_transform(feature_matrix)
+                
+                # Log PCA results
+                explained_variance = pca.explained_variance_ratio_
+                cumulative_variance = np.cumsum(explained_variance)
+                
+                tprint_structured({
+                    "original_components": original_shape[1],
+                    "pca_components": feature_matrix.shape[1],
+                    "explained_variance_ratio": explained_variance.tolist(),
+                    "cumulative_variance": cumulative_variance.tolist(),
+                    "variance_retained": cumulative_variance[-1]
+                }, level="INFO")
+                
+                # Update feature names for PCA components
+                feature_names = [f'pca_component_{i+1}' for i in range(feature_matrix.shape[1])]
+                tprint_success(f"✅ PCA reduction completed: {original_shape[1]} → {feature_matrix.shape[1]} components")
+            else:
+                if not self.enable_pca_reduction:
+                    tprint_info("⏭️ PCA reduction disabled")
+                elif not SKLEARN_AVAILABLE:
+                    tprint_warning("⚠️ Scikit-learn not available - skipping PCA")
+                else:
+                    tprint_info(f"⏭️ Skipping PCA: {feature_matrix.shape[1]} features ≤ {self.pca_components} components")
+            
+            # Add preprocessing metadata
+            metadata = feature_result.copy()
+            metadata.update({
+                'preprocessing': {
+                    'scaled': SKLEARN_AVAILABLE,
+                    'nan_handled': True,
+                    'original_shape': original_shape,
+                    'final_shape': feature_matrix.shape,
+                    'pca_applied': pca is not None,
+                    'pca_components': feature_matrix.shape[1] if pca is not None else original_shape[1],
+                    'pca_explained_variance_ratio': pca.explained_variance_ratio_.tolist() if pca is not None else None,
+                    'pca_cumulative_variance': np.cumsum(pca.explained_variance_ratio_).tolist() if pca is not None else None
+                }
+            })
+            
+            # Final data preview
+            tprint_data_preview(feature_matrix, "Final Feature Matrix", max_rows=3, max_cols=8)
+            tprint_success(f"✅ Data preparation completed: {original_shape} → {feature_matrix.shape}")
+            
+            return feature_matrix, feature_names, metadata
     
     def cluster_with_enhanced_hdbscan(self, data: pd.DataFrame, 
                                     min_cluster_size: int = 5,
@@ -289,31 +391,72 @@ class EnhancedHDBSCANClusteringIntegration:
         Returns:
             Dictionary containing clustering results
         """
+        tprint_info("🎯 Starting Enhanced HDBSCAN Clustering")
+        
         if not HDBSCAN_AVAILABLE:
+            tprint_error("❌ HDBSCAN not available. Install with: pip install hdbscan")
             raise ImportError("HDBSCAN not available. Install with: pip install hdbscan")
         
-        # Prepare data
-        feature_matrix, feature_names, metadata = self.prepare_data_for_clustering(data)
+        # Log clustering parameters
+        tprint_structured({
+            "min_cluster_size": min_cluster_size,
+            "min_samples": min_samples,
+            "cluster_selection_epsilon": cluster_selection_epsilon,
+            "metric": metric
+        }, level="INFO")
         
-        if feature_matrix.size == 0:
-            raise ValueError("No features available for clustering")
-        
-        # Perform HDBSCAN clustering
-        clusterer = hdbscan.HDBSCAN(
-            min_cluster_size=min_cluster_size,
-            min_samples=min_samples,
-            cluster_selection_epsilon=cluster_selection_epsilon,
-            metric=metric
-        )
-        
-        cluster_labels = clusterer.fit_predict(feature_matrix)
-        
-        # Calculate clustering metrics
-        n_clusters = len(set(cluster_labels)) - (1 if -1 in cluster_labels else 0)
-        n_noise = list(cluster_labels).count(-1)
-        
-        # Calculate quality metrics
-        quality_metrics = self._calculate_clustering_quality(feature_matrix, cluster_labels)
+        with tprint_timer("HDBSCAN Clustering", level="PERFORMANCE"):
+            # Prepare data
+            tprint_info("📊 Preparing data for clustering")
+            feature_matrix, feature_names, metadata = self.prepare_data_for_clustering(data)
+            
+            if feature_matrix.size == 0:
+                tprint_error("❌ No features available for clustering")
+                raise ValueError("No features available for clustering")
+            
+            tprint_info(f"📈 Feature matrix shape: {feature_matrix.shape}")
+            
+            # Perform HDBSCAN clustering
+            tprint_info("🔄 Performing HDBSCAN clustering")
+            clusterer = hdbscan.HDBSCAN(
+                min_cluster_size=min_cluster_size,
+                min_samples=min_samples,
+                cluster_selection_epsilon=cluster_selection_epsilon,
+                metric=metric
+            )
+            
+            cluster_labels = clusterer.fit_predict(feature_matrix)
+            tprint_success("✅ HDBSCAN clustering completed")
+            
+            # Calculate clustering metrics
+            tprint_info("📊 Calculating clustering metrics")
+            n_clusters = len(set(cluster_labels)) - (1 if -1 in cluster_labels else 0)
+            n_noise = list(cluster_labels).count(-1)
+            noise_ratio = n_noise / len(cluster_labels) if len(cluster_labels) > 0 else 0
+            
+            # Log clustering results
+            tprint_structured({
+                "n_clusters": n_clusters,
+                "n_noise": n_noise,
+                "noise_ratio": noise_ratio,
+                "total_samples": len(cluster_labels)
+            }, level="INFO")
+            
+            # Preview clustering results
+            unique_labels, counts = np.unique(cluster_labels, return_counts=True)
+            tprint_info("📊 Cluster distribution:")
+            for label, count in zip(unique_labels, counts):
+                if label == -1:
+                    tprint_info(f"   Noise: {count} samples ({count/len(cluster_labels)*100:.1f}%)")
+                else:
+                    tprint_info(f"   Cluster {label}: {count} samples ({count/len(cluster_labels)*100:.1f}%)")
+            
+            # Calculate quality metrics
+            tprint_info("🔍 Calculating clustering quality metrics")
+            quality_metrics = self._calculate_clustering_quality(feature_matrix, cluster_labels)
+            
+            tprint_structured(quality_metrics, level="INFO")
+            tprint_success(f"🎉 Clustering completed successfully: {n_clusters} clusters, {n_noise} noise points")
         
         return {
             'cluster_labels': cluster_labels,
@@ -334,7 +477,10 @@ class EnhancedHDBSCANClusteringIntegration:
     
     def _calculate_clustering_quality(self, feature_matrix: np.ndarray, cluster_labels: np.ndarray) -> Dict[str, Any]:
         """Calculate comprehensive clustering quality metrics."""
+        tprint_debug("🔍 Calculating clustering quality metrics")
+        
         if not SKLEARN_AVAILABLE:
+            tprint_warning("⚠️ Scikit-learn not available - returning basic metrics")
             return {'silhouette_score': 0.0, 'calinski_harabasz_score': 0.0, 'davies_bouldin_score': 0.0}
         
         metrics = {}
@@ -343,6 +489,8 @@ class EnhancedHDBSCANClusteringIntegration:
         n_clusters = len(set(cluster_labels)) - (1 if -1 in cluster_labels else 0)
         n_noise = list(cluster_labels).count(-1)
         total_samples = len(cluster_labels)
+        
+        tprint_debug(f"📊 Basic stats: {n_clusters} clusters, {n_noise} noise, {total_samples} total samples")
         
         metrics['basic_stats'] = {
             'n_clusters': n_clusters,
@@ -353,15 +501,19 @@ class EnhancedHDBSCANClusteringIntegration:
         
         # Clustering quality scores
         if n_clusters > 1 and -1 not in cluster_labels:
+            tprint_debug("📊 Calculating quality scores (no noise points)")
             try:
                 metrics['silhouette_score'] = silhouette_score(feature_matrix, cluster_labels)
                 metrics['calinski_harabasz_score'] = calinski_harabasz_score(feature_matrix, cluster_labels)
                 metrics['davies_bouldin_score'] = davies_bouldin_score(feature_matrix, cluster_labels)
-            except:
+                tprint_debug(f"✅ Quality scores calculated: silhouette={metrics['silhouette_score']:.4f}")
+            except Exception as e:
+                tprint_warning(f"⚠️ Error calculating quality scores: {e}")
                 metrics['silhouette_score'] = 0.0
                 metrics['calinski_harabasz_score'] = 0.0
                 metrics['davies_bouldin_score'] = 0.0
         else:
+            tprint_debug("⚠️ Cannot calculate quality scores: insufficient clusters or noise present")
             metrics['silhouette_score'] = 0.0
             metrics['calinski_harabasz_score'] = 0.0
             metrics['davies_bouldin_score'] = 0.0
@@ -377,6 +529,7 @@ class EnhancedHDBSCANClusteringIntegration:
         else:
             quality = 'poor'
         
+        tprint_debug(f"📊 Overall quality assessment: {quality} (silhouette={silhouette:.4f})")
         metrics['overall_quality'] = quality
         
         return metrics
@@ -393,12 +546,17 @@ class EnhancedHDBSCANClusteringIntegration:
         Returns:
             Dictionary containing cluster analysis
         """
+        tprint_info("🔍 Analyzing cluster characteristics")
+        
         cluster_labels = clustering_result['cluster_labels']
         feature_names = clustering_result['feature_names']
         feature_matrix = clustering_result['feature_matrix']
         
+        tprint_data_preview(feature_matrix, "Feature Matrix for Analysis", max_rows=2, max_cols=5)
+        
         # Get unique clusters (excluding noise)
         unique_clusters = [c for c in set(cluster_labels) if c != -1]
+        tprint_info(f"📊 Analyzing {len(unique_clusters)} clusters (excluding noise)")
         
         analysis = {
             'n_clusters': len(unique_clusters),
@@ -495,13 +653,25 @@ def get_enhanced_hdbscan_features(data: pd.DataFrame,
                                 enable_pca_reduction: bool = True,
                                 pca_components: int = 15) -> Dict[str, Any]:
     """Get enhanced comprehensive features for HDBSCAN clustering with PCA optimization."""
+    tprint_info("🚀 Getting Enhanced HDBSCAN Features (Convenience Function)")
+    tprint_structured({
+        "min_features": min_features,
+        "max_features": max_features,
+        "enable_pca_reduction": enable_pca_reduction,
+        "pca_components": pca_components
+    }, level="INFO")
+    
     integrator = EnhancedHDBSCANClusteringIntegration(
         min_features=min_features,
         max_features=max_features,
         enable_pca_reduction=enable_pca_reduction,
         pca_components=pca_components
     )
-    return integrator.get_comprehensive_clustering_features(data)
+    
+    result = integrator.get_comprehensive_clustering_features(data)
+    tprint_success(f"✅ Enhanced HDBSCAN features generated: {len(result.get('feature_names', []))} features")
+    
+    return result
 
 
 def perform_enhanced_hdbscan_clustering(data: pd.DataFrame, 
@@ -511,13 +681,26 @@ def perform_enhanced_hdbscan_clustering(data: pd.DataFrame,
                                       pca_components: int = 15,
                                       **kwargs) -> Dict[str, Any]:
     """Perform enhanced HDBSCAN clustering with comprehensive features and PCA optimization."""
+    tprint_info("🎯 Performing Enhanced HDBSCAN Clustering (Convenience Function)")
+    tprint_structured({
+        "min_features": min_features,
+        "max_features": max_features,
+        "enable_pca_reduction": enable_pca_reduction,
+        "pca_components": pca_components,
+        "clustering_params": kwargs
+    }, level="INFO")
+    
     integrator = EnhancedHDBSCANClusteringIntegration(
         min_features=min_features,
         max_features=max_features,
         enable_pca_reduction=enable_pca_reduction,
         pca_components=pca_components
     )
-    return integrator.cluster_with_enhanced_hdbscan(data, **kwargs)
+    
+    result = integrator.cluster_with_enhanced_hdbscan(data, **kwargs)
+    tprint_success(f"✅ Enhanced HDBSCAN clustering completed: {result.get('n_clusters', 0)} clusters")
+    
+    return result
 
 
 __all__ = [

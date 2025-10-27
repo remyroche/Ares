@@ -22,6 +22,14 @@ from enum import Enum
 import numpy as np
 import pandas as pd
 
+# Import tprint utilities for comprehensive logging
+from src.utils.tprint import (
+    tprint, tprint_info, tprint_success, tprint_warning, tprint_error, 
+    tprint_debug, tprint_performance, tprint_progress, tprint_structured,
+    tprint_data_preview, tprint_data_format, tprint_feature_counts,
+    tprint_timer, tprint_logged
+)
+
 # Import existing feature generators
 from ..categories.volume import (
     VolumeFeatureGenerator, VolumeSMAGenerator, VolumeEMAGenerator,
@@ -153,8 +161,17 @@ class FeatureBankIntegrator:
     """
     
     def __init__(self, config: Optional[FeatureBankConfig] = None):
+        tprint_info("🏦 Initializing Feature Bank Integrator")
+        
         self.config = config or FeatureBankConfig()
+        tprint_structured({
+            "hdbscan_min_features": self.config.hdbscan_min_features,
+            "hdbscan_max_features": self.config.hdbscan_max_features,
+            "hdbscan_weights": self.config.hdbscan_weights
+        }, level="INFO")
+        
         self.feature_generators = self._initialize_feature_generators()
+        tprint_success(f"✅ Feature Bank Integrator initialized with {len(self.feature_generators)} generators")
         self.task_integrator = FeatureTaskIntegrator()
     
     def _initialize_feature_generators(self) -> Dict[FeatureBankCategory, List[Any]]:
@@ -238,26 +255,44 @@ class FeatureBankIntegrator:
         Returns:
             Dictionary containing comprehensive features and metadata
         """
-        # Get task-specific configuration
-        task_config = self._get_task_config(task)
+        tprint_info(f"🔍 Getting comprehensive features for task: {task.value}")
+        tprint_data_preview(data, "Input Market Data", max_rows=3, max_cols=8)
         
-        # Generate features from each category
-        all_features = {}
-        feature_metadata = {}
-        
-        for category, generators in self.feature_generators.items():
-            if category in task_config['weights']:
-                weight = task_config['weights'][category]
-                category_features = self._generate_category_features(
-                    category, generators, data, weight, task_config
-                )
-                all_features.update(category_features['features'])
-                feature_metadata[category.value] = category_features['metadata']
-        
-        # Select optimal features for the task
-        selected_features = self._select_optimal_features(
-            all_features, task, task_config
-        )
+        with tprint_timer("Comprehensive Feature Generation", level="PERFORMANCE"):
+            # Get task-specific configuration
+            tprint_info("⚙️ Getting task-specific configuration")
+            task_config = self._get_task_config(task)
+            tprint_structured(task_config, level="DEBUG")
+            
+            # Generate features from each category
+            all_features = {}
+            feature_metadata = {}
+            
+            tprint_info(f"📊 Processing {len(task_config['weights'])} weighted categories")
+            
+            for category, generators in self.feature_generators.items():
+                if category in task_config['weights']:
+                    weight = task_config['weights'][category]
+                    tprint_info(f"🔄 Generating {category.value} features (weight: {weight}, {len(generators)} generators)")
+                    
+                    category_features = self._generate_category_features(
+                        category, generators, data, weight, task_config
+                    )
+                    
+                    tprint_info(f"✅ {category.value}: {len(category_features['features'])} features generated")
+                    
+                    all_features.update(category_features['features'])
+                    feature_metadata[category.value] = category_features['metadata']
+                else:
+                    tprint_debug(f"⏭️ Skipping {category.value} (not weighted for {task.value})")
+            
+            tprint_success(f"✅ Generated {len(all_features)} total features across {len(feature_metadata)} categories")
+            
+            # Select optimal features for the task
+            tprint_info("🎯 Selecting optimal features for task")
+            selected_features = self._select_optimal_features(
+                all_features, task, task_config
+            )
         
         return {
             'features': selected_features['features'],
@@ -302,25 +337,37 @@ class FeatureBankIntegrator:
     def _generate_category_features(self, category: FeatureBankCategory, generators: List[Any], 
                                  data: pd.DataFrame, weight: float, task_config: Dict[str, Any]) -> Dict[str, Any]:
         """Generate features for a specific category."""
+        tprint_debug(f"🔄 Generating {category.value} features (weight: {weight})")
+        
         category_features = {}
         successful_generators = 0
         failed_generators = 0
         
-        for generator in generators:
+        for i, generator in enumerate(generators):
+            tprint_debug(f"   Generator {i+1}/{len(generators)}: {generator.__class__.__name__}")
             try:
                 # Generate features using the generator
                 if hasattr(generator, 'generate_features'):
                     features = generator.generate_features(data)
                     category_features.update(features)
                     successful_generators += 1
+                    tprint_debug(f"   ✅ Generated {len(features)} features via generate_features()")
                 elif hasattr(generator, 'generate'):
                     features = generator.generate(data)
                     if isinstance(features, dict):
                         category_features.update(features)
-                    successful_generators += 1
+                        successful_generators += 1
+                        tprint_debug(f"   ✅ Generated {len(features)} features via generate()")
+                    else:
+                        tprint_debug(f"   ⚠️ Generator returned non-dict: {type(features)}")
+                else:
+                    tprint_warning(f"   ⚠️ Generator has no generate_features or generate method")
             except Exception as e:
                 failed_generators += 1
+                tprint_warning(f"   ❌ Failed to generate features from {generator.__class__.__name__}: {e}")
                 warnings.warn(f"Failed to generate features from {generator.__class__.__name__}: {e}")
+        
+        tprint_debug(f"✅ {category.value}: {len(category_features)} features, {successful_generators} successful, {failed_generators} failed")
         
         return {
             'features': category_features,

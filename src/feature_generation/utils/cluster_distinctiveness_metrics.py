@@ -1,0 +1,499 @@
+"""
+Cluster Distinctiveness Metrics for Feature Selection
+
+This module provides comprehensive metrics to evaluate how well features
+separate clusters in regime clustering tasks. It implements various
+statistical measures to assess feature quality for clustering.
+
+Key Metrics:
+- F-ratio: Between-cluster variance vs within-cluster variance
+- Silhouette-based feature importance
+- Cluster separation strength
+- Inter-cluster distance measures
+- Cluster compactness metrics
+"""
+
+import numpy as np
+import pandas as pd
+from typing import Dict, List, Tuple, Optional, Any
+from dataclasses import dataclass
+import warnings
+
+try:
+    from sklearn.metrics import silhouette_score, calinski_harabasz_score, davies_bouldin_score
+    from sklearn.preprocessing import StandardScaler
+    SKLEARN_AVAILABLE = True
+except ImportError:
+    SKLEARN_AVAILABLE = False
+    warnings.warn("Scikit-learn not available. Some metrics will be disabled.")
+
+
+@dataclass
+class ClusterDistinctivenessConfig:
+    """Configuration for cluster distinctiveness metrics."""
+    
+    # Minimum cluster size for valid calculations
+    min_cluster_size: int = 3
+    
+    # Minimum number of clusters for valid calculations
+    min_clusters: int = 2
+    
+    # Noise label (typically -1 for DBSCAN)
+    noise_label: int = -1
+    
+    # Enable advanced metrics (requires scikit-learn)
+    enable_advanced_metrics: bool = True
+    
+    # Scaling for feature values before calculation
+    enable_scaling: bool = True
+    
+    # Minimum variance threshold for feature validity
+    min_variance_threshold: float = 1e-8
+
+
+class ClusterDistinctivenessCalculator:
+    """
+    Calculator for cluster distinctiveness metrics.
+    
+    This class provides various metrics to evaluate how well individual
+    features or feature combinations separate clusters in regime clustering.
+    """
+    
+    def __init__(self, config: Optional[ClusterDistinctivenessConfig] = None):
+        self.config = config or ClusterDistinctivenessConfig()
+        self.scaler = StandardScaler() if self.config.enable_scaling else None
+    
+    def calculate_feature_distinctiveness(self, 
+                                        features: Dict[str, np.ndarray], 
+                                        cluster_labels: np.ndarray) -> Dict[str, Dict[str, float]]:
+        """
+        Calculate distinctiveness metrics for each feature.
+        
+        Args:
+            features: Dictionary of feature names to feature values
+            cluster_labels: Cluster labels for each sample
+            
+        Returns:
+            Dictionary mapping feature names to their distinctiveness metrics
+        """
+        if not features or len(cluster_labels) == 0:
+            return {}
+        
+        # Validate cluster labels
+        unique_clusters = [c for c in set(cluster_labels) if c != self.config.noise_label]
+        if len(unique_clusters) < self.config.min_clusters:
+            warnings.warn(f"Insufficient clusters for distinctiveness calculation: {len(unique_clusters)}")
+            return {}
+        
+        results = {}
+        
+        for feature_name, feature_values in features.items():
+            try:
+                # Validate feature
+                if not self._validate_feature(feature_values):
+                    results[feature_name] = self._get_zero_metrics()
+                    continue
+                
+                # Calculate distinctiveness metrics
+                metrics = self._calculate_single_feature_distinctiveness(
+                    feature_values, cluster_labels
+                )
+                results[feature_name] = metrics
+                
+            except Exception as e:
+                warnings.warn(f"Failed to calculate distinctiveness for {feature_name}: {e}")
+                results[feature_name] = self._get_zero_metrics()
+        
+        return results
+    
+    def _calculate_single_feature_distinctiveness(self, 
+                                                feature_values: np.ndarray, 
+                                                cluster_labels: np.ndarray) -> Dict[str, float]:
+        """Calculate distinctiveness metrics for a single feature."""
+        metrics = {}
+        
+        # Basic F-ratio
+        metrics['f_ratio'] = self._calculate_f_ratio(feature_values, cluster_labels)
+        
+        # Cluster separation strength
+        metrics['separation_strength'] = self._calculate_separation_strength(
+            feature_values, cluster_labels
+        )
+        
+        # Inter-cluster distance
+        metrics['inter_cluster_distance'] = self._calculate_inter_cluster_distance(
+            feature_values, cluster_labels
+        )
+        
+        # Cluster compactness
+        metrics['cluster_compactness'] = self._calculate_cluster_compactness(
+            feature_values, cluster_labels
+        )
+        
+        # Advanced metrics (if sklearn available)
+        if SKLEARN_AVAILABLE and self.config.enable_advanced_metrics:
+            metrics.update(self._calculate_advanced_metrics(feature_values, cluster_labels))
+        
+        # Combined distinctiveness score
+        metrics['combined_score'] = self._calculate_combined_score(metrics)
+        
+        return metrics
+    
+    def _calculate_f_ratio(self, feature_values: np.ndarray, cluster_labels: np.ndarray) -> float:
+        """Calculate F-ratio (between-cluster variance / within-cluster variance)."""
+        unique_clusters = [c for c in set(cluster_labels) if c != self.config.noise_label]
+        
+        if len(unique_clusters) < 2:
+            return 0.0
+        
+        # Calculate cluster statistics
+        cluster_means = []
+        cluster_sizes = []
+        cluster_values = []
+        
+        for cluster_id in unique_clusters:
+            cluster_mask = cluster_labels == cluster_id
+            cluster_vals = feature_values[cluster_mask]
+            
+            if len(cluster_vals) >= self.config.min_cluster_size:
+                cluster_means.append(np.mean(cluster_vals))
+                cluster_sizes.append(len(cluster_vals))
+                cluster_values.append(cluster_vals)
+        
+        if len(cluster_means) < 2:
+            return 0.0
+        
+        # Overall mean
+        overall_mean = np.mean(feature_values)
+        
+        # Between-cluster variance
+        between_var = sum(size * (mean - overall_mean)**2 
+                         for mean, size in zip(cluster_means, cluster_sizes))
+        
+        # Within-cluster variance
+        within_var = 0
+        for i, cluster_id in enumerate(unique_clusters):
+            if i < len(cluster_values):
+                cluster_mean = cluster_means[i]
+                within_var += np.sum((cluster_values[i] - cluster_mean)**2)
+        
+        # F-ratio
+        if within_var > 0:
+            f_ratio = between_var / within_var
+        else:
+            f_ratio = 0.0
+        
+        return float(f_ratio)
+    
+    def _calculate_separation_strength(self, feature_values: np.ndarray, 
+                                     cluster_labels: np.ndarray) -> float:
+        """Calculate cluster separation strength."""
+        unique_clusters = [c for c in set(cluster_labels) if c != self.config.noise_label]
+        
+        if len(unique_clusters) < 2:
+            return 0.0
+        
+        # Calculate cluster means
+        cluster_means = []
+        for cluster_id in unique_clusters:
+            cluster_mask = cluster_labels == cluster_id
+            cluster_vals = feature_values[cluster_mask]
+            
+            if len(cluster_vals) >= self.config.min_cluster_size:
+                cluster_means.append(np.mean(cluster_vals))
+        
+        if len(cluster_means) < 2:
+            return 0.0
+        
+        # Calculate separation as ratio of inter-cluster distance to intra-cluster spread
+        inter_cluster_dist = np.std(cluster_means)
+        
+        # Calculate average intra-cluster spread
+        intra_cluster_spreads = []
+        for cluster_id in unique_clusters:
+            cluster_mask = cluster_labels == cluster_id
+            cluster_vals = feature_values[cluster_mask]
+            
+            if len(cluster_vals) >= self.config.min_cluster_size:
+                intra_cluster_spreads.append(np.std(cluster_vals))
+        
+        if not intra_cluster_spreads:
+            return 0.0
+        
+        avg_intra_cluster_spread = np.mean(intra_cluster_spreads)
+        
+        # Separation strength
+        if avg_intra_cluster_spread > 0:
+            separation_strength = inter_cluster_dist / avg_intra_cluster_spread
+        else:
+            separation_strength = 0.0
+        
+        return float(separation_strength)
+    
+    def _calculate_inter_cluster_distance(self, feature_values: np.ndarray, 
+                                        cluster_labels: np.ndarray) -> float:
+        """Calculate average inter-cluster distance."""
+        unique_clusters = [c for c in set(cluster_labels) if c != self.config.noise_label]
+        
+        if len(unique_clusters) < 2:
+            return 0.0
+        
+        # Calculate cluster means
+        cluster_means = []
+        for cluster_id in unique_clusters:
+            cluster_mask = cluster_labels == cluster_id
+            cluster_vals = feature_values[cluster_mask]
+            
+            if len(cluster_vals) >= self.config.min_cluster_size:
+                cluster_means.append(np.mean(cluster_vals))
+        
+        if len(cluster_means) < 2:
+            return 0.0
+        
+        # Calculate pairwise distances between cluster means
+        distances = []
+        for i in range(len(cluster_means)):
+            for j in range(i + 1, len(cluster_means)):
+                distances.append(abs(cluster_means[i] - cluster_means[j]))
+        
+        return float(np.mean(distances)) if distances else 0.0
+    
+    def _calculate_cluster_compactness(self, feature_values: np.ndarray, 
+                                     cluster_labels: np.ndarray) -> float:
+        """Calculate cluster compactness (inverse of average intra-cluster spread)."""
+        unique_clusters = [c for c in set(cluster_labels) if c != self.config.noise_label]
+        
+        if not unique_clusters:
+            return 0.0
+        
+        # Calculate intra-cluster spreads
+        intra_cluster_spreads = []
+        for cluster_id in unique_clusters:
+            cluster_mask = cluster_labels == cluster_id
+            cluster_vals = feature_values[cluster_mask]
+            
+            if len(cluster_vals) >= self.config.min_cluster_size:
+                intra_cluster_spreads.append(np.std(cluster_vals))
+        
+        if not intra_cluster_spreads:
+            return 0.0
+        
+        # Compactness is inverse of average spread
+        avg_spread = np.mean(intra_cluster_spreads)
+        compactness = 1.0 / (1.0 + avg_spread) if avg_spread > 0 else 0.0
+        
+        return float(compactness)
+    
+    def _calculate_advanced_metrics(self, feature_values: np.ndarray, 
+                                  cluster_labels: np.ndarray) -> Dict[str, float]:
+        """Calculate advanced metrics using scikit-learn."""
+        if not SKLEARN_AVAILABLE:
+            return {}
+        
+        unique_clusters = [c for c in set(cluster_labels) if c != self.config.noise_label]
+        
+        if len(unique_clusters) < 2:
+            return {}
+        
+        # Filter out noise points
+        valid_mask = cluster_labels != self.config.noise_label
+        valid_values = feature_values[valid_mask]
+        valid_labels = cluster_labels[valid_mask]
+        
+        if len(valid_values) < 4:  # Need at least 4 points for silhouette
+            return {}
+        
+        # Scale values if enabled
+        if self.scaler is not None:
+            try:
+                valid_values_scaled = self.scaler.fit_transform(valid_values.reshape(-1, 1)).flatten()
+            except:
+                valid_values_scaled = valid_values
+        else:
+            valid_values_scaled = valid_values
+        
+        metrics = {}
+        
+        try:
+            # Silhouette score
+            if len(set(valid_labels)) > 1:
+                metrics['silhouette_score'] = silhouette_score(
+                    valid_values_scaled.reshape(-1, 1), valid_labels
+                )
+            else:
+                metrics['silhouette_score'] = 0.0
+        except:
+            metrics['silhouette_score'] = 0.0
+        
+        try:
+            # Calinski-Harabasz score
+            if len(set(valid_labels)) > 1:
+                metrics['calinski_harabasz_score'] = calinski_harabasz_score(
+                    valid_values_scaled.reshape(-1, 1), valid_labels
+                )
+            else:
+                metrics['calinski_harabasz_score'] = 0.0
+        except:
+            metrics['calinski_harabasz_score'] = 0.0
+        
+        try:
+            # Davies-Bouldin score (lower is better, so we invert it)
+            if len(set(valid_labels)) > 1:
+                db_score = davies_bouldin_score(
+                    valid_values_scaled.reshape(-1, 1), valid_labels
+                )
+                metrics['davies_bouldin_score'] = 1.0 / (1.0 + db_score)  # Invert for higher = better
+            else:
+                metrics['davies_bouldin_score'] = 0.0
+        except:
+            metrics['davies_bouldin_score'] = 0.0
+        
+        return metrics
+    
+    def _calculate_combined_score(self, metrics: Dict[str, float]) -> float:
+        """Calculate combined distinctiveness score from individual metrics."""
+        # Weights for different metrics
+        weights = {
+            'f_ratio': 0.3,
+            'separation_strength': 0.25,
+            'inter_cluster_distance': 0.15,
+            'cluster_compactness': 0.15,
+            'silhouette_score': 0.1,
+            'calinski_harabasz_score': 0.05
+        }
+        
+        combined_score = 0.0
+        total_weight = 0.0
+        
+        for metric_name, weight in weights.items():
+            if metric_name in metrics:
+                # Normalize scores to 0-1 range
+                normalized_score = min(1.0, max(0.0, metrics[metric_name]))
+                combined_score += weight * normalized_score
+                total_weight += weight
+        
+        # Normalize by total weight
+        if total_weight > 0:
+            combined_score /= total_weight
+        
+        return float(combined_score)
+    
+    def _validate_feature(self, feature_values: np.ndarray) -> bool:
+        """Validate feature for distinctiveness calculation."""
+        # Check for sufficient data
+        if len(feature_values) == 0:
+            return False
+        
+        # Check for sufficient variance
+        if np.var(feature_values) < self.config.min_variance_threshold:
+            return False
+        
+        # Check for excessive NaN values
+        nan_ratio = np.isnan(feature_values).sum() / len(feature_values)
+        if nan_ratio > 0.5:
+            return False
+        
+        # Check for constant values
+        if len(np.unique(feature_values)) < 3:
+            return False
+        
+        return True
+    
+    def _get_zero_metrics(self) -> Dict[str, float]:
+        """Return zero metrics for invalid features."""
+        return {
+            'f_ratio': 0.0,
+            'separation_strength': 0.0,
+            'inter_cluster_distance': 0.0,
+            'cluster_compactness': 0.0,
+            'silhouette_score': 0.0,
+            'calinski_harabasz_score': 0.0,
+            'davies_bouldin_score': 0.0,
+            'combined_score': 0.0
+        }
+    
+    def rank_features_by_distinctiveness(self, 
+                                       features: Dict[str, np.ndarray], 
+                                       cluster_labels: np.ndarray) -> List[Tuple[str, float]]:
+        """
+        Rank features by their distinctiveness score.
+        
+        Args:
+            features: Dictionary of feature names to feature values
+            cluster_labels: Cluster labels for each sample
+            
+        Returns:
+            List of (feature_name, distinctiveness_score) tuples, sorted by score
+        """
+        distinctiveness_metrics = self.calculate_feature_distinctiveness(features, cluster_labels)
+        
+        # Extract combined scores
+        feature_scores = []
+        for feature_name, metrics in distinctiveness_metrics.items():
+            score = metrics.get('combined_score', 0.0)
+            feature_scores.append((feature_name, score))
+        
+        # Sort by score (descending)
+        feature_scores.sort(key=lambda x: x[1], reverse=True)
+        
+        return feature_scores
+    
+    def get_top_distinctive_features(self, 
+                                   features: Dict[str, np.ndarray], 
+                                   cluster_labels: np.ndarray, 
+                                   n_features: int) -> Dict[str, np.ndarray]:
+        """
+        Get top N most distinctive features.
+        
+        Args:
+            features: Dictionary of feature names to feature values
+            cluster_labels: Cluster labels for each sample
+            n_features: Number of top features to return
+            
+        Returns:
+            Dictionary of top distinctive features
+        """
+        ranked_features = self.rank_features_by_distinctiveness(features, cluster_labels)
+        
+        # Select top N features
+        top_features = {}
+        for feature_name, _ in ranked_features[:n_features]:
+            if feature_name in features:
+                top_features[feature_name] = features[feature_name]
+        
+        return top_features
+
+
+# Convenience functions
+def calculate_cluster_distinctiveness(features: Dict[str, np.ndarray], 
+                                    cluster_labels: np.ndarray,
+                                    config: Optional[ClusterDistinctivenessConfig] = None) -> Dict[str, Dict[str, float]]:
+    """Calculate cluster distinctiveness metrics for features."""
+    calculator = ClusterDistinctivenessCalculator(config)
+    return calculator.calculate_feature_distinctiveness(features, cluster_labels)
+
+
+def rank_features_by_cluster_distinctiveness(features: Dict[str, np.ndarray], 
+                                           cluster_labels: np.ndarray,
+                                           config: Optional[ClusterDistinctivenessConfig] = None) -> List[Tuple[str, float]]:
+    """Rank features by cluster distinctiveness."""
+    calculator = ClusterDistinctivenessCalculator(config)
+    return calculator.rank_features_by_distinctiveness(features, cluster_labels)
+
+
+def get_top_distinctive_features(features: Dict[str, np.ndarray], 
+                               cluster_labels: np.ndarray, 
+                               n_features: int,
+                               config: Optional[ClusterDistinctivenessConfig] = None) -> Dict[str, np.ndarray]:
+    """Get top N most distinctive features."""
+    calculator = ClusterDistinctivenessCalculator(config)
+    return calculator.get_top_distinctive_features(features, cluster_labels, n_features)
+
+
+__all__ = [
+    'ClusterDistinctivenessCalculator',
+    'ClusterDistinctivenessConfig',
+    'calculate_cluster_distinctiveness',
+    'rank_features_by_cluster_distinctiveness',
+    'get_top_distinctive_features'
+]

@@ -1,0 +1,11 @@
+{
+  "test": true,
+  "step_name": "test_sr_detection",
+  "data_type": "sr_levels",
+  "artifact_name": "test_sr_levels",
+  "artifact_type": "data",
+  "file_path": "artifacts/market_analysis/long/Analyst/test_sr_detection/test_sr_detection_test_sr_levels_long_Analyst_20251027_102950.parquet",
+  "file_size": 2861,
+  "timestamp": "2025-10-27T10:29:50.938507",
+  "compression": "auto"
+}

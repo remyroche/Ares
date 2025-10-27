@@ -28,7 +28,8 @@ from pathlib import Path
 from dataclasses import dataclass, field
 import warnings
 from sklearn.metrics import silhouette_score, calinski_harabasz_score, davies_bouldin_score
-from sklearn.cluster import SpectralClustering, GaussianMixture
+from sklearn.cluster import SpectralClustering
+from sklearn.mixture import GaussianMixture
 from sklearn.preprocessing import StandardScaler, RobustScaler
 from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE

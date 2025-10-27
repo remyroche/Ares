@@ -295,6 +295,7 @@ class RegimeClusteringStep(BaseStep):
     def _refine_hdbscan_clusters(self, hdbscan_artifacts: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
         """
         Refine HDBSCAN clusters using economic validation and temporal stabilization.
+        Falls back to iterative optimization if quality targets are not met.
         
         Args:
             hdbscan_artifacts: HDBSCAN regime discovery artifacts
@@ -323,7 +324,7 @@ class RegimeClusteringStep(BaseStep):
             
             tprint(f"📊 Processing {len(regime_labels)} regime labels", "INFO")
             
-            # Apply refinement logic
+            # Apply initial refinement logic
             refined_labels = self._apply_temporal_stabilization(regime_labels, config)
             refined_labels = self._apply_economic_validation(refined_labels, hdbscan_artifacts, config)
             refined_labels = self._merge_similar_clusters(refined_labels, config)
@@ -342,14 +343,48 @@ class RegimeClusteringStep(BaseStep):
             non_noise_labels = unique_labels[noise_mask]
             n_clusters = len(non_noise_labels)
             
-            tprint(f"🔧 Refined clusters: {n_clusters} clusters (from {len(np.unique(regime_labels))} original)", "INFO")
+            tprint(f"🔧 Initial refinement: {n_clusters} clusters (from {len(np.unique(regime_labels))} original)", "INFO")
+            
+            # Check if we meet quality targets
+            quality_targets = self._check_quality_targets(refined_labels, hdbscan_artifacts, config)
+            
+            if quality_targets['meets_targets']:
+                tprint("✅ Quality targets met with initial refinement", "SUCCESS")
+                clustering_method = 'hdbscan_refined'
+            else:
+                tprint("⚠️ Quality targets not met, attempting iterative optimization fallback", "WARNING")
+                tprint(f"📊 Quality issues: {quality_targets['issues']}", "INFO")
+                
+                # Try iterative optimization as fallback
+                iterative_result = self._run_iterative_optimization_fallback(
+                    hdbscan_artifacts, refined_labels, config
+                )
+                
+                if iterative_result is not None:
+                    refined_labels = iterative_result
+                    clustering_method = 'hdbscan_iterative_optimized'
+                    
+                    # Recalculate cluster count
+                    unique_labels = np.unique(refined_labels)
+                    if hasattr(unique_labels, 'values'):
+                        unique_labels = unique_labels.values
+                    unique_labels = np.array(unique_labels)
+                    noise_mask = unique_labels != -1
+                    non_noise_labels = unique_labels[noise_mask]
+                    n_clusters = len(non_noise_labels)
+                    
+                    tprint(f"🔧 Iterative optimization: {n_clusters} clusters", "INFO")
+                else:
+                    tprint("⚠️ Iterative optimization failed, using initial refinement", "WARNING")
+                    clustering_method = 'hdbscan_refined_fallback'
             
             return {
                 'refined_labels': refined_labels,
                 'original_labels': regime_labels,
                 'n_clusters': n_clusters,
-                'clustering_method': 'hdbscan_refined',
+                'clustering_method': clustering_method,
                 'refinement_applied': True,
+                'quality_targets': quality_targets,
                 'metadata': {
                     'symbol': config.get('symbol'),
                     'exchange': config.get('exchange', 'binance'),
@@ -938,8 +973,48 @@ class RegimeClusteringStep(BaseStep):
 - **Clustering Method**: {metrics.get('clustering_method', 'hdbscan_refined')}
 - **Refinement Applied**: {metrics.get('refinement_applied', True)}
 
-## Cluster Analysis
+## Quality Assessment
+- **Meets Targets**: {refined_clusters.get('quality_targets', {}).get('meets_targets', 'Unknown')}
+- **Cluster Count**: {refined_clusters.get('quality_targets', {}).get('n_clusters', 'Unknown')}
+- **Issues**: {', '.join(refined_clusters.get('quality_targets', {}).get('issues', ['None']))}
+
+### Quality Metrics
 """
+            
+            # Add quality metrics if available
+            quality_targets = refined_clusters.get('quality_targets', {})
+            if quality_targets:
+                metrics = quality_targets.get('metrics', {})
+                targets = quality_targets.get('targets', {})
+                
+                report_content += f"\n| Metric | Value | Target | Status |\n"
+                report_content += f"|--------|-------|--------|--------|\n"
+                
+                # CV Score
+                cv_score = metrics.get('cv_score')
+                cv_target = targets.get('min_cv_score', 0.3)
+                cv_status = "✅" if cv_score and cv_score >= cv_target else "❌"
+                report_content += f"| CV Score | {cv_score:.3f if cv_score else 'N/A'} | ≥{cv_target} | {cv_status} |\n"
+                
+                # Silhouette Score
+                sil_score = metrics.get('silhouette_score')
+                sil_target = targets.get('min_silhouette_score', 0.2)
+                sil_status = "✅" if sil_score and sil_score >= sil_target else "❌"
+                report_content += f"| Silhouette | {sil_score:.3f if sil_score else 'N/A'} | ≥{sil_target} | {sil_status} |\n"
+                
+                # DBI Score
+                dbi_score = metrics.get('dbi_score')
+                dbi_target = targets.get('min_dbi_score', 0.5)
+                dbi_status = "✅" if dbi_score and dbi_score <= dbi_target else "❌"
+                report_content += f"| DBI Score | {dbi_score:.3f if dbi_score else 'N/A'} | ≤{dbi_target} | {dbi_status} |\n"
+                
+                # Temporal Smoothness
+                temp_smooth = metrics.get('temporal_smoothness')
+                temp_target = targets.get('min_temporal_smoothness', 0.6)
+                temp_status = "✅" if temp_smooth and temp_smooth >= temp_target else "❌"
+                report_content += f"| Temporal Smoothness | {temp_smooth:.3f if temp_smooth else 'N/A'} | ≥{temp_target} | {temp_status} |\n"
+            
+            report_content += f"\n## Cluster Analysis\n"
             
             # Add cluster details if available
             if 'refined_labels' in refined_clusters:
@@ -1111,6 +1186,274 @@ class RegimeClusteringStep(BaseStep):
         except Exception as e:
             tprint(f"⚠️ Failed to apply stability validation: {e}", "WARNING")
             return labels
+
+    def _check_quality_targets(self, labels: np.ndarray, hdbscan_artifacts: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Check if clustering results meet quality targets.
+        
+        Targets:
+        - 4-8 clusters
+        - Minimum CV score
+        - Minimum Silhouette score  
+        - Minimum DBI score
+        - Minimum temporal smoothness
+        
+        Args:
+            labels: Cluster labels
+            hdbscan_artifacts: HDBSCAN artifacts
+            config: Configuration dictionary
+            
+        Returns:
+            Dictionary with quality assessment results
+        """
+        try:
+            # Get quality thresholds from config
+            min_clusters = config.get('min_clusters', 4)
+            max_clusters = config.get('max_clusters', 8)
+            min_cv_score = config.get('min_cv_score', 0.3)
+            min_silhouette_score = config.get('min_silhouette_score', 0.2)
+            min_dbi_score = config.get('min_dbi_score', 0.5)  # Lower is better for DBI
+            min_temporal_smoothness = config.get('min_temporal_smoothness', 0.6)
+            
+            # Calculate cluster count
+            unique_labels = np.unique(labels)
+            non_noise_labels = unique_labels[unique_labels != -1]
+            n_clusters = len(non_noise_labels)
+            
+            issues = []
+            meets_targets = True
+            
+            # Check cluster count target
+            if n_clusters < min_clusters:
+                issues.append(f"Too few clusters: {n_clusters} < {min_clusters}")
+                meets_targets = False
+            elif n_clusters > max_clusters:
+                issues.append(f"Too many clusters: {n_clusters} > {max_clusters}")
+                meets_targets = False
+            
+            # Calculate quality metrics if we have features
+            features = hdbscan_artifacts.get('features')
+            if features is not None and len(features) > 0:
+                try:
+                    # Calculate CV score (if available)
+                    cv_score = self._calculate_cv_score(features, labels)
+                    if cv_score is not None and cv_score < min_cv_score:
+                        issues.append(f"Low CV score: {cv_score:.3f} < {min_cv_score}")
+                        meets_targets = False
+                    
+                    # Calculate Silhouette score
+                    silhouette_score = self._calculate_silhouette_score(features, labels)
+                    if silhouette_score is not None and silhouette_score < min_silhouette_score:
+                        issues.append(f"Low Silhouette score: {silhouette_score:.3f} < {min_silhouette_score}")
+                        meets_targets = False
+                    
+                    # Calculate DBI score
+                    dbi_score = self._calculate_dbi_score(features, labels)
+                    if dbi_score is not None and dbi_score > min_dbi_score:  # Higher is worse for DBI
+                        issues.append(f"High DBI score: {dbi_score:.3f} > {min_dbi_score}")
+                        meets_targets = False
+                    
+                except Exception as e:
+                    tprint(f"⚠️ Failed to calculate quality metrics: {e}", "WARNING")
+                    issues.append("Quality metrics calculation failed")
+                    meets_targets = False
+            
+            # Calculate temporal smoothness
+            temporal_smoothness = self._calculate_temporal_smoothness(labels)
+            if temporal_smoothness < min_temporal_smoothness:
+                issues.append(f"Low temporal smoothness: {temporal_smoothness:.3f} < {min_temporal_smoothness}")
+                meets_targets = False
+            
+            return {
+                'meets_targets': meets_targets,
+                'n_clusters': n_clusters,
+                'issues': issues,
+                'metrics': {
+                    'cv_score': cv_score if 'cv_score' in locals() else None,
+                    'silhouette_score': silhouette_score if 'silhouette_score' in locals() else None,
+                    'dbi_score': dbi_score if 'dbi_score' in locals() else None,
+                    'temporal_smoothness': temporal_smoothness
+                },
+                'targets': {
+                    'min_clusters': min_clusters,
+                    'max_clusters': max_clusters,
+                    'min_cv_score': min_cv_score,
+                    'min_silhouette_score': min_silhouette_score,
+                    'min_dbi_score': min_dbi_score,
+                    'min_temporal_smoothness': min_temporal_smoothness
+                }
+            }
+            
+        except Exception as e:
+            tprint(f"⚠️ Failed to check quality targets: {e}", "WARNING")
+            return {
+                'meets_targets': False,
+                'n_clusters': 0,
+                'issues': [f"Quality check failed: {e}"],
+                'metrics': {},
+                'targets': {}
+            }
+
+    def _calculate_cv_score(self, features: np.ndarray, labels: np.ndarray) -> Optional[float]:
+        """Calculate Calinski-Harabasz (CV) score."""
+        try:
+            from sklearn.metrics import calinski_harabasz_score
+            non_noise_mask = labels != -1
+            if np.sum(non_noise_mask) < 2:
+                return None
+            return calinski_harabasz_score(features[non_noise_mask], labels[non_noise_mask])
+        except Exception:
+            return None
+
+    def _calculate_silhouette_score(self, features: np.ndarray, labels: np.ndarray) -> Optional[float]:
+        """Calculate Silhouette score."""
+        try:
+            from sklearn.metrics import silhouette_score
+            non_noise_mask = labels != -1
+            if np.sum(non_noise_mask) < 2:
+                return None
+            return silhouette_score(features[non_noise_mask], labels[non_noise_mask])
+        except Exception:
+            return None
+
+    def _calculate_dbi_score(self, features: np.ndarray, labels: np.ndarray) -> Optional[float]:
+        """Calculate Davies-Bouldin Index (DBI) score."""
+        try:
+            from sklearn.metrics import davies_bouldin_score
+            non_noise_mask = labels != -1
+            if np.sum(non_noise_mask) < 2:
+                return None
+            return davies_bouldin_score(features[non_noise_mask], labels[non_noise_mask])
+        except Exception:
+            return None
+
+    def _calculate_temporal_smoothness(self, labels: np.ndarray) -> float:
+        """Calculate temporal smoothness score."""
+        try:
+            if len(labels) < 2:
+                return 0.0
+            
+            # Calculate the ratio of consecutive identical labels
+            changes = np.sum(labels[1:] != labels[:-1])
+            total_pairs = len(labels) - 1
+            smoothness = 1.0 - (changes / total_pairs)
+            
+            return smoothness
+        except Exception:
+            return 0.0
+
+    def _run_iterative_optimization_fallback(self, hdbscan_artifacts: Dict[str, Any], initial_labels: np.ndarray, config: Dict[str, Any]) -> Optional[np.ndarray]:
+        """
+        Run iterative optimization as fallback when quality targets are not met.
+        
+        Args:
+            hdbscan_artifacts: HDBSCAN artifacts
+            initial_labels: Initial cluster labels
+            config: Configuration dictionary
+            
+        Returns:
+            Optimized cluster labels or None if optimization fails
+        """
+        try:
+            if not ITERATIVE_OPTIMIZATION_AVAILABLE:
+                tprint("⚠️ IterativeOptimization not available for fallback", "WARNING")
+                return None
+            
+            tprint("🔄 Starting iterative optimization fallback...", "INFO")
+            
+            # Get features from artifacts
+            features = hdbscan_artifacts.get('features')
+            if features is None:
+                tprint("⚠️ No features available for iterative optimization", "WARNING")
+                return None
+            
+            # Create clustering context for iterative optimization
+            context = self._create_clustering_context_for_iterative_optimization(
+                features, initial_labels, config
+            )
+            
+            # Configure iterative optimization
+            iterative_config = {
+                'max_iterations': config.get('iterative_max_iterations', 25),
+                'convergence_threshold': config.get('iterative_convergence_threshold', 0.001),
+                'enable_risk_mitigation': config.get('iterative_enable_risk_mitigation', True),
+                'min_clusters': config.get('min_clusters', 4),
+                'max_clusters': config.get('max_clusters', 8)
+            }
+            
+            # Run iterative optimization
+            optimizer = IterativeOptimization(verbose=True)
+            
+            # Use asyncio to run the async method
+            import asyncio
+            try:
+                loop = asyncio.get_event_loop()
+            except RuntimeError:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+            
+            optimized_context = loop.run_until_complete(
+                optimizer.execute_optimization_loop(
+                    context, iterative_config, 
+                    max_iterations=iterative_config['max_iterations'],
+                    enable_risk_mitigation=iterative_config['enable_risk_mitigation']
+                )
+            )
+            
+            # Extract optimized labels
+            optimized_labels = optimized_context.assignments
+            
+            tprint(f"✅ Iterative optimization completed: {len(np.unique(optimized_labels))} clusters", "SUCCESS")
+            
+            return optimized_labels
+            
+        except Exception as e:
+            tprint(f"⚠️ Iterative optimization fallback failed: {e}", "WARNING")
+            return None
+
+    def _create_clustering_context_for_iterative_optimization(self, features: np.ndarray, labels: np.ndarray, config: Dict[str, Any]) -> Any:
+        """
+        Create clustering context for iterative optimization.
+        
+        Args:
+            features: Feature matrix
+            labels: Initial cluster labels
+            config: Configuration dictionary
+            
+        Returns:
+            ClusteringContext object
+        """
+        try:
+            # Import the ClusteringContext class
+            from src.training.steps.market_analysis.clusters.step1_feature_preparation import ClusteringContext
+            
+            # Create context with required attributes
+            context = ClusteringContext()
+            context.features = features
+            context.assignments = labels
+            context.optimal_k = len(np.unique(labels[labels != -1]))
+            context.n_samples = len(features)
+            context.n_features = features.shape[1] if len(features.shape) > 1 else 1
+            
+            # Add any additional context attributes that might be needed
+            context.symbol = config.get('symbol', 'UNKNOWN')
+            context.exchange = config.get('exchange', 'binance')
+            context.timeframe = config.get('timeframe', '1h')
+            
+            return context
+            
+        except Exception as e:
+            tprint(f"⚠️ Failed to create clustering context: {e}", "WARNING")
+            # Return a minimal context if the full context creation fails
+            class MinimalContext:
+                def __init__(self, features, labels):
+                    self.features = features
+                    self.assignments = labels
+                    self.optimal_k = len(np.unique(labels[labels != -1]))
+                    self.n_samples = len(features)
+                    self.n_features = features.shape[1] if len(features.shape) > 1 else 1
+            
+            return MinimalContext(features, labels)
 
     def _validate_initialization(self) -> None:
         """Validate that the step is properly initialized."""

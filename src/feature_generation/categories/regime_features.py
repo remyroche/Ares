@@ -4909,6 +4909,504 @@ class AnalystRegimeStabilityGenerator(VectorizedFeatureGenerator):
         return stability_series
 
 
+class RegimeMicrostructureGenerator(VectorizedFeatureGenerator):
+    """
+    Regime Microstructure Feature Generator.
+    
+    Generates microstructure-based features for regime detection and clustering.
+    Focuses on order flow, spread dynamics, and market structure changes.
+    """
+    
+    def __init__(self):
+        base_config = FeatureConfig(
+            name="regime_microstructure",
+            category=FeatureCategory.REGIME,
+            description="Microstructure features for regime detection",
+            required_columns=["close"],
+            optional_columns=["high", "low", "open", "volume"],
+            default_lookback=20,
+            min_lookback=5,
+            max_lookback=50,
+            parameters={},
+            matrix_optimized=True,
+            gpu_accelerated=False
+        )
+        super().__init__(base_config, enable_matrix_ops=True)
+
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate microstructure regime features."""
+        features = self.generate_features(data)
+        
+        # Return a composite microstructure regime score
+        if features:
+            # Combine multiple microstructure features into a single score
+            microstructure_score = np.mean(list(features.values()), axis=0)
+            return pd.Series(microstructure_score, index=data.index, name=self.config.name)
+        else:
+            return pd.Series(0.5, index=data.index, name=self.config.name)
+
+    def generate_features(self, data: pd.DataFrame, **kwargs) -> Dict[str, np.ndarray]:
+        """Generate comprehensive microstructure regime features."""
+        features = {}
+        
+        if len(data) < self.config.min_lookback:
+            return features
+            
+        # Price impact features
+        features.update(self._generate_price_impact_features(data))
+        
+        # Spread dynamics features
+        features.update(self._generate_spread_dynamics_features(data))
+        
+        # Volume profile features
+        features.update(self._generate_volume_profile_features(data))
+        
+        # Market structure features
+        features.update(self._generate_market_structure_features(data))
+        
+        return features
+
+    def _generate_price_impact_features(self, data: pd.DataFrame) -> Dict[str, np.ndarray]:
+        """Generate price impact regime features."""
+        features = {}
+        
+        if 'volume' in data.columns and 'close' in data.columns:
+            # Price impact per unit volume
+            returns = data['close'].pct_change().fillna(0)
+            volume = data['volume'].replace(0, 1)  # Avoid division by zero
+            
+            # Rolling price impact
+            for window in [5, 10, 20]:
+                price_impact = returns.rolling(window).std() / volume.rolling(window).mean()
+                features[f'price_impact_{window}'] = price_impact.fillna(0).values
+                
+                # Price impact regime persistence
+                price_impact_ma = price_impact.rolling(window).mean()
+                price_impact_std = price_impact.rolling(window).std()
+                persistence = (price_impact_ma / (price_impact_std + 1e-8)).fillna(0)
+                features[f'price_impact_persistence_{window}'] = persistence.values
+        
+        return features
+
+    def _generate_spread_dynamics_features(self, data: pd.DataFrame) -> Dict[str, np.ndarray]:
+        """Generate spread dynamics regime features."""
+        features = {}
+        
+        if all(col in data.columns for col in ['high', 'low', 'close']):
+            # Effective spread proxy using high-low range
+            spread = (data['high'] - data['low']) / data['close']
+            
+            for window in [5, 10, 20]:
+                # Spread regime characteristics
+                spread_ma = spread.rolling(window).mean()
+                spread_std = spread.rolling(window).std()
+                
+                # Spread regime strength
+                spread_strength = spread_ma / (spread_std + 1e-8)
+                features[f'spread_regime_strength_{window}'] = spread_strength.fillna(0).values
+                
+                # Spread regime persistence
+                spread_changes = spread.diff().abs()
+                spread_persistence = 1 - (spread_changes.rolling(window).mean() / (spread_ma + 1e-8))
+                features[f'spread_regime_persistence_{window}'] = spread_persistence.fillna(0).values
+                
+                # Spread regime clustering
+                spread_zscore = (spread - spread_ma) / (spread_std + 1e-8)
+                spread_clustering = spread_zscore.rolling(window).apply(
+                    lambda x: np.sum(np.abs(x) > 1) / len(x), raw=True
+                )
+                features[f'spread_regime_clustering_{window}'] = spread_clustering.fillna(0).values
+        
+        return features
+
+    def _generate_volume_profile_features(self, data: pd.DataFrame) -> Dict[str, np.ndarray]:
+        """Generate volume profile regime features."""
+        features = {}
+        
+        if 'volume' in data.columns and 'close' in data.columns:
+            volume = data['volume']
+            price = data['close']
+            
+            for window in [5, 10, 20]:
+                # Volume-weighted price regime
+                vwap = (price * volume).rolling(window).sum() / volume.rolling(window).sum()
+                price_vwap_ratio = price / vwap
+                
+                # Volume regime strength
+                volume_ma = volume.rolling(window).mean()
+                volume_std = volume.rolling(window).std()
+                volume_regime_strength = volume_ma / (volume_std + 1e-8)
+                features[f'volume_regime_strength_{window}'] = volume_regime_strength.fillna(0).values
+                
+                # Volume-price divergence regime
+                price_change = price.pct_change()
+                volume_change = volume.pct_change()
+                volume_price_corr = price_change.rolling(window).corr(volume_change)
+                features[f'volume_price_divergence_{window}'] = (1 - volume_price_corr).fillna(0).values
+                
+                # Volume regime clustering
+                volume_zscore = (volume - volume_ma) / (volume_std + 1e-8)
+                volume_clustering = volume_zscore.rolling(window).apply(
+                    lambda x: np.sum(np.abs(x) > 1) / len(x), raw=True
+                )
+                features[f'volume_regime_clustering_{window}'] = volume_clustering.fillna(0).values
+        
+        return features
+
+    def _generate_market_structure_features(self, data: pd.DataFrame) -> Dict[str, np.ndarray]:
+        """Generate market structure regime features."""
+        features = {}
+        
+        if all(col in data.columns for col in ['high', 'low', 'close']):
+            # Market structure regime indicators
+            highs = data['high']
+            lows = data['low']
+            closes = data['close']
+            
+            for window in [5, 10, 20]:
+                # Higher highs, lower lows pattern
+                higher_highs = (highs > highs.shift(1)).rolling(window).sum()
+                lower_lows = (lows < lows.shift(1)).rolling(window).sum()
+                
+                # Market structure regime
+                structure_regime = (higher_highs - lower_lows) / window
+                features[f'market_structure_regime_{window}'] = structure_regime.fillna(0).values
+                
+                # Support/resistance regime strength
+                price_range = highs - lows
+                price_range_ma = price_range.rolling(window).mean()
+                price_range_std = price_range.rolling(window).std()
+                
+                sr_strength = price_range_ma / (price_range_std + 1e-8)
+                features[f'sr_regime_strength_{window}'] = sr_strength.fillna(0).values
+                
+                # Market structure persistence
+                structure_changes = structure_regime.diff().abs()
+                structure_persistence = 1 - (structure_changes.rolling(window).mean() / (np.abs(structure_regime) + 1e-8))
+                features[f'market_structure_persistence_{window}'] = structure_persistence.fillna(0).values
+        
+        return features
+
+
+class RegimeCrossAssetGenerator(VectorizedFeatureGenerator):
+    """
+    Regime Cross-Asset Feature Generator.
+    
+    Generates cross-asset correlation and regime persistence features.
+    Useful for regime clustering when multiple assets are available.
+    """
+    
+    def __init__(self):
+        base_config = FeatureConfig(
+            name="regime_cross_asset",
+            category=FeatureCategory.REGIME,
+            description="Cross-asset regime features for clustering",
+            required_columns=["close"],
+            optional_columns=["high", "low", "open", "volume"],
+            default_lookback=20,
+            min_lookback=5,
+            max_lookback=50,
+            parameters={},
+            matrix_optimized=True,
+            gpu_accelerated=False
+        )
+        super().__init__(base_config, enable_matrix_ops=True)
+
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate cross-asset regime features."""
+        features = self.generate_features(data)
+        
+        if features:
+            # Return a composite cross-asset regime score
+            cross_asset_score = np.mean(list(features.values()), axis=0)
+            return pd.Series(cross_asset_score, index=data.index, name=self.config.name)
+        else:
+            return pd.Series(0.5, index=data.index, name=self.config.name)
+
+    def generate_features(self, data: pd.DataFrame, **kwargs) -> Dict[str, np.ndarray]:
+        """Generate cross-asset regime features."""
+        features = {}
+        
+        if len(data) < self.config.min_lookback:
+            return features
+            
+        # Cross-timeframe correlation features
+        features.update(self._generate_cross_timeframe_features(data))
+        
+        # Regime persistence features
+        features.update(self._generate_regime_persistence_features(data))
+        
+        # Market regime synchronization features
+        features.update(self._generate_regime_synchronization_features(data))
+        
+        return features
+
+    def _generate_cross_timeframe_features(self, data: pd.DataFrame) -> Dict[str, np.ndarray]:
+        """Generate cross-timeframe regime features."""
+        features = {}
+        
+        if 'close' in data.columns:
+            returns = data['close'].pct_change().fillna(0)
+            
+            # Different timeframe returns
+            returns_1 = returns
+            returns_2 = returns.rolling(2).sum()
+            returns_3 = returns.rolling(3).sum()
+            returns_5 = returns.rolling(5).sum()
+            
+            for window in [10, 20]:
+                # Cross-timeframe correlations
+                corr_1_2 = returns_1.rolling(window).corr(returns_2)
+                corr_1_3 = returns_1.rolling(window).corr(returns_3)
+                corr_1_5 = returns_1.rolling(window).corr(returns_5)
+                corr_2_3 = returns_2.rolling(window).corr(returns_3)
+                corr_2_5 = returns_2.rolling(window).corr(returns_5)
+                corr_3_5 = returns_3.rolling(window).corr(returns_5)
+                
+                features[f'cross_timeframe_corr_1_2_{window}'] = corr_1_2.fillna(0).values
+                features[f'cross_timeframe_corr_1_3_{window}'] = corr_1_3.fillna(0).values
+                features[f'cross_timeframe_corr_1_5_{window}'] = corr_1_5.fillna(0).values
+                features[f'cross_timeframe_corr_2_3_{window}'] = corr_2_3.fillna(0).values
+                features[f'cross_timeframe_corr_2_5_{window}'] = corr_2_5.fillna(0).values
+                features[f'cross_timeframe_corr_3_5_{window}'] = corr_3_5.fillna(0).values
+                
+                # Cross-timeframe regime consistency
+                avg_corr = (corr_1_2 + corr_1_3 + corr_1_5 + corr_2_3 + corr_2_5 + corr_3_5) / 6
+                features[f'cross_timeframe_consistency_{window}'] = avg_corr.fillna(0).values
+        
+        return features
+
+    def _generate_regime_persistence_features(self, data: pd.DataFrame) -> Dict[str, np.ndarray]:
+        """Generate regime persistence features."""
+        features = {}
+        
+        if 'close' in data.columns:
+            returns = data['close'].pct_change().fillna(0)
+            
+            for window in [10, 20]:
+                # Regime persistence based on return patterns
+                returns_abs = np.abs(returns)
+                returns_ma = returns_abs.rolling(window).mean()
+                returns_std = returns_abs.rolling(window).std()
+                
+                # Regime persistence score
+                persistence_score = returns_ma / (returns_std + 1e-8)
+                features[f'regime_persistence_score_{window}'] = persistence_score.fillna(0).values
+                
+                # Regime stability (inverse of volatility)
+                volatility = returns.rolling(window).std()
+                stability = 1 / (volatility + 1e-8)
+                features[f'regime_stability_{window}'] = stability.fillna(0).values
+                
+                # Regime transition frequency
+                regime_changes = (returns > 0).astype(int).diff().abs()
+                transition_freq = regime_changes.rolling(window).sum() / window
+                features[f'regime_transition_freq_{window}'] = transition_freq.fillna(0).values
+        
+        return features
+
+    def _generate_regime_synchronization_features(self, data: pd.DataFrame) -> Dict[str, np.ndarray]:
+        """Generate regime synchronization features."""
+        features = {}
+        
+        if all(col in data.columns for col in ['high', 'low', 'close']):
+            # Price and volume synchronization
+            if 'volume' in data.columns:
+                price_change = data['close'].pct_change().fillna(0)
+                volume_change = data['volume'].pct_change().fillna(0)
+                
+                for window in [10, 20]:
+                    # Price-volume synchronization
+                    pv_sync = price_change.rolling(window).corr(volume_change)
+                    features[f'price_volume_sync_{window}'] = pv_sync.fillna(0).values
+                    
+                    # Regime synchronization strength
+                    sync_strength = np.abs(pv_sync)
+                    features[f'regime_sync_strength_{window}'] = sync_strength.fillna(0).values
+            
+            # High-low synchronization
+            high_change = data['high'].pct_change().fillna(0)
+            low_change = data['low'].pct_change().fillna(0)
+            
+            for window in [10, 20]:
+                hl_sync = high_change.rolling(window).corr(low_change)
+                features[f'high_low_sync_{window}'] = hl_sync.fillna(0).values
+        
+        return features
+
+
+class RegimeTransitionProbabilityGenerator(VectorizedFeatureGenerator):
+    """
+    Regime Transition Probability Generator.
+    
+    Generates features that capture regime transition probabilities and change points.
+    Critical for regime detection and clustering.
+    """
+    
+    def __init__(self):
+        base_config = FeatureConfig(
+            name="regime_transition_probability",
+            category=FeatureCategory.REGIME,
+            description="Regime transition probability features",
+            required_columns=["close"],
+            optional_columns=["high", "low", "open", "volume"],
+            default_lookback=20,
+            min_lookback=5,
+            max_lookback=50,
+            parameters={},
+            matrix_optimized=True,
+            gpu_accelerated=False
+        )
+        super().__init__(base_config, enable_matrix_ops=True)
+
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate regime transition probability features."""
+        features = self.generate_features(data)
+        
+        if features:
+            # Return a composite transition probability score
+            transition_score = np.mean(list(features.values()), axis=0)
+            return pd.Series(transition_score, index=data.index, name=self.config.name)
+        else:
+            return pd.Series(0.5, index=data.index, name=self.config.name)
+
+    def generate_features(self, data: pd.DataFrame, **kwargs) -> Dict[str, np.ndarray]:
+        """Generate regime transition probability features."""
+        features = {}
+        
+        if len(data) < self.config.min_lookback:
+            return features
+            
+        # Regime change point detection
+        features.update(self._generate_change_point_features(data))
+        
+        # Transition probability features
+        features.update(self._generate_transition_probability_features(data))
+        
+        # Regime stability features
+        features.update(self._generate_regime_stability_features(data))
+        
+        return features
+
+    def _generate_change_point_features(self, data: pd.DataFrame) -> Dict[str, np.ndarray]:
+        """Generate regime change point detection features."""
+        features = {}
+        
+        if 'close' in data.columns:
+            returns = data['close'].pct_change().fillna(0)
+            
+            for window in [10, 20]:
+                # CUSUM-based change point detection
+                returns_cumsum = returns.rolling(window).sum()
+                returns_mean = returns_cumsum / window
+                returns_std = returns.rolling(window).std()
+                
+                # CUSUM statistic
+                cusum = (returns_cumsum - returns_mean * window) / (returns_std * np.sqrt(window) + 1e-8)
+                features[f'cusum_change_point_{window}'] = np.abs(cusum).fillna(0).values
+                
+                # Change point probability
+                change_prob = 1 / (1 + np.exp(-np.abs(cusum)))
+                features[f'change_point_prob_{window}'] = change_prob.fillna(0).values
+                
+                # Regime change intensity
+                change_intensity = np.abs(returns.diff()).rolling(window).mean()
+                features[f'regime_change_intensity_{window}'] = change_intensity.fillna(0).values
+        
+        return features
+
+    def _generate_transition_probability_features(self, data: pd.DataFrame) -> Dict[str, np.ndarray]:
+        """Generate transition probability features."""
+        features = {}
+        
+        if 'close' in data.columns:
+            returns = data['close'].pct_change().fillna(0)
+            
+            # Define regime states based on return quantiles
+            for window in [10, 20]:
+                # Regime state classification
+                returns_quantiles = returns.rolling(window).quantile([0.33, 0.67])
+                q33 = returns_quantiles.iloc[:, 0]
+                q67 = returns_quantiles.iloc[:, 1]
+                
+                # Regime states: 0=low, 1=medium, 2=high
+                regime_states = np.where(returns < q33, 0, 
+                                       np.where(returns < q67, 1, 2))
+                regime_states = pd.Series(regime_states, index=data.index)
+                
+                # Transition probabilities
+                transition_matrix = self._calculate_transition_matrix(regime_states, window)
+                
+                # Extract transition probabilities
+                for from_state in range(3):
+                    for to_state in range(3):
+                        if from_state in transition_matrix and to_state in transition_matrix[from_state]:
+                            prob = transition_matrix[from_state][to_state]
+                            features[f'transition_prob_{from_state}_to_{to_state}_{window}'] = prob
+                        else:
+                            features[f'transition_prob_{from_state}_to_{to_state}_{window}'] = 0.0
+                
+                # Regime persistence probability
+                persistence_prob = np.array([
+                    transition_matrix.get(i, {}).get(i, 0.0) for i in range(3)
+                ])
+                features[f'regime_persistence_prob_{window}'] = np.tile(persistence_prob, len(data))
+        
+        return features
+
+    def _calculate_transition_matrix(self, regime_states: pd.Series, window: int) -> Dict[int, Dict[int, float]]:
+        """Calculate regime transition matrix."""
+        transition_matrix = {0: {}, 1: {}, 2: {}}
+        
+        # Count transitions
+        for i in range(len(regime_states) - window):
+            current_state = regime_states.iloc[i]
+            next_state = regime_states.iloc[i + 1]
+            
+            if current_state in transition_matrix:
+                if next_state in transition_matrix[current_state]:
+                    transition_matrix[current_state][next_state] += 1
+                else:
+                    transition_matrix[current_state][next_state] = 1
+        
+        # Convert counts to probabilities
+        for from_state in transition_matrix:
+            total_transitions = sum(transition_matrix[from_state].values())
+            if total_transitions > 0:
+                for to_state in transition_matrix[from_state]:
+                    transition_matrix[from_state][to_state] /= total_transitions
+        
+        return transition_matrix
+
+    def _generate_regime_stability_features(self, data: pd.DataFrame) -> Dict[str, np.ndarray]:
+        """Generate regime stability features."""
+        features = {}
+        
+        if 'close' in data.columns:
+            returns = data['close'].pct_change().fillna(0)
+            
+            for window in [10, 20]:
+                # Regime stability based on return consistency
+                returns_abs = np.abs(returns)
+                returns_ma = returns_abs.rolling(window).mean()
+                returns_std = returns_abs.rolling(window).std()
+                
+                # Stability score
+                stability_score = returns_ma / (returns_std + 1e-8)
+                features[f'regime_stability_score_{window}'] = stability_score.fillna(0).values
+                
+                # Regime consistency (inverse of coefficient of variation)
+                consistency = 1 / (returns_std / (returns_ma + 1e-8))
+                features[f'regime_consistency_{window}'] = consistency.fillna(0).values
+                
+                # Regime predictability (based on autocorrelation)
+                autocorr = returns.rolling(window).apply(lambda x: x.autocorr(), raw=False)
+                predictability = np.abs(autocorr)
+                features[f'regime_predictability_{window}'] = predictability.fillna(0).values
+        
+        return features
+
+
 # Convenience function for easy integration
 def generate_regime_features(data: pd.DataFrame,
                            config: Optional[RegimeFeatureConfig] = None) -> Tuple[Dict[str, np.ndarray], Dict[str, Any]]:
@@ -4941,6 +5439,9 @@ __all__ = [
     'RegimeFractalDimensionGenerator',
     'RegimeHurstExponentGenerator',
     'RegimeMemoryStrengthGenerator',
+    'RegimeMicrostructureGenerator',
+    'RegimeCrossAssetGenerator',
+    'RegimeTransitionProbabilityGenerator',
     'RegimeFeatureConfig',
     'RegimeFeatureIntegration',
     'AnalystRegimeProbTrendingGenerator',
@@ -4957,7 +5458,7 @@ __all__ = [
     'StatisticalRegimeFeatureGenerator',
     'StructuralTrendRegimeFeatureGenerator',
     'VolatilityRegimeFeatureGenerator',
-    'VolumeRegimeFeatureGenerator'
+    'VolumeRegimeFeatureGenerator',
     'AdvancedRegimeFeatureGenerator'
 ]
 

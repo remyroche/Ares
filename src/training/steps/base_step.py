@@ -44,6 +44,48 @@ class BaseStep(ABC):
             datetime=datetime.now()
         )
         
+        # Mode detection for differentiated execution
+        self.execution_mode = None  # Will be set by _detect_execution_mode
+    
+    def _detect_execution_mode(self, config: Dict[str, Any]) -> str:
+        """
+        Detect execution mode based on launcher arguments and step context.
+        
+        This method can be overridden by subclasses for more specific mode detection.
+        
+        Args:
+            config: Configuration dictionary
+            
+        Returns:
+            'analyst' or 'tactician'
+        """
+        # Primary detection: Check current step name for Tactician training steps
+        is_tactician_training_step = (
+            'tactician_base_training' in self.step_name or
+            'tactician_ensemble_training' in self.step_name or
+            'tactician' in self.step_name.lower()
+        )
+        
+        # Secondary detection: Check execution context
+        tactician_execution_context = config.get('execution_context', '').lower()
+        is_tactician_context = 'tactician' in tactician_execution_context
+        
+        # Tertiary detection: Check for explicit mode setting
+        explicit_mode = config.get('interaction_generation_mode', '').lower()
+        
+        # Quaternary detection: Check for Tactician-specific configuration
+        tactician_mode_config = config.get('tactician_mode', False)
+        
+        # Determine mode
+        if (is_tactician_training_step or is_tactician_context or 
+            explicit_mode == 'tactician' or tactician_mode_config):
+            mode = 'tactician'  # Uses MI-based selection
+        else:
+            mode = 'analyst'  # Uses CMI-based selection
+        
+        self.logger.info(f"Execution mode detected: {mode}")
+        return mode
+        
     @abstractmethod
     async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -184,6 +226,9 @@ class BaseStep(ABC):
         
         try:
             self.logger.info(f"Starting execution of {self.step_name}")
+            
+            # Detect execution mode
+            self.execution_mode = self._detect_execution_mode(config)
             
             # Execute the step (async)
             execution_result = await self.execute(config)

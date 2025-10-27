@@ -28,7 +28,7 @@ except ImportError:
 from src.training.steps.base_step import BaseStep
 from src.utils.logger import system_logger
 from src.utils.tprint import tprint
-from src.training.steps.market_analysis.components.improved_regime_models_training import ImprovedRegimeModelsTrainingComponent
+from src.training.steps.market_analysis.components.regime_models_training import RegimeModelsTrainingComponent
 from src.training.steps.market_analysis.components.base_component import ComponentConfig
 
 logger = logging.getLogger(__name__)
@@ -77,8 +77,8 @@ class RegimeModelsTrainingStep(BaseStep):
             config['timeframe'] = regime_timeframe
 
         try:
-            # Initialize the improved RegimeModelsTrainingComponent
-            tprint("🚀 Initializing ImprovedRegimeModelsTrainingComponent", "INFO")
+            # Initialize the RegimeModelsTrainingComponent (now with improvements)
+            tprint("🚀 Initializing RegimeModelsTrainingComponent", "INFO")
             component_config = ComponentConfig(
                 symbol=config.get('symbol', 'UNKNOWN'),
                 exchange=config.get('exchange', 'binance'),
@@ -86,8 +86,8 @@ class RegimeModelsTrainingStep(BaseStep):
                 execution_mode=config.get('execution_mode', 'light')
             )
             
-            models_component = ImprovedRegimeModelsTrainingComponent(component_config)
-            tprint("✅ ImprovedRegimeModelsTrainingComponent initialized successfully", "SUCCESS")
+            models_component = RegimeModelsTrainingComponent(component_config)
+            tprint("✅ RegimeModelsTrainingComponent initialized successfully", "SUCCESS")
 
             # Get pipeline state from config (should contain artifacts from previous steps)
             pipeline_state = config.get('pipeline_state', {})

@@ -96,7 +96,7 @@ class VolatilityAwareConfig:
         lookahead_periods: int = 6,
         min_volatility: float = 0.001,
         max_volatility: float = 0.1,
-        label_type: LabelDefinitionType = LabelDefinitionType.BINARY,
+        label_type: LabelDefinitionType = LabelDefinitionType.SMOOTH_BINARY,
         enable_long_positions: bool = True,
         enable_short_positions: bool = False,
         min_label_quality: float = 0.3,
@@ -3456,15 +3456,20 @@ class VolatilityAwareMultiHorizonLabeler:
         sharpness = 2.0 + (vol_normalized - 1.0) * 0.5  # Range: 1.5 to 2.5
         smooth_labels = np.tanh(distance * sharpness)
         
-        # Apply proximity weighting for cases close to targets
-        # When close to target (within 20% of threshold), reduce confidence
+        # Apply enhanced confidence weighting:
+        # - Reduced confidence when close to targets (within 20% of threshold)
+        # - Increased confidence when hitting targets and beyond (120%+ threshold)
         proximity_factor = np.where(
             np.abs(distance) < 1.2,  # Close to target
             np.abs(distance) / 1.2,  # Linear scaling from 0 to 1
-            1.0  # Full confidence when far from target
+            np.where(
+                np.abs(distance) >= 1.2,  # Hit target and beyond
+                1.0 + (np.abs(distance) - 1.2) * 0.5,  # Enhanced confidence: 1.0 + 0.5 * excess
+                1.0  # Fallback
+            )
         )
         
-        # Apply proximity weighting
+        # Apply enhanced confidence weighting
         smooth_labels = smooth_labels * proximity_factor
         
         # Apply quality weighting if available
@@ -3500,23 +3505,25 @@ class VolatilityAwareMultiHorizonLabeler:
         # Start with actual returns
         smooth_labels = future_returns.copy()
         
-        # Apply proximity weighting for cases close to targets
+        # Apply enhanced confidence weighting for cases close to and beyond targets
         # Calculate distance from threshold
         distance = future_returns / effective_threshold
         
-        # For cases close to target (within 20% of threshold), apply proximity weighting
-        proximity_mask = np.abs(distance) < 1.2
-        
-        if proximity_mask.any():
-            # Apply proximity weighting: reduce magnitude for close cases
-            proximity_factor = np.where(
-                proximity_mask,
-                np.abs(distance) / 1.2,  # Linear scaling from 0 to 1
-                1.0  # Full magnitude when far from target
+        # Apply enhanced confidence weighting:
+        # - Reduced confidence when close to targets (within 20% of threshold)
+        # - Increased confidence when hitting targets and beyond (120%+ threshold)
+        proximity_factor = np.where(
+            np.abs(distance) < 1.2,  # Close to target
+            np.abs(distance) / 1.2,  # Linear scaling from 0 to 1
+            np.where(
+                np.abs(distance) >= 1.2,  # Hit target and beyond
+                1.0 + (np.abs(distance) - 1.2) * 0.5,  # Enhanced confidence: 1.0 + 0.5 * excess
+                1.0  # Fallback
             )
-            
-            # Apply proximity weighting
-            smooth_labels = smooth_labels * proximity_factor
+        )
+        
+        # Apply enhanced confidence weighting
+        smooth_labels = smooth_labels * proximity_factor
         
         # Apply quality weighting if available
         if quality_scores is not None:

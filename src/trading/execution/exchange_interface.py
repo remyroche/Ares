@@ -159,6 +159,10 @@ class ExchangeInterface:
         self.api_secret = config.get('api_secret')
         self.testnet = config.get('testnet', True)
         self.rate_limits = config.get('rate_limits', {})
+        
+        # Paper trading mode support
+        self.trading_mode = config.get('trading_mode', 'trade')  # 'trade' or 'paper'
+        self.paper_simulator = None
 
         # Exchange dispatcher
         self.dispatcher: Optional[ExchangeDispatcher] = None
@@ -200,6 +204,10 @@ class ExchangeInterface:
 
         # Initialize shared utilities
         self._initialize_shared_utilities()
+        
+        # Initialize paper trading simulator if in paper mode
+        if self.trading_mode == 'paper':
+            self._initialize_paper_simulator()
 
         self.logger = logger.getChild(f'{self.exchange_type}')
 
@@ -296,6 +304,30 @@ class ExchangeInterface:
             # Continue without shared utilities for simulated mode
             if self.exchange_type != 'simulated':
                 raise
+
+    def _initialize_paper_simulator(self) -> None:
+        """Initialize paper trading simulator for paper mode."""
+        try:
+            from src.trading.simulation.paper_trading_simulator import PaperTradingSimulator
+            
+            # Create simulator configuration
+            simulator_config = {
+                'exchange_interface': self,
+                'initial_balance': self.config.get('initial_balance', 10000.0),
+                'maker_fee': self.config.get('maker_fee', 0.001),
+                'taker_fee': self.config.get('taker_fee', 0.001),
+                'max_slippage': self.config.get('max_slippage', 0.005),
+                'slippage_model': self.config.get('slippage_model', 'linear'),
+                'risk_limits': self.config.get('risk_limits', {})
+            }
+            
+            self.paper_simulator = PaperTradingSimulator(simulator_config)
+            tprint("✅ Paper trading simulator initialized", "INFO")
+            
+        except Exception as e:
+            tprint(f"❌ Failed to initialize paper simulator: {e}", "ERROR")
+            # Continue without paper simulator
+            self.paper_simulator = None
 
     @handle_async_errors(default_return=False)
     async def connect(self) -> bool:
@@ -820,6 +852,11 @@ class ExchangeInterface:
     async def get_account_balance(self, asset: Optional[str] = None) -> Dict[str, float]:
         """Get account balance."""
         try:
+            # Paper trading mode: get balance from simulator
+            if self.trading_mode == 'paper' and self.paper_simulator:
+                return await self.paper_simulator.get_balance(asset)
+            
+            # Live trading mode or simulated exchange
             if self.exchange_type == 'simulated':
                 return self._get_simulated_balance(asset)
 
@@ -858,6 +895,18 @@ class ExchangeInterface:
     ) -> Dict[str, Any]:
         """Create order."""
         try:
+            # Paper trading mode: redirect to simulator
+            if self.trading_mode == 'paper' and self.paper_simulator:
+                return await self.paper_simulator.execute_order(
+                    symbol=symbol,
+                    side=side,
+                    order_type=order_type,
+                    quantity=quantity,
+                    price=price,
+                    **kwargs
+                )
+            
+            # Live trading mode or simulated exchange
             if self.exchange_type == 'simulated':
                 return await self._create_simulated_order(symbol, side, order_type, quantity, price)
 
@@ -1124,6 +1173,38 @@ class ExchangeInterface:
                 open_orders.append(order_data)
 
         return open_orders
+
+    @handle_async_errors(default_return=[])
+    async def get_positions(self, symbol: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Get current positions."""
+        try:
+            # Paper trading mode: get positions from simulator
+            if self.trading_mode == 'paper' and self.paper_simulator:
+                return await self.paper_simulator.get_positions(symbol)
+            
+            # For live trading, this would need to be implemented
+            # based on the specific exchange API
+            return []
+            
+        except Exception as e:
+            tprint(f"❌ Error getting positions: {e}", "ERROR")
+            return []
+
+    @handle_async_errors(default_return={})
+    async def get_performance_metrics(self) -> Dict[str, Any]:
+        """Get performance metrics."""
+        try:
+            # Paper trading mode: get metrics from simulator
+            if self.trading_mode == 'paper' and self.paper_simulator:
+                return await self.paper_simulator.get_performance_metrics()
+            
+            # For live trading, this would need to be implemented
+            # based on the specific exchange API
+            return {}
+            
+        except Exception as e:
+            tprint(f"❌ Error getting performance metrics: {e}", "ERROR")
+            return {}
 
     @handle_errors(default_return=False)
     def _check_rate_limit(self, endpoint: str) -> bool:

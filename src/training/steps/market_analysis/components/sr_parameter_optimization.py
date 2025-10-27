@@ -312,6 +312,10 @@ class SRParameterOptimizationStep(BaseStep):
     def get_required_artifacts(self) -> List[str]:
         """Get list of required artifacts this step must produce."""
         return ['sr_parameter_optimization_result']
+    
+    def get_required_input_artifacts(self) -> List[str]:
+        """Get list of required input artifacts this step needs from previous steps."""
+        return ['sr_clustering_result', 'sr_levels_dictionary']
 
     async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -337,6 +341,16 @@ class SRParameterOptimizationStep(BaseStep):
         self.logger.info('🎯 Starting Enhanced SR Parameter Optimization')
 
         try:
+            # Fetch required input artifacts from previous steps
+            input_artifacts = await self._fetch_input_artifacts(config)
+            if not input_artifacts['success']:
+                return {
+                    'success': False,
+                    'artifacts': {},
+                    'metrics': {},
+                    'error': f"Failed to fetch required input artifacts: {input_artifacts['error']}"
+                }
+            
             # Create enhanced configuration
             enhanced_config = EnhancedSRConfig()
             
@@ -363,9 +377,9 @@ class SRParameterOptimizationStep(BaseStep):
             # Ensure data has proper datetime indexing for backtesting
             market_data = self._prepare_data_for_backtesting(market_data)
 
-            # Run enhanced parameter optimization
+            # Run enhanced parameter optimization with input artifacts
             optimization_result = await self._run_enhanced_parameter_optimization(
-                market_data, enhanced_config, config
+                market_data, enhanced_config, config, input_artifacts['artifacts']
             )
 
             # Extract results
@@ -427,10 +441,15 @@ class SRParameterOptimizationStep(BaseStep):
                 }
             }
 
+            # Save artifacts using BaseStep artifact management
+            saved_artifacts = await self._save_output_artifacts(artifacts, config)
+            if not saved_artifacts['success']:
+                self.logger.warning(f"Some artifacts failed to save: {saved_artifacts['error']}")
+
             self.logger.info('✅ Enhanced SR Parameter Optimization completed successfully')
             return {
                 'success': True,
-                'artifacts': artifacts,
+                'artifacts': saved_artifacts.get('artifact_paths', {}),
                 'metrics': metrics
             }
 
@@ -657,7 +676,8 @@ class SRParameterOptimizationStep(BaseStep):
         self, 
         market_data: Any, 
         enhanced_config: EnhancedSRConfig, 
-        config: Dict[str, Any]
+        config: Dict[str, Any],
+        input_artifacts: Dict[str, Any] = None
     ) -> Dict[str, Any]:
         """
         Run enhanced parameter optimization using advanced techniques.
@@ -666,12 +686,31 @@ class SRParameterOptimizationStep(BaseStep):
             market_data: Market data for optimization
             enhanced_config: Enhanced configuration
             config: User configuration
+            input_artifacts: Artifacts from previous steps (sr_clustering_result, sr_levels_dictionary)
             
         Returns:
             Optimization results dictionary
         """
         self.logger.info("🚀 Starting enhanced parameter optimization...")
         start_time = time.time()
+        
+        # Log input artifacts usage
+        if input_artifacts:
+            self.logger.info("📊 Using input artifacts from previous steps:")
+            for artifact_name, artifact_data in input_artifacts.items():
+                if artifact_data is not None:
+                    if artifact_name == 'sr_clustering_result':
+                        clusters_count = artifact_data.get('total_clusters', 0)
+                        self.logger.info(f"  - {artifact_name}: {clusters_count} clusters")
+                    elif artifact_name == 'sr_levels_dictionary':
+                        levels_count = len(artifact_data.get('levels', []))
+                        self.logger.info(f"  - {artifact_name}: {levels_count} SR levels")
+                    else:
+                        self.logger.info(f"  - {artifact_name}: available")
+                else:
+                    self.logger.warning(f"  - {artifact_name}: not available")
+        else:
+            self.logger.warning("⚠️ No input artifacts provided, proceeding with basic optimization")
         
         # Initialize results
         optimization_result = {
@@ -688,8 +727,8 @@ class SRParameterOptimizationStep(BaseStep):
         }
         
         try:
-            # Create SR parameter search space
-            search_space = self._create_sr_search_space()
+            # Create SR parameter search space using input artifacts for intelligent bounds
+            search_space = self._create_sr_search_space(input_artifacts)
             
             # Split data for optimization with temporal validation
             train_data, test_data = self._split_data_with_validation(market_data, enhanced_config)
@@ -745,9 +784,11 @@ class SRParameterOptimizationStep(BaseStep):
             optimization_result['error'] = str(e)
             return optimization_result
 
-    def _create_sr_search_space(self) -> Dict[str, Any]:
+    def _create_sr_search_space(self, input_artifacts: Dict[str, Any] = None) -> Dict[str, Any]:
         """Create enhanced search space for SR parameter optimization with comprehensive parameters."""
-        return {
+        
+        # Default parameter bounds
+        search_space = {
             # Core SR detection parameters
             'min_touches': {'type': 'int', 'low': 2, 'high': 15},
             'strength_threshold': {'type': 'float', 'low': 0.1, 'high': 0.9},
@@ -786,6 +827,64 @@ class SRParameterOptimizationStep(BaseStep):
             'correlation_threshold': {'type': 'float', 'low': 0.3, 'high': 0.9},
             'volatility_threshold': {'type': 'float', 'low': 0.01, 'high': 0.1}
         }
+        
+        # Enhance search space based on input artifacts
+        if input_artifacts:
+            self.logger.info("🎯 Enhancing search space based on input artifacts...")
+            
+            # Use SR clustering results to inform parameter bounds
+            sr_clustering_result = input_artifacts.get('sr_clustering_result')
+            if sr_clustering_result:
+                try:
+                    # Adjust min_touches based on clustering results
+                    total_clusters = sr_clustering_result.get('total_clusters', 0)
+                    if total_clusters > 0:
+                        # More clusters suggest we can be more selective with touches
+                        min_touches_high = min(15, max(5, total_clusters // 2))
+                        search_space['min_touches']['high'] = min_touches_high
+                        self.logger.info(f"Adjusted min_touches high bound to {min_touches_high} based on {total_clusters} clusters")
+                    
+                    # Adjust strength_threshold based on clustering efficiency
+                    clustering_efficiency = sr_clustering_result.get('clustering_efficiency', 0.5)
+                    if clustering_efficiency > 0.7:
+                        # High efficiency suggests we can be more strict
+                        search_space['strength_threshold']['low'] = 0.3
+                        search_space['strength_threshold']['high'] = 0.8
+                    elif clustering_efficiency < 0.3:
+                        # Low efficiency suggests we should be more lenient
+                        search_space['strength_threshold']['low'] = 0.1
+                        search_space['strength_threshold']['high'] = 0.6
+                    
+                except Exception as e:
+                    self.logger.warning(f"Failed to enhance search space with clustering results: {e}")
+            
+            # Use SR levels dictionary to inform parameter bounds
+            sr_levels_dict = input_artifacts.get('sr_levels_dictionary')
+            if sr_levels_dict:
+                try:
+                    levels = sr_levels_dict.get('levels', [])
+                    if levels:
+                        # Analyze level characteristics to inform bounds
+                        avg_strength = sum(level.get('strength', 0) for level in levels) / len(levels)
+                        avg_touches = sum(level.get('touches', 0) for level in levels) / len(levels)
+                        
+                        # Adjust strength_threshold based on average level strength
+                        if avg_strength > 0.6:
+                            search_space['strength_threshold']['low'] = max(0.1, avg_strength - 0.2)
+                            search_space['strength_threshold']['high'] = min(0.9, avg_strength + 0.2)
+                        
+                        # Adjust min_touches based on average touches
+                        if avg_touches > 0:
+                            min_touches_low = max(2, int(avg_touches * 0.5))
+                            min_touches_high = min(15, int(avg_touches * 1.5))
+                            search_space['min_touches']['low'] = min_touches_low
+                            search_space['min_touches']['high'] = min_touches_high
+                            self.logger.info(f"Adjusted min_touches bounds to [{min_touches_low}, {min_touches_high}] based on average touches {avg_touches:.1f}")
+                    
+                except Exception as e:
+                    self.logger.warning(f"Failed to enhance search space with SR levels: {e}")
+        
+        return search_space
 
     async def _split_data_with_validation(
         self, 
@@ -1343,6 +1442,115 @@ class SRParameterOptimizationStep(BaseStep):
         except Exception as e:
             self.logger.error(f"Validation failed: {e}")
             return {'error': str(e)}
+
+    async def _fetch_input_artifacts(self, config: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Fetch required input artifacts from previous steps.
+        
+        Args:
+            config: Configuration dictionary
+            
+        Returns:
+            Dict containing success status and fetched artifacts
+        """
+        try:
+            self.logger.info("📥 Fetching required input artifacts from previous steps...")
+            
+            fetched_artifacts = {}
+            required_artifacts = self.get_required_input_artifacts()
+            
+            for artifact_name in required_artifacts:
+                try:
+                    # Try to get artifact using BaseStep artifact management
+                    artifact_data = self._get_artifact(artifact_name, artifact_type="data")
+                    if artifact_data is not None:
+                        fetched_artifacts[artifact_name] = artifact_data
+                        self.logger.info(f"✅ Successfully fetched {artifact_name}")
+                    else:
+                        self.logger.warning(f"⚠️ {artifact_name} returned None")
+                        fetched_artifacts[artifact_name] = None
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Failed to fetch {artifact_name}: {e}")
+                    fetched_artifacts[artifact_name] = None
+            
+            # Check if critical artifacts are missing
+            missing_artifacts = [name for name, data in fetched_artifacts.items() if data is None]
+            if missing_artifacts:
+                self.logger.warning(f"Missing artifacts: {missing_artifacts}")
+                # For now, we'll continue with None values and handle gracefully
+                # In a production system, you might want to fail here
+            
+            return {
+                'success': True,
+                'artifacts': fetched_artifacts,
+                'missing_artifacts': missing_artifacts
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Failed to fetch input artifacts: {e}")
+            return {
+                'success': False,
+                'error': str(e),
+                'artifacts': {}
+            }
+    
+    async def _save_output_artifacts(self, artifacts: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Save output artifacts using BaseStep artifact management.
+        
+        Args:
+            artifacts: Dictionary of artifacts to save
+            config: Configuration dictionary
+            
+        Returns:
+            Dict containing success status and saved artifact paths
+        """
+        try:
+            self.logger.info("💾 Saving output artifacts using BaseStep artifact management...")
+            
+            saved_paths = {}
+            
+            for artifact_name, artifact_data in artifacts.items():
+                try:
+                    # Save artifact using BaseStep method
+                    artifact_path = self._save_artifact(
+                        data=artifact_data,
+                        artifact_name=artifact_name,
+                        artifact_type="data",
+                        compression="auto",
+                        metadata={
+                            'symbol': config.get('symbol', 'unknown'),
+                            'exchange': config.get('exchange', 'unknown'),
+                            'timeframe': config.get('timeframe', 'unknown'),
+                            'step_name': self.step_name,
+                            'execution_timestamp': datetime.now().isoformat(),
+                            'enhancement_version': '2.0'
+                        }
+                    )
+                    saved_paths[artifact_name] = artifact_path
+                    self.logger.info(f"✅ Successfully saved {artifact_name} to {artifact_path}")
+                    
+                except Exception as e:
+                    self.logger.error(f"❌ Failed to save {artifact_name}: {e}")
+                    saved_paths[artifact_name] = None
+            
+            # Check if any artifacts failed to save
+            failed_artifacts = [name for name, path in saved_paths.items() if path is None]
+            
+            return {
+                'success': len(failed_artifacts) == 0,
+                'artifact_paths': saved_paths,
+                'failed_artifacts': failed_artifacts,
+                'error': f"Failed to save artifacts: {failed_artifacts}" if failed_artifacts else None
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Failed to save output artifacts: {e}")
+            return {
+                'success': False,
+                'error': str(e),
+                'artifact_paths': {}
+            }
 
     async def run(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """Run method required by BaseStep interface."""

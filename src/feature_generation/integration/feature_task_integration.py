@@ -93,8 +93,8 @@ class FeatureTaskConfig:
     """Configuration for feature-task integration."""
     
     # Feature limits for each task
-    hdbscan_max_features: int = 100
-    hdbscan_min_features: int = 50
+    hdbscan_max_features: int = 150
+    hdbscan_min_features: int = 100
     regime_clustering_max_features: int = 80
     regime_clustering_min_features: int = 40
     models_training_max_features: int = 60

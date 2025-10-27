@@ -28,6 +28,14 @@ from functools import lru_cache
 
 # Third-party imports
 import numpy as np
+
+# Import tprint utilities for comprehensive logging
+from src.utils.tprint import (
+    tprint, tprint_info, tprint_success, tprint_warning, tprint_error, 
+    tprint_debug, tprint_performance, tprint_progress, tprint_structured,
+    tprint_data_preview, tprint_data_format, tprint_feature_counts,
+    tprint_timer, tprint_logged
+)
 import pandas as pd
 
 # Optional third-party imports
@@ -200,13 +208,13 @@ class ClusteringDistanceGenerator(VectorizedFeatureGenerator):
         super().__init__(base_config, enable_matrix_ops=True)
         
         # Initialize VectorBT optimizers
-        self.vectorbt_optimizer = None
+        # vectorbt_optimizer inherited from base class
         self.unified_optimizer = None
         
         if OPTIMIZATION_AVAILABLE:
             try:
                 # Initialize VectorBT rolling optimizer
-                self.vectorbt_optimizer = get_vectorbt_rolling_optimizer()
+                # vectorbt_rolling_optimizer inherited from base class
                 
                 # Initialize unified vectorization manager
                 unified_config = {
@@ -234,23 +242,41 @@ class ClusteringDistanceGenerator(VectorizedFeatureGenerator):
 
     def generate_features(self, data: pd.DataFrame, **kwargs) -> Dict[str, np.ndarray]:
         """Generate comprehensive distance-based clustering features."""
+        tprint_debug("🔍 Generating clustering distance features")
+        tprint_data_preview(data, "Input Data for Distance Features", max_rows=2, max_cols=5)
+        
         features = {}
         
         if len(data) < self.config.min_lookback:
+            tprint_warning(f"⚠️ Insufficient data: {len(data)} < {self.config.min_lookback}")
             return features
+        
+        with tprint_timer("Distance Feature Generation", level="PERFORMANCE"):
+            # Price distance features
+            tprint_debug("📊 Calculating price distance features")
+            price_features = self._generate_price_distance_features(data)
+            features.update(price_features)
+            tprint_debug(f"✅ Generated {len(price_features)} price distance features")
             
-        # Price distance features
-        features.update(self._generate_price_distance_features(data))
+            # Volume distance features
+            tprint_debug("📊 Calculating volume distance features")
+            volume_features = self._generate_volume_distance_features(data)
+            features.update(volume_features)
+            tprint_debug(f"✅ Generated {len(volume_features)} volume distance features")
+            
+            # Volatility distance features
+            tprint_debug("📊 Calculating volatility distance features")
+            volatility_features = self._generate_volatility_distance_features(data)
+            features.update(volatility_features)
+            tprint_debug(f"✅ Generated {len(volatility_features)} volatility distance features")
+            
+            # Cross-feature distance features
+            tprint_debug("📊 Calculating cross-feature distance features")
+            cross_features = self._generate_cross_feature_distance_features(data)
+            features.update(cross_features)
+            tprint_debug(f"✅ Generated {len(cross_features)} cross-feature distance features")
         
-        # Volume distance features
-        features.update(self._generate_volume_distance_features(data))
-        
-        # Volatility distance features
-        features.update(self._generate_volatility_distance_features(data))
-        
-        # Cross-feature distance features
-        features.update(self._generate_cross_feature_distance_features(data))
-        
+        tprint_success(f"🎉 Generated {len(features)} total clustering distance features")
         return features
 
     def _generate_price_distance_features(self, data: pd.DataFrame) -> Dict[str, np.ndarray]:
@@ -475,13 +501,13 @@ class ClusteringSeparationGenerator(VectorizedFeatureGenerator):
         super().__init__(base_config, enable_matrix_ops=True)
         
         # Initialize VectorBT optimizers
-        self.vectorbt_optimizer = None
+        # vectorbt_optimizer inherited from base class
         self.unified_optimizer = None
         
         if OPTIMIZATION_AVAILABLE:
             try:
                 # Initialize VectorBT rolling optimizer
-                self.vectorbt_optimizer = get_vectorbt_rolling_optimizer()
+                # vectorbt_rolling_optimizer inherited from base class
                 
                 # Initialize unified vectorization manager
                 unified_config = {
@@ -695,13 +721,13 @@ class ClusteringStabilityGenerator(VectorizedFeatureGenerator):
         super().__init__(base_config, enable_matrix_ops=True)
         
         # Initialize VectorBT optimizers
-        self.vectorbt_optimizer = None
+        # vectorbt_optimizer inherited from base class
         self.unified_optimizer = None
         
         if OPTIMIZATION_AVAILABLE:
             try:
                 # Initialize VectorBT rolling optimizer
-                self.vectorbt_optimizer = get_vectorbt_rolling_optimizer()
+                # vectorbt_rolling_optimizer inherited from base class
                 
                 # Initialize unified vectorization manager
                 unified_config = {
@@ -932,13 +958,13 @@ class ClusteringIntegration(VectorizedFeatureGenerator):
         super().__init__(base_config, enable_matrix_ops=True)
         
         # Initialize VectorBT optimizers
-        self.vectorbt_optimizer = None
+        # vectorbt_optimizer inherited from base class
         self.unified_optimizer = None
         
         if OPTIMIZATION_AVAILABLE:
             try:
                 # Initialize VectorBT rolling optimizer
-                self.vectorbt_optimizer = get_vectorbt_rolling_optimizer()
+                # vectorbt_rolling_optimizer inherited from base class
                 
                 # Initialize unified vectorization manager
                 unified_config = {
@@ -971,33 +997,53 @@ class ClusteringIntegration(VectorizedFeatureGenerator):
 
     def generate_features(self, data: pd.DataFrame, **kwargs) -> Dict[str, np.ndarray]:
         """Generate comprehensive clustering features."""
+        tprint_info("🎯 Generating comprehensive clustering features")
+        tprint_data_preview(data, "Input Data for Clustering Features", max_rows=2, max_cols=5)
+        
         features = {}
         
         if len(data) < self.config.min_lookback:
+            tprint_warning(f"⚠️ Insufficient data: {len(data)} < {self.config.min_lookback}")
             return features
         
-        # Generate features from each generator
-        if self.distance_generator:
-            features.update(self.distance_generator.generate_features(data))
+        with tprint_timer("Comprehensive Clustering Feature Generation", level="PERFORMANCE"):
+            # Generate features from each generator
+            if self.distance_generator:
+                tprint_info("📊 Generating distance features")
+                distance_features = self.distance_generator.generate_features(data)
+                features.update(distance_features)
+                tprint_info(f"✅ Generated {len(distance_features)} distance features")
+            
+            if self.separation_generator:
+                tprint_info("📊 Generating separation features")
+                separation_features = self.separation_generator.generate_features(data)
+                features.update(separation_features)
+                tprint_info(f"✅ Generated {len(separation_features)} separation features")
+            
+            if self.stability_generator:
+                tprint_info("📊 Generating stability features")
+                stability_features = self.stability_generator.generate_features(data)
+                features.update(stability_features)
+                tprint_info(f"✅ Generated {len(stability_features)} stability features")
         
-        if self.separation_generator:
-            features.update(self.separation_generator.generate_features(data))
-        
-        if self.stability_generator:
-            features.update(self.stability_generator.generate_features(data))
-        
+        tprint_success(f"🎉 Generated {len(features)} total comprehensive clustering features")
         return features
 
 
 # Convenience functions
 def create_clustering_feature_generators() -> List[FeatureGenerator]:
     """Create all clustering feature generators."""
-    return [
+    tprint_info("🏭 Creating clustering feature generators")
+    
+    generators = [
         ClusteringDistanceGenerator(),
         ClusteringSeparationGenerator(),
         ClusteringStabilityGenerator(),
         ClusteringIntegration()
     ]
+    
+    tprint_success(f"✅ Created {len(generators)} clustering feature generators")
+    return generators
 
 
 def create_default_clustering_generators() -> List[FeatureGenerator]:

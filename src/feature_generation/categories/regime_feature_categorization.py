@@ -48,7 +48,13 @@ from .clustering_features import (
 
 # Import other feature categories
 from .momentum import *
-from .volatility import *
+from .volatility import (
+    VolatilityFeatureGenerator, VectorBTVolatilityFeatureGenerator,
+    VectorBTBollingerBandsGenerator, VectorBTAverageTrueRangeGenerator,
+    VectorBTGarmanKlassVolatilityGenerator, VectorBTParkinsonVolatilityGenerator,
+    VectorBTRogersSatchellVolatilityGenerator, VectorBTYangZhangVolatilityGenerator,
+    create_default_volatility_generators
+)
 from .trend import *
 from .volume import *
 

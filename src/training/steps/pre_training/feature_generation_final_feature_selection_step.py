@@ -5,6 +5,11 @@ This step performs final feature selection from all previously generated and sel
 It creates multiple optimized feature sets (60, 50, 40 features) for different model configurations
 and generates comprehensive SHAP values and selection metadata.
 
+IMPORTANT: This step analyzes the OPPOSITE mode's artifacts:
+- When called in Analyst mode, it analyzes Tactician artifacts
+- When called in Tactician mode, it analyzes Analyst artifacts
+- Default is Analyst mode (analyzes Tactician artifacts)
+
 Features:
 - Combines features from interaction generation steps
 - Performs final feature ranking and selection
@@ -133,6 +138,11 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
 
     This step combines all previously selected features and performs final selection
     to create optimized feature sets for model training.
+    
+    IMPORTANT: This step analyzes the OPPOSITE mode's artifacts:
+    - When called in Analyst mode, it analyzes Tactician artifacts
+    - When called in Tactician mode, it analyzes Analyst artifacts
+    - Default is Analyst mode (analyzes Tactician artifacts)
     """
 
     def __init__(self, step_name: str = "feature_generation_final_feature_selection_step"):
@@ -172,6 +182,73 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             self.analyst_handler = None
             tprint_warning("⚠️ CMI complementarity components not available")
 
+    def _determine_execution_mode(self) -> str:
+        """
+        Determine execution mode (Analyst vs Tactician) from configuration.
+        
+        Returns:
+            str: 'analyst' or 'tactician' (defaults to 'analyst')
+        """
+        # Check for execution_context in config (set by ares_launcher)
+        if hasattr(self, 'config') and self.config:
+            execution_context = self.config.get('execution_context', '').lower()
+            
+            if 'tactician' in execution_context:
+                return 'tactician'
+            elif 'analyst' in execution_context:
+                return 'analyst'
+        
+        # Fallback: check for mode-specific artifacts to infer the mode
+        try:
+            # Check if tactician-specific artifacts exist
+            tactician_artifacts = [
+                'tactician_interaction_features',
+                'tactician_selected_feature_dataframe_60',
+                'tactician_labeled_dataframe'
+            ]
+            
+            analyst_artifacts = [
+                'analyst_interaction_features', 
+                'analyst_selected_feature_dataframe_60',
+                'analyst_labeled_dataframe'
+            ]
+            
+            # Count available artifacts for each mode
+            tactician_count = 0
+            analyst_count = 0
+            
+            for artifact_name in tactician_artifacts:
+                try:
+                    artifact = self._get_artifact(artifact_name)
+                    if artifact is not None:
+                        tactician_count += 1
+                except Exception:
+                    continue
+            
+            for artifact_name in analyst_artifacts:
+                try:
+                    artifact = self._get_artifact(artifact_name)
+                    if artifact is not None:
+                        analyst_count += 1
+                except Exception:
+                    continue
+            
+            # Determine mode based on artifact availability
+            if tactician_count > analyst_count:
+                tprint_info(f"🔍 Inferred tactician mode from artifacts ({tactician_count} tactician vs {analyst_count} analyst artifacts)")
+                return 'tactician'
+            elif analyst_count > tactician_count:
+                tprint_info(f"🔍 Inferred analyst mode from artifacts ({analyst_count} analyst vs {tactician_count} tactician artifacts)")
+                return 'analyst'
+            else:
+                # Equal or no artifacts found, default to analyst
+                tprint_info(f"🔍 No clear mode indicators found, defaulting to analyst mode")
+                return 'analyst'
+                
+        except Exception as e:
+            tprint_warning(f"⚠️ Error determining execution mode from artifacts: {e}")
+            return 'analyst'  # Default fallback
+
     async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """
         Execute final feature selection.
@@ -189,7 +266,12 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             Dict containing execution results and artifacts
         """
         try:
+            # Determine analysis mode for logging
+            execution_mode = self._determine_execution_mode()
+            analysis_mode = 'tactician' if execution_mode == 'analyst' else 'analyst'
+            
             tprint_info(f"🎯 Starting {self.step_name} execution...")
+            tprint_info(f"🎯 Running in {execution_mode} mode, analyzing {analysis_mode} artifacts")
 
             # Get required data from previous steps
             # Look for artifacts created by labeling integration step
@@ -199,8 +281,8 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             if labeled_df is None or targets is None:
                 raise ValueError("Required artifacts 'labeled_data' and 'labeling_metadata' not found")
 
-            # Get features from previous steps
-            features_data = self._collect_features_from_previous_steps()
+            # Get features from previous steps (analyzing opposite mode's artifacts)
+            features_data = self._collect_features_from_previous_steps(analysis_mode)
 
             # Combine all features
             combined_features_df = self._combine_features(features_data, labeled_df)
@@ -228,7 +310,7 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             artifacts = self._generate_artifacts(feature_sets, shap_values, config, combined_features_df)
 
             # Create comprehensive outcome report
-            outcome_report = self._create_outcome_report(feature_sets, shap_values, config)
+            outcome_report = self._create_outcome_report(feature_sets, shap_values, config, execution_mode, analysis_mode)
 
             # Save artifacts
             saved_artifacts = []
@@ -252,11 +334,11 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             )
             
             # Generate and save markdown report
-            markdown_report = self._generate_markdown_report(outcome_report, feature_sets, shap_values, config)
+            markdown_report = self._generate_markdown_report(outcome_report, feature_sets, shap_values, config, execution_mode, analysis_mode)
             markdown_path = self._save_markdown_report(markdown_report, "final_feature_selection_outcome_report")
 
             # Calculate metrics
-            metrics = self._calculate_metrics(feature_sets, shap_values, config)
+            metrics = self._calculate_metrics(feature_sets, shap_values, config, execution_mode, analysis_mode)
             
             # Add optimization performance metrics
             optimization_metrics = self._get_optimization_metrics()
@@ -276,6 +358,7 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             }
 
             tprint_success(f"✅ {self.step_name} completed successfully")
+            tprint_info(f"📊 Running in {execution_mode} mode, analyzed {analysis_mode} artifacts")
             tprint_info(f"📊 Created feature sets: {metrics.get('total_features_selected', 0)} total features across {len(feature_sets)} sets")
 
             return execution_result
@@ -292,9 +375,20 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
                 'execution_time': 0.0
             }
 
-    def _collect_features_from_previous_steps(self) -> Dict[str, Any]:
-        """Collect features from previous steps in the pipeline."""
+    def _collect_features_from_previous_steps(self, analysis_mode: str) -> Dict[str, Any]:
+        """
+        Collect features from previous steps in the pipeline.
+        
+        This function analyzes the OPPOSITE mode's artifacts:
+        - When called in Analyst mode, it analyzes Tactician artifacts
+        - When called in Tactician mode, it analyzes Analyst artifacts
+        - Default is Analyst mode (analyzes Tactician artifacts)
+        
+        Args:
+            analysis_mode: The mode whose artifacts to analyze ('analyst' or 'tactician')
+        """
         features_data = {}
+        tprint_info(f"🔍 Collecting features from {analysis_mode} mode artifacts...")
 
         # PRIORITY 1: Get features from main feature generation step (334+ features)
         try:
@@ -325,39 +419,62 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             tprint_warning(f"⚠️ Could not get lookback optimization features: {e}")
 
         # PRIORITY 3: Get features from interaction generation steps (Complex feature interactions)
+        # Look for the analysis mode's interaction features
         try:
-            analyst_interactions = self._get_artifact('analyst_interaction_features')
-            if analyst_interactions is not None:
-                features_data['analyst_interactions'] = analyst_interactions
-                tprint_info(f"✅ Retrieved analyst interaction features: {analyst_interactions.shape if hasattr(analyst_interactions, 'shape') else 'Unknown shape'}")
+            mode_interactions = self._get_artifact(f'{analysis_mode}_interaction_features')
+            if mode_interactions is not None:
+                features_data[f'{analysis_mode}_interactions'] = mode_interactions
+                tprint_info(f"✅ Retrieved {analysis_mode} interaction features: {mode_interactions.shape if hasattr(mode_interactions, 'shape') else 'Unknown shape'}")
         except Exception as e:
-            tprint_warning(f"⚠️ Could not get analyst interaction features: {e}")
+            tprint_warning(f"⚠️ Could not get {analysis_mode} interaction features: {e}")
 
+        # Also try to get the opposite mode's interaction features as fallback
+        opposite_mode = 'tactician' if analysis_mode == 'analyst' else 'analyst'
         try:
-            tactician_interactions = self._get_artifact('tactician_interaction_features')
-            if tactician_interactions is not None:
-                features_data['tactician_interactions'] = tactician_interactions
-                tprint_info(f"✅ Retrieved tactician interaction features: {tactician_interactions.shape if hasattr(tactician_interactions, 'shape') else 'Unknown shape'}")
+            opposite_interactions = self._get_artifact(f'{opposite_mode}_interaction_features')
+            if opposite_interactions is not None:
+                features_data[f'{opposite_mode}_interactions'] = opposite_interactions
+                tprint_info(f"✅ Retrieved {opposite_mode} interaction features as fallback: {opposite_interactions.shape if hasattr(opposite_interactions, 'shape') else 'Unknown shape'}")
         except Exception as e:
-            tprint_warning(f"⚠️ Could not get tactician interaction features: {e}")
+            tprint_warning(f"⚠️ Could not get {opposite_mode} interaction features: {e}")
 
         # PRIORITY 4: Get features from feature selection step (Previously selected features)
+        # Look for mode-specific selected features first
+        try:
+            mode_selected_features = self._get_artifact(f'{analysis_mode}_selected_features')
+            if mode_selected_features is not None:
+                features_data[f'{analysis_mode}_selected_features'] = mode_selected_features
+                tprint_info(f"✅ Retrieved {analysis_mode} selected features: {len(mode_selected_features) if isinstance(mode_selected_features, list) else 'Unknown count'}")
+        except Exception as e:
+            tprint_warning(f"⚠️ Could not get {analysis_mode} selected features: {e}")
+
+        # Fallback to generic selected features
         try:
             selected_features = self._get_artifact('selected_features')
             if selected_features is not None:
                 features_data['selected_features'] = selected_features
-                tprint_info(f"✅ Retrieved selected features: {len(selected_features) if isinstance(selected_features, list) else 'Unknown count'}")
+                tprint_info(f"✅ Retrieved generic selected features: {len(selected_features) if isinstance(selected_features, list) else 'Unknown count'}")
         except Exception as e:
-            tprint_warning(f"⚠️ Could not get selected features: {e}")
+            tprint_warning(f"⚠️ Could not get generic selected features: {e}")
 
         # PRIORITY 5: Get feature dataframe from feature generation step (Other engineered features)
+        # Look for mode-specific feature dataframe first
+        try:
+            mode_feature_df = self._get_artifact(f'{analysis_mode}_feature_dataframe')
+            if mode_feature_df is not None:
+                features_data[f'{analysis_mode}_feature_dataframe'] = mode_feature_df
+                tprint_info(f"✅ Retrieved {analysis_mode} feature dataframe: {mode_feature_df.shape if hasattr(mode_feature_df, 'shape') else 'Unknown shape'}")
+        except Exception as e:
+            tprint_warning(f"⚠️ Could not get {analysis_mode} feature dataframe: {e}")
+
+        # Fallback to generic feature dataframe
         try:
             feature_df = self._get_artifact('feature_dataframe')
             if feature_df is not None:
                 features_data['feature_dataframe'] = feature_df
-                tprint_info(f"✅ Retrieved feature dataframe: {feature_df.shape if hasattr(feature_df, 'shape') else 'Unknown shape'}")
+                tprint_info(f"✅ Retrieved generic feature dataframe: {feature_df.shape if hasattr(feature_df, 'shape') else 'Unknown shape'}")
         except Exception as e:
-            tprint_warning(f"⚠️ Could not get feature dataframe: {e}")
+            tprint_warning(f"⚠️ Could not get generic feature dataframe: {e}")
 
         return features_data
 
@@ -886,52 +1003,12 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
         Returns:
             True if in Tactician mode, False otherwise
         """
-        # Primary detection: Check current step name for Tactician training steps
-        # This is the most reliable method since it comes directly from ares_launcher.py
-        current_step_name = getattr(self, 'step_name', '')
-        is_tactician_training_step = (
-            'tactician_base_training' in current_step_name or
-            'tactician_ensemble_training' in current_step_name or
-            'tactician' in current_step_name.lower()
-        )
-        
-        # Also check if we're in a Tactician execution context
-        # This could be set by upstream steps or the launcher
-        tactician_execution_context = config.get('execution_context', '').lower()
-        is_tactician_context = 'tactician' in tactician_execution_context
-        
-        # Secondary detection: Check for Tactician-specific features
-        tactician_features = [col for col in features_df.columns if 'tactician' in col.lower()]
-        
-        # Tertiary detection: Check for CMI-based Tactician features
-        cmi_tactician_features = [col for col in features_df.columns if 'cmi' in col.lower()]
-        
-        # Quaternary detection: Check configuration for explicit Tactician mode
-        explicit_tactician_mode = config.get('tactician_mode', False)
-        
-        # Quinary detection: Check for Analyst features (if present, we might be in complementarity mode)
-        analyst_features = [col for col in features_df.columns if 'analyst' in col.lower()]
-        
-        # Determine mode based on step name (primary) or feature analysis (secondary)
-        is_tactician_mode = (
-            is_tactician_training_step or
-            is_tactician_context or
-            len(tactician_features) > 0 or 
-            len(cmi_tactician_features) > 0 or 
-            explicit_tactician_mode or
-            (len(analyst_features) > 0 and config.get('enable_cmi_complementarity', False))
-        )
+        # Use the new execution mode determination method
+        execution_mode = self._determine_execution_mode()
+        is_tactician_mode = execution_mode == 'tactician'
         
         tprint_info(f"🔍 Tactician mode detection:")
-        tprint_info(f"  - Current step name: {current_step_name}")
-        tprint_info(f"  - Is Tactician training step: {is_tactician_training_step}")
-        tprint_info(f"  - Execution context: {config.get('execution_context', 'N/A')}")
-        tprint_info(f"  - Is Tactician context: {is_tactician_context}")
-        tprint_info(f"  - Tactician features: {len(tactician_features)}")
-        tprint_info(f"  - CMI Tactician features: {len(cmi_tactician_features)}")
-        tprint_info(f"  - Analyst features: {len(analyst_features)}")
-        tprint_info(f"  - Explicit Tactician mode: {explicit_tactician_mode}")
-        tprint_info(f"  - CMI complementarity enabled: {config.get('enable_cmi_complementarity', False)}")
+        tprint_info(f"  - Execution mode: {execution_mode}")
         tprint_info(f"  - Detected Tactician mode: {is_tactician_mode}")
         
         return is_tactician_mode
@@ -1240,7 +1317,7 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
 
         return artifacts
 
-    def _calculate_metrics(self, feature_sets: Dict[str, List[str]], shap_values: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
+    def _calculate_metrics(self, feature_sets: Dict[str, List[str]], shap_values: Dict[str, Any], config: Dict[str, Any], execution_mode: str, analysis_mode: str) -> Dict[str, Any]:
         """Calculate metrics for the feature selection."""
         total_features_selected = sum(len(features) for name, features in feature_sets.items()
                                     if name.startswith('selected_features_'))
@@ -1253,7 +1330,10 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             'symbol': config.get('symbol', 'unknown'),
             'exchange': config.get('exchange', 'binance'),
             'timeframe': config.get('timeframe', '15m'),
-            'execution_mode': config.get('execution_mode', 'light')
+            'execution_mode': config.get('execution_mode', 'light'),
+            'execution_mode_type': execution_mode,  # analyst or tactician (the mode we're running in)
+            'analysis_mode_type': analysis_mode,  # analyst or tactician (the mode whose artifacts we're analyzing)
+            'execution_context': config.get('execution_context', 'unknown')
         }
 
         # Feature set details
@@ -1363,7 +1443,7 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             tprint_warning(f"⚠️ Failed to get detailed vectorization stats: {e}")
             return {'enabled': True, 'error': str(e)}
 
-    def _create_outcome_report(self, feature_sets: Dict[str, List[str]], shap_values: Dict[str, Any], config: Dict[str, Any]) -> str:
+    def _create_outcome_report(self, feature_sets: Dict[str, List[str]], shap_values: Dict[str, Any], config: Dict[str, Any], execution_mode: str, analysis_mode: str) -> str:
         """Create comprehensive outcome report."""
         try:
             report = f"""# Final Feature Selection Outcome Report
@@ -1373,6 +1453,8 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
 - **Exchange:** {config.get('exchange', 'binance')}
 - **Timeframe:** {config.get('timeframe', '15m')}
 - **Execution Mode:** {config.get('execution_mode', 'light')}
+- **Running in:** {execution_mode.title()} mode
+- **Analyzing:** {analysis_mode.title()} artifacts
 - **Timestamp:** {datetime.now().isoformat()}
 
 ## Feature Selection Summary
@@ -1460,7 +1542,9 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
     def _generate_markdown_report(self, outcome_report: Dict[str, Any], 
                                  feature_sets: Dict[str, List[str]], 
                                  shap_values: Dict[str, Any], 
-                                 config: FinalFeatureSelectionConfig) -> str:
+                                 config: FinalFeatureSelectionConfig,
+                                 execution_mode: str,
+                                 analysis_mode: str) -> str:
         """
         Generate a comprehensive markdown report for the final feature selection step.
         
@@ -1487,6 +1571,8 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
 - **Exchange:** {getattr(self, 'exchange', 'N/A')}
 - **Timeframe:** {getattr(self, 'timeframe', 'N/A')}
 - **Execution Mode:** {getattr(self, 'execution_mode', 'N/A')}
+- **Running in:** {execution_mode.title()} mode
+- **Analyzing:** {analysis_mode.title()} artifacts
 - **Feature Count Targets:** {config.get('feature_count_targets', 'N/A')}
 - **Selection Method:** {config.get('selection_method', 'N/A')}
 - **Optimization Enabled:** {self.optimization_enabled}
@@ -1573,7 +1659,8 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             report += f"- **Total Artifacts:** {artifact_count + 2}\n"  # +2 for pickle and markdown reports
             
             report += f"\n## Summary\n\n"
-            report += f"Final feature selection completed successfully. Generated {len([k for k in feature_sets.keys() if k.startswith('selected_features_')])} optimized feature sets "
+            report += f"Final feature selection completed successfully in {execution_mode} mode, analyzing {analysis_mode} artifacts. "
+            report += f"Generated {len([k for k in feature_sets.keys() if k.startswith('selected_features_')])} optimized feature sets "
             report += f"with comprehensive SHAP analysis and metadata. All artifacts saved in both pickle and markdown formats.\n"
             
             report += f"\n---\n"

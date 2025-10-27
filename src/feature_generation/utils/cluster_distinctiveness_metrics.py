@@ -49,6 +49,16 @@ class ClusterDistinctivenessConfig:
     
     # Minimum variance threshold for feature validity
     min_variance_threshold: float = 1e-8
+    
+    # Performance optimization settings
+    enable_fast_proxies: bool = True  # Use fast proxy calculations
+    max_samples_for_advanced: int = 10000  # Limit samples for expensive calculations
+    enable_caching: bool = True  # Cache intermediate calculations
+    batch_size: int = 1000  # Process features in batches
+    
+    # Approximation settings
+    use_approximate_silhouette: bool = True  # Use faster silhouette approximation
+    silhouette_sample_ratio: float = 0.1  # Sample ratio for silhouette calculation
 
 
 class ClusterDistinctivenessCalculator:
@@ -62,12 +72,16 @@ class ClusterDistinctivenessCalculator:
     def __init__(self, config: Optional[ClusterDistinctivenessConfig] = None):
         self.config = config or ClusterDistinctivenessConfig()
         self.scaler = StandardScaler() if self.config.enable_scaling else None
+        
+        # Performance optimization caches
+        self._cluster_stats_cache = {} if self.config.enable_caching else None
+        self._feature_stats_cache = {} if self.config.enable_caching else None
     
     def calculate_feature_distinctiveness(self, 
                                         features: Dict[str, np.ndarray], 
                                         cluster_labels: np.ndarray) -> Dict[str, Dict[str, float]]:
         """
-        Calculate distinctiveness metrics for each feature.
+        Calculate distinctiveness metrics for each feature - OPTIMIZED with batch processing.
         
         Args:
             features: Dictionary of feature names to feature values
@@ -87,22 +101,30 @@ class ClusterDistinctivenessCalculator:
         
         results = {}
         
-        for feature_name, feature_values in features.items():
-            try:
-                # Validate feature
-                if not self._validate_feature(feature_values):
+        # Batch processing for large feature sets
+        feature_items = list(features.items())
+        batch_size = self.config.batch_size
+        
+        for i in range(0, len(feature_items), batch_size):
+            batch = feature_items[i:i + batch_size]
+            
+            # Process batch
+            for feature_name, feature_values in batch:
+                try:
+                    # Validate feature
+                    if not self._validate_feature(feature_values):
+                        results[feature_name] = self._get_zero_metrics()
+                        continue
+                    
+                    # Calculate distinctiveness metrics
+                    metrics = self._calculate_single_feature_distinctiveness(
+                        feature_values, cluster_labels
+                    )
+                    results[feature_name] = metrics
+                    
+                except Exception as e:
+                    warnings.warn(f"Failed to calculate distinctiveness for {feature_name}: {e}")
                     results[feature_name] = self._get_zero_metrics()
-                    continue
-                
-                # Calculate distinctiveness metrics
-                metrics = self._calculate_single_feature_distinctiveness(
-                    feature_values, cluster_labels
-                )
-                results[feature_name] = metrics
-                
-            except Exception as e:
-                warnings.warn(f"Failed to calculate distinctiveness for {feature_name}: {e}")
-                results[feature_name] = self._get_zero_metrics()
         
         return results
     
@@ -140,13 +162,25 @@ class ClusterDistinctivenessCalculator:
         return metrics
     
     def _calculate_f_ratio(self, feature_values: np.ndarray, cluster_labels: np.ndarray) -> float:
-        """Calculate F-ratio (between-cluster variance / within-cluster variance)."""
-        unique_clusters = [c for c in set(cluster_labels) if c != self.config.noise_label]
+        """Calculate F-ratio (between-cluster variance / within-cluster variance) - OPTIMIZED."""
+        # Use cached cluster stats if available
+        cache_key = f"cluster_stats_{hash(cluster_labels.tobytes())}"
+        if self._cluster_stats_cache and cache_key in self._cluster_stats_cache:
+            cluster_stats = self._cluster_stats_cache[cache_key]
+        else:
+            cluster_stats = self._get_cluster_stats_optimized(cluster_labels)
+            if self._cluster_stats_cache is not None:
+                self._cluster_stats_cache[cache_key] = cluster_stats
         
+        unique_clusters = cluster_stats['unique_clusters']
         if len(unique_clusters) < 2:
             return 0.0
         
-        # Calculate cluster statistics
+        # Fast F-ratio calculation using vectorized operations
+        if self.config.enable_fast_proxies:
+            return self._calculate_f_ratio_fast(feature_values, cluster_labels, cluster_stats)
+        
+        # Original calculation for accuracy
         cluster_means = []
         cluster_sizes = []
         cluster_values = []
@@ -176,6 +210,60 @@ class ClusterDistinctivenessCalculator:
             if i < len(cluster_values):
                 cluster_mean = cluster_means[i]
                 within_var += np.sum((cluster_values[i] - cluster_mean)**2)
+        
+        # F-ratio
+        if within_var > 0:
+            f_ratio = between_var / within_var
+        else:
+            f_ratio = 0.0
+        
+        return float(f_ratio)
+    
+    def _get_cluster_stats_optimized(self, cluster_labels: np.ndarray) -> Dict[str, Any]:
+        """Get cluster statistics with caching and optimization."""
+        unique_clusters = [c for c in set(cluster_labels) if c != self.config.noise_label]
+        cluster_sizes = [np.sum(cluster_labels == c) for c in unique_clusters]
+        
+        return {
+            'unique_clusters': unique_clusters,
+            'cluster_sizes': cluster_sizes,
+            'total_samples': len(cluster_labels),
+            'n_clusters': len(unique_clusters)
+        }
+    
+    def _calculate_f_ratio_fast(self, feature_values: np.ndarray, cluster_labels: np.ndarray, 
+                               cluster_stats: Dict[str, Any]) -> float:
+        """Fast F-ratio calculation using vectorized operations."""
+        unique_clusters = cluster_stats['unique_clusters']
+        
+        # Vectorized cluster mean calculation
+        cluster_means = np.array([np.mean(feature_values[cluster_labels == c]) 
+                                 for c in unique_clusters])
+        cluster_sizes = np.array([np.sum(cluster_labels == c) 
+                                 for c in unique_clusters])
+        
+        # Filter by minimum cluster size
+        valid_mask = cluster_sizes >= self.config.min_cluster_size
+        if np.sum(valid_mask) < 2:
+            return 0.0
+        
+        cluster_means = cluster_means[valid_mask]
+        cluster_sizes = cluster_sizes[valid_mask]
+        
+        # Overall mean
+        overall_mean = np.mean(feature_values)
+        
+        # Vectorized between-cluster variance
+        between_var = np.sum(cluster_sizes * (cluster_means - overall_mean)**2)
+        
+        # Vectorized within-cluster variance (approximation for speed)
+        within_var = 0
+        for i, cluster_id in enumerate(unique_clusters):
+            if valid_mask[i]:
+                cluster_mask = cluster_labels == cluster_id
+                cluster_vals = feature_values[cluster_mask]
+                cluster_mean = cluster_means[i]
+                within_var += np.sum((cluster_vals - cluster_mean)**2)
         
         # F-ratio
         if within_var > 0:
@@ -286,7 +374,7 @@ class ClusterDistinctivenessCalculator:
     
     def _calculate_advanced_metrics(self, feature_values: np.ndarray, 
                                   cluster_labels: np.ndarray) -> Dict[str, float]:
-        """Calculate advanced metrics using scikit-learn."""
+        """Calculate advanced metrics using scikit-learn - OPTIMIZED."""
         if not SKLEARN_AVAILABLE:
             return {}
         
@@ -303,6 +391,14 @@ class ClusterDistinctivenessCalculator:
         if len(valid_values) < 4:  # Need at least 4 points for silhouette
             return {}
         
+        # Performance optimization: limit samples for expensive calculations
+        if len(valid_values) > self.config.max_samples_for_advanced:
+            # Sample data for expensive calculations
+            sample_size = min(self.config.max_samples_for_advanced, len(valid_values))
+            sample_indices = np.random.choice(len(valid_values), sample_size, replace=False)
+            valid_values = valid_values[sample_indices]
+            valid_labels = valid_labels[sample_indices]
+        
         # Scale values if enabled
         if self.scaler is not None:
             try:
@@ -314,11 +410,79 @@ class ClusterDistinctivenessCalculator:
         
         metrics = {}
         
+        # Use fast proxies for expensive calculations
+        if self.config.enable_fast_proxies:
+            metrics.update(self._calculate_advanced_metrics_fast(valid_values_scaled, valid_labels))
+        else:
+            metrics.update(self._calculate_advanced_metrics_full(valid_values_scaled, valid_labels))
+        
+        return metrics
+    
+    def _calculate_advanced_metrics_fast(self, valid_values: np.ndarray, 
+                                       valid_labels: np.ndarray) -> Dict[str, float]:
+        """Fast approximation of advanced metrics."""
+        metrics = {}
+        
+        try:
+            # Fast silhouette approximation using sampling
+            if self.config.use_approximate_silhouette and len(valid_values) > 100:
+                sample_size = max(50, int(len(valid_values) * self.config.silhouette_sample_ratio))
+                sample_indices = np.random.choice(len(valid_values), sample_size, replace=False)
+                sample_values = valid_values[sample_indices]
+                sample_labels = valid_labels[sample_indices]
+                
+                if len(set(sample_labels)) > 1:
+                    metrics['silhouette_score'] = silhouette_score(
+                        sample_values.reshape(-1, 1), sample_labels
+                    )
+                else:
+                    metrics['silhouette_score'] = 0.0
+            else:
+                # Use full calculation for small datasets
+                if len(set(valid_labels)) > 1:
+                    metrics['silhouette_score'] = silhouette_score(
+                        valid_values.reshape(-1, 1), valid_labels
+                    )
+                else:
+                    metrics['silhouette_score'] = 0.0
+        except:
+            metrics['silhouette_score'] = 0.0
+        
+        try:
+            # Calinski-Harabasz score (relatively fast)
+            if len(set(valid_labels)) > 1:
+                metrics['calinski_harabasz_score'] = calinski_harabasz_score(
+                    valid_values.reshape(-1, 1), valid_labels
+                )
+            else:
+                metrics['calinski_harabasz_score'] = 0.0
+        except:
+            metrics['calinski_harabasz_score'] = 0.0
+        
+        try:
+            # Davies-Bouldin score (relatively fast)
+            if len(set(valid_labels)) > 1:
+                db_score = davies_bouldin_score(
+                    valid_values.reshape(-1, 1), valid_labels
+                )
+                metrics['davies_bouldin_score'] = 1.0 / (1.0 + db_score)  # Invert for higher = better
+            else:
+                metrics['davies_bouldin_score'] = 0.0
+        except:
+            metrics['davies_bouldin_score'] = 0.0
+        
+        return metrics
+    
+    def _calculate_advanced_metrics_full(self, valid_values: np.ndarray, 
+                                       valid_labels: np.ndarray) -> Dict[str, float]:
+        """Full calculation of advanced metrics."""
+        metrics = {}
+        
         try:
             # Silhouette score
             if len(set(valid_labels)) > 1:
                 metrics['silhouette_score'] = silhouette_score(
-                    valid_values_scaled.reshape(-1, 1), valid_labels
+                    valid_values.reshape(-1, 1), valid_labels
                 )
             else:
                 metrics['silhouette_score'] = 0.0
@@ -329,7 +493,7 @@ class ClusterDistinctivenessCalculator:
             # Calinski-Harabasz score
             if len(set(valid_labels)) > 1:
                 metrics['calinski_harabasz_score'] = calinski_harabasz_score(
-                    valid_values_scaled.reshape(-1, 1), valid_labels
+                    valid_values.reshape(-1, 1), valid_labels
                 )
             else:
                 metrics['calinski_harabasz_score'] = 0.0
@@ -340,7 +504,7 @@ class ClusterDistinctivenessCalculator:
             # Davies-Bouldin score (lower is better, so we invert it)
             if len(set(valid_labels)) > 1:
                 db_score = davies_bouldin_score(
-                    valid_values_scaled.reshape(-1, 1), valid_labels
+                    valid_values.reshape(-1, 1), valid_labels
                 )
                 metrics['davies_bouldin_score'] = 1.0 / (1.0 + db_score)  # Invert for higher = better
             else:

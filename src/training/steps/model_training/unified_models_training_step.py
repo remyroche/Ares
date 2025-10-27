@@ -264,6 +264,81 @@ class UnifiedModelsTrainingStep(BaseStep):
             self.logger.error(f"Failed to retrieve training data: {e}")
             raise
 
+    async def _get_primary_features(self, config: Dict[str, Any]) -> pd.DataFrame:
+        """Get primary features from feature generation step."""
+        try:
+            # Determine artifact name based on training type and config
+            training_type = config.get('training_type', 'analyst_base')
+            direction = config.get('direction', 'longs')
+            exchange = config.get('exchange', 'binance')
+            symbol = config.get('symbol', 'ETHUSDT')
+            
+            if training_type.startswith('analyst'):
+                artifact_name = f"analyst_features_{direction}_{exchange}_{symbol}"
+            else:
+                artifact_name = f"tactician_features_{direction}_{exchange}_{symbol}"
+            
+            features = await self._get_artifact(artifact_name, config)
+            if features is None:
+                # Fallback to generic artifact name
+                features = await self._get_artifact('selected_features', config)
+            
+            return features
+            
+        except Exception as e:
+            self.logger.error(f"Error retrieving primary features: {e}")
+            return None
+
+    async def _get_regime_features(self, config: Dict[str, Any]) -> pd.DataFrame:
+        """Get regime probability features."""
+        try:
+            regime_features = await self._get_artifact('regime_probabilities', config)
+            if regime_features is None:
+                # Try alternative artifact names
+                regime_features = await self._get_artifact('regime_ml_outputs', config)
+            
+            return regime_features
+            
+        except Exception as e:
+            self.logger.error(f"Error retrieving regime features: {e}")
+            return None
+
+    async def _get_additional_model_outputs(self, training_type: str, config: Dict[str, Any]) -> pd.DataFrame:
+        """Get additional model outputs based on training type."""
+        try:
+            additional_features = []
+            
+            if training_type == 'analyst_ensemble':
+                # Get Analyst base model outputs
+                base_outputs = await self._get_artifact('analyst_base_outputs', config)
+                if base_outputs is not None:
+                    additional_features.append(base_outputs)
+            
+            elif training_type == 'tactician_base':
+                # Get Analyst ensemble outputs
+                analyst_outputs = await self._get_artifact('analyst_ensemble_outputs', config)
+                if analyst_outputs is not None:
+                    additional_features.append(analyst_outputs)
+            
+            elif training_type == 'tactician_ensemble':
+                # Get both Analyst ensemble and Tactician base outputs
+                analyst_outputs = await self._get_artifact('analyst_ensemble_outputs', config)
+                tactician_outputs = await self._get_artifact('tactician_base_outputs', config)
+                
+                if analyst_outputs is not None:
+                    additional_features.append(analyst_outputs)
+                if tactician_outputs is not None:
+                    additional_features.append(tactician_outputs)
+            
+            if additional_features:
+                return pd.concat(additional_features, axis=1)
+            else:
+                return None
+                
+        except Exception as e:
+            self.logger.error(f"Error retrieving additional model outputs: {e}")
+            return None
+
     async def _execute_training_by_type(
         self, 
         training_type: str, 

@@ -1,61 +1,58 @@
 # Tactician Ensemble Training Configuration
-# Configuration for ensemble tactician models training
+# Configuration for ensemble tactician models training (15m timeframe, runs every 3m)
+# Role: When Analyst gives green light, decides WHEN to trade based on 0.5% price change timing
+# Uses outputs from Analyst ensemble + Tactician base models
 
 tactician_config:
   model_name: "tactician_ensemble"
   model_type: "meta_ensemble"
-  base_models: ["extra_trees", "gradient_boosting", "neural_network", "rule_based"]
-  meta_learner: "lightgbm_calibrated"
-  target: "strategy_optimization"
-  features: ["regime_features", "market_microstructure", "order_flow", "liquidity"]
+  target: "entry_timing"  # Timing for 0.5% price change
+  base_timeframe: "1m"  # Base timeframe for cross-timeframe features & optimized lookback
+  execution_timeframe: "15m"  # When to run the model
+  execution_frequency: "3m"  # Run every 3 minutes
+  price_change_target: 0.005  # 0.5% price change target
   
-  # Base models configuration
-  base_models_config:
-    extra_trees:
-      model_type: "ExtraTreesRegressor"
-      params:
-        n_estimators: 500
-        max_depth: 8
-        min_samples_split: 10
-        random_state: 42
-        n_jobs: -1
-    
-    gradient_boosting:
-      model_type: "GradientBoostingRegressor"
-      params:
-        n_estimators: 500
-        learning_rate: 0.1
-        max_depth: 6
-        subsample: 0.8
-        random_state: 42
-    
-    neural_network:
-      model_type: "MLPRegressor"
-      params:
-        hidden_layer_sizes: (128, 64, 32)
-        activation: "relu"
-        solver: "adam"
-        alpha: 0.001
-        learning_rate: "adaptive"
-        max_iter: 1000
-        random_state: 42
-    
-    rule_based:
-      model_type: "RuleBasedRegressor"
-      params:
-        enable_technical_rules: true
-        enable_regime_rules: true
-        enable_risk_rules: true
-        rule_confidence_threshold: 0.7
+  # Meta-learner configuration (uses Analyst ensemble + Tactician base outputs)
+  meta_learner:
+    model_type: "stacker_lgbm_calibrated"
+    gating: true  # Enable gating mechanism
+    params:
+      n_estimators: 500
+      learning_rate: 0.05
+      max_depth: 6
+      num_leaves: 63
+      subsample: 0.9
+      colsample_bytree: 0.9
+      random_state: 42
+      verbosity: -1
+      n_jobs: -1
+    calibration:
+      method: "isotonic"
+      enable_temperature_scaling: true
+    gating_params:
+      gate_threshold: 0.7
+      enable_adaptive_gating: true
+      gate_learning_rate: 0.01
   
-  # Ensemble configuration
-  ensemble:
-    method: "stacking"
-    enable_meta_learning: true
-    meta_learning_rate: 0.005
-    meta_learning_iterations: 2000
-    cross_validation_folds: 5
-    calibration_method: "isotonic"
+  # Input features from Analyst ensemble models
+  analyst_ensemble_outputs:
+    enable: true
+    source: "analyst_ensemble_models"
+    features:
+      - "analyst_ensemble_predictions"
+      - "analyst_ensemble_confidence"
+      - "analyst_ensemble_meta_learner_output"
+  
+  # Input features from Tactician base models
+  tactician_base_outputs:
+    enable: true
+    source: "tactician_base_models"
+    features:
+      - "lgbm_gru_predictions"
+      - "catboost_predictions"
+      - "causal_dilated_tcn_predictions"
+      - "tactician_base_meta_learner_output"
+      - "tactician_base_confidence_scores"
   
   # Training configuration
   training:
@@ -86,13 +83,47 @@ tactician_config:
 
 # Feature engineering configuration
 feature_engineering:
-  enable_regime_features: true
-  enable_market_microstructure: true
-  enable_order_flow_features: true
-  enable_liquidity_features: true
-  enable_technical_indicators: true
-  enable_cross_timeframe_features: true
-  cross_timeframe_periods: [5, 15, 30, 60]  # minutes
+  # Primary feature source
+  primary_features:
+    source: "feature_generation_final_feature_selection_step"
+    artifact_name: "tactician_features"  # Will be determined by direction, exchange, asset, token
+    initial_count: 300  # 300+ features before selection
+    target_count: 100   # Down to 100 after selection
+  
+  # Cross-timeframe features
+  cross_timeframe:
+    enable: true
+    base_timeframe: "1m"
+    target_timeframes: ["1m", "5m", "15m", "30m", "1h", "4h", "1d"]
+    feature_types: ["technical_indicators", "price_action", "volume_profile", "volatility"]
+    optimized_lookback: true
+  
+  # Regime features (probabilities for each regime)
+  regime_features:
+    enable: true
+    source: "regime_ml_models"
+    feature_names: ["regime_prob_0", "regime_prob_1", "regime_prob_2", "regime_prob_3"]
+    include_regime_outputs: true
+  
+  # Analyst ensemble outputs as features
+  analyst_ensemble_outputs:
+    enable: true
+    source: "analyst_ensemble_models"
+    features:
+      - "analyst_ensemble_predictions"
+      - "analyst_ensemble_confidence"
+      - "analyst_ensemble_meta_learner_output"
+  
+  # Tactician base outputs as features
+  tactician_base_outputs:
+    enable: true
+    source: "tactician_base_models"
+    features:
+      - "lgbm_gru_predictions"
+      - "catboost_predictions"
+      - "causal_dilated_tcn_predictions"
+      - "tactician_base_meta_learner_output"
+      - "tactician_base_confidence_scores"
   
   # Feature selection
   feature_selection:
@@ -100,6 +131,7 @@ feature_engineering:
     alpha: 0.005
     max_features: 150
     enable_recursive_elimination: true
+    enable_feature_importance: true
   
   # Feature scaling
   scaling:

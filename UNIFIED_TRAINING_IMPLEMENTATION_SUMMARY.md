@@ -21,12 +21,21 @@ Successfully consolidated the redundant analyst and tactician training scripts i
 
 ### 3. Configuration Management
 - **YAML Files**: Created dedicated config files in `src/training/steps/model_training/`:
-  - `analyst_base_config.yaml` for analyst base training
-  - `analyst_ensemble_config.yaml` for analyst ensemble training
-  - `tactician_base_config.yaml` for tactician base training
-  - `tactician_ensemble_config.yaml` for tactician ensemble training
+  - `analyst_base_config.yaml` for analyst base training (15m timeframe, runs every 15m)
+  - `analyst_ensemble_config.yaml` for analyst ensemble training (15m timeframe, runs every 15m)
+  - `tactician_base_config.yaml` for tactician base training (15m timeframe, runs every 3m)
+  - `tactician_ensemble_config.yaml` for tactician ensemble training (15m timeframe, runs every 3m)
+- **Model Specifications**: Updated with specific model configurations as requested:
+  - **Analyst Base**: LGBM, LGBM + PatchTST features, CatBoost with stacker_lgbm_calibrated meta-learner
+  - **Analyst Ensemble**: Uses Analyst base model outputs with stacker_lgbm_calibrated meta-learner
+  - **Tactician Base**: LGBM + small GRU, CatBoost, Causal Dilated TCN with stacker_lgbm_calibrated meta-learner
+  - **Tactician Ensemble**: Uses Analyst ensemble + Tactician base outputs with stacker_lgbm_calibrated + gating
+- **Feature Specifications**: 
+  - Primary features from `feature_generation_final_feature_selection_step` (300+ → 100 features)
+  - Regime probabilities from regime ML models
+  - Cross-timeframe features (5m base for analyst, 1m base for tactician)
+  - Model outputs as features (Analyst base → Analyst ensemble, Analyst ensemble → Tactician base, both → Tactician ensemble)
 - **Runtime Parameters**: Updates YAML configs with symbol, timeframe, direction from ares_launcher
-- **Configuration Structure**: Each YAML file contains model-specific parameters, training settings, feature engineering, evaluation metrics, and hardware optimization settings
 
 ### 4. Artifact Integration
 - **Data Retrieval**: Uses `BaseStep._get_artifact()` to retrieve training data and targets

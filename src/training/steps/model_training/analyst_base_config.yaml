@@ -1,31 +1,84 @@
 # Analyst Base Training Configuration
-# Configuration for base analyst models training
+# Configuration for base analyst models training (15m timeframe, runs every 15m)
+# Role: Decides IF we trade and emit a green light for the Tactician
 
 analyst_config:
   model_name: "analyst_base"
-  model_type: "catboost_base"
-  target: "price_prediction"
-  features: ["returns", "volatility", "volume", "momentum", "trend"]
+  model_type: "multi_model_ensemble"
+  target: "trading_signal"  # Green light signal for trading
+  base_timeframe: "5m"  # Base timeframe for cross-timeframe features
+  execution_timeframe: "15m"  # When to run the model
+  execution_frequency: "15m"  # Run every 15 minutes
   
-  # Model parameters
-  model_params:
-    iterations: 1000
-    depth: 6
-    learning_rate: 0.1
-    random_seed: 42
-    verbose: false
+  # Base models configuration
+  base_models:
+    lgbm:
+      model_type: "LGBMRegressor"
+      params:
+        n_estimators: 1000
+        learning_rate: 0.1
+        max_depth: 8
+        num_leaves: 255
+        subsample: 0.8
+        colsample_bytree: 0.8
+        random_state: 42
+        verbosity: -1
+        n_jobs: -1
+    
+    lgbm_patchtst:
+      model_type: "LGBMRegressor"
+      patchtst_features: true
+      params:
+        n_estimators: 1000
+        learning_rate: 0.08
+        max_depth: 10
+        num_leaves: 511
+        subsample: 0.85
+        colsample_bytree: 0.85
+        random_state: 42
+        verbosity: -1
+        n_jobs: -1
+    
+    catboost:
+      model_type: "CatBoostRegressor"
+      params:
+        iterations: 1500
+        learning_rate: 0.08
+        depth: 8
+        l2_leaf_reg: 3.0
+        random_seed: 42
+        verbose: false
+        thread_count: -1
+  
+  # Meta-learner configuration
+  meta_learner:
+    model_type: "stacker_lgbm_calibrated"
+    params:
+      n_estimators: 500
+      learning_rate: 0.05
+      max_depth: 6
+      num_leaves: 63
+      subsample: 0.9
+      colsample_bytree: 0.9
+      random_state: 42
+      verbosity: -1
+      n_jobs: -1
+    calibration:
+      method: "isotonic"
+      enable_temperature_scaling: true
   
   # Training configuration
   training:
-    training_samples: 10000
-    validation_samples: 3000
-    test_samples: 2000
+    training_samples: 50000
+    validation_samples: 15000
+    test_samples: 10000
     enable_cross_validation: true
     cv_folds: 5
     enable_early_stopping: true
-    early_stopping_patience: 10
+    early_stopping_patience: 20
     validation_split: 0.2
     test_split: 0.1
+    enable_time_series_split: true
   
   # Performance settings
   performance:
@@ -42,16 +95,34 @@ analyst_config:
 
 # Feature engineering configuration
 feature_engineering:
-  enable_technical_indicators: true
-  enable_regime_features: true
-  enable_market_microstructure: true
+  # Primary feature source
+  primary_features:
+    source: "feature_generation_final_feature_selection_step"
+    artifact_name: "analyst_features"  # Will be determined by direction, exchange, asset, token
+    initial_count: 300  # 300+ features before selection
+    target_count: 100   # Down to 100 after selection
+  
+  # Cross-timeframe features
+  cross_timeframe:
+    enable: true
+    base_timeframe: "5m"
+    target_timeframes: ["1m", "5m", "15m", "30m", "1h", "4h", "1d"]
+    feature_types: ["technical_indicators", "price_action", "volume_profile", "volatility"]
+  
+  # Regime features (probabilities for each regime)
+  regime_features:
+    enable: true
+    source: "regime_ml_models"
+    feature_names: ["regime_prob_0", "regime_prob_1", "regime_prob_2", "regime_prob_3"]
+    include_regime_outputs: true
   
   # Feature selection
   feature_selection:
     method: "lasso"
     alpha: 0.01
-    max_features: 50
+    max_features: 100
     enable_recursive_elimination: true
+    enable_feature_importance: true
   
   # Feature scaling
   scaling:

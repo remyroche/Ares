@@ -1442,7 +1442,7 @@ class SRParameterOptimizationStep(BaseStep):
         return True
 
     def _detect_sr_levels(self, data: Any, params: Dict[str, Any]) -> List[Dict[str, Any]]:
-        """Detect SR levels using given parameters."""
+        """Detect SR levels using multiple proven methods."""
         try:
             if not PANDAS_AVAILABLE or not isinstance(data, pd.DataFrame):
                 return []
@@ -1453,37 +1453,376 @@ class SRParameterOptimizationStep(BaseStep):
             close = data['close'].values
             volume = data['volume'].values if 'volume' in data.columns else None
             
-            sr_levels = []
-            min_touches = params.get('min_touches', 2)
-            strength_threshold = params.get('strength_threshold', 0.5)
-            distance_threshold = params.get('distance_threshold', 0.01)
-            lookback_periods = params.get('lookback_periods', 50)
+            all_sr_levels = []
             
-            # Simple SR detection algorithm
-            for i in range(lookback_periods, len(high)):
-                # Check for support level (local minimum)
-                if self._is_local_minimum(low, i, lookback_periods):
-                    level = self._analyze_sr_level(
-                        high, low, close, volume, i, 'support', 
-                        min_touches, strength_threshold, distance_threshold
-                    )
-                    if level:
-                        sr_levels.append(level)
-                
-                # Check for resistance level (local maximum)
-                if self._is_local_maximum(high, i, lookback_periods):
-                    level = self._analyze_sr_level(
-                        high, low, close, volume, i, 'resistance',
-                        min_touches, strength_threshold, distance_threshold
-                    )
-                    if level:
-                        sr_levels.append(level)
+            # Method 1: Traditional local minima/maxima
+            traditional_levels = self._detect_traditional_sr_levels(high, low, close, volume, params)
+            all_sr_levels.extend(traditional_levels)
             
-            return sr_levels
+            # Method 2: High Volume Nodes (HVN)
+            hvn_levels = self._detect_hvn_levels(high, low, close, volume, params)
+            all_sr_levels.extend(hvn_levels)
+            
+            # Method 3: Price reversal patterns
+            reversal_levels = self._detect_reversal_levels(high, low, close, volume, params)
+            all_sr_levels.extend(reversal_levels)
+            
+            # Method 4: Fibonacci levels
+            fib_levels = self._detect_fibonacci_levels(high, low, close, params)
+            all_sr_levels.extend(fib_levels)
+            
+            # Method 5: Fractal-based levels
+            fractal_levels = self._detect_fractal_levels(high, low, close, volume, params)
+            all_sr_levels.extend(fractal_levels)
+            
+            # Method 6: Consolidation ranges
+            consolidation_levels = self._detect_consolidation_levels(high, low, close, volume, params)
+            all_sr_levels.extend(consolidation_levels)
+            
+            # Method 7: Pivot points
+            pivot_levels = self._detect_pivot_levels(high, low, close, params)
+            all_sr_levels.extend(pivot_levels)
+            
+            # Consolidate and merge similar levels
+            consolidated_levels = self._consolidate_sr_levels(all_sr_levels, params)
+            
+            self.logger.info(f"Detected {len(consolidated_levels)} SR levels using {len(all_sr_levels)} raw detections")
+            return consolidated_levels
             
         except Exception as e:
             self.logger.error(f"SR level detection failed: {e}")
             return []
+
+    def _detect_traditional_sr_levels(self, high: np.ndarray, low: np.ndarray, close: np.ndarray, 
+                                     volume: Optional[np.ndarray], params: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Detect traditional SR levels using local minima/maxima."""
+        sr_levels = []
+        min_touches = params.get('min_touches', 2)
+        strength_threshold = params.get('strength_threshold', 0.5)
+        distance_threshold = params.get('distance_threshold', 0.01)
+        lookback_periods = params.get('lookback_periods', 50)
+        
+        for i in range(lookback_periods, len(high)):
+            # Check for support level (local minimum)
+            if self._is_local_minimum(low, i, lookback_periods):
+                level = self._analyze_sr_level(
+                    high, low, close, volume, i, 'support', 
+                    min_touches, strength_threshold, distance_threshold, 'traditional'
+                )
+                if level:
+                    sr_levels.append(level)
+            
+            # Check for resistance level (local maximum)
+            if self._is_local_maximum(high, i, lookback_periods):
+                level = self._analyze_sr_level(
+                    high, low, close, volume, i, 'resistance',
+                    min_touches, strength_threshold, distance_threshold, 'traditional'
+                )
+                if level:
+                    sr_levels.append(level)
+        
+        return sr_levels
+
+    def _detect_hvn_levels(self, high: np.ndarray, low: np.ndarray, close: np.ndarray, 
+                          volume: Optional[np.ndarray], params: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Detect High Volume Node (HVN) levels."""
+        if volume is None:
+            return []
+        
+        sr_levels = []
+        volume_threshold = params.get('volume_threshold', 1.5)
+        lookback_periods = params.get('lookback_periods', 50)
+        
+        # Calculate volume moving average
+        volume_ma = self._rolling_mean(volume, lookback_periods)
+        
+        for i in range(lookback_periods, len(high)):
+            if volume[i] > volume_ma[i] * volume_threshold:
+                # Check if this is a significant price level
+                price_level = (high[i] + low[i]) / 2
+                level_type = 'support' if close[i] < price_level else 'resistance'
+                
+                level = self._analyze_sr_level(
+                    high, low, close, volume, i, level_type,
+                    params.get('min_touches', 2), params.get('strength_threshold', 0.5),
+                    params.get('distance_threshold', 0.01), 'hvn'
+                )
+                if level:
+                    level['volume_ratio'] = volume[i] / volume_ma[i]
+                    sr_levels.append(level)
+        
+        return sr_levels
+
+    def _detect_reversal_levels(self, high: np.ndarray, low: np.ndarray, close: np.ndarray, 
+                               volume: Optional[np.ndarray], params: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Detect price reversal pattern levels."""
+        sr_levels = []
+        reversal_threshold = params.get('reversal_threshold', 0.02)
+        min_reversal_strength = params.get('min_reversal_strength', 0.01)
+        
+        for i in range(2, len(high) - 2):
+            # Check for bullish reversal (hammer, doji, etc.)
+            if self._is_bullish_reversal(high, low, close, i):
+                level = self._analyze_sr_level(
+                    high, low, close, volume, i, 'support',
+                    params.get('min_touches', 2), min_reversal_strength,
+                    params.get('distance_threshold', 0.01), 'reversal'
+                )
+                if level:
+                    level['reversal_strength'] = self._calculate_reversal_strength(high, low, close, i)
+                    sr_levels.append(level)
+            
+            # Check for bearish reversal (shooting star, doji, etc.)
+            if self._is_bearish_reversal(high, low, close, i):
+                level = self._analyze_sr_level(
+                    high, low, close, volume, i, 'resistance',
+                    params.get('min_touches', 2), min_reversal_strength,
+                    params.get('distance_threshold', 0.01), 'reversal'
+                )
+                if level:
+                    level['reversal_strength'] = self._calculate_reversal_strength(high, low, close, i)
+                    sr_levels.append(level)
+        
+        return sr_levels
+
+    def _detect_fibonacci_levels(self, high: np.ndarray, low: np.ndarray, close: np.ndarray, 
+                                params: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Detect Fibonacci retracement and extension levels."""
+        sr_levels = []
+        lookback_periods = params.get('lookback_periods', 50)
+        
+        for i in range(lookback_periods, len(high)):
+            # Find recent swing high and low
+            swing_high_idx = self._find_swing_high(high, i, lookback_periods)
+            swing_low_idx = self._find_swing_low(low, i, lookback_periods)
+            
+            if swing_high_idx is not None and swing_low_idx is not None:
+                swing_high = high[swing_high_idx]
+                swing_low = low[swing_low_idx]
+                price_range = swing_high - swing_low
+                
+                # Calculate Fibonacci levels
+                fib_levels = {
+                    0.236: swing_low + price_range * 0.236,
+                    0.382: swing_low + price_range * 0.382,
+                    0.5: swing_low + price_range * 0.5,
+                    0.618: swing_low + price_range * 0.618,
+                    0.786: swing_low + price_range * 0.786,
+                    1.0: swing_high,
+                    1.272: swing_high + price_range * 0.272,
+                    1.414: swing_high + price_range * 0.414,
+                    1.618: swing_high + price_range * 0.618
+                }
+                
+                for fib_ratio, fib_price in fib_levels.items():
+                    if swing_low <= fib_price <= swing_high * 1.2:  # Within reasonable range
+                        level_type = 'support' if fib_price < close[i] else 'resistance'
+                        level = {
+                            'price': fib_price,
+                            'type': level_type,
+                            'method': 'fibonacci',
+                            'fib_ratio': fib_ratio,
+                            'touches': 1,  # Will be calculated in analyze_sr_level
+                            'strength': 0.5,  # Default strength
+                            'volume_confirmation': 1.0,
+                            'index': i,
+                            'quality_score': 0.6  # Fibonacci levels have moderate quality
+                        }
+                        sr_levels.append(level)
+        
+        return sr_levels
+
+    def _detect_fractal_levels(self, high: np.ndarray, low: np.ndarray, close: np.ndarray, 
+                              volume: Optional[np.ndarray], params: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Detect fractal-based SR levels."""
+        sr_levels = []
+        fractal_period = params.get('fractal_period', 5)
+        
+        for i in range(fractal_period, len(high) - fractal_period):
+            # Check for fractal high (resistance)
+            if self._is_fractal_high(high, i, fractal_period):
+                level = self._analyze_sr_level(
+                    high, low, close, volume, i, 'resistance',
+                    params.get('min_touches', 2), params.get('strength_threshold', 0.5),
+                    params.get('distance_threshold', 0.01), 'fractal'
+                )
+                if level:
+                    sr_levels.append(level)
+            
+            # Check for fractal low (support)
+            if self._is_fractal_low(low, i, fractal_period):
+                level = self._analyze_sr_level(
+                    high, low, close, volume, i, 'support',
+                    params.get('min_touches', 2), params.get('strength_threshold', 0.5),
+                    params.get('distance_threshold', 0.01), 'fractal'
+                )
+                if level:
+                    sr_levels.append(level)
+        
+        return sr_levels
+
+    def _detect_consolidation_levels(self, high: np.ndarray, low: np.ndarray, close: np.ndarray, 
+                                   volume: Optional[np.ndarray], params: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Detect consolidation range levels."""
+        sr_levels = []
+        consolidation_periods = params.get('consolidation_periods', 20)
+        max_range_pct = params.get('max_range_pct', 0.05)  # 5% max range for consolidation
+        
+        for i in range(consolidation_periods, len(high)):
+            # Check if this period represents a consolidation
+            period_high = np.max(high[i-consolidation_periods:i])
+            period_low = np.min(low[i-consolidation_periods:i])
+            period_range = (period_high - period_low) / period_low
+            
+            if period_range <= max_range_pct:
+                # This is a consolidation - add support and resistance levels
+                support_level = {
+                    'price': period_low,
+                    'type': 'support',
+                    'method': 'consolidation',
+                    'touches': consolidation_periods,
+                    'strength': 0.7,  # Consolidations are strong levels
+                    'volume_confirmation': 1.0,
+                    'index': i,
+                    'quality_score': 0.8,
+                    'consolidation_periods': consolidation_periods
+                }
+                sr_levels.append(support_level)
+                
+                resistance_level = {
+                    'price': period_high,
+                    'type': 'resistance',
+                    'method': 'consolidation',
+                    'touches': consolidation_periods,
+                    'strength': 0.7,
+                    'volume_confirmation': 1.0,
+                    'index': i,
+                    'quality_score': 0.8,
+                    'consolidation_periods': consolidation_periods
+                }
+                sr_levels.append(resistance_level)
+        
+        return sr_levels
+
+    def _detect_pivot_levels(self, high: np.ndarray, low: np.ndarray, close: np.ndarray, 
+                           params: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Detect pivot point levels."""
+        sr_levels = []
+        pivot_period = params.get('pivot_period', 20)
+        
+        for i in range(pivot_period, len(high) - pivot_period):
+            # Calculate pivot point
+            prev_high = np.max(high[i-pivot_period:i])
+            prev_low = np.min(low[i-pivot_period:i])
+            prev_close = close[i-1]
+            
+            pivot = (prev_high + prev_low + prev_close) / 3
+            
+            # Calculate support and resistance levels
+            r1 = 2 * pivot - prev_low
+            r2 = pivot + (prev_high - prev_low)
+            r3 = prev_high + 2 * (pivot - prev_low)
+            
+            s1 = 2 * pivot - prev_high
+            s2 = pivot - (prev_high - prev_low)
+            s3 = prev_low - 2 * (prev_high - pivot)
+            
+            # Add pivot levels
+            levels = [
+                (r3, 'resistance', 'pivot_r3'),
+                (r2, 'resistance', 'pivot_r2'),
+                (r1, 'resistance', 'pivot_r1'),
+                (pivot, 'support', 'pivot'),
+                (s1, 'support', 'pivot_s1'),
+                (s2, 'support', 'pivot_s2'),
+                (s3, 'support', 'pivot_s3')
+            ]
+            
+            for price, level_type, level_name in levels:
+                if prev_low <= price <= prev_high * 1.2:  # Within reasonable range
+                    level = {
+                        'price': price,
+                        'type': level_type,
+                        'method': 'pivot',
+                        'level_name': level_name,
+                        'touches': 1,
+                        'strength': 0.6,
+                        'volume_confirmation': 1.0,
+                        'index': i,
+                        'quality_score': 0.7
+                    }
+                    sr_levels.append(level)
+        
+        return sr_levels
+
+    def _consolidate_sr_levels(self, all_levels: List[Dict[str, Any]], params: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Consolidate and merge similar SR levels."""
+        if not all_levels:
+            return []
+        
+        # Sort levels by price
+        sorted_levels = sorted(all_levels, key=lambda x: x['price'])
+        consolidated = []
+        distance_threshold = params.get('distance_threshold', 0.01)
+        
+        i = 0
+        while i < len(sorted_levels):
+            current_level = sorted_levels[i]
+            merged_levels = [current_level]
+            
+            # Find levels within distance threshold
+            j = i + 1
+            while j < len(sorted_levels):
+                next_level = sorted_levels[j]
+                price_diff = abs(next_level['price'] - current_level['price']) / current_level['price']
+                
+                if price_diff <= distance_threshold and next_level['type'] == current_level['type']:
+                    merged_levels.append(next_level)
+                    j += 1
+                else:
+                    break
+            
+            # Merge the levels
+            if len(merged_levels) > 1:
+                merged_level = self._merge_sr_levels(merged_levels)
+                consolidated.append(merged_level)
+            else:
+                consolidated.append(current_level)
+            
+            i = j
+        
+        return consolidated
+
+    def _merge_sr_levels(self, levels: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Merge multiple similar SR levels into one."""
+        if not levels:
+            return {}
+        
+        # Calculate weighted average price
+        total_weight = sum(level.get('quality_score', 0.5) for level in levels)
+        weighted_price = sum(level['price'] * level.get('quality_score', 0.5) for level in levels) / total_weight
+        
+        # Sum touches and calculate average strength
+        total_touches = sum(level.get('touches', 1) for level in levels)
+        avg_strength = sum(level.get('strength', 0.5) for level in levels) / len(levels)
+        
+        # Get the best quality score
+        max_quality = max(level.get('quality_score', 0.5) for level in levels)
+        
+        # Combine methods
+        methods = list(set(level.get('method', 'unknown') for level in levels))
+        
+        return {
+            'price': weighted_price,
+            'type': levels[0]['type'],
+            'method': '+'.join(methods),
+            'touches': total_touches,
+            'strength': avg_strength,
+            'volume_confirmation': 1.0,
+            'index': levels[0]['index'],
+            'quality_score': max_quality,
+            'merged_from': len(levels)
+        }
 
     def _is_local_minimum(self, low: np.ndarray, idx: int, window: int) -> bool:
         """Check if index is a local minimum."""
@@ -1497,10 +1836,129 @@ class SRParameterOptimizationStep(BaseStep):
         end = min(len(high), idx + window // 2 + 1)
         return high[idx] == np.max(high[start:end])
 
+    def _rolling_mean(self, data: np.ndarray, window: int) -> np.ndarray:
+        """Calculate rolling mean."""
+        result = np.full_like(data, np.nan)
+        for i in range(window - 1, len(data)):
+            result[i] = np.mean(data[i - window + 1:i + 1])
+        return result
+
+    def _is_bullish_reversal(self, high: np.ndarray, low: np.ndarray, close: np.ndarray, idx: int) -> bool:
+        """Check for bullish reversal patterns (hammer, doji, etc.)."""
+        if idx < 2 or idx >= len(high) - 2:
+            return False
+        
+        # Hammer pattern
+        body = abs(close[idx] - high[idx])
+        lower_shadow = low[idx] - min(close[idx], high[idx])
+        upper_shadow = max(close[idx], high[idx]) - high[idx]
+        
+        # Hammer: small body, long lower shadow, small upper shadow
+        if body < (high[idx] - low[idx]) * 0.3 and lower_shadow > body * 2 and upper_shadow < body:
+            return True
+        
+        # Doji pattern
+        if body < (high[idx] - low[idx]) * 0.1:
+            return True
+        
+        return False
+
+    def _is_bearish_reversal(self, high: np.ndarray, low: np.ndarray, close: np.ndarray, idx: int) -> bool:
+        """Check for bearish reversal patterns (shooting star, doji, etc.)."""
+        if idx < 2 or idx >= len(high) - 2:
+            return False
+        
+        # Shooting star pattern
+        body = abs(close[idx] - high[idx])
+        lower_shadow = low[idx] - min(close[idx], high[idx])
+        upper_shadow = max(close[idx], high[idx]) - high[idx]
+        
+        # Shooting star: small body, long upper shadow, small lower shadow
+        if body < (high[idx] - low[idx]) * 0.3 and upper_shadow > body * 2 and lower_shadow < body:
+            return True
+        
+        # Doji pattern
+        if body < (high[idx] - low[idx]) * 0.1:
+            return True
+        
+        return False
+
+    def _calculate_reversal_strength(self, high: np.ndarray, low: np.ndarray, close: np.ndarray, idx: int) -> float:
+        """Calculate reversal pattern strength."""
+        if idx < 2 or idx >= len(high) - 2:
+            return 0.0
+        
+        # Calculate body size relative to total range
+        body_size = abs(close[idx] - high[idx])
+        total_range = high[idx] - low[idx]
+        
+        if total_range == 0:
+            return 0.0
+        
+        # Stronger reversal if body is smaller relative to range
+        body_ratio = body_size / total_range
+        return max(0.0, 1.0 - body_ratio)
+
+    def _find_swing_high(self, high: np.ndarray, idx: int, lookback: int) -> Optional[int]:
+        """Find the most recent swing high."""
+        start = max(0, idx - lookback)
+        end = idx
+        
+        if end - start < 3:
+            return None
+        
+        # Find local maximum in the range
+        local_max_idx = start
+        for i in range(start + 1, end):
+            if high[i] > high[local_max_idx]:
+                local_max_idx = i
+        
+        return local_max_idx
+
+    def _find_swing_low(self, low: np.ndarray, idx: int, lookback: int) -> Optional[int]:
+        """Find the most recent swing low."""
+        start = max(0, idx - lookback)
+        end = idx
+        
+        if end - start < 3:
+            return None
+        
+        # Find local minimum in the range
+        local_min_idx = start
+        for i in range(start + 1, end):
+            if low[i] < low[local_min_idx]:
+                local_min_idx = i
+        
+        return local_min_idx
+
+    def _is_fractal_high(self, high: np.ndarray, idx: int, period: int) -> bool:
+        """Check if index is a fractal high."""
+        if idx < period or idx >= len(high) - period:
+            return False
+        
+        # Check if current high is higher than all highs in the period
+        for i in range(idx - period, idx + period + 1):
+            if i != idx and high[i] >= high[idx]:
+                return False
+        
+        return True
+
+    def _is_fractal_low(self, low: np.ndarray, idx: int, period: int) -> bool:
+        """Check if index is a fractal low."""
+        if idx < period or idx >= len(low) - period:
+            return False
+        
+        # Check if current low is lower than all lows in the period
+        for i in range(idx - period, idx + period + 1):
+            if i != idx and low[i] <= low[idx]:
+                return False
+        
+        return True
+
     def _analyze_sr_level(self, high: np.ndarray, low: np.ndarray, close: np.ndarray, 
                          volume: Optional[np.ndarray], idx: int, level_type: str,
                          min_touches: int, strength_threshold: float, 
-                         distance_threshold: float) -> Optional[Dict[str, Any]]:
+                         distance_threshold: float, method: str = 'unknown') -> Optional[Dict[str, Any]]:
         """Analyze a potential SR level for quality."""
         try:
             level_price = low[idx] if level_type == 'support' else high[idx]
@@ -1544,6 +2002,7 @@ class SRParameterOptimizationStep(BaseStep):
             return {
                 'price': level_price,
                 'type': level_type,
+                'method': method,
                 'touches': touches,
                 'strength': avg_strength,
                 'volume_confirmation': volume_confirmation,

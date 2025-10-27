@@ -47,6 +47,17 @@ from src.utils.ml_common.post_training.model_validation import (
     ModelValidator, ValidationConfig
 )
 
+# New improved imports for fast fail behavior
+from src.utils.ml_common.validation.temporal_data_splitter import (
+    TemporalDataSplitter, RegimeAwareSplitter, create_temporal_splitter
+)
+from src.utils.ml_common.data.regime_label_extractor import (
+    RegimeLabelExtractor, extract_regime_labels_fast_fail
+)
+from src.utils.ml_common.validation.config_validator import (
+    validate_regime_training_config, create_default_regime_training_config
+)
+
 # Suppress warnings
 warnings.filterwarnings('ignore')
 
@@ -148,7 +159,7 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
     """
 
     def __init__(self, config: Optional[ComponentConfig] = None):
-        """Initialize the Regime Models Training Component with enhanced utilities."""
+        """Initialize the Regime Models Training Component with enhanced utilities and fast fail behavior."""
         tprint("🚀 [REGIME_MODELS] Initializing Regime Models Training Component", color="cyan", bold=True)
         tprint(f"📋 [REGIME_MODELS] Config provided: {config is not None}", color="blue")
 
@@ -167,6 +178,12 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
             tprint("✅ [REGIME_MODELS] Logger initialized successfully", color="green")
         except Exception as e:
             tprint(f"⚠️ [REGIME_MODELS] Logger initialization warning: {e}", color="yellow")
+
+        # Validate and setup configuration with fast fail
+        self._validate_and_setup_config()
+
+        # Initialize improved components
+        self._initialize_improved_components()
 
         # Initialize hardware manager for optimization
         self.hardware_manager = UnifiedHardwareManager(
@@ -319,6 +336,54 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
         tprint("📋 [REGIME_MODELS] Getting required artifacts", color="cyan")
         required_artifacts = ['regime_models_training_result']
         tprint(f"✅ [REGIME_MODELS] Required artifacts: {required_artifacts}", color="green")
+        return required_artifacts
+
+    def _validate_and_setup_config(self):
+        """Validate and setup configuration with fast fail behavior."""
+        tprint("🔧 [REGIME_MODELS] Validating configuration", color="cyan")
+        
+        # Get default configuration
+        default_config = create_default_regime_training_config()
+        
+        # Merge with provided config
+        if self.config:
+            config_dict = {
+                'test_size': getattr(self.config, 'test_size', default_config['test_size']),
+                'validation_size': getattr(self.config, 'validation_size', default_config['validation_size']),
+                'cv_folds': getattr(self.config, 'cv_folds', default_config['cv_folds']),
+                'random_state': getattr(self.config, 'random_state', default_config['random_state']),
+                'gap_size': getattr(self.config, 'gap_size', default_config['gap_size']),
+                'min_regime_samples': getattr(self.config, 'min_regime_samples', default_config['min_regime_samples']),
+                'regime_aware': getattr(self.config, 'regime_aware', True)
+            }
+        else:
+            config_dict = default_config
+        
+        # Validate configuration with fast fail
+        try:
+            self.validated_config = validate_regime_training_config(config_dict, strict=True)
+            tprint("✅ [REGIME_MODELS] Configuration validated successfully", color="green")
+        except ValueError as e:
+            tprint(f"❌ [REGIME_MODELS] Configuration validation failed: {e}", color="red")
+            raise
+
+    def _initialize_improved_components(self):
+        """Initialize improved components with fast fail behavior."""
+        tprint("🔧 [REGIME_MODELS] Initializing improved components", color="cyan")
+        
+        # Initialize temporal splitter
+        self.temporal_splitter = create_temporal_splitter(self.validated_config)
+        tprint("✅ [REGIME_MODELS] Temporal splitter initialized", color="green")
+        
+        # Initialize regime label extractor
+        self.regime_extractor = RegimeLabelExtractor(
+            min_samples=self.validated_config.get('min_regime_samples', 10),
+            min_regimes=2
+        )
+        tprint("✅ [REGIME_MODELS] Regime label extractor initialized", color="green")
+        
+        # Note: Using existing feature bank system instead of custom feature generator
+        tprint("✅ [REGIME_MODELS] Using existing feature bank system", color="green")
     async def _train_models_with_hpo(self, X_train: np.ndarray, y_train: np.ndarray, X_test: np.ndarray, y_test: np.ndarray) -> Dict[str, Any]:
         """Train models with HPO optimization."""
         tprint("🔍 [REGIME_MODELS] Training models with HPO optimization", color="cyan")
@@ -790,90 +855,50 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
             initial_memory = psutil.virtual_memory()
             tprint(f"🧠 [REGIME_MODELS] Initial memory usage: {initial_memory.percent:.1f}% ({initial_memory.used / 1024**3:.1f}GB / {initial_memory.total / 1024**3:.1f}GB)", color="blue")
 
-            # Extract regime labels from pipeline state
-            tprint("📊 [REGIME_MODELS] Extracting regime labels from pipeline state", color="yellow")
+            # Extract regime labels with fast fail behavior
+            tprint("📊 [REGIME_MODELS] Extracting regime labels with fast fail", color="cyan")
             artifacts = pipeline_state.get('artifacts', {})
-            regime_labels = None
-
-            # Try multiple possible artifact keys for clustering results
-            optimal_clustering_result = artifacts.get('optimal_regime_clustering_result', {})
-            if optimal_clustering_result:
-                clustering_result = optimal_clustering_result.get('clustering_result')
-                if clustering_result:
-                    if isinstance(clustering_result, dict):
-                        regime_labels = clustering_result.get('cluster_assignments')
-                        if isinstance(regime_labels, str):
-                            try:
-                                clean_str = regime_labels.strip('[]')
-                                regime_labels = np.array([int(x) for x in clean_str.split() if x.strip()])
-                                tprint("🔍 [REGIME_MODELS] Parsed regime labels from string representation", color="blue")
-                            except Exception as e:
-                                tprint(f"⚠️ [REGIME_MODELS] Failed to parse regime labels string: {e}", color="yellow")
-                                regime_labels = None
-                    elif hasattr(clustering_result, 'cluster_assignments'):
-                        regime_labels = clustering_result.cluster_assignments
-                        if isinstance(regime_labels, str):
-                            try:
-                                clean_str = regime_labels.strip('[]')
-                                regime_labels = np.array([int(x) for x in clean_str.split() if x.strip()])
-                                tprint("🔍 [REGIME_MODELS] Parsed regime labels from clustering_result object", color="blue")
-                            except Exception as e:
-                                tprint(f"⚠️ [REGIME_MODELS] Failed to parse regime labels string: {e}", color="yellow")
-                                regime_labels = None
-
-            # Fallback to old regime_clustering_result structure
-            if regime_labels is None:
-                regime_clustering_result = artifacts.get('regime_clustering_result', {})
-                regime_labels = regime_clustering_result.get('cluster_assignments')
-                if regime_labels is not None:
-                    tprint("🔍 [REGIME_MODELS] Found regime labels in regime_clustering_result", color="blue")
-
-            # Check if regime labels are available
-            if regime_labels is None:
-                tprint("⚠️ [REGIME_MODELS] No regime labels found in artifacts, will create synthetic regime labels", color="yellow")
-                regime_labels = self._create_synthetic_regime_labels(protected_data)
-
-            # Prepare training data with enhanced feature generation
-            tprint("🔧 [REGIME_MODELS] Preparing training data with enhanced feature generation", color="yellow")
-            X, y, feature_names = self._prepare_training_data(protected_data, regime_labels, pipeline_state)
-
-            # Validate required data
-            if X is None or y is None or feature_names is None:
-                tprint("❌ [REGIME_MODELS] Failed to prepare training data", color="red")
+            
+            try:
+                regime_labels = self.regime_extractor.extract_regime_labels(artifacts)
+                tprint(f"✅ [REGIME_MODELS] Regime labels extracted: {len(regime_labels)} samples", color="green")
+            except ValueError as e:
+                tprint(f"❌ [REGIME_MODELS] Regime label extraction failed: {e}", color="red")
                 return ComponentResult(
                     success=False,
+                    error_message=f"Regime label extraction failed: {e}",
                     artifacts={},
-                    error_message="Failed to prepare training data",
-                    metadata={'component_type': 'regime_models_training'}
+                    metadata={'execution_time': time.time() - execution_start_time}
                 )
+
+            # Prepare training data with existing feature bank
+            tprint("🔧 [REGIME_MODELS] Preparing training data with existing feature bank", color="cyan")
+            try:
+                X, y, feature_names = self._prepare_training_data_improved(protected_data, regime_labels, pipeline_state)
+            except ValueError as e:
+                tprint(f"❌ [REGIME_MODELS] Training data preparation failed: {e}", color="red")
+                return ComponentResult(
+                    success=False,
+                    error_message=f"Training data preparation failed: {e}",
+                    artifacts={},
+                    metadata={'execution_time': time.time() - execution_start_time}
+                )
+
 
             tprint(f"📊 [REGIME_MODELS] Training data prepared - X: {X.shape}, y: {y.shape}", color="green")
 
-            # Perform temporal validation
-            tprint("🔄 [REGIME_MODELS] Performing temporal validation", color="cyan")
-            total_samples = len(X)
-            train_size = int(total_samples * 0.7)
-            train_indices = np.arange(train_size)
-            test_indices = np.arange(train_size, total_samples)
-
-            X_train = X[train_indices]
-            X_test = X[test_indices]
-            y_train = y[train_indices]
-            y_test = y[test_indices]
-
-            # Validate temporal split
-            validation_report = self.temporal_validator.validate_temporal_split(
-                X_train, X_test, y_train, y_test,
-                model_name="regime_models",
-                model_type="classification"
-            )
-
-            if not validation_report.temporal_order_valid:
-                tprint(f"⚠️ [REGIME_MODELS] Temporal validation failed: {validation_report.temporal_message}", color="yellow")
-                # Use fallback split
-                from sklearn.model_selection import train_test_split
-                X_train, X_test, y_train, y_test = train_test_split(
-                    X, y, test_size=0.3, random_state=42, stratify=y
+            # Split data temporally with fast fail
+            tprint("🔄 [REGIME_MODELS] Splitting data temporally", color="cyan")
+            try:
+                X_train, X_val, X_test, y_train, y_val, y_test = self.temporal_splitter.split_regime_aware(X, y)
+                tprint(f"✅ [REGIME_MODELS] Data split: Train={len(X_train)}, Val={len(X_val)}, Test={len(X_test)}", color="green")
+            except Exception as e:
+                tprint(f"❌ [REGIME_MODELS] Temporal splitting failed: {e}", color="red")
+                return ComponentResult(
+                    success=False,
+                    error_message=f"Temporal splitting failed: {e}",
+                    artifacts={},
+                    metadata={'execution_time': time.time() - execution_start_time}
                 )
             else:
                 tprint("✅ [REGIME_MODELS] Temporal validation passed", color="green")
@@ -1854,8 +1879,47 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
             tprint(f"❌ [REGIME_MODELS] Error preparing training data: {e}", color="red")
             tprint(f"🔍 [REGIME_MODELS] Error type: {error_type}", color="yellow")
 
-            self.logger.error(f"Error preparing training data: {str(e)}", exc_info=True)
-            return None, None, {}, None
+    def _prepare_training_data_improved(
+        self,
+        data: pd.DataFrame,
+        regime_labels: np.ndarray,
+        pipeline_state: Dict[str, Any] = None
+    ) -> Tuple[np.ndarray, np.ndarray, List[str]]:
+        """Prepare training data using existing feature bank system with fast fail."""
+        tprint("🔧 [REGIME_MODELS] Preparing training data with existing feature bank", color="cyan")
+        
+        try:
+            # Use existing feature bank system with fast fail
+            if not FEATURE_GENERATION_AVAILABLE:
+                raise ValueError("Feature generation system not available - cannot generate features")
+            
+            tprint("🔧 [REGIME_MODELS] Generating features using existing feature bank", color="cyan")
+            X, feature_names = self._generate_features_with_bank(data)
+            
+            if X is None or X.shape[1] < 50:
+                raise ValueError(f"Insufficient features generated: {X.shape[1] if X is not None else 0} < 50 required")
+            
+            tprint(f"✅ [REGIME_MODELS] Features generated: {X.shape[1]} features", color="green")
+            
+            # Align with regime labels
+            tprint("🔧 [REGIME_MODELS] Aligning features with regime labels", color="cyan")
+            min_length = min(len(X), len(regime_labels))
+            X = X[:min_length]
+            y = np.array(regime_labels[:min_length])
+            
+            # Validate data
+            if len(X) < 10:
+                raise ValueError(f"Insufficient samples after alignment: {len(X)}")
+            
+            if len(np.unique(y)) < 2:
+                raise ValueError(f"Insufficient regimes: {len(np.unique(y))}")
+            
+            tprint(f"✅ [REGIME_MODELS] Training data prepared: {X.shape[0]} samples, {X.shape[1]} features", color="green")
+            return X, y, feature_names
+            
+        except Exception as e:
+            tprint(f"❌ [REGIME_MODELS] Training data preparation failed: {e}", color="red")
+            raise
 
     def _generate_features_with_bank(self, data: pd.DataFrame) -> Tuple[Optional[np.ndarray], Optional[List[str]]]:
         """Generate comprehensive features using the existing feature bank."""

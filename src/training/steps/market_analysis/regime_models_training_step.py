@@ -77,7 +77,7 @@ class RegimeModelsTrainingStep(BaseStep):
             config['timeframe'] = regime_timeframe
 
         try:
-            # Initialize the comprehensive RegimeModelsTrainingComponent
+            # Initialize the RegimeModelsTrainingComponent (now with improvements)
             tprint("🚀 Initializing RegimeModelsTrainingComponent", "INFO")
             component_config = ComponentConfig(
                 symbol=config.get('symbol', 'UNKNOWN'),

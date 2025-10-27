@@ -70,3 +70,28 @@ __all__ = [
     'TradingSignal',
     'get_trading_ml_integration'
 ]
+
+try:
+    from .enhanced_sr_clustering import (
+        EnhancedSRClustering,
+        EnhancedSRClusteringConfig,
+        EnhancedClusterResult,
+        ClusteringAlgorithm,
+        OptimizationStrategy,
+        create_enhanced_sr_clustering,
+        create_enhanced_sr_clustering_from_dict
+    )
+    logger.info("✅ Successfully imported EnhancedSRClustering components")
+except ImportError as e:
+    logger.error(f"❌ Failed to import EnhancedSRClustering components: {e}")
+
+# Update __all__ to include new components
+__all__.extend([
+    'EnhancedSRClustering',
+    'EnhancedSRClusteringConfig', 
+    'EnhancedClusterResult',
+    'ClusteringAlgorithm',
+    'OptimizationStrategy',
+    'create_enhanced_sr_clustering',
+    'create_enhanced_sr_clustering_from_dict'
+])

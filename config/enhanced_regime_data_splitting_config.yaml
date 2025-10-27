@@ -1,0 +1,58 @@
+# Enhanced Regime Data Splitting Configuration
+
+# Step configuration
+step:
+  name: "enhanced_regime_data_splitting"
+  version: "1.0.0"
+  description: "Enhanced regime data splitting with BaseStep integration and multi-timeframe support"
+
+# Supported timeframes
+timeframes:
+  supported: ["1h", "15m"]
+  default: ["1h", "15m"]
+  validation:
+    min_timeframes: 1
+    max_timeframes: 5
+
+# Regime configuration
+regime:
+  min_samples_per_regime: 100
+  max_regimes: 10
+  probability_threshold: 0.1
+  split_ratios:
+    train: 0.7
+    validation: 0.2
+    test: 0.1
+
+# Data quality settings
+data_quality:
+  min_completeness: 0.95
+  max_duplicate_ratio: 0.01
+  memory_limit_mb: 1000
+
+# Artifact settings
+artifacts:
+  base_directory: "artifacts/enhanced_regime_data_splitting"
+  save_tagged_data: true
+  save_regime_splits: true
+  save_statistics: true
+  save_cross_timeframe_analysis: true
+
+# Logging configuration
+logging:
+  level: "INFO"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  file: "logs/enhanced_regime_data_splitting.log"
+
+# Performance settings
+performance:
+  max_concurrent_timeframes: 2
+  memory_optimization: true
+  parallel_processing: true
+
+# Validation settings
+validation:
+  strict_mode: false
+  validate_regime_consistency: true
+  validate_data_quality: true
+  validate_artifact_integrity: true

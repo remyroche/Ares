@@ -1,9 +1,9 @@
 """
 Unified Interaction Generation Step (Analyst/Tactician).
 
-This step implements a sophisticated pipeline for feature engineering that can operate in two modes:
-- **Tactician Mode**: Uses MI-based feature selection and interaction discovery
-- **Analyst Mode**: Uses CMI-based feature selection conditioned on Tactician outputs
+        This step implements a sophisticated pipeline for feature engineering that can operate in two modes:
+        - **Tactician Mode**: Uses CMI-based feature selection and interaction discovery
+        - **Analyst Mode**: Uses MI-based feature selection
 
 Pipeline Phases:
 1. Phase 0: Load artifacts and perform mode-specific feature selection
@@ -20,7 +20,7 @@ Key Features:
 - Tree-based interaction guidance with corrected SHAP analysis
 - Comprehensive causality enforcement
 - Category coverage tracking (≥2 per category in final set)
-- CMI complementarity for Analyst mode
+        - CMI complementarity for Tactician mode
 
 Cross-Timeframe Features:
 - For each variant feature (base, volnorm, vwap, trend_adj), generates 4 additional timeframe versions
@@ -341,9 +341,9 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
         # Determine mode
         if (is_tactician_training_step or is_tactician_context or 
             explicit_mode == 'tactician' or tactician_mode_config):
-            mode = 'tactician'  # Uses MI-based selection
+            mode = 'tactician'  # Uses CMI-based selection
         else:
-            mode = 'analyst'  # Uses CMI-based selection
+            mode = 'analyst'  # Uses MI-based selection
         
         tprint_info(f"🔍 Execution mode detection:")
         tprint_info(f"  - Current step name: {current_step_name}")
@@ -383,10 +383,10 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
         # Detect execution mode
         self.execution_mode = self._detect_execution_mode(config)
         
-        # Fast fail: Check CMI availability for Analyst mode
-        if self.execution_mode == 'analyst':
+        # Fast fail: Check CMI availability for Tactician mode
+        if self.execution_mode == 'tactician':
             if not CMI_COMPLEMENTARITY_AVAILABLE or self.cmi_scorer is None:
-                error_msg = "❌ FATAL: Analyst mode requires CMI complementarity components, but they are not available!"
+                error_msg = "❌ FATAL: Tactician mode requires CMI complementarity components, but they are not available!"
                 tprint_error(error_msg)
                 return {
                     'success': False,
@@ -394,9 +394,9 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
                     'artifacts': {},
                     'metrics': {}
                 }
-            tprint_info(f"📊 [ANALYST] Starting CMI-based interaction generation for {config.get('symbol', 'UNKNOWN')}")
+            tprint_info(f"🎯 [TACTICIAN] Starting CMI-based interaction generation for {config.get('symbol', 'UNKNOWN')}")
         else:
-            tprint_info(f"🎯 [TACTICIAN] Starting MI-based interaction generation for {config.get('symbol', 'UNKNOWN')}")
+            tprint_info(f"📊 [ANALYST] Starting MI-based interaction generation for {config.get('symbol', 'UNKNOWN')}")
         
         tprint_info(f"🔍 DEBUG: execute method called")
         tprint_info(f"🔍 DEBUG: Config: {config}")
@@ -650,14 +650,14 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
         top_features_per_category = config.get('top_features_per_category', 4)
         
         if self.execution_mode == 'tactician':
-            tprint_info(f"🎯 [TACTICIAN] Using MI-based feature selection")
-            top_features_by_category = self._select_top_features_per_category(
-                lookback_optimization, top_features_per_category
-            )
-        else:
-            tprint_info(f"📊 [ANALYST] Using CMI-based feature selection")
+            tprint_info(f"🎯 [TACTICIAN] Using CMI-based feature selection")
             top_features_by_category = self._select_top_features_per_category_cmi(
                 lookback_optimization, top_features_per_category, config
+            )
+        else:
+            tprint_info(f"📊 [ANALYST] Using MI-based feature selection")
+            top_features_by_category = self._select_top_features_per_category(
+                lookback_optimization, top_features_per_category
             )
         
         tprint_info(f"🔍 DEBUG: Feature selection returned: {len(top_features_by_category)} categories")
@@ -870,9 +870,9 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
     
     def _select_top_features_per_category(self, lookback_optimization: pd.DataFrame, top_n: int = 4) -> Dict:
         """
-        Select top features per category using adaptive selection (5-12 per category).
+        Select top features per category using MI-based selection for Analyst mode.
         
-        Uses adaptive selection based on signal strength:
+        Uses Mutual Information (MI) for feature selection:
         - Minimum 5, maximum 12 per category
         - Select features above 50th percentile of composite_score within category
         - Allow categories with stronger signals to contribute more features
@@ -884,7 +884,7 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
         Returns:
             Dict mapping category -> list of (feature_name, optimal_lookback, composite_score)
         """
-        tprint_info(f"🎯 Adaptive feature selection (3-6 per category based on signal strength)")
+        tprint_info(f"📊 [ANALYST] MI-based feature selection (3-6 per category based on signal strength)")
         
         # Transform the data if it's in wide format
         tprint_info(f"🔍 DEBUG: Checking if transformation needed...")
@@ -985,7 +985,7 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
 
     def _select_top_features_per_category_cmi(self, lookback_optimization: pd.DataFrame, top_n: int = 4, config: Dict[str, Any] = None) -> Dict:
         """
-        Select top features per category using CMI-based selection for Analyst mode.
+        Select top features per category using CMI-based selection for Tactician mode.
         
         Uses CMI complementarity conditioned on Tactician outputs:
         - Maximizes I(X;Y|T) where T = Tactician side information
@@ -1000,7 +1000,7 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
         Returns:
             Dict mapping category -> list of (feature_name, optimal_lookback, composite_score)
         """
-        tprint_info(f"📊 [ANALYST] CMI-based feature selection (3-6 per category)")
+        tprint_info(f"🎯 [TACTICIAN] CMI-based feature selection (3-6 per category)")
         
         # Transform the data if it's in wide format
         if 'category' not in lookback_optimization.columns:
@@ -1090,6 +1090,8 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
         """
         Extract Tactician side information for CMI conditioning.
         
+        This method loads Tactician outputs to condition CMI calculations for Tactician mode.
+        
         Args:
             config: Configuration dictionary
             
@@ -1097,7 +1099,7 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
             Dictionary containing Tactician side information and CMI configuration
         """
         if not CMI_COMPLEMENTARITY_AVAILABLE or self.analyst_handler is None:
-            error_msg = "❌ FATAL: CMI components not available - Analyst mode requires CMI complementarity!"
+            error_msg = "❌ FATAL: CMI components not available - Tactician mode requires CMI complementarity!"
             tprint_error(error_msg)
             raise RuntimeError(error_msg)
         

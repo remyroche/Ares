@@ -245,6 +245,11 @@ Examples:
   # MODEL_TRAINING steps (maintain compatibility)
   python ares_launcher.py --train-analyst-base --symbol ETHUSDT --timeframe 15m --direction longs
   
+  # FEATURE GENERATION INTERACTION GENERATION (differentiated modes)
+  python ares_launcher.py --run-tactician-interaction --symbol ETHUSDT --timeframe 15m
+  python ares_launcher.py --run-analyst-interaction --symbol ETHUSDT --timeframe 15m
+  python ares_launcher.py --run-both-interaction-modes --symbol ETHUSDT --timeframe 15m
+  
   # Legacy compatibility
   python ares_launcher.py --mode sequential --sub_pipeline feature_generation_data_validation_step --symbol ETHUSDT
         """
@@ -264,6 +269,12 @@ Examples:
     training_group.add_argument('--train-analyst-ensemble', action='store_true', help='Train analyst ensemble models')
     training_group.add_argument('--train-tactician-base', action='store_true', help='Train tactician base models')
     training_group.add_argument('--train-tactician-ensemble', action='store_true', help='Train tactician ensemble models')
+    
+    # Feature generation interaction generation options
+    interaction_group = parser.add_mutually_exclusive_group()
+    interaction_group.add_argument('--run-tactician-interaction', action='store_true', help='Run feature generation interaction generation in Tactician mode (MI-based)')
+    interaction_group.add_argument('--run-analyst-interaction', action='store_true', help='Run feature generation interaction generation in Analyst mode (CMI-based)')
+    interaction_group.add_argument('--run-both-interaction-modes', action='store_true', help='Run feature generation interaction generation in both Tactician and Analyst modes')
     
     # Regime discovery options
     regime_group = parser.add_mutually_exclusive_group()
@@ -428,6 +439,7 @@ async def main():
         args.step, args.steps, args.stage, args.mode, args.sub_pipeline,
         args.train_analyst_base, args.train_analyst_ensemble, 
         args.train_tactician_base, args.train_tactician_ensemble,
+        args.run_tactician_interaction, args.run_analyst_interaction, args.run_both_interaction_modes,
         args.hdbscan_regime_discovery, args.legacy_nas_tas
     ])
     
@@ -517,6 +529,47 @@ async def main():
             # For now, redirect to HDBSCAN until legacy is fully removed
             result = await launcher.run_step('hdbscan_regime_discovery', config)
             print(f"Legacy NAS/TAS regime discovery (redirected to HDBSCAN) completed: {'✅ Success' if result.get('success') else '❌ Failed'}")
+            
+        elif args.run_tactician_interaction:
+            # Tactician mode interaction generation (MI-based)
+            logger.info("Running feature generation interaction generation in Tactician mode (MI-based)")
+            config['execution_context'] = 'tactician'
+            config['interaction_generation_mode'] = 'tactician'
+            result = await launcher.run_step('feature_generation_interaction_generation_step', config)
+            print(f"Tactician interaction generation completed: {'✅ Success' if result.get('success') else '❌ Failed'}")
+            
+        elif args.run_analyst_interaction:
+            # Analyst mode interaction generation (CMI-based)
+            logger.info("Running feature generation interaction generation in Analyst mode (CMI-based)")
+            config['execution_context'] = 'analyst'
+            config['interaction_generation_mode'] = 'analyst'
+            result = await launcher.run_step('feature_generation_interaction_generation_step', config)
+            print(f"Analyst interaction generation completed: {'✅ Success' if result.get('success') else '❌ Failed'}")
+            
+        elif args.run_both_interaction_modes:
+            # Both modes interaction generation
+            logger.info("Running feature generation interaction generation in both Tactician and Analyst modes")
+            
+            # Run Tactician mode first
+            logger.info("Step 1/2: Running Tactician mode (MI-based)")
+            tactician_config = config.copy()
+            tactician_config['execution_context'] = 'tactician'
+            tactician_config['interaction_generation_mode'] = 'tactician'
+            tactician_result = await launcher.run_step('feature_generation_interaction_generation_step', tactician_config)
+            print(f"Tactician interaction generation completed: {'✅ Success' if tactician_result.get('success') else '❌ Failed'}")
+            
+            # Run Analyst mode second
+            logger.info("Step 2/2: Running Analyst mode (CMI-based)")
+            analyst_config = config.copy()
+            analyst_config['execution_context'] = 'analyst'
+            analyst_config['interaction_generation_mode'] = 'analyst'
+            analyst_result = await launcher.run_step('feature_generation_interaction_generation_step', analyst_config)
+            print(f"Analyst interaction generation completed: {'✅ Success' if analyst_result.get('success') else '❌ Failed'}")
+            
+            # Summary
+            tactician_success = tactician_result.get('success', False)
+            analyst_success = analyst_result.get('success', False)
+            print(f"Both modes completed: Tactician={'✅' if tactician_success else '❌'}, Analyst={'✅' if analyst_success else '❌'}")
             
         else:
             parser.error("Please specify a valid execution mode")

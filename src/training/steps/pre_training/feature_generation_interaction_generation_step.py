@@ -1,9 +1,9 @@
 """
 Unified Interaction Generation Step (Analyst/Tactician).
 
-This step implements a sophisticated pipeline for feature engineering that can operate in two modes:
-- **Analyst Mode**: Uses MI-based feature selection and interaction discovery
-- **Tactician Mode**: Uses CMI-based feature selection conditioned on Analyst outputs
+        This step implements a sophisticated pipeline for feature engineering that can operate in two modes:
+        - **Tactician Mode**: Uses CMI-based feature selection and interaction discovery
+        - **Analyst Mode**: Uses MI-based feature selection
 
 Pipeline Phases:
 1. Phase 0: Load artifacts and perform mode-specific feature selection
@@ -20,7 +20,7 @@ Key Features:
 - Tree-based interaction guidance with corrected SHAP analysis
 - Comprehensive causality enforcement
 - Category coverage tracking (≥2 per category in final set)
-- CMI complementarity for Tactician mode
+        - CMI complementarity for Tactician mode
 
 Cross-Timeframe Features:
 - For each variant feature (base, volnorm, vwap, trend_adj), generates 4 additional timeframe versions
@@ -85,7 +85,7 @@ except ImportError:
     DATA_LOADING_AVAILABLE = False
     tprint_warning("⚠️ Data loading utilities not available")
 
-# CMI complementarity components for Tactician mode
+# CMI complementarity components for Analyst mode
 try:
     # These modules don't exist yet - placeholder for future implementation
     CMIComplementarityScorer = None
@@ -165,8 +165,8 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
     Unified Interaction Generation Step (Analyst/Tactician).
     
     Implements a comprehensive pipeline for feature engineering that can operate in two modes:
-    - **Analyst Mode**: Uses MI-based feature selection and interaction discovery
-    - **Tactician Mode**: Uses CMI-based feature selection conditioned on Analyst outputs
+    - **Tactician Mode**: Uses MI-based feature selection and interaction discovery
+    - **Analyst Mode**: Uses CMI-based feature selection conditioned on Tactician outputs
     
     Features:
     - Top feature selection by composite_score
@@ -263,24 +263,32 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
             self.available_categories = []
             tprint_warning("⚠️ Using fallback category management")
         
-        # Initialize overfitting prevention
+        # Initialize overfitting prevention with enhanced settings
         if OVERFITTING_PREVENTION_AVAILABLE:
             self.overfitting_config = OverfittingPreventionConfig(
                 enable_early_stopping=True,
-                early_stopping_patience=10,
-                early_stopping_min_delta=1e-4,
+                early_stopping_patience=5,  # Reduced patience for stricter control
+                early_stopping_min_delta=1e-3,  # Increased minimum delta
                 enable_cross_validation=True,
                 cv_folds=5,
                 cv_strategy='time_series_split',
                 enable_regularization=True,
-                l1_regularization=0.1,
-                l2_regularization=0.1,
+                l1_regularization=0.15,  # Increased L1 regularization
+                l2_regularization=0.15,  # Increased L2 regularization
                 enable_ensemble_diversity=True,
-                diversity_threshold=0.7
+                diversity_threshold=0.8,  # Increased diversity threshold
+                enable_feature_importance_stability=True,  # New: Feature importance stability
+                stability_threshold=0.7,  # New: Stability threshold
+                enable_out_of_sample_validation=True,  # New: OOS validation
+                oos_validation_ratio=0.2,  # New: 20% OOS validation
+                enable_noise_injection=True,  # New: Noise injection for robustness
+                noise_level=0.01,  # New: 1% noise level
+                enable_feature_interaction_validation=True,  # New: Interaction validation
+                max_interaction_complexity=3  # New: Limit interaction complexity
             )
             self.overfitting_manager = OverfittingPreventionManager(self.overfitting_config)
             self.data_leakage_prevention = DataLeakagePrevention()
-            tprint_info("✅ Overfitting prevention initialized")
+            tprint_info("✅ Enhanced overfitting prevention initialized")
         else:
             self.overfitting_config = None
             self.overfitting_manager = None
@@ -333,9 +341,9 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
         # Determine mode
         if (is_tactician_training_step or is_tactician_context or 
             explicit_mode == 'tactician' or tactician_mode_config):
-            mode = 'tactician'
+            mode = 'tactician'  # Uses CMI-based selection
         else:
-            mode = 'analyst'  # Default to analyst mode
+            mode = 'analyst'  # Uses MI-based selection
         
         tprint_info(f"🔍 Execution mode detection:")
         tprint_info(f"  - Current step name: {current_step_name}")
@@ -862,9 +870,9 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
     
     def _select_top_features_per_category(self, lookback_optimization: pd.DataFrame, top_n: int = 4) -> Dict:
         """
-        Select top features per category using adaptive selection (5-12 per category).
+        Select top features per category using MI-based selection for Analyst mode.
         
-        Uses adaptive selection based on signal strength:
+        Uses Mutual Information (MI) for feature selection:
         - Minimum 5, maximum 12 per category
         - Select features above 50th percentile of composite_score within category
         - Allow categories with stronger signals to contribute more features
@@ -876,7 +884,7 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
         Returns:
             Dict mapping category -> list of (feature_name, optimal_lookback, composite_score)
         """
-        tprint_info(f"🎯 Adaptive feature selection (3-6 per category based on signal strength)")
+        tprint_info(f"📊 [ANALYST] MI-based feature selection (3-6 per category based on signal strength)")
         
         # Transform the data if it's in wide format
         tprint_info(f"🔍 DEBUG: Checking if transformation needed...")
@@ -979,9 +987,9 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
         """
         Select top features per category using CMI-based selection for Tactician mode.
         
-        Uses CMI complementarity conditioned on Analyst outputs:
-        - Maximizes I(X;Y|A) where A = Analyst side information
-        - Creates complementary features that work with Analyst outputs
+        Uses CMI complementarity conditioned on Tactician outputs:
+        - Maximizes I(X;Y|T) where T = Tactician side information
+        - Creates complementary features that work with Tactician outputs
         - Maintains category protection (minimum features per category)
         
         Args:
@@ -1002,11 +1010,11 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
             tprint_warning("⚠️ No lookback optimization data available")
             return {}
         
-        # Extract Analyst side information for CMI conditioning
-        analyst_side_info = self._extract_analyst_side_info_for_cmi(config)
+        # Extract Tactician side information for CMI conditioning
+        tactician_side_info = self._extract_tactician_side_info_for_cmi(config)
         
-        if not analyst_side_info.get('cmi_enabled', False):
-            error_msg = f"❌ FATAL: CMI conditioning not available: {analyst_side_info.get('reason', 'Unknown error')}"
+        if not tactician_side_info.get('cmi_enabled', False):
+            error_msg = f"❌ FATAL: CMI conditioning not available: {tactician_side_info.get('reason', 'Unknown error')}"
             tprint_error(error_msg)
             raise RuntimeError(error_msg)
         
@@ -1078,15 +1086,17 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
         
         return top_features_by_category
 
-    def _extract_analyst_side_info_for_cmi(self, config: Dict[str, Any]) -> Dict[str, Any]:
+    def _extract_tactician_side_info_for_cmi(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Extract Analyst side information for CMI conditioning.
+        Extract Tactician side information for CMI conditioning.
+        
+        This method loads Tactician outputs to condition CMI calculations for Tactician mode.
         
         Args:
             config: Configuration dictionary
             
         Returns:
-            Dictionary containing Analyst side information and CMI configuration
+            Dictionary containing Tactician side information and CMI configuration
         """
         if not CMI_COMPLEMENTARITY_AVAILABLE or self.analyst_handler is None:
             error_msg = "❌ FATAL: CMI components not available - Tactician mode requires CMI complementarity!"
@@ -1094,38 +1104,38 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
             raise RuntimeError(error_msg)
         
         try:
-            # Try to load Analyst features from artifacts
+            # Try to load Tactician features from artifacts
             try:
-                analyst_features = self._get_artifact('analyst_interaction_features', 'data')
-                if analyst_features is not None and not analyst_features.empty:
-                    # Extract Analyst side information
-                    analyst_side_info = self.analyst_handler.extract_side_info(
-                        {'analyst_features': analyst_features},
+                tactician_features = self._get_artifact('tactician_interaction_features', 'data')
+                if tactician_features is not None and not tactician_features.empty:
+                    # Extract Tactician side information
+                    tactician_side_info = self.analyst_handler.extract_side_info(
+                        {'tactician_features': tactician_features},
                         config=config,
-                        data_index=analyst_features.index
+                        data_index=tactician_features.index
                     )
                     
-                    if analyst_side_info.is_valid:
+                    if tactician_side_info.is_valid:
                         return {
                             'cmi_enabled': True,
-                            'analyst_features': analyst_features,
-                            'side_info': analyst_side_info
+                            'tactician_features': tactician_features,
+                            'side_info': tactician_side_info
                         }
                     else:
-                        error_msg = "❌ FATAL: Analyst side information invalid - Tactician mode requires valid Analyst outputs!"
+                        error_msg = "❌ FATAL: Tactician side information invalid - Analyst mode requires valid Tactician outputs!"
                         tprint_error(error_msg)
                         raise RuntimeError(error_msg)
                 else:
-                    error_msg = "❌ FATAL: No Analyst features found - Tactician mode requires Analyst outputs for CMI conditioning!"
+                    error_msg = "❌ FATAL: No Tactician features found - Analyst mode requires Tactician outputs for CMI conditioning!"
                     tprint_error(error_msg)
                     raise RuntimeError(error_msg)
             except Exception as e:
-                error_msg = f"❌ FATAL: Failed to load Analyst features: {e}"
+                error_msg = f"❌ FATAL: Failed to load Tactician features: {e}"
                 tprint_error(error_msg)
                 raise RuntimeError(error_msg)
                 
         except Exception as e:
-            error_msg = f"❌ FATAL: Failed to extract Analyst side information: {e}"
+            error_msg = f"❌ FATAL: Failed to extract Tactician side information: {e}"
             tprint_error(error_msg)
             raise RuntimeError(error_msg)
 
@@ -2215,16 +2225,18 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
         # Setup LGBM with overfitting prevention parameters
         tprint_info(f"  🔍 DEBUG: About to setup LGBM parameters with regularization...")
         lgbm_params = {
-            'max_depth': 4,                    # Reduced from 6 to prevent overfitting
-            'num_leaves': 15,                  # Reduced from 31 to prevent overfitting
-            'n_estimators': 100,               # Reduced from 200 to prevent overfitting
-            'learning_rate': 0.1,              # Increased from 0.05 for better convergence
-            'reg_alpha': 0.1,                  # L1 regularization
-            'reg_lambda': 0.1,                 # L2 regularization
-            'min_child_samples': 50,            # Increased from default 20
-            'min_split_gain': 0.01,            # Minimum gain for splits
-            'subsample': 0.8,                  # Row subsampling
-            'colsample_bytree': 0.8,           # Column subsampling
+            'max_depth': 3,                    # Further reduced from 4 to prevent overfitting
+            'num_leaves': 10,                  # Further reduced from 15 to prevent overfitting
+            'n_estimators': 80,                # Further reduced from 100 to prevent overfitting
+            'learning_rate': 0.05,             # Reduced from 0.1 for more conservative learning
+            'reg_alpha': 0.2,                  # Increased L1 regularization
+            'reg_lambda': 0.2,                 # Increased L2 regularization
+            'min_child_samples': 80,           # Increased from 50 to prevent overfitting
+            'min_split_gain': 0.02,            # Increased minimum gain for splits
+            'subsample': 0.6,                  # Reduced row subsampling
+            'colsample_bytree': 0.6,           # Reduced column subsampling
+            'max_bin': 255,                    # Added max_bin limit
+            'min_data_per_group': 50,          # Added minimum data per group
             'random_state': 42,
             'verbose': -1
         }
@@ -2671,18 +2683,20 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
         if len(features_sample) > 5000:
             features_sample = self._chunked_processing(features_sample, targets_sample, chunk_size=2000)
         
-        # Setup deeper LGBM
+        # Setup deeper LGBM with enhanced overfitting prevention
         lgbm_params = {
-            'max_depth': 4,                    # Reduced from 5 to prevent overfitting
-            'num_leaves': 15,                  # Reduced from 31 to prevent overfitting
-            'n_estimators': 100,               # Keep same
-            'learning_rate': 0.1,              # Increased from 0.05 for better convergence
-            'reg_alpha': 0.1,                  # L1 regularization
-            'reg_lambda': 0.1,                 # L2 regularization
-            'min_child_samples': 50,            # Increased from default 20
-            'min_split_gain': 0.01,            # Minimum gain for splits
-            'subsample': 0.8,                  # Row subsampling
-            'colsample_bytree': 0.8,           # Column subsampling
+            'max_depth': 3,                    # Further reduced from 4 to prevent overfitting
+            'num_leaves': 10,                  # Further reduced from 15 to prevent overfitting
+            'n_estimators': 80,                # Reduced from 100 to prevent overfitting
+            'learning_rate': 0.05,             # Reduced from 0.1 for more conservative learning
+            'reg_alpha': 0.2,                  # Increased L1 regularization
+            'reg_lambda': 0.2,                 # Increased L2 regularization
+            'min_child_samples': 80,           # Increased from 50 to prevent overfitting
+            'min_split_gain': 0.02,            # Increased minimum gain for splits
+            'subsample': 0.6,                  # Reduced row subsampling
+            'colsample_bytree': 0.6,           # Reduced column subsampling
+            'max_bin': 255,                    # Added max_bin limit
+            'min_data_per_group': 50,          # Added minimum data per group
             'random_state': 42,
             'verbose': -1
         }
@@ -2892,16 +2906,18 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
         # Setup LGBM with corrected parameters
         print(f"🔍 DEBUG: About to create LGBM parameters...")
         lgbm_params = {
-            'max_depth': 5,                    # Reduced from 6 to prevent overfitting
-            'num_leaves': 20,                  # Reduced from 31 to prevent overfitting
-            'n_estimators': 150,               # Reduced from 200 to prevent overfitting
-            'learning_rate': 0.1,              # Increased from 0.05 for better convergence
-            'reg_alpha': 0.15,                 # L1 regularization (higher for deeper model)
-            'reg_lambda': 0.15,                # L2 regularization (higher for deeper model)
-            'min_child_samples': 75,            # Increased from 50
-            'min_split_gain': 0.01,
-            'subsample': 0.75,                 # Row subsampling (lower for deeper model)
-            'colsample_bytree': 0.75,          # Column subsampling (lower for deeper model)
+            'max_depth': 3,                    # Further reduced from 5 to prevent overfitting
+            'num_leaves': 10,                  # Further reduced from 20 to prevent overfitting
+            'n_estimators': 80,                # Further reduced from 150 to prevent overfitting
+            'learning_rate': 0.05,             # Reduced from 0.1 for more conservative learning
+            'reg_alpha': 0.25,                 # Increased L1 regularization
+            'reg_lambda': 0.25,                # Increased L2 regularization
+            'min_child_samples': 100,          # Increased from 75 to prevent overfitting
+            'min_split_gain': 0.02,            # Increased minimum gain for splits
+            'subsample': 0.6,                  # Further reduced row subsampling
+            'colsample_bytree': 0.6,           # Further reduced column subsampling
+            'max_bin': 255,                    # Added max_bin limit
+            'min_data_per_group': 50,          # Added minimum data per group
             'random_state': 42,
             'verbose': -1
         }
@@ -3053,8 +3069,8 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
         tprint_info(f"  📊 Successful MI calculations: {sum(1 for score in mi_scores.values() if score > 0)}")
         tprint_info(f"  📊 Failed MI calculations: {sum(1 for score in mi_scores.values() if score == 0)}")
         
-        # Use pre-calculated MI scores to select best interactions
-        tprint_info("  🔧 Selecting best interactions using pre-calculated MI scores...")
+        # Use pre-calculated MI scores to select best interactions with overfitting prevention
+        tprint_info("  🔧 Selecting best interactions using pre-calculated MI scores with overfitting prevention...")
         
         # Filter out zero scores and sort by MI score
         valid_scores = {name: score for name, score in mi_scores.items() if score > 0}
@@ -3062,8 +3078,24 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
         
         tprint_info(f"  📊 Valid interactions with MI > 0: {len(valid_scores)}")
         
-        # Select top interactions (up to 50 or all if fewer)
-        max_interactions = min(50, len(sorted_interactions))
+        # Apply overfitting prevention: Limit interaction complexity and apply stability checks
+        if OVERFITTING_PREVENTION_AVAILABLE and self.overfitting_manager is not None:
+            # Filter interactions by complexity (limit to 3-way interactions max)
+            max_complexity = getattr(self.overfitting_config, 'max_interaction_complexity', 3)
+            filtered_interactions = []
+            for name, score in sorted_interactions:
+                # Count interaction terms (e.g., "feature1_x_feature2" = 2 terms)
+                complexity = len(name.split('_x_'))
+                if complexity <= max_complexity:
+                    filtered_interactions.append((name, score))
+                else:
+                    tprint_info(f"  🚫 Filtered out complex interaction: {name} (complexity: {complexity})")
+            
+            sorted_interactions = filtered_interactions
+            tprint_info(f"  📊 Interactions after complexity filtering: {len(sorted_interactions)}")
+        
+        # Select top interactions with overfitting-aware limits
+        max_interactions = min(30, len(sorted_interactions))  # Reduced from 50 to 30 for overfitting prevention
         top_interactions = sorted_interactions[:max_interactions]
         
         tprint_info(f"  📊 Selected top {len(top_interactions)} interactions")

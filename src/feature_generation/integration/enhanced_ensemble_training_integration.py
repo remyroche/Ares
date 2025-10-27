@@ -1,12 +1,14 @@
 """
 Enhanced Ensemble Training Integration
 
-This module provides comprehensive ensemble training integration that combines
-existing feature bank features (volume, trend, volatility, momentum) with
-regime-specific features for optimal meta-learner training.
+This module provides meta-features optimized for ensemble training including:
+- Base model outputs (required)
+- Disagreement features between base models
+- Entropy features derived from disagreements
+- Overall feature disagreement measures
 
-Target: 20-40 comprehensive features optimized for ensemble training
-Includes base model outputs, disagreement features, and entropy features
+Target: Meta-features optimized for ensemble training
+Focus: Base model disagreement and entropy analysis
 """
 
 import warnings
@@ -14,17 +16,13 @@ from typing import Dict, List, Optional, Tuple, Any, Union
 import numpy as np
 import pandas as pd
 
-# Import feature bank integration
-from .feature_bank_integration import (
-    FeatureBankIntegrator, FeatureBankConfig, FeatureBankCategory,
-    get_comprehensive_ensemble_training_features
-)
+# Meta-features only - no feature bank integration needed
 
 # Import ensemble models
 try:
-    from sklearn.ensemble import VotingRegressor, StackingRegressor
+    from sklearn.ensemble import VotingRegressor, StackingRegressor, RandomForestRegressor, GradientBoostingRegressor
     from sklearn.linear_model import LinearRegression, Ridge
-    from sklearn.model_selection import cross_val_score
+    from sklearn.model_selection import cross_val_score, train_test_split
     from sklearn.metrics import mean_squared_error, r2_score
     from sklearn.preprocessing import StandardScaler
     SKLEARN_AVAILABLE = True
@@ -45,96 +43,58 @@ class EnhancedEnsembleTrainingIntegration:
     """
     Enhanced Ensemble Training Integration.
     
-    Provides 20-40 comprehensive features optimized for meta-learner training
-    by combining existing feature bank features with regime-specific features,
-    base model outputs, disagreement features, and entropy features.
+    Provides meta-features optimized for meta-learner training including:
+    - Base model outputs (required)
+    - Disagreement features between base models
+    - Entropy features derived from disagreements
+    - Overall feature disagreement measures
     """
     
     def __init__(self, 
                  min_features: int = 20,
                  max_features: int = 40,
-                 enable_comprehensive_features: bool = True,
-                 enable_base_models: bool = True,
-                 enable_meta_features: bool = True,
                  ensemble_config: Optional[Dict[str, Any]] = None):
         self.min_features = min_features
         self.max_features = max_features
-        self.enable_comprehensive_features = enable_comprehensive_features
-        self.enable_base_models = enable_base_models
-        self.enable_meta_features = enable_meta_features
         self.ensemble_config = ensemble_config or {}
         
-        # Initialize feature bank integrator
-        if self.enable_comprehensive_features:
-            # Configure for ensemble training
-            config = FeatureBankConfig()
-            config.ensemble_training_min_features = min_features
-            config.ensemble_training_max_features = max_features
-            # Balanced weights for ensemble training
-            config.ensemble_training_weights = {
-                FeatureBankCategory.REGIME: 0.25,     # Regime features
-                FeatureBankCategory.VOLUME: 0.2,      # Volume patterns
-                FeatureBankCategory.TREND: 0.2,       # Trend patterns
-                FeatureBankCategory.VOLATILITY: 0.2,  # Volatility patterns
-                FeatureBankCategory.MOMENTUM: 0.15    # Momentum patterns
-            }
-            self.feature_integrator = FeatureBankIntegrator(config)
-        else:
-            self.feature_integrator = None
+        # Meta-features only - no feature bank integration needed
+        self.feature_integrator = None
     
     def get_comprehensive_ensemble_features(self, data: pd.DataFrame, 
                                          base_models: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
-        Get comprehensive features optimized for ensemble training.
+        Get meta-features optimized for ensemble training.
         
         Args:
             data: Market data DataFrame with OHLCV columns
-            base_models: Dictionary of trained base models (optional)
+            base_models: Dictionary of trained base models (required)
             
         Returns:
-            Dictionary containing comprehensive features and metadata
+            Dictionary containing meta-features and metadata
         """
-        if self.enable_comprehensive_features:
-            # Use comprehensive feature bank integration
-            result = self.feature_integrator.get_comprehensive_features_for_task(
-                'regime_ensemble_training', data
-            )
-            
-            # Add ensemble-specific features
-            if self.enable_meta_features:
-                meta_features = self._generate_meta_features(data, result['features'], base_models)
-                result['features'].update(meta_features['features'])
-                result['feature_names'].extend(meta_features['feature_names'])
-                result['feature_count'] = len(result['feature_names'])
-            
-            # Add ensemble-specific metadata
-            result.update({
-                'ensemble_optimized': True,
-                'comprehensive_features': True,
-                'meta_features_included': self.enable_meta_features,
-                'base_models_included': base_models is not None,
-                'feature_categories': self._get_feature_category_breakdown(result['features']),
-                'ensemble_readiness': self._assess_ensemble_readiness(result['features'])
-            })
-            
-            return result
-        else:
-            # Fallback to basic ensemble features
-            return self._get_basic_ensemble_features(data)
-    
-    def _get_basic_ensemble_features(self, data: pd.DataFrame) -> Dict[str, Any]:
-        """Fallback to basic ensemble features if comprehensive features are disabled."""
-        # This would use the original ensemble features only
-        # For now, return a basic implementation
-        return {
-            'features': {},
-            'feature_names': [],
-            'feature_count': 0,
+        if base_models is None:
+            raise ValueError("Base models must be provided for ensemble training")
+        
+        # Generate only meta-features
+        meta_features = self._generate_meta_features(data, {}, base_models)
+        
+        result = {
+            'features': meta_features['features'],
+            'feature_names': meta_features['feature_names'],
+            'feature_count': len(meta_features['feature_names']),
             'target_range': (self.min_features, self.max_features),
             'ensemble_optimized': True,
             'comprehensive_features': False,
-            'description': 'Basic ensemble features (comprehensive disabled)'
+            'meta_features_included': True,
+            'base_models_included': True,
+            'feature_categories': self._get_feature_category_breakdown(meta_features['features']),
+            'ensemble_readiness': self._assess_ensemble_readiness(meta_features['features']),
+            'description': 'Meta-features for ensemble training'
         }
+        
+        return result
+    
     
     def _generate_meta_features(self, data: pd.DataFrame, 
                               base_features: Dict[str, np.ndarray],
@@ -143,26 +103,23 @@ class EnhancedEnsembleTrainingIntegration:
         meta_features = {}
         meta_feature_names = []
         
-        # Base model outputs
+        # Base model outputs (always required)
         if base_models:
             base_outputs = self._generate_base_model_outputs(data, base_models)
             meta_features.update(base_outputs['features'])
             meta_feature_names.extend(base_outputs['feature_names'])
+        else:
+            raise ValueError("Base models must be provided for meta-feature generation")
         
-        # Disagreement features
-        disagreement_features = self._generate_disagreement_features(data, base_features)
+        # Disagreement features (using base model outputs as base_features)
+        disagreement_features = self._generate_disagreement_features(data, meta_features, base_models)
         meta_features.update(disagreement_features['features'])
         meta_feature_names.extend(disagreement_features['feature_names'])
         
-        # Entropy features
-        entropy_features = self._generate_entropy_features(data, base_features)
+        # Entropy features (using all current features)
+        entropy_features = self._generate_entropy_features(data, meta_features, base_models)
         meta_features.update(entropy_features['features'])
         meta_feature_names.extend(entropy_features['feature_names'])
-        
-        # Ensemble-specific features
-        ensemble_features = self._generate_ensemble_specific_features(data, base_features)
-        meta_features.update(ensemble_features['features'])
-        meta_feature_names.extend(ensemble_features['feature_names'])
         
         return {
             'features': meta_features,
@@ -171,7 +128,7 @@ class EnhancedEnsembleTrainingIntegration:
                 'base_outputs': base_models is not None,
                 'disagreement_features': len(disagreement_features['features']),
                 'entropy_features': len(entropy_features['features']),
-                'ensemble_features': len(ensemble_features['features'])
+                'total_meta_features': len(meta_feature_names)
             }
         }
     
@@ -228,37 +185,44 @@ class EnhancedEnsembleTrainingIntegration:
             return np.random.randn(len(data), 4)
     
     def _generate_disagreement_features(self, data: pd.DataFrame, 
-                                      base_features: Dict[str, np.ndarray]) -> Dict[str, Any]:
-        """Generate disagreement features between different feature categories."""
+                                      base_features: Dict[str, np.ndarray],
+                                      base_models: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Generate disagreement features between base model outputs."""
         features = {}
         feature_names = []
         
-        # Get feature categories
-        volume_features = [name for name in base_features.keys() if 'volume' in name.lower()]
-        trend_features = [name for name in base_features.keys() if 'trend' in name.lower()]
-        volatility_features = [name for name in base_features.keys() if 'volatility' in name.lower()]
-        momentum_features = [name for name in base_features.keys() if 'momentum' in name.lower()]
+        # Get base model outputs
+        base_model_outputs = []
+        base_model_names = []
+        for model_name in base_models.keys():
+            feature_name = f'base_model_{model_name}_output'
+            if feature_name in base_features:
+                base_model_outputs.append(base_features[feature_name])
+                base_model_names.append(model_name)
         
-        # Calculate disagreement between categories
-        if len(volume_features) > 1 and len(trend_features) > 1:
-            volume_std = np.std([base_features[name] for name in volume_features], axis=0)
-            trend_std = np.std([base_features[name] for name in trend_features], axis=0)
-            disagreement = np.abs(volume_std - trend_std)
-            
-            features['volume_trend_disagreement'] = disagreement
-            feature_names.append('volume_trend_disagreement')
+        if len(base_model_outputs) < 2:
+            return {
+                'features': features,
+                'feature_names': feature_names
+            }
         
-        if len(volatility_features) > 1 and len(momentum_features) > 1:
-            vol_std = np.std([base_features[name] for name in volatility_features], axis=0)
-            mom_std = np.std([base_features[name] for name in momentum_features], axis=0)
-            disagreement = np.abs(vol_std - mom_std)
-            
-            features['volatility_momentum_disagreement'] = disagreement
-            feature_names.append('volatility_momentum_disagreement')
+        # Calculate disagreement between base model outputs
+        base_model_array = np.array(base_model_outputs)
+        base_model_std = np.std(base_model_array, axis=0)
+        features['base_model_disagreement'] = base_model_std
+        feature_names.append('base_model_disagreement')
         
-        # Overall feature disagreement
-        if len(base_features) > 1:
-            all_features = np.array([base_features[name] for name in base_features.keys()])
+        # Calculate pairwise disagreements between models
+        for i, name1 in enumerate(base_model_names):
+            for j, name2 in enumerate(base_model_names[i+1:], i+1):
+                if i < len(base_model_outputs) and j < len(base_model_outputs):
+                    disagreement = np.abs(base_model_outputs[i] - base_model_outputs[j])
+                    features[f'{name1}_{name2}_disagreement'] = disagreement
+                    feature_names.append(f'{name1}_{name2}_disagreement')
+        
+        # Overall feature disagreement (using all base model outputs)
+        if len(base_model_outputs) > 1:
+            all_features = np.array(base_model_outputs)
             feature_std = np.std(all_features, axis=0)
             features['overall_feature_disagreement'] = feature_std
             feature_names.append('overall_feature_disagreement')
@@ -269,8 +233,9 @@ class EnhancedEnsembleTrainingIntegration:
         }
     
     def _generate_entropy_features(self, data: pd.DataFrame, 
-                                 base_features: Dict[str, np.ndarray]) -> Dict[str, Any]:
-        """Generate entropy features for ensemble training."""
+                                 base_features: Dict[str, np.ndarray],
+                                 base_models: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Generate entropy features for ensemble training, including entropy from disagreements."""
         features = {}
         feature_names = []
         
@@ -305,88 +270,59 @@ class EnhancedEnsembleTrainingIntegration:
                         features[f'{name1}_{name2}_joint_entropy'] = np.full(len(values1), joint_entropy)
                         feature_names.append(f'{name1}_{name2}_joint_entropy')
         
+        # Entropy from disagreements
+        disagreement_features = ['base_model_disagreement', 'overall_feature_disagreement']
+        
+        # Add pairwise disagreement features
+        if base_models:
+            base_model_names = list(base_models.keys())
+            for i, name1 in enumerate(base_model_names):
+                for j, name2 in enumerate(base_model_names[i+1:], i+1):
+                    disagreement_name = f'{name1}_{name2}_disagreement'
+                    disagreement_features.append(disagreement_name)
+        
+        for disagreement_name in disagreement_features:
+            if disagreement_name in base_features:
+                values = base_features[disagreement_name]
+                if len(values) > 0:
+                    # Calculate entropy of disagreement
+                    hist, _ = np.histogram(values, bins=20)
+                    hist = hist / np.sum(hist)  # Normalize
+                    hist = hist[hist > 0]  # Remove zero bins
+                    if len(hist) > 0:
+                        entropy = -np.sum(hist * np.log2(hist))
+                        features[f'{disagreement_name}_entropy'] = np.full(len(values), entropy)
+                        feature_names.append(f'{disagreement_name}_entropy')
+        
         return {
             'features': features,
             'feature_names': feature_names
         }
     
-    def _generate_ensemble_specific_features(self, data: pd.DataFrame, 
-                                           base_features: Dict[str, np.ndarray]) -> Dict[str, Any]:
-        """Generate ensemble-specific features."""
-        features = {}
-        feature_names = []
-        
-        # Feature diversity
-        if len(base_features) > 1:
-            all_features = np.array([base_features[name] for name in base_features.keys()])
-            feature_correlation = np.corrcoef(all_features)
-            diversity = 1 - np.mean(np.abs(feature_correlation))
-            
-            features['feature_diversity'] = np.full(len(data), diversity)
-            feature_names.append('feature_diversity')
-        
-        # Feature stability
-        for name, values in base_features.items():
-            if len(values) > 10:
-                # Calculate rolling stability
-                window = min(10, len(values) // 2)
-                stability = []
-                for i in range(window, len(values)):
-                    window_values = values[i-window:i]
-                    stability.append(np.std(window_values))
-                
-                # Pad with first value
-                stability = [stability[0]] * window + stability
-                
-                features[f'{name}_stability'] = np.array(stability)
-                feature_names.append(f'{name}_stability')
-        
-        return {
-            'features': features,
-            'feature_names': feature_names
-        }
     
     def _get_feature_category_breakdown(self, features: Dict[str, np.ndarray]) -> Dict[str, int]:
-        """Get breakdown of features by category."""
+        """Get breakdown of meta-features by category."""
         breakdown = {
-            'regime': 0,
-            'volume': 0,
-            'trend': 0,
-            'volatility': 0,
-            'momentum': 0,
             'base_outputs': 0,
             'disagreement': 0,
             'entropy': 0,
-            'ensemble': 0,
             'other': 0
         }
         
         for feature_name in features.keys():
-            if any(keyword in feature_name.lower() for keyword in ['regime', 'entropy', 'complexity', 'hurst', 'fractal', 'memory']):
-                breakdown['regime'] += 1
-            elif any(keyword in feature_name.lower() for keyword in ['volume', 'obv', 'ad', 'mfi', 'vwap']):
-                breakdown['volume'] += 1
-            elif any(keyword in feature_name.lower() for keyword in ['trend', 'sma', 'ema', 'adx', 'directional']):
-                breakdown['trend'] += 1
-            elif any(keyword in feature_name.lower() for keyword in ['volatility', 'bollinger', 'atr', 'vol']):
-                breakdown['volatility'] += 1
-            elif any(keyword in feature_name.lower() for keyword in ['rsi', 'macd', 'stochastic', 'momentum']):
-                breakdown['momentum'] += 1
-            elif 'base_model' in feature_name.lower():
+            if 'base_model' in feature_name.lower() and 'output' in feature_name.lower():
                 breakdown['base_outputs'] += 1
             elif 'disagreement' in feature_name.lower():
                 breakdown['disagreement'] += 1
             elif 'entropy' in feature_name.lower():
                 breakdown['entropy'] += 1
-            elif any(keyword in feature_name.lower() for keyword in ['diversity', 'stability', 'ensemble']):
-                breakdown['ensemble'] += 1
             else:
                 breakdown['other'] += 1
         
         return breakdown
     
     def _assess_ensemble_readiness(self, features: Dict[str, np.ndarray]) -> Dict[str, Any]:
-        """Assess how well-suited the features are for ensemble training."""
+        """Assess how well-suited the meta-features are for ensemble training."""
         if not features:
             return {'score': 0, 'issues': ['No features available']}
         
@@ -395,23 +331,27 @@ class EnhancedEnsembleTrainingIntegration:
         
         # Check feature count
         feature_count = len(features)
-        if feature_count < self.min_features:
-            issues.append(f'Too few features: {feature_count} < {self.min_features}')
-            score -= 30
-        elif feature_count > self.max_features:
-            issues.append(f'Too many features: {feature_count} > {self.max_features}')
-            score -= 10
+        if feature_count < 3:  # Minimum: base outputs + disagreement + entropy
+            issues.append(f'Too few meta-features: {feature_count} < 3')
+            score -= 50
         
         # Check meta-feature presence
         category_breakdown = self._get_feature_category_breakdown(features)
-        meta_features = (category_breakdown['base_outputs'] + 
-                        category_breakdown['disagreement'] + 
-                        category_breakdown['entropy'] + 
-                        category_breakdown['ensemble'])
         
-        if meta_features < 5:
-            issues.append(f'Insufficient meta-features: {meta_features} < 5')
-            score -= 25
+        # Must have base model outputs
+        if category_breakdown['base_outputs'] == 0:
+            issues.append('No base model outputs found')
+            score -= 40
+        
+        # Should have disagreement features
+        if category_breakdown['disagreement'] == 0:
+            issues.append('No disagreement features found')
+            score -= 20
+        
+        # Should have entropy features
+        if category_breakdown['entropy'] == 0:
+            issues.append('No entropy features found')
+            score -= 20
         
         # Check feature quality
         quality_issues = 0
@@ -425,20 +365,15 @@ class EnhancedEnsembleTrainingIntegration:
         
         if quality_issues > 0:
             issues.append(f'{quality_issues} features have quality issues')
-            score -= quality_issues * 5
-        
-        # Check feature diversity
-        unique_categories = sum(1 for count in category_breakdown.values() if count > 0)
-        if unique_categories < 4:
-            issues.append(f'Low feature diversity: only {unique_categories} categories')
-            score -= 20
+            score -= quality_issues * 10
         
         return {
             'score': max(0, score),
             'issues': issues,
             'feature_count': feature_count,
-            'meta_features': meta_features,
-            'category_diversity': unique_categories,
+            'base_outputs': category_breakdown['base_outputs'],
+            'disagreement_features': category_breakdown['disagreement'],
+            'entropy_features': category_breakdown['entropy'],
             'quality_issues': quality_issues
         }
     
@@ -446,17 +381,20 @@ class EnhancedEnsembleTrainingIntegration:
                                          base_models: Optional[Dict[str, Any]] = None,
                                          target_column: Optional[str] = None) -> Tuple[np.ndarray, np.ndarray, List[str], Dict[str, Any]]:
         """
-        Prepare data for ensemble training with comprehensive features.
+        Prepare data for ensemble training with meta-features.
         
         Args:
             data: Market data DataFrame
-            base_models: Dictionary of trained base models (optional)
+            base_models: Dictionary of trained base models (required)
             target_column: Name of target column (if None, will create synthetic target)
             
         Returns:
             Tuple of (X, y, feature_names, metadata)
         """
-        # Get comprehensive ensemble features
+        if base_models is None:
+            raise ValueError("Base models must be provided for ensemble training")
+        
+        # Get meta-features
         feature_result = self.get_comprehensive_ensemble_features(data, base_models)
         features = feature_result['features']
         feature_names = feature_result['feature_names']
@@ -512,11 +450,11 @@ class EnhancedEnsembleTrainingIntegration:
                               ensemble_type: str = 'voting',
                               test_size: float = 0.2) -> Dict[str, Any]:
         """
-        Train enhanced ensemble with comprehensive features.
+        Train enhanced ensemble with meta-features.
         
         Args:
             data: Market data DataFrame
-            base_models: Dictionary of trained base models (optional)
+            base_models: Dictionary of trained base models (required)
             target_column: Name of target column
             ensemble_type: Type of ensemble ('voting', 'stacking')
             test_size: Fraction of data to use for testing
@@ -526,6 +464,9 @@ class EnhancedEnsembleTrainingIntegration:
         """
         if not SKLEARN_AVAILABLE:
             raise ImportError("Scikit-learn not available. Install with: pip install scikit-learn")
+        
+        if base_models is None:
+            raise ValueError("Base models must be provided for ensemble training")
         
         # Prepare data
         X, y, feature_names, metadata = self.prepare_data_for_ensemble_training(data, base_models, target_column)
@@ -628,14 +569,14 @@ class EnhancedEnsembleTrainingIntegration:
 
 
 # Convenience functions
-def get_enhanced_ensemble_features(data: pd.DataFrame, base_models: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    """Get enhanced comprehensive features for ensemble training."""
+def get_enhanced_ensemble_features(data: pd.DataFrame, base_models: Dict[str, Any]) -> Dict[str, Any]:
+    """Get meta-features for ensemble training."""
     integrator = EnhancedEnsembleTrainingIntegration()
     return integrator.get_comprehensive_ensemble_features(data, base_models)
 
 
-def train_enhanced_ensemble(data: pd.DataFrame, base_models: Optional[Dict[str, Any]] = None, **kwargs) -> Dict[str, Any]:
-    """Train enhanced ensemble with comprehensive features."""
+def train_enhanced_ensemble(data: pd.DataFrame, base_models: Dict[str, Any], **kwargs) -> Dict[str, Any]:
+    """Train enhanced ensemble with meta-features."""
     integrator = EnhancedEnsembleTrainingIntegration()
     return integrator.train_enhanced_ensemble(data, base_models, **kwargs)
 

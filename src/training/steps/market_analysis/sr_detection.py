@@ -308,21 +308,86 @@ class SRDetectionStep(BaseStep):
             self.hardware_manager = None
             self.logger.warning("⚠️ Enhanced optimization not available")
 
-    async def execute(self, training_input: Dict[str, Any], pipeline_state: Dict[str, Any]) -> Dict[str, Any]:
-        """Execute the SR detection stage."""
+    async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
+        """Execute the SR detection stage with full artifact integration."""
         self.logger.info('🎯 Starting SR Detection Stage execution')
         start_time = time.time()
 
         try:
-            # Get data from pipeline state
-            data = pipeline_state.get('dataframe')
+            # Extract configuration parameters
+            symbol = config.get('symbol', 'ETHUSDT')
+            exchange = config.get('exchange', 'binance')
+            timeframe = config.get('timeframe', '15m')
+            direction = config.get('direction', 'longs')
+            execution_mode = config.get('execution_mode', 'light')
+            
+            # Set up artifact manager context
+            self.artifact_manager.set_context(
+                step_name=self.step_name,
+                symbol=symbol,
+                exchange=exchange,
+                direction=direction,
+                model='Analyst'
+            )
+
+            # Try to load existing SR levels from artifacts first
+            existing_sr_levels = None
+            try:
+                existing_sr_levels = self._get_artifact('sr_levels_dictionary', 'data')
+                if existing_sr_levels:
+                    self.logger.info(f'📊 Loaded existing SR levels from artifacts: {len(existing_sr_levels.get("levels", []))} levels')
+            except Exception as e:
+                self.logger.debug(f'No existing SR levels found in artifacts: {e}')
+
+            # Get data from config or pipeline state
+            data = config.get('dataframe') or config.get('data')
             if data is None:
-                raise ValueError("No dataframe found in pipeline state")
+                # Try to load data from artifacts
+                try:
+                    data = self._get_artifact('market_data', 'data')
+                    if data is not None:
+                        self.logger.info(f'📊 Loaded market data from artifacts: {data.shape[0]:,} rows, {data.shape[1]} columns')
+                except Exception as e:
+                    self.logger.debug(f'No market data found in artifacts: {e}')
+
+            if data is None:
+                raise ValueError("No dataframe found in config or artifacts")
 
             self.logger.info(f'📊 Data loaded: {data.shape[0]:,} rows, {data.shape[1]} columns')
 
             # Detect SR levels
             sr_levels = self._detect_sr_levels(data)
+
+            # Save SR levels as artifact
+            sr_artifact_path = self._save_artifact(
+                sr_levels,
+                'sr_levels_dictionary',
+                'data',
+                metadata={
+                    'symbol': symbol,
+                    'exchange': exchange,
+                    'timeframe': timeframe,
+                    'direction': direction,
+                    'execution_mode': execution_mode,
+                    'total_levels': len(sr_levels.get('all_levels', [])),
+                    'support_levels': len(sr_levels.get('support_levels', [])),
+                    'resistance_levels': len(sr_levels.get('resistance_levels', []))
+                }
+            )
+
+            # Save market data as artifact for future use
+            data_artifact_path = self._save_artifact(
+                data,
+                'market_data',
+                'data',
+                metadata={
+                    'symbol': symbol,
+                    'exchange': exchange,
+                    'timeframe': timeframe,
+                    'rows': data.shape[0],
+                    'columns': data.shape[1]
+                }
+            )
 
             execution_time = time.time() - start_time
             self.logger.info(f'✅ SR Detection completed in {execution_time:.2f} seconds')
@@ -331,7 +396,15 @@ class SRDetectionStep(BaseStep):
                 'success': True,
                 'sr_levels': sr_levels,
                 'execution_time': execution_time,
-                'stage': 'sr_detection'
+                'stage': 'sr_detection',
+                'artifacts': [sr_artifact_path, data_artifact_path],
+                'metrics': {
+                    'total_levels': len(sr_levels.get('all_levels', [])),
+                    'support_levels': len(sr_levels.get('support_levels', [])),
+                    'resistance_levels': len(sr_levels.get('resistance_levels', [])),
+                    'data_rows': data.shape[0],
+                    'data_columns': data.shape[1]
+                }
             }
 
         except Exception as e:
@@ -341,8 +414,36 @@ class SRDetectionStep(BaseStep):
                 'success': False,
                 'error': str(e),
                 'execution_time': execution_time,
-                'stage': 'sr_detection'
+                'stage': 'sr_detection',
+                'artifacts': [],
+                'metrics': {}
             }
+
+    def load_sr_levels_from_artifacts(self, symbol: str = 'ETHUSDT', exchange: str = 'binance', 
+                                     direction: str = 'longs') -> Optional[Dict[str, Any]]:
+        """Load existing SR levels from artifacts if available."""
+        try:
+            # Set context for artifact retrieval
+            self.artifact_manager.set_context(
+                step_name=self.step_name,
+                symbol=symbol,
+                exchange=exchange,
+                direction=direction,
+                model='Analyst'
+            )
+            
+            # Try to load SR levels
+            sr_levels = self._get_artifact('sr_levels_dictionary', 'data')
+            if sr_levels:
+                self.logger.info(f'📊 Loaded existing SR levels from artifacts: {len(sr_levels.get("all_levels", []))} levels')
+                return sr_levels
+            else:
+                self.logger.debug('No existing SR levels found in artifacts')
+                return None
+                
+        except Exception as e:
+            self.logger.debug(f'Failed to load SR levels from artifacts: {e}')
+            return None
 
     def _detect_sr_levels(self, data: pd.DataFrame) -> Dict[str, Any]:
         """Detect support and resistance levels using Enhanced SR Detection with VectorBT optimization."""

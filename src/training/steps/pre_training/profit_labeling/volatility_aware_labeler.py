@@ -3456,18 +3456,19 @@ class VolatilityAwareMultiHorizonLabeler:
         sharpness = 2.0 + (vol_normalized - 1.0) * 0.5  # Range: 1.5 to 2.5
         smooth_labels = np.tanh(distance * sharpness)
         
-        # Apply enhanced confidence weighting:
+        # Apply enhanced confidence weighting with caps:
+        # - No labels below 75% of target (0 confidence)
         # - 0.5 confidence for 75% of target
         # - 1.0 confidence for 100% of target
-        # - 1.5 confidence for 200% of target
-        # Linear scaling: confidence = 0.5 + 0.4 * (distance - 0.75)
+        # - 1.5 confidence for 200% of target (capped at 1.5)
+        # Linear scaling: confidence = 0.5 + 2.0 * (distance - 0.75), capped at 1.5
         proximity_factor = np.where(
             np.abs(distance) < 0.75,  # Below 75% of target
-            0.5 * np.abs(distance) / 0.75,  # Linear scaling from 0 to 0.5
+            0.0,  # No confidence below 75% of target
             np.where(
                 np.abs(distance) >= 0.75,  # 75% and above
-                0.5 + 2.0 * (np.abs(distance) - 0.75),  # Linear scaling: 0.5 + 0.4 * (distance - 0.75)
-                0.5  # Fallback
+                np.clip(0.5 + 2.0 * (np.abs(distance) - 0.75), 0.5, 1.5),  # Linear scaling capped at 1.5
+                0.0  # Fallback
             )
         )
         
@@ -3511,18 +3512,19 @@ class VolatilityAwareMultiHorizonLabeler:
         # Calculate distance from threshold
         distance = future_returns / effective_threshold
         
-        # Apply enhanced confidence weighting:
+        # Apply enhanced confidence weighting with caps:
+        # - No labels below 75% of target (0 confidence)
         # - 0.5 confidence for 75% of target
         # - 1.0 confidence for 100% of target
-        # - 1.5 confidence for 200% of target
-        # Linear scaling: confidence = 0.5 + 0.4 * (distance - 0.75)
+        # - 1.5 confidence for 200% of target (capped at 1.5)
+        # Linear scaling: confidence = 0.5 + 2.0 * (distance - 0.75), capped at 1.5
         proximity_factor = np.where(
             np.abs(distance) < 0.75,  # Below 75% of target
-            0.5 * np.abs(distance) / 0.75,  # Linear scaling from 0 to 0.5
+            0.0,  # No confidence below 75% of target
             np.where(
                 np.abs(distance) >= 0.75,  # 75% and above
-                0.5 + 2.0 * (np.abs(distance) - 0.75),  # Linear scaling: 0.5 + 0.4 * (distance - 0.75)
-                0.5  # Fallback
+                np.clip(0.5 + 2.0 * (np.abs(distance) - 0.75), 0.5, 1.5),  # Linear scaling capped at 1.5
+                0.0  # Fallback
             )
         )
         

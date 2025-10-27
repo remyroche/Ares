@@ -31,6 +31,45 @@ except Exception:
     logging.basicConfig(level=logging.INFO)
     system_logger = logging.getLogger("system")
 
+# Robust piecewise linear mapping for proximity-based confidence
+def proximity_mapping(ratio: np.ndarray, min_thresh: float = 0.75, cap: float = 1.5) -> np.ndarray:
+    """
+    Compute proximity-based confidence using piecewise linear mapping.
+    
+    Args:
+        ratio: actual_move / target_move (can be negative for opposite direction)
+        min_thresh: Minimum threshold below which confidence is 0 (default: 0.75)
+        cap: Maximum confidence cap (default: 1.5)
+    
+    Returns:
+        proximity (float) in [0, cap] with preserved sign
+    """
+    # Handle outliers by clipping extreme values
+    ratio = np.clip(ratio, -10.0, 10.0)
+    
+    absd = np.abs(ratio)
+    prox = np.zeros_like(absd, dtype=float)
+    
+    # Below minimum threshold -> 0 confidence
+    mask_below = absd < min_thresh
+    prox[mask_below] = 0.0
+    
+    # 0.75 <= absd < 1.0 -> linear from 0.5 at 0.75 to 1.0 at 1.0
+    mask_mid = (absd >= min_thresh) & (absd < 1.0)
+    prox[mask_mid] = 0.5 + 2.0 * (absd[mask_mid] - min_thresh)  # 0.5 + 2.0 * (distance - 0.75)
+    
+    # 1.0 <= absd <= 2.0 -> linear from 1.0 at 1.0 to 1.5 at 2.0
+    mask_high = (absd >= 1.0) & (absd <= 2.0)
+    prox[mask_high] = 1.0 + 0.5 * (absd[mask_high] - 1.0)  # 1.0 + 0.5 * (distance - 1.0)
+    
+    # > 2.0 -> cap
+    mask_above = absd > 2.0
+    prox[mask_above] = cap
+    
+    # Preserve sign for directional information
+    sign = np.sign(ratio)
+    return sign * prox
+
 # Import the missing function from multi_horizon_profit_labeler
 try:
     from src.training.steps.pre_training.multi_horizon_profit_labeler import create_enhanced_tactician_labeler
@@ -81,6 +120,7 @@ class LabelDefinitionType(Enum):
     REGRESSION = "regression"
     SMOOTH_BINARY = "smooth_binary"  # Smooth binary labels with confidence weighting
     SMOOTH_REGRESSION = "smooth_regression"  # Smooth regression labels with proximity weighting
+    PROXIMITY_REGRESSION = "proximity_regression"  # Regression with proximity-based confidence and sample weights
     ANALYST = "analyst"  # For analyst profit labeling (long-term analysis)
     TACTICIAN = "tactician"  # For tactician entry labeling (short-term entry)
 
@@ -96,7 +136,7 @@ class VolatilityAwareConfig:
         lookahead_periods: int = 6,
         min_volatility: float = 0.001,
         max_volatility: float = 0.1,
-        label_type: LabelDefinitionType = LabelDefinitionType.SMOOTH_BINARY,
+        label_type: LabelDefinitionType = LabelDefinitionType.PROXIMITY_REGRESSION,
         enable_long_positions: bool = True,
         enable_short_positions: bool = False,
         min_label_quality: float = 0.3,
@@ -3338,6 +3378,15 @@ class VolatilityAwareMultiHorizonLabeler:
                     target_labels = self._generate_smooth_regression_labels(
                         future_returns, effective_target, vol_normalized
                     )
+                elif self.config.label_type == LabelDefinitionType.PROXIMITY_REGRESSION:
+                    # Proximity-based regression with sample weights
+                    target_labels, sample_weights = self._generate_proximity_regression_labels(
+                        future_returns, effective_target, vol_normalized
+                    )
+                    # Store sample weights for later use (will be returned in metadata)
+                    if not hasattr(self, '_sample_weights'):
+                        self._sample_weights = {}
+                    self._sample_weights[target_name] = sample_weights
                 else:
                     # Regression: use actual returns
                     target_labels = future_returns
@@ -3423,6 +3472,21 @@ class VolatilityAwareMultiHorizonLabeler:
                 labels = self._generate_smooth_regression_labels(
                     future_returns, effective_threshold, vol_normalized
                 )
+            elif self.config.label_type == LabelDefinitionType.PROXIMITY_REGRESSION:
+                # Proximity-based regression with sample weights
+                base_threshold = self.config.multi_target.target_profit / 100.0
+                k = self.config.volatility.sensitivity
+                min_mult = getattr(self.config.multi_target, 'min_threshold_multiplier', 0.5)
+                max_mult = getattr(self.config.multi_target, 'max_threshold_multiplier', 2.0)
+                effective_threshold = base_threshold * np.clip(1.0 + k * (vol_normalized - 1.0), min_mult, max_mult)
+                
+                labels, sample_weights = self._generate_proximity_regression_labels(
+                    future_returns, effective_threshold, vol_normalized
+                )
+                # Store sample weights for later use
+                if not hasattr(self, '_sample_weights'):
+                    self._sample_weights = {}
+                self._sample_weights['default'] = sample_weights
             else:
                 # Regression: use actual returns
                 labels = future_returns
@@ -3538,6 +3602,92 @@ class VolatilityAwareMultiHorizonLabeler:
             smooth_labels = smooth_aligned * quality_aligned
         
         return pd.Series(smooth_labels, index=future_returns.index, name='smooth_regression_label')
+
+    def _generate_proximity_regression_labels(
+        self,
+        future_returns: pd.Series,
+        effective_threshold: pd.Series,
+        vol_normalized: pd.Series,
+        quality_scores: Optional[pd.Series] = None
+    ) -> Tuple[pd.Series, pd.Series]:
+        """
+        Generate proximity-based regression labels with sample weights.
+        
+        This method implements the new regression approach where:
+        - Target = expected move strength (normalized)
+        - Sample weight = confidence based on proximity to target
+        - Uses piecewise linear mapping for robust confidence scaling
+        
+        Args:
+            future_returns: Future returns series
+            effective_threshold: Volatility-adjusted threshold series
+            vol_normalized: Normalized volatility series
+            quality_scores: Optional quality scores for additional weighting
+            
+        Returns:
+            Tuple of (labels, sample_weights) where:
+            - labels: Regression targets in [-1, 1] range
+            - sample_weights: Confidence-based weights in [0, 1] range
+        """
+        # Calculate ratio = actual_move / target_move (directional)
+        ratio = future_returns / effective_threshold
+        
+        # Apply robust piecewise linear mapping
+        proximity = proximity_mapping(ratio, min_thresh=0.75, cap=1.5)
+        
+        # Normalize proximity to [0, 1] range for stability
+        proximity_norm = np.abs(proximity) / 1.5
+        
+        # Create regression targets: sign(ratio) * proximity_norm (range [-1, 1])
+        labels = np.sign(ratio) * proximity_norm
+        
+        # Sample weights: proximity_norm (or sqrt for dampening extremes)
+        sample_weights = proximity_norm
+        # Alternative: sample_weights = np.sqrt(proximity_norm)  # To dampen extremes
+        
+        # Apply quality weighting if available
+        if quality_scores is not None:
+            # Align quality scores with labels
+            quality_aligned, labels_aligned = _align_like(quality_scores, pd.Series(labels, index=future_returns.index))
+            quality_aligned, weights_aligned = _align_like(quality_scores, pd.Series(sample_weights, index=future_returns.index))
+            
+            # Apply quality weighting to both labels and weights
+            labels = labels_aligned * quality_aligned
+            sample_weights = weights_aligned * quality_aligned
+            
+            # Ensure weights stay in [0, 1] range
+            sample_weights = np.clip(sample_weights, 0.0, 1.0)
+        
+        # Create return series
+        labels_series = pd.Series(labels, index=future_returns.index, name='proximity_regression_label')
+        weights_series = pd.Series(sample_weights, index=future_returns.index, name='sample_weight')
+        
+        return labels_series, weights_series
+
+    def get_sample_weights(self, target_name: str = 'default') -> Optional[pd.Series]:
+        """
+        Get sample weights for the specified target.
+        
+        Args:
+            target_name: Name of the target (default: 'default')
+            
+        Returns:
+            Sample weights series if available, None otherwise
+        """
+        if hasattr(self, '_sample_weights') and target_name in self._sample_weights:
+            return self._sample_weights[target_name]
+        return None
+
+    def get_all_sample_weights(self) -> Dict[str, pd.Series]:
+        """
+        Get all sample weights for all targets.
+        
+        Returns:
+            Dictionary mapping target names to sample weights
+        """
+        if hasattr(self, '_sample_weights'):
+            return self._sample_weights.copy()
+        return {}
 
 
     @staticmethod

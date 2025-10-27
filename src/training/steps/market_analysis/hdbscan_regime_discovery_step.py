@@ -287,9 +287,9 @@ class HDBSCANRegimeDiscoveryStep(BaseStep):
                 umap_n_components=8,
                 umap_n_neighbors=30,
                 
-                # HDBSCAN clustering
-                min_cluster_size_pct=0.01,
-                min_cluster_size_floor=12,
+                # HDBSCAN clustering - optimized for more regimes
+                min_cluster_size_pct=0.015,  # 1.5% for more clusters
+                min_cluster_size_floor=25,   # Lower floor for more regimes
                 cluster_selection_method="eom",
                 
                 # Post-clustering optimization
@@ -334,9 +334,9 @@ class HDBSCANRegimeDiscoveryStep(BaseStep):
                 dim_reduction_mode="pca_only",  # Use PCA-only for light mode
                 pca_variance_threshold=0.95,
 
-                # HDBSCAN clustering - adjusted for smaller dataset
-                min_cluster_size_pct=0.03,  # Slightly higher percentage with less data
-                min_cluster_size_floor=15,  # Reduced from 20
+                # HDBSCAN clustering - optimized for more regimes
+                min_cluster_size_pct=0.015,  # 1.5% for more clusters
+                min_cluster_size_floor=25,   # Lower floor for more regimes
                 cluster_selection_method="eom",
 
                 # Post-clustering optimization - reduced rounds for light mode
@@ -377,9 +377,9 @@ class HDBSCANRegimeDiscoveryStep(BaseStep):
                 dim_reduction_mode="pca_only",
                 pca_variance_threshold=0.90,
 
-                # HDBSCAN clustering - adjusted for moderate dataset (180 days)
-                min_cluster_size_pct=0.05,  # Moderate percentage with 180 days data
-                min_cluster_size_floor=15,  # Moderate floor value
+                # HDBSCAN clustering - optimized for more regimes
+                min_cluster_size_pct=0.015,  # 1.5% for more clusters
+                min_cluster_size_floor=25,   # Lower floor for more regimes
                 cluster_selection_method="leaf",
 
                 # Post-clustering optimization - minimal rounds for blank mode

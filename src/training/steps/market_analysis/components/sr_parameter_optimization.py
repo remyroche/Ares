@@ -32,6 +32,47 @@ except ImportError:
     PANDAS_AVAILABLE = False
     pd = None
 
+# VectorBT imports
+try:
+    from src.vectorbt import (
+        vbt, rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max,
+        rolling_sum, rolling_apply, VECTORBT_AVAILABLE
+    )
+    from src.vectorbt.optimization import RollingOptimizer
+    VECTORBT_ROLLING_AVAILABLE = True
+except ImportError:
+    VECTORBT_AVAILABLE = False
+    VECTORBT_ROLLING_AVAILABLE = False
+    vbt = None
+    rolling_mean = None
+    rolling_std = None
+    rolling_var = None
+    rolling_min = None
+    rolling_max = None
+    rolling_sum = None
+    rolling_apply = None
+    RollingOptimizer = None
+
+# Hardware and vectorization imports
+try:
+    from src.utils.hardware.unified_hardware_manager import UnifiedHardwareManager
+    from src.utils.hardware.vectorization_manager import UnifiedVectorizationManager
+    HARDWARE_AVAILABLE = True
+except ImportError:
+    HARDWARE_AVAILABLE = False
+    UnifiedHardwareManager = None
+    UnifiedVectorizationManager = None
+
+# TPrint imports
+try:
+    from src.utils.tprint import tprint, tprint_data_preview, tprint_data_format
+    TPRINT_AVAILABLE = True
+except ImportError:
+    TPRINT_AVAILABLE = False
+    tprint = print
+    tprint_data_preview = lambda x, y: None
+    tprint_data_format = lambda x, y: None
+
 from src.training.steps.base_step import BaseStep
 from src.utils.logger import system_logger
 
@@ -339,10 +380,13 @@ class SRParameterOptimizationStep(BaseStep):
             - 'error': error message if step failed (optional)
         """
         self.logger.info('🎯 Starting Enhanced SR Parameter Optimization')
+        tprint("🚀 SR Parameter Optimization: Starting execution", "info")
 
         try:
             # Fetch required input artifacts from previous steps
+            tprint("📥 Fetching input artifacts", "info")
             input_artifacts = await self._fetch_input_artifacts(config)
+            tprint_data_preview(input_artifacts, "Input artifacts")
             if not input_artifacts['success']:
                 return {
                     'success': False,
@@ -629,16 +673,19 @@ class SRParameterOptimizationStep(BaseStep):
             Optimization results dictionary
         """
         self.logger.info("🚀 Starting enhanced parameter optimization...")
+        tprint("🔧 Enhanced Parameter Optimization: Starting", "info")
         start_time = time.time()
         
         # Log input artifacts usage
         if input_artifacts:
             self.logger.info("📊 Using input artifacts from previous steps:")
+            tprint("📊 Using input artifacts from previous steps", "info")
             for artifact_name, artifact_data in input_artifacts.items():
                 if artifact_data is not None:
                     if artifact_name == 'sr_clustering_result':
                         clusters_count = artifact_data.get('total_clusters', 0)
                         self.logger.info(f"  - {artifact_name}: {clusters_count} clusters")
+                        tprint(f"  - {artifact_name}: {clusters_count} clusters", "info")
                     elif artifact_name == 'sr_levels_dictionary':
                         levels_count = len(artifact_data.get('levels', []))
                         self.logger.info(f"  - {artifact_name}: {levels_count} SR levels")
@@ -1005,12 +1052,27 @@ class SRParameterOptimizationStep(BaseStep):
                 )
                 return score
             
+            # Run VectorBT optimization if available
+            vectorbt_result = None
+            if VECTORBT_ROLLING_AVAILABLE and config.get('enable_vectorbt', True):
+                tprint("⚡ Running VectorBT Rolling Optimization", "info")
+                try:
+                    vectorbt_result = await self._run_vectorbt_optimization(
+                        market_data, search_space, enhanced_config, input_artifacts
+                    )
+                    tprint_data_preview(vectorbt_result, "VectorBT optimization result")
+                except Exception as e:
+                    self.logger.warning(f"VectorBT optimization failed: {e}")
+                    tprint(f"⚠️ VectorBT optimization failed: {e}", "warning")
+            
             # Run optimization with enhanced monitoring
+            tprint("🧠 Running Bayesian Optimization", "info")
             result = await self.bayesian_optimizer.optimize(
                 objective_function, 
                 search_space, 
                 opt_config
             )
+            tprint_data_preview(result, "Bayesian optimization result")
             
             # Generate explainability if available
             explainability_results = {}
@@ -1443,8 +1505,10 @@ class SRParameterOptimizationStep(BaseStep):
 
     def _detect_sr_levels(self, data: Any, params: Dict[str, Any]) -> List[Dict[str, Any]]:
         """Detect SR levels using multiple proven methods."""
+        tprint("🔍 SR Detection: Starting level detection", "info")
         try:
             if not PANDAS_AVAILABLE or not isinstance(data, pd.DataFrame):
+                tprint("❌ SR Detection: Pandas not available or invalid data", "error")
                 return []
             
             # Extract price data
@@ -1452,6 +1516,7 @@ class SRParameterOptimizationStep(BaseStep):
             low = data['low'].values
             close = data['close'].values
             volume = data['volume'].values if 'volume' in data.columns else None
+            tprint_data_format(data, "SR detection input data")
             
             all_sr_levels = []
             
@@ -2031,12 +2096,17 @@ class SRParameterOptimizationStep(BaseStep):
     def _backtest_sr_levels(self, sr_levels: List[Dict[str, Any]], test_data: Any, 
                            params: Dict[str, Any]) -> Dict[str, Any]:
         """Backtest SR levels on test data."""
+        tprint("📊 Backtesting: Starting SR level backtesting", "info")
         try:
             if not PANDAS_AVAILABLE or not isinstance(test_data, pd.DataFrame):
+                tprint("❌ Backtesting: Pandas not available or invalid test data", "error")
                 return {}
             
             if not sr_levels:
+                tprint("⚠️ Backtesting: No SR levels to backtest", "warning")
                 return {}
+            
+            tprint(f"📊 Backtesting: Testing {len(sr_levels)} SR levels", "info")
             
             high = test_data['high'].values
             low = test_data['low'].values
@@ -2407,6 +2477,146 @@ class SRParameterOptimizationStep(BaseStep):
                 'success': False,
                 'error': str(e),
                 'artifact_paths': {}
+            }
+
+    async def _run_vectorbt_optimization(
+        self, 
+        market_data: Any, 
+        search_space: Dict[str, Any], 
+        enhanced_config: EnhancedSRConfig,
+        input_artifacts: Dict[str, Any] = None
+    ) -> Dict[str, Any]:
+        """
+        Run VectorBT rolling optimization for SR parameters.
+        
+        Args:
+            market_data: Market data for optimization
+            search_space: Parameter search space
+            enhanced_config: Enhanced configuration
+            input_artifacts: Artifacts from previous steps
+            
+        Returns:
+            VectorBT optimization results
+        """
+        if not VECTORBT_ROLLING_AVAILABLE:
+            return {'success': False, 'error': 'VectorBT RollingOptimizer not available'}
+        
+        tprint("⚡ VectorBT Rolling Optimization: Starting", "info")
+        
+        try:
+            # Convert market data to VectorBT format
+            if not PANDAS_AVAILABLE:
+                return {'success': False, 'error': 'Pandas not available for VectorBT'}
+            
+            # Prepare data for VectorBT
+            data_df = market_data if isinstance(market_data, pd.DataFrame) else pd.DataFrame(market_data)
+            tprint_data_format(data_df, "Market data for VectorBT")
+            
+            # Create VectorBT data structure
+            vbt_data = vbt.Data(
+                data_df['close'].values,
+                index=data_df.index if hasattr(data_df, 'index') else None,
+                columns=['close']
+            )
+            
+            # Add OHLCV data if available
+            if all(col in data_df.columns for col in ['open', 'high', 'low', 'volume']):
+                vbt_data = vbt.Data(
+                    data_df[['open', 'high', 'low', 'close', 'volume']].values,
+                    index=data_df.index if hasattr(data_df, 'index') else None,
+                    columns=['open', 'high', 'low', 'close', 'volume']
+                )
+            
+            # Define VectorBT objective function
+            def vectorbt_objective(params):
+                """VectorBT objective function for SR parameter optimization."""
+                try:
+                    # Extract parameters
+                    min_touches = int(params.get('min_touches', 2))
+                    strength_threshold = float(params.get('strength_threshold', 0.5))
+                    distance_threshold = float(params.get('distance_threshold', 0.01))
+                    lookback_periods = int(params.get('lookback_periods', 50))
+                    
+                    # Use VectorBT for efficient SR detection
+                    if hasattr(vbt_data, 'close'):
+                        close_prices = vbt_data.close.values
+                    else:
+                        close_prices = vbt_data.values.flatten()
+                    
+                    # Calculate rolling statistics using VectorBT
+                    rolling_min_vals = rolling_min(close_prices, window=lookback_periods)
+                    rolling_max_vals = rolling_max(close_prices, window=lookback_periods)
+                    rolling_std_vals = rolling_std(close_prices, window=lookback_periods)
+                    
+                    # Detect SR levels using vectorized operations
+                    sr_levels = []
+                    
+                    # Find local minima (support levels)
+                    min_mask = close_prices == rolling_min_vals
+                    support_levels = close_prices[min_mask]
+                    
+                    # Find local maxima (resistance levels)  
+                    max_mask = close_prices == rolling_max_vals
+                    resistance_levels = close_prices[max_mask]
+                    
+                    # Calculate level quality using vectorized operations
+                    total_levels = len(support_levels) + len(resistance_levels)
+                    
+                    if total_levels == 0:
+                        return 0.0
+                    
+                    # Calculate average volatility for normalization
+                    avg_volatility = rolling_std_vals.mean() if rolling_std_vals is not None else 0.01
+                    
+                    # Score based on level count and volatility
+                    level_score = min(total_levels / 10.0, 1.0)  # Normalize to 0-1
+                    volatility_score = min(avg_volatility / 0.05, 1.0)  # Normalize volatility
+                    
+                    # Combined score
+                    combined_score = (level_score * 0.6 + volatility_score * 0.4)
+                    
+                    return min(max(combined_score, 0.0), 1.0)
+                    
+                except Exception as e:
+                    self.logger.error(f"VectorBT objective function error: {e}")
+                    return 0.0
+            
+            # Create VectorBT RollingOptimizer
+            rolling_optimizer = RollingOptimizer(
+                data=vbt_data,
+                objective_func=vectorbt_objective,
+                param_ranges=search_space,
+                n_trials=enhanced_config.n_trials // 2,  # Use half trials for VectorBT
+                rolling_window=enhanced_config.rolling_window,
+                step_size=enhanced_config.step_size
+            )
+            
+            # Run optimization
+            tprint("⚡ VectorBT: Running rolling optimization", "info")
+            optimization_result = rolling_optimizer.optimize()
+            
+            # Process results
+            best_params = optimization_result.get('best_params', {})
+            best_score = optimization_result.get('best_score', 0.0)
+            
+            tprint(f"⚡ VectorBT: Best score = {best_score:.4f}", "info")
+            tprint_data_preview(best_params, "VectorBT best parameters")
+            
+            return {
+                'success': True,
+                'best_params': best_params,
+                'best_score': best_score,
+                'optimization_result': optimization_result,
+                'method': 'vectorbt_rolling'
+            }
+            
+        except Exception as e:
+            self.logger.error(f"VectorBT optimization failed: {e}")
+            tprint(f"❌ VectorBT optimization failed: {e}", "error")
+            return {
+                'success': False,
+                'error': str(e),
+                'method': 'vectorbt_rolling'
             }
 
     async def run(self, config: Dict[str, Any]) -> Dict[str, Any]:

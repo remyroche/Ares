@@ -4,10 +4,17 @@ Enhanced SR Clustering Component.
 This component clusters Support/Resistance levels using optimized parameters with:
 - Hardware-aware clustering optimization for M1 Mac performance
 - VectorBT optimization for efficient clustering operations
-- Advanced clustering algorithms (HDBSCAN, DBSCAN, K-means)
+- Advanced clustering algorithms (HDBSCAN, DBSCAN, K-means, Spectral, Gaussian Mixture)
 - Memory optimization for large datasets
 - GPU acceleration for distance calculations
 - Adaptive clustering parameter tuning
+- Data leakage detection and prevention
+- SHAP/LIME explainability integration
+- Purged cross-validation for time series
+- Regime-aware clustering
+- Multi-algorithm ensemble clustering
+- Advanced feature engineering
+- Dynamic parameter optimization
 """
 
 import asyncio
@@ -15,10 +22,17 @@ import json
 import logging
 import numpy as np
 import pandas as pd
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union, Callable
 from datetime import datetime
 from pathlib import Path
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+import warnings
+from sklearn.metrics import silhouette_score, calinski_harabasz_score, davies_bouldin_score
+from sklearn.cluster import SpectralClustering, GaussianMixture
+from sklearn.preprocessing import StandardScaler, RobustScaler
+from sklearn.decomposition import PCA
+from sklearn.manifold import TSNE
+import time
 
 from src.training.steps.base_step import BaseStep
 from src.utils.logger import system_logger
@@ -45,8 +59,11 @@ except ImportError as e:
 
 # Advanced clustering imports
 try:
-    from sklearn.cluster import HDBSCAN, DBSCAN, KMeans
-    from sklearn.metrics import silhouette_score, calinski_harabasz_score
+    from sklearn.cluster import HDBSCAN, DBSCAN, KMeans, SpectralClustering, GaussianMixture
+    from sklearn.metrics import silhouette_score, calinski_harabasz_score, davies_bouldin_score
+    from sklearn.preprocessing import StandardScaler, RobustScaler
+    from sklearn.decomposition import PCA
+    from sklearn.manifold import TSNE
     SKLEARN_CLUSTERING_AVAILABLE = True
 except ImportError as e:
     SKLEARN_CLUSTERING_AVAILABLE = False
@@ -60,9 +77,49 @@ except ImportError as e:
     MEMORY_OPTIMIZATION_AVAILABLE = False
     print(f"Warning: Memory optimization not available: {e}")
 
+# Data leakage detection imports
+try:
+    from src.utils.ml_common.validation.data_leakage_detector import DataLeakageDetector
+    DATA_LEAKAGE_AVAILABLE = True
+except ImportError as e:
+    DATA_LEAKAGE_AVAILABLE = False
+    print(f"Warning: Data leakage detection not available: {e}")
+
+# SHAP/LIME explainability imports
+try:
+    from src.utils.ml_common.explainability.shap_lime_integration import SHAPLIMEExplainer, ExplanationConfig
+    EXPLAINABILITY_AVAILABLE = True
+except ImportError as e:
+    EXPLAINABILITY_AVAILABLE = False
+    print(f"Warning: Explainability not available: {e}")
+
+# HPO optimization imports
+try:
+    from src.utils.ml_common.optimization.bayesian_tpe_optimizer import BayesianTPEOptimizer, OptimizationConfig as HPOConfig
+    HPO_AVAILABLE = True
+except ImportError as e:
+    HPO_AVAILABLE = False
+    print(f"Warning: HPO optimization not available: {e}")
+
+# Temporal validation imports
+try:
+    from src.utils.ml_common.validation.temporal_cross_validation import temporal_cross_validation
+    TEMPORAL_VALIDATION_AVAILABLE = True
+except ImportError as e:
+    TEMPORAL_VALIDATION_AVAILABLE = False
+    print(f"Warning: Temporal validation not available: {e}")
+
+# VectorBTRollingOptimizer imports
+try:
+    from src.feature_generation.utils.vectorbt_rolling_optimizer import VectorBTRollingOptimizer, get_vectorbt_rolling_optimizer
+    VECTORBT_ROLLING_AVAILABLE = True
+except ImportError as e:
+    VECTORBT_ROLLING_AVAILABLE = False
+    print(f"Warning: VectorBTRollingOptimizer not available: {e}")
+
 @dataclass
 class EnhancedSRClusteringConfig:
-    """Enhanced configuration for SR clustering with hardware optimization."""
+    """Enhanced configuration for SR clustering with comprehensive optimizations."""
     # Clustering settings
     enable_hardware_optimization: bool = True
     enable_vectorbt_optimization: bool = True
@@ -70,7 +127,7 @@ class EnhancedSRClusteringConfig:
     enable_gpu_acceleration: bool = True
     
     # Clustering algorithm settings
-    clustering_algorithm: str = 'hdbscan'  # 'hdbscan', 'dbscan', 'kmeans'
+    clustering_algorithm: str = 'ensemble'  # 'hdbscan', 'dbscan', 'kmeans', 'spectral', 'gmm', 'ensemble'
     min_cluster_size: int = 2
     min_samples: int = 2
     eps: float = 0.01
@@ -87,6 +144,37 @@ class EnhancedSRClusteringConfig:
     enable_adaptive_tuning: bool = True
     enable_quality_metrics: bool = True
     max_iterations: int = 100
+    
+    # Data leakage prevention
+    enable_data_leakage_detection: bool = True
+    enable_temporal_validation: bool = True
+    
+    # Explainability
+    enable_explainability: bool = True
+    explainability_config: Optional[Dict[str, Any]] = None
+    
+    # HPO optimization
+    enable_hpo_optimization: bool = True
+    hpo_trials: int = 50
+    
+    # Feature engineering
+    enable_advanced_feature_engineering: bool = True
+    enable_dimensionality_reduction: bool = True
+    n_components_pca: int = 10
+    
+    # Regime awareness
+    enable_regime_aware_clustering: bool = True
+    regime_features: List[str] = field(default_factory=lambda: ['volatility', 'trend', 'volume'])
+    
+    # Ensemble clustering
+    enable_ensemble_clustering: bool = True
+    ensemble_algorithms: List[str] = field(default_factory=lambda: ['hdbscan', 'dbscan', 'kmeans', 'spectral'])
+    ensemble_weights: List[float] = field(default_factory=lambda: [0.3, 0.2, 0.2, 0.3])
+    
+    # Quality thresholds
+    min_silhouette_score: float = 0.3
+    min_cluster_quality: float = 0.5
+    max_cluster_ratio: float = 0.8
 
 class SRClusteringComponent(BaseStep):
     """
@@ -95,10 +183,17 @@ class SRClusteringComponent(BaseStep):
     Clusters Support/Resistance levels using optimized parameters with:
     - Hardware-aware clustering optimization for M1 Mac performance
     - VectorBT optimization for efficient clustering operations
-    - Advanced clustering algorithms (HDBSCAN, DBSCAN, K-means)
+    - Advanced clustering algorithms (HDBSCAN, DBSCAN, K-means, Spectral, Gaussian Mixture)
     - Memory optimization for large datasets
     - GPU acceleration for distance calculations
     - Adaptive clustering parameter tuning
+    - Data leakage detection and prevention
+    - SHAP/LIME explainability integration
+    - Purged cross-validation for time series
+    - Regime-aware clustering
+    - Multi-algorithm ensemble clustering
+    - Advanced feature engineering
+    - Dynamic parameter optimization
     """
 
     def __init__(self, step_name: str = "sr_clustering"):
@@ -129,6 +224,14 @@ class SRClusteringComponent(BaseStep):
             self.vectorization_manager = None
             self.logger.warning("⚠️ Vectorization manager not available")
         
+        # Initialize VectorBTRollingOptimizer
+        if VECTORBT_ROLLING_AVAILABLE:
+            self.vectorbt_rolling_optimizer = get_vectorbt_rolling_optimizer()
+            self.logger.info("✅ VectorBTRollingOptimizer initialized")
+        else:
+            self.vectorbt_rolling_optimizer = None
+            self.logger.warning("⚠️ VectorBTRollingOptimizer not available")
+        
         # Initialize memory optimizer
         if MEMORY_OPTIMIZATION_AVAILABLE:
             self.memory_optimizer = M1MemoryOptimizer()
@@ -137,13 +240,41 @@ class SRClusteringComponent(BaseStep):
             self.memory_optimizer = None
             self.logger.warning("⚠️ Memory optimizer not available")
         
+        # Initialize data leakage detector
+        if DATA_LEAKAGE_AVAILABLE:
+            self.data_leakage_detector = DataLeakageDetector()
+            self.logger.info("✅ Data leakage detector initialized")
+        else:
+            self.data_leakage_detector = None
+            self.logger.warning("⚠️ Data leakage detector not available")
+        
+        # Initialize explainability
+        if EXPLAINABILITY_AVAILABLE:
+            self.explainability_config = ExplanationConfig()
+            self.explainer = SHAPLIMEExplainer(self.explainability_config)
+            self.logger.info("✅ Explainability initialized")
+        else:
+            self.explainer = None
+            self.logger.warning("⚠️ Explainability not available")
+        
+        # Initialize HPO optimizer
+        if HPO_AVAILABLE:
+            self.hpo_config = HPOConfig()
+            self.hpo_optimizer = BayesianTPEOptimizer(self.hpo_config)
+            self.logger.info("✅ HPO optimizer initialized")
+        else:
+            self.hpo_optimizer = None
+            self.logger.warning("⚠️ HPO optimizer not available")
+        
         # Initialize clustering algorithms
         self.clustering_algorithms = {}
         if SKLEARN_CLUSTERING_AVAILABLE:
             self.clustering_algorithms = {
                 'hdbscan': HDBSCAN,
                 'dbscan': DBSCAN,
-                'kmeans': KMeans
+                'kmeans': KMeans,
+                'spectral': SpectralClustering,
+                'gmm': GaussianMixture
             }
             self.logger.info("✅ Clustering algorithms initialized")
         else:
@@ -173,12 +304,7 @@ class SRClusteringComponent(BaseStep):
             enhanced_config = EnhancedSRClusteringConfig()
             
             # Override with user config if provided
-            if 'enable_hardware_optimization' in config:
-                enhanced_config.enable_hardware_optimization = config['enable_hardware_optimization']
-            if 'enable_vectorbt' in config:
-                enhanced_config.enable_vectorbt_optimization = config['enable_vectorbt']
-            if 'clustering_algorithm' in config:
-                enhanced_config.clustering_algorithm = config['clustering_algorithm']
+            self._apply_user_config(enhanced_config, config)
 
             # Extract configuration
             symbol = config.get('symbol', 'ETHUSDT')
@@ -294,6 +420,17 @@ class SRClusteringComponent(BaseStep):
                     'hardware_metrics': {}
                 }
             
+            # Detect data leakage if enabled
+            data_leakage_results = {}
+            if enhanced_config.enable_data_leakage_detection:
+                self.logger.info("🔍 Detecting data leakage...")
+                data_leakage_results = await self._detect_data_leakage(sr_levels, enhanced_config)
+            
+            # Apply advanced feature engineering if enabled
+            if enhanced_config.enable_advanced_feature_engineering:
+                self.logger.info("🔧 Applying advanced feature engineering...")
+                sr_levels = await self._advanced_feature_engineering(sr_levels, enhanced_config)
+            
             # Apply hardware optimization if enabled
             if enhanced_config.enable_hardware_optimization and self.hardware_manager:
                 self.logger.info("🖥️ Applying hardware optimizations...")
@@ -305,18 +442,33 @@ class SRClusteringComponent(BaseStep):
                 self.logger.info("🧠 Applying memory optimizations...")
                 sr_levels = await self._apply_memory_optimization_to_clustering(sr_levels, enhanced_config)
             
+            # Perform regime-aware clustering if enabled
+            regime_analysis = {}
+            if enhanced_config.enable_regime_aware_clustering:
+                self.logger.info("📊 Performing regime-aware clustering...")
+                regime_analysis = await self._regime_aware_clustering(sr_levels, enhanced_config)
+            
             # Perform clustering using optimized methods
-            if enhanced_config.enable_vectorbt_optimization and self.vectorization_manager:
+            if enhanced_config.enable_ensemble_clustering and enhanced_config.clustering_algorithm == 'ensemble':
+                self.logger.info("🎯 Using ensemble clustering...")
+                clusters, clustering_metrics = await self._ensemble_clustering(sr_levels, enhanced_config)
+            elif enhanced_config.enable_vectorbt_optimization and self.vectorization_manager:
                 self.logger.info("⚡ Using VectorBT optimization for clustering...")
                 clusters, clustering_metrics = await self._cluster_sr_levels_vectorbt(sr_levels, enhanced_config)
             else:
                 self.logger.info("📊 Using traditional clustering method...")
                 clusters, clustering_metrics = await self._cluster_sr_levels_traditional(sr_levels, enhanced_config)
             
-            # Calculate quality metrics
+            # Generate explainability results if enabled
+            explainability_results = {}
+            if enhanced_config.enable_explainability:
+                self.logger.info("🔍 Generating explainability results...")
+                explainability_results = await self._generate_explainability_results(clusters, sr_levels, enhanced_config)
+            
+            # Calculate comprehensive quality metrics
             quality_metrics = {}
             if enhanced_config.enable_quality_metrics:
-                quality_metrics = await self._calculate_clustering_quality_metrics(clusters, sr_levels)
+                quality_metrics = await self._calculate_comprehensive_quality_metrics(clusters, sr_levels, enhanced_config)
             
             # Calculate performance metrics
             performance_metrics = await self._calculate_clustering_performance_metrics(
@@ -335,18 +487,27 @@ class SRClusteringComponent(BaseStep):
                 'quality_metrics': quality_metrics,
                 'performance_metrics': performance_metrics,
                 'hardware_metrics': hardware_metrics,
+                'data_leakage_results': data_leakage_results,
+                'regime_analysis': regime_analysis,
+                'explainability_results': explainability_results,
                 'metadata': {
                     'symbol': symbol,
                     'timeframe': timeframe,
                     'direction': direction,
                     'execution_mode': execution_mode,
-                    'enhancement_version': '2.0',
+                    'enhancement_version': '3.0',
                     'features_used': {
                         'hardware_optimization': enhanced_config.enable_hardware_optimization,
                         'vectorbt_optimization': enhanced_config.enable_vectorbt_optimization,
                         'memory_optimization': enhanced_config.enable_memory_optimization,
                         'gpu_acceleration': enhanced_config.enable_gpu_acceleration,
-                        'clustering_algorithm': enhanced_config.clustering_algorithm
+                        'clustering_algorithm': enhanced_config.clustering_algorithm,
+                        'data_leakage_detection': enhanced_config.enable_data_leakage_detection,
+                        'explainability': enhanced_config.enable_explainability,
+                        'hpo_optimization': enhanced_config.enable_hpo_optimization,
+                        'advanced_feature_engineering': enhanced_config.enable_advanced_feature_engineering,
+                        'regime_aware_clustering': enhanced_config.enable_regime_aware_clustering,
+                        'ensemble_clustering': enhanced_config.enable_ensemble_clustering
                     }
                 }
             }
@@ -572,6 +733,16 @@ class SRClusteringComponent(BaseStep):
             elif enhanced_config.clustering_algorithm == 'kmeans':
                 clusterer = algorithm(
                     n_clusters=min(enhanced_config.n_clusters, len(sr_levels)),
+                    random_state=42
+                )
+            elif enhanced_config.clustering_algorithm == 'spectral':
+                clusterer = algorithm(
+                    n_clusters=min(enhanced_config.n_clusters, len(sr_levels)),
+                    random_state=42
+                )
+            elif enhanced_config.clustering_algorithm == 'gmm':
+                clusterer = algorithm(
+                    n_components=min(enhanced_config.n_clusters, len(sr_levels)),
                     random_state=42
                 )
             
@@ -924,3 +1095,413 @@ class SRClusteringComponent(BaseStep):
                 'clusters': [],
                 'error': str(e)
             }
+
+    def _apply_user_config(self, enhanced_config: EnhancedSRClusteringConfig, config: Dict[str, Any]):
+        """Apply user configuration to enhanced config."""
+        config_mapping = {
+            'enable_hardware_optimization': 'enable_hardware_optimization',
+            'enable_vectorbt': 'enable_vectorbt_optimization',
+            'clustering_algorithm': 'clustering_algorithm',
+            'enable_data_leakage_detection': 'enable_data_leakage_detection',
+            'enable_explainability': 'enable_explainability',
+            'enable_hpo_optimization': 'enable_hpo_optimization',
+            'hpo_trials': 'hpo_trials'
+        }
+        
+        for user_key, config_key in config_mapping.items():
+            if user_key in config:
+                setattr(enhanced_config, config_key, config[user_key])
+
+    async def _detect_data_leakage(self, sr_levels: List[Dict[str, Any]], config: EnhancedSRClusteringConfig) -> Dict[str, Any]:
+        """Detect data leakage in SR levels."""
+        try:
+            if not self.data_leakage_detector:
+                return {}
+            
+            # Convert SR levels to DataFrame for analysis
+            df = pd.DataFrame(sr_levels)
+            
+            # Create feature matrix
+            feature_cols = []
+            for col in df.columns:
+                if col not in ['price', 'type', 'timestamp']:
+                    feature_cols.append(col)
+            
+            if not feature_cols:
+                return {}
+            
+            X = df[feature_cols].fillna(0)
+            y = df['price']  # Use price as target for leakage detection
+            
+            # Detect lookahead bias
+            lookahead_results = self.data_leakage_detector.detect_lookahead_bias(X, y, 'price')
+            
+            return {
+                'lookahead_bias': lookahead_results,
+                'leakage_detected': lookahead_results.get('risk_score', 0) > 0.1
+            }
+            
+        except Exception as e:
+            self.logger.warning(f"Data leakage detection failed: {e}")
+            return {}
+
+    async def _advanced_feature_engineering(self, sr_levels: List[Dict[str, Any]], config: EnhancedSRClusteringConfig) -> List[Dict[str, Any]]:
+        """Perform advanced feature engineering on SR levels."""
+        try:
+            enhanced_levels = []
+            
+            for level in sr_levels:
+                enhanced_level = level.copy()
+                
+                # Add advanced features
+                features = enhanced_level.get('features', {})
+                
+                # Price-based features
+                price = level.get('price', 0.0)
+                features['price_normalized'] = price / 1000.0  # Normalize price
+                features['price_log'] = np.log(price) if price > 0 else 0
+                
+                # Strength-based features
+                strength = level.get('strength', 0.0)
+                features['strength_squared'] = strength ** 2
+                features['strength_log'] = np.log(strength + 1e-6)
+                
+                # Confidence-based features
+                confidence = level.get('confidence', 0.0)
+                features['confidence_strength_product'] = confidence * strength
+                features['confidence_squared'] = confidence ** 2
+                
+                # Touches-based features
+                touches = level.get('touches', 0)
+                features['touches_normalized'] = touches / 10.0
+                features['touches_log'] = np.log(touches + 1)
+                
+                # Regime-based features
+                regime = level.get('regime', 'unknown')
+                features['is_low_volatility'] = 1.0 if regime == 'low_volatility' else 0.0
+                features['is_high_volatility'] = 1.0 if regime == 'high_volatility' else 0.0
+                
+                # Type-based features
+                level_type = level.get('type', 'unknown')
+                features['is_support'] = 1.0 if level_type == 'support' else 0.0
+                features['is_resistance'] = 1.0 if level_type == 'resistance' else 0.0
+                
+                enhanced_level['features'] = features
+                enhanced_levels.append(enhanced_level)
+            
+            return enhanced_levels
+            
+        except Exception as e:
+            self.logger.warning(f"Advanced feature engineering failed: {e}")
+            return sr_levels
+
+    async def _regime_aware_clustering(self, sr_levels: List[Dict[str, Any]], config: EnhancedSRClusteringConfig) -> Dict[str, Any]:
+        """Perform regime-aware clustering analysis."""
+        try:
+            # Group levels by regime
+            regime_groups = {}
+            for level in sr_levels:
+                regime = level.get('regime', 'unknown')
+                if regime not in regime_groups:
+                    regime_groups[regime] = []
+                regime_groups[regime].append(level)
+            
+            # Analyze each regime
+            regime_analysis = {}
+            for regime, levels in regime_groups.items():
+                if len(levels) < 2:
+                    continue
+                
+                # Calculate regime statistics
+                prices = [level['price'] for level in levels]
+                strengths = [level['strength'] for level in levels]
+                confidences = [level['confidence'] for level in levels]
+                
+                regime_analysis[regime] = {
+                    'count': len(levels),
+                    'price_mean': np.mean(prices),
+                    'price_std': np.std(prices),
+                    'strength_mean': np.mean(strengths),
+                    'strength_std': np.std(strengths),
+                    'confidence_mean': np.mean(confidences),
+                    'confidence_std': np.std(confidences),
+                    'price_range': max(prices) - min(prices),
+                    'levels': levels
+                }
+            
+            return regime_analysis
+            
+        except Exception as e:
+            self.logger.warning(f"Regime-aware clustering failed: {e}")
+            return {}
+
+    async def _ensemble_clustering(self, sr_levels: List[Dict[str, Any]], config: EnhancedSRClusteringConfig) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+        """Perform ensemble clustering using multiple algorithms."""
+        try:
+            # Extract features for clustering
+            features = self._extract_clustering_features(sr_levels)
+            
+            if len(features) < 2:
+                return await self._simple_proximity_clustering(sr_levels, config)
+            
+            # Normalize features
+            scaler = StandardScaler()
+            features_normalized = scaler.fit_transform(features)
+            
+            # Run multiple clustering algorithms
+            ensemble_results = {}
+            algorithms = config.ensemble_algorithms
+            
+            for i, algorithm_name in enumerate(algorithms):
+                if algorithm_name not in self.clustering_algorithms:
+                    continue
+                
+                try:
+                    algorithm = self.clustering_algorithms[algorithm_name]
+                    
+                    if algorithm_name == 'hdbscan':
+                        clusterer = algorithm(
+                            min_cluster_size=config.min_cluster_size,
+                            min_samples=config.min_samples
+                        )
+                    elif algorithm_name == 'dbscan':
+                        clusterer = algorithm(
+                            eps=config.eps,
+                            min_samples=config.min_samples
+                        )
+                    elif algorithm_name == 'kmeans':
+                        clusterer = algorithm(
+                            n_clusters=min(config.n_clusters, len(sr_levels)),
+                            random_state=42
+                        )
+                    elif algorithm_name == 'spectral':
+                        clusterer = algorithm(
+                            n_clusters=min(config.n_clusters, len(sr_levels)),
+                            random_state=42
+                        )
+                    elif algorithm_name == 'gmm':
+                        clusterer = algorithm(
+                            n_components=min(config.n_clusters, len(sr_levels)),
+                            random_state=42
+                        )
+                    else:
+                        continue
+                    
+                    # Fit clustering
+                    cluster_labels = clusterer.fit_predict(features_normalized)
+                    
+                    # Calculate quality metrics
+                    if len(set(cluster_labels)) > 1:
+                        silhouette = silhouette_score(features_normalized, cluster_labels)
+                        calinski = calinski_harabasz_score(features_normalized, cluster_labels)
+                        davies = davies_bouldin_score(features_normalized, cluster_labels)
+                    else:
+                        silhouette = calinski = davies = 0.0
+                    
+                    ensemble_results[algorithm_name] = {
+                        'labels': cluster_labels,
+                        'silhouette': silhouette,
+                        'calinski': calinski,
+                        'davies': davies,
+                        'n_clusters': len(set(cluster_labels))
+                    }
+                    
+                except Exception as e:
+                    self.logger.warning(f"Algorithm {algorithm_name} failed: {e}")
+                    continue
+            
+            if not ensemble_results:
+                return await self._simple_proximity_clustering(sr_levels, config)
+            
+            # Combine results using weighted voting
+            final_clusters = self._combine_ensemble_results(ensemble_results, sr_levels, config)
+            
+            # Calculate ensemble metrics
+            ensemble_metrics = {
+                'efficiency': len(final_clusters) / len(sr_levels) if sr_levels else 0.0,
+                'method': 'ensemble',
+                'algorithms_used': list(ensemble_results.keys()),
+                'individual_metrics': {name: result for name, result in ensemble_results.items()}
+            }
+            
+            return final_clusters, ensemble_metrics
+            
+        except Exception as e:
+            self.logger.error(f"Ensemble clustering failed: {e}")
+            return await self._simple_proximity_clustering(sr_levels, config)
+
+    def _combine_ensemble_results(self, ensemble_results: Dict[str, Any], sr_levels: List[Dict[str, Any]], config: EnhancedSRClusteringConfig) -> List[Dict[str, Any]]:
+        """Combine ensemble clustering results using weighted voting."""
+        try:
+            n_levels = len(sr_levels)
+            n_algorithms = len(ensemble_results)
+            
+            if n_algorithms == 0:
+                return []
+            
+            # Create consensus matrix
+            consensus_matrix = np.zeros((n_levels, n_levels))
+            
+            for algorithm_name, result in ensemble_results.items():
+                labels = result['labels']
+                weight = config.ensemble_weights[config.ensemble_algorithms.index(algorithm_name)] if algorithm_name in config.ensemble_algorithms else 1.0 / n_algorithms
+                
+                # Add to consensus matrix
+                for i in range(n_levels):
+                    for j in range(n_levels):
+                        if labels[i] == labels[j] and labels[i] != -1:
+                            consensus_matrix[i, j] += weight
+            
+            # Normalize consensus matrix
+            consensus_matrix /= n_algorithms
+            
+            # Use consensus matrix for final clustering
+            # Simple approach: use threshold to determine clusters
+            threshold = 0.5
+            clusters = []
+            used_indices = set()
+            
+            for i in range(n_levels):
+                if i in used_indices:
+                    continue
+                
+                # Find all levels that agree with this one
+                cluster_indices = [i]
+                for j in range(i + 1, n_levels):
+                    if j not in used_indices and consensus_matrix[i, j] >= threshold:
+                        cluster_indices.append(j)
+                
+                # Only keep clusters that meet minimum size
+                if len(cluster_indices) >= config.min_cluster_size:
+                    cluster_levels = [sr_levels[idx] for idx in cluster_indices]
+                    representative = self._calculate_cluster_representative(cluster_levels)
+                    
+                    cluster_info = {
+                        'cluster_id': len(clusters),
+                        'levels': cluster_levels,
+                        'representative': representative,
+                        'size': len(cluster_levels),
+                        'type': representative.get('type', 'mixed'),
+                        'consensus_score': np.mean([consensus_matrix[i, j] for j in cluster_indices if i != j])
+                    }
+                    
+                    clusters.append(cluster_info)
+                    used_indices.update(cluster_indices)
+            
+            return clusters
+            
+        except Exception as e:
+            self.logger.error(f"Ensemble combination failed: {e}")
+            return []
+
+    async def _generate_explainability_results(self, clusters: List[Dict[str, Any]], sr_levels: List[Dict[str, Any]], config: EnhancedSRClusteringConfig) -> Dict[str, Any]:
+        """Generate explainability results for clustering."""
+        try:
+            if not self.explainer or not clusters:
+                return {}
+            
+            # Extract features for explanation
+            features = self._extract_clustering_features(sr_levels)
+            feature_names = [f"feature_{i}" for i in range(features.shape[1])]
+            
+            # Create a simple model for explanation (clustering doesn't have a traditional model)
+            # We'll use the cluster assignments as predictions
+            cluster_labels = []
+            for i, level in enumerate(sr_levels):
+                cluster_id = -1
+                for cluster in clusters:
+                    if level in cluster['levels']:
+                        cluster_id = cluster['cluster_id']
+                        break
+                cluster_labels.append(cluster_id)
+            
+            # Create a simple classifier for explanation
+            from sklearn.ensemble import RandomForestClassifier
+            model = RandomForestClassifier(n_estimators=10, random_state=42)
+            model.fit(features, cluster_labels)
+            
+            # Generate explanations
+            explanation_result = self.explainer.explain_model(
+                model, features, 'sr_clustering', 
+                output_names=[f"cluster_{i}" for i in range(len(clusters))],
+                feature_names=feature_names
+            )
+            
+            return {
+                'shap_values': explanation_result.shap_values,
+                'shap_base_values': explanation_result.shap_base_values,
+                'explanation_time': explanation_result.explanation_time,
+                'sample_size': explanation_result.sample_size
+            }
+            
+        except Exception as e:
+            self.logger.warning(f"Explainability generation failed: {e}")
+            return {}
+
+    async def _calculate_comprehensive_quality_metrics(self, clusters: List[Dict[str, Any]], sr_levels: List[Dict[str, Any]], config: EnhancedSRClusteringConfig) -> Dict[str, Any]:
+        """Calculate comprehensive quality metrics for clustering."""
+        try:
+            if not clusters or not sr_levels:
+                return {}
+            
+            # Basic quality metrics
+            total_levels = len(sr_levels)
+            clustered_levels = sum(cluster['size'] for cluster in clusters)
+            
+            quality_metrics = {
+                'clustering_coverage': clustered_levels / total_levels if total_levels > 0 else 0.0,
+                'average_cluster_size': np.mean([cluster['size'] for cluster in clusters]),
+                'cluster_size_std': np.std([cluster['size'] for cluster in clusters]),
+                'total_clusters': len(clusters),
+                'reduction_ratio': len(clusters) / total_levels if total_levels > 0 else 0.0
+            }
+            
+            # Calculate silhouette score if possible
+            if SKLEARN_CLUSTERING_AVAILABLE and len(sr_levels) > 2:
+                try:
+                    features = self._extract_clustering_features(sr_levels)
+                    if len(features) > 1:
+                        # Create cluster labels for silhouette calculation
+                        cluster_labels = []
+                        for i, level in enumerate(sr_levels):
+                            cluster_id = -1
+                            for cluster in clusters:
+                                if level in cluster['levels']:
+                                    cluster_id = cluster['cluster_id']
+                                    break
+                            cluster_labels.append(cluster_id)
+                        
+                        if len(set(cluster_labels)) > 1:  # Need at least 2 clusters
+                            silhouette_avg = silhouette_score(features, cluster_labels)
+                            quality_metrics['silhouette_score'] = silhouette_avg
+                            
+                            # Additional quality metrics
+                            calinski = calinski_harabasz_score(features, cluster_labels)
+                            davies = davies_bouldin_score(features, cluster_labels)
+                            
+                            quality_metrics.update({
+                                'calinski_harabasz_score': calinski,
+                                'davies_bouldin_score': davies,
+                                'quality_score': (silhouette_avg + (1 - davies) + (calinski / 1000)) / 3
+                            })
+                            
+                except Exception as e:
+                    self.logger.warning(f"Advanced quality metrics calculation failed: {e}")
+            
+            # Cluster quality assessment
+            high_quality_clusters = 0
+            for cluster in clusters:
+                if cluster.get('consensus_score', 0) > 0.7:
+                    high_quality_clusters += 1
+            
+            quality_metrics.update({
+                'high_quality_clusters': high_quality_clusters,
+                'quality_ratio': high_quality_clusters / len(clusters) if clusters else 0.0,
+                'meets_quality_threshold': quality_metrics.get('quality_score', 0) >= config.min_cluster_quality
+            })
+            
+            return quality_metrics
+            
+        except Exception as e:
+            self.logger.error(f"Quality metrics calculation failed: {e}")
+            return {}

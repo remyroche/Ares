@@ -578,81 +578,9 @@ class SRParameterOptimizationStep(BaseStep):
 
         return data
 
-    def _create_validated_param_config(self) -> Any:
-        """Create parameter optimization config with hardware capability validation."""
-        if not SR_CLUSTERING_AVAILABLE or ParameterOptimizationConfig is None:
-            raise RuntimeError("ParameterOptimizationConfig not available")
 
-        # Get current data for configuration
-        current_data = getattr(self, '_current_data', None)
-
-        # Check GPU availability
-        gpu_available = False
-        if TORCH_AVAILABLE:
-            gpu_available = torch.cuda.is_available() or torch.backends.mps.is_available()
-
-        # Determine optimal memory settings
-        memory_limit_gb = 4.0  # Conservative default
-        if PSUTIL_AVAILABLE:
-            available_memory_gb = psutil.virtual_memory().available / (1024**3)
-            memory_limit_gb = min(available_memory_gb * 0.5, 8.0)
-
-        return ParameterOptimizationConfig(
-            optimization_method='adaptive_grid_search',
-            min_samples_for_optimization=10,
-            adaptive_optimization=True,
-            objective_metric='composite',
-
-            # Hardware optimization settings
-            enable_hardware_optimization=True,
-            enable_parallel_processing=True,
-            max_parallel_workers=None,  # Auto-detect
-            enable_gpu_acceleration=gpu_available,
-            memory_limit_gb=memory_limit_gb,
-            chunk_size=min(1000, max(100, int(len(current_data) / 10) if current_data is not None else 100))
-        )
-
-    def _create_validated_backtest_config(self) -> Any:
-        """Create backtesting config with hardware capability validation."""
-        if not SR_CLUSTERING_AVAILABLE or BacktestConfig is None:
-            raise RuntimeError("BacktestConfig not available")
-
-        # Get current data for configuration
-        current_data = getattr(self, '_current_data', None)
-
-        # Check GPU availability
-        gpu_available = False
-        if TORCH_AVAILABLE:
-            gpu_available = torch.cuda.is_available() or torch.backends.mps.is_available()
-
-        # Determine optimal memory settings
-        memory_limit_gb = 4.0  # Conservative default
-        if PSUTIL_AVAILABLE:
-            available_memory_gb = psutil.virtual_memory().available / (1024**3)
-            memory_limit_gb = min(available_memory_gb * 0.5, 8.0)
-
-        return BacktestConfig(
-            enable_parameter_optimization=True,
-            parameter_optimization_method='adaptive_grid_search',
-            min_samples_for_optimization=10,
-
-            # Hardware optimization settings
-            enable_m1_optimizations=True,
-            enable_gpu_acceleration=gpu_available,
-            enable_memory_optimization=True,
-            memory_limit_gb=memory_limit_gb,
-            chunk_size=min(1000, max(100, int(len(current_data) / 10) if current_data is not None else 100)),
-
-            # Computation optimization settings
-            enable_parallel_processing=True,
-            enable_vectorized_operations=True,
-            enable_caching=True,
-            cache_size_mb=min(100, max(10, int(memory_limit_gb * 10))),
-            enable_numba_acceleration=True
-        )
-
-    def _split_data_for_optimization(self, market_data: Any) -> Tuple[Any, Any]:
-        """Split data properly to avoid data leakage during optimization."""
+    def _split_data_for_optimization(self, market_data: Any, temporal_gap_hours: int = 24) -> Tuple[Any, Any]:
+        """Split data properly to avoid data leakage during optimization with temporal gap."""
         if not PANDAS_AVAILABLE or not isinstance(market_data, pd.DataFrame):
             return market_data, market_data
 
@@ -660,12 +588,21 @@ class SRParameterOptimizationStep(BaseStep):
         split_point = int(len(market_data) * 0.7)
 
         if split_point < 100:
+            self.logger.warning("Insufficient data for proper splitting, using same data for train/test")
             return market_data, market_data
 
+        # Add temporal gap to prevent data leakage
+        gap_periods = max(1, int(temporal_gap_hours * 60 / 15))  # Assuming 15m timeframe
+        
         level_creation_data = market_data.iloc[:split_point]
-        backtest_data = market_data.iloc[split_point:]
+        backtest_data = market_data.iloc[split_point + gap_periods:]
 
-        self.logger.info(f"Data split: {len(level_creation_data)} rows for training, {len(backtest_data)} rows for testing")
+        if len(backtest_data) < 50:
+            self.logger.warning("Insufficient test data after gap, reducing gap")
+            gap_periods = max(1, int(gap_periods * 0.5))
+            backtest_data = market_data.iloc[split_point + gap_periods:]
+
+        self.logger.info(f"Data split: {len(level_creation_data)} train, {len(backtest_data)} test, {gap_periods} period gap")
         return level_creation_data, backtest_data
 
     def _get_current_data(self):
@@ -731,7 +668,7 @@ class SRParameterOptimizationStep(BaseStep):
             search_space = self._create_sr_search_space(input_artifacts)
             
             # Split data for optimization with temporal validation
-            train_data, test_data = self._split_data_with_validation(market_data, enhanced_config)
+            train_data, test_data = self._split_data_for_optimization(market_data, enhanced_config.temporal_gap_hours)
             
             # Run Bayesian HPO if enabled
             if enhanced_config.enable_bayesian_hpo and self.bayesian_optimizer:
@@ -785,47 +722,50 @@ class SRParameterOptimizationStep(BaseStep):
             return optimization_result
 
     def _create_sr_search_space(self, input_artifacts: Dict[str, Any] = None) -> Dict[str, Any]:
-        """Create enhanced search space for SR parameter optimization with comprehensive parameters."""
+        """Create adaptive search space for SR parameter optimization based on market data characteristics."""
         
-        # Default parameter bounds
+        # Get market data characteristics for adaptive ranges
+        market_characteristics = self._analyze_market_characteristics(input_artifacts)
+        
+        # Base parameter bounds with adaptive adjustments
         search_space = {
-            # Core SR detection parameters
-            'min_touches': {'type': 'int', 'low': 2, 'high': 15},
-            'strength_threshold': {'type': 'float', 'low': 0.1, 'high': 0.9},
-            'distance_threshold': {'type': 'float', 'low': 0.001, 'high': 0.05},
-            'lookback_periods': {'type': 'int', 'low': 20, 'high': 500},
-            'volume_threshold': {'type': 'float', 'low': 0.5, 'high': 3.0},
+            # Core SR detection parameters - adaptive based on market volatility
+            'min_touches': self._get_adaptive_range('min_touches', market_characteristics),
+            'strength_threshold': self._get_adaptive_range('strength_threshold', market_characteristics),
+            'distance_threshold': self._get_adaptive_range('distance_threshold', market_characteristics),
+            'lookback_periods': self._get_adaptive_range('lookback_periods', market_characteristics),
+            'volume_threshold': self._get_adaptive_range('volume_threshold', market_characteristics),
             
-            # Advanced SR parameters
-            'touch_tolerance': {'type': 'float', 'low': 0.001, 'high': 0.02},
-            'breakout_threshold': {'type': 'float', 'low': 0.01, 'high': 0.1},
-            'consolidation_periods': {'type': 'int', 'low': 5, 'high': 50},
-            'trend_strength_threshold': {'type': 'float', 'low': 0.3, 'high': 0.8},
+            # Advanced SR parameters - adaptive based on market structure
+            'touch_tolerance': self._get_adaptive_range('touch_tolerance', market_characteristics),
+            'breakout_threshold': self._get_adaptive_range('breakout_threshold', market_characteristics),
+            'consolidation_periods': self._get_adaptive_range('consolidation_periods', market_characteristics),
+            'trend_strength_threshold': self._get_adaptive_range('trend_strength_threshold', market_characteristics),
             
-            # Time-based parameters
-            'min_formation_time': {'type': 'int', 'low': 1, 'high': 30},
-            'max_formation_time': {'type': 'int', 'low': 30, 'high': 200},
-            'time_decay_factor': {'type': 'float', 'low': 0.8, 'high': 1.0},
+            # Time-based parameters - adaptive based on timeframe
+            'min_formation_time': self._get_adaptive_range('min_formation_time', market_characteristics),
+            'max_formation_time': self._get_adaptive_range('max_formation_time', market_characteristics),
+            'time_decay_factor': self._get_adaptive_range('time_decay_factor', market_characteristics),
             
-            # Volume-based parameters
-            'volume_spike_threshold': {'type': 'float', 'low': 1.5, 'high': 5.0},
-            'volume_consistency_threshold': {'type': 'float', 'low': 0.7, 'high': 1.0},
-            'volume_weight': {'type': 'float', 'low': 0.1, 'high': 0.5},
+            # Volume-based parameters - adaptive based on volume patterns
+            'volume_spike_threshold': self._get_adaptive_range('volume_spike_threshold', market_characteristics),
+            'volume_consistency_threshold': self._get_adaptive_range('volume_consistency_threshold', market_characteristics),
+            'volume_weight': self._get_adaptive_range('volume_weight', market_characteristics),
             
-            # Price action parameters
-            'wick_ratio_threshold': {'type': 'float', 'low': 0.1, 'high': 0.5},
-            'body_ratio_threshold': {'type': 'float', 'low': 0.3, 'high': 0.8},
-            'price_momentum_threshold': {'type': 'float', 'low': 0.1, 'high': 0.5},
+            # Price action parameters - adaptive based on price action patterns
+            'wick_ratio_threshold': self._get_adaptive_range('wick_ratio_threshold', market_characteristics),
+            'body_ratio_threshold': self._get_adaptive_range('body_ratio_threshold', market_characteristics),
+            'price_momentum_threshold': self._get_adaptive_range('price_momentum_threshold', market_characteristics),
             
-            # Risk management parameters
-            'stop_loss_multiplier': {'type': 'float', 'low': 1.0, 'high': 3.0},
-            'take_profit_multiplier': {'type': 'float', 'low': 1.5, 'high': 5.0},
-            'risk_reward_ratio': {'type': 'float', 'low': 1.0, 'high': 3.0},
+            # Risk management parameters - adaptive based on market risk
+            'stop_loss_multiplier': self._get_adaptive_range('stop_loss_multiplier', market_characteristics),
+            'take_profit_multiplier': self._get_adaptive_range('take_profit_multiplier', market_characteristics),
+            'risk_reward_ratio': self._get_adaptive_range('risk_reward_ratio', market_characteristics),
             
-            # Filtering parameters
-            'noise_filter_threshold': {'type': 'float', 'low': 0.01, 'high': 0.1},
-            'correlation_threshold': {'type': 'float', 'low': 0.3, 'high': 0.9},
-            'volatility_threshold': {'type': 'float', 'low': 0.01, 'high': 0.1}
+            # Filtering parameters - adaptive based on noise levels
+            'noise_filter_threshold': self._get_adaptive_range('noise_filter_threshold', market_characteristics),
+            'correlation_threshold': self._get_adaptive_range('correlation_threshold', market_characteristics),
+            'volatility_threshold': self._get_adaptive_range('volatility_threshold', market_characteristics)
         }
         
         # Enhance search space based on input artifacts
@@ -886,27 +826,137 @@ class SRParameterOptimizationStep(BaseStep):
         
         return search_space
 
-    async def _split_data_with_validation(
-        self, 
-        market_data: Any, 
-        enhanced_config: EnhancedSRConfig
-    ) -> Tuple[Any, Any]:
-        """Split data with temporal validation to prevent data leakage."""
-        if not PANDAS_AVAILABLE or not isinstance(market_data, pd.DataFrame):
-            return market_data, market_data
+    def _analyze_market_characteristics(self, input_artifacts: Dict[str, Any] = None) -> Dict[str, Any]:
+        """Analyze market characteristics to inform parameter ranges."""
+        characteristics = {
+            'volatility_level': 'medium',
+            'timeframe': '15m',
+            'market_structure': 'trending',
+            'volume_profile': 'normal',
+            'noise_level': 'medium'
+        }
         
-        # Use 70% for training and 30% for testing with temporal gap
-        split_point = int(len(market_data) * 0.7)
+        try:
+            # Analyze volatility from input artifacts
+            if input_artifacts and 'sr_clustering_result' in input_artifacts:
+                clustering_result = input_artifacts['sr_clustering_result']
+                if clustering_result:
+                    # Use clustering efficiency to determine market structure
+                    efficiency = clustering_result.get('clustering_efficiency', 0.5)
+                    if efficiency > 0.7:
+                        characteristics['market_structure'] = 'consolidated'
+                    elif efficiency < 0.3:
+                        characteristics['market_structure'] = 'choppy'
+            
+            # Analyze SR levels for market characteristics
+            if input_artifacts and 'sr_levels_dictionary' in input_artifacts:
+                levels_dict = input_artifacts['sr_levels_dictionary']
+                if levels_dict and 'levels' in levels_dict:
+                    levels = levels_dict['levels']
+                    if levels:
+                        # Analyze level characteristics
+                        avg_strength = sum(level.get('strength', 0) for level in levels) / len(levels)
+                        avg_touches = sum(level.get('touches', 0) for level in levels) / len(levels)
+                        
+                        # Determine volatility level based on level strength
+                        if avg_strength > 0.7:
+                            characteristics['volatility_level'] = 'low'
+                        elif avg_strength < 0.3:
+                            characteristics['volatility_level'] = 'high'
+                        
+                        # Determine noise level based on touches
+                        if avg_touches > 8:
+                            characteristics['noise_level'] = 'high'
+                        elif avg_touches < 3:
+                            characteristics['noise_level'] = 'low'
+            
+            self.logger.info(f"Market characteristics: {characteristics}")
+            return characteristics
+            
+        except Exception as e:
+            self.logger.warning(f"Failed to analyze market characteristics: {e}")
+            return characteristics
+
+    def _get_adaptive_range(self, param_name: str, characteristics: Dict[str, Any]) -> Dict[str, Any]:
+        """Get adaptive parameter range based on market characteristics."""
+        # Default ranges
+        default_ranges = {
+            'min_touches': {'type': 'int', 'low': 2, 'high': 15},
+            'strength_threshold': {'type': 'float', 'low': 0.1, 'high': 0.9},
+            'distance_threshold': {'type': 'float', 'low': 0.001, 'high': 0.05},
+            'lookback_periods': {'type': 'int', 'low': 20, 'high': 500},
+            'volume_threshold': {'type': 'float', 'low': 0.5, 'high': 3.0},
+            'touch_tolerance': {'type': 'float', 'low': 0.001, 'high': 0.02},
+            'breakout_threshold': {'type': 'float', 'low': 0.01, 'high': 0.1},
+            'consolidation_periods': {'type': 'int', 'low': 5, 'high': 50},
+            'trend_strength_threshold': {'type': 'float', 'low': 0.3, 'high': 0.8},
+            'min_formation_time': {'type': 'int', 'low': 1, 'high': 30},
+            'max_formation_time': {'type': 'int', 'low': 30, 'high': 200},
+            'time_decay_factor': {'type': 'float', 'low': 0.8, 'high': 1.0},
+            'volume_spike_threshold': {'type': 'float', 'low': 1.5, 'high': 5.0},
+            'volume_consistency_threshold': {'type': 'float', 'low': 0.7, 'high': 1.0},
+            'volume_weight': {'type': 'float', 'low': 0.1, 'high': 0.5},
+            'wick_ratio_threshold': {'type': 'float', 'low': 0.1, 'high': 0.5},
+            'body_ratio_threshold': {'type': 'float', 'low': 0.3, 'high': 0.8},
+            'price_momentum_threshold': {'type': 'float', 'low': 0.1, 'high': 0.5},
+            'stop_loss_multiplier': {'type': 'float', 'low': 1.0, 'high': 3.0},
+            'take_profit_multiplier': {'type': 'float', 'low': 1.5, 'high': 5.0},
+            'risk_reward_ratio': {'type': 'float', 'low': 1.0, 'high': 3.0},
+            'noise_filter_threshold': {'type': 'float', 'low': 0.01, 'high': 0.1},
+            'correlation_threshold': {'type': 'float', 'low': 0.3, 'high': 0.9},
+            'volatility_threshold': {'type': 'float', 'low': 0.01, 'high': 0.1}
+        }
         
-        # Add temporal gap to prevent data leakage
-        gap_hours = enhanced_config.temporal_gap_hours
-        gap_periods = max(1, int(gap_hours * 60 / 15))  # Assuming 15m timeframe
+        base_range = default_ranges.get(param_name, {'type': 'float', 'low': 0.0, 'high': 1.0})
+        range_copy = base_range.copy()
         
-        train_data = market_data.iloc[:split_point]
-        test_data = market_data.iloc[split_point + gap_periods:]
+        # Apply adaptive adjustments based on market characteristics
+        volatility_level = characteristics.get('volatility_level', 'medium')
+        market_structure = characteristics.get('market_structure', 'trending')
+        noise_level = characteristics.get('noise_level', 'medium')
         
-        self.logger.info(f"Data split: {len(train_data)} train, {len(test_data)} test, {gap_periods} period gap")
-        return train_data, test_data
+        # Adjust distance_threshold based on volatility
+        if param_name == 'distance_threshold':
+            if volatility_level == 'high':
+                range_copy['low'] = 0.005
+                range_copy['high'] = 0.03
+            elif volatility_level == 'low':
+                range_copy['low'] = 0.001
+                range_copy['high'] = 0.01
+        
+        # Adjust min_touches based on noise level
+        elif param_name == 'min_touches':
+            if noise_level == 'high':
+                range_copy['low'] = 4
+                range_copy['high'] = 12
+            elif noise_level == 'low':
+                range_copy['low'] = 2
+                range_copy['high'] = 8
+        
+        # Adjust strength_threshold based on market structure
+        elif param_name == 'strength_threshold':
+            if market_structure == 'consolidated':
+                range_copy['low'] = 0.3
+                range_copy['high'] = 0.8
+            elif market_structure == 'choppy':
+                range_copy['low'] = 0.1
+                range_copy['high'] = 0.6
+        
+        # Adjust lookback_periods based on timeframe
+        elif param_name == 'lookback_periods':
+            timeframe = characteristics.get('timeframe', '15m')
+            if timeframe in ['1m', '5m']:
+                range_copy['low'] = 50
+                range_copy['high'] = 200
+            elif timeframe in ['1h', '4h']:
+                range_copy['low'] = 20
+                range_copy['high'] = 100
+            else:  # daily or higher
+                range_copy['low'] = 10
+                range_copy['high'] = 50
+        
+        return range_copy
+
 
     async def _run_bayesian_optimization(
         self, 
@@ -1110,29 +1160,30 @@ class SRParameterOptimizationStep(BaseStep):
             return {'error': str(e)}
 
     def _evaluate_sr_parameters(self, params: Dict[str, Any], train_data: Any, test_data: Any) -> float:
-        """Evaluate SR parameters and return a score."""
+        """Evaluate SR parameters using real SR detection and backtesting."""
         try:
-            # Simple evaluation based on parameter quality
-            # In a real implementation, this would run actual SR detection and backtesting
+            # Validate parameters first
+            if not self._validate_parameters(params):
+                self.logger.warning("Invalid parameters provided for evaluation")
+                return 0.0
             
-            # Calculate a composite score based on parameters
-            score = 0.0
+            # Detect SR levels using the parameters
+            sr_levels = self._detect_sr_levels(train_data, params)
+            if not sr_levels or len(sr_levels) == 0:
+                self.logger.warning("No SR levels detected with given parameters")
+                return 0.0
             
-            # Touches score (more touches = better, but not too many)
-            touches_score = min(params.get('min_touches', 2) / 5.0, 1.0)
-            score += touches_score * 0.3
+            # Backtest the SR levels on test data
+            backtest_results = self._backtest_sr_levels(sr_levels, test_data, params)
+            if not backtest_results:
+                self.logger.warning("Backtest failed for SR levels")
+                return 0.0
             
-            # Strength threshold score (balanced threshold)
-            strength = params.get('strength_threshold', 0.5)
-            strength_score = 1.0 - abs(strength - 0.6) / 0.6  # Optimal around 0.6
-            score += max(0, strength_score) * 0.4
+            # Calculate composite score based on backtest results
+            score = self._calculate_composite_score(backtest_results, params)
             
-            # Distance threshold score (not too tight, not too loose)
-            distance = params.get('distance_threshold', 0.01)
-            distance_score = 1.0 - abs(distance - 0.01) / 0.01  # Optimal around 0.01
-            score += max(0, distance_score) * 0.3
-            
-            return min(score, 1.0)
+            self.logger.debug(f"Parameter evaluation completed: score={score:.4f}, levels={len(sr_levels)}")
+            return min(max(score, 0.0), 1.0)  # Clamp between 0 and 1
             
         except Exception as e:
             self.logger.error(f"Parameter evaluation failed: {e}")
@@ -1153,11 +1204,16 @@ class SRParameterOptimizationStep(BaseStep):
             # Enhanced evaluation with ML utilities
             enhanced_score = base_score
             
+            # Collect scores from different validation methods
+            validation_scores = {}
+            validation_weights = {}
+            
             # Add OOF validation if available
             if self.oof_manager and enhanced_config.enable_oof_validation:
                 try:
                     oof_score = await self._evaluate_with_oof_validation(params, train_data, test_data)
-                    enhanced_score = (enhanced_score + oof_score) / 2.0
+                    validation_scores['oof'] = oof_score
+                    validation_weights['oof'] = 0.3  # 30% weight for OOF
                 except Exception as e:
                     self.logger.warning(f"OOF validation failed: {e}")
             
@@ -1165,7 +1221,8 @@ class SRParameterOptimizationStep(BaseStep):
             if PURGED_CV_AVAILABLE and enhanced_config.enable_purged_cv:
                 try:
                     purged_score = await self._evaluate_with_purged_cv(params, train_data, test_data)
-                    enhanced_score = (enhanced_score + purged_score) / 2.0
+                    validation_scores['purged_cv'] = purged_score
+                    validation_weights['purged_cv'] = 0.3  # 30% weight for Purged CV
                 except Exception as e:
                     self.logger.warning(f"Purged CV validation failed: {e}")
             
@@ -1173,9 +1230,17 @@ class SRParameterOptimizationStep(BaseStep):
             if self.evaluator and enhanced_config.enable_unified_evaluation:
                 try:
                     evaluation_score = await self._evaluate_with_unified_evaluator(params, train_data, test_data)
-                    enhanced_score = (enhanced_score + evaluation_score) / 2.0
+                    validation_scores['unified'] = evaluation_score
+                    validation_weights['unified'] = 0.4  # 40% weight for unified evaluation
                 except Exception as e:
                     self.logger.warning(f"Unified evaluation failed: {e}")
+            
+            # Combine scores using weighted average
+            if validation_scores:
+                enhanced_score = self._combine_evaluation_scores(validation_scores, validation_weights)
+            else:
+                # Fallback to base score if no validation methods available
+                enhanced_score = base_score
             
             # Apply data leakage penalty if detected
             if self.leakage_detector and enhanced_config.enable_data_leakage_detection:
@@ -1199,14 +1264,39 @@ class SRParameterOptimizationStep(BaseStep):
         train_data: Any, 
         test_data: Any
     ) -> float:
-        """Evaluate parameters using OOF validation."""
+        """Evaluate parameters using proper OOF validation with temporal splits."""
         try:
-            # Create OOF splits
+            if not PANDAS_AVAILABLE or not isinstance(train_data, pd.DataFrame):
+                return 0.0
+            
             oof_scores = []
-            for fold in range(self.oof_config.n_splits):
-                # Simulate OOF evaluation (simplified)
-                fold_score = self._evaluate_sr_parameters(params, train_data, test_data)
+            n_splits = self.oof_config.n_splits
+            
+            # Create proper temporal splits for OOF validation
+            for fold in range(n_splits):
+                # Calculate split boundaries
+                fold_size = len(train_data) // n_splits
+                train_start = 0
+                train_end = fold_size * (fold + 1)
+                val_start = train_end
+                val_end = min(val_start + fold_size, len(train_data))
+                
+                if val_end <= val_start or train_end <= train_start:
+                    continue
+                
+                # Create fold-specific train/validation splits
+                fold_train_data = train_data.iloc[train_start:train_end]
+                fold_val_data = train_data.iloc[val_start:val_end]
+                
+                # Evaluate on this fold
+                fold_score = self._evaluate_sr_parameters(params, fold_train_data, fold_val_data)
                 oof_scores.append(fold_score)
+                
+                self.logger.debug(f"OOF fold {fold+1}/{n_splits}: score={fold_score:.4f}")
+            
+            if not oof_scores:
+                self.logger.warning("No valid OOF folds created")
+                return 0.0
             
             return np.mean(oof_scores)
         except Exception as e:
@@ -1219,14 +1309,43 @@ class SRParameterOptimizationStep(BaseStep):
         train_data: Any, 
         test_data: Any
     ) -> float:
-        """Evaluate parameters using purged cross-validation."""
+        """Evaluate parameters using purged cross-validation with temporal gaps."""
         try:
-            # Create purged CV splits
+            if not PANDAS_AVAILABLE or not isinstance(train_data, pd.DataFrame):
+                return 0.0
+            
             purged_scores = []
-            for fold in range(enhanced_config.purged_cv_n_splits):
-                # Simulate purged CV evaluation (simplified)
-                fold_score = self._evaluate_sr_parameters(params, train_data, test_data)
+            n_splits = 5  # Default number of splits
+            embargo_pct = 0.01  # 1% embargo period
+            
+            # Calculate embargo period in data points
+            embargo_periods = max(1, int(len(train_data) * embargo_pct))
+            
+            # Create purged CV splits with embargo
+            for fold in range(n_splits):
+                # Calculate split boundaries with embargo
+                fold_size = len(train_data) // n_splits
+                train_start = 0
+                train_end = fold_size * (fold + 1)
+                val_start = train_end + embargo_periods  # Add embargo gap
+                val_end = min(val_start + fold_size, len(train_data))
+                
+                if val_end <= val_start or train_end <= train_start:
+                    continue
+                
+                # Create fold-specific train/validation splits with embargo
+                fold_train_data = train_data.iloc[train_start:train_end]
+                fold_val_data = train_data.iloc[val_start:val_end]
+                
+                # Evaluate on this fold
+                fold_score = self._evaluate_sr_parameters(params, fold_train_data, fold_val_data)
                 purged_scores.append(fold_score)
+                
+                self.logger.debug(f"Purged CV fold {fold+1}/{n_splits}: score={fold_score:.4f}, embargo={embargo_periods}")
+            
+            if not purged_scores:
+                self.logger.warning("No valid purged CV folds created")
+                return 0.0
             
             return np.mean(purged_scores)
         except Exception as e:
@@ -1297,6 +1416,262 @@ class SRParameterOptimizationStep(BaseStep):
             self.logger.error(f"Explainability generation failed: {e}")
             return {}
 
+    def _validate_parameters(self, params: Dict[str, Any]) -> bool:
+        """Validate parameter values before optimization."""
+        required_params = ['min_touches', 'strength_threshold', 'distance_threshold']
+        
+        for param in required_params:
+            if param not in params:
+                self.logger.warning(f"Missing required parameter: {param}")
+                return False
+            
+            value = params[param]
+            if not isinstance(value, (int, float)) or value <= 0:
+                self.logger.warning(f"Invalid parameter value for {param}: {value}")
+                return False
+        
+        # Validate parameter relationships
+        if params['min_touches'] > 20:  # Unrealistic
+            self.logger.warning(f"min_touches too high: {params['min_touches']}")
+            return False
+        
+        if params['strength_threshold'] > 1.0 or params['strength_threshold'] < 0:
+            self.logger.warning(f"strength_threshold out of range: {params['strength_threshold']}")
+            return False
+        
+        return True
+
+    def _detect_sr_levels(self, data: Any, params: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Detect SR levels using given parameters."""
+        try:
+            if not PANDAS_AVAILABLE or not isinstance(data, pd.DataFrame):
+                return []
+            
+            # Extract price data
+            high = data['high'].values
+            low = data['low'].values
+            close = data['close'].values
+            volume = data['volume'].values if 'volume' in data.columns else None
+            
+            sr_levels = []
+            min_touches = params.get('min_touches', 2)
+            strength_threshold = params.get('strength_threshold', 0.5)
+            distance_threshold = params.get('distance_threshold', 0.01)
+            lookback_periods = params.get('lookback_periods', 50)
+            
+            # Simple SR detection algorithm
+            for i in range(lookback_periods, len(high)):
+                # Check for support level (local minimum)
+                if self._is_local_minimum(low, i, lookback_periods):
+                    level = self._analyze_sr_level(
+                        high, low, close, volume, i, 'support', 
+                        min_touches, strength_threshold, distance_threshold
+                    )
+                    if level:
+                        sr_levels.append(level)
+                
+                # Check for resistance level (local maximum)
+                if self._is_local_maximum(high, i, lookback_periods):
+                    level = self._analyze_sr_level(
+                        high, low, close, volume, i, 'resistance',
+                        min_touches, strength_threshold, distance_threshold
+                    )
+                    if level:
+                        sr_levels.append(level)
+            
+            return sr_levels
+            
+        except Exception as e:
+            self.logger.error(f"SR level detection failed: {e}")
+            return []
+
+    def _is_local_minimum(self, low: np.ndarray, idx: int, window: int) -> bool:
+        """Check if index is a local minimum."""
+        start = max(0, idx - window // 2)
+        end = min(len(low), idx + window // 2 + 1)
+        return low[idx] == np.min(low[start:end])
+
+    def _is_local_maximum(self, high: np.ndarray, idx: int, window: int) -> bool:
+        """Check if index is a local maximum."""
+        start = max(0, idx - window // 2)
+        end = min(len(high), idx + window // 2 + 1)
+        return high[idx] == np.max(high[start:end])
+
+    def _analyze_sr_level(self, high: np.ndarray, low: np.ndarray, close: np.ndarray, 
+                         volume: Optional[np.ndarray], idx: int, level_type: str,
+                         min_touches: int, strength_threshold: float, 
+                         distance_threshold: float) -> Optional[Dict[str, Any]]:
+        """Analyze a potential SR level for quality."""
+        try:
+            level_price = low[idx] if level_type == 'support' else high[idx]
+            touches = 0
+            total_strength = 0.0
+            
+            # Count touches and calculate strength
+            for i in range(max(0, idx - 100), min(len(high), idx + 100)):
+                if i == idx:
+                    continue
+                
+                if level_type == 'support':
+                    if abs(low[i] - level_price) / level_price <= distance_threshold:
+                        touches += 1
+                        # Calculate bounce strength
+                        bounce_strength = (close[i] - low[i]) / low[i]
+                        total_strength += bounce_strength
+                else:  # resistance
+                    if abs(high[i] - level_price) / level_price <= distance_threshold:
+                        touches += 1
+                        # Calculate rejection strength
+                        rejection_strength = (high[i] - close[i]) / high[i]
+                        total_strength += rejection_strength
+            
+            if touches < min_touches:
+                return None
+            
+            avg_strength = total_strength / touches if touches > 0 else 0.0
+            
+            # Check if level meets strength threshold
+            if avg_strength < strength_threshold:
+                return None
+            
+            # Calculate volume confirmation if available
+            volume_confirmation = 1.0
+            if volume is not None:
+                avg_volume = np.mean(volume[max(0, idx-10):min(len(volume), idx+10)])
+                level_volume = volume[idx]
+                volume_confirmation = min(2.0, level_volume / avg_volume) if avg_volume > 0 else 1.0
+            
+            return {
+                'price': level_price,
+                'type': level_type,
+                'touches': touches,
+                'strength': avg_strength,
+                'volume_confirmation': volume_confirmation,
+                'index': idx,
+                'quality_score': self._calculate_level_quality(touches, avg_strength, volume_confirmation)
+            }
+            
+        except Exception as e:
+            self.logger.error(f"SR level analysis failed: {e}")
+            return None
+
+    def _calculate_level_quality(self, touches: int, strength: float, volume_confirmation: float) -> float:
+        """Calculate quality score for an SR level."""
+        # Normalize touches (2-10 range to 0-1)
+        touches_score = min(1.0, (touches - 2) / 8.0)
+        
+        # Normalize strength (0-0.1 range to 0-1)
+        strength_score = min(1.0, strength / 0.1)
+        
+        # Normalize volume confirmation (0.5-2.0 range to 0-1)
+        volume_score = min(1.0, max(0.0, (volume_confirmation - 0.5) / 1.5))
+        
+        # Weighted combination
+        return (touches_score * 0.4 + strength_score * 0.4 + volume_score * 0.2)
+
+    def _backtest_sr_levels(self, sr_levels: List[Dict[str, Any]], test_data: Any, 
+                           params: Dict[str, Any]) -> Dict[str, Any]:
+        """Backtest SR levels on test data."""
+        try:
+            if not PANDAS_AVAILABLE or not isinstance(test_data, pd.DataFrame):
+                return {}
+            
+            if not sr_levels:
+                return {}
+            
+            high = test_data['high'].values
+            low = test_data['low'].values
+            close = test_data['close'].values
+            
+            total_trades = 0
+            successful_trades = 0
+            total_pnl = 0.0
+            level_performance = []
+            
+            for level in sr_levels:
+                level_price = level['price']
+                level_type = level['type']
+                breakout_threshold = params.get('breakout_threshold', 0.02)
+                
+                # Find breakout opportunities
+                for i in range(len(close)):
+                    if level_type == 'support':
+                        # Look for breakdown
+                        if low[i] < level_price * (1 - breakout_threshold):
+                            total_trades += 1
+                            # Calculate PnL (simplified)
+                            pnl = (level_price - close[i]) / level_price
+                            total_pnl += pnl
+                            if pnl > 0:
+                                successful_trades += 1
+                            level_performance.append({
+                                'level_id': len(level_performance),
+                                'pnl': pnl,
+                                'success': pnl > 0
+                            })
+                            break
+                    else:  # resistance
+                        # Look for breakout
+                        if high[i] > level_price * (1 + breakout_threshold):
+                            total_trades += 1
+                            # Calculate PnL (simplified)
+                            pnl = (close[i] - level_price) / level_price
+                            total_pnl += pnl
+                            if pnl > 0:
+                                successful_trades += 1
+                            level_performance.append({
+                                'level_id': len(level_performance),
+                                'pnl': pnl,
+                                'success': pnl > 0
+                            })
+                            break
+            
+            success_rate = successful_trades / total_trades if total_trades > 0 else 0.0
+            avg_pnl = total_pnl / total_trades if total_trades > 0 else 0.0
+            
+            return {
+                'total_trades': total_trades,
+                'successful_trades': successful_trades,
+                'success_rate': success_rate,
+                'total_pnl': total_pnl,
+                'avg_pnl': avg_pnl,
+                'level_performance': level_performance
+            }
+            
+        except Exception as e:
+            self.logger.error(f"SR level backtesting failed: {e}")
+            return {}
+
+    def _calculate_composite_score(self, backtest_results: Dict[str, Any], 
+                                 params: Dict[str, Any]) -> float:
+        """Calculate composite score from backtest results."""
+        try:
+            if not backtest_results:
+                return 0.0
+            
+            success_rate = backtest_results.get('success_rate', 0.0)
+            avg_pnl = backtest_results.get('avg_pnl', 0.0)
+            total_trades = backtest_results.get('total_trades', 0)
+            
+            # Normalize PnL (assume 0-0.1 range is good)
+            pnl_score = min(1.0, max(0.0, avg_pnl / 0.1))
+            
+            # Trade frequency score (more trades = better, but not too many)
+            trade_frequency_score = min(1.0, total_trades / 10.0)
+            
+            # Composite score with weights
+            composite_score = (
+                success_rate * 0.5 +           # 50% weight on success rate
+                pnl_score * 0.3 +              # 30% weight on PnL
+                trade_frequency_score * 0.2    # 20% weight on trade frequency
+            )
+            
+            return composite_score
+            
+        except Exception as e:
+            self.logger.error(f"Composite score calculation failed: {e}")
+            return 0.0
+
     def _predict_with_params(self, params: Dict[str, Any], X: np.ndarray) -> np.ndarray:
         """Generate predictions using given parameters (simplified)."""
         # This is a simplified prediction method
@@ -1321,6 +1696,29 @@ class SRParameterOptimizationStep(BaseStep):
                 # Higher values indicate higher sensitivity
                 sensitivity[param_name] = min(1.0, abs(param_value) / 10.0)
         return sensitivity
+
+    def _combine_evaluation_scores(self, scores: Dict[str, float], weights: Dict[str, float]) -> float:
+        """Combine different evaluation scores with appropriate weights."""
+        try:
+            if not scores or not weights:
+                return 0.0
+            
+            # Normalize weights to sum to 1.0
+            total_weight = sum(weights.values())
+            if total_weight == 0:
+                return 0.0
+            
+            normalized_weights = {method: weight / total_weight for method, weight in weights.items()}
+            
+            # Calculate weighted sum
+            weighted_sum = sum(score * normalized_weights.get(method, 0) for method, score in scores.items())
+            
+            self.logger.debug(f"Score combination: {scores}, weights: {normalized_weights}, result: {weighted_sum:.4f}")
+            return weighted_sum
+            
+        except Exception as e:
+            self.logger.error(f"Score combination failed: {e}")
+            return 0.0
 
     def _generate_enhancement_summary(self) -> Dict[str, Any]:
         """Generate a comprehensive summary of all enhancements made to the SR parameter optimization."""

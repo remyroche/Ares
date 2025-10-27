@@ -200,13 +200,13 @@ class ClusteringDistanceGenerator(VectorizedFeatureGenerator):
         super().__init__(base_config, enable_matrix_ops=True)
         
         # Initialize VectorBT optimizers
-        self.vectorbt_optimizer = None
+        # vectorbt_optimizer inherited from base class
         self.unified_optimizer = None
         
         if OPTIMIZATION_AVAILABLE:
             try:
                 # Initialize VectorBT rolling optimizer
-                self.vectorbt_optimizer = get_vectorbt_rolling_optimizer()
+                # vectorbt_rolling_optimizer inherited from base class
                 
                 # Initialize unified vectorization manager
                 unified_config = {
@@ -475,13 +475,13 @@ class ClusteringSeparationGenerator(VectorizedFeatureGenerator):
         super().__init__(base_config, enable_matrix_ops=True)
         
         # Initialize VectorBT optimizers
-        self.vectorbt_optimizer = None
+        # vectorbt_optimizer inherited from base class
         self.unified_optimizer = None
         
         if OPTIMIZATION_AVAILABLE:
             try:
                 # Initialize VectorBT rolling optimizer
-                self.vectorbt_optimizer = get_vectorbt_rolling_optimizer()
+                # vectorbt_rolling_optimizer inherited from base class
                 
                 # Initialize unified vectorization manager
                 unified_config = {
@@ -695,13 +695,13 @@ class ClusteringStabilityGenerator(VectorizedFeatureGenerator):
         super().__init__(base_config, enable_matrix_ops=True)
         
         # Initialize VectorBT optimizers
-        self.vectorbt_optimizer = None
+        # vectorbt_optimizer inherited from base class
         self.unified_optimizer = None
         
         if OPTIMIZATION_AVAILABLE:
             try:
                 # Initialize VectorBT rolling optimizer
-                self.vectorbt_optimizer = get_vectorbt_rolling_optimizer()
+                # vectorbt_rolling_optimizer inherited from base class
                 
                 # Initialize unified vectorization manager
                 unified_config = {
@@ -932,13 +932,13 @@ class ClusteringIntegration(VectorizedFeatureGenerator):
         super().__init__(base_config, enable_matrix_ops=True)
         
         # Initialize VectorBT optimizers
-        self.vectorbt_optimizer = None
+        # vectorbt_optimizer inherited from base class
         self.unified_optimizer = None
         
         if OPTIMIZATION_AVAILABLE:
             try:
                 # Initialize VectorBT rolling optimizer
-                self.vectorbt_optimizer = get_vectorbt_rolling_optimizer()
+                # vectorbt_rolling_optimizer inherited from base class
                 
                 # Initialize unified vectorization manager
                 unified_config = {

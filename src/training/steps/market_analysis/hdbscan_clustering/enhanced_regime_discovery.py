@@ -3,6 +3,7 @@ Enhanced HDBSCAN Regime Discovery
 
 This module integrates all the enhanced components for comprehensive regime discovery
 with proper parameter optimization, quality assessment, and temporal stability.
+Enhanced with VectorBT optimizations and comprehensive tprint logging.
 """
 
 import numpy as np
@@ -12,6 +13,33 @@ import logging
 import time
 from dataclasses import dataclass
 import warnings
+
+# Import VectorBT optimizations
+try:
+    from src.vectorbt import (
+        vbt, rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max,
+        rolling_sum, rolling_apply, VECTORBT_AVAILABLE
+    )
+except ImportError:
+    VECTORBT_AVAILABLE = False
+    vbt = None
+    rolling_mean = None
+    rolling_std = None
+    rolling_var = None
+    rolling_min = None
+    rolling_max = None
+    rolling_sum = None
+    rolling_apply = None
+
+# Import tprint system
+from src.utils.tprint import (
+    tprint, tprint_data_preview, tprint_data_format, 
+    tprint_performance
+)
+
+# Import hardware optimizations
+from src.utils.hardware.unified_hardware_manager import UnifiedHardwareManager
+from src.utils.hardware.m1_memory_optimizer import M1MemoryOptimizer
 
 # Import our enhanced components
 from unified_config import UnifiedHDBSCANConfig, create_unified_config
@@ -56,6 +84,15 @@ class EnhancedHDBSCANRegimeDiscovery:
         self.config = config or create_unified_config()
         self.quality_assessor = ComprehensiveQualityAssessor()
         self.logger = logging.getLogger(self.__class__.__name__)
+        self.hardware_manager = UnifiedHardwareManager()
+        self.memory_optimizer = M1MemoryOptimizer()
+        
+        # Initialize VectorBT optimizations
+        self.vectorbt_available = VECTORBT_AVAILABLE
+        if self.vectorbt_available:
+            tprint("✅ VectorBT optimizations enabled for regime discovery")
+        else:
+            tprint("⚠️ VectorBT not available - using standard methods")
         
         # Initialize feature engineering pipeline
         feature_config = FeatureEngineeringConfig(
@@ -69,6 +106,9 @@ class EnhancedHDBSCANRegimeDiscovery:
             enable_temporal_features=self.config.feature_engineering.enable_temporal_features
         )
         self.feature_pipeline = EnhancedFeatureEngineeringPipeline(feature_config)
+        
+        tprint("🚀 Enhanced HDBSCAN regime discovery initialized")
+        tprint_data_format("Configuration", self.config.__dict__)
         
         # Initialize chunked processor
         chunk_config = ChunkProcessingConfig(
@@ -87,7 +127,7 @@ class EnhancedHDBSCANRegimeDiscovery:
                         returns: Optional[np.ndarray] = None,
                         target: Optional[np.ndarray] = None) -> EnhancedRegimeResult:
         """
-        Discover regimes using enhanced HDBSCAN clustering.
+        Discover regimes using enhanced HDBSCAN clustering with VectorBT optimizations.
         
         Args:
             data_df: Input data DataFrame
@@ -98,14 +138,16 @@ class EnhancedHDBSCANRegimeDiscovery:
         Returns:
             EnhancedRegimeResult with comprehensive clustering results
         """
+        tprint("🚀 Starting enhanced regime discovery with VectorBT optimizations")
+        tprint_data_preview(data_df, "Input data")
+        
         start_time = time.time()
         
-        self.logger.info("Starting enhanced regime discovery")
-        self.logger.info(f"Data shape: {data_df.shape}")
-        self.logger.info(f"Execution mode: {self.config.execution_mode.value}")
+        tprint(f"📊 Data shape: {data_df.shape}")
+        tprint(f"⚙️ Execution mode: {self.config.execution_mode.value}")
         
         # Step 1: Feature Engineering
-        self.logger.info("Step 1: Feature Engineering")
+        tprint("🔧 Step 1: VectorBT-optimized feature engineering")
         processed_features, feature_info = self.feature_pipeline.process_features(data_df, target)
         
         # Step 2: Determine processing strategy
@@ -115,18 +157,18 @@ class EnhancedHDBSCANRegimeDiscovery:
         )
         
         if use_chunked:
-            self.logger.info("Step 2: Chunked Processing")
+            tprint("🔄 Step 2: Chunked Processing with VectorBT optimizations")
             clustering_result = self._discover_regimes_chunked(
                 processed_features, timestamps, returns
             )
         else:
-            self.logger.info("Step 2: Standard Processing")
+            tprint("⚡ Step 2: Standard Processing with VectorBT optimizations")
             clustering_result = self._discover_regimes_standard(
                 processed_features, timestamps, returns
             )
         
         # Step 3: Quality Assessment
-        self.logger.info("Step 3: Quality Assessment")
+        tprint("📊 Step 3: Comprehensive quality assessment")
         quality_metrics = self.quality_assessor.assess_clustering_quality(
             cluster_labels=clustering_result['labels'],
             features=processed_features.values,
@@ -136,7 +178,7 @@ class EnhancedHDBSCANRegimeDiscovery:
         )
         
         # Step 4: Validation
-        self.logger.info("Step 4: Validation")
+        tprint("✅ Step 4: Quality validation")
         validation_results = self.config.validate_clustering_quality(
             clustering_result['labels'], 
             {
@@ -149,7 +191,7 @@ class EnhancedHDBSCANRegimeDiscovery:
         )
         
         # Step 5: Generate cluster profiles
-        self.logger.info("Step 5: Generate Cluster Profiles")
+        tprint("📋 Step 5: Generating cluster profiles")
         cluster_profiles = self._generate_cluster_profiles(
             clustering_result['labels'], 
             processed_features, 
@@ -180,15 +222,18 @@ class EnhancedHDBSCANRegimeDiscovery:
             validation_results=validation_results
         )
         
-        # Log results
-        self.logger.info(f"Regime discovery completed in {processing_info['processing_time']:.2f}s")
-        self.logger.info(f"Clusters: {result.n_clusters}, Noise ratio: {result.noise_ratio:.3f}")
-        self.logger.info(f"Quality validation passed: {validation_results['overall_passed']}")
+        # Log results with tprint
+        processing_time = processing_info['processing_time']
+        tprint_performance(f"Regime discovery completed in {processing_time:.2f}s")
+        tprint(f"📊 Clusters: {result.n_clusters}, Noise ratio: {result.noise_ratio:.3f}")
+        tprint(f"✅ Quality validation passed: {validation_results['overall_passed']}")
         
         if not validation_results['overall_passed']:
-            self.logger.warning("Quality validation failed - see recommendations")
+            tprint("⚠️ Quality validation failed - see recommendations")
             for rec in validation_results['recommendations']:
-                self.logger.warning(f"  - {rec}")
+                tprint(f"  - {rec}")
+        
+        tprint_data_preview(result.labels, "Final cluster labels")
         
         return result
     

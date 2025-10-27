@@ -3,6 +3,7 @@ Enhanced Feature Engineering Pipeline
 
 This module provides intelligent feature selection, preprocessing, and engineering
 for HDBSCAN clustering with proper validation and correlation handling.
+Enhanced with VectorBT optimizations and comprehensive tprint logging.
 """
 
 import numpy as np
@@ -19,6 +20,33 @@ from sklearn.ensemble import RandomForestRegressor
 from scipy import stats
 from scipy.signal import find_peaks
 import warnings
+
+# Import VectorBT optimizations
+try:
+    from src.vectorbt import (
+        vbt, rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max,
+        rolling_sum, rolling_apply, VECTORBT_AVAILABLE
+    )
+except ImportError:
+    VECTORBT_AVAILABLE = False
+    vbt = None
+    rolling_mean = None
+    rolling_std = None
+    rolling_var = None
+    rolling_min = None
+    rolling_max = None
+    rolling_sum = None
+    rolling_apply = None
+
+# Import tprint system
+from src.utils.tprint import (
+    tprint, tprint_data_preview, tprint_data_format, 
+    tprint_performance
+)
+
+# Import hardware optimizations
+from src.utils.hardware.unified_hardware_manager import UnifiedHardwareManager
+from src.utils.hardware.m1_memory_optimizer import M1MemoryOptimizer
 
 # Import feature selection methods
 try:
@@ -301,15 +329,23 @@ class FeatureSelector:
 
 
 class AdvancedFeatureGenerator:
-    """Generator for advanced features including regime-specific features."""
+    """Generator for advanced features including regime-specific features with VectorBT optimizations."""
     
     def __init__(self, config: FeatureEngineeringConfig):
         self.config = config
         self.logger = logging.getLogger(self.__class__.__name__)
+        self.hardware_manager = UnifiedHardwareManager()
+        self.memory_optimizer = M1MemoryOptimizer()
+        self.vectorbt_available = VECTORBT_AVAILABLE
+        
+        if self.vectorbt_available:
+            tprint("✅ VectorBT optimizations enabled for feature generation")
+        else:
+            tprint("⚠️ VectorBT not available - using pandas fallback methods")
     
     def generate_features(self, data_df: pd.DataFrame) -> pd.DataFrame:
         """
-        Generate comprehensive feature set for clustering.
+        Generate comprehensive feature set for clustering with VectorBT optimizations.
         
         Args:
             data_df: Input data DataFrame
@@ -317,40 +353,104 @@ class AdvancedFeatureGenerator:
         Returns:
             DataFrame with generated features
         """
+        tprint("🚀 Starting VectorBT-optimized feature generation")
+        tprint_data_preview(data_df, "Input data")
+        
+        start_time = time.time()
         features_df = data_df.copy()
         
         # Generate different types of features
         if self.config.enable_technical_indicators:
+            tprint("📊 Generating technical indicators with VectorBT")
             features_df = self._add_technical_indicators(features_df)
         
         if self.config.enable_volatility_features:
+            tprint("📈 Generating volatility features with VectorBT")
             features_df = self._add_volatility_features(features_df)
         
         if self.config.enable_momentum_features:
+            tprint("⚡ Generating momentum features with VectorBT")
             features_df = self._add_momentum_features(features_df)
         
         if self.config.enable_entropy_features:
+            tprint("🔍 Generating entropy features")
             features_df = self._add_entropy_features(features_df)
         
         if self.config.enable_spectral_features:
+            tprint("🌊 Generating spectral features")
             features_df = self._add_spectral_features(features_df)
         
         if self.config.enable_temporal_features:
+            tprint("⏰ Generating temporal features")
             features_df = self._add_temporal_features(features_df)
         
         if self.config.enable_regime_features:
+            tprint("🎯 Generating regime-specific features")
             features_df = self._add_regime_features(features_df)
         
         if self.config.enable_feature_interactions:
+            tprint("🔗 Generating feature interactions")
             features_df = self._add_feature_interactions(features_df)
+        
+        processing_time = time.time() - start_time
+        tprint_performance(f"Feature generation completed in {processing_time:.2f}s")
+        tprint_data_preview(features_df, "Generated features")
         
         return features_df
     
     def _add_technical_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Add technical indicators."""
+        """Add technical indicators with VectorBT optimizations."""
         if 'close' not in df.columns:
+            tprint("⚠️ Close price not available for technical indicators")
             return df
         
+        close = df['close']
+        
+        if self.vectorbt_available:
+            try:
+                # Moving averages with VectorBT
+                df['sma_5'] = rolling_mean(close, window=5)
+                df['sma_20'] = rolling_mean(close, window=20)
+                df['sma_50'] = rolling_mean(close, window=50)
+                
+                # Exponential moving averages
+                df['ema_5'] = close.ewm(span=5).mean()
+                df['ema_20'] = close.ewm(span=20).mean()
+                
+                # Bollinger Bands with VectorBT
+                sma_20 = rolling_mean(close, window=20)
+                std_20 = rolling_std(close, window=20)
+                df['bb_upper'] = sma_20 + (std_20 * 2)
+                df['bb_lower'] = sma_20 - (std_20 * 2)
+                df['bb_width'] = (df['bb_upper'] - df['bb_lower']) / sma_20
+                df['bb_position'] = (close - df['bb_lower']) / (df['bb_upper'] - df['bb_lower'])
+                
+                # RSI with VectorBT
+                delta = close.diff()
+                gain = rolling_mean(delta.where(delta > 0, 0), window=14)
+                loss = rolling_mean((-delta.where(delta < 0, 0)), window=14)
+                rs = gain / loss
+                df['rsi'] = 100 - (100 / (1 + rs))
+                
+                # MACD with VectorBT
+                ema_12 = close.ewm(span=12).mean()
+                ema_26 = close.ewm(span=26).mean()
+                df['macd'] = ema_12 - ema_26
+                df['macd_signal'] = df['macd'].ewm(span=9).mean()
+                df['macd_histogram'] = df['macd'] - df['macd_signal']
+                
+                tprint("✅ Technical indicators generated with VectorBT")
+                
+            except Exception as e:
+                tprint(f"⚠️ VectorBT technical indicators failed: {e}, using pandas fallback")
+                df = self._add_pandas_technical_indicators(df)
+        else:
+            df = self._add_pandas_technical_indicators(df)
+        
+        return df
+    
+    def _add_pandas_technical_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Fallback pandas implementation for technical indicators."""
         close = df['close']
         
         # Moving averages
@@ -387,10 +487,51 @@ class AdvancedFeatureGenerator:
         return df
     
     def _add_volatility_features(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Add volatility features."""
+        """Add volatility features with VectorBT optimizations."""
         if 'close' not in df.columns:
+            tprint("⚠️ Close price not available for volatility features")
             return df
         
+        close = df['close']
+        returns = close.pct_change()
+        
+        if self.vectorbt_available:
+            try:
+                # Rolling volatility with VectorBT
+                df['volatility_5'] = rolling_std(returns, window=5)
+                df['volatility_20'] = rolling_std(returns, window=20)
+                df['volatility_50'] = rolling_std(returns, window=50)
+                
+                # GARCH-like features
+                df['volatility_ratio'] = df['volatility_5'] / df['volatility_20']
+                
+                # Volatility trend using VectorBT rolling apply
+                def volatility_trend_func(x):
+                    if len(x) < 2:
+                        return np.nan
+                    return np.polyfit(range(len(x)), x, 1)[0]
+                
+                df['volatility_trend'] = rolling_apply(
+                    df['volatility_20'], window=10, func=volatility_trend_func
+                )
+                
+                # High-low volatility
+                if 'high' in df.columns and 'low' in df.columns:
+                    df['hl_volatility'] = (df['high'] - df['low']) / close
+                    df['hl_volatility_ma'] = rolling_mean(df['hl_volatility'], window=20)
+                
+                tprint("✅ Volatility features generated with VectorBT")
+                
+            except Exception as e:
+                tprint(f"⚠️ VectorBT volatility features failed: {e}, using pandas fallback")
+                df = self._add_pandas_volatility_features(df)
+        else:
+            df = self._add_pandas_volatility_features(df)
+        
+        return df
+    
+    def _add_pandas_volatility_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Fallback pandas implementation for volatility features."""
         close = df['close']
         returns = close.pct_change()
         
@@ -401,7 +542,9 @@ class AdvancedFeatureGenerator:
         
         # GARCH-like features
         df['volatility_ratio'] = df['volatility_5'] / df['volatility_20']
-        df['volatility_trend'] = df['volatility_20'].rolling(10).apply(lambda x: np.polyfit(range(len(x)), x, 1)[0])
+        df['volatility_trend'] = df['volatility_20'].rolling(10).apply(
+            lambda x: np.polyfit(range(len(x)), x, 1)[0] if len(x) > 1 else np.nan
+        )
         
         # High-low volatility
         if 'high' in df.columns and 'low' in df.columns:
@@ -411,10 +554,49 @@ class AdvancedFeatureGenerator:
         return df
     
     def _add_momentum_features(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Add momentum features."""
+        """Add momentum features with VectorBT optimizations."""
         if 'close' not in df.columns:
+            tprint("⚠️ Close price not available for momentum features")
             return df
         
+        close = df['close']
+        
+        if self.vectorbt_available:
+            try:
+                # Price momentum with VectorBT
+                df['momentum_5'] = close / rolling_mean(close.shift(5), window=1) - 1
+                df['momentum_20'] = close / rolling_mean(close.shift(20), window=1) - 1
+                df['momentum_50'] = close / rolling_mean(close.shift(50), window=1) - 1
+                
+                # Rate of change
+                df['roc_5'] = close.pct_change(5)
+                df['roc_20'] = close.pct_change(20)
+                
+                # Momentum indicators
+                df['momentum_ratio'] = df['momentum_5'] / df['momentum_20']
+                
+                # Momentum trend using VectorBT rolling apply
+                def momentum_trend_func(x):
+                    if len(x) < 2:
+                        return np.nan
+                    return np.polyfit(range(len(x)), x, 1)[0]
+                
+                df['momentum_trend'] = rolling_apply(
+                    df['momentum_20'], window=10, func=momentum_trend_func
+                )
+                
+                tprint("✅ Momentum features generated with VectorBT")
+                
+            except Exception as e:
+                tprint(f"⚠️ VectorBT momentum features failed: {e}, using pandas fallback")
+                df = self._add_pandas_momentum_features(df)
+        else:
+            df = self._add_pandas_momentum_features(df)
+        
+        return df
+    
+    def _add_pandas_momentum_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Fallback pandas implementation for momentum features."""
         close = df['close']
         
         # Price momentum
@@ -428,17 +610,22 @@ class AdvancedFeatureGenerator:
         
         # Momentum indicators
         df['momentum_ratio'] = df['momentum_5'] / df['momentum_20']
-        df['momentum_trend'] = df['momentum_20'].rolling(10).apply(lambda x: np.polyfit(range(len(x)), x, 1)[0])
+        df['momentum_trend'] = df['momentum_20'].rolling(10).apply(
+            lambda x: np.polyfit(range(len(x)), x, 1)[0] if len(x) > 1 else np.nan
+        )
         
         return df
     
     def _add_entropy_features(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Add entropy-based features."""
+        """Add entropy-based features with tprint logging."""
         if 'close' not in df.columns:
+            tprint("⚠️ Close price not available for entropy features")
             return df
         
         close = df['close']
         returns = close.pct_change().dropna()
+        
+        tprint("🔍 Calculating entropy features...")
         
         # Rolling entropy of returns
         window = 20
@@ -498,6 +685,7 @@ class AdvancedFeatureGenerator:
         
         df['vol_entropy_20'] = pd.Series(vol_entropy_values, index=volatility.index)
         
+        tprint("✅ Entropy features calculated")
         return df
     
     def _add_spectral_features(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -708,11 +896,16 @@ class EnhancedFeatureEngineeringPipeline:
         self.generator = AdvancedFeatureGenerator(config)
         self.preprocessor = FeaturePreprocessor(config.preprocessing_method, config.outlier_threshold)
         self.logger = logging.getLogger(self.__class__.__name__)
+        self.hardware_manager = UnifiedHardwareManager()
+        self.memory_optimizer = M1MemoryOptimizer()
+        
+        tprint("🚀 Enhanced feature engineering pipeline initialized")
+        tprint_data_format("Pipeline configuration", config.__dict__)
     
     def process_features(self, data_df: pd.DataFrame, 
                         target: Optional[np.ndarray] = None) -> Tuple[pd.DataFrame, Dict[str, Any]]:
         """
-        Process features through the complete pipeline.
+        Process features through the complete pipeline with comprehensive logging.
         
         Args:
             data_df: Input data DataFrame
@@ -721,6 +914,9 @@ class EnhancedFeatureEngineeringPipeline:
         Returns:
             Tuple of (processed_features, processing_info)
         """
+        tprint("🚀 Starting enhanced feature processing pipeline")
+        tprint_data_preview(data_df, "Input data")
+        
         start_time = time.time()
         processing_info = {
             'original_features': len(data_df.columns),
@@ -728,7 +924,8 @@ class EnhancedFeatureEngineeringPipeline:
             'validation_results': {},
             'selection_results': {},
             'preprocessing_method': self.config.preprocessing_method,
-            'processing_time': 0.0
+            'processing_time': 0.0,
+            'vectorbt_optimizations': self.generator.vectorbt_available
         }
         
         # Step 1: Generate features
@@ -742,22 +939,27 @@ class EnhancedFeatureEngineeringPipeline:
             self.config.enable_regime_features,
             self.config.enable_feature_interactions
         ]):
+            tprint("📊 Step 1: VectorBT-optimized feature generation")
             data_df = self.generator.generate_features(data_df)
             processing_info['processing_steps'].append('feature_generation')
             processing_info['generated_features'] = len(data_df.columns)
+            tprint_data_preview(data_df, "After feature generation")
         
         # Step 2: Validate features
+        tprint("🔍 Step 2: Feature validation")
         validation_results = self.validator.validate_features(data_df)
         processing_info['validation_results'] = validation_results
         
         if not validation_results['passed']:
-            self.logger.warning(f"Feature validation failed: {validation_results['issues']}")
+            tprint(f"⚠️ Feature validation failed: {validation_results['issues']}")
             # Clean problematic features
             data_df = self.validator.remove_problematic_features(data_df)
             processing_info['processing_steps'].append('feature_cleaning')
+            tprint_data_preview(data_df, "After feature cleaning")
         
         # Step 3: Select features
         if self.config.enable_feature_selection:
+            tprint("🎯 Step 3: Intelligent feature selection")
             selected_features = self.selector.select_features(data_df, target)
             data_df = data_df[selected_features]
             processing_info['selection_results'] = {
@@ -766,20 +968,24 @@ class EnhancedFeatureEngineeringPipeline:
                 'feature_names': selected_features
             }
             processing_info['processing_steps'].append('feature_selection')
+            tprint_data_preview(data_df, "After feature selection")
         
         # Step 4: Preprocess features
+        tprint("🔧 Step 4: Feature preprocessing")
         data_df = self.preprocessor.fit_transform(data_df)
         processing_info['processing_steps'].append('preprocessing')
+        tprint_data_preview(data_df, "After preprocessing")
         
         # Final validation
+        tprint("✅ Step 5: Final validation")
         final_validation = self.validator.validate_features(data_df)
         processing_info['final_validation'] = final_validation
         
         processing_info['final_features'] = len(data_df.columns)
         processing_info['processing_time'] = time.time() - start_time
         
-        self.logger.info(f"Feature processing completed in {processing_info['processing_time']:.2f}s")
-        self.logger.info(f"Final feature count: {processing_info['final_features']}")
+        tprint_performance(f"Feature processing completed in {processing_info['processing_time']:.2f}s")
+        tprint(f"📊 Final feature count: {processing_info['final_features']}")
         
         return data_df, processing_info
 

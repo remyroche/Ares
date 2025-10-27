@@ -153,7 +153,7 @@ class EnhancedRegimeFeatureSelectorConfig:
     min_feature_importance: float = 0.01
     feature_selection_method: str = "treeshap"  # treeshap, mutual_info, rfe, etc.
     
-    # TreeSHAP specific parameters
+    # TreeSHAP specific parameters - optimized for feature selection stability
     treeshap_params: Optional[Dict[str, Any]] = None
     
     # VectorBT optimization parameters
@@ -200,6 +200,10 @@ class EnhancedRegimeFeatureSelector(BaseStep):
         # Initialize with default config - will be updated in execute()
         self.config = EnhancedRegimeFeatureSelectorConfig()
         
+        # Set optimized TreeSHAP parameters if not provided
+        if self.config.treeshap_params is None:
+            self.config.treeshap_params = self._get_optimized_treeshap_params()
+        
         # Initialize components
         self._initialize_components()
         
@@ -209,17 +213,33 @@ class EnhancedRegimeFeatureSelector(BaseStep):
         
         tprint_success("Enhanced Regime Feature Selector initialized successfully")
     
+    def _get_optimized_treeshap_params(self) -> Dict[str, Any]:
+        """Get optimized TreeSHAP parameters for feature selection stability."""
+        return {
+            'n_estimators': 500,        # Higher for stable SHAP values
+            'max_depth': 4,             # Shallower to prevent overfitting
+            'learning_rate': 0.05,      # Lower for stable training
+            'min_samples_split': 20,    # Prevent overfitting
+            'min_samples_leaf': 10,     # Prevent overfitting
+            'subsample': 0.8,           # Add regularization
+            'random_state': 42,         # Reproducibility
+            'n_jobs': -1,               # Parallel processing
+            'verbose': 0                # Reduce noise
+        }
+    
     def _initialize_components(self):
         """Initialize all required components."""
         try:
-            # Initialize TreeSHAP feature selector
-            if TREESHAP_AVAILABLE and TreeSHAPFeatureSelector:
-                treeshap_config = self.config.treeshap_params or {}
-                self.treeshap_selector = TreeSHAPFeatureSelector(treeshap_config)
-                tprint_info("TreeSHAP feature selector initialized")
-            else:
-                self.treeshap_selector = None
-                tprint_warning("TreeSHAP not available, using fallback methods")
+            # Initialize TreeSHAP feature selector - REQUIRED, no fallback
+            if not TREESHAP_AVAILABLE or not TreeSHAPFeatureSelector:
+                raise ImportError(
+                    "TreeSHAP is required for regime feature selection. "
+                    "Install with: pip install shap"
+                )
+            
+            treeshap_config = self.config.treeshap_params or {}
+            self.treeshap_selector = TreeSHAPFeatureSelector(treeshap_config)
+            tprint_info("TreeSHAP feature selector initialized with optimized parameters")
             
             # Initialize VectorBT rolling optimizer
             if VECTORBT_OPTIMIZER_AVAILABLE and self.config.use_vectorbt_optimization:
@@ -321,43 +341,49 @@ class EnhancedRegimeFeatureSelector(BaseStep):
     def select_features(
         self,
         features_df: pd.DataFrame,
-        target: pd.Series,
-        regime_labels: Optional[pd.Series] = None,
+        regime_labels: pd.Series,
         feature_names: Optional[List[str]] = None
     ) -> Dict[str, Any]:
         """
-        Select features using the enhanced regime feature selection pipeline.
+        Select features for regime detection/clustering using TreeSHAP.
+        
+        This method selects a common set of features that work across all regimes
+        for regime detection and clustering purposes.
         
         Args:
             features_df: DataFrame containing features
-            target: Target variable series
-            regime_labels: Optional regime labels for regime-specific selection
+            regime_labels: Regime labels from clustering step (used as target)
             feature_names: Optional list of feature names
             
         Returns:
             Dictionary containing selected features and metadata
         """
         try:
-            tprint_info("Starting enhanced regime feature selection")
+            tprint_info("Starting regime feature selection for regime detection")
             tprint_data_preview(f"Features shape: {features_df.shape}")
-            tprint_data_preview(f"Target shape: {target.shape}")
+            tprint_data_preview(f"Regime labels shape: {regime_labels.shape}")
+            tprint_data_preview(f"Unique regimes: {regime_labels.nunique()}")
+            
+            # Validate inputs
+            if regime_labels is None:
+                raise ValueError("Regime labels are required for regime feature selection")
             
             # Data validation and preprocessing
-            features_df, target = self._validate_and_preprocess_data(features_df, target)
+            features_df, regime_labels = self._validate_and_preprocess_data(features_df, regime_labels)
             
             # Hardware optimization setup
             if self.hardware_manager:
                 self._setup_hardware_optimization()
             
-            # Feature selection pipeline
-            selection_results = self._run_feature_selection_pipeline(
-                features_df, target, regime_labels, feature_names
+            # Feature selection pipeline - use regime labels as target
+            selection_results = self._run_regime_feature_selection_pipeline(
+                features_df, regime_labels, feature_names
             )
             
             # Performance tracking
             self._track_performance(selection_results)
             
-            tprint_success("Feature selection completed successfully")
+            tprint_success("Regime feature selection completed successfully")
             return selection_results
             
         except Exception as e:
@@ -368,36 +394,101 @@ class EnhancedRegimeFeatureSelector(BaseStep):
     def _validate_and_preprocess_data(
         self,
         features_df: pd.DataFrame,
-        target: pd.Series
+        regime_labels: pd.Series
     ) -> Tuple[pd.DataFrame, pd.Series]:
         """Validate and preprocess input data."""
         try:
             # Basic validation
-            if features_df.empty or target.empty:
+            if features_df.empty or regime_labels.empty:
                 raise ValueError("Input data cannot be empty")
             
-            if len(features_df) != len(target):
-                raise ValueError("Features and target must have the same length")
+            if len(features_df) != len(regime_labels):
+                raise ValueError("Features and regime labels must have the same length")
             
-            # Handle missing values
+            # Handle missing values in features
             if features_df.isnull().any().any():
-                tprint_warning("Missing values detected, filling with median")
+                tprint_warning("Missing values detected in features, filling with median")
                 features_df = features_df.fillna(features_df.median())
             
-            if target.isnull().any():
-                tprint_warning("Missing target values detected, dropping rows")
-                valid_indices = ~target.isnull()
+            # Handle missing values in regime labels
+            if regime_labels.isnull().any():
+                tprint_warning("Missing regime labels detected, dropping rows")
+                valid_indices = ~regime_labels.isnull()
                 features_df = features_df[valid_indices]
-                target = target[valid_indices]
+                regime_labels = regime_labels[valid_indices]
+            
+            # Validate regime labels are numeric
+            if not pd.api.types.is_numeric_dtype(regime_labels):
+                tprint_warning("Converting regime labels to numeric")
+                regime_labels = pd.to_numeric(regime_labels, errors='coerce')
+                if regime_labels.isnull().any():
+                    raise ValueError("Could not convert regime labels to numeric")
             
             # Data format logging
             tprint_data_format(f"Features dtype: {features_df.dtypes.value_counts().to_dict()}")
-            tprint_data_format(f"Target dtype: {target.dtype}")
+            tprint_data_format(f"Regime labels dtype: {regime_labels.dtype}")
+            tprint_data_format(f"Regime distribution: {regime_labels.value_counts().to_dict()}")
             
-            return features_df, target
+            return features_df, regime_labels
             
         except Exception as e:
             tprint_error(f"Data validation failed: {e}")
+            raise
+    
+    def _run_regime_feature_selection_pipeline(
+        self,
+        features_df: pd.DataFrame,
+        regime_labels: pd.Series,
+        feature_names: Optional[List[str]]
+    ) -> Dict[str, Any]:
+        """Run the regime feature selection pipeline using regime labels as target."""
+        try:
+            results = {
+                'selected_features': [],
+                'feature_importance': {},
+                'selection_metadata': {},
+                'performance_metrics': {},
+                'regime_analysis': {}
+            }
+            
+            # Data leakage detection
+            if self.leakage_detector:
+                leakage_results = self.leakage_detector.detect_leakage(
+                    features_df, regime_labels
+                )
+                results['leakage_detection'] = leakage_results
+                tprint_info(f"Data leakage detection completed: {leakage_results}")
+            
+            # Main feature selection using TreeSHAP with regime labels as target
+            selection_results = self._run_treeshap_selection(
+                features_df, regime_labels, feature_names
+            )
+            results.update(selection_results)
+            
+            # Regime analysis (not regime-specific selection, but analysis of selected features)
+            regime_analysis = self._analyze_regime_characteristics(
+                features_df, regime_labels, results['selected_features']
+            )
+            results['regime_analysis'] = regime_analysis
+            
+            # Feature importance analysis
+            if self.explainability_tool:
+                importance_analysis = self._analyze_feature_importance(
+                    features_df, regime_labels, results['selected_features']
+                )
+                results['importance_analysis'] = importance_analysis
+            
+            # Performance evaluation
+            if self.evaluator:
+                evaluation_results = self._evaluate_selection_performance(
+                    features_df, regime_labels, results['selected_features']
+                )
+                results['evaluation_results'] = evaluation_results
+            
+            return results
+            
+        except Exception as e:
+            tprint_error(f"Regime feature selection pipeline failed: {e}")
             raise
     
     def _setup_hardware_optimization(self):
@@ -493,26 +584,27 @@ class EnhancedRegimeFeatureSelector(BaseStep):
     def _run_treeshap_selection(
         self,
         features_df: pd.DataFrame,
-        target: pd.Series,
+        regime_labels: pd.Series,
         feature_names: Optional[List[str]]
     ) -> Dict[str, Any]:
-        """Run TreeSHAP-based feature selection."""
+        """Run TreeSHAP-based feature selection using regime labels as target."""
         try:
-            tprint_info("Running TreeSHAP feature selection")
+            tprint_info("Running TreeSHAP feature selection for regime detection")
+            tprint_info(f"Using regime labels as target with {regime_labels.nunique()} unique regimes")
             
             # Use VectorBT optimization if available
             if self.vectorbt_optimizer and VECTORBT_AVAILABLE:
                 # Optimize features using VectorBT
                 optimized_features = self._optimize_features_with_vectorbt(
-                    features_df, target
+                    features_df, regime_labels
                 )
             else:
                 optimized_features = features_df
             
-            # Run TreeSHAP selection
+            # Run TreeSHAP selection with regime labels as target
             selection_results = self.treeshap_selector.select_features(
                 optimized_features,
-                target,
+                regime_labels,  # Use regime labels as target
                 feature_names=feature_names or list(features_df.columns),
                 max_features=self.config.max_features,
                 min_importance=self.config.min_feature_importance
@@ -524,6 +616,52 @@ class EnhancedRegimeFeatureSelector(BaseStep):
         except Exception as e:
             tprint_error(f"TreeSHAP selection failed: {e}")
             raise
+    
+    def _analyze_regime_characteristics(
+        self,
+        features_df: pd.DataFrame,
+        regime_labels: pd.Series,
+        selected_features: List[str]
+    ) -> Dict[str, Any]:
+        """Analyze characteristics of selected features across regimes."""
+        try:
+            tprint_info("Analyzing regime characteristics of selected features")
+            
+            if not selected_features:
+                return {'regime_analysis': 'No features selected'}
+            
+            regime_analysis = {}
+            unique_regimes = regime_labels.unique()
+            
+            for regime in unique_regimes:
+                regime_mask = regime_labels == regime
+                regime_data = features_df[selected_features][regime_mask]
+                
+                regime_stats = {
+                    'sample_count': len(regime_data),
+                    'feature_means': regime_data.mean().to_dict(),
+                    'feature_stds': regime_data.std().to_dict(),
+                    'feature_ranges': (regime_data.max() - regime_data.min()).to_dict()
+                }
+                
+                regime_analysis[f'regime_{regime}'] = regime_stats
+            
+            # Overall regime separation analysis
+            overall_stats = {
+                'total_regimes': len(unique_regimes),
+                'regime_distribution': regime_labels.value_counts().to_dict(),
+                'selected_features_count': len(selected_features),
+                'features_per_regime': {f'regime_{r}': len(regime_labels[regime_labels == r]) for r in unique_regimes}
+            }
+            
+            regime_analysis['overall'] = overall_stats
+            
+            tprint_success(f"Regime analysis completed for {len(unique_regimes)} regimes")
+            return regime_analysis
+            
+        except Exception as e:
+            tprint_warning(f"Regime analysis failed: {e}")
+            return {'regime_analysis': f'Analysis failed: {e}'}
     
     def _run_basic_selection(
         self,
@@ -590,55 +728,6 @@ class EnhancedRegimeFeatureSelector(BaseStep):
             tprint_warning(f"VectorBT optimization failed: {e}, using original features")
             return features_df
     
-    def _run_regime_specific_selection(
-        self,
-        features_df: pd.DataFrame,
-        target: pd.Series,
-        regime_labels: pd.Series,
-        feature_names: Optional[List[str]]
-    ) -> Dict[str, Any]:
-        """Run regime-specific feature selection."""
-        try:
-            tprint_info("Running regime-specific feature selection")
-            
-            regime_results = {}
-            unique_regimes = regime_labels.unique()
-            
-            for regime in unique_regimes:
-                regime_mask = regime_labels == regime
-                regime_features = features_df[regime_mask]
-                regime_target = target[regime_mask]
-                
-                if len(regime_features) < 10:  # Skip if too few samples
-                    continue
-                
-                # Select features for this regime
-                if self.treeshap_selector:
-                    regime_selection = self.treeshap_selector.select_features(
-                        regime_features,
-                        regime_target,
-                        feature_names=feature_names or list(features_df.columns),
-                        max_features=self.config.max_features // len(unique_regimes)
-                    )
-                else:
-                    # Basic selection for regime
-                    correlations = regime_features.corrwith(regime_target).abs()
-                    selected_features = correlations.nlargest(
-                        min(self.config.max_features // len(unique_regimes), len(correlations))
-                    ).index.tolist()
-                    regime_selection = {
-                        'selected_features': selected_features,
-                        'feature_importance': correlations.to_dict()
-                    }
-                
-                regime_results[f'regime_{regime}'] = regime_selection
-                tprint_info(f"Regime {regime}: {len(regime_selection.get('selected_features', []))} features selected")
-            
-            return regime_results
-            
-        except Exception as e:
-            tprint_error(f"Regime-specific selection failed: {e}")
-            return {}
     
     def _analyze_feature_importance(
         self,
@@ -764,23 +853,22 @@ class EnhancedRegimeFeatureSelector(BaseStep):
             tprint_info(f"Processing regime feature selection for {symbol} on {exchange}")
             tprint_info(f"Timeframes: {timeframes}, Mode: {execution_mode}")
             
-            # Load or generate features data
-            features_data, target_data, regime_labels = await self._load_or_generate_data(config)
+            # Load features data and regime labels from clustering step
+            features_data, regime_labels = await self._load_features_and_regime_labels(config)
             
             if features_data is None or features_data.empty:
                 raise ValueError("No features data available for feature selection")
             
+            if regime_labels is None or regime_labels.empty:
+                raise ValueError("No regime labels available from clustering step")
+            
             # Apply light mode filtering if needed
             features_data = self._apply_light_mode_filter(features_data, config, timeframes[0])
-            if target_data is not None:
-                target_data = self._apply_light_mode_filter(target_data, config, timeframes[0])
-            if regime_labels is not None:
-                regime_labels = self._apply_light_mode_filter(regime_labels, config, timeframes[0])
+            regime_labels = self._apply_light_mode_filter(regime_labels, config, timeframes[0])
             
-            # Perform feature selection
+            # Perform feature selection using regime labels as target
             selection_results = self.select_features(
                 features_df=features_data,
-                target=target_data if target_data is not None else pd.Series([0] * len(features_data)),
                 regime_labels=regime_labels
             )
             
@@ -929,6 +1017,63 @@ class EnhancedRegimeFeatureSelector(BaseStep):
                 'metrics': {}
             }
     
+    async def _load_features_and_regime_labels(self, config: Dict[str, Any]) -> Tuple[Optional[pd.DataFrame], Optional[pd.Series]]:
+        """Load features data and regime labels from clustering step artifacts."""
+        try:
+            symbol = config.get('symbol', 'UNKNOWN')
+            exchange = config.get('exchange', 'UNKNOWN')
+            
+            # Try to load pre-loaded data first
+            features_data = config.get('features_data')
+            regime_labels = config.get('regime_labels')
+            
+            if features_data is not None and regime_labels is not None:
+                tprint_info("Using pre-loaded features data and regime labels")
+                return features_data, regime_labels
+            
+            # Try to load from artifacts
+            try:
+                features_data = self._get_artifact(
+                    artifact_name=f'features_{symbol}_{exchange}',
+                    artifact_type='data'
+                )
+                regime_labels = self._get_artifact(
+                    artifact_name=f'regime_labels_{symbol}_{exchange}',
+                    artifact_type='data'
+                )
+                tprint_info("Loaded data from artifacts")
+                return features_data, regime_labels
+            except Exception as e:
+                self.logger.debug(f"Could not load data from artifacts: {e}")
+            
+            # Try to load from feature bank
+            try:
+                from src.feature_generation.core.feature_bank import get_global_feature_bank
+                feature_bank = get_global_feature_bank()
+                
+                # Generate features for the symbol/exchange
+                features_result = feature_bank.generate_features(
+                    symbol=symbol,
+                    exchange=exchange,
+                    timeframes=config.get('timeframes', ['15m'])
+                )
+                
+                if features_result and 'features' in features_result:
+                    features_data = features_result['features']
+                    regime_labels = features_result.get('regime_labels')
+                    tprint_info("Generated data from feature bank")
+                    return features_data, regime_labels
+            except Exception as e:
+                self.logger.debug(f"Could not generate data from feature bank: {e}")
+            
+            # Generate sample data as fallback
+            tprint_warning("No data available, generating sample data for testing")
+            return self._generate_sample_data()
+            
+        except Exception as e:
+            self.logger.error(f"Error loading features and regime labels: {e}")
+            return None, None
+    
     async def _load_or_generate_data(self, config: Dict[str, Any]) -> Tuple[Optional[pd.DataFrame], Optional[pd.Series], Optional[pd.Series]]:
         """Load or generate features, target, and regime labels data."""
         try:
@@ -992,7 +1137,7 @@ class EnhancedRegimeFeatureSelector(BaseStep):
             self.logger.error(f"Error loading/generating data: {e}")
             return None, None, None
     
-    def _generate_sample_data(self) -> Tuple[pd.DataFrame, pd.Series, pd.Series]:
+    def _generate_sample_data(self) -> Tuple[pd.DataFrame, pd.Series]:
         """Generate sample data for testing purposes."""
         np.random.seed(42)
         n_samples = 1000
@@ -1004,21 +1149,23 @@ class EnhancedRegimeFeatureSelector(BaseStep):
             columns=[f"feature_{i}" for i in range(n_features)]
         )
         
-        # Generate target with some relationship to features
-        target_data = pd.Series(
-            0.3 * features_data.iloc[:, 0] +
-            0.2 * features_data.iloc[:, 1] +
-            0.1 * features_data.iloc[:, 2] +
-            np.random.randn(n_samples) * 0.1
-        )
-        
-        # Generate regime labels
+        # Generate regime labels with some structure
+        # Create 3 regimes with different characteristics
         regime_labels = pd.Series(
-            np.random.choice([0, 1, 2], n_samples),
+            np.random.choice([0, 1, 2], n_samples, p=[0.4, 0.4, 0.2]),
             index=features_data.index
         )
         
-        return features_data, target_data, regime_labels
+        # Add some regime-specific structure to features
+        for i, regime in enumerate([0, 1, 2]):
+            regime_mask = regime_labels == regime
+            if regime == 0:  # Low volatility regime
+                features_data.loc[regime_mask, :20] *= 0.5
+            elif regime == 1:  # High volatility regime
+                features_data.loc[regime_mask, :20] *= 2.0
+            # Regime 2 stays normal
+        
+        return features_data, regime_labels
     
     def _generate_execution_report(
         self, 

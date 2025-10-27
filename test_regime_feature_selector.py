@@ -18,7 +18,7 @@ sys.path.insert(0, str(Path(__file__).parent / "src"))
 def test_enhanced_regime_feature_selector():
     """Test the Enhanced Regime Feature Selector."""
     try:
-        from src.training.steps.market_analysis.enhanced_regime_feature_selector import (
+        from src.training.steps.market_analysis.regime_feature_selector import (
             EnhancedRegimeFeatureSelector,
             EnhancedRegimeFeatureSelectorConfig,
             create_enhanced_regime_feature_selector

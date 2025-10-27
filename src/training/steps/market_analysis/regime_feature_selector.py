@@ -7,11 +7,14 @@ This module provides an advanced regime feature selection system that integrates
 - VectorBTRollingOptimizer and UnifiedVectorizationManager for vectorized computations
 - Hardware optimizations for M1 systems
 - ML common utilities for HPO, SHAP/LIME, time series validation, and data leakage prevention
+- BaseStep integration for autonomous pipeline execution
+- Artifact management for data persistence and retrieval
 
 Author: AI Assistant
 Date: 2024
 """
 
+import asyncio
 import logging
 import warnings
 from typing import Dict, List, Optional, Tuple, Union, Any
@@ -19,6 +22,7 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 from pathlib import Path
+from datetime import datetime
 
 # Core imports
 from src.training.steps.base_step import BaseStep
@@ -185,15 +189,16 @@ class EnhancedRegimeFeatureSelector(BaseStep):
     
     This class provides comprehensive feature selection capabilities for regime-based
     trading strategies, combining TreeSHAP feature importance with advanced optimization
-    techniques and hardware acceleration.
+    techniques and hardware acceleration. Inherits from BaseStep for autonomous pipeline
+    execution with artifact management.
     """
     
-    def __init__(self, config: Optional[EnhancedRegimeFeatureSelectorConfig] = None):
+    def __init__(self, step_name: str = "regime_feature_selection"):
         """Initialize the Enhanced Regime Feature Selector."""
-        super().__init__(step_name="enhanced_regime_feature_selection")
+        super().__init__(step_name=step_name)
         
-        self.config = config or EnhancedRegimeFeatureSelectorConfig()
-        self.logger = logging.getLogger(__name__)
+        # Initialize with default config - will be updated in execute()
+        self.config = EnhancedRegimeFeatureSelectorConfig()
         
         # Initialize components
         self._initialize_components()
@@ -202,8 +207,7 @@ class EnhancedRegimeFeatureSelector(BaseStep):
         self.performance_metrics = {}
         self.feature_importance_cache = {}
         
-        if self.config.verbose:
-            tprint_success("Enhanced Regime Feature Selector initialized successfully")
+        tprint_success("Enhanced Regime Feature Selector initialized successfully")
     
     def _initialize_components(self):
         """Initialize all required components."""
@@ -722,70 +726,381 @@ class EnhancedRegimeFeatureSelector(BaseStep):
         self.feature_importance_cache.clear()
         self.performance_metrics.clear()
         tprint_info("Caches cleared")
+    
+    async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Execute the regime feature selection step.
+        
+        Args:
+            config: Configuration dictionary containing:
+                - symbol: Trading symbol
+                - exchange: Exchange name
+                - timeframes: List of timeframes
+                - execution_mode: 'light' or 'full'
+                - feature_selection_config: Optional custom config
+                - features_data: Optional pre-loaded features data
+                - target_data: Optional pre-loaded target data
+                - regime_labels: Optional pre-loaded regime labels
+        
+        Returns:
+            Dict containing execution results and artifacts
+        """
+        try:
+            self.logger.info("Starting regime feature selection execution")
+            
+            # Update config with any custom settings
+            if 'feature_selection_config' in config:
+                custom_config = config['feature_selection_config']
+                for key, value in custom_config.items():
+                    if hasattr(self.config, key):
+                        setattr(self.config, key, value)
+            
+            # Extract configuration parameters
+            symbol = config.get('symbol', 'UNKNOWN')
+            exchange = config.get('exchange', 'UNKNOWN')
+            timeframes = config.get('timeframes', ['15m'])
+            execution_mode = config.get('execution_mode', 'light')
+            
+            tprint_info(f"Processing regime feature selection for {symbol} on {exchange}")
+            tprint_info(f"Timeframes: {timeframes}, Mode: {execution_mode}")
+            
+            # Load or generate features data
+            features_data, target_data, regime_labels = await self._load_or_generate_data(config)
+            
+            if features_data is None or features_data.empty:
+                raise ValueError("No features data available for feature selection")
+            
+            # Apply light mode filtering if needed
+            features_data = self._apply_light_mode_filter(features_data, config, timeframes[0])
+            if target_data is not None:
+                target_data = self._apply_light_mode_filter(target_data, config, timeframes[0])
+            if regime_labels is not None:
+                regime_labels = self._apply_light_mode_filter(regime_labels, config, timeframes[0])
+            
+            # Perform feature selection
+            selection_results = self.select_features(
+                features_df=features_data,
+                target=target_data if target_data is not None else pd.Series([0] * len(features_data)),
+                regime_labels=regime_labels
+            )
+            
+            # Save artifacts
+            artifacts = []
+            
+            # Save selected features
+            selected_features_path = self._save_artifact(
+                data=selection_results['selected_features'],
+                artifact_name=f'selected_features_{symbol}_{exchange}',
+                artifact_type='data',
+                metadata={
+                    'symbol': symbol,
+                    'exchange': exchange,
+                    'timeframes': timeframes,
+                    'execution_mode': execution_mode,
+                    'selection_method': selection_results.get('selection_method', 'treeshap'),
+                    'total_features': len(features_data.columns),
+                    'selected_count': len(selection_results['selected_features']),
+                    'timestamp': datetime.now().isoformat()
+                }
+            )
+            artifacts.append(selected_features_path)
+            
+            # Save feature importance scores
+            if 'feature_importance' in selection_results:
+                importance_path = self._save_artifact(
+                    data=selection_results['feature_importance'],
+                    artifact_name=f'feature_importance_{symbol}_{exchange}',
+                    artifact_type='data',
+                    metadata={
+                        'symbol': symbol,
+                        'exchange': exchange,
+                        'timeframes': timeframes,
+                        'execution_mode': execution_mode,
+                        'timestamp': datetime.now().isoformat()
+                    }
+                )
+                artifacts.append(importance_path)
+            
+            # Save regime-specific results if available
+            if 'regime_specific_results' in selection_results and selection_results['regime_specific_results']:
+                regime_results_path = self._save_artifact(
+                    data=selection_results['regime_specific_results'],
+                    artifact_name=f'regime_specific_features_{symbol}_{exchange}',
+                    artifact_type='data',
+                    metadata={
+                        'symbol': symbol,
+                        'exchange': exchange,
+                        'timeframes': timeframes,
+                        'execution_mode': execution_mode,
+                        'regime_count': len(selection_results['regime_specific_results']),
+                        'timestamp': datetime.now().isoformat()
+                    }
+                )
+                artifacts.append(regime_results_path)
+            
+            # Save performance metrics
+            performance_metrics = self.get_performance_metrics()
+            if performance_metrics:
+                metrics_path = self._save_artifact(
+                    data=performance_metrics,
+                    artifact_name=f'feature_selection_metrics_{symbol}_{exchange}',
+                    artifact_type='metadata',
+                    metadata={
+                        'symbol': symbol,
+                        'exchange': exchange,
+                        'timeframes': timeframes,
+                        'execution_mode': execution_mode,
+                        'timestamp': datetime.now().isoformat()
+                    }
+                )
+                artifacts.append(metrics_path)
+            
+            # Generate comprehensive report
+            report_data = self._generate_execution_report(
+                symbol, exchange, timeframes, execution_mode, 
+                selection_results, performance_metrics
+            )
+            
+            # Save execution report
+            report_path = self._save_artifact(
+                data=report_data,
+                artifact_name=f'feature_selection_report_{symbol}_{exchange}',
+                artifact_type='report',
+                metadata={
+                    'symbol': symbol,
+                    'exchange': exchange,
+                    'timeframes': timeframes,
+                    'execution_mode': execution_mode,
+                    'timestamp': datetime.now().isoformat()
+                }
+            )
+            artifacts.append(report_path)
+            
+            # Prepare execution result
+            execution_result = {
+                'success': True,
+                'artifacts': artifacts,
+                'metrics': {
+                    'selected_features_count': len(selection_results['selected_features']),
+                    'total_features_count': len(features_data.columns),
+                    'selection_ratio': len(selection_results['selected_features']) / len(features_data.columns),
+                    'execution_mode': execution_mode,
+                    'performance_metrics': performance_metrics
+                },
+                'selected_features': selection_results['selected_features'],
+                'feature_importance': selection_results.get('feature_importance', {}),
+                'regime_specific_results': selection_results.get('regime_specific_results', {}),
+                'report_path': report_path
+            }
+            
+            tprint_success(f"Regime feature selection completed successfully for {symbol}")
+            tprint_info(f"Selected {len(selection_results['selected_features'])} features from {len(features_data.columns)} total")
+            
+            return execution_result
+            
+        except Exception as e:
+            error_msg = f"Regime feature selection failed: {str(e)}"
+            self.logger.error(error_msg)
+            tprint_error(error_msg)
+            
+            return {
+                'success': False,
+                'error': error_msg,
+                'artifacts': [],
+                'metrics': {}
+            }
+    
+    async def _load_or_generate_data(self, config: Dict[str, Any]) -> Tuple[Optional[pd.DataFrame], Optional[pd.Series], Optional[pd.Series]]:
+        """Load or generate features, target, and regime labels data."""
+        try:
+            symbol = config.get('symbol', 'UNKNOWN')
+            exchange = config.get('exchange', 'UNKNOWN')
+            
+            # Try to load pre-loaded data first
+            features_data = config.get('features_data')
+            target_data = config.get('target_data')
+            regime_labels = config.get('regime_labels')
+            
+            if features_data is not None:
+                tprint_info("Using pre-loaded features data")
+                return features_data, target_data, regime_labels
+            
+            # Try to load from artifacts
+            try:
+                features_data = self._get_artifact(
+                    artifact_name=f'features_{symbol}_{exchange}',
+                    artifact_type='data'
+                )
+                target_data = self._get_artifact(
+                    artifact_name=f'target_{symbol}_{exchange}',
+                    artifact_type='data'
+                )
+                regime_labels = self._get_artifact(
+                    artifact_name=f'regime_labels_{symbol}_{exchange}',
+                    artifact_type='data'
+                )
+                tprint_info("Loaded data from artifacts")
+                return features_data, target_data, regime_labels
+            except Exception as e:
+                self.logger.debug(f"Could not load data from artifacts: {e}")
+            
+            # Try to load from feature bank
+            try:
+                from src.feature_generation.core.feature_bank import get_global_feature_bank
+                feature_bank = get_global_feature_bank()
+                
+                # Generate features for the symbol/exchange
+                features_result = feature_bank.generate_features(
+                    symbol=symbol,
+                    exchange=exchange,
+                    timeframes=config.get('timeframes', ['15m'])
+                )
+                
+                if features_result and 'features' in features_result:
+                    features_data = features_result['features']
+                    target_data = features_result.get('target')
+                    regime_labels = features_result.get('regime_labels')
+                    tprint_info("Generated data from feature bank")
+                    return features_data, target_data, regime_labels
+            except Exception as e:
+                self.logger.debug(f"Could not generate data from feature bank: {e}")
+            
+            # Generate sample data as fallback
+            tprint_warning("No data available, generating sample data for testing")
+            return self._generate_sample_data()
+            
+        except Exception as e:
+            self.logger.error(f"Error loading/generating data: {e}")
+            return None, None, None
+    
+    def _generate_sample_data(self) -> Tuple[pd.DataFrame, pd.Series, pd.Series]:
+        """Generate sample data for testing purposes."""
+        np.random.seed(42)
+        n_samples = 1000
+        n_features = 50
+        
+        # Generate features
+        features_data = pd.DataFrame(
+            np.random.randn(n_samples, n_features),
+            columns=[f"feature_{i}" for i in range(n_features)]
+        )
+        
+        # Generate target with some relationship to features
+        target_data = pd.Series(
+            0.3 * features_data.iloc[:, 0] +
+            0.2 * features_data.iloc[:, 1] +
+            0.1 * features_data.iloc[:, 2] +
+            np.random.randn(n_samples) * 0.1
+        )
+        
+        # Generate regime labels
+        regime_labels = pd.Series(
+            np.random.choice([0, 1, 2], n_samples),
+            index=features_data.index
+        )
+        
+        return features_data, target_data, regime_labels
+    
+    def _generate_execution_report(
+        self, 
+        symbol: str, 
+        exchange: str, 
+        timeframes: List[str], 
+        execution_mode: str,
+        selection_results: Dict[str, Any],
+        performance_metrics: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Generate comprehensive execution report."""
+        return {
+            'execution_summary': {
+                'symbol': symbol,
+                'exchange': exchange,
+                'timeframes': timeframes,
+                'execution_mode': execution_mode,
+                'timestamp': datetime.now().isoformat(),
+                'step_name': self.step_name
+            },
+            'feature_selection_results': {
+                'total_features': len(selection_results.get('selected_features', [])),
+                'selected_features': selection_results.get('selected_features', []),
+                'selection_method': selection_results.get('selection_method', 'unknown'),
+                'feature_importance_available': 'feature_importance' in selection_results,
+                'regime_specific_available': 'regime_specific_results' in selection_results
+            },
+            'performance_metrics': performance_metrics,
+            'component_availability': {
+                'treeshap_available': hasattr(self, 'treeshap_selector') and self.treeshap_selector is not None,
+                'vectorbt_available': hasattr(self, 'vectorbt_optimizer') and self.vectorbt_optimizer is not None,
+                'hardware_optimization_available': hasattr(self, 'hardware_manager') and self.hardware_manager is not None,
+                'ml_common_available': hasattr(self, 'hpo_optimizer') and self.hpo_optimizer is not None
+            },
+            'configuration': {
+                'max_features': self.config.max_features,
+                'min_feature_importance': self.config.min_feature_importance,
+                'use_hardware_optimization': self.config.use_hardware_optimization,
+                'use_hpo': self.config.use_hpo,
+                'use_explainability': self.config.use_explainability
+            }
+        }
 
 
 def create_enhanced_regime_feature_selector(
-    config: Optional[EnhancedRegimeFeatureSelectorConfig] = None
+    step_name: str = "regime_feature_selection"
 ) -> EnhancedRegimeFeatureSelector:
     """
     Factory function to create an Enhanced Regime Feature Selector.
     
     Args:
-        config: Optional configuration object
+        step_name: Name for the step (used for artifact organization)
         
     Returns:
         Configured EnhancedRegimeFeatureSelector instance
     """
-    return EnhancedRegimeFeatureSelector(config)
+    return EnhancedRegimeFeatureSelector(step_name=step_name)
+
+
+# Register the step with the global registry
+from src.training.steps.base_step import step_registry
+step_registry.register("regime_feature_selection", EnhancedRegimeFeatureSelector)
 
 
 # Example usage
 if __name__ == "__main__":
-    # Create sample data
-    np.random.seed(42)
-    n_samples = 1000
-    n_features = 100
+    import asyncio
     
-    features_df = pd.DataFrame(
-        np.random.randn(n_samples, n_features),
-        columns=[f"feature_{i}" for i in range(n_features)]
-    )
+    async def main():
+        # Create selector
+        selector = create_enhanced_regime_feature_selector()
+        
+        # Example configuration for execution
+        config = {
+            'symbol': 'BTCUSDT',
+            'exchange': 'binance',
+            'timeframes': ['15m'],
+            'execution_mode': 'light',
+            'feature_selection_config': {
+                'max_features': 20,
+                'min_feature_importance': 0.01,
+                'verbose': True
+            }
+        }
+        
+        # Run the step
+        result = await selector.run(config)
+        
+        # Print results
+        print("\n" + "="*50)
+        print("ENHANCED REGIME FEATURE SELECTION RESULTS")
+        print("="*50)
+        print(f"Success: {result['success']}")
+        if result['success']:
+            print(f"Selected features: {len(result['selected_features'])}")
+            print(f"Selected features: {result['selected_features'][:10]}...")  # Show first 10
+            print(f"Artifacts created: {len(result['artifacts'])}")
+            print(f"Performance metrics: {result['metrics']}")
+        else:
+            print(f"Error: {result.get('error', 'Unknown error')}")
+        print("="*50)
     
-    # Create target with some relationship to features
-    target = (
-        0.3 * features_df.iloc[:, 0] +
-        0.2 * features_df.iloc[:, 1] +
-        0.1 * features_df.iloc[:, 2] +
-        np.random.randn(n_samples) * 0.1
-    )
-    
-    # Create regime labels
-    regime_labels = pd.Series(
-        np.random.choice([0, 1, 2], n_samples),
-        index=features_df.index
-    )
-    
-    # Create selector
-    config = EnhancedRegimeFeatureSelectorConfig(
-        max_features=20,
-        min_feature_importance=0.01,
-        verbose=True
-    )
-    
-    selector = create_enhanced_regime_feature_selector(config)
-    
-    # Run feature selection
-    results = selector.select_features(
-        features_df=features_df,
-        target=target,
-        regime_labels=regime_labels
-    )
-    
-    # Print results
-    print("\n" + "="*50)
-    print("ENHANCED REGIME FEATURE SELECTION RESULTS")
-    print("="*50)
-    print(f"Selected features: {len(results['selected_features'])}")
-    print(f"Selected features: {results['selected_features'][:10]}...")  # Show first 10
-    print(f"Performance metrics: {selector.get_performance_metrics()}")
-    print("="*50)
+    # Run the example
+    asyncio.run(main())

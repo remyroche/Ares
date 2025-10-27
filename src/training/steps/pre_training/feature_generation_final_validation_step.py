@@ -5,6 +5,11 @@ This step performs comprehensive validation of the final feature datasets to ens
 ready for model training. It validates data quality, feature distributions, target relationships,
 and generates final validation reports.
 
+IMPORTANT: This step analyzes the OPPOSITE mode's artifacts:
+- When called in Analyst mode, it analyzes Tactician artifacts
+- When called in Tactician mode, it analyzes Analyst artifacts
+- Default is Analyst mode (analyzes Tactician artifacts)
+
 Features:
 - Data quality validation (NaN, outliers, distributions)
 - Feature-target correlation analysis
@@ -43,6 +48,11 @@ class FeatureGenerationFinalValidationStep(BaseStep):
 
     This step validates the final feature datasets and ensures they are suitable
     for model training with comprehensive quality checks.
+    
+    IMPORTANT: This step analyzes the OPPOSITE mode's artifacts:
+    - When called in Analyst mode, it analyzes Tactician artifacts
+    - When called in Tactician mode, it analyzes Analyst artifacts
+    - Default is Analyst mode (analyzes Tactician artifacts)
     """
 
     def __init__(self, step_name: str = "feature_generation_final_validation_step"):
@@ -65,7 +75,12 @@ class FeatureGenerationFinalValidationStep(BaseStep):
             Dict containing execution results and artifacts
         """
         try:
+            # Determine analysis mode for logging
+            execution_mode = self._determine_execution_mode()
+            analysis_mode = 'tactician' if execution_mode == 'analyst' else 'analyst'
+            
             tprint_info(f"🔍 Starting {self.step_name} execution...")
+            tprint_info(f"🔍 Running in {execution_mode} mode, analyzing {analysis_mode} artifacts")
 
             # Get final datasets from previous step
             final_datasets = self._get_final_datasets()
@@ -119,9 +134,13 @@ class FeatureGenerationFinalValidationStep(BaseStep):
                 'execution_time': 0.0  # Will be set by base class
             }
 
+            # Get analysis mode for reporting
+            execution_mode = self._determine_execution_mode()
+            analysis_mode = 'tactician' if execution_mode == 'analyst' else 'analyst'
+            
             if success:
                 tprint_success(f"✅ {self.step_name} completed successfully")
-                tprint_info(f"📊 Validated {len(final_datasets)} feature sets")
+                tprint_info(f"📊 Validated {len(final_datasets)} {analysis_mode} feature sets")
             else:
                 tprint_warning(f"⚠️ {self.step_name} completed with validation warnings")
 
@@ -141,22 +160,31 @@ class FeatureGenerationFinalValidationStep(BaseStep):
             }
 
     def _get_final_datasets(self) -> Dict[str, pd.DataFrame]:
-        """Get final datasets from previous steps based on execution mode."""
+        """Get final datasets from previous steps based on execution mode.
+        
+        This function analyzes the OPPOSITE mode's artifacts:
+        - When called in Analyst mode, it analyzes Tactician artifacts
+        - When called in Tactician mode, it analyzes Analyst artifacts
+        - Default is Analyst mode (analyzes Tactician artifacts)
+        """
         final_datasets = {}
 
         # Determine execution mode (Analyst vs Tactician)
         execution_mode = self._determine_execution_mode()
-        tprint_info(f"🔍 Execution mode detected: {execution_mode}")
+        
+        # Determine which mode's artifacts to analyze (opposite of execution mode)
+        analysis_mode = 'tactician' if execution_mode == 'analyst' else 'analyst'
+        tprint_info(f"🔍 Execution mode: {execution_mode}, analyzing {analysis_mode} artifacts")
 
-        # Get the final feature selection artifacts based on mode
+        # Get the final feature selection artifacts based on analysis mode
         feature_set_sizes = [60, 50, 40]  # Standard sizes
 
         for size in feature_set_sizes:
-            # Try to get the selected feature dataframe with mode-specific naming
+            # Try to get the selected feature dataframe with analysis mode-specific naming
             artifact_names_to_try = [
                 f'selected_feature_dataframe_{size}',  # Generic fallback
-                f'{execution_mode}_selected_feature_dataframe_{size}',  # Mode-specific
-                f'final_{execution_mode}_dataset_{size}'  # Alternative naming
+                f'{analysis_mode}_selected_feature_dataframe_{size}',  # Analysis mode-specific
+                f'final_{analysis_mode}_dataset_{size}'  # Alternative naming
             ]
             
             dataset = None
@@ -165,27 +193,27 @@ class FeatureGenerationFinalValidationStep(BaseStep):
                     dataset = self._get_artifact(artifact_name)
                     if dataset is not None and isinstance(dataset, pd.DataFrame):
                         final_datasets[f'final_dataset_{size}'] = dataset
-                        tprint_info(f"📊 Retrieved {execution_mode} final dataset with {size} features from '{artifact_name}'")
+                        tprint_info(f"📊 Retrieved {analysis_mode} final dataset with {size} features from '{artifact_name}'")
                         break
                 except Exception as e:
                     continue
             
             if dataset is None:
-                tprint_warning(f"⚠️ Could not retrieve final dataset for {size} features in {execution_mode} mode")
+                tprint_warning(f"⚠️ Could not retrieve final dataset for {size} features in {analysis_mode} mode")
 
-        # Also try to get labeled dataframe for target relationships with mode-specific naming
+        # Also try to get labeled dataframe for target relationships with analysis mode-specific naming
         labeled_df = None
         artifact_names_to_try = [
             'labeled_dataframe', 'labeled_data', 'labeled_dataset', 'target_dataframe',  # Generic fallbacks
-            f'{execution_mode}_labeled_dataframe', f'{execution_mode}_labeled_data',  # Mode-specific
-            f'{execution_mode}_target_dataframe', f'{execution_mode}_dataset'  # Alternative naming
+            f'{analysis_mode}_labeled_dataframe', f'{analysis_mode}_labeled_data',  # Analysis mode-specific
+            f'{analysis_mode}_target_dataframe', f'{analysis_mode}_dataset'  # Alternative naming
         ]
         
         for artifact_name in artifact_names_to_try:
             try:
                 labeled_df = self._get_artifact(artifact_name)
                 if labeled_df is not None:
-                    tprint_info(f"📊 Retrieved {execution_mode} labeled data from '{artifact_name}' with {len(labeled_df.columns)} columns")
+                    tprint_info(f"📊 Retrieved {analysis_mode} labeled data from '{artifact_name}' with {len(labeled_df.columns)} columns")
                     break
             except Exception as e:
                 continue
@@ -193,7 +221,7 @@ class FeatureGenerationFinalValidationStep(BaseStep):
         if labeled_df is not None:
             final_datasets['labeled_dataframe'] = labeled_df
         else:
-            tprint_warning(f"⚠️ Could not retrieve labeled data from any known artifact names for {execution_mode} mode")
+            tprint_warning(f"⚠️ Could not retrieve labeled data from any known artifact names for {analysis_mode} mode")
 
         return final_datasets
 
@@ -910,6 +938,7 @@ class FeatureGenerationFinalValidationStep(BaseStep):
     def _calculate_metrics(self, validation_results: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
         """Calculate metrics for the validation."""
         execution_mode = self._determine_execution_mode()
+        analysis_mode = 'tactician' if execution_mode == 'analyst' else 'analyst'
         
         metrics = {
             'datasets_validated': len(validation_results),
@@ -918,7 +947,8 @@ class FeatureGenerationFinalValidationStep(BaseStep):
             'exchange': config.get('exchange', 'binance'),
             'timeframe': config.get('timeframe', '15m'),
             'execution_mode': config.get('execution_mode', 'light'),
-            'model_type': execution_mode,  # analyst or tactician
+            'execution_mode_type': execution_mode,  # analyst or tactician (the mode we're running in)
+            'analysis_mode_type': analysis_mode,  # analyst or tactician (the mode whose artifacts we're analyzing)
             'execution_context': config.get('execution_context', 'unknown')
         }
 
@@ -972,8 +1002,9 @@ class FeatureGenerationFinalValidationStep(BaseStep):
     def _create_outcome_report(self, validation_results: Dict[str, Any], config: Dict[str, Any]) -> str:
         """Create comprehensive outcome report."""
         try:
-            # Get execution mode for reporting
+            # Get execution mode and analysis mode for reporting
             execution_mode = self._determine_execution_mode()
+            analysis_mode = 'tactician' if execution_mode == 'analyst' else 'analyst'
             
             report = f"""# Final Dataset Validation Outcome Report
 
@@ -982,12 +1013,13 @@ class FeatureGenerationFinalValidationStep(BaseStep):
 - **Exchange:** {config.get('exchange', 'binance')}
 - **Timeframe:** {config.get('timeframe', '15m')}
 - **Execution Mode:** {config.get('execution_mode', 'light')}
-- **Model Type:** {execution_mode.title()} (Analyst/Tactician)
+- **Running in:** {execution_mode.title()} mode
+- **Analyzing:** {analysis_mode.title()} artifacts
 - **Timestamp:** {datetime.now().isoformat()}
 
 ## Validation Summary
 
-**Datasets Validated:** {len(validation_results)}
+**Datasets Validated:** {len(validation_results)} ({analysis_mode.title()} artifacts)
 
 **Overall Results:**
 """

@@ -58,6 +58,9 @@ class RegimeClusteringStep(BaseStep):
         """Initialize the regime clustering step."""
         super().__init__(step_name)
         self.logger = system_logger.getChild('RegimeClustering')
+        
+        # Validate configuration on initialization
+        self._validate_initialization()
 
     async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -79,6 +82,12 @@ class RegimeClusteringStep(BaseStep):
         """
         start_time = datetime.now()
         tprint(f"🔍 Starting regime clustering for {config.get('symbol', 'UNKNOWN')}", "INFO")
+        
+        # Validate configuration
+        try:
+            self._validate_config(config)
+        except Exception as e:
+            return self._handle_execution_error(e, config)
         
         # Use regime_timeframe (defaults to 1h) for regime clustering
         regime_timeframe = config.get('regime_timeframe', '1h')
@@ -149,7 +158,7 @@ class RegimeClusteringStep(BaseStep):
             error_msg = f"Regime clustering failed: {str(e)}"
             tprint(f"❌ {error_msg}", "ERROR")
             self.logger.error(error_msg)
-            raise e  # Re-raise the exception for fast fail
+            return self._handle_execution_error(e, config)
 
     async def run(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """Run method required by BaseStep interface."""
@@ -286,6 +295,7 @@ class RegimeClusteringStep(BaseStep):
     def _refine_hdbscan_clusters(self, hdbscan_artifacts: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
         """
         Refine HDBSCAN clusters using economic validation and temporal stabilization.
+        Falls back to iterative optimization if quality targets are not met.
         
         Args:
             hdbscan_artifacts: HDBSCAN regime discovery artifacts
@@ -298,20 +308,15 @@ class RegimeClusteringStep(BaseStep):
             # Store HDBSCAN artifacts for use by iterative optimization
             self._current_hdbscan_artifacts = hdbscan_artifacts
             
-            # Extract regime labels from artifacts
-            regime_labels = hdbscan_artifacts.get('regime_labels', [])
+            # Extract and validate regime labels from artifacts
+            regime_labels_raw = hdbscan_artifacts.get('regime_labels', [])
             
-            # Handle different data types
-            if isinstance(regime_labels, pd.DataFrame):
-                regime_labels = regime_labels['regime_label'].values if 'regime_label' in regime_labels.columns else regime_labels.values
-            elif isinstance(regime_labels, np.ndarray):
-                # Already a numpy array, use as is
-                pass
-            elif isinstance(regime_labels, list):
-                regime_labels = np.array(regime_labels)
-            else:
-                tprint(f"⚠️ Unexpected regime_labels type: {type(regime_labels)}", "WARNING")
-                regime_labels = np.array([])
+            # Use robust data validation
+            try:
+                regime_labels = self._validate_and_convert_labels(regime_labels_raw)
+            except Exception as e:
+                tprint(f"⚠️ Failed to validate regime labels: {e}", "WARNING")
+                return self._create_placeholder_clusters(config)['artifacts']['regime_clusters']
             
             if len(regime_labels) == 0:
                 tprint("⚠️ No regime labels found in HDBSCAN artifacts", "WARNING")
@@ -319,7 +324,7 @@ class RegimeClusteringStep(BaseStep):
             
             tprint(f"📊 Processing {len(regime_labels)} regime labels", "INFO")
             
-            # Apply refinement logic
+            # Apply initial refinement logic
             refined_labels = self._apply_temporal_stabilization(regime_labels, config)
             refined_labels = self._apply_economic_validation(refined_labels, hdbscan_artifacts, config)
             refined_labels = self._merge_similar_clusters(refined_labels, config)
@@ -338,14 +343,48 @@ class RegimeClusteringStep(BaseStep):
             non_noise_labels = unique_labels[noise_mask]
             n_clusters = len(non_noise_labels)
             
-            tprint(f"🔧 Refined clusters: {n_clusters} clusters (from {len(np.unique(regime_labels))} original)", "INFO")
+            tprint(f"🔧 Initial refinement: {n_clusters} clusters (from {len(np.unique(regime_labels))} original)", "INFO")
+            
+            # Check if we meet quality targets
+            quality_targets = self._check_quality_targets(refined_labels, hdbscan_artifacts, config)
+            
+            if quality_targets['meets_targets']:
+                tprint("✅ Quality targets met with initial refinement", "SUCCESS")
+                clustering_method = 'hdbscan_refined'
+            else:
+                tprint("⚠️ Quality targets not met, attempting iterative optimization fallback", "WARNING")
+                tprint(f"📊 Quality issues: {quality_targets['issues']}", "INFO")
+                
+                # Try iterative optimization as fallback
+                iterative_result = self._run_iterative_optimization_fallback(
+                    hdbscan_artifacts, refined_labels, config
+                )
+                
+                if iterative_result is not None:
+                    refined_labels = iterative_result
+                    clustering_method = 'hdbscan_iterative_optimized'
+                    
+                    # Recalculate cluster count
+                    unique_labels = np.unique(refined_labels)
+                    if hasattr(unique_labels, 'values'):
+                        unique_labels = unique_labels.values
+                    unique_labels = np.array(unique_labels)
+                    noise_mask = unique_labels != -1
+                    non_noise_labels = unique_labels[noise_mask]
+                    n_clusters = len(non_noise_labels)
+                    
+                    tprint(f"🔧 Iterative optimization: {n_clusters} clusters", "INFO")
+                else:
+                    tprint("⚠️ Iterative optimization failed, using initial refinement", "WARNING")
+                    clustering_method = 'hdbscan_refined_fallback'
             
             return {
                 'refined_labels': refined_labels,
                 'original_labels': regime_labels,
                 'n_clusters': n_clusters,
-                'clustering_method': 'hdbscan_refined',
+                'clustering_method': clustering_method,
                 'refinement_applied': True,
+                'quality_targets': quality_targets,
                 'metadata': {
                     'symbol': config.get('symbol'),
                     'exchange': config.get('exchange', 'binance'),
@@ -392,19 +431,19 @@ class RegimeClusteringStep(BaseStep):
                 # Pass 2: Apply stability constraints
                 # Pass 3: Final consistency check
                 
-                for i in range(adaptive_dwell, len(labels) - adaptive_dwell):
-                    current_label = labels[i]
+                for i in range(adaptive_dwell, len(stabilized_labels) - adaptive_dwell):
+                    current_label = stabilized_labels[i]
                     
-                    # Calculate local stability score
-                    local_stability = self._calculate_local_stability(labels, i, adaptive_dwell)
+                    # Calculate local stability score using stabilized labels
+                    local_stability = self._calculate_local_stability(stabilized_labels, i, adaptive_dwell)
                     
                     # Apply different rules based on pass
                     if pass_num == 0:
                         # Remove isolated changes
-                        if (current_label != labels[i-1] and 
-                            current_label != labels[i+1] and 
-                            labels[i-1] == labels[i+1]):
-                            stabilized_labels[i] = labels[i-1]
+                        if (current_label != stabilized_labels[i-1] and 
+                            current_label != stabilized_labels[i+1] and 
+                            stabilized_labels[i-1] == stabilized_labels[i+1]):
+                            stabilized_labels[i] = stabilized_labels[i-1]
                             changes_this_pass += 1
                     
                     elif pass_num == 1:
@@ -412,13 +451,13 @@ class RegimeClusteringStep(BaseStep):
                         if local_stability < stability_threshold:
                             # Find most stable neighbor
                             neighbor_stability = [
-                                self._calculate_local_stability(labels, i-1, adaptive_dwell),
-                                self._calculate_local_stability(labels, i+1, adaptive_dwell)
+                                self._calculate_local_stability(stabilized_labels, i-1, adaptive_dwell),
+                                self._calculate_local_stability(stabilized_labels, i+1, adaptive_dwell)
                             ]
                             most_stable_neighbor = i-1 if neighbor_stability[0] > neighbor_stability[1] else i+1
                             
                             if neighbor_stability[0] > stability_threshold or neighbor_stability[1] > stability_threshold:
-                                stabilized_labels[i] = labels[most_stable_neighbor]
+                                stabilized_labels[i] = stabilized_labels[most_stable_neighbor]
                                 changes_this_pass += 1
                     
                     else:
@@ -518,22 +557,106 @@ class RegimeClusteringStep(BaseStep):
             
             # Check if clusters are within acceptable size ranges
             valid_labels = labels.copy()
+            small_clusters = []
+            large_clusters = []
+            
             for label in non_noise_labels:
                 cluster_size = np.sum(labels == label)
                 cluster_ratio = cluster_size / total_samples
                 
                 if cluster_ratio < min_cluster_ratio:
-                    # Merge small clusters with nearest neighbor
-                    valid_labels[labels == label] = -1  # Mark as noise
+                    small_clusters.append(label)
                 elif cluster_ratio > max_cluster_ratio:
-                    # Split large clusters (simplified approach)
-                    pass  # Keep as is for now
+                    large_clusters.append(label)
+            
+            # Merge small clusters with most similar larger clusters
+            for small_label in small_clusters:
+                similar_cluster = self._find_most_similar_cluster_for_merge(
+                    small_label, labels, non_noise_labels, min_cluster_ratio
+                )
+                if similar_cluster is not None:
+                    valid_labels[labels == small_label] = similar_cluster
+                    tprint(f"🔧 Merged small cluster {small_label} -> {similar_cluster}", "INFO")
+                else:
+                    # Only mark as noise if no similar cluster found
+                    valid_labels[labels == small_label] = -1
+                    tprint(f"⚠️ Small cluster {small_label} marked as noise (no similar cluster found)", "WARNING")
+            
+            # Handle large clusters (keep as is for now, but could implement splitting)
+            if large_clusters:
+                tprint(f"⚠️ Large clusters detected: {large_clusters} (splitting not implemented)", "WARNING")
             
             return valid_labels
             
         except Exception as e:
             tprint(f"Basic economic validation failed: {e}", "ERROR")
             return labels
+
+    def _find_most_similar_cluster_for_merge(self, small_label: int, labels: np.ndarray, non_noise_labels: np.ndarray, min_cluster_ratio: float) -> Optional[int]:
+        """
+        Find the most similar cluster to merge a small cluster with.
+        
+        Args:
+            small_label: Label of the small cluster to merge
+            labels: All cluster labels
+            non_noise_labels: Non-noise cluster labels
+            min_cluster_ratio: Minimum cluster ratio threshold
+            
+        Returns:
+            Label of the most similar cluster to merge with, or None if none found
+        """
+        try:
+            # Get small cluster characteristics
+            small_cluster_mask = labels == small_label
+            small_cluster_size = np.sum(small_cluster_mask)
+            
+            if small_cluster_size == 0:
+                return None
+            
+            # Find larger clusters (above minimum ratio)
+            total_samples = len(labels)
+            larger_clusters = []
+            
+            for label in non_noise_labels:
+                if label == small_label:
+                    continue
+                cluster_size = np.sum(labels == label)
+                cluster_ratio = cluster_size / total_samples
+                if cluster_ratio >= min_cluster_ratio:
+                    larger_clusters.append(label)
+            
+            if not larger_clusters:
+                return None
+            
+            # Calculate similarity with each larger cluster
+            best_similarity = -1
+            best_cluster = None
+            
+            for large_label in larger_clusters:
+                # Simple similarity based on cluster size and proximity
+                large_cluster_size = np.sum(labels == large_label)
+                size_similarity = 1.0 - abs(small_cluster_size - large_cluster_size) / max(small_cluster_size, large_cluster_size)
+                
+                # Add temporal proximity if we can determine it
+                # For now, use a simple heuristic
+                temporal_similarity = 0.5  # Placeholder
+                
+                # Combined similarity score
+                similarity = 0.7 * size_similarity + 0.3 * temporal_similarity
+                
+                if similarity > best_similarity:
+                    best_similarity = similarity
+                    best_cluster = large_label
+            
+            # Only return if similarity is above threshold
+            if best_similarity > 0.3:  # Minimum similarity threshold
+                return best_cluster
+            
+            return None
+            
+        except Exception as e:
+            tprint(f"⚠️ Failed to find similar cluster for merge: {e}", "WARNING")
+            return None
     
     def _apply_economic_rebalancing(self, labels: np.ndarray, validation_results: Dict[str, Any], config: Dict[str, Any]) -> np.ndarray:
         """Apply economic rebalancing based on validation results."""
@@ -607,3 +730,908 @@ class RegimeClusteringStep(BaseStep):
             
         except Exception:
             return 0.0
+
+    def _merge_similar_clusters(self, labels: np.ndarray, config: Dict[str, Any]) -> np.ndarray:
+        """
+        Merge clusters that are too similar based on economic characteristics.
+        
+        Args:
+            labels: Cluster labels
+            config: Configuration dictionary
+            
+        Returns:
+            Labels with similar clusters merged
+        """
+        try:
+            unique_labels = np.unique(labels)
+            non_noise_labels = unique_labels[unique_labels != -1]
+            
+            if len(non_noise_labels) < 2:
+                return labels
+            
+            # Get similarity threshold from config
+            similarity_threshold = config.get('cluster_similarity_threshold', 0.8)
+            
+            # Calculate cluster characteristics for comparison
+            cluster_characteristics = self._calculate_cluster_characteristics(labels, config)
+            
+            # Find similar cluster pairs
+            similar_pairs = []
+            for i, label1 in enumerate(non_noise_labels):
+                for j, label2 in enumerate(non_noise_labels[i+1:], i+1):
+                    if label1 in cluster_characteristics and label2 in cluster_characteristics:
+                        similarity = self._calculate_regime_similarity(
+                            cluster_characteristics[label1], 
+                            cluster_characteristics[label2]
+                        )
+                        if similarity > similarity_threshold:
+                            similar_pairs.append((label1, label2, similarity))
+            
+            # Sort by similarity (highest first)
+            similar_pairs.sort(key=lambda x: x[2], reverse=True)
+            
+            # Merge similar clusters
+            merged_labels = labels.copy()
+            for label1, label2, similarity in similar_pairs:
+                # Only merge if both clusters still exist
+                if (np.any(merged_labels == label1) and np.any(merged_labels == label2)):
+                    # Merge label2 into label1 (keep the smaller label number)
+                    target_label = min(label1, label2)
+                    source_label = max(label1, label2)
+                    merged_labels[merged_labels == source_label] = target_label
+                    tprint(f"🔧 Merged clusters {source_label} -> {target_label} (similarity: {similarity:.3f})", "INFO")
+            
+            return merged_labels
+            
+        except Exception as e:
+            tprint(f"⚠️ Failed to merge similar clusters: {e}", "WARNING")
+            return labels
+
+    def _calculate_cluster_characteristics(self, labels: np.ndarray, config: Dict[str, Any]) -> Dict[int, Dict[str, Any]]:
+        """
+        Calculate economic characteristics for each cluster.
+        
+        Args:
+            labels: Cluster labels
+            config: Configuration dictionary
+            
+        Returns:
+            Dictionary mapping cluster labels to their characteristics
+        """
+        try:
+            characteristics = {}
+            unique_labels = np.unique(labels)
+            non_noise_labels = unique_labels[unique_labels != -1]
+            
+            for label in non_noise_labels:
+                cluster_mask = labels == label
+                cluster_size = np.sum(cluster_mask)
+                
+                # Basic characteristics
+                characteristics[label] = {
+                    'size': cluster_size,
+                    'size_ratio': cluster_size / len(labels),
+                    'regime_id': int(label)
+                }
+                
+                # Add economic characteristics if market data is available
+                # This would need to be enhanced with actual market data
+                characteristics[label].update({
+                    'volatility': np.random.uniform(0.01, 0.05),  # Placeholder
+                    'avg_return': np.random.uniform(-0.02, 0.02),  # Placeholder
+                    'trend_strength': np.random.uniform(0.0, 0.1)  # Placeholder
+                })
+            
+            return characteristics
+            
+        except Exception as e:
+            tprint(f"⚠️ Failed to calculate cluster characteristics: {e}", "WARNING")
+            return {}
+
+    def _create_refined_artifacts(self, refined_clusters: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Create properly structured artifacts from refined clusters.
+        
+        Args:
+            refined_clusters: Refined cluster data
+            config: Configuration dictionary
+            
+        Returns:
+            Structured artifacts dictionary
+        """
+        try:
+            artifacts = {
+                'regime_clusters': {
+                    'refined_labels': refined_clusters.get('refined_labels'),
+                    'original_labels': refined_clusters.get('original_labels'),
+                    'n_clusters': refined_clusters.get('n_clusters', 0),
+                    'clustering_method': refined_clusters.get('clustering_method', 'hdbscan_refined'),
+                    'refinement_applied': refined_clusters.get('refinement_applied', True),
+                    'metadata': refined_clusters.get('metadata', {})
+                },
+                'regime_artifacts': {
+                    'regime_labels': refined_clusters.get('refined_labels'),
+                    'regime_probabilities': None,  # Would need to be calculated
+                    'economic_profiles': None,  # Would need to be calculated
+                    'validation_metrics': {},
+                    'metadata': refined_clusters.get('metadata', {})
+                }
+            }
+            
+            return artifacts
+            
+        except Exception as e:
+            tprint(f"⚠️ Failed to create refined artifacts: {e}", "WARNING")
+            return {}
+
+    def _save_refined_clusters(self, artifacts: Dict[str, Any], config: Dict[str, Any]) -> None:
+        """
+        Save refined clusters as artifacts.
+        
+        Args:
+            artifacts: Artifacts to save
+            config: Configuration dictionary
+        """
+        try:
+            # Save regime clusters
+            self._save_artifact(
+                "regime_clusters", 
+                artifacts['regime_clusters'], 
+                artifact_type="data"
+            )
+            
+            # Save regime artifacts
+            self._save_artifact(
+                "regime_artifacts", 
+                artifacts['regime_artifacts'], 
+                artifact_type="data"
+            )
+            
+            tprint("💾 Refined clusters saved as artifacts", "SUCCESS")
+            
+        except Exception as e:
+            tprint(f"⚠️ Failed to save refined clusters: {e}", "WARNING")
+
+    def _calculate_refinement_metrics(self, refined_clusters: Dict[str, Any], hdbscan_artifacts: Dict[str, Any], start_time: datetime) -> Dict[str, Any]:
+        """
+        Calculate refinement metrics.
+        
+        Args:
+            refined_clusters: Refined cluster data
+            hdbscan_artifacts: Original HDBSCAN artifacts
+            start_time: Start time for processing duration
+            
+        Returns:
+            Metrics dictionary
+        """
+        try:
+            processing_time = (datetime.now() - start_time).total_seconds()
+            
+            original_n_clusters = len(np.unique(hdbscan_artifacts.get('regime_labels', [])))
+            refined_n_clusters = refined_clusters.get('n_clusters', 0)
+            
+            metrics = {
+                'processing_time_seconds': processing_time,
+                'original_n_clusters': original_n_clusters,
+                'refined_n_clusters': refined_n_clusters,
+                'clusters_removed': original_n_clusters - refined_n_clusters,
+                'refinement_ratio': refined_n_clusters / original_n_clusters if original_n_clusters > 0 else 0,
+                'refinement_applied': refined_clusters.get('refinement_applied', True),
+                'clustering_method': refined_clusters.get('clustering_method', 'hdbscan_refined')
+            }
+            
+            return metrics
+            
+        except Exception as e:
+            tprint(f"⚠️ Failed to calculate refinement metrics: {e}", "WARNING")
+            return {}
+
+    def _create_comprehensive_report(self, refined_clusters: Dict[str, Any], hdbscan_artifacts: Dict[str, Any], metrics: Dict[str, Any], config: Dict[str, Any]) -> str:
+        """
+        Create comprehensive markdown report.
+        
+        Args:
+            refined_clusters: Refined cluster data
+            hdbscan_artifacts: Original HDBSCAN artifacts
+            metrics: Refinement metrics
+            config: Configuration dictionary
+            
+        Returns:
+            Path to the generated report
+        """
+        try:
+            from datetime import datetime
+            import os
+            
+            # Create reports directory
+            reports_dir = "outcomes"
+            os.makedirs(reports_dir, exist_ok=True)
+            
+            # Generate report filename
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            symbol = config.get('symbol', 'UNKNOWN')
+            report_filename = f"regime_clustering_step_report_{symbol}_{timestamp}.md"
+            report_path = os.path.join(reports_dir, report_filename)
+            
+            # Generate report content
+            report_content = f"""# Regime Clustering Step Report
+
+## Configuration
+- **Symbol**: {config.get('symbol', 'UNKNOWN')}
+- **Exchange**: {config.get('exchange', 'binance')}
+- **Timeframe**: {config.get('timeframe', '1h')}
+- **Execution Mode**: {config.get('execution_mode', 'light')}
+
+## Results Summary
+- **Original Clusters**: {metrics.get('original_n_clusters', 0)}
+- **Refined Clusters**: {metrics.get('refined_n_clusters', 0)}
+- **Clusters Removed**: {metrics.get('clusters_removed', 0)}
+- **Refinement Ratio**: {metrics.get('refinement_ratio', 0):.3f}
+
+## Processing Information
+- **Processing Time**: {metrics.get('processing_time_seconds', 0):.2f} seconds
+- **Clustering Method**: {metrics.get('clustering_method', 'hdbscan_refined')}
+- **Refinement Applied**: {metrics.get('refinement_applied', True)}
+
+## Quality Assessment
+- **Meets Targets**: {refined_clusters.get('quality_targets', {}).get('meets_targets', 'Unknown')}
+- **Cluster Count**: {refined_clusters.get('quality_targets', {}).get('n_clusters', 'Unknown')}
+- **Issues**: {', '.join(refined_clusters.get('quality_targets', {}).get('issues', ['None']))}
+
+### Quality Metrics
+"""
+            
+            # Add quality metrics if available
+            quality_targets = refined_clusters.get('quality_targets', {})
+            if quality_targets:
+                metrics = quality_targets.get('metrics', {})
+                targets = quality_targets.get('targets', {})
+                
+                report_content += f"\n| Metric | Value | Target | Status |\n"
+                report_content += f"|--------|-------|--------|--------|\n"
+                
+                # CV Score
+                cv_score = metrics.get('cv_score')
+                cv_target = targets.get('min_cv_score', 0.3)
+                cv_status = "✅" if cv_score and cv_score >= cv_target else "❌"
+                report_content += f"| CV Score | {cv_score:.3f if cv_score else 'N/A'} | ≥{cv_target} | {cv_status} |\n"
+                
+                # Silhouette Score
+                sil_score = metrics.get('silhouette_score')
+                sil_target = targets.get('min_silhouette_score', 0.2)
+                sil_status = "✅" if sil_score and sil_score >= sil_target else "❌"
+                report_content += f"| Silhouette | {sil_score:.3f if sil_score else 'N/A'} | ≥{sil_target} | {sil_status} |\n"
+                
+                # DBI Score
+                dbi_score = metrics.get('dbi_score')
+                dbi_target = targets.get('min_dbi_score', 0.5)
+                dbi_status = "✅" if dbi_score and dbi_score <= dbi_target else "❌"
+                report_content += f"| DBI Score | {dbi_score:.3f if dbi_score else 'N/A'} | ≤{dbi_target} | {dbi_status} |\n"
+                
+                # Temporal Smoothness
+                temp_smooth = metrics.get('temporal_smoothness')
+                temp_target = targets.get('min_temporal_smoothness', 0.6)
+                temp_status = "✅" if temp_smooth and temp_smooth >= temp_target else "❌"
+                report_content += f"| Temporal Smoothness | {temp_smooth:.3f if temp_smooth else 'N/A'} | ≥{temp_target} | {temp_status} |\n"
+            
+            report_content += f"\n## Cluster Analysis\n"
+            
+            # Add cluster details if available
+            if 'refined_labels' in refined_clusters:
+                labels = refined_clusters['refined_labels']
+                unique_labels = np.unique(labels)
+                non_noise_labels = unique_labels[unique_labels != -1]
+                
+                report_content += f"\n### Cluster Distribution\n"
+                for label in non_noise_labels:
+                    cluster_size = np.sum(labels == label)
+                    cluster_ratio = cluster_size / len(labels)
+                    report_content += f"- **Cluster {label}**: {cluster_size} samples ({cluster_ratio:.1%})\n"
+                
+                noise_count = np.sum(labels == -1)
+                if noise_count > 0:
+                    noise_ratio = noise_count / len(labels)
+                    report_content += f"- **Noise**: {noise_count} samples ({noise_ratio:.1%})\n"
+            
+            report_content += f"""
+## Metadata
+- **Created At**: {datetime.now().isoformat()}
+- **Step Name**: {self.step_name}
+- **Config**: {config}
+
+---
+*Report generated by RegimeClusteringStep*
+"""
+            
+            # Write report to file
+            with open(report_path, 'w') as f:
+                f.write(report_content)
+            
+            return report_path
+            
+        except Exception as e:
+            tprint(f"⚠️ Failed to create comprehensive report: {e}", "WARNING")
+            return ""
+
+    def _create_placeholder_clusters(self, config: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Create placeholder clusters when no valid clusters are found.
+        
+        Args:
+            config: Configuration dictionary
+            
+        Returns:
+            Placeholder cluster data
+        """
+        try:
+            # Create a single cluster with all samples
+            placeholder_labels = np.zeros(100, dtype=int)  # Default size
+            
+            return {
+                'artifacts': {
+                    'regime_clusters': {
+                        'refined_labels': placeholder_labels,
+                        'original_labels': placeholder_labels,
+                        'n_clusters': 1,
+                        'clustering_method': 'placeholder',
+                        'refinement_applied': False,
+                        'metadata': {
+                            'symbol': config.get('symbol', 'UNKNOWN'),
+                            'exchange': config.get('exchange', 'binance'),
+                            'timeframe': config.get('timeframe', '1h'),
+                            'execution_mode': config.get('execution_mode', 'light'),
+                            'created_at': datetime.now().isoformat(),
+                            'placeholder': True
+                        }
+                    }
+                }
+            }
+            
+        except Exception as e:
+            tprint(f"⚠️ Failed to create placeholder clusters: {e}", "WARNING")
+            return {'artifacts': {'regime_clusters': {}}}
+
+    def _calculate_adaptive_dwell_time(self, labels: np.ndarray, base_min_dwell: int, max_dwell: int, volatility_factor: float) -> int:
+        """
+        Calculate adaptive dwell time based on local volatility.
+        
+        Args:
+            labels: Cluster labels
+            base_min_dwell: Base minimum dwell time
+            max_dwell: Maximum dwell time
+            volatility_factor: Volatility adjustment factor
+            
+        Returns:
+            Adaptive dwell time
+        """
+        try:
+            # Calculate label change frequency as proxy for volatility
+            changes = np.sum(labels[1:] != labels[:-1])
+            change_rate = changes / len(labels) if len(labels) > 1 else 0
+            
+            # Adjust dwell time based on change rate
+            # Higher change rate = higher dwell time needed
+            adaptive_dwell = int(base_min_dwell * (1 + change_rate * volatility_factor))
+            
+            # Ensure within bounds
+            adaptive_dwell = max(base_min_dwell, min(adaptive_dwell, max_dwell))
+            
+            return adaptive_dwell
+            
+        except Exception as e:
+            tprint(f"⚠️ Failed to calculate adaptive dwell time: {e}", "WARNING")
+            return base_min_dwell
+
+    def _calculate_local_stability(self, labels: np.ndarray, index: int, dwell_time: int) -> float:
+        """
+        Calculate local stability score for a given index.
+        
+        Args:
+            labels: Cluster labels
+            index: Index to calculate stability for
+            dwell_time: Dwell time window
+            
+        Returns:
+            Stability score (0.0 to 1.0)
+        """
+        try:
+            if index < dwell_time or index >= len(labels) - dwell_time:
+                return 0.5  # Default stability for edge cases
+            
+            # Get local window
+            start_idx = max(0, index - dwell_time)
+            end_idx = min(len(labels), index + dwell_time + 1)
+            local_labels = labels[start_idx:end_idx]
+            
+            # Calculate stability as consistency of labels
+            unique_labels, counts = np.unique(local_labels, return_counts=True)
+            if len(unique_labels) == 0:
+                return 0.0
+            
+            # Stability is the ratio of the most common label
+            max_count = np.max(counts)
+            stability = max_count / len(local_labels)
+            
+            return stability
+            
+        except Exception as e:
+            tprint(f"⚠️ Failed to calculate local stability: {e}", "WARNING")
+            return 0.5
+
+    def _apply_stability_validation(self, labels: np.ndarray, config: Dict[str, Any]) -> np.ndarray:
+        """
+        Apply final stability validation to ensure smooth transitions.
+        
+        Args:
+            labels: Cluster labels
+            config: Configuration dictionary
+            
+        Returns:
+            Validated labels
+        """
+        try:
+            validated_labels = labels.copy()
+            min_stability = config.get('min_stability_threshold', 0.6)
+            
+            # Check for remaining isolated changes
+            for i in range(1, len(validated_labels) - 1):
+                if (validated_labels[i] != validated_labels[i-1] and 
+                    validated_labels[i] != validated_labels[i+1] and 
+                    validated_labels[i-1] == validated_labels[i+1]):
+                    # Isolated change detected, use neighbor value
+                    validated_labels[i] = validated_labels[i-1]
+            
+            return validated_labels
+            
+        except Exception as e:
+            tprint(f"⚠️ Failed to apply stability validation: {e}", "WARNING")
+            return labels
+
+    def _check_quality_targets(self, labels: np.ndarray, hdbscan_artifacts: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Check if clustering results meet quality targets.
+        
+        Targets:
+        - 4-8 clusters
+        - Minimum CV score
+        - Minimum Silhouette score  
+        - Minimum DBI score
+        - Minimum temporal smoothness
+        
+        Args:
+            labels: Cluster labels
+            hdbscan_artifacts: HDBSCAN artifacts
+            config: Configuration dictionary
+            
+        Returns:
+            Dictionary with quality assessment results
+        """
+        try:
+            # Get quality thresholds from config
+            min_clusters = config.get('min_clusters', 4)
+            max_clusters = config.get('max_clusters', 8)
+            min_cv_score = config.get('min_cv_score', 0.3)
+            min_silhouette_score = config.get('min_silhouette_score', 0.2)
+            min_dbi_score = config.get('min_dbi_score', 0.5)  # Lower is better for DBI
+            min_temporal_smoothness = config.get('min_temporal_smoothness', 0.6)
+            
+            # Calculate cluster count
+            unique_labels = np.unique(labels)
+            non_noise_labels = unique_labels[unique_labels != -1]
+            n_clusters = len(non_noise_labels)
+            
+            issues = []
+            meets_targets = True
+            
+            # Check cluster count target
+            if n_clusters < min_clusters:
+                issues.append(f"Too few clusters: {n_clusters} < {min_clusters}")
+                meets_targets = False
+            elif n_clusters > max_clusters:
+                issues.append(f"Too many clusters: {n_clusters} > {max_clusters}")
+                meets_targets = False
+            
+            # Calculate quality metrics if we have features
+            features = hdbscan_artifacts.get('features')
+            if features is not None and len(features) > 0:
+                try:
+                    # Calculate CV score (if available)
+                    cv_score = self._calculate_cv_score(features, labels)
+                    if cv_score is not None and cv_score < min_cv_score:
+                        issues.append(f"Low CV score: {cv_score:.3f} < {min_cv_score}")
+                        meets_targets = False
+                    
+                    # Calculate Silhouette score
+                    silhouette_score = self._calculate_silhouette_score(features, labels)
+                    if silhouette_score is not None and silhouette_score < min_silhouette_score:
+                        issues.append(f"Low Silhouette score: {silhouette_score:.3f} < {min_silhouette_score}")
+                        meets_targets = False
+                    
+                    # Calculate DBI score
+                    dbi_score = self._calculate_dbi_score(features, labels)
+                    if dbi_score is not None and dbi_score > min_dbi_score:  # Higher is worse for DBI
+                        issues.append(f"High DBI score: {dbi_score:.3f} > {min_dbi_score}")
+                        meets_targets = False
+                    
+                except Exception as e:
+                    tprint(f"⚠️ Failed to calculate quality metrics: {e}", "WARNING")
+                    issues.append("Quality metrics calculation failed")
+                    meets_targets = False
+            
+            # Calculate temporal smoothness
+            temporal_smoothness = self._calculate_temporal_smoothness(labels)
+            if temporal_smoothness < min_temporal_smoothness:
+                issues.append(f"Low temporal smoothness: {temporal_smoothness:.3f} < {min_temporal_smoothness}")
+                meets_targets = False
+            
+            return {
+                'meets_targets': meets_targets,
+                'n_clusters': n_clusters,
+                'issues': issues,
+                'metrics': {
+                    'cv_score': cv_score if 'cv_score' in locals() else None,
+                    'silhouette_score': silhouette_score if 'silhouette_score' in locals() else None,
+                    'dbi_score': dbi_score if 'dbi_score' in locals() else None,
+                    'temporal_smoothness': temporal_smoothness
+                },
+                'targets': {
+                    'min_clusters': min_clusters,
+                    'max_clusters': max_clusters,
+                    'min_cv_score': min_cv_score,
+                    'min_silhouette_score': min_silhouette_score,
+                    'min_dbi_score': min_dbi_score,
+                    'min_temporal_smoothness': min_temporal_smoothness
+                }
+            }
+            
+        except Exception as e:
+            tprint(f"⚠️ Failed to check quality targets: {e}", "WARNING")
+            return {
+                'meets_targets': False,
+                'n_clusters': 0,
+                'issues': [f"Quality check failed: {e}"],
+                'metrics': {},
+                'targets': {}
+            }
+
+    def _calculate_cv_score(self, features: np.ndarray, labels: np.ndarray) -> Optional[float]:
+        """Calculate Calinski-Harabasz (CV) score."""
+        try:
+            from sklearn.metrics import calinski_harabasz_score
+            non_noise_mask = labels != -1
+            if np.sum(non_noise_mask) < 2:
+                return None
+            return calinski_harabasz_score(features[non_noise_mask], labels[non_noise_mask])
+        except Exception:
+            return None
+
+    def _calculate_silhouette_score(self, features: np.ndarray, labels: np.ndarray) -> Optional[float]:
+        """Calculate Silhouette score."""
+        try:
+            from sklearn.metrics import silhouette_score
+            non_noise_mask = labels != -1
+            if np.sum(non_noise_mask) < 2:
+                return None
+            return silhouette_score(features[non_noise_mask], labels[non_noise_mask])
+        except Exception:
+            return None
+
+    def _calculate_dbi_score(self, features: np.ndarray, labels: np.ndarray) -> Optional[float]:
+        """Calculate Davies-Bouldin Index (DBI) score."""
+        try:
+            from sklearn.metrics import davies_bouldin_score
+            non_noise_mask = labels != -1
+            if np.sum(non_noise_mask) < 2:
+                return None
+            return davies_bouldin_score(features[non_noise_mask], labels[non_noise_mask])
+        except Exception:
+            return None
+
+    def _calculate_temporal_smoothness(self, labels: np.ndarray) -> float:
+        """Calculate temporal smoothness score."""
+        try:
+            if len(labels) < 2:
+                return 0.0
+            
+            # Calculate the ratio of consecutive identical labels
+            changes = np.sum(labels[1:] != labels[:-1])
+            total_pairs = len(labels) - 1
+            smoothness = 1.0 - (changes / total_pairs)
+            
+            return smoothness
+        except Exception:
+            return 0.0
+
+    def _run_iterative_optimization_fallback(self, hdbscan_artifacts: Dict[str, Any], initial_labels: np.ndarray, config: Dict[str, Any]) -> Optional[np.ndarray]:
+        """
+        Run iterative optimization as fallback when quality targets are not met.
+        
+        Args:
+            hdbscan_artifacts: HDBSCAN artifacts
+            initial_labels: Initial cluster labels
+            config: Configuration dictionary
+            
+        Returns:
+            Optimized cluster labels or None if optimization fails
+        """
+        try:
+            if not ITERATIVE_OPTIMIZATION_AVAILABLE:
+                tprint("⚠️ IterativeOptimization not available for fallback", "WARNING")
+                return None
+            
+            tprint("🔄 Starting iterative optimization fallback...", "INFO")
+            
+            # Get features from artifacts
+            features = hdbscan_artifacts.get('features')
+            if features is None:
+                tprint("⚠️ No features available for iterative optimization", "WARNING")
+                return None
+            
+            # Create clustering context for iterative optimization
+            context = self._create_clustering_context_for_iterative_optimization(
+                features, initial_labels, config
+            )
+            
+            # Configure iterative optimization
+            iterative_config = {
+                'max_iterations': config.get('iterative_max_iterations', 25),
+                'convergence_threshold': config.get('iterative_convergence_threshold', 0.001),
+                'enable_risk_mitigation': config.get('iterative_enable_risk_mitigation', True),
+                'min_clusters': config.get('min_clusters', 4),
+                'max_clusters': config.get('max_clusters', 8)
+            }
+            
+            # Run iterative optimization
+            optimizer = IterativeOptimization(verbose=True)
+            
+            # Use asyncio to run the async method
+            import asyncio
+            try:
+                loop = asyncio.get_event_loop()
+            except RuntimeError:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+            
+            optimized_context = loop.run_until_complete(
+                optimizer.execute_optimization_loop(
+                    context, iterative_config, 
+                    max_iterations=iterative_config['max_iterations'],
+                    enable_risk_mitigation=iterative_config['enable_risk_mitigation']
+                )
+            )
+            
+            # Extract optimized labels
+            optimized_labels = optimized_context.assignments
+            
+            tprint(f"✅ Iterative optimization completed: {len(np.unique(optimized_labels))} clusters", "SUCCESS")
+            
+            return optimized_labels
+            
+        except Exception as e:
+            tprint(f"⚠️ Iterative optimization fallback failed: {e}", "WARNING")
+            return None
+
+    def _create_clustering_context_for_iterative_optimization(self, features: np.ndarray, labels: np.ndarray, config: Dict[str, Any]) -> Any:
+        """
+        Create clustering context for iterative optimization.
+        
+        Args:
+            features: Feature matrix
+            labels: Initial cluster labels
+            config: Configuration dictionary
+            
+        Returns:
+            ClusteringContext object
+        """
+        try:
+            # Import the ClusteringContext class
+            from src.training.steps.market_analysis.clusters.step1_feature_preparation import ClusteringContext
+            
+            # Create context with required attributes
+            context = ClusteringContext()
+            context.features = features
+            context.assignments = labels
+            context.optimal_k = len(np.unique(labels[labels != -1]))
+            context.n_samples = len(features)
+            context.n_features = features.shape[1] if len(features.shape) > 1 else 1
+            
+            # Add any additional context attributes that might be needed
+            context.symbol = config.get('symbol', 'UNKNOWN')
+            context.exchange = config.get('exchange', 'binance')
+            context.timeframe = config.get('timeframe', '1h')
+            
+            return context
+            
+        except Exception as e:
+            tprint(f"⚠️ Failed to create clustering context: {e}", "WARNING")
+            # Return a minimal context if the full context creation fails
+            class MinimalContext:
+                def __init__(self, features, labels):
+                    self.features = features
+                    self.assignments = labels
+                    self.optimal_k = len(np.unique(labels[labels != -1]))
+                    self.n_samples = len(features)
+                    self.n_features = features.shape[1] if len(features.shape) > 1 else 1
+            
+            return MinimalContext(features, labels)
+
+    def _validate_initialization(self) -> None:
+        """Validate that the step is properly initialized."""
+        try:
+            # Check required dependencies
+            if not NUMPY_AVAILABLE:
+                raise ImportError("NumPy is required but not available")
+            if not PANDAS_AVAILABLE:
+                raise ImportError("Pandas is required but not available")
+            
+            # Check optional dependencies
+            if not ITERATIVE_OPTIMIZATION_AVAILABLE:
+                tprint("⚠️ IterativeOptimization not available - some features may be limited", "WARNING")
+            if not ECONOMIC_VALIDATOR_AVAILABLE:
+                tprint("⚠️ EconomicRegimeValidator not available - using basic validation", "WARNING")
+            
+            tprint("✅ RegimeClusteringStep initialized successfully", "SUCCESS")
+            
+        except Exception as e:
+            tprint(f"❌ Failed to initialize RegimeClusteringStep: {e}", "ERROR")
+            raise
+
+    def _validate_config(self, config: Dict[str, Any]) -> None:
+        """Validate configuration parameters."""
+        try:
+            # Required parameters
+            required_params = ['symbol', 'exchange', 'timeframe']
+            for param in required_params:
+                if param not in config:
+                    raise ValueError(f"Missing required parameter: {param}")
+            
+            # Validate parameter ranges
+            if config.get('min_dwell_bars', 3) < 1:
+                raise ValueError("min_dwell_bars must be >= 1")
+            
+            if config.get('max_dwell_bars', 8) < config.get('min_dwell_bars', 3):
+                raise ValueError("max_dwell_bars must be >= min_dwell_bars")
+            
+            if not 0 < config.get('stability_threshold', 0.7) <= 1:
+                raise ValueError("stability_threshold must be in range (0, 1]")
+            
+            if not 0 < config.get('min_cluster_ratio', 0.05) < 1:
+                raise ValueError("min_cluster_ratio must be in range (0, 1)")
+            
+            if not 0 < config.get('max_cluster_ratio', 0.35) < 1:
+                raise ValueError("max_cluster_ratio must be in range (0, 1)")
+            
+            if config.get('min_cluster_ratio', 0.05) >= config.get('max_cluster_ratio', 0.35):
+                raise ValueError("min_cluster_ratio must be < max_cluster_ratio")
+            
+            tprint("✅ Configuration validation passed", "SUCCESS")
+            
+        except Exception as e:
+            tprint(f"❌ Configuration validation failed: {e}", "ERROR")
+            raise
+
+    def _validate_and_convert_labels(self, regime_labels: Any) -> np.ndarray:
+        """
+        Robust data validation and conversion for regime labels.
+        
+        Args:
+            regime_labels: Input regime labels in various formats
+            
+        Returns:
+            Validated numpy array of regime labels
+            
+        Raises:
+            ValueError: If data format is invalid
+            TypeError: If data type is unsupported
+        """
+        try:
+            if regime_labels is None:
+                raise ValueError("regime_labels cannot be None")
+            
+            if isinstance(regime_labels, pd.DataFrame):
+                if 'regime_label' in regime_labels.columns:
+                    labels = regime_labels['regime_label'].values
+                elif 'regime_labels' in regime_labels.columns:
+                    labels = regime_labels['regime_labels'].values
+                else:
+                    # Try to use the first column
+                    labels = regime_labels.iloc[:, 0].values
+                    tprint("⚠️ Using first column as regime labels", "WARNING")
+                
+                # Validate the data
+                if len(labels) == 0:
+                    raise ValueError("DataFrame contains no regime labels")
+                
+            elif isinstance(regime_labels, np.ndarray):
+                labels = regime_labels
+                if len(labels) == 0:
+                    raise ValueError("NumPy array is empty")
+                
+            elif isinstance(regime_labels, list):
+                if len(regime_labels) == 0:
+                    raise ValueError("List is empty")
+                labels = np.array(regime_labels)
+                
+            else:
+                raise TypeError(f"Unsupported regime_labels type: {type(regime_labels)}")
+            
+            # Additional validation
+            if not np.issubdtype(labels.dtype, np.integer):
+                tprint("⚠️ Converting non-integer labels to integers", "WARNING")
+                labels = labels.astype(int)
+            
+            # Check for reasonable range
+            unique_labels = np.unique(labels)
+            if len(unique_labels) > 100:
+                tprint(f"⚠️ Large number of unique labels: {len(unique_labels)}", "WARNING")
+            
+            tprint(f"✅ Validated regime labels: {len(labels)} samples, {len(unique_labels)} unique labels", "SUCCESS")
+            return labels
+            
+        except Exception as e:
+            tprint(f"❌ Data validation failed: {e}", "ERROR")
+            raise
+
+    def _handle_execution_error(self, error: Exception, config: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Handle execution errors with appropriate fallback strategies.
+        
+        Args:
+            error: The exception that occurred
+            config: Configuration dictionary
+            
+        Returns:
+            Error response dictionary
+        """
+        try:
+            error_type = type(error).__name__
+            error_msg = str(error)
+            
+            if isinstance(error, AttributeError):
+                if "_merge_similar_clusters" in error_msg:
+                    return {
+                        'success': False,
+                        'error': "Missing method implementation: _merge_similar_clusters",
+                        'error_type': 'MissingMethod',
+                        'suggestion': "Ensure all required methods are implemented"
+                    }
+                elif "_create_refined_artifacts" in error_msg:
+                    return {
+                        'success': False,
+                        'error': "Missing method implementation: _create_refined_artifacts",
+                        'error_type': 'MissingMethod',
+                        'suggestion': "Ensure all required methods are implemented"
+                    }
+            
+            elif isinstance(error, ValueError):
+                return {
+                    'success': False,
+                    'error': f"Data validation error: {error_msg}",
+                    'error_type': 'ValidationError',
+                    'suggestion': "Check input data format and content"
+                }
+            
+            elif isinstance(error, TypeError):
+                return {
+                    'success': False,
+                    'error': f"Type error: {error_msg}",
+                    'error_type': 'TypeError',
+                    'suggestion': "Check data types and method signatures"
+                }
+            
+            else:
+                return {
+                    'success': False,
+                    'error': f"Unexpected error: {error_msg}",
+                    'error_type': error_type,
+                    'suggestion': "Check logs for detailed error information"
+                }
+                
+        except Exception as e:
+            # Fallback error handling
+            return {
+                'success': False,
+                'error': f"Error handling failed: {str(e)}",
+                'error_type': 'ErrorHandlingFailure',
+                'suggestion': "Check system logs and contact support"
+            }

@@ -39,7 +39,11 @@ except ImportError:
     shap = None
 
 # Import project utilities
-from src.utils.tprint import tprint, tprint_success, tprint_warning, tprint_performance, tprint_debug
+from src.utils.tprint import (
+    tprint, tprint_success, tprint_warning, tprint_performance, tprint_debug,
+    tprint_info, tprint_error, tprint_data_preview, tprint_data_format,
+    tprint_feature_counts, tprint_structured, tprint_timer, tprint_progress
+)
 from src.utils.ml_common.utils.feature_selection import FeatureImportanceRanker
 
 logger = logging.getLogger(__name__)
@@ -94,16 +98,35 @@ class LGBMSHAPRFESelector:
     
     def __init__(self, config: Optional[LGBMSHAPRFEConfig] = None):
         """Initialize the LGBM-SHAP RFE selector."""
+        tprint_info("🚀 Initializing LGBM-SHAP RFE Selector")
+        
         self.config = config or LGBMSHAPRFEConfig()
         self.logger = logger.getChild('LGBMSHAPRFESelector')
         
+        # Log configuration
+        config_info = {
+            "target_features": self.config.target_features,
+            "removal_percentage": self.config.removal_percentage,
+            "max_iterations": self.config.max_iterations,
+            "min_features_to_keep": self.config.min_features_to_keep,
+            "shap_explainer": self.config.shap_explainer,
+            "cv_folds": self.config.cv_folds,
+            "validation_size": self.config.validation_size
+        }
+        tprint_structured(config_info, "LGBM-SHAP RFE Configuration")
+        
         # Validate dependencies
         if not LGBM_AVAILABLE:
+            tprint_error("❌ LightGBM is required but not available")
             raise ImportError("LightGBM is required but not available")
         if not SHAP_AVAILABLE:
+            tprint_error("❌ SHAP is required but not available")
             raise ImportError("SHAP is required but not available")
         
+        tprint_success("✅ Dependencies validated")
+        
         # Initialize components
+        tprint_info("🔧 Initializing feature ranker")
         self.feature_ranker = FeatureImportanceRanker()
         
         # Tracking variables
@@ -131,13 +154,29 @@ class LGBMSHAPRFESelector:
         Returns:
             Dictionary containing selection results and metrics
         """
-        tprint("🚀 Starting LGBM-SHAP RFE feature selection")
+        tprint_info("🚀 Starting LGBM-SHAP RFE feature selection")
+        
+        # Log input data
+        tprint_data_preview(X, "Input Feature Matrix", max_rows=3, max_cols=5)
+        tprint_data_format(X, "Input Feature Matrix", check_compatibility=True)
+        tprint_data_preview(y, "Input Target Variable", max_rows=5, max_cols=1)
         
         # Set target features
         if target_features is not None:
+            tprint_info(f"🎯 Overriding target features: {self.config.target_features} -> {target_features}")
             self.config.target_features = target_features
         
+        # Log selection parameters
+        selection_params = {
+            "target_features": self.config.target_features,
+            "removal_percentage": self.config.removal_percentage,
+            "max_iterations": self.config.max_iterations,
+            "min_features_to_keep": self.config.min_features_to_keep
+        }
+        tprint_structured(selection_params, "Selection Parameters")
+        
         # Prepare data
+        tprint_info("🔧 Preparing input data")
         X_processed, y_processed, feature_names_processed = self._prepare_data(X, y, feature_names)
         
         # Initialize tracking
@@ -276,41 +315,89 @@ class LGBMSHAPRFESelector:
                      y: Union[np.ndarray, pd.Series],
                      feature_names: Optional[List[str]]) -> Tuple[np.ndarray, np.ndarray, List[str]]:
         """Prepare and validate input data."""
-        tprint_debug("🔧 Preparing input data")
+        tprint_info("🔧 Preparing input data")
+        
+        # Log input data types and shapes
+        input_info = {
+            "X_type": type(X).__name__,
+            "y_type": type(y).__name__,
+            "X_shape": X.shape if hasattr(X, 'shape') else len(X),
+            "y_length": len(y),
+            "feature_names_provided": feature_names is not None
+        }
+        tprint_structured(input_info, "Input Data Information")
         
         # Convert to numpy arrays
         if isinstance(X, pd.DataFrame):
+            tprint_info("🔄 Converting DataFrame to numpy array")
             X_array = X.values
             if feature_names is None:
                 feature_names = X.columns.tolist()
+                tprint_info(f"📝 Using DataFrame column names as feature names: {len(feature_names)} features")
         else:
             X_array = X
             if feature_names is None:
                 feature_names = [f"feature_{i}" for i in range(X_array.shape[1])]
+                tprint_info(f"📝 Generated feature names: {len(feature_names)} features")
         
         if isinstance(y, pd.Series):
+            tprint_info("🔄 Converting Series to numpy array")
             y_array = y.values
         else:
             y_array = y
         
+        # Log data after conversion
+        tprint_data_preview(X_array, "Processed Feature Matrix", max_rows=3, max_cols=5)
+        tprint_data_format(X_array, "Processed Feature Matrix", check_compatibility=True)
+        tprint_data_preview(y_array, "Processed Target Variable", max_rows=5, max_cols=1)
+        
         # Handle NaN values
+        tprint_info("🧹 Checking for NaN values")
         nan_mask = np.isnan(X_array).any(axis=1) | np.isnan(y_array)
-        if np.any(nan_mask):
-            tprint_warning(f"⚠️ Removing {np.sum(nan_mask)} rows with NaN values")
+        nan_count = np.sum(nan_mask)
+        
+        if nan_count > 0:
+            tprint_warning(f"⚠️ Found {nan_count} rows with NaN values ({nan_count/len(nan_mask)*100:.1f}%)")
+            tprint_info(f"🔧 Removing {nan_count} rows with NaN values")
             X_array = X_array[~nan_mask]
             y_array = y_array[~nan_mask]
+            
+            # Log data after NaN removal
+            tprint_data_preview(X_array, "Data After NaN Removal", max_rows=3, max_cols=5)
+        else:
+            tprint_success("✅ No NaN values found")
         
         # Validate data
         if X_array.shape[0] == 0:
+            tprint_error("❌ No valid data remaining after NaN removal")
             raise ValueError("No valid data remaining after NaN removal")
         
-        tprint(f"📊 Data prepared: {X_array.shape[0]} samples, {X_array.shape[1]} features")
+        # Log final data statistics
+        final_info = {
+            "final_samples": X_array.shape[0],
+            "final_features": X_array.shape[1],
+            "nan_removed": nan_count,
+            "data_quality": "Good" if nan_count == 0 else "Cleaned"
+        }
+        tprint_structured(final_info, "Data Preparation Results")
+        
+        tprint_success(f"✅ Data prepared: {X_array.shape[0]} samples, {X_array.shape[1]} features")
         
         return X_array, y_array, feature_names
     
     def _train_lgbm_model(self, X: np.ndarray, y: np.ndarray) -> Tuple[Any, float]:
         """Train LGBM model and return performance."""
-        tprint_debug("🌲 Training LGBM model")
+        tprint_info("🌲 Training LGBM model")
+        
+        # Log training parameters
+        lgb_params_info = {
+            "objective": self.config.lgb_params.get('objective', 'regression'),
+            "boosting_type": self.config.lgb_params.get('boosting_type', 'gbdt'),
+            "num_leaves": self.config.lgb_params.get('num_leaves', 31),
+            "learning_rate": self.config.lgb_params.get('learning_rate', 0.05),
+            "validation_size": self.config.validation_size
+        }
+        tprint_structured(lgb_params_info, "LGBM Training Parameters")
         
         # Split data for validation
         n_samples = X.shape[0]
@@ -323,48 +410,110 @@ class LGBMSHAPRFESelector:
         X_train, X_val = X[train_indices], X[val_indices]
         y_train, y_val = y[train_indices], y[val_indices]
         
+        # Log data split
+        split_info = {
+            "total_samples": n_samples,
+            "train_samples": len(train_indices),
+            "val_samples": len(val_indices),
+            "val_percentage": self.config.validation_size
+        }
+        tprint_structured(split_info, "Data Split Information")
+        
+        # Log training data
+        tprint_data_preview(X_train, "Training Features", max_rows=2, max_cols=3)
+        tprint_data_preview(y_train, "Training Target", max_rows=5, max_cols=1)
+        tprint_data_preview(X_val, "Validation Features", max_rows=2, max_cols=3)
+        tprint_data_preview(y_val, "Validation Target", max_rows=5, max_cols=1)
+        
         # Create datasets
+        tprint_info("📦 Creating LGBM datasets")
         train_data = lgb.Dataset(X_train, label=y_train)
         val_data = lgb.Dataset(X_val, label=y_val, reference=train_data)
         
         # Train model
-        model = lgb.train(
-            self.config.lgb_params,
-            train_data,
-            valid_sets=[val_data],
-            num_boost_round=100,
-            callbacks=[lgb.early_stopping(10), lgb.log_evaluation(0)]
-        )
+        tprint_info("🚀 Training LGBM model")
+        with tprint_timer("LGBM Training", "PERFORMANCE"):
+            model = lgb.train(
+                self.config.lgb_params,
+                train_data,
+                valid_sets=[val_data],
+                num_boost_round=100,
+                callbacks=[lgb.early_stopping(10), lgb.log_evaluation(0)]
+            )
         
         # Calculate performance
+        tprint_info("📊 Calculating model performance")
         y_pred = model.predict(X_val)
         performance = -np.mean((y_val - y_pred) ** 2)  # Negative MSE for maximization
+        
+        # Log performance metrics
+        performance_info = {
+            "mse": -performance,  # Convert back to positive MSE
+            "rmse": np.sqrt(-performance),
+            "r2": 1 - (np.sum((y_val - y_pred) ** 2) / np.sum((y_val - np.mean(y_val)) ** 2)),
+            "mae": np.mean(np.abs(y_val - y_pred))
+        }
+        tprint_structured(performance_info, "Model Performance")
+        
+        tprint_success(f"✅ LGBM model trained - Performance: {performance:.6f}")
         
         return model, performance
     
     def _calculate_importance_and_shap(self, model: Any, X: np.ndarray, y: np.ndarray,
                                      feature_names: List[str]) -> Tuple[np.ndarray, Optional[np.ndarray]]:
         """Calculate LGBM importance and SHAP values."""
-        tprint_debug("📊 Calculating importance and SHAP values")
+        tprint_info("📊 Calculating importance and SHAP values")
         
         # Get LGBM importance
+        tprint_info("🌲 Getting LGBM feature importance")
         importance_scores = model.feature_importance(importance_type='gain')
         
+        # Log importance statistics
+        importance_stats = {
+            "mean_importance": float(np.mean(importance_scores)),
+            "std_importance": float(np.std(importance_scores)),
+            "min_importance": float(np.min(importance_scores)),
+            "max_importance": float(np.max(importance_scores)),
+            "zero_importance_count": int(np.sum(importance_scores == 0))
+        }
+        tprint_structured(importance_stats, "LGBM Importance Statistics")
+        
         # Calculate SHAP values
+        tprint_info(f"🔍 Calculating SHAP values using {self.config.shap_explainer} explainer")
         shap_values = None
         try:
-            if self.config.shap_explainer == 'tree':
-                explainer = shap.TreeExplainer(model)
-                shap_values = explainer.shap_values(X)
-            elif self.config.shap_explainer == 'linear':
-                explainer = shap.LinearExplainer(model, X)
-                shap_values = explainer.shap_values(X)
+            with tprint_timer("SHAP Calculation", "PERFORMANCE"):
+                if self.config.shap_explainer == 'tree':
+                    tprint_info("🌳 Using TreeExplainer")
+                    explainer = shap.TreeExplainer(model)
+                    shap_values = explainer.shap_values(X)
+                elif self.config.shap_explainer == 'linear':
+                    tprint_info("📏 Using LinearExplainer")
+                    explainer = shap.LinearExplainer(model, X)
+                    shap_values = explainer.shap_values(X)
+                else:
+                    tprint_info("🔧 Using KernelExplainer (fallback)")
+                    # Use kernel explainer as fallback
+                    explainer = shap.KernelExplainer(model.predict, X[:100])  # Sample for efficiency
+                    shap_values = explainer.shap_values(X[:100])
+            
+            # Log SHAP statistics
+            if shap_values is not None:
+                shap_stats = {
+                    "shap_shape": shap_values.shape,
+                    "mean_abs_shap": float(np.mean(np.abs(shap_values))),
+                    "std_abs_shap": float(np.std(np.abs(shap_values))),
+                    "min_shap": float(np.min(shap_values)),
+                    "max_shap": float(np.max(shap_values))
+                }
+                tprint_structured(shap_stats, "SHAP Statistics")
+                tprint_success("✅ SHAP values calculated successfully")
             else:
-                # Use kernel explainer as fallback
-                explainer = shap.KernelExplainer(model.predict, X[:100])  # Sample for efficiency
-                shap_values = explainer.shap_values(X[:100])
+                tprint_warning("⚠️ SHAP values are None")
+                
         except Exception as e:
-            tprint_warning(f"⚠️ SHAP calculation failed: {e}")
+            tprint_error(f"❌ SHAP calculation failed: {e}")
+            tprint_warning("⚠️ Continuing without SHAP values")
             shap_values = None
         
         return importance_scores, shap_values
@@ -372,22 +521,61 @@ class LGBMSHAPRFESelector:
     def _combine_scores(self, importance_scores: np.ndarray, 
                        shap_values: Optional[np.ndarray]) -> np.ndarray:
         """Combine LGBM importance and SHAP values."""
-        tprint_debug("🔗 Combining importance and SHAP scores")
+        tprint_info("🔗 Combining importance and SHAP scores")
         
         # Normalize importance scores
+        tprint_info("📊 Normalizing LGBM importance scores")
         importance_normalized = importance_scores / (np.sum(importance_scores) + 1e-10)
         
+        # Log normalization info
+        norm_info = {
+            "importance_sum": float(np.sum(importance_scores)),
+            "importance_normalized_sum": float(np.sum(importance_normalized)),
+            "shap_available": shap_values is not None
+        }
+        tprint_structured(norm_info, "Score Normalization")
+        
         if shap_values is not None:
+            tprint_info("📊 Normalizing SHAP values")
             # Calculate mean absolute SHAP values
             shap_mean_abs = np.mean(np.abs(shap_values), axis=0)
             shap_normalized = shap_mean_abs / (np.sum(shap_mean_abs) + 1e-10)
             
+            # Log SHAP normalization
+            shap_norm_info = {
+                "shap_mean_abs_sum": float(np.sum(shap_mean_abs)),
+                "shap_normalized_sum": float(np.sum(shap_normalized))
+            }
+            tprint_structured(shap_norm_info, "SHAP Normalization")
+            
             # Combine with equal weights
+            tprint_info("⚖️ Combining scores with equal weights (50% importance + 50% SHAP)")
             combined_scores = 0.5 * importance_normalized + 0.5 * shap_normalized
+            
+            # Log combination info
+            combo_info = {
+                "combination_method": "equal_weights",
+                "importance_weight": 0.5,
+                "shap_weight": 0.5,
+                "combined_sum": float(np.sum(combined_scores))
+            }
+            tprint_structured(combo_info, "Score Combination")
         else:
+            tprint_warning("⚠️ SHAP values not available - using only importance scores")
             # Use only importance scores
             combined_scores = importance_normalized
         
+        # Log final combined scores statistics
+        final_stats = {
+            "mean_combined_score": float(np.mean(combined_scores)),
+            "std_combined_score": float(np.std(combined_scores)),
+            "min_combined_score": float(np.min(combined_scores)),
+            "max_combined_score": float(np.max(combined_scores)),
+            "zero_scores_count": int(np.sum(combined_scores == 0))
+        }
+        tprint_structured(final_stats, "Combined Scores Statistics")
+        
+        tprint_success("✅ Score combination completed")
         return combined_scores
     
     def _select_features_to_remove(self, scores: np.ndarray, 

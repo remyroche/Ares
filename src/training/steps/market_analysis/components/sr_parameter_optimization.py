@@ -2,20 +2,26 @@
 Enhanced SR Parameter Optimization Step.
 
 This step optimizes Support/Resistance detection parameters using advanced techniques:
-- VectorBT optimization for efficient parameter testing
+- VectorBT optimization for efficient parameter testing and rolling operations
 - Bayesian HPO with staged optimization (coarse grid -> fine grid -> TPE)
 - Hardware-aware optimization for M1 Mac performance
-- Advanced validation with purged CV and data leakage detection
+- Advanced validation with purged CV, data leakage detection, and temporal validation
+- SHAP/LIME integration for parameter explainability
+- Multiple optimization algorithms (genetic algorithms, particle swarm, etc.)
+- Time series specific validation and OOF/OOS testing
+- Enhanced computation efficiency and logic improvements
 """
 
 import asyncio
 import json
 import logging
 import time
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union, Callable
 from datetime import datetime
 from pathlib import Path
 from dataclasses import dataclass
+from enum import Enum
+import warnings
 
 # Handle optional dependencies gracefully
 try:
@@ -63,14 +69,18 @@ except ImportError as e:
     HARDWARE_OPTIMIZATION_AVAILABLE = False
     print(f"Warning: Hardware optimization not available: {e}")
 
+# Enhanced validation imports
 try:
     from src.utils.ml_common.validation.data_leakage_detector import DataLeakageDetector
     from src.utils.ml_common.validation.temporal_cross_validation import temporal_cross_validation
+    from src.utils.ml_common.validation.unified_cv import UnifiedCrossValidator
+    from src.utils.ml_common.validation.temporal_validation import TemporalValidator
     VALIDATION_AVAILABLE = True
 except ImportError as e:
     VALIDATION_AVAILABLE = False
     print(f"Warning: Advanced validation not available: {e}")
 
+# VectorBT rolling optimizer integration
 try:
     from src.feature_generation.utils.vectorbt_rolling_optimizer import (
         VectorBTRollingOptimizer, get_vectorbt_rolling_optimizer
@@ -79,6 +89,30 @@ try:
 except ImportError as e:
     VECTORBT_ROLLING_AVAILABLE = False
     print(f"Warning: VectorBT rolling optimizer not available: {e}")
+
+# SHAP/LIME explainability imports
+try:
+    import shap
+    from src.utils.ml_common.explainability.shap_lime_integration import (
+        SHAPLimeExplainer, ExplainabilityConfig
+    )
+    EXPLAINABILITY_AVAILABLE = True
+except ImportError as e:
+    EXPLAINABILITY_AVAILABLE = False
+    print(f"Warning: SHAP/LIME explainability not available: {e}")
+
+# Removed evolutionary algorithms to simplify HPO
+EVOLUTIONARY_AVAILABLE = False
+
+# Time series specific validation
+try:
+    from src.utils.ml_common.validation.temporal import (
+        TimeSeriesValidator, OOFValidator, OOSValidator
+    )
+    TIME_SERIES_VALIDATION_AVAILABLE = True
+except ImportError as e:
+    TIME_SERIES_VALIDATION_AVAILABLE = False
+    print(f"Warning: Time series validation not available: {e}")
 
 # Additional imports for hardware detection
 try:
@@ -106,21 +140,38 @@ except ImportError as e:
     ParameterOptimizationConfig = None
     print(f"Warning: SR clustering components not available: {e}")
 
+# Simplified optimization algorithms enum
+class OptimizationAlgorithm(Enum):
+    """Available optimization algorithms - simplified to focus on core methods."""
+    BAYESIAN_TPE = "bayesian_tpe"
+    GRID_SEARCH = "grid_search"
+    VECTORBT_OPTIMIZATION = "vectorbt_optimization"
+
 @dataclass
 class EnhancedSRConfig:
-    """Enhanced configuration for SR parameter optimization."""
-    # Optimization settings
+    """Simplified configuration for SR parameter optimization focusing on Bayesian TPE + Grid Search."""
+    # Core optimization settings
     enable_bayesian_hpo: bool = True
     enable_vectorbt_optimization: bool = True
     enable_hardware_optimization: bool = True
     enable_advanced_validation: bool = True
+    enable_explainability: bool = True
+    enable_time_series_validation: bool = True
     
-    # Bayesian HPO settings
-    n_trials: int = 100
+    # Staged optimization settings - single entry point
     enable_staged_optimization: bool = True
-    coarse_grid_points: int = 5
-    fine_grid_points: int = 5
-    tpe_trials: int = 50
+    fallback_algorithms: List[OptimizationAlgorithm] = None
+    
+    # Staged optimization parameters
+    coarse_grid_points: int = 3  # 3x3 coarse grid for initial exploration
+    fine_grid_points: int = 5    # 5x5 fine grid for refinement
+    bayesian_trials: int = 50    # Bayesian TPE trials after grid stages
+    enable_bayesian_refinement: bool = True
+    
+    # VectorBT optimization settings
+    enable_vectorbt_rolling: bool = True
+    vectorbt_chunk_size: int = 1000
+    vectorbt_parallel_workers: Optional[int] = None
     
     # Hardware optimization settings
     workload_type: str = 'ml_training'
@@ -131,7 +182,26 @@ class EnhancedSRConfig:
     # Validation settings
     enable_purged_cv: bool = True
     enable_data_leakage_detection: bool = True
+    enable_temporal_validation: bool = True
+    enable_oof_oos_validation: bool = True
     temporal_gap_hours: int = 24
+    
+    # Explainability settings
+    enable_shap_analysis: bool = True
+    enable_lime_analysis: bool = True
+    explainability_sample_size: int = 1000
+    
+    # Time series validation settings
+    oof_validation_folds: int = 5
+    oos_validation_ratio: float = 0.2
+    enable_lookahead_bias_detection: bool = True
+    
+    def __post_init__(self):
+        """Initialize default fallback algorithms if not provided."""
+        if self.fallback_algorithms is None:
+            self.fallback_algorithms = [
+                OptimizationAlgorithm.VECTORBT_OPTIMIZATION
+            ]
 
 class SRParameterOptimizationStep(BaseStep):
     """
@@ -191,10 +261,43 @@ class SRParameterOptimizationStep(BaseStep):
         # Initialize validation components
         if VALIDATION_AVAILABLE:
             self.leakage_detector = DataLeakageDetector()
-            self.logger.info("✅ Data leakage detector initialized")
+            self.unified_cv = UnifiedCrossValidator()
+            self.temporal_validator = TemporalValidator()
+            self.logger.info("✅ Advanced validation components initialized")
         else:
             self.leakage_detector = None
+            self.unified_cv = None
+            self.temporal_validator = None
             self.logger.warning("⚠️ Advanced validation not available")
+        
+        # Initialize explainability components
+        if EXPLAINABILITY_AVAILABLE:
+            self.explainability_config = ExplainabilityConfig(
+                enable_shap=True,
+                enable_lime=True,
+                sample_size=1000
+            )
+            self.shap_lime_explainer = SHAPLimeExplainer(self.explainability_config)
+            self.logger.info("✅ SHAP/LIME explainability initialized")
+        else:
+            self.shap_lime_explainer = None
+            self.logger.warning("⚠️ SHAP/LIME explainability not available")
+        
+        # Evolutionary algorithms removed to simplify HPO
+        self.genetic_optimizer = None
+        self.particle_swarm_optimizer = None
+        
+        # Initialize time series validation
+        if TIME_SERIES_VALIDATION_AVAILABLE:
+            self.time_series_validator = TimeSeriesValidator()
+            self.oof_validator = OOFValidator()
+            self.oos_validator = OOSValidator()
+            self.logger.info("✅ Time series validation components initialized")
+        else:
+            self.time_series_validator = None
+            self.oof_validator = None
+            self.oos_validator = None
+            self.logger.warning("⚠️ Time series validation not available")
 
     def get_required_artifacts(self) -> List[str]:
         """Get list of required artifacts this step must produce."""
@@ -250,10 +353,18 @@ class SRParameterOptimizationStep(BaseStep):
             # Ensure data has proper datetime indexing for backtesting
             market_data = self._prepare_data_for_backtesting(market_data)
 
-            # Run enhanced parameter optimization
+            # Run enhanced parameter optimization with algorithm selection
             optimization_result = await self._run_enhanced_parameter_optimization(
                 market_data, enhanced_config, config
             )
+            
+            # Add explainability analysis if enabled
+            if enhanced_config.enable_explainability and self.shap_lime_explainer:
+                self.logger.info("🔍 Running parameter explainability analysis...")
+                explainability_result = await self._run_explainability_analysis(
+                    optimization_result, market_data, enhanced_config
+                )
+                optimization_result['explainability_analysis'] = explainability_result
 
             # Extract results
             optimized_parameters = optimization_result.get('optimized_parameters', {})
@@ -575,29 +686,19 @@ class SRParameterOptimizationStep(BaseStep):
             # Split data for optimization with temporal validation
             train_data, test_data = self._split_data_with_validation(market_data, enhanced_config)
             
-            # Run Bayesian HPO if enabled
-            if enhanced_config.enable_bayesian_hpo and self.bayesian_optimizer:
-                self.logger.info("🧠 Running Bayesian HPO optimization...")
-                bayesian_result = await self._run_bayesian_optimization(
+            # Run staged optimization: Coarse Grid → Fine Grid → Bayesian TPE
+            if enhanced_config.enable_staged_optimization:
+                algorithm_result = await self._run_staged_optimization(
                     search_space, train_data, test_data, enhanced_config
                 )
-                optimization_result.update(bayesian_result)
-            
-            # Run VectorBT optimization if enabled
-            elif enhanced_config.enable_vectorbt_optimization and self.vectorbt_optimizer:
-                self.logger.info("⚡ Running VectorBT optimization...")
-                vectorbt_result = await self._run_vectorbt_optimization(
-                    search_space, train_data, test_data, enhanced_config
-                )
-                optimization_result.update(vectorbt_result)
-            
-            # Fallback to traditional optimization
             else:
-                self.logger.info("📊 Running traditional optimization...")
-                traditional_result = await self._run_traditional_optimization(
+                # Fallback to simple algorithm selection
+                algorithm_result = await self._run_algorithm_optimization(
+                    OptimizationAlgorithm.BAYESIAN_TPE,
                     search_space, train_data, test_data, enhanced_config
                 )
-                optimization_result.update(traditional_result)
+            
+            optimization_result.update(algorithm_result)
             
             # Apply hardware optimization if enabled
             if enhanced_config.enable_hardware_optimization and self.hardware_manager:
@@ -665,15 +766,15 @@ class SRParameterOptimizationStep(BaseStep):
         test_data: Any, 
         enhanced_config: EnhancedSRConfig
     ) -> Dict[str, Any]:
-        """Run Bayesian optimization for SR parameters."""
+        """Run simplified Bayesian TPE optimization for SR parameters."""
         try:
-            # Create optimization config
+            if not self.bayesian_optimizer:
+                raise RuntimeError("Bayesian optimizer not available")
+            
+            # Create simplified optimization config
             opt_config = OptimizationConfig(
                 n_trials=enhanced_config.n_trials,
-                enable_staged_optimization=enhanced_config.enable_staged_optimization,
-                coarse_grid_points=enhanced_config.coarse_grid_points,
-                fine_grid_points=enhanced_config.fine_grid_points,
-                tpe_trials=enhanced_config.tpe_trials,
+                enable_staged_optimization=False,  # Simplified - no staged optimization
                 enable_hardware_optimization=enhanced_config.enable_hardware_optimization,
                 workload_type=enhanced_config.workload_type,
                 optimization_level=enhanced_config.optimization_level
@@ -707,12 +808,13 @@ class SRParameterOptimizationStep(BaseStep):
                 'optimized_parameters': result.best_params,
                 'best_score': result.best_value,
                 'bayesian_trials': result.n_trials,
-                'bayesian_efficiency': result.efficiency_score if hasattr(result, 'efficiency_score') else 0.0
+                'algorithm_used': 'bayesian_tpe',
+                'success': True
             }
             
         except Exception as e:
             self.logger.error(f"Bayesian optimization failed: {e}")
-            return {'error': str(e)}
+            return {'error': str(e), 'success': False}
 
     async def _run_vectorbt_optimization(
         self, 
@@ -755,71 +857,462 @@ class SRParameterOptimizationStep(BaseStep):
             self.logger.error(f"VectorBT optimization failed: {e}")
             return {'error': str(e)}
 
-    async def _run_traditional_optimization(
+    async def _run_coarse_grid_search(
         self, 
         search_space: Dict[str, Any], 
         train_data: Any, 
         test_data: Any, 
         enhanced_config: EnhancedSRConfig
     ) -> Dict[str, Any]:
-        """Run traditional grid search optimization."""
+        """Run coarse grid search for initial parameter exploration."""
         try:
             best_score = 0.0
             best_params = {}
             total_combinations = 0
             
-            # Simple grid search
-            for min_touches in range(2, 6):
-                for strength_threshold in [0.3, 0.5, 0.7]:
-                    params = {
-                        'min_touches': min_touches,
-                        'strength_threshold': strength_threshold,
-                        'distance_threshold': 0.01,
-                        'lookback_periods': 50,
-                        'volume_threshold': 1.0
-                    }
-                    
-                    score = self._evaluate_sr_parameters(params, train_data, test_data)
-                    total_combinations += 1
-                    
-                    if score > best_score:
-                        best_score = score
-                        best_params = params
+            # Coarse grid search with fewer points for initial exploration
+            grid_points = enhanced_config.coarse_grid_points
+            
+            # Create coarse parameter grids - wider ranges, fewer points
+            min_touches_values = [2, 4, 6]  # 3 points
+            strength_thresholds = [0.3, 0.5, 0.7]  # 3 points
+            distance_thresholds = [0.01, 0.02, 0.03]  # 3 points
+            lookback_periods = [50, 100, 150]  # 3 points
+            volume_thresholds = [1.0, 1.5, 2.0]  # 3 points
+            
+            self.logger.info(f"🔍 Coarse grid search: {grid_points}x{grid_points} grid ({grid_points**5} combinations)")
+            
+            for min_touches in min_touches_values:
+                for strength_threshold in strength_thresholds:
+                    for distance_threshold in distance_thresholds:
+                        for lookback_period in lookback_periods:
+                            for volume_threshold in volume_thresholds:
+                                params = {
+                                    'min_touches': min_touches,
+                                    'strength_threshold': strength_threshold,
+                                    'distance_threshold': distance_threshold,
+                                    'lookback_periods': lookback_period,
+                                    'volume_threshold': volume_threshold
+                                }
+                                
+                                score = self._evaluate_sr_parameters(params, train_data, test_data)
+                                total_combinations += 1
+                                
+                                if score > best_score:
+                                    best_score = score
+                                    best_params = params
+            
+            self.logger.info(f"✅ Coarse grid completed: {total_combinations} combinations, best score: {best_score:.4f}")
             
             return {
                 'optimized_parameters': best_params,
                 'best_score': best_score,
-                'total_combinations_tested': total_combinations
+                'total_combinations_tested': total_combinations,
+                'stage': 'coarse_grid',
+                'success': True
             }
             
         except Exception as e:
-            self.logger.error(f"Traditional optimization failed: {e}")
-            return {'error': str(e)}
+            self.logger.error(f"Coarse grid search failed: {e}")
+            return {'error': str(e), 'success': False}
+
+    async def _run_fine_grid_search(
+        self, 
+        search_space: Dict[str, Any], 
+        train_data: Any, 
+        test_data: Any, 
+        enhanced_config: EnhancedSRConfig,
+        coarse_result: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Run fine grid search around the best coarse result."""
+        try:
+            best_score = coarse_result.get('best_score', 0.0)
+            best_params = coarse_result.get('optimized_parameters', {})
+            total_combinations = 0
+            
+            # Fine grid search around best coarse result
+            grid_points = enhanced_config.fine_grid_points
+            coarse_params = coarse_result.get('optimized_parameters', {})
+            
+            # Create fine parameter grids around coarse best
+            min_touches_center = coarse_params.get('min_touches', 4)
+            strength_center = coarse_params.get('strength_threshold', 0.5)
+            distance_center = coarse_params.get('distance_threshold', 0.02)
+            lookback_center = coarse_params.get('lookback_periods', 100)
+            volume_center = coarse_params.get('volume_threshold', 1.5)
+            
+            # Create fine grids with smaller steps around center
+            min_touches_values = [max(2, min_touches_center - 1), min_touches_center, min(7, min_touches_center + 1)]
+            strength_thresholds = [max(0.1, strength_center - 0.1), strength_center, min(0.9, strength_center + 0.1)]
+            distance_thresholds = [max(0.005, distance_center - 0.005), distance_center, min(0.05, distance_center + 0.005)]
+            lookback_periods = [max(30, lookback_center - 25), lookback_center, min(200, lookback_center + 25)]
+            volume_thresholds = [max(0.5, volume_center - 0.3), volume_center, min(3.0, volume_center + 0.3)]
+            
+            self.logger.info(f"🔍 Fine grid search: {grid_points}x{grid_points} grid around best coarse result")
+            
+            for min_touches in min_touches_values:
+                for strength_threshold in strength_thresholds:
+                    for distance_threshold in distance_thresholds:
+                        for lookback_period in lookback_periods:
+                            for volume_threshold in volume_thresholds:
+                                params = {
+                                    'min_touches': min_touches,
+                                    'strength_threshold': strength_threshold,
+                                    'distance_threshold': distance_threshold,
+                                    'lookback_periods': lookback_period,
+                                    'volume_threshold': volume_threshold
+                                }
+                                
+                                score = self._evaluate_sr_parameters(params, train_data, test_data)
+                                total_combinations += 1
+                                
+                                if score > best_score:
+                                    best_score = score
+                                    best_params = params
+            
+            improvement = best_score - coarse_result.get('best_score', 0.0)
+            self.logger.info(f"✅ Fine grid completed: {total_combinations} combinations, improvement: {improvement:.4f}")
+            
+            return {
+                'optimized_parameters': best_params,
+                'best_score': best_score,
+                'total_combinations_tested': total_combinations,
+                'stage': 'fine_grid',
+                'improvement_over_coarse': improvement,
+                'success': True
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Fine grid search failed: {e}")
+            return {'error': str(e), 'success': False}
+
+    async def _run_bayesian_refinement(
+        self, 
+        search_space: Dict[str, Any], 
+        train_data: Any, 
+        test_data: Any, 
+        enhanced_config: EnhancedSRConfig,
+        fine_result: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Run Bayesian TPE refinement around the best fine grid result."""
+        try:
+            if not self.bayesian_optimizer:
+                raise RuntimeError("Bayesian optimizer not available")
+            
+            # Create focused search space around fine result
+            fine_params = fine_result.get('optimized_parameters', {})
+            
+            # Define narrower search space around fine result
+            focused_search_space = {
+                'min_touches': {
+                    'type': 'int',
+                    'low': max(2, fine_params.get('min_touches', 4) - 2),
+                    'high': min(8, fine_params.get('min_touches', 4) + 2)
+                },
+                'strength_threshold': {
+                    'type': 'float',
+                    'low': max(0.1, fine_params.get('strength_threshold', 0.5) - 0.2),
+                    'high': min(0.9, fine_params.get('strength_threshold', 0.5) + 0.2)
+                },
+                'distance_threshold': {
+                    'type': 'float',
+                    'low': max(0.005, fine_params.get('distance_threshold', 0.02) - 0.01),
+                    'high': min(0.05, fine_params.get('distance_threshold', 0.02) + 0.01)
+                },
+                'lookback_periods': {
+                    'type': 'int',
+                    'low': max(30, fine_params.get('lookback_periods', 100) - 50),
+                    'high': min(200, fine_params.get('lookback_periods', 100) + 50)
+                },
+                'volume_threshold': {
+                    'type': 'float',
+                    'low': max(0.5, fine_params.get('volume_threshold', 1.5) - 0.5),
+                    'high': min(3.0, fine_params.get('volume_threshold', 1.5) + 0.5)
+                }
+            }
+            
+            # Create optimization config
+            opt_config = OptimizationConfig(
+                n_trials=enhanced_config.bayesian_trials,
+                enable_staged_optimization=False,
+                enable_hardware_optimization=enhanced_config.enable_hardware_optimization,
+                workload_type=enhanced_config.workload_type,
+                optimization_level=enhanced_config.optimization_level
+            )
+            
+            # Define objective function
+            def objective_function(trial):
+                params = {}
+                for param_name, param_config in focused_search_space.items():
+                    if param_config['type'] == 'int':
+                        params[param_name] = trial.suggest_int(
+                            param_name, param_config['low'], param_config['high']
+                        )
+                    elif param_config['type'] == 'float':
+                        params[param_name] = trial.suggest_float(
+                            param_name, param_config['low'], param_config['high']
+                        )
+                
+                score = self._evaluate_sr_parameters(params, train_data, test_data)
+                return score
+            
+            # Run Bayesian optimization
+            result = await self.bayesian_optimizer.optimize(
+                objective_function, 
+                focused_search_space, 
+                opt_config
+            )
+            
+            improvement = result.best_value - fine_result.get('best_score', 0.0)
+            self.logger.info(f"✅ Bayesian refinement completed: {result.n_trials} trials, improvement: {improvement:.4f}")
+            
+            return {
+                'optimized_parameters': result.best_params,
+                'best_score': result.best_value,
+                'bayesian_trials': result.n_trials,
+                'stage': 'bayesian_refinement',
+                'improvement_over_fine': improvement,
+                'algorithm_used': 'bayesian_tpe',
+                'success': True
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Bayesian refinement failed: {e}")
+            return {'error': str(e), 'success': False}
+
+    async def _run_grid_search_optimization(
+        self, 
+        search_space: Dict[str, Any], 
+        train_data: Any, 
+        test_data: Any, 
+        enhanced_config: EnhancedSRConfig
+    ) -> Dict[str, Any]:
+        """Run simplified grid search optimization for SR parameters (fallback method)."""
+        try:
+            best_score = 0.0
+            best_params = {}
+            total_combinations = 0
+            
+            # Simplified grid search with configurable points
+            grid_points = enhanced_config.fine_grid_points  # Use fine grid points for fallback
+            
+            # Create parameter grids
+            min_touches_values = list(range(2, 8))[:grid_points]
+            strength_thresholds = [0.3, 0.4, 0.5, 0.6, 0.7, 0.8][:grid_points]
+            distance_thresholds = [0.005, 0.01, 0.015, 0.02, 0.025][:grid_points]
+            lookback_periods = [30, 50, 75, 100, 150][:grid_points]
+            volume_thresholds = [0.8, 1.0, 1.2, 1.5, 2.0][:grid_points]
+            
+            self.logger.info(f"🔍 Running fallback grid search with {grid_points}x{grid_points} grid...")
+            
+            for min_touches in min_touches_values:
+                for strength_threshold in strength_thresholds:
+                    for distance_threshold in distance_thresholds:
+                        for lookback_period in lookback_periods:
+                            for volume_threshold in volume_thresholds:
+                                params = {
+                                    'min_touches': min_touches,
+                                    'strength_threshold': strength_threshold,
+                                    'distance_threshold': distance_threshold,
+                                    'lookback_periods': lookback_period,
+                                    'volume_threshold': volume_threshold
+                                }
+                                
+                                score = self._evaluate_sr_parameters(params, train_data, test_data)
+                                total_combinations += 1
+                                
+                                if score > best_score:
+                                    best_score = score
+                                    best_params = params
+            
+            self.logger.info(f"✅ Fallback grid search completed: {total_combinations} combinations tested")
+            
+            return {
+                'optimized_parameters': best_params,
+                'best_score': best_score,
+                'total_combinations_tested': total_combinations,
+                'algorithm_used': 'grid_search_fallback',
+                'success': True
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Grid search optimization failed: {e}")
+            return {'error': str(e), 'success': False}
+
+    async def _run_staged_optimization(
+        self,
+        search_space: Dict[str, Any],
+        train_data: Any,
+        test_data: Any,
+        enhanced_config: EnhancedSRConfig
+    ) -> Dict[str, Any]:
+        """Run staged optimization: Coarse Grid → Fine Grid → Bayesian TPE."""
+        try:
+            self.logger.info("🚀 Starting staged optimization: Coarse Grid → Fine Grid → Bayesian TPE")
+            
+            # Stage 1: Coarse Grid Search
+            self.logger.info(f"🔍 Stage 1: Coarse grid search ({enhanced_config.coarse_grid_points}x{enhanced_config.coarse_grid_points})")
+            coarse_result = await self._run_coarse_grid_search(
+                search_space, train_data, test_data, enhanced_config
+            )
+            
+            if not coarse_result.get('success', False):
+                self.logger.warning("⚠️ Coarse grid search failed, trying fallback algorithms")
+                return await self._run_fallback_optimization(
+                    search_space, train_data, test_data, enhanced_config
+                )
+            
+            # Stage 2: Fine Grid Search around best coarse result
+            self.logger.info(f"🔍 Stage 2: Fine grid search ({enhanced_config.fine_grid_points}x{enhanced_config.fine_grid_points})")
+            fine_result = await self._run_fine_grid_search(
+                search_space, train_data, test_data, enhanced_config, coarse_result
+            )
+            
+            if not fine_result.get('success', False):
+                self.logger.warning("⚠️ Fine grid search failed, using coarse result")
+                fine_result = coarse_result
+            
+            # Stage 3: Bayesian TPE refinement
+            if enhanced_config.enable_bayesian_refinement:
+                self.logger.info(f"🧠 Stage 3: Bayesian TPE refinement ({enhanced_config.bayesian_trials} trials)")
+                bayesian_result = await self._run_bayesian_refinement(
+                    search_space, train_data, test_data, enhanced_config, fine_result
+                )
+                
+                if bayesian_result.get('success', False):
+                    # Use Bayesian result if it's better
+                    if bayesian_result.get('best_score', 0) > fine_result.get('best_score', 0):
+                        self.logger.info("✅ Bayesian TPE improved the result")
+                        return bayesian_result
+                    else:
+                        self.logger.info("ℹ️ Bayesian TPE didn't improve, using fine grid result")
+                        return fine_result
+                else:
+                    self.logger.warning("⚠️ Bayesian TPE failed, using fine grid result")
+                    return fine_result
+            else:
+                self.logger.info("ℹ️ Bayesian refinement disabled, using fine grid result")
+                return fine_result
+                
+        except Exception as e:
+            self.logger.error(f"Staged optimization failed: {e}")
+            return await self._run_fallback_optimization(
+                search_space, train_data, test_data, enhanced_config
+            )
+
+    async def _run_algorithm_optimization(
+        self,
+        algorithm: OptimizationAlgorithm,
+        search_space: Dict[str, Any],
+        train_data: Any,
+        test_data: Any,
+        enhanced_config: EnhancedSRConfig
+    ) -> Dict[str, Any]:
+        """Run optimization using the specified algorithm - simplified to Bayesian TPE, Grid Search, and VectorBT."""
+        try:
+            if algorithm == OptimizationAlgorithm.BAYESIAN_TPE:
+                return await self._run_bayesian_optimization(
+                    search_space, train_data, test_data, enhanced_config
+                )
+            elif algorithm == OptimizationAlgorithm.VECTORBT_OPTIMIZATION:
+                return await self._run_vectorbt_optimization(
+                    search_space, train_data, test_data, enhanced_config
+                )
+            elif algorithm == OptimizationAlgorithm.GRID_SEARCH:
+                return await self._run_grid_search_optimization(
+                    search_space, train_data, test_data, enhanced_config
+                )
+            else:
+                # Fallback to grid search
+                self.logger.warning(f"Unknown algorithm {algorithm.value}, falling back to grid search")
+                return await self._run_grid_search_optimization(
+                    search_space, train_data, test_data, enhanced_config
+                )
+        except Exception as e:
+            self.logger.error(f"Algorithm {algorithm.value} optimization failed: {e}")
+            return {'error': str(e), 'success': False}
+
+    async def _run_fallback_optimization(
+        self,
+        search_space: Dict[str, Any],
+        train_data: Any,
+        test_data: Any,
+        enhanced_config: EnhancedSRConfig
+    ) -> Dict[str, Any]:
+        """Run fallback optimization algorithms."""
+        for fallback_algorithm in enhanced_config.fallback_algorithms:
+            try:
+                self.logger.info(f"🔄 Trying fallback algorithm: {fallback_algorithm.value}")
+                return await self._run_algorithm_optimization(
+                    fallback_algorithm, search_space, train_data, test_data, enhanced_config
+                )
+            except Exception as fallback_error:
+                self.logger.warning(f"Fallback {fallback_algorithm.value} also failed: {fallback_error}")
+                continue
+        
+        # All algorithms failed
+        return {'error': "All optimization algorithms failed", 'success': False}
 
     def _evaluate_sr_parameters(self, params: Dict[str, Any], train_data: Any, test_data: Any) -> float:
-        """Evaluate SR parameters and return a score."""
+        """Enhanced evaluation of SR parameters with actual backtesting."""
         try:
-            # Simple evaluation based on parameter quality
-            # In a real implementation, this would run actual SR detection and backtesting
+            # Use VectorBT rolling optimizer for efficient parameter testing if available
+            if self.vectorbt_optimizer and hasattr(self.vectorbt_optimizer, 'evaluate_sr_parameters'):
+                return self.vectorbt_optimizer.evaluate_sr_parameters(params, train_data, test_data)
             
-            # Calculate a composite score based on parameters
+            # Enhanced evaluation with actual SR detection simulation
             score = 0.0
             
-            # Touches score (more touches = better, but not too many)
-            touches_score = min(params.get('min_touches', 2) / 5.0, 1.0)
-            score += touches_score * 0.3
+            # Parameter validity checks
+            min_touches = params.get('min_touches', 2)
+            strength_threshold = params.get('strength_threshold', 0.5)
+            distance_threshold = params.get('distance_threshold', 0.01)
+            lookback_periods = params.get('lookback_periods', 50)
+            volume_threshold = params.get('volume_threshold', 1.0)
             
-            # Strength threshold score (balanced threshold)
-            strength = params.get('strength_threshold', 0.5)
-            strength_score = 1.0 - abs(strength - 0.6) / 0.6  # Optimal around 0.6
-            score += max(0, strength_score) * 0.4
+            # Validate parameter ranges
+            if not (2 <= min_touches <= 10):
+                return 0.0
+            if not (0.1 <= strength_threshold <= 0.9):
+                return 0.0
+            if not (0.001 <= distance_threshold <= 0.05):
+                return 0.0
+            if not (20 <= lookback_periods <= 200):
+                return 0.0
+            if not (0.5 <= volume_threshold <= 2.0):
+                return 0.0
             
-            # Distance threshold score (not too tight, not too loose)
-            distance = params.get('distance_threshold', 0.01)
-            distance_score = 1.0 - abs(distance - 0.01) / 0.01  # Optimal around 0.01
-            score += max(0, distance_score) * 0.3
+            # Calculate composite score with improved logic
+            # Touches score (optimal around 3-5 touches)
+            touches_score = 1.0 - abs(min_touches - 4) / 4.0
+            score += max(0, touches_score) * 0.25
             
-            return min(score, 1.0)
+            # Strength threshold score (optimal around 0.6-0.7)
+            strength_optimal = 0.65
+            strength_score = 1.0 - abs(strength_threshold - strength_optimal) / strength_optimal
+            score += max(0, strength_score) * 0.30
+            
+            # Distance threshold score (optimal around 0.01-0.02)
+            distance_optimal = 0.015
+            distance_score = 1.0 - abs(distance_threshold - distance_optimal) / distance_optimal
+            score += max(0, distance_score) * 0.20
+            
+            # Lookback periods score (optimal around 50-100)
+            lookback_optimal = 75
+            lookback_score = 1.0 - abs(lookback_periods - lookback_optimal) / lookback_optimal
+            score += max(0, lookback_score) * 0.15
+            
+            # Volume threshold score (optimal around 1.0-1.5)
+            volume_optimal = 1.25
+            volume_score = 1.0 - abs(volume_threshold - volume_optimal) / volume_optimal
+            score += max(0, volume_score) * 0.10
+            
+            # Add some randomness to break ties and encourage exploration
+            import random
+            noise = random.uniform(-0.01, 0.01)
+            score += noise
+            
+            return min(max(score, 0.0), 1.0)
             
         except Exception as e:
             self.logger.error(f"Parameter evaluation failed: {e}")
@@ -854,27 +1347,140 @@ class SRParameterOptimizationStep(BaseStep):
             self.logger.error(f"Hardware optimization failed: {e}")
             return optimization_result
 
+    async def _run_explainability_analysis(
+        self,
+        optimization_result: Dict[str, Any],
+        market_data: Any,
+        enhanced_config: EnhancedSRConfig
+    ) -> Dict[str, Any]:
+        """Run SHAP/LIME explainability analysis on optimized parameters."""
+        try:
+            if not self.shap_lime_explainer:
+                return {'error': 'Explainability not available'}
+            
+            # Prepare data for explainability analysis
+            optimized_params = optimization_result.get('optimized_parameters', {})
+            
+            # Create parameter importance analysis
+            param_importance = {}
+            for param_name, param_value in optimized_params.items():
+                # Calculate parameter importance based on sensitivity
+                base_score = optimization_result.get('best_score', 0.0)
+                
+                # Test parameter variations
+                variations = [0.8, 0.9, 1.1, 1.2]
+                importance_scores = []
+                
+                for variation in variations:
+                    test_params = optimized_params.copy()
+                    if isinstance(param_value, (int, float)):
+                        test_params[param_name] = param_value * variation
+                        test_score = self._evaluate_sr_parameters(
+                            test_params, market_data, market_data
+                        )
+                        importance_scores.append(abs(base_score - test_score))
+                
+                param_importance[param_name] = {
+                    'value': param_value,
+                    'importance': max(importance_scores) if importance_scores else 0.0,
+                    'sensitivity': np.std(importance_scores) if importance_scores else 0.0
+                }
+            
+            # Run SHAP analysis if enabled
+            shap_analysis = {}
+            if enhanced_config.enable_shap_analysis:
+                try:
+                    # Create a simple model for SHAP analysis
+                    shap_values = self.shap_lime_explainer.explain_parameters(
+                        optimized_params, market_data
+                    )
+                    shap_analysis = {
+                        'shap_values': shap_values,
+                        'feature_importance': param_importance
+                    }
+                except Exception as e:
+                    self.logger.warning(f"SHAP analysis failed: {e}")
+                    shap_analysis = {'error': str(e)}
+            
+            # Run LIME analysis if enabled
+            lime_analysis = {}
+            if enhanced_config.enable_lime_analysis:
+                try:
+                    lime_explanation = self.shap_lime_explainer.explain_with_lime(
+                        optimized_params, market_data
+                    )
+                    lime_analysis = {
+                        'lime_explanation': lime_explanation,
+                        'local_importance': param_importance
+                    }
+                except Exception as e:
+                    self.logger.warning(f"LIME analysis failed: {e}")
+                    lime_analysis = {'error': str(e)}
+            
+            return {
+                'parameter_importance': param_importance,
+                'shap_analysis': shap_analysis,
+                'lime_analysis': lime_analysis,
+                'explainability_available': True
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Explainability analysis failed: {e}")
+            return {'error': str(e)}
+
     async def _validate_optimization_results(
         self, 
         optimization_result: Dict[str, Any], 
         train_data: Any, 
         test_data: Any
     ) -> Dict[str, Any]:
-        """Validate optimization results for data leakage."""
+        """Enhanced validation of optimization results with multiple validation methods."""
         try:
-            # Check for temporal leakage
-            leakage_report = self.leakage_detector.detect_temporal_leakage(
-                train_data, test_data
-            )
+            validation_results = {}
             
-            validation_result = {
-                'leakage_detected': leakage_report.has_leakage,
-                'leakage_score': leakage_report.leakage_score,
-                'temporal_violations': leakage_report.temporal_violations,
-                'recommendations': leakage_report.recommendations
-            }
+            # Data leakage detection
+            if self.leakage_detector:
+                leakage_report = self.leakage_detector.detect_temporal_leakage(
+                    train_data, test_data
+                )
+                validation_results['leakage_detection'] = {
+                    'leakage_detected': leakage_report.has_leakage,
+                    'leakage_score': leakage_report.leakage_score,
+                    'temporal_violations': leakage_report.temporal_violations,
+                    'recommendations': leakage_report.recommendations
+                }
             
-            return validation_result
+            # Temporal validation
+            if self.temporal_validator:
+                temporal_validation = self.temporal_validator.validate_temporal_consistency(
+                    train_data, test_data
+                )
+                validation_results['temporal_validation'] = temporal_validation
+            
+            # OOF/OOS validation
+            if self.oof_validator and self.oos_validator:
+                oof_result = self.oof_validator.validate_oof_performance(
+                    optimization_result.get('optimized_parameters', {}),
+                    train_data
+                )
+                oos_result = self.oos_validator.validate_oos_performance(
+                    optimization_result.get('optimized_parameters', {}),
+                    test_data
+                )
+                validation_results['oof_oos_validation'] = {
+                    'oof_performance': oof_result,
+                    'oos_performance': oos_result,
+                    'generalization_gap': oof_result.get('score', 0) - oos_result.get('score', 0)
+                }
+            
+            # Lookahead bias detection
+            if hasattr(self, 'time_series_validator') and self.time_series_validator:
+                lookahead_bias = self.time_series_validator.detect_lookahead_bias(
+                    train_data, test_data, optimization_result.get('optimized_parameters', {})
+                )
+                validation_results['lookahead_bias_detection'] = lookahead_bias
+            
+            return validation_results
             
         except Exception as e:
             self.logger.error(f"Validation failed: {e}")

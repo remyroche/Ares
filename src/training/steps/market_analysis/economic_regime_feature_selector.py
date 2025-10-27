@@ -215,7 +215,7 @@ class EconomicFeatureSelectorConfig:
     regime_discrimination_weight: float = 0.25  # Kept same
     clustering_quality_weight: float = 0.15     # Kept same
     stability_weight: float = 0.10              # Kept same
-    mrmr_weight: float = 0.15                   # Reduced from 0.20
+    mrmr_weight: float = 0.08                   # Further reduced to allow more feature diversity
     regime_transition_weight: float = 0.05      # Kept same
     
     # Validation parameters
@@ -227,7 +227,7 @@ class EconomicFeatureSelectorConfig:
     min_stability_score: float = 0.30       # Adjusted for proper stability calculation
     
     # Performance thresholds
-    min_sharpe_variance: float = 0.5
+    min_sharpe_variance: float = 0.1  # Reduced threshold for better economic distinctiveness calculation
     max_noise_ratio: float = 0.30
     
     # mRMR parameters
@@ -2116,12 +2116,13 @@ class EconomicRegimeFeatureSelector(BaseStep):
             # Check if we have discrete labels (regime-based) or continuous labels (multi-target)
             unique_labels = labels_clean.unique()
             
-            # If we have too many unique labels (>50), treat as continuous and create bins
-            if len(unique_labels) > 50:
-                # Create discrete bins for continuous data
+            # If we have too many unique labels (>20), treat as continuous and create bins
+            if len(unique_labels) > 20:
+                # Create discrete bins for continuous data with better error handling
                 try:
                     # Use more robust binning with error handling
-                    labels_binned = pd.qcut(labels_clean, q=min(5, len(labels_clean)//10), duplicates='drop')
+                    n_bins = min(5, max(2, len(labels_clean)//20))  # Ensure at least 2 bins
+                    labels_binned = pd.qcut(labels_clean, q=n_bins, duplicates='drop')
                     unique_bins = labels_binned.unique()
                     if len(unique_bins) < 2:
                         # Fallback to simple separation score
@@ -2194,11 +2195,16 @@ class EconomicRegimeFeatureSelector(BaseStep):
             # Calculate silhouette score with improved error handling
             from sklearn.metrics import silhouette_score
             
-            # Final validation
+            # Final validation with more lenient requirements
             final_label_counts = pd.Series(sample_labels).value_counts()
-            if len(final_label_counts) < 2 or (final_label_counts < 1).any():
+            if len(final_label_counts) < 2:
                 tprint_debug(f"Clustering quality: insufficient final label distribution")
                 return 0.0
+            
+            # Check if any label has at least 1 sample (more lenient)
+            if (final_label_counts < 1).any():
+                tprint_debug(f"Clustering quality: some labels have 0 samples, using fallback")
+                return self._calculate_simple_separation_score(sample_feature, sample_labels)
             
             # Reshape for sklearn
             feature_matrix = sample_feature.values.reshape(-1, 1)
@@ -2216,6 +2222,10 @@ class EconomicRegimeFeatureSelector(BaseStep):
                 
             except ValueError as ve:
                 tprint_warning(f"Silhouette calculation failed: {ve}")
+                # Fallback to simple separation metric
+                return self._calculate_simple_separation_score(sample_feature, sample_labels)
+            except Exception as e:
+                tprint_warning(f"Unexpected error in silhouette calculation: {e}")
                 # Fallback to simple separation metric
                 return self._calculate_simple_separation_score(sample_feature, sample_labels)
             
@@ -2259,12 +2269,14 @@ class EconomicRegimeFeatureSelector(BaseStep):
             # Calculate separation score
             if within_var > 0:
                 separation_score = between_var / within_var
-                # Normalize to [0, 1] range
-                normalized_score = min(1.0, separation_score / 10.0)  # Adjust divisor as needed
+                # Normalize to [0, 1] range with better scaling
+                normalized_score = min(1.0, max(0.0, separation_score / 5.0))  # Better scaling
                 tprint_debug(f"Simple separation score: {separation_score:.4f}, normalized: {normalized_score:.4f}")
                 return normalized_score
             else:
-                return 0.0
+                # If within_var is 0, all points in each cluster are identical
+                # This is actually good separation, so return a high score
+                return min(1.0, max(0.1, between_var))  # Ensure minimum score
                 
         except Exception as e:
             tprint_warning(f"Error calculating simple separation score: {e}")
@@ -2430,8 +2442,8 @@ class EconomicRegimeFeatureSelector(BaseStep):
                 
                 if redundancy_correlations:
                     redundancy_penalty = np.mean(redundancy_correlations)
-                    # Apply penalty scaling to avoid over-penalization
-                    redundancy_penalty = min(redundancy_penalty, 0.8)  # Cap penalty at 0.8
+                    # Apply penalty scaling to avoid over-penalization - reduced for better diversity
+                    redundancy_penalty = min(redundancy_penalty * 0.6, 0.5)  # Scale down and cap at 0.5
             
             # mRMR score = relevance - redundancy_penalty
             mrmr_score = relevance - redundancy_penalty
@@ -2481,14 +2493,38 @@ class EconomicRegimeFeatureSelector(BaseStep):
             return 0.5
     
     def _determine_feature_category(self, feature_name: str) -> str:
-        """Determine feature category from name."""
+        """Determine feature category from name with improved volatility detection."""
         feature_lower = feature_name.lower()
         
+        # Priority-based categorization - check more specific patterns first
+        # 1. Volatility features (highest priority to avoid misclassification)
+        volatility_patterns = [
+            'volatility', 'vol_', 'std', 'var', 'atr', 'bbands', 'parkinson', 'garman', 'yang', 'rogers',
+            'returns_volatility', 'volatility_', '_volatility_', 'volatility_acceleration', 'acceleration_volatility',
+            'vectorbt_volatility', 'enhanced_volatility', 'volatility_comprehensive', 'volatility_elasticity'
+        ]
+        if any(pattern in feature_lower for pattern in volatility_patterns):
+            return 'volatility'
+        
+        # 2. Volume features
+        volume_patterns = ['volume', 'vwap', 'obv', 'ad_line', 'cmf', 'volume_', '_volume_']
+        if any(pattern in feature_lower for pattern in volume_patterns):
+            return 'volume'
+        
+        # 3. Momentum features
+        momentum_patterns = ['momentum', 'mom', 'rsi', 'macd', 'roc', 'stochastic', 'williams_r']
+        if any(pattern in feature_lower for pattern in momentum_patterns):
+            return 'momentum'
+        
+        # 4. Returns features (but not volatility-related returns)
+        returns_patterns = ['return', 'ret']
+        if any(pattern in feature_lower for pattern in returns_patterns):
+            # Double-check it's not a volatility feature
+            if not any(vol_pattern in feature_lower for vol_pattern in volatility_patterns):
+                return 'returns'
+        
+        # 5. Other categories
         category_mapping = {
-            'volatility': ['volatility', 'vol_', 'std', 'var', 'atr', 'bbands', 'parkinson', 'garman', 'yang', 'rogers'],
-            'returns': ['return', 'ret'],
-            'momentum': ['momentum', 'mom', 'rsi', 'macd'],
-            'volume': ['volume', 'vwap', 'obv', 'ad_line', 'cmf'],
             'regime': ['regime', 'state'],
             'order_flow': ['order', 'flow', 'bid', 'ask'],
             'statistical': ['stat', 'mean', 'median', 'skew', 'kurt'],

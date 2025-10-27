@@ -118,12 +118,12 @@ class UnifiedModelsTrainingStep(BaseStep):
     async def _load_training_config(self, training_type: str, config: Dict[str, Any]) -> Dict[str, Any]:
         """Load appropriate YAML configuration based on training type."""
         try:
-            # Map training types to config files
+            # Map training types to config files in steps/model_training/
             config_mapping = {
-                'analyst_base': 'config/analyst_multi_output_config.yaml',
-                'analyst_ensemble': 'config/analyst_multi_output_config.yaml',
-                'tactician_base': 'config/tactician_multi_output_config.yaml',
-                'tactician_ensemble': 'config/tactician_multi_output_config.yaml'
+                'analyst_base': 'src/training/steps/model_training/analyst_base_config.yaml',
+                'analyst_ensemble': 'src/training/steps/model_training/analyst_ensemble_config.yaml',
+                'tactician_base': 'src/training/steps/model_training/tactician_base_config.yaml',
+                'tactician_ensemble': 'src/training/steps/model_training/tactician_ensemble_config.yaml'
             }
             
             config_file = config_mapping.get(training_type)
@@ -187,18 +187,23 @@ class UnifiedModelsTrainingStep(BaseStep):
 
     def _update_config_with_runtime_params(self, yaml_config: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
         """Update YAML configuration with runtime parameters."""
-        # Update basic parameters
+        # Update basic parameters in the main config sections
         if 'analyst_config' in yaml_config:
             yaml_config['analyst_config']['timeframe'] = config.get('timeframe', '15m')
+            yaml_config['analyst_config']['symbol'] = config.get('symbol', 'ETHUSDT')
+            yaml_config['analyst_config']['direction'] = config.get('direction', 'longs')
         if 'tactician_config' in yaml_config:
             yaml_config['tactician_config']['timeframe'] = config.get('timeframe', '15m')
+            yaml_config['tactician_config']['symbol'] = config.get('symbol', 'ETHUSDT')
+            yaml_config['tactician_config']['direction'] = config.get('direction', 'longs')
         
-        # Add runtime parameters
+        # Add runtime parameters to the root level
         yaml_config.update({
             'symbol': config.get('symbol', 'ETHUSDT'),
             'timeframe': config.get('timeframe', '15m'),
             'direction': config.get('direction', 'longs'),
-            'execution_mode': config.get('execution_mode', 'light')
+            'execution_mode': config.get('execution_mode', 'light'),
+            'exchange': config.get('exchange', 'binance')
         })
         
         return yaml_config

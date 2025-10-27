@@ -1,0 +1,114 @@
+# Analyst Base Training Configuration
+# Configuration for base analyst models training
+
+analyst_config:
+  model_name: "analyst_base"
+  model_type: "catboost_base"
+  target: "price_prediction"
+  features: ["returns", "volatility", "volume", "momentum", "trend"]
+  
+  # Model parameters
+  model_params:
+    iterations: 1000
+    depth: 6
+    learning_rate: 0.1
+    random_seed: 42
+    verbose: false
+  
+  # Training configuration
+  training:
+    training_samples: 10000
+    validation_samples: 3000
+    test_samples: 2000
+    enable_cross_validation: true
+    cv_folds: 5
+    enable_early_stopping: true
+    early_stopping_patience: 10
+    validation_split: 0.2
+    test_split: 0.1
+  
+  # Performance settings
+  performance:
+    expected_accuracy: 0.78
+    training_time_limit: 300  # seconds
+    memory_limit_mb: 2048
+  
+  # Output settings
+  output:
+    save_models: true
+    save_predictions: true
+    generate_reports: true
+    output_dir: "./analyst_base_models"
+
+# Feature engineering configuration
+feature_engineering:
+  enable_technical_indicators: true
+  enable_regime_features: true
+  enable_market_microstructure: true
+  
+  # Feature selection
+  feature_selection:
+    method: "lasso"
+    alpha: 0.01
+    max_features: 50
+    enable_recursive_elimination: true
+  
+  # Feature scaling
+  scaling:
+    method: "robust"
+    enable_outlier_handling: true
+    outlier_threshold: 3.0
+
+# Data preparation configuration
+data_preparation:
+  # Time series specific
+  time_series:
+    enable_temporal_features: true
+    lookback_window: 50
+    forecast_horizon: 1
+  
+  # Target generation
+  target_generation:
+    method: "price_momentum"
+    lookback_periods: [5, 10, 20]
+    threshold: 0.02
+
+# Model evaluation configuration
+evaluation:
+  metrics:
+    regression: ["mse", "mae", "r2", "mape"]
+    classification: ["accuracy", "precision", "recall", "f1"]
+  
+  # Cross-validation
+  cross_validation:
+    method: "time_series_split"
+    n_splits: 5
+    test_size: 0.2
+  
+  # Model comparison
+  comparison:
+    enable_model_ranking: true
+    ranking_metric: "r2"
+    enable_feature_importance: true
+
+# Hardware optimization
+hardware:
+  enable_gpu_acceleration: false  # CatBoost doesn't use GPU
+  enable_memory_optimization: true
+  enable_parallel_processing: true
+  memory_limit_gb: 2.0
+  max_workers: null
+
+# Logging configuration
+logging:
+  level: "INFO"
+  enable_detailed_logging: true
+  log_predictions: true
+  log_performance_metrics: true
+  log_feature_importance: true
+  
+  # Logging intervals
+  intervals:
+    training_progress: 100  # log every 100 iterations
+    prediction_summary: 1000  # log every 1000 predictions
+    performance_update: 5000  # log every 5000 samples

@@ -1,0 +1,147 @@
+# Tactician Base Training Configuration
+# Configuration for base tactician models training
+
+tactician_config:
+  model_name: "tactician_base"
+  model_type: "extra_trees_base"
+  target: "strategy_optimization"
+  features: ["regime_features", "market_microstructure", "order_flow", "liquidity"]
+  
+  # Model parameters
+  model_params:
+    n_estimators: 500
+    max_depth: 8
+    min_samples_split: 10
+    min_samples_leaf: 4
+    max_features: "sqrt"
+    random_state: 42
+    n_jobs: -1
+  
+  # Training configuration
+  training:
+    training_samples: 8000
+    validation_samples: 2500
+    test_samples: 1500
+    enable_cross_validation: true
+    cv_folds: 5
+    enable_early_stopping: true
+    early_stopping_patience: 10
+    validation_split: 0.2
+    test_split: 0.1
+  
+  # Performance settings
+  performance:
+    expected_accuracy: 0.82
+    expected_sharpe_ratio: 1.45
+    training_time_limit: 200  # seconds
+    memory_limit_mb: 2048
+  
+  # Output settings
+  output:
+    save_models: true
+    save_predictions: true
+    generate_reports: true
+    output_dir: "./tactician_base_models"
+
+# Feature engineering configuration
+feature_engineering:
+  enable_regime_features: true
+  enable_market_microstructure: true
+  enable_order_flow_features: true
+  enable_liquidity_features: true
+  enable_technical_indicators: true
+  
+  # Feature selection
+  feature_selection:
+    method: "lasso"
+    alpha: 0.005
+    max_features: 100
+    enable_recursive_elimination: true
+  
+  # Feature scaling
+  scaling:
+    method: "robust"
+    enable_outlier_handling: true
+    outlier_threshold: 2.5
+
+# Data preparation configuration
+data_preparation:
+  # Time series specific
+  time_series:
+    enable_temporal_features: true
+    lookback_window: 100
+    forecast_horizon: 1
+  
+  # Target generation for strategy optimization
+  target_generation:
+    method: "momentum_based"
+    lookback_periods: [5, 10, 20]
+    momentum_threshold: 0.01
+    enable_risk_adjustment: true
+    risk_free_rate: 0.02
+
+# Model evaluation configuration
+evaluation:
+  metrics:
+    regression: ["mse", "mae", "r2", "mape"]
+    classification: ["accuracy", "precision", "recall", "f1"]
+    trading: ["sharpe_ratio", "max_drawdown", "calmar_ratio", "sortino_ratio"]
+  
+  # Cross-validation
+  cross_validation:
+    method: "time_series_split"
+    n_splits: 5
+    test_size: 0.2
+  
+  # Model comparison
+  comparison:
+    enable_model_ranking: true
+    ranking_metric: "sharpe_ratio"
+    enable_feature_importance: true
+    enable_trading_metrics: true
+
+# Risk management configuration
+risk_management:
+  enable_position_sizing: true
+  max_position_size: 0.1
+  enable_stop_loss: true
+  enable_take_profit: true
+  enable_portfolio_limits: true
+  
+  # Risk limits
+  limits:
+    max_drawdown: 0.05
+    max_daily_loss: 0.02
+    max_position_concentration: 0.3
+  
+  # Risk monitoring
+  monitoring:
+    enable_real_time_monitoring: true
+    alert_thresholds:
+      drawdown: 0.03
+      daily_loss: 0.01
+      position_size: 0.08
+
+# Hardware optimization
+hardware:
+  enable_gpu_acceleration: false  # ExtraTrees doesn't use GPU
+  enable_memory_optimization: true
+  enable_parallel_processing: true
+  memory_limit_gb: 2.0
+  max_workers: null
+
+# Logging configuration
+logging:
+  level: "INFO"
+  enable_detailed_logging: true
+  log_predictions: true
+  log_performance_metrics: true
+  log_feature_importance: true
+  log_risk_metrics: true
+  
+  # Logging intervals
+  intervals:
+    training_progress: 100  # log every 100 iterations
+    prediction_summary: 1000  # log every 1000 predictions
+    performance_update: 5000  # log every 5000 samples
+    risk_monitoring: 100  # log every 100 samples

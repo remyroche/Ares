@@ -1,0 +1,166 @@
+# Analyst Ensemble Training Configuration
+# Configuration for ensemble analyst models training
+
+analyst_config:
+  model_name: "analyst_ensemble"
+  model_type: "stacked_ensemble"
+  base_models: ["catboost", "xgboost", "lightgbm", "neural_network"]
+  meta_learner: "linear_regression"
+  target: "price_prediction"
+  features: ["returns", "volatility", "volume", "momentum", "trend"]
+  
+  # Base models configuration
+  base_models_config:
+    catboost:
+      model_type: "CatBoostRegressor"
+      params:
+        iterations: 1000
+        learning_rate: 0.1
+        depth: 6
+        l2_leaf_reg: 3.0
+        random_seed: 42
+        verbose: false
+    
+    xgboost:
+      model_type: "XGBRegressor"
+      params:
+        n_estimators: 1000
+        learning_rate: 0.1
+        max_depth: 6
+        subsample: 0.8
+        colsample_bytree: 0.8
+        random_state: 42
+        n_jobs: -1
+    
+    lightgbm:
+      model_type: "LGBMRegressor"
+      params:
+        n_estimators: 1000
+        learning_rate: 0.1
+        max_depth: 6
+        num_leaves: 63
+        random_state: 42
+        verbosity: -1
+    
+    neural_network:
+      model_type: "MLPRegressor"
+      params:
+        hidden_layer_sizes: (100, 50)
+        activation: "relu"
+        solver: "adam"
+        alpha: 0.001
+        learning_rate: "adaptive"
+        max_iter: 1000
+        random_state: 42
+  
+  # Ensemble configuration
+  ensemble:
+    method: "stacking"
+    enable_meta_learning: true
+    meta_learning_rate: 0.01
+    meta_learning_iterations: 1000
+    cross_validation_folds: 5
+  
+  # Training configuration
+  training:
+    training_samples: 15000
+    validation_samples: 5000
+    test_samples: 3000
+    enable_cross_validation: true
+    cv_folds: 5
+    enable_early_stopping: true
+    early_stopping_patience: 15
+    validation_split: 0.2
+    test_split: 0.1
+  
+  # Performance settings
+  performance:
+    expected_accuracy: 0.85
+    expected_diversity_score: 0.92
+    training_time_limit: 600  # seconds
+    memory_limit_mb: 4096
+  
+  # Output settings
+  output:
+    save_models: true
+    save_predictions: true
+    generate_reports: true
+    output_dir: "./analyst_ensemble_models"
+
+# Feature engineering configuration
+feature_engineering:
+  enable_technical_indicators: true
+  enable_regime_features: true
+  enable_market_microstructure: true
+  enable_cross_timeframe_features: true
+  cross_timeframe_periods: [5, 15, 30, 60]  # minutes
+  
+  # Feature selection
+  feature_selection:
+    method: "lasso"
+    alpha: 0.01
+    max_features: 100
+    enable_recursive_elimination: true
+  
+  # Feature scaling
+  scaling:
+    method: "robust"
+    enable_outlier_handling: true
+    outlier_threshold: 3.0
+
+# Data preparation configuration
+data_preparation:
+  # Time series specific
+  time_series:
+    enable_temporal_features: true
+    lookback_window: 100
+    forecast_horizon: 1
+  
+  # Target generation
+  target_generation:
+    method: "price_momentum"
+    lookback_periods: [5, 10, 20]
+    threshold: 0.02
+
+# Model evaluation configuration
+evaluation:
+  metrics:
+    regression: ["mse", "mae", "r2", "mape"]
+    classification: ["accuracy", "precision", "recall", "f1"]
+  
+  # Cross-validation
+  cross_validation:
+    method: "time_series_split"
+    n_splits: 5
+    test_size: 0.2
+  
+  # Model comparison
+  comparison:
+    enable_model_ranking: true
+    ranking_metric: "r2"
+    enable_feature_importance: true
+    enable_model_explanations: true
+
+# Hardware optimization
+hardware:
+  enable_gpu_acceleration: true
+  enable_memory_optimization: true
+  enable_parallel_processing: true
+  memory_limit_gb: 4.0
+  max_workers: null
+
+# Logging configuration
+logging:
+  level: "INFO"
+  enable_detailed_logging: true
+  log_predictions: true
+  log_performance_metrics: true
+  log_feature_importance: true
+  log_ensemble_metrics: true
+  
+  # Logging intervals
+  intervals:
+    training_progress: 50  # log every 50 iterations
+    prediction_summary: 500  # log every 500 predictions
+    performance_update: 2000  # log every 2000 samples
+    ensemble_update: 1000  # log every 1000 ensemble predictions

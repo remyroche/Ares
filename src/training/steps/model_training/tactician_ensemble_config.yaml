@@ -1,0 +1,227 @@
+# Tactician Ensemble Training Configuration
+# Configuration for ensemble tactician models training
+
+tactician_config:
+  model_name: "tactician_ensemble"
+  model_type: "meta_ensemble"
+  base_models: ["extra_trees", "gradient_boosting", "neural_network", "rule_based"]
+  meta_learner: "lightgbm_calibrated"
+  target: "strategy_optimization"
+  features: ["regime_features", "market_microstructure", "order_flow", "liquidity"]
+  
+  # Base models configuration
+  base_models_config:
+    extra_trees:
+      model_type: "ExtraTreesRegressor"
+      params:
+        n_estimators: 500
+        max_depth: 8
+        min_samples_split: 10
+        random_state: 42
+        n_jobs: -1
+    
+    gradient_boosting:
+      model_type: "GradientBoostingRegressor"
+      params:
+        n_estimators: 500
+        learning_rate: 0.1
+        max_depth: 6
+        subsample: 0.8
+        random_state: 42
+    
+    neural_network:
+      model_type: "MLPRegressor"
+      params:
+        hidden_layer_sizes: (128, 64, 32)
+        activation: "relu"
+        solver: "adam"
+        alpha: 0.001
+        learning_rate: "adaptive"
+        max_iter: 1000
+        random_state: 42
+    
+    rule_based:
+      model_type: "RuleBasedRegressor"
+      params:
+        enable_technical_rules: true
+        enable_regime_rules: true
+        enable_risk_rules: true
+        rule_confidence_threshold: 0.7
+  
+  # Ensemble configuration
+  ensemble:
+    method: "stacking"
+    enable_meta_learning: true
+    meta_learning_rate: 0.005
+    meta_learning_iterations: 2000
+    cross_validation_folds: 5
+    calibration_method: "isotonic"
+  
+  # Training configuration
+  training:
+    training_samples: 12000
+    validation_samples: 4000
+    test_samples: 2500
+    enable_cross_validation: true
+    cv_folds: 5
+    enable_early_stopping: true
+    early_stopping_patience: 20
+    validation_split: 0.2
+    test_split: 0.1
+  
+  # Performance settings
+  performance:
+    expected_accuracy: 0.88
+    expected_sharpe_ratio: 1.78
+    expected_calibration_score: 0.91
+    training_time_limit: 800  # seconds
+    memory_limit_mb: 4096
+  
+  # Output settings
+  output:
+    save_models: true
+    save_predictions: true
+    generate_reports: true
+    output_dir: "./tactician_ensemble_models"
+
+# Feature engineering configuration
+feature_engineering:
+  enable_regime_features: true
+  enable_market_microstructure: true
+  enable_order_flow_features: true
+  enable_liquidity_features: true
+  enable_technical_indicators: true
+  enable_cross_timeframe_features: true
+  cross_timeframe_periods: [5, 15, 30, 60]  # minutes
+  
+  # Feature selection
+  feature_selection:
+    method: "lasso"
+    alpha: 0.005
+    max_features: 150
+    enable_recursive_elimination: true
+  
+  # Feature scaling
+  scaling:
+    method: "robust"
+    enable_outlier_handling: true
+    outlier_threshold: 2.5
+
+# Data preparation configuration
+data_preparation:
+  # Time series specific
+  time_series:
+    enable_temporal_features: true
+    lookback_window: 200
+    forecast_horizon: 1
+  
+  # Target generation for strategy optimization
+  target_generation:
+    method: "momentum_based"
+    lookback_periods: [5, 10, 20]
+    momentum_threshold: 0.01
+    enable_risk_adjustment: true
+    risk_free_rate: 0.02
+
+# Model evaluation configuration
+evaluation:
+  metrics:
+    regression: ["mse", "mae", "r2", "mape"]
+    classification: ["accuracy", "precision", "recall", "f1"]
+    trading: ["sharpe_ratio", "max_drawdown", "calmar_ratio", "sortino_ratio"]
+    ensemble: ["diversity_score", "calibration_score", "consistency_score"]
+  
+  # Cross-validation
+  cross_validation:
+    method: "time_series_split"
+    n_splits: 5
+    test_size: 0.2
+  
+  # Model comparison
+  comparison:
+    enable_model_ranking: true
+    ranking_metric: "sharpe_ratio"
+    enable_feature_importance: true
+    enable_trading_metrics: true
+    enable_ensemble_metrics: true
+
+# Risk management configuration
+risk_management:
+  enable_position_sizing: true
+  max_position_size: 0.1
+  enable_stop_loss: true
+  enable_take_profit: true
+  enable_portfolio_limits: true
+  
+  # Risk limits
+  limits:
+    max_drawdown: 0.05
+    max_daily_loss: 0.02
+    max_position_concentration: 0.3
+  
+  # Risk monitoring
+  monitoring:
+    enable_real_time_monitoring: true
+    alert_thresholds:
+      drawdown: 0.03
+      daily_loss: 0.01
+      position_size: 0.08
+
+# Confidence calibration configuration
+confidence_calibration:
+  enable_calibration: true
+  methods: ["platt_scaling", "isotonic_regression"]
+  enable_temperature_scaling: true
+  enable_histogram_binning: true
+  enable_bayesian_calibration: true
+  
+  # Calibration parameters
+  platt_scaling:
+    learning_rate: 0.005
+    max_iterations: 2000
+    convergence_threshold: 1e-6
+  
+  isotonic_regression:
+    out_of_bounds: "clip"
+    increasing: true
+  
+  temperature_scaling:
+    temperature_range: [0.1, 10.0]
+    optimization_method: "lbfgs"
+  
+  histogram_binning:
+    bin_count: 15
+    bin_strategy: "uniform"
+  
+  bayesian_calibration:
+    prior_strength: 1.0
+    mcmc_samples: 2000
+    burn_in_samples: 200
+
+# Hardware optimization
+hardware:
+  enable_gpu_acceleration: true
+  enable_memory_optimization: true
+  enable_parallel_processing: true
+  memory_limit_gb: 4.0
+  max_workers: null
+
+# Logging configuration
+logging:
+  level: "INFO"
+  enable_detailed_logging: true
+  log_predictions: true
+  log_performance_metrics: true
+  log_feature_importance: true
+  log_risk_metrics: true
+  log_ensemble_metrics: true
+  log_calibration_metrics: true
+  
+  # Logging intervals
+  intervals:
+    training_progress: 50  # log every 50 iterations
+    prediction_summary: 500  # log every 500 predictions
+    performance_update: 2000  # log every 2000 samples
+    risk_monitoring: 100  # log every 100 samples
+    ensemble_update: 1000  # log every 1000 ensemble predictions
+    calibration_update: 500  # log every 500 calibration updates

@@ -73,9 +73,10 @@ def test_yaml_config_files():
     print("🧪 Testing YAML config files...")
     
     config_files = [
-        'config/analyst_multi_output_config.yaml',
-        'config/tactician_multi_output_config.yaml',
-        'config/tactician_t1_t4_models_config.yaml'
+        'src/training/steps/model_training/analyst_base_config.yaml',
+        'src/training/steps/model_training/analyst_ensemble_config.yaml',
+        'src/training/steps/model_training/tactician_base_config.yaml',
+        'src/training/steps/model_training/tactician_ensemble_config.yaml'
     ]
     
     all_exist = True

@@ -20,11 +20,13 @@ Successfully consolidated the redundant analyst and tactician training scripts i
   - Updated `MODEL_TRAINING` stage to use unified step
 
 ### 3. Configuration Management
-- **YAML Files**: Uses existing config files:
-  - `config/analyst_multi_output_config.yaml` for analyst training
-  - `config/tactician_multi_output_config.yaml` for tactician training
-  - `config/tactician_t1_t4_models_config.yaml` for advanced tactician models
+- **YAML Files**: Created dedicated config files in `src/training/steps/model_training/`:
+  - `analyst_base_config.yaml` for analyst base training
+  - `analyst_ensemble_config.yaml` for analyst ensemble training
+  - `tactician_base_config.yaml` for tactician base training
+  - `tactician_ensemble_config.yaml` for tactician ensemble training
 - **Runtime Parameters**: Updates YAML configs with symbol, timeframe, direction from ares_launcher
+- **Configuration Structure**: Each YAML file contains model-specific parameters, training settings, feature engineering, evaluation metrics, and hardware optimization settings
 
 ### 4. Artifact Integration
 - **Data Retrieval**: Uses `BaseStep._get_artifact()` to retrieve training data and targets
@@ -106,6 +108,10 @@ result = await training_step.execute(config)
 
 ### New Files
 - `src/training/steps/model_training/unified_models_training_step.py` - Main unified training step
+- `src/training/steps/model_training/analyst_base_config.yaml` - Analyst base training configuration
+- `src/training/steps/model_training/analyst_ensemble_config.yaml` - Analyst ensemble training configuration
+- `src/training/steps/model_training/tactician_base_config.yaml` - Tactician base training configuration
+- `src/training/steps/model_training/tactician_ensemble_config.yaml` - Tactician ensemble training configuration
 - `test_unified_training.py` - Test script for unified training
 - `test_ares_launcher_integration.py` - Integration test script
 - `test_launcher_integration_simple.py` - Simple integration test

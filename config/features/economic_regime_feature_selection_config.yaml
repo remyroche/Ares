@@ -1,6 +1,21 @@
 # Economic Regime Feature Selection Configuration
 economic_regime_feature_selection:
 
+  # Primary method selection
+  primary_method: "treeshap"  # Options: "treeshap", "traditional", "hybrid"
+  
+  # TreeSHAP configuration (primary method)
+  treeshap_config:
+    enable: true
+    n_estimators: 100
+    max_depth: 8
+    learning_rate: 0.1
+    correlation_threshold: 0.85
+    diversity_weight: 0.2
+    treeshap_weight: 0.6
+    correlation_weight: 0.2
+    target_feature_count: 25
+
   # Multi-target approach settings
   multi_target_enabled: true
   target_columns:
@@ -58,8 +73,8 @@ economic_regime_feature_selection:
   max_transition_features_ratio: 0.3
   transition_window_size: 10
 
-  # mRMR parameters
-  enable_mrmr: true
+  # mRMR parameters (fallback method when not using TreeSHAP)
+  enable_mrmr: false  # Disabled when using TreeSHAP as primary method
   mrmr_weight: 0.25  # Weight for mRMR score in composite (increased to 25% to better protect volatility)
   protect_categories:
     - volatility

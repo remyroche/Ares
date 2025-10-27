@@ -1337,9 +1337,70 @@ class EconomicRegimeFeatureSelector(BaseStep):
             return []
     
     def _score_features_multi_target(self, features_df: pd.DataFrame, labels_df: pd.DataFrame) -> List[FeatureScore]:
-        """Score features using multiple targets with weighted approach."""
+        """Score features using TreeSHAP as primary method with fallback to traditional scoring."""
         try:
-            tprint_info(f"🎯 Starting multi-target feature scoring for {len(features_df.columns)} features")
+            tprint_info(f"🎯 Starting TreeSHAP-based feature scoring for {len(features_df.columns)} features")
+            
+            # Try TreeSHAP-based scoring first
+            try:
+                from src.training.steps.market_analysis.treeshap_feature_selector import TreeSHAPFeatureSelector
+                
+                # Initialize TreeSHAP selector with current config
+                treeshap_config = {
+                    'n_estimators': 100,
+                    'max_depth': 8,
+                    'learning_rate': 0.1,
+                    'correlation_threshold': 0.85,
+                    'diversity_weight': 0.2,
+                    'treeshap_weight': 0.6,
+                    'correlation_weight': 0.2,
+                    'target_columns': self.target_columns,
+                    'target_weights': self.target_weights
+                }
+                
+                treeshap_selector = TreeSHAPFeatureSelector(treeshap_config)
+                
+                # Get target feature count from config
+                target_count = self.config.get('target_feature_count', 25)
+                
+                # Run TreeSHAP selection
+                treeshap_result = treeshap_selector.select_features(
+                    features_df, labels_df, target_count
+                )
+                
+                if treeshap_result['success'] and treeshap_result['selected_features']:
+                    tprint_success("✅ TreeSHAP scoring completed successfully")
+                    
+                    # Convert TreeSHAP results to FeatureScore format
+                    feature_scores = []
+                    for feature_name in treeshap_result['selected_features']:
+                        treeshap_score = treeshap_result['treeshap_scores'].get(feature_name, 0.0)
+                        correlation_score = treeshap_result['correlation_scores'].get(feature_name, 0.0)
+                        diversity_score = treeshap_result['diversity_scores'].get(feature_name, 0.0)
+                        composite_score = treeshap_result['feature_scores'].get(feature_name, 0.0)
+                        
+                        feature_scores.append(FeatureScore(
+                            feature_name=feature_name,
+                            economic_significance=correlation_score,
+                            regime_discrimination=0.0,  # Not calculated in TreeSHAP
+                            clustering_quality=0.0,    # Not calculated in TreeSHAP
+                            mrmr_score=0.0,            # Not calculated in TreeSHAP
+                            regime_transition_score=0.0,  # Not calculated in TreeSHAP
+                            composite_score=composite_score,
+                            treeshap_importance=treeshap_score,
+                            diversity_score=diversity_score,
+                            selected=True
+                        ))
+                    
+                    return feature_scores
+                else:
+                    tprint_warning("⚠️ TreeSHAP scoring failed, falling back to traditional method")
+                    
+            except Exception as e:
+                tprint_warning(f"⚠️ TreeSHAP scoring error: {e}, falling back to traditional method")
+            
+            # Fallback to traditional multi-target scoring
+            tprint_info("🔄 Falling back to traditional multi-target scoring")
             
             # Calculate multi-target economic metrics
             multi_target_metrics = self._calculate_multi_target_economic_metrics(features_df, labels_df)

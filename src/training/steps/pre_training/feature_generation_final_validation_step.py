@@ -330,6 +330,9 @@ class FeatureGenerationFinalValidationStep(BaseStep):
         # Statistical validation
         validation['validations']['statistical'] = self._validate_statistical_properties(dataset, config)
 
+        # Filter normalization validation
+        validation['validations']['filter_normalization'] = self._validate_filter_normalization(dataset, config)
+
         # Overall assessment
         validation['overall_assessment'] = self._assess_dataset_quality(validation['validations'], config, dataset)
 
@@ -614,6 +617,119 @@ class FeatureGenerationFinalValidationStep(BaseStep):
 
         return stats_validation
 
+    def _validate_filter_normalization(self, dataset: pd.DataFrame, config: Dict[str, Any]) -> Dict[str, Any]:
+        """Validate that all filter grades are properly normalized/scaled."""
+        filter_validation = {
+            'filter_grades_found': False,
+            'normalization_status': {},
+            'scaling_issues': [],
+            'recommendations': []
+        }
+
+        # Identify filter grade columns
+        filter_grade_patterns = [
+            'efficiency_grade', 'bar_efficiency_grade',
+            'clv_grade', 'close_location_value_grade',
+            'atr_grade', 'atr_volatility_grade',
+            'trend_coherence_grade', 'trend_grade',
+            'filter_grade', 'quality_grade'
+        ]
+        
+        filter_grade_cols = []
+        for col in dataset.columns:
+            col_lower = col.lower()
+            if any(pattern in col_lower for pattern in filter_grade_patterns):
+                filter_grade_cols.append(col)
+
+        if not filter_grade_cols:
+            filter_validation['recommendations'].append("No filter grade columns found - filters may not be generating normalized grades")
+            return filter_validation
+
+        filter_validation['filter_grades_found'] = True
+        filter_validation['filter_grade_columns'] = filter_grade_cols
+
+        # Validate each filter grade column
+        for col in filter_grade_cols:
+            try:
+                grade_data = dataset[col].dropna()
+                if len(grade_data) == 0:
+                    filter_validation['scaling_issues'].append(f"Column '{col}' has no valid data")
+                    continue
+
+                # Check if values are in expected range [0, 1]
+                min_val = float(grade_data.min())
+                max_val = float(grade_data.max())
+                mean_val = float(grade_data.mean())
+                std_val = float(grade_data.std())
+
+                # Validate range
+                range_valid = 0.0 <= min_val <= 1.0 and 0.0 <= max_val <= 1.0
+                
+                # Check for proper distribution (not all same value)
+                distribution_valid = std_val > 1e-6
+                
+                # Check for reasonable mean (not all 0s or 1s)
+                mean_reasonable = 0.1 <= mean_val <= 0.9
+
+                col_status = {
+                    'range_valid': range_valid,
+                    'distribution_valid': distribution_valid,
+                    'mean_reasonable': mean_reasonable,
+                    'min_value': min_val,
+                    'max_value': max_val,
+                    'mean_value': mean_val,
+                    'std_value': std_val,
+                    'sample_count': len(grade_data)
+                }
+
+                filter_validation['normalization_status'][col] = col_status
+
+                # Generate recommendations
+                if not range_valid:
+                    filter_validation['scaling_issues'].append(f"Column '{col}' values outside [0,1] range: [{min_val:.3f}, {max_val:.3f}]")
+                    filter_validation['recommendations'].append(f"Normalize '{col}' to [0,1] range using MinMaxScaler or manual scaling")
+                
+                if not distribution_valid:
+                    filter_validation['scaling_issues'].append(f"Column '{col}' has no variance (all values identical)")
+                    filter_validation['recommendations'].append(f"Check if '{col}' filter is working correctly - no grade variation detected")
+                
+                if not mean_reasonable:
+                    if mean_val < 0.1:
+                        filter_validation['scaling_issues'].append(f"Column '{col}' mean too low ({mean_val:.3f}) - may indicate overly strict filtering")
+                        filter_validation['recommendations'].append(f"Consider adjusting '{col}' filter thresholds to allow more samples")
+                    elif mean_val > 0.9:
+                        filter_validation['scaling_issues'].append(f"Column '{col}' mean too high ({mean_val:.3f}) - may indicate overly lenient filtering")
+                        filter_validation['recommendations'].append(f"Consider tightening '{col}' filter thresholds for better quality control")
+
+                # Check for extreme skewness (indicating poor normalization)
+                if std_val > 0:
+                    skewness = float(stats.skew(grade_data))
+                    if abs(skewness) > 2.0:
+                        filter_validation['scaling_issues'].append(f"Column '{col}' has extreme skewness ({skewness:.3f}) - may need better normalization")
+                        filter_validation['recommendations'].append(f"Consider using RobustScaler or log transformation for '{col}' normalization")
+
+            except Exception as e:
+                filter_validation['scaling_issues'].append(f"Error validating column '{col}': {str(e)}")
+
+        # Overall assessment
+        total_issues = len(filter_validation['scaling_issues'])
+        total_columns = len(filter_grade_cols)
+        
+        if total_issues == 0:
+            filter_validation['overall_status'] = 'excellent'
+            filter_validation['recommendations'].append("✅ All filter grades are properly normalized and scaled")
+        elif total_issues <= total_columns * 0.3:  # Less than 30% of columns have issues
+            filter_validation['overall_status'] = 'good'
+            filter_validation['recommendations'].append("✅ Most filter grades are properly normalized, minor issues detected")
+        elif total_issues <= total_columns * 0.6:  # Less than 60% of columns have issues
+            filter_validation['overall_status'] = 'fair'
+            filter_validation['recommendations'].append("⚠️ Some filter grades need normalization/scaling improvements")
+        else:
+            filter_validation['overall_status'] = 'poor'
+            filter_validation['recommendations'].append("❌ Multiple filter grades need normalization/scaling fixes")
+
+        return filter_validation
+
     def _assess_dataset_quality(self, validations: Dict[str, Any], config: Dict[str, Any], dataset: pd.DataFrame) -> Dict[str, Any]:
         """Assess overall dataset quality based on all validations."""
         assessment = {
@@ -784,6 +900,41 @@ class FeatureGenerationFinalValidationStep(BaseStep):
                         assessment['issues'].append(f"   Error details: {error_msg}")
                 
                 assessment['recommendations'].append("💡 Consider: 1) More data collection, 2) Feature selection, 3) Different algorithms, 4) Target variable refinement")
+
+        # Assess filter normalization
+        if 'filter_normalization' in validations:
+            fn = validations['filter_normalization']
+            total_checks += 1
+            
+            if fn.get('filter_grades_found', False):
+                overall_status = fn.get('overall_status', 'unknown')
+                scaling_issues = fn.get('scaling_issues', [])
+                recommendations = fn.get('recommendations', [])
+                
+                if overall_status == 'excellent':
+                    passed_checks += 1
+                    assessment['recommendations'].extend([r for r in recommendations if r.startswith('✅')])
+                elif overall_status == 'good':
+                    passed_checks += 0.8
+                    assessment['recommendations'].extend([r for r in recommendations if r.startswith('✅')])
+                    assessment['warnings'].extend([r for r in recommendations if r.startswith('⚠️')])
+                elif overall_status == 'fair':
+                    passed_checks += 0.5
+                    assessment['warnings'].extend([r for r in recommendations if r.startswith('⚠️')])
+                    assessment['issues'].extend(scaling_issues[:3])  # Show top 3 issues
+                else:  # poor
+                    assessment['issues'].extend(scaling_issues[:5])  # Show top 5 issues
+                    assessment['recommendations'].extend([r for r in recommendations if r.startswith('❌')])
+                
+                # Add specific filter grade statistics
+                normalization_status = fn.get('normalization_status', {})
+                if normalization_status:
+                    valid_grades = sum(1 for status in normalization_status.values() if status.get('range_valid', False))
+                    total_grades = len(normalization_status)
+                    assessment['recommendations'].append(f"📊 Filter grades: {valid_grades}/{total_grades} properly normalized")
+            else:
+                assessment['warnings'].append("⚠️ No filter grades found - advanced filters may not be generating normalized outputs")
+                assessment['recommendations'].append("💡 Consider enabling filter grade generation in advanced filters configuration")
 
         # Calculate overall score
         if total_checks > 0:

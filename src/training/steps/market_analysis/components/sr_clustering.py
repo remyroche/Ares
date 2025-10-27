@@ -1223,7 +1223,7 @@ class SRClusteringComponent(BaseStep):
                 ]
                 features.append(level_features)
             
-            return np.array(features)
+                return np.array(features)
             
             except Exception as e:
                 tprint_error(f"Feature extraction failed: {e}")

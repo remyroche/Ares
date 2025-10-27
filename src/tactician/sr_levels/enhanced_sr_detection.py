@@ -28,6 +28,23 @@ from ...core.decorators import handles_errors, traced
 # from ...utils.clustering_alternatives  # Module not found, commented out import get_clustering_manager
 # Circular import moved to local import within function
 
+# Import new error handling and validation modules
+try:
+    from src.training.steps.market_analysis.sr_error_handlers import (
+        handles_sr_detection_errors, handles_sr_data_validation, 
+        monitors_sr_performance, validates_sr_output
+    )
+    from src.training.steps.market_analysis.sr_data_validator import (
+        SRDataValidator, ValidationLevel
+    )
+    from src.training.steps.market_analysis.sr_performance_monitor import (
+        SRPerformanceMonitor, performance_monitor_decorator
+    )
+    ENHANCED_ERROR_HANDLING_AVAILABLE = True
+except ImportError as e:
+    ENHANCED_ERROR_HANDLING_AVAILABLE = False
+    print(f"Warning: Enhanced error handling not available: {e}")
+
 import hashlib
 import logging
 
@@ -453,6 +470,17 @@ class EnhancedSRDetector:
         """Initialize enhanced S/R detector with optimization features."""
         self.config = config
         self.logger = system_logger.getChild('EnhancedSRDetector')
+
+        # Initialize enhanced error handling and validation
+        if ENHANCED_ERROR_HANDLING_AVAILABLE:
+            self.data_validator = SRDataValidator(ValidationLevel.STANDARD)
+            self.performance_monitor = SRPerformanceMonitor()
+            self.performance_monitor.start_monitoring()
+            self.logger.info("Enhanced error handling and validation enabled")
+        else:
+            self.data_validator = None
+            self.performance_monitor = None
+            self.logger.warning("Enhanced error handling not available, using basic error handling")
 
         # Performance optimization settings
         self.use_optimized_fractals = config.get('use_optimized_fractals', True)
@@ -1219,8 +1247,20 @@ class EnhancedSRDetector:
             start_time = time.time()
             self.logger.info('🔍 Starting enhanced S/R level detection...')
 
-            # Enhanced data quality validation
-            self._validate_input_data_quality(market_data)
+            # Comprehensive data validation
+            if self.data_validator:
+                validation_result = self.data_validator.validate_ohlcv_data(market_data)
+                if not validation_result.is_valid:
+                    self.logger.error(f"Data validation failed: {validation_result.issues}")
+                    return []
+                
+                if validation_result.warnings:
+                    self.logger.warning(f"Data validation warnings: {validation_result.warnings}")
+                
+                self.logger.info(f"Data quality score: {validation_result.quality_score:.2f}")
+            else:
+                # Fallback to basic validation
+                self._validate_input_data_quality(market_data)
 
             # Limit data size for performance with stratified sampling to maintain historical context
             sr_config = self.config.get('sr_detection', {})
@@ -1477,6 +1517,10 @@ class EnhancedSRDetector:
             self.logger.error(f'Enhanced S/R detection failed: {e}')
             return []
 
+    @handles_sr_detection_errors(default_return=[], use_fallback=True) if ENHANCED_ERROR_HANDLING_AVAILABLE else handles_errors(exceptions=(Exception,), default_return=[], context='fractal detection')
+    @handles_sr_data_validation(required_columns=['high', 'low'], min_rows=10) if ENHANCED_ERROR_HANDLING_AVAILABLE else lambda x: x
+    @monitors_sr_performance(method_name='fractal', threshold_seconds=5.0) if ENHANCED_ERROR_HANDLING_AVAILABLE else lambda x: x
+    @validates_sr_output(expected_type=list, min_items=0, max_items=100) if ENHANCED_ERROR_HANDLING_AVAILABLE else lambda x: x
     def _detect_fractal_levels(self, data: pd.DataFrame) -> List[SRLevel]:
         """Detect S/R levels using fractal analysis with advanced optimizations."""
         start_time = time.time()
@@ -5014,3 +5058,78 @@ except ImportError:
         except Exception as e:
             logger.warning(f"VectorBT rolling apply failed: {e}, using pandas fallback")
             return data.rolling(window=window).apply(func, **kwargs)
+    
+    def cleanup(self):
+        """Cleanup resources and stop monitoring."""
+        try:
+            if self.performance_monitor:
+                self.performance_monitor.stop_monitoring()
+                self.logger.info("Performance monitoring stopped")
+            
+            # Clear caches
+            self._fractal_cache.clear()
+            self._pivot_cache.clear()
+            self._touch_cache.clear()
+            
+            # Force garbage collection
+            import gc
+            gc.collect()
+            
+            self.logger.info("EnhancedSRDetector cleanup completed")
+        except Exception as e:
+            self.logger.error(f"Cleanup failed: {e}")
+    
+    def get_performance_summary(self) -> Dict[str, Any]:
+        """Get comprehensive performance summary."""
+        summary = {
+            'cache_stats': {
+                'fractal_cache_hits': self._cache_hits,
+                'fractal_cache_misses': self._cache_misses,
+                'cache_hit_rate': self._cache_hits / (self._cache_hits + self._cache_misses) if (self._cache_hits + self._cache_misses) > 0 else 0
+            },
+            'config': {
+                'use_optimized_fractals': self.use_optimized_fractals,
+                'use_optimized_touch_counting': self.use_optimized_touch_counting,
+                'enable_fractal_caching': self.enable_fractal_caching,
+                'chunk_size': self.chunk_size
+            }
+        }
+        
+        if self.performance_monitor:
+            summary['performance_metrics'] = self.performance_monitor.get_performance_summary()
+            summary['system_status'] = self.performance_monitor.get_system_status()
+        
+        return summary
+    
+    def get_adaptive_parameters(self, method_name: str) -> Dict[str, Any]:
+        """Get adaptive parameters for a specific detection method."""
+        if self.performance_monitor:
+            adaptive_params = self.performance_monitor.get_adaptive_parameters(method_name)
+            return {
+                'batch_size': adaptive_params.batch_size,
+                'max_memory_mb': adaptive_params.max_memory_mb,
+                'timeout_seconds': adaptive_params.timeout_seconds,
+                'enable_caching': adaptive_params.enable_caching,
+                'enable_parallel': adaptive_params.enable_parallel,
+                'max_workers': adaptive_params.max_workers,
+                'quality_threshold': adaptive_params.quality_threshold,
+                'performance_level': adaptive_params.performance_level.value
+            }
+        else:
+            return {
+                'batch_size': self.chunk_size,
+                'max_memory_mb': 1000,
+                'timeout_seconds': 30.0,
+                'enable_caching': self.enable_fractal_caching,
+                'enable_parallel': True,
+                'max_workers': 4,
+                'quality_threshold': 0.8,
+                'performance_level': 'good'
+            }
+    
+    def __del__(self):
+        """Destructor to ensure cleanup."""
+        try:
+            self.cleanup()
+        except:
+            pass  # Ignore errors during cleanup

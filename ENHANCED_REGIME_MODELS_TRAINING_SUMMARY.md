@@ -18,9 +18,6 @@ from src.utils.ml_common.data.regime_label_extractor import (
 from src.utils.ml_common.validation.config_validator import (
     validate_regime_training_config, create_default_regime_training_config
 )
-from src.utils.ml_common.features.robust_feature_generator import (
-    RobustFeatureGenerator, generate_features_fast_fail, FeatureGenerationError
-)
 ```
 
 ### 2. ✅ **Enhanced Initialization**
@@ -82,23 +79,27 @@ if FEATURE_GENERATION_AVAILABLE:
         # Complex fallback logic
 ```
 
-**After**: Fast fail feature generation
+**After**: Fast fail feature generation using existing feature bank
 ```python
-# New approach with fast fail
+# New approach with fast fail using existing feature bank
 def _prepare_training_data_improved(self, data, regime_labels, pipeline_state):
     try:
-        X, feature_names = self.feature_generator.generate_features(data)
+        if not FEATURE_GENERATION_AVAILABLE:
+            raise ValueError("Feature generation system not available")
+        X, feature_names = self._generate_features_with_bank(data)
+        if X is None or X.shape[1] < 50:
+            raise ValueError(f"Insufficient features: {X.shape[1] if X is not None else 0}")
         # ... validation and alignment
         return X, y, feature_names
-    except FeatureGenerationError as e:
+    except Exception as e:
         tprint(f"❌ [REGIME_MODELS] Feature generation failed: {e}", color="red")
         raise
 ```
 
 ### 6. ✅ **Enhanced Error Handling**
-- **Specific exception types**: `FeatureGenerationError` for feature generation failures
 - **Fast fail behavior**: Clear error messages and immediate failure instead of fallbacks
 - **Proper resource cleanup**: Ensures resources are cleaned up on failure
+- **Validation with existing systems**: Leverages existing feature bank validation
 
 ### 7. ✅ **Configuration Validation**
 - **Input validation**: All configuration parameters are validated before use
@@ -126,7 +127,7 @@ def _prepare_training_data_improved(self, data, regime_labels, pipeline_state):
 
 ### 🔧 **Improved Feature Generation**
 - **Before**: Complex fallback mechanisms
-- **After**: Robust generation with fast fail
+- **After**: Fast fail generation using existing feature bank system
 
 ## Files Modified
 

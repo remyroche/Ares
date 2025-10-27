@@ -57,9 +57,6 @@ from src.utils.ml_common.data.regime_label_extractor import (
 from src.utils.ml_common.validation.config_validator import (
     validate_regime_training_config, create_default_regime_training_config
 )
-from src.utils.ml_common.features.robust_feature_generator import (
-    RobustFeatureGenerator, generate_features_fast_fail, FeatureGenerationError
-)
 
 # Suppress warnings
 warnings.filterwarnings('ignore')
@@ -385,12 +382,8 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
         )
         tprint("✅ [REGIME_MODELS] Regime label extractor initialized", color="green")
         
-        # Initialize feature generator
-        self.feature_generator = RobustFeatureGenerator(
-            min_total_features=50,
-            min_samples=100
-        )
-        tprint("✅ [REGIME_MODELS] Feature generator initialized", color="green")
+        # Note: Using existing feature bank system instead of custom feature generator
+        tprint("✅ [REGIME_MODELS] Using existing feature bank system", color="green")
     async def _train_models_with_hpo(self, X_train: np.ndarray, y_train: np.ndarray, X_test: np.ndarray, y_test: np.ndarray) -> Dict[str, Any]:
         """Train models with HPO optimization."""
         tprint("🔍 [REGIME_MODELS] Training models with HPO optimization", color="cyan")
@@ -878,11 +871,11 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                     metadata={'execution_time': time.time() - execution_start_time}
                 )
 
-            # Prepare training data with improved feature generation
-            tprint("🔧 [REGIME_MODELS] Preparing training data with improved feature generation", color="cyan")
+            # Prepare training data with existing feature bank
+            tprint("🔧 [REGIME_MODELS] Preparing training data with existing feature bank", color="cyan")
             try:
                 X, y, feature_names = self._prepare_training_data_improved(protected_data, regime_labels, pipeline_state)
-            except (FeatureGenerationError, ValueError) as e:
+            except ValueError as e:
                 tprint(f"❌ [REGIME_MODELS] Training data preparation failed: {e}", color="red")
                 return ComponentResult(
                     success=False,
@@ -1892,13 +1885,20 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
         regime_labels: np.ndarray,
         pipeline_state: Dict[str, Any] = None
     ) -> Tuple[np.ndarray, np.ndarray, List[str]]:
-        """Prepare training data using improved feature generation with fast fail."""
-        tprint("🔧 [REGIME_MODELS] Preparing training data with improved feature generation", color="cyan")
+        """Prepare training data using existing feature bank system with fast fail."""
+        tprint("🔧 [REGIME_MODELS] Preparing training data with existing feature bank", color="cyan")
         
         try:
-            # Generate features with fast fail
-            tprint("🔧 [REGIME_MODELS] Generating features with fast fail", color="cyan")
-            X, feature_names = self.feature_generator.generate_features(data)
+            # Use existing feature bank system with fast fail
+            if not FEATURE_GENERATION_AVAILABLE:
+                raise ValueError("Feature generation system not available - cannot generate features")
+            
+            tprint("🔧 [REGIME_MODELS] Generating features using existing feature bank", color="cyan")
+            X, feature_names = self._generate_features_with_bank(data)
+            
+            if X is None or X.shape[1] < 50:
+                raise ValueError(f"Insufficient features generated: {X.shape[1] if X is not None else 0} < 50 required")
+            
             tprint(f"✅ [REGIME_MODELS] Features generated: {X.shape[1]} features", color="green")
             
             # Align with regime labels
@@ -1917,9 +1917,6 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
             tprint(f"✅ [REGIME_MODELS] Training data prepared: {X.shape[0]} samples, {X.shape[1]} features", color="green")
             return X, y, feature_names
             
-        except FeatureGenerationError as e:
-            tprint(f"❌ [REGIME_MODELS] Feature generation failed: {e}", color="red")
-            raise
         except Exception as e:
             tprint(f"❌ [REGIME_MODELS] Training data preparation failed: {e}", color="red")
             raise

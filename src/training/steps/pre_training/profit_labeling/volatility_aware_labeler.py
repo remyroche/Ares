@@ -31,6 +31,68 @@ except Exception:
     logging.basicConfig(level=logging.INFO)
     system_logger = logging.getLogger("system")
 
+# Robust piecewise linear mapping for proximity-based confidence
+def proximity_mapping(
+    ratio: np.ndarray, 
+    min_thresh: float = 0.75, 
+    cap: float = 1.5,
+    adaptive_clip: bool = True,
+    clip_percentile: float = 99.9
+) -> np.ndarray:
+    """
+    Compute proximity-based confidence using piecewise linear mapping.
+    
+    Args:
+        ratio: actual_move / target_move (can be negative for opposite direction)
+        min_thresh: Minimum threshold below which confidence is 0 (default: 0.75)
+        cap: Maximum confidence cap (default: 1.5)
+        adaptive_clip: Use percentile-based clipping instead of fixed threshold
+        clip_percentile: Percentile for adaptive clipping (default: 99.9)
+    
+    Returns:
+        proximity (float) in [0, cap] with preserved sign
+    """
+    # Handle outliers with adaptive or fixed clipping
+    if adaptive_clip and len(ratio) > 0:
+        # Use percentile-based clipping for better adaptation to data distribution
+        clip_value = np.percentile(np.abs(ratio), clip_percentile)
+        ratio = np.clip(ratio, -clip_value, clip_value)
+    else:
+        # Fixed clipping as fallback
+        ratio = np.clip(ratio, -10.0, 10.0)
+    
+    absd = np.abs(ratio)
+    prox = np.zeros_like(absd, dtype=float)
+    
+    # Below minimum threshold -> 0 confidence
+    mask_below = absd < min_thresh
+    prox[mask_below] = 0.0
+    
+    # Edge continuity: smooth transition near 0.75 threshold
+    # Use a small ramp to avoid label discontinuity
+    ramp_start = min_thresh - 0.05  # Start ramp at 0.70
+    mask_ramp = (absd >= ramp_start) & (absd < min_thresh)
+    if np.any(mask_ramp):
+        # Linear ramp from 0 to 0.5 over 0.05 range
+        ramp_factor = (absd[mask_ramp] - ramp_start) / (min_thresh - ramp_start)
+        prox[mask_ramp] = 0.5 * ramp_factor
+    
+    # 0.75 <= absd < 1.0 -> linear from 0.5 at 0.75 to 1.0 at 1.0
+    mask_mid = (absd >= min_thresh) & (absd < 1.0)
+    prox[mask_mid] = 0.5 + 2.0 * (absd[mask_mid] - min_thresh)  # 0.5 + 2.0 * (distance - 0.75)
+    
+    # 1.0 <= absd <= 2.0 -> linear from 1.0 at 1.0 to 1.5 at 2.0
+    mask_high = (absd >= 1.0) & (absd <= 2.0)
+    prox[mask_high] = 1.0 + 0.5 * (absd[mask_high] - 1.0)  # 1.0 + 0.5 * (distance - 1.0)
+    
+    # > 2.0 -> cap
+    mask_above = absd > 2.0
+    prox[mask_above] = cap
+    
+    # Handle signed-zero deterministically: treat exactly zero as positive
+    sign = np.where(ratio == 0, 1, np.sign(ratio))
+    return sign * prox
+
 # Import the missing function from multi_horizon_profit_labeler
 try:
     from src.training.steps.pre_training.multi_horizon_profit_labeler import create_enhanced_tactician_labeler
@@ -79,6 +141,9 @@ class LabelDefinitionType(Enum):
     BINARY = "binary"
     MULTI_CLASS = "multi_class"
     REGRESSION = "regression"
+    SMOOTH_BINARY = "smooth_binary"  # Smooth binary labels with confidence weighting
+    SMOOTH_REGRESSION = "smooth_regression"  # Smooth regression labels with proximity weighting
+    PROXIMITY_REGRESSION = "proximity_regression"  # Regression with proximity-based confidence and sample weights
     ANALYST = "analyst"  # For analyst profit labeling (long-term analysis)
     TACTICIAN = "tactician"  # For tactician entry labeling (short-term entry)
 
@@ -94,7 +159,7 @@ class VolatilityAwareConfig:
         lookahead_periods: int = 6,
         min_volatility: float = 0.001,
         max_volatility: float = 0.1,
-        label_type: LabelDefinitionType = LabelDefinitionType.BINARY,
+        label_type: LabelDefinitionType = LabelDefinitionType.PROXIMITY_REGRESSION,
         enable_long_positions: bool = True,
         enable_short_positions: bool = False,
         min_label_quality: float = 0.3,
@@ -235,15 +300,28 @@ class VolatilityConfig:
     """Configuration for volatility settings."""
     def __init__(self) -> None:
         self.enabled = True
-        self.window = 20
-        self.sensitivity = 1.0  # Tunable parameter for volatility sensitivity (reduced from 1.5)
+        self.window = 20  # Window for raw volatility calculation
+        self.vol_ema_span = 100  # EMA span for smoothing volatility baseline
+        self.sensitivity = 1.0  # Tunable parameter for volatility sensitivity
+        self.alpha = 1.0  # Nonlinear sensitivity exponent (1.0 = linear, <1.0 = dampened)
+        self.volatility_estimator = 'log_returns'  # 'log_returns', 'atr', or 'realized'
+        self.percentile_clipping = False  # Use percentile-based clipping instead of fixed bounds
+        self.percentile_low = 1.0  # Low percentile for clipping (e.g., 1st percentile)
+        self.percentile_high = 99.0  # High percentile for clipping (e.g., 99th percentile)
+        self.percentile_min_range = 0.5  # Minimum range between percentiles to prevent too narrow ranges
+        self.rolling_percentile_window = 90  # Rolling window for dynamic percentile updates (days)
+        self.hysteresis_threshold = 0.05  # Base minimum change required to update threshold
+        self.adaptive_hysteresis = True  # Scale hysteresis by volatility
+        self.hysteresis_volatility_factor = 0.1  # Factor to scale hysteresis by volatility (5-10%)
+        self.volatility_floor = 1e-6  # Minimum volatility to prevent divide-by-zero
+        self.warmup_policy = 'rolling_mean'  # 'rolling_mean', 'drop', or 'fillna'
 
 
 class RateControlConfig:
     """Configuration for data-driven rate calibration."""
     def __init__(self) -> None:
         self.enabled = True
-        self.max_ops_per_day = 6  # cap opportunities per day (conservative target to ensure ≤8/day)
+        # Removed max_ops_per_day limit as requested
         self.min_scale = 0.5      # search lower bound for threshold scaling
         self.max_scale = 3.0      # search upper bound for threshold scaling
         self.tolerance = 0.15     # tighter tolerance (was 0.25)
@@ -442,7 +520,6 @@ class VolatilityAwareMultiHorizonLabeler:
                                                             enable_short=self.config.enable_short_positions,
                                                             min_scale=self.config.rate_control.min_scale,
                                                             max_scale=self.config.rate_control.max_scale,
-                                                            max_ops_per_day=self.config.rate_control.max_ops_per_day,
                                                             tol=self.config.rate_control.tolerance)
                     if targets_frac:
                         calibrated_targets = [float(t) * rate_scale for t in targets_frac]
@@ -854,12 +931,12 @@ class VolatilityAwareMultiHorizonLabeler:
         enable_short: bool,
         min_scale: float,
         max_scale: float,
-        max_ops_per_day: int,
         tol: float = 0.25
     ) -> float:
-        """Calibrate a multiplicative scale for the base target to meet an ops/day cap.
+        """Calibrate a multiplicative scale for the base target.
 
         Uses binary search on a simple thresholded returns proxy to estimate signal rate.
+        No longer limited by max_ops_per_day as requested.
         """
         # Precompute future returns and vol normalization
         fut_ret = prices.pct_change(lookahead_bars).shift(-lookahead_bars)
@@ -872,33 +949,9 @@ class VolatilityAwareMultiHorizonLabeler:
         except Exception:
             time_span_days = max(1.0, len(prices) / (24 * 60))  # rough fallback for 1-min data
 
-        target_total = max_ops_per_day * time_span_days
-
-        def count_ops(scale: float) -> int:
-            k = self.config.volatility.sensitivity
-            min_mult = getattr(self.config.multi_target, 'min_threshold_multiplier', 0.5)
-            max_mult = getattr(self.config.multi_target, 'max_threshold_multiplier', 2.0)
-            eff = (base_target * scale) * np.clip(1.0 + k * (vol_norm - 1.0), min_mult, max_mult)
-            count = 0
-            if enable_long:
-                count += int((fut_ret > eff).sum())
-            if enable_short:
-                count += int((fut_ret < -eff).sum())
-            return count
-
-        lo, hi = min_scale, max_scale
-        best_scale = hi
-        # Binary search for scale that brings op count <= target_total
-        for _ in range(20):
-            mid = 0.5 * (lo + hi)
-            ops = count_ops(mid)
-            if ops > target_total * (1.0 + tol):
-                # too many ops → increase threshold → increase scale
-                lo = mid
-            else:
-                best_scale = mid
-                hi = mid
-        return float(best_scale)
+        # No longer using target_total based on max_ops_per_day
+        # Return a default scale since we're not limiting opportunities per day
+        return 1.0
 
     def _infer_bars_per_day(self, index: pd.Index) -> float:
         """Infer approximate bars per day from datetime-like index."""
@@ -3104,9 +3157,8 @@ class VolatilityAwareMultiHorizonLabeler:
             # Fallback to close prices
             high_prices = low_prices = prices
         
-        # Volatility normalization (leak-free: use lagged EMA mean)
-        vol_mean = volatility.ewm(span=100, adjust=False).mean().shift(1).fillna(volatility.mean())
-        vol_normalized = volatility / vol_mean
+        # Calculate robust volatility normalization
+        vol_normalized, vol_mean = self._calculate_volatility_normalization(volatility)
         
         # Default profit targets if not provided
         if profit_targets is None:
@@ -3285,6 +3337,265 @@ class VolatilityAwareMultiHorizonLabeler:
 
         return labels
 
+    def _calculate_robust_volatility(
+        self, 
+        prices: pd.Series, 
+        high_prices: Optional[pd.Series] = None,
+        low_prices: Optional[pd.Series] = None
+    ) -> pd.Series:
+        """
+        Calculate robust volatility using the configured estimator.
+        
+        Args:
+            prices: Price series (close prices)
+            high_prices: High prices (for ATR calculation)
+            low_prices: Low prices (for ATR calculation)
+            
+        Returns:
+            Volatility series with proper scaling and floor
+        """
+        if self.config.volatility.volatility_estimator == 'log_returns':
+            # Log returns volatility (most common)
+            log_returns = np.log(prices / prices.shift(1))
+            volatility = log_returns.rolling(window=self.config.volatility.window).std()
+            
+        elif self.config.volatility.volatility_estimator == 'atr':
+            # ATR-based volatility
+            if high_prices is None or low_prices is None:
+                # Fallback to log returns if OHLC not available
+                log_returns = np.log(prices / prices.shift(1))
+                volatility = log_returns.rolling(window=self.config.volatility.window).std()
+            else:
+                # True Range calculation
+                high_low = high_prices - low_prices
+                high_close = np.abs(high_prices - prices.shift(1))
+                low_close = np.abs(low_prices - prices.shift(1))
+                true_range = np.maximum(high_low, np.maximum(high_close, low_close))
+                atr = true_range.rolling(window=self.config.volatility.window).mean()
+                volatility = atr / prices  # Normalize by price level
+                
+        elif self.config.volatility.volatility_estimator == 'realized':
+            # Realized volatility (sum of squared returns)
+            returns = prices.pct_change()
+            volatility = returns.rolling(window=self.config.volatility.window).std()
+            
+        else:
+            raise ValueError(f"Unknown volatility estimator: {self.config.volatility.volatility_estimator}")
+        
+        # Apply volatility floor to prevent divide-by-zero
+        volatility = np.maximum(volatility, self.config.volatility.volatility_floor)
+        
+        return volatility
+
+    def _calculate_volatility_normalization(
+        self, 
+        volatility: pd.Series
+    ) -> Tuple[pd.Series, pd.Series]:
+        """
+        Calculate robust volatility normalization with proper warm-up handling.
+        
+        Args:
+            volatility: Raw volatility series
+            
+        Returns:
+            Tuple of (vol_normalized, vol_mean) with proper warm-up handling
+        """
+        # Calculate volatility mean with proper warm-up policy
+        if self.config.volatility.warmup_policy == 'rolling_mean':
+            # Use rolling mean for warm-up, then switch to EMA
+            vol_mean_rolling = volatility.rolling(window=self.config.volatility.vol_ema_span).mean()
+            vol_mean_ema = volatility.ewm(span=self.config.volatility.vol_ema_span, adjust=False).mean()
+            
+            # Use rolling mean for warm-up period, then EMA
+            warmup_periods = self.config.volatility.vol_ema_span
+            vol_mean = vol_mean_rolling.copy()
+            vol_mean.iloc[warmup_periods:] = vol_mean_ema.iloc[warmup_periods:]
+            
+        elif self.config.volatility.warmup_policy == 'drop':
+            # Drop early samples - use EMA only
+            vol_mean = volatility.ewm(span=self.config.volatility.vol_ema_span, adjust=False).mean()
+            
+        else:  # 'fillna'
+            # Original behavior - fill with mean
+            vol_mean = volatility.ewm(span=self.config.volatility.vol_ema_span, adjust=False).mean().shift(1).fillna(volatility.mean())
+        
+        # Apply volatility floor to prevent extreme jumps
+        vol_mean = np.maximum(vol_mean, self.config.volatility.volatility_floor)
+        
+        # Calculate normalized volatility
+        vol_normalized = volatility / vol_mean
+        
+        # Apply percentile-based clipping if enabled
+        if self.config.volatility.percentile_clipping:
+            vol_normalized = self._apply_percentile_clipping(vol_normalized)
+        
+        return vol_normalized, vol_mean
+
+    def _apply_percentile_clipping(
+        self, 
+        vol_normalized: pd.Series
+    ) -> pd.Series:
+        """
+        Apply percentile-based clipping with range validation and rolling updates.
+        
+        Args:
+            vol_normalized: Normalized volatility series
+            
+        Returns:
+            Clipped volatility series with validated range
+        """
+        # Use rolling window for dynamic percentile updates if enabled
+        if hasattr(self.config.volatility, 'rolling_percentile_window') and self.config.volatility.rolling_percentile_window > 0:
+            # Rolling percentile calculation
+            window = self.config.volatility.rolling_percentile_window
+            p_low_series = vol_normalized.rolling(window=window, min_periods=window//2).quantile(
+                self.config.volatility.percentile_low / 100.0
+            )
+            p_high_series = vol_normalized.rolling(window=window, min_periods=window//2).quantile(
+                self.config.volatility.percentile_high / 100.0
+            )
+            
+            # Fill initial values with global percentiles
+            global_p_low = np.percentile(vol_normalized.dropna(), self.config.volatility.percentile_low)
+            global_p_high = np.percentile(vol_normalized.dropna(), self.config.volatility.percentile_high)
+            p_low_series = p_low_series.fillna(global_p_low)
+            p_high_series = p_high_series.fillna(global_p_high)
+            
+            # Apply range validation
+            p_low_series, p_high_series = self._validate_percentile_range(p_low_series, p_high_series)
+            
+            # Apply clipping
+            vol_normalized_clipped = vol_normalized.copy()
+            for i in range(len(vol_normalized)):
+                if not pd.isna(p_low_series.iloc[i]) and not pd.isna(p_high_series.iloc[i]):
+                    vol_normalized_clipped.iloc[i] = np.clip(
+                        vol_normalized.iloc[i], 
+                        p_low_series.iloc[i], 
+                        p_high_series.iloc[i]
+                    )
+            
+            return vol_normalized_clipped
+        else:
+            # Static percentile calculation
+            p_low = np.percentile(vol_normalized.dropna(), self.config.volatility.percentile_low)
+            p_high = np.percentile(vol_normalized.dropna(), self.config.volatility.percentile_high)
+            
+            # Apply range validation
+            p_low, p_high = self._validate_percentile_range_static(p_low, p_high)
+            
+            return np.clip(vol_normalized, p_low, p_high)
+
+    def _validate_percentile_range(
+        self, 
+        p_low_series: pd.Series, 
+        p_high_series: pd.Series
+    ) -> Tuple[pd.Series, pd.Series]:
+        """
+        Validate percentile range to prevent too narrow ranges.
+        
+        Args:
+            p_low_series: Low percentile series
+            p_high_series: High percentile series
+            
+        Returns:
+            Validated percentile series
+        """
+        min_range = self.config.volatility.percentile_min_range
+        
+        # Calculate range
+        range_series = p_high_series - p_low_series
+        
+        # Find where range is too narrow
+        narrow_mask = range_series < min_range
+        
+        if narrow_mask.any():
+            # Expand range symmetrically around center
+            center = (p_low_series + p_high_series) / 2
+            half_range = min_range / 2
+            
+            p_low_series = np.where(narrow_mask, center - half_range, p_low_series)
+            p_high_series = np.where(narrow_mask, center + half_range, p_high_series)
+        
+        return p_low_series, p_high_series
+
+    def _validate_percentile_range_static(
+        self, 
+        p_low: float, 
+        p_high: float
+    ) -> Tuple[float, float]:
+        """
+        Validate static percentile range to prevent too narrow ranges.
+        
+        Args:
+            p_low: Low percentile value
+            p_high: High percentile value
+            
+        Returns:
+            Validated percentile values
+        """
+        min_range = self.config.volatility.percentile_min_range
+        
+        if p_high - p_low < min_range:
+            # Expand range symmetrically around center
+            center = (p_low + p_high) / 2
+            half_range = min_range / 2
+            p_low = center - half_range
+            p_high = center + half_range
+        
+        return p_low, p_high
+
+    def _calculate_effective_threshold(
+        self, 
+        base_threshold: float, 
+        vol_normalized: pd.Series,
+        min_mult: float = 0.5,
+        max_mult: float = 2.0
+    ) -> pd.Series:
+        """
+        Calculate effective threshold with nonlinear sensitivity and hysteresis.
+        
+        Args:
+            base_threshold: Base profit target
+            vol_normalized: Normalized volatility series
+            min_mult: Minimum threshold multiplier
+            max_mult: Maximum threshold multiplier
+            
+        Returns:
+            Effective threshold series
+        """
+        # Apply nonlinear sensitivity: mult = 1 + k * (vol_normalized - 1)^alpha
+        vol_deviation = vol_normalized - 1.0
+        if self.config.volatility.alpha != 1.0:
+            # Apply nonlinear transformation
+            vol_deviation = np.sign(vol_deviation) * np.power(np.abs(vol_deviation), self.config.volatility.alpha)
+        
+        # Calculate multiplier
+        multiplier = 1.0 + self.config.volatility.sensitivity * vol_deviation
+        
+        # Apply clipping
+        multiplier = np.clip(multiplier, min_mult, max_mult)
+        
+        # Apply adaptive hysteresis to prevent chattering
+        if hasattr(self, '_last_multiplier') and len(multiplier) > 0:
+            # Calculate adaptive hysteresis threshold
+            if self.config.volatility.adaptive_hysteresis:
+                # Scale hysteresis by volatility: threshold = base * (1 + factor * vol_normalized)
+                adaptive_threshold = self.config.volatility.hysteresis_threshold * (
+                    1.0 + self.config.volatility.hysteresis_volatility_factor * vol_normalized
+                )
+            else:
+                adaptive_threshold = self.config.volatility.hysteresis_threshold
+            
+            # Only update if change exceeds adaptive threshold
+            change = np.abs(multiplier - self._last_multiplier)
+            update_mask = change > adaptive_threshold
+            multiplier = np.where(update_mask, multiplier, self._last_multiplier)
+        
+        # Store for next iteration
+        self._last_multiplier = multiplier.iloc[-1] if len(multiplier) > 0 else 1.0
+        
+        return base_threshold * multiplier
+
     def _generate_price_target_vol_normalized_labels(
         self,
         prices: pd.Series,
@@ -3305,14 +3616,8 @@ class VolatilityAwareMultiHorizonLabeler:
         # Performance optimization: calculate future returns once and reuse
         future_returns = prices.pct_change(self.config.lookahead_periods).shift(-self.config.lookahead_periods)
 
-        # Performance optimization: cache volatility mean
-        vol_mean = volatility.mean()
-
-        # Normalize volatility for threshold adjustment
-        if vol_mean > 0:
-            vol_normalized = volatility / vol_mean
-        else:
-            vol_normalized = pd.Series(1.0, index=volatility.index)
+        # Calculate robust volatility normalization
+        vol_normalized, vol_mean = self._calculate_volatility_normalization(volatility)
 
         # Multi-target labeling
         if profit_targets and len(profit_targets) > 0:
@@ -3332,12 +3637,12 @@ class VolatilityAwareMultiHorizonLabeler:
                 target_name = f"t_{bps}bps"
                 target_columns.append(target_name)
                 
-                # Profit target semantics in volatility regimes
-                # Clear rule: effective_target = base_target * clip(1 + k*(vol/vol_mean - 1), 0.5, 2.0)
-                k = self.config.volatility.sensitivity  # Tunable parameter
+                # Profit target semantics in volatility regimes with robust calculation
                 min_mult = getattr(self.config.multi_target, 'min_threshold_multiplier', 0.5)
                 max_mult = getattr(self.config.multi_target, 'max_threshold_multiplier', 2.0)
-                effective_target = target_frac * np.clip(1.0 + k * (vol_normalized - 1.0), min_mult, max_mult)
+                effective_target = self._calculate_effective_threshold(
+                    target_frac, vol_normalized, min_mult, max_mult
+                )
                 
                 # Generate labels for this target
                 if self.config.label_type == LabelDefinitionType.BINARY:
@@ -3351,6 +3656,25 @@ class VolatilityAwareMultiHorizonLabeler:
                     if self.config.enable_short_positions:
                         short_signals = (future_returns < -effective_target).astype(np.int8)
                         target_labels -= short_signals  # -1 for short signals
+                elif self.config.label_type == LabelDefinitionType.SMOOTH_BINARY:
+                    # Smooth binary labels with proximity weighting
+                    target_labels = self._generate_smooth_binary_labels(
+                        future_returns, effective_target, vol_normalized
+                    )
+                elif self.config.label_type == LabelDefinitionType.SMOOTH_REGRESSION:
+                    # Smooth regression labels with proximity weighting
+                    target_labels = self._generate_smooth_regression_labels(
+                        future_returns, effective_target, vol_normalized
+                    )
+                elif self.config.label_type == LabelDefinitionType.PROXIMITY_REGRESSION:
+                    # Proximity-based regression with sample weights
+                    target_labels, sample_weights = self._generate_proximity_regression_labels(
+                        future_returns, effective_target, vol_normalized
+                    )
+                    # Store sample weights for later use (will be returned in metadata)
+                    if not hasattr(self, '_sample_weights'):
+                        self._sample_weights = {}
+                    self._sample_weights[target_name] = sample_weights
                 else:
                     # Regression: use actual returns
                     target_labels = future_returns
@@ -3381,11 +3705,12 @@ class VolatilityAwareMultiHorizonLabeler:
                 # Use volatility-modulated threshold logic with configurable base target
                 base_threshold = self.config.multi_target.target_profit / 100.0  # Convert percentage to decimal
                 
-                # Apply volatility modulation: effective_target = base_target * clip(1 + k*(vol/vol_mean - 1), 0.5, 2.0)
-                k = self.config.volatility.sensitivity  # Tunable parameter
+                # Apply robust volatility modulation with nonlinear sensitivity and hysteresis
                 min_mult = getattr(self.config.multi_target, 'min_threshold_multiplier', 0.5)
                 max_mult = getattr(self.config.multi_target, 'max_threshold_multiplier', 2.0)
-                effective_threshold = base_threshold * np.clip(1.0 + k * (vol_normalized - 1.0), min_mult, max_mult)
+                effective_threshold = self._calculate_effective_threshold(
+                    base_threshold, vol_normalized, min_mult, max_mult
+                )
                 
                 # Default simple thresholding path
                 labels = pd.Series(0, index=future_returns.index, dtype=np.int8)
@@ -3414,11 +3739,384 @@ class VolatilityAwareMultiHorizonLabeler:
                 short_rate = (labels < 0).mean()
                 signal_rate = (labels != 0).mean()
                 # Generate signals based on direction configuration and volatility modulation
+            elif self.config.label_type == LabelDefinitionType.SMOOTH_BINARY:
+                # Smooth binary labels with proximity weighting
+                base_threshold = self.config.multi_target.target_profit / 100.0
+                min_mult = getattr(self.config.multi_target, 'min_threshold_multiplier', 0.5)
+                max_mult = getattr(self.config.multi_target, 'max_threshold_multiplier', 2.0)
+                effective_threshold = self._calculate_effective_threshold(
+                    base_threshold, vol_normalized, min_mult, max_mult
+                )
+                
+                labels = self._generate_smooth_binary_labels(
+                    future_returns, effective_threshold, vol_normalized
+                )
+            elif self.config.label_type == LabelDefinitionType.SMOOTH_REGRESSION:
+                # Smooth regression labels with proximity weighting
+                base_threshold = self.config.multi_target.target_profit / 100.0
+                min_mult = getattr(self.config.multi_target, 'min_threshold_multiplier', 0.5)
+                max_mult = getattr(self.config.multi_target, 'max_threshold_multiplier', 2.0)
+                effective_threshold = self._calculate_effective_threshold(
+                    base_threshold, vol_normalized, min_mult, max_mult
+                )
+                
+                labels = self._generate_smooth_regression_labels(
+                    future_returns, effective_threshold, vol_normalized
+                )
+            elif self.config.label_type == LabelDefinitionType.PROXIMITY_REGRESSION:
+                # Proximity-based regression with sample weights
+                base_threshold = self.config.multi_target.target_profit / 100.0
+                min_mult = getattr(self.config.multi_target, 'min_threshold_multiplier', 0.5)
+                max_mult = getattr(self.config.multi_target, 'max_threshold_multiplier', 2.0)
+                effective_threshold = self._calculate_effective_threshold(
+                    base_threshold, vol_normalized, min_mult, max_mult
+                )
+                
+                labels, sample_weights = self._generate_proximity_regression_labels(
+                    future_returns, effective_threshold, vol_normalized
+                )
+                # Store sample weights for later use
+                if not hasattr(self, '_sample_weights'):
+                    self._sample_weights = {}
+                self._sample_weights['default'] = sample_weights
             else:
                 # Regression: use actual returns
                 labels = future_returns
 
         return labels
+
+    def _generate_smooth_binary_labels(
+        self,
+        future_returns: pd.Series,
+        effective_threshold: pd.Series,
+        vol_normalized: pd.Series,
+        quality_scores: Optional[pd.Series] = None
+    ) -> pd.Series:
+        """
+        Generate smooth binary labels with confidence weighting and proximity consideration.
+        
+        Args:
+            future_returns: Future returns series
+            effective_threshold: Volatility-adjusted threshold series
+            vol_normalized: Normalized volatility series
+            quality_scores: Optional quality scores for weighting
+            
+        Returns:
+            Smooth binary labels in range [-1, 1] with proximity weighting
+        """
+        # Calculate distance from threshold
+        distance = future_returns / effective_threshold
+        
+        # Apply sigmoid smoothing with volatility-dependent sharpness
+        # More sharp in high volatility periods
+        sharpness = 2.0 + (vol_normalized - 1.0) * 0.5  # Range: 1.5 to 2.5
+        smooth_labels = np.tanh(distance * sharpness)
+        
+        # Apply enhanced confidence weighting with caps:
+        # - No labels below 75% of target (0 confidence)
+        # - 0.5 confidence for 75% of target
+        # - 1.0 confidence for 100% of target
+        # - 1.5 confidence for 200% of target (capped at 1.5)
+        # Linear scaling: confidence = 0.5 + 2.0 * (distance - 0.75), capped at 1.5
+        proximity_factor = np.where(
+            np.abs(distance) < 0.75,  # Below 75% of target
+            0.0,  # No confidence below 75% of target
+            np.where(
+                np.abs(distance) >= 0.75,  # 75% and above
+                np.clip(0.5 + 2.0 * (np.abs(distance) - 0.75), 0.5, 1.5),  # Linear scaling capped at 1.5
+                0.0  # Fallback
+            )
+        )
+        
+        # Apply enhanced confidence weighting
+        smooth_labels = smooth_labels * proximity_factor
+        
+        # Apply quality weighting if available
+        if quality_scores is not None:
+            # Align quality scores with smooth labels
+            quality_aligned, smooth_aligned = _align_like(quality_scores, smooth_labels)
+            smooth_labels = smooth_aligned * quality_aligned
+        
+        # Ensure labels are in valid range
+        smooth_labels = np.clip(smooth_labels, -1.0, 1.0)
+        
+        return pd.Series(smooth_labels, index=future_returns.index, name='smooth_binary_label')
+
+    def _generate_smooth_regression_labels(
+        self,
+        future_returns: pd.Series,
+        effective_threshold: pd.Series,
+        vol_normalized: pd.Series,
+        quality_scores: Optional[pd.Series] = None
+    ) -> pd.Series:
+        """
+        Generate smooth regression labels with proximity weighting.
+        
+        Args:
+            future_returns: Future returns series
+            effective_threshold: Volatility-adjusted threshold series
+            vol_normalized: Normalized volatility series
+            quality_scores: Optional quality scores for weighting
+            
+        Returns:
+            Smooth regression labels with proximity weighting
+        """
+        # Start with actual returns
+        smooth_labels = future_returns.copy()
+        
+        # Apply enhanced confidence weighting for cases close to and beyond targets
+        # Calculate distance from threshold
+        distance = future_returns / effective_threshold
+        
+        # Apply enhanced confidence weighting with caps:
+        # - No labels below 75% of target (0 confidence)
+        # - 0.5 confidence for 75% of target
+        # - 1.0 confidence for 100% of target
+        # - 1.5 confidence for 200% of target (capped at 1.5)
+        # Linear scaling: confidence = 0.5 + 2.0 * (distance - 0.75), capped at 1.5
+        proximity_factor = np.where(
+            np.abs(distance) < 0.75,  # Below 75% of target
+            0.0,  # No confidence below 75% of target
+            np.where(
+                np.abs(distance) >= 0.75,  # 75% and above
+                np.clip(0.5 + 2.0 * (np.abs(distance) - 0.75), 0.5, 1.5),  # Linear scaling capped at 1.5
+                0.0  # Fallback
+            )
+        )
+        
+        # Apply enhanced confidence weighting
+        smooth_labels = smooth_labels * proximity_factor
+        
+        # Apply quality weighting if available
+        if quality_scores is not None:
+            # Align quality scores with smooth labels
+            quality_aligned, smooth_aligned = _align_like(quality_scores, smooth_labels)
+            smooth_labels = smooth_aligned * quality_aligned
+        
+        return pd.Series(smooth_labels, index=future_returns.index, name='smooth_regression_label')
+
+    def _generate_proximity_regression_labels(
+        self,
+        future_returns: pd.Series,
+        effective_threshold: pd.Series,
+        vol_normalized: pd.Series,
+        quality_scores: Optional[pd.Series] = None,
+        weight_transform: str = 'linear',
+        soft_threshold: bool = False
+    ) -> Tuple[pd.Series, pd.Series]:
+        """
+        Generate proximity-based regression labels with sample weights.
+        
+        This method implements the new regression approach where:
+        - Target = expected move strength (normalized)
+        - Sample weight = confidence based on proximity to target
+        - Uses piecewise linear mapping for robust confidence scaling
+        
+        Args:
+            future_returns: Future returns series
+            effective_threshold: Volatility-adjusted threshold series
+            vol_normalized: Normalized volatility series
+            quality_scores: Optional quality scores for additional weighting
+            weight_transform: Weight transformation ('linear', 'sqrt', 'power_0.75')
+            soft_threshold: Use soft thresholding instead of hard cutoff
+            
+        Returns:
+            Tuple of (labels, sample_weights) where:
+            - labels: Regression targets in [-1, 1] range
+            - sample_weights: Confidence-based weights in [0, 1] range
+        """
+        # LEAKAGE CHECK: Ensure future_returns uses only out-of-sample data
+        # This is already handled by the calling method using shift(-lookahead_periods)
+        
+        # Calculate ratio = actual_move / target_move (directional)
+        ratio = future_returns / effective_threshold
+        
+        # Apply robust piecewise linear mapping with soft threshold option
+        min_thresh = 0.70 if soft_threshold else 0.75
+        proximity = proximity_mapping(ratio, min_thresh=min_thresh, cap=1.5, adaptive_clip=True)
+        
+        # Normalize proximity to [0, 1] range for stability
+        proximity_norm = np.abs(proximity) / 1.5
+        
+        # Create regression targets: sign(ratio) * proximity_norm (range [-1, 1])
+        labels = np.sign(ratio) * proximity_norm
+        
+        # Apply weight transformation to reduce overfitting
+        if weight_transform == 'sqrt':
+            sample_weights = np.sqrt(proximity_norm)
+        elif weight_transform == 'power_0.75':
+            sample_weights = np.power(proximity_norm, 0.75)
+        else:  # 'linear'
+            sample_weights = proximity_norm
+        
+        # Apply quality weighting if available
+        if quality_scores is not None:
+            # Align quality scores with labels
+            quality_aligned, labels_aligned = _align_like(quality_scores, pd.Series(labels, index=future_returns.index))
+            quality_aligned, weights_aligned = _align_like(quality_scores, pd.Series(sample_weights, index=future_returns.index))
+            
+            # Apply quality weighting to both labels and weights
+            labels = labels_aligned * quality_aligned
+            sample_weights = weights_aligned * quality_aligned
+            
+            # Ensure weights stay in [0, 1] range
+            sample_weights = np.clip(sample_weights, 0.0, 1.0)
+        
+        # Create return series
+        labels_series = pd.Series(labels, index=future_returns.index, name='proximity_regression_label')
+        weights_series = pd.Series(sample_weights, index=future_returns.index, name='sample_weight')
+        
+        return labels_series, weights_series
+
+    def get_sample_weights(self, target_name: str = 'default') -> Optional[pd.Series]:
+        """
+        Get sample weights for the specified target.
+        
+        Args:
+            target_name: Name of the target (default: 'default')
+            
+        Returns:
+            Sample weights series if available, None otherwise
+        """
+        if hasattr(self, '_sample_weights') and target_name in self._sample_weights:
+            return self._sample_weights[target_name]
+        return None
+
+    def get_all_sample_weights(self) -> Dict[str, pd.Series]:
+        """
+        Get all sample weights for all targets.
+        
+        Returns:
+            Dictionary mapping target names to sample weights
+        """
+        if hasattr(self, '_sample_weights'):
+            return self._sample_weights.copy()
+        return {}
+
+    def get_coverage_stats(self) -> Dict[str, float]:
+        """
+        Get coverage statistics for tracking dropped samples.
+        
+        Returns:
+            Dictionary with coverage statistics
+        """
+        if not hasattr(self, '_sample_weights'):
+            return {}
+        
+        stats = {}
+        for target_name, weights in self._sample_weights.items():
+            total_samples = len(weights)
+            zero_weight_samples = (weights == 0).sum()
+            coverage_rate = 1.0 - (zero_weight_samples / total_samples) if total_samples > 0 else 0.0
+            
+            stats[f'{target_name}_coverage_rate'] = coverage_rate
+            stats[f'{target_name}_dropped_samples'] = zero_weight_samples
+            stats[f'{target_name}_total_samples'] = total_samples
+        
+        return stats
+
+    def compute_calibration_metrics(
+        self, 
+        predictions: pd.Series, 
+        realized_returns: pd.Series,
+        n_bins: int = 10
+    ) -> Dict[str, float]:
+        """
+        Compute calibration metrics for predicted confidence vs realized returns.
+        
+        Args:
+            predictions: Model predictions (signed confidence)
+            realized_returns: Actual realized returns
+            n_bins: Number of calibration bins
+            
+        Returns:
+            Dictionary with calibration metrics
+        """
+        # Align data
+        pred_aligned, ret_aligned = _align_like(predictions, realized_returns)
+        
+        # Create bins based on absolute prediction values
+        abs_pred = np.abs(pred_aligned)
+        bin_edges = np.linspace(0, 1, n_bins + 1)
+        bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
+        
+        calibration_data = []
+        for i in range(n_bins):
+            mask = (abs_pred >= bin_edges[i]) & (abs_pred < bin_edges[i + 1])
+            if i == n_bins - 1:  # Include upper bound for last bin
+                mask = (abs_pred >= bin_edges[i]) & (abs_pred <= bin_edges[i + 1])
+            
+            if mask.sum() > 0:
+                avg_pred = abs_pred[mask].mean()
+                avg_realized = np.abs(ret_aligned[mask]).mean()
+                sample_count = mask.sum()
+                
+                calibration_data.append({
+                    'bin_center': bin_centers[i],
+                    'avg_pred': avg_pred,
+                    'avg_realized': avg_realized,
+                    'sample_count': sample_count
+                })
+        
+        # Calculate calibration error (MSE between predicted and realized)
+        if calibration_data:
+            pred_values = [d['avg_pred'] for d in calibration_data]
+            realized_values = [d['avg_realized'] for d in calibration_data]
+            calibration_error = np.mean((np.array(pred_values) - np.array(realized_values)) ** 2)
+        else:
+            calibration_error = np.nan
+        
+        return {
+            'calibration_error': calibration_error,
+            'n_bins': len(calibration_data),
+            'calibration_data': calibration_data
+        }
+
+    def compute_rank_metrics(
+        self, 
+        predictions: pd.Series, 
+        realized_returns: pd.Series
+    ) -> Dict[str, float]:
+        """
+        Compute rank-based metrics for model evaluation.
+        
+        Args:
+            predictions: Model predictions (signed confidence)
+            realized_returns: Actual realized returns
+            
+        Returns:
+            Dictionary with rank metrics
+        """
+        from scipy.stats import spearmanr, pearsonr
+        
+        # Align data
+        pred_aligned, ret_aligned = _align_like(predictions, realized_returns)
+        
+        # Remove NaN values
+        valid_mask = ~(np.isnan(pred_aligned) | np.isnan(ret_aligned))
+        pred_clean = pred_aligned[valid_mask]
+        ret_clean = ret_aligned[valid_mask]
+        
+        if len(pred_clean) < 2:
+            return {'spearman_correlation': np.nan, 'pearson_correlation': np.nan}
+        
+        # Spearman correlation (rank-based)
+        spearman_corr, spearman_p = spearmanr(pred_clean, ret_clean)
+        
+        # Pearson correlation (linear)
+        pearson_corr, pearson_p = pearsonr(pred_clean, ret_clean)
+        
+        # Information Coefficient (IC) - commonly used in quant finance
+        ic = spearman_corr  # Often used interchangeably with Spearman
+        
+        return {
+            'spearman_correlation': spearman_corr,
+            'spearman_p_value': spearman_p,
+            'pearson_correlation': pearson_corr,
+            'pearson_p_value': pearson_p,
+            'information_coefficient': ic,
+            'n_samples': len(pred_clean)
+        }
 
 
     @staticmethod

@@ -12,12 +12,12 @@ from dataclasses import dataclass
 class OptimizedHDBSCANDefaultConfig:
     """Default configuration for optimized HDBSCAN regime discovery."""
     
-    # HDBSCAN parameters
-    min_cluster_size: int = 10
-    min_samples: int = 5
-    cluster_selection_epsilon: float = 0.0
-    cluster_selection_method: str = 'eom'
-    metric: str = 'euclidean'
+    # HDBSCAN parameters - optimized for more clusters
+    min_cluster_size: int = 8
+    min_samples: int = 3
+    cluster_selection_epsilon: float = 0.005
+    cluster_selection_method: str = 'leaf'
+    metric: str = 'manhattan'
     alpha: float = 1.0
     
     # Optimization settings
@@ -32,11 +32,12 @@ class OptimizedHDBSCANDefaultConfig:
     enable_regime_features: bool = True
     enable_normalization_features: bool = True
     
-    # Feature selection
+    # Feature selection - enhanced for regime detection
     enable_feature_selection: bool = True
-    feature_selection_method: str = 'mrmr'  # 'mrmr', 'lasso', 'mutual_info'
-    max_features: int = 50
-    feature_selection_threshold: float = 0.01
+    feature_selection_method: str = 'regime_aware'  # 'mrmr', 'lasso', 'mutual_info', 'regime_aware'
+    max_features: int = 100  # Increased for more feature diversity
+    feature_selection_threshold: float = 0.005  # Lower threshold for more features
+    enable_regime_specific_features: bool = True  # Enable regime-specific feature engineering
     
     # Performance settings
     enable_parallel_processing: bool = True

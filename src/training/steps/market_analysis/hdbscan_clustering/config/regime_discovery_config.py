@@ -23,12 +23,12 @@ class RegimeDiscoveryConfig:
     # ============================================================================
     # CORE HDBSCAN PARAMETERS
     # ============================================================================
-    min_cluster_size_pct: float = 0.01  # % of N_eff (after windowing)
-    min_cluster_size_floor: int = 12    # Absolute minimum
+    min_cluster_size_pct: float = 0.008  # % of N_eff (after windowing) - more aggressive
+    min_cluster_size_floor: int = 8      # Absolute minimum - lower for more clusters
     min_samples_options: List[Union[int, str]] = field(default_factory=lambda: [None, 'half', 'same'])
     cluster_selection_method_options: List[str] = field(default_factory=lambda: ['eom', 'leaf'])
-    cluster_selection_epsilon: float = 0.01
-    metric: str = 'euclidean'  # Distance metric: 'euclidean', 'manhattan', 'cosine', etc.
+    cluster_selection_epsilon: float = 0.005  # Tighter clusters for better separation
+    metric: str = 'manhattan'  # Distance metric: 'manhattan' more robust to outliers
     prediction_data: bool = True
     
     # ============================================================================
@@ -67,7 +67,7 @@ class RegimeDiscoveryConfig:
     # ============================================================================
     winsorize_limits: Tuple[float, float] = (0.01, 0.99)
     quantile_transformer_output: str = 'normal'
-    correlation_threshold: float = 0.95
+    correlation_threshold: float = 0.85
     mi_threshold: float = 0.9  # Mutual information pruning
     per_asset_fitting: bool = True  # Avoid cross-sectional leakage
     variance_floor: float = 1e-8  # Clamp tiny variances

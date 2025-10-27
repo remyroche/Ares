@@ -20,7 +20,7 @@ from .feature_bank_integration import (
 )
 
 # Import enhanced feature selection
-from ..utils.enhanced_feature_selection import (
+from ..utils.cluster_feature_selection import (
     EnhancedFeatureSelector, EnhancedFeatureSelectionConfig
 )
 

@@ -24,7 +24,7 @@ sys.path.append('src')
 from feature_generation.integration.enhanced_regime_clustering_integration import (
     EnhancedRegimeClusteringIntegration, perform_enhanced_regime_clustering
 )
-from feature_generation.utils.enhanced_feature_selection import (
+from feature_generation.utils.cluster_feature_selection import (
     EnhancedFeatureSelector, EnhancedFeatureSelectionConfig
 )
 from feature_generation.utils.cluster_distinctiveness_metrics import (

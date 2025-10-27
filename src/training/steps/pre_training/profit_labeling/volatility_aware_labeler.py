@@ -79,6 +79,8 @@ class LabelDefinitionType(Enum):
     BINARY = "binary"
     MULTI_CLASS = "multi_class"
     REGRESSION = "regression"
+    SMOOTH_BINARY = "smooth_binary"  # Smooth binary labels with confidence weighting
+    SMOOTH_REGRESSION = "smooth_regression"  # Smooth regression labels with proximity weighting
     ANALYST = "analyst"  # For analyst profit labeling (long-term analysis)
     TACTICIAN = "tactician"  # For tactician entry labeling (short-term entry)
 
@@ -243,7 +245,7 @@ class RateControlConfig:
     """Configuration for data-driven rate calibration."""
     def __init__(self) -> None:
         self.enabled = True
-        self.max_ops_per_day = 6  # cap opportunities per day (conservative target to ensure ≤8/day)
+        # Removed max_ops_per_day limit as requested
         self.min_scale = 0.5      # search lower bound for threshold scaling
         self.max_scale = 3.0      # search upper bound for threshold scaling
         self.tolerance = 0.15     # tighter tolerance (was 0.25)
@@ -442,7 +444,6 @@ class VolatilityAwareMultiHorizonLabeler:
                                                             enable_short=self.config.enable_short_positions,
                                                             min_scale=self.config.rate_control.min_scale,
                                                             max_scale=self.config.rate_control.max_scale,
-                                                            max_ops_per_day=self.config.rate_control.max_ops_per_day,
                                                             tol=self.config.rate_control.tolerance)
                     if targets_frac:
                         calibrated_targets = [float(t) * rate_scale for t in targets_frac]
@@ -854,12 +855,12 @@ class VolatilityAwareMultiHorizonLabeler:
         enable_short: bool,
         min_scale: float,
         max_scale: float,
-        max_ops_per_day: int,
         tol: float = 0.25
     ) -> float:
-        """Calibrate a multiplicative scale for the base target to meet an ops/day cap.
+        """Calibrate a multiplicative scale for the base target.
 
         Uses binary search on a simple thresholded returns proxy to estimate signal rate.
+        No longer limited by max_ops_per_day as requested.
         """
         # Precompute future returns and vol normalization
         fut_ret = prices.pct_change(lookahead_bars).shift(-lookahead_bars)
@@ -872,33 +873,9 @@ class VolatilityAwareMultiHorizonLabeler:
         except Exception:
             time_span_days = max(1.0, len(prices) / (24 * 60))  # rough fallback for 1-min data
 
-        target_total = max_ops_per_day * time_span_days
-
-        def count_ops(scale: float) -> int:
-            k = self.config.volatility.sensitivity
-            min_mult = getattr(self.config.multi_target, 'min_threshold_multiplier', 0.5)
-            max_mult = getattr(self.config.multi_target, 'max_threshold_multiplier', 2.0)
-            eff = (base_target * scale) * np.clip(1.0 + k * (vol_norm - 1.0), min_mult, max_mult)
-            count = 0
-            if enable_long:
-                count += int((fut_ret > eff).sum())
-            if enable_short:
-                count += int((fut_ret < -eff).sum())
-            return count
-
-        lo, hi = min_scale, max_scale
-        best_scale = hi
-        # Binary search for scale that brings op count <= target_total
-        for _ in range(20):
-            mid = 0.5 * (lo + hi)
-            ops = count_ops(mid)
-            if ops > target_total * (1.0 + tol):
-                # too many ops → increase threshold → increase scale
-                lo = mid
-            else:
-                best_scale = mid
-                hi = mid
-        return float(best_scale)
+        # No longer using target_total based on max_ops_per_day
+        # Return a default scale since we're not limiting opportunities per day
+        return 1.0
 
     def _infer_bars_per_day(self, index: pd.Index) -> float:
         """Infer approximate bars per day from datetime-like index."""
@@ -3351,6 +3328,16 @@ class VolatilityAwareMultiHorizonLabeler:
                     if self.config.enable_short_positions:
                         short_signals = (future_returns < -effective_target).astype(np.int8)
                         target_labels -= short_signals  # -1 for short signals
+                elif self.config.label_type == LabelDefinitionType.SMOOTH_BINARY:
+                    # Smooth binary labels with proximity weighting
+                    target_labels = self._generate_smooth_binary_labels(
+                        future_returns, effective_target, vol_normalized
+                    )
+                elif self.config.label_type == LabelDefinitionType.SMOOTH_REGRESSION:
+                    # Smooth regression labels with proximity weighting
+                    target_labels = self._generate_smooth_regression_labels(
+                        future_returns, effective_target, vol_normalized
+                    )
                 else:
                     # Regression: use actual returns
                     target_labels = future_returns
@@ -3414,11 +3401,130 @@ class VolatilityAwareMultiHorizonLabeler:
                 short_rate = (labels < 0).mean()
                 signal_rate = (labels != 0).mean()
                 # Generate signals based on direction configuration and volatility modulation
+            elif self.config.label_type == LabelDefinitionType.SMOOTH_BINARY:
+                # Smooth binary labels with proximity weighting
+                base_threshold = self.config.multi_target.target_profit / 100.0
+                k = self.config.volatility.sensitivity
+                min_mult = getattr(self.config.multi_target, 'min_threshold_multiplier', 0.5)
+                max_mult = getattr(self.config.multi_target, 'max_threshold_multiplier', 2.0)
+                effective_threshold = base_threshold * np.clip(1.0 + k * (vol_normalized - 1.0), min_mult, max_mult)
+                
+                labels = self._generate_smooth_binary_labels(
+                    future_returns, effective_threshold, vol_normalized
+                )
+            elif self.config.label_type == LabelDefinitionType.SMOOTH_REGRESSION:
+                # Smooth regression labels with proximity weighting
+                base_threshold = self.config.multi_target.target_profit / 100.0
+                k = self.config.volatility.sensitivity
+                min_mult = getattr(self.config.multi_target, 'min_threshold_multiplier', 0.5)
+                max_mult = getattr(self.config.multi_target, 'max_threshold_multiplier', 2.0)
+                effective_threshold = base_threshold * np.clip(1.0 + k * (vol_normalized - 1.0), min_mult, max_mult)
+                
+                labels = self._generate_smooth_regression_labels(
+                    future_returns, effective_threshold, vol_normalized
+                )
             else:
                 # Regression: use actual returns
                 labels = future_returns
 
         return labels
+
+    def _generate_smooth_binary_labels(
+        self,
+        future_returns: pd.Series,
+        effective_threshold: pd.Series,
+        vol_normalized: pd.Series,
+        quality_scores: Optional[pd.Series] = None
+    ) -> pd.Series:
+        """
+        Generate smooth binary labels with confidence weighting and proximity consideration.
+        
+        Args:
+            future_returns: Future returns series
+            effective_threshold: Volatility-adjusted threshold series
+            vol_normalized: Normalized volatility series
+            quality_scores: Optional quality scores for weighting
+            
+        Returns:
+            Smooth binary labels in range [-1, 1] with proximity weighting
+        """
+        # Calculate distance from threshold
+        distance = future_returns / effective_threshold
+        
+        # Apply sigmoid smoothing with volatility-dependent sharpness
+        # More sharp in high volatility periods
+        sharpness = 2.0 + (vol_normalized - 1.0) * 0.5  # Range: 1.5 to 2.5
+        smooth_labels = np.tanh(distance * sharpness)
+        
+        # Apply proximity weighting for cases close to targets
+        # When close to target (within 20% of threshold), reduce confidence
+        proximity_factor = np.where(
+            np.abs(distance) < 1.2,  # Close to target
+            np.abs(distance) / 1.2,  # Linear scaling from 0 to 1
+            1.0  # Full confidence when far from target
+        )
+        
+        # Apply proximity weighting
+        smooth_labels = smooth_labels * proximity_factor
+        
+        # Apply quality weighting if available
+        if quality_scores is not None:
+            # Align quality scores with smooth labels
+            quality_aligned, smooth_aligned = _align_like(quality_scores, smooth_labels)
+            smooth_labels = smooth_aligned * quality_aligned
+        
+        # Ensure labels are in valid range
+        smooth_labels = np.clip(smooth_labels, -1.0, 1.0)
+        
+        return pd.Series(smooth_labels, index=future_returns.index, name='smooth_binary_label')
+
+    def _generate_smooth_regression_labels(
+        self,
+        future_returns: pd.Series,
+        effective_threshold: pd.Series,
+        vol_normalized: pd.Series,
+        quality_scores: Optional[pd.Series] = None
+    ) -> pd.Series:
+        """
+        Generate smooth regression labels with proximity weighting.
+        
+        Args:
+            future_returns: Future returns series
+            effective_threshold: Volatility-adjusted threshold series
+            vol_normalized: Normalized volatility series
+            quality_scores: Optional quality scores for weighting
+            
+        Returns:
+            Smooth regression labels with proximity weighting
+        """
+        # Start with actual returns
+        smooth_labels = future_returns.copy()
+        
+        # Apply proximity weighting for cases close to targets
+        # Calculate distance from threshold
+        distance = future_returns / effective_threshold
+        
+        # For cases close to target (within 20% of threshold), apply proximity weighting
+        proximity_mask = np.abs(distance) < 1.2
+        
+        if proximity_mask.any():
+            # Apply proximity weighting: reduce magnitude for close cases
+            proximity_factor = np.where(
+                proximity_mask,
+                np.abs(distance) / 1.2,  # Linear scaling from 0 to 1
+                1.0  # Full magnitude when far from target
+            )
+            
+            # Apply proximity weighting
+            smooth_labels = smooth_labels * proximity_factor
+        
+        # Apply quality weighting if available
+        if quality_scores is not None:
+            # Align quality scores with smooth labels
+            quality_aligned, smooth_aligned = _align_like(quality_scores, smooth_labels)
+            smooth_labels = smooth_aligned * quality_aligned
+        
+        return pd.Series(smooth_labels, index=future_returns.index, name='smooth_regression_label')
 
 
     @staticmethod

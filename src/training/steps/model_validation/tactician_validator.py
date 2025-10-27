@@ -140,6 +140,13 @@ class TacticianValidator:
             return {}
 
         try:
+            # Check if we're dealing with smooth labels
+            if self._detect_smooth_labels(y_true):
+                # Convert numpy array to pandas Series for smooth label evaluation
+                y_pred_series = pd.Series(y_pred, index=y_true.index)
+                return self._evaluate_smooth_labels(y_true, y_pred_series, y_pred_proba)
+            
+            # Standard classification metrics for discrete labels
             metrics = {
                 'accuracy': accuracy_score(y_true, y_pred),
                 'precision': precision_score(y_true, y_pred, average='weighted', zero_division=0),
@@ -188,3 +195,105 @@ class TacticianValidator:
                 best_model = model_key
 
         return best_model
+
+    def _evaluate_smooth_labels(
+        self, 
+        y_true: pd.Series, 
+        y_pred: pd.Series, 
+        y_pred_proba: Optional[np.ndarray] = None
+    ) -> Dict[str, float]:
+        """
+        Evaluate smooth labels using both classification and regression metrics.
+        
+        Args:
+            y_true: True smooth labels (continuous values in [-1, 1])
+            y_pred: Predicted smooth labels (continuous values in [-1, 1])
+            y_pred_proba: Optional probability predictions
+            
+        Returns:
+            Dictionary of evaluation metrics
+        """
+        metrics = {}
+        
+        # Regression metrics for smooth labels
+        mse = np.mean((y_true - y_pred) ** 2)
+        mae = np.mean(np.abs(y_true - y_pred))
+        r2 = 1 - (mse / np.var(y_true)) if np.var(y_true) > 0 else 0
+        
+        metrics.update({
+            'mse': mse,
+            'mae': mae,
+            'r2': r2,
+            'rmse': np.sqrt(mse)
+        })
+        
+        # Classification metrics by thresholding smooth labels
+        # Convert smooth labels to binary for classification metrics
+        y_true_binary = np.where(y_true > 0.1, 1, np.where(y_true < -0.1, -1, 0))
+        y_pred_binary = np.where(y_pred > 0.1, 1, np.where(y_pred < -0.1, -1, 0))
+        
+        # Calculate classification metrics
+        accuracy = np.mean(y_true_binary == y_pred_binary)
+        
+        # Precision, recall, F1 for each class
+        for class_label in [-1, 0, 1]:
+            class_name = {-1: 'short', 0: 'neutral', 1: 'long'}[class_label]
+            
+            true_positives = np.sum((y_true_binary == class_label) & (y_pred_binary == class_label))
+            false_positives = np.sum((y_true_binary != class_label) & (y_pred_binary == class_label))
+            false_negatives = np.sum((y_true_binary == class_label) & (y_pred_binary != class_label))
+            
+            precision = true_positives / (true_positives + false_positives) if (true_positives + false_positives) > 0 else 0
+            recall = true_positives / (true_positives + false_negatives) if (true_positives + false_negatives) > 0 else 0
+            f1 = 2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0
+            
+            metrics.update({
+                f'{class_name}_precision': precision,
+                f'{class_name}_recall': recall,
+                f'{class_name}_f1': f1
+            })
+        
+        # Overall weighted metrics
+        precision_weighted = np.mean([
+            metrics['short_precision'], metrics['neutral_precision'], metrics['long_precision']
+        ])
+        recall_weighted = np.mean([
+            metrics['short_recall'], metrics['neutral_recall'], metrics['long_recall']
+        ])
+        f1_weighted = np.mean([
+            metrics['short_f1'], metrics['neutral_f1'], metrics['long_f1']
+        ])
+        
+        metrics.update({
+            'accuracy': accuracy,
+            'precision_weighted': precision_weighted,
+            'recall_weighted': recall_weighted,
+            'f1_weighted': f1_weighted
+        })
+        
+        # Correlation between true and predicted smooth labels
+        correlation = np.corrcoef(y_true, y_pred)[0, 1] if len(y_true) > 1 else 0
+        metrics['correlation'] = correlation
+        
+        return metrics
+
+    def _detect_smooth_labels(self, y: pd.Series) -> bool:
+        """
+        Detect if labels are smooth (continuous values in [-1, 1] range).
+        
+        Args:
+            y: Label series to check
+            
+        Returns:
+            True if labels appear to be smooth, False otherwise
+        """
+        if len(y) == 0:
+            return False
+        
+        # Check if values are continuous and in [-1, 1] range
+        unique_values = y.unique()
+        is_continuous = len(unique_values) > 10  # More than 10 unique values suggests continuous
+        in_range = np.all((y >= -1.0) & (y <= 1.0))
+        has_fractional = np.any(y != y.astype(int))  # Has non-integer values
+        
+        return is_continuous and in_range and has_fractional

@@ -60,6 +60,19 @@ except ImportError:
     Isomap = None
     StandardScaler = None
 
+# VectorBT optimization imports
+try:
+    from src.feature_generation.utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer, VectorBTRollingOptimizer
+    from src.feature_generation.utils.unified_vectorization_manager import UnifiedVectorizationManager
+    from src.utils.ml_common.unified_vectorization_manager import UnifiedVectorizationManager as MLUnifiedVectorizationManager
+    OPTIMIZATION_AVAILABLE = True
+except ImportError:
+    OPTIMIZATION_AVAILABLE = False
+    get_vectorbt_rolling_optimizer = None
+    VectorBTRollingOptimizer = None
+    UnifiedVectorizationManager = None
+    MLUnifiedVectorizationManager = None
+
 try:
     import vectorbt as vbt
     from vectorbt.generic import (
@@ -185,6 +198,28 @@ class ClusteringDistanceGenerator(VectorizedFeatureGenerator):
             gpu_accelerated=False
         )
         super().__init__(base_config, enable_matrix_ops=True)
+        
+        # Initialize VectorBT optimizers
+        self.vectorbt_optimizer = None
+        self.unified_optimizer = None
+        
+        if OPTIMIZATION_AVAILABLE:
+            try:
+                # Initialize VectorBT rolling optimizer
+                self.vectorbt_optimizer = get_vectorbt_rolling_optimizer()
+                
+                # Initialize unified vectorization manager
+                unified_config = {
+                    "enable_vectorbt": True,
+                    "enable_matrix_ops": True,
+                    "enable_gpu": False,
+                    "optimization_level": "high"
+                }
+                self.unified_optimizer = UnifiedVectorizationManager(unified_config)
+                
+                print("✅ VectorBT optimizers and UnifiedVectorizationManager initialized for ClusteringDistanceGenerator")
+            except Exception as e:
+                print(f"⚠️ VectorBT optimizer initialization failed: {e}")
 
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         """Generate clustering distance features."""
@@ -438,6 +473,28 @@ class ClusteringSeparationGenerator(VectorizedFeatureGenerator):
             gpu_accelerated=False
         )
         super().__init__(base_config, enable_matrix_ops=True)
+        
+        # Initialize VectorBT optimizers
+        self.vectorbt_optimizer = None
+        self.unified_optimizer = None
+        
+        if OPTIMIZATION_AVAILABLE:
+            try:
+                # Initialize VectorBT rolling optimizer
+                self.vectorbt_optimizer = get_vectorbt_rolling_optimizer()
+                
+                # Initialize unified vectorization manager
+                unified_config = {
+                    "enable_vectorbt": True,
+                    "enable_matrix_ops": True,
+                    "enable_gpu": False,
+                    "optimization_level": "high"
+                }
+                self.unified_optimizer = UnifiedVectorizationManager(unified_config)
+                
+                print("✅ VectorBT optimizers and UnifiedVectorizationManager initialized for ClusteringSeparationGenerator")
+            except Exception as e:
+                print(f"⚠️ VectorBT optimizer initialization failed: {e}")
 
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         """Generate clustering separation features."""
@@ -636,6 +693,28 @@ class ClusteringStabilityGenerator(VectorizedFeatureGenerator):
             gpu_accelerated=False
         )
         super().__init__(base_config, enable_matrix_ops=True)
+        
+        # Initialize VectorBT optimizers
+        self.vectorbt_optimizer = None
+        self.unified_optimizer = None
+        
+        if OPTIMIZATION_AVAILABLE:
+            try:
+                # Initialize VectorBT rolling optimizer
+                self.vectorbt_optimizer = get_vectorbt_rolling_optimizer()
+                
+                # Initialize unified vectorization manager
+                unified_config = {
+                    "enable_vectorbt": True,
+                    "enable_matrix_ops": True,
+                    "enable_gpu": False,
+                    "optimization_level": "high"
+                }
+                self.unified_optimizer = UnifiedVectorizationManager(unified_config)
+                
+                print("✅ VectorBT optimizers and UnifiedVectorizationManager initialized for ClusteringStabilityGenerator")
+            except Exception as e:
+                print(f"⚠️ VectorBT optimizer initialization failed: {e}")
 
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         """Generate clustering stability features."""
@@ -851,6 +930,28 @@ class ClusteringIntegration(VectorizedFeatureGenerator):
         )
         
         super().__init__(base_config, enable_matrix_ops=True)
+        
+        # Initialize VectorBT optimizers
+        self.vectorbt_optimizer = None
+        self.unified_optimizer = None
+        
+        if OPTIMIZATION_AVAILABLE:
+            try:
+                # Initialize VectorBT rolling optimizer
+                self.vectorbt_optimizer = get_vectorbt_rolling_optimizer()
+                
+                # Initialize unified vectorization manager
+                unified_config = {
+                    "enable_vectorbt": True,
+                    "enable_matrix_ops": True,
+                    "enable_gpu": False,
+                    "optimization_level": "high"
+                }
+                self.unified_optimizer = UnifiedVectorizationManager(unified_config)
+                
+                print("✅ VectorBT optimizers and UnifiedVectorizationManager initialized for ClusteringIntegration")
+            except Exception as e:
+                print(f"⚠️ VectorBT optimizer initialization failed: {e}")
         
         # Initialize clustering feature generators
         self.distance_generator = ClusteringDistanceGenerator() if config.include_distance_features else None

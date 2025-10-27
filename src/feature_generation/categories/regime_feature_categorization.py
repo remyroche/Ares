@@ -34,7 +34,6 @@ from .regime_features import (
     RegimeFractalDimensionGenerator,
     RegimeHurstExponentGenerator,
     RegimeMemoryStrengthGenerator,
-    RegimeMicrostructureGenerator,
     RegimeCrossAssetGenerator,
     RegimeTransitionProbabilityGenerator,
     RegimeFeatureIntegration
@@ -142,26 +141,6 @@ class RegimeFeatureCategorizer:
             lookahead_safe=True
         )
         
-        # Microstructure Features (for detailed regime analysis)
-        categories["microstructure"] = FeatureCategory(
-            name="Microstructure Features",
-            description="Market microstructure features for regime detection",
-            use_cases={
-                FeatureUseCase.HDBSCAN_CLUSTERING,
-                FeatureUseCase.REGIME_CLUSTERING,
-                FeatureUseCase.REGIME_MODELS_TRAINING
-            },
-            generators=[
-                RegimeMicrostructureGenerator()
-            ],
-            feature_names=[
-                "price_impact", "spread_regime_strength", "volume_regime_strength",
-                "market_structure_regime", "sr_regime_strength"
-            ],
-            priority=7,
-            stability_required=True,
-            lookahead_safe=True
-        )
         
         # Cross-Asset Features (for multi-asset regime analysis)
         categories["cross_asset"] = FeatureCategory(
@@ -427,7 +406,7 @@ FEATURE_USAGE_GUIDELINES = {
             "Features that are not regime-relevant"
         ],
         "recommended_count": "40-80 features",
-        "priority_categories": ["core_regime", "structural_trend", "microstructure"]
+        "priority_categories": ["core_regime", "structural_trend", "cross_asset"]
     },
     
     FeatureUseCase.REGIME_MODELS_TRAINING: {
@@ -444,7 +423,7 @@ FEATURE_USAGE_GUIDELINES = {
             "Features that are too unstable"
         ],
         "recommended_count": "30-60 features",
-        "priority_categories": ["core_regime", "transition", "microstructure"]
+        "priority_categories": ["core_regime", "transition", "cross_asset"]
     },
     
     FeatureUseCase.REGIME_ENSEMBLE_TRAINING: {

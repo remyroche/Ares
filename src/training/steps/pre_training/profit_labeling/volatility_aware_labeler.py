@@ -308,7 +308,11 @@ class VolatilityConfig:
         self.percentile_clipping = False  # Use percentile-based clipping instead of fixed bounds
         self.percentile_low = 1.0  # Low percentile for clipping (e.g., 1st percentile)
         self.percentile_high = 99.0  # High percentile for clipping (e.g., 99th percentile)
-        self.hysteresis_threshold = 0.05  # Minimum change required to update threshold
+        self.percentile_min_range = 0.5  # Minimum range between percentiles to prevent too narrow ranges
+        self.rolling_percentile_window = 90  # Rolling window for dynamic percentile updates (days)
+        self.hysteresis_threshold = 0.05  # Base minimum change required to update threshold
+        self.adaptive_hysteresis = True  # Scale hysteresis by volatility
+        self.hysteresis_volatility_factor = 0.1  # Factor to scale hysteresis by volatility (5-10%)
         self.volatility_floor = 1e-6  # Minimum volatility to prevent divide-by-zero
         self.warmup_policy = 'rolling_mean'  # 'rolling_mean', 'drop', or 'fillna'
 
@@ -3423,11 +3427,122 @@ class VolatilityAwareMultiHorizonLabeler:
         
         # Apply percentile-based clipping if enabled
         if self.config.volatility.percentile_clipping:
-            p_low = np.percentile(vol_normalized.dropna(), self.config.volatility.percentile_low)
-            p_high = np.percentile(vol_normalized.dropna(), self.config.volatility.percentile_high)
-            vol_normalized = np.clip(vol_normalized, p_low, p_high)
+            vol_normalized = self._apply_percentile_clipping(vol_normalized)
         
         return vol_normalized, vol_mean
+
+    def _apply_percentile_clipping(
+        self, 
+        vol_normalized: pd.Series
+    ) -> pd.Series:
+        """
+        Apply percentile-based clipping with range validation and rolling updates.
+        
+        Args:
+            vol_normalized: Normalized volatility series
+            
+        Returns:
+            Clipped volatility series with validated range
+        """
+        # Use rolling window for dynamic percentile updates if enabled
+        if hasattr(self.config.volatility, 'rolling_percentile_window') and self.config.volatility.rolling_percentile_window > 0:
+            # Rolling percentile calculation
+            window = self.config.volatility.rolling_percentile_window
+            p_low_series = vol_normalized.rolling(window=window, min_periods=window//2).quantile(
+                self.config.volatility.percentile_low / 100.0
+            )
+            p_high_series = vol_normalized.rolling(window=window, min_periods=window//2).quantile(
+                self.config.volatility.percentile_high / 100.0
+            )
+            
+            # Fill initial values with global percentiles
+            global_p_low = np.percentile(vol_normalized.dropna(), self.config.volatility.percentile_low)
+            global_p_high = np.percentile(vol_normalized.dropna(), self.config.volatility.percentile_high)
+            p_low_series = p_low_series.fillna(global_p_low)
+            p_high_series = p_high_series.fillna(global_p_high)
+            
+            # Apply range validation
+            p_low_series, p_high_series = self._validate_percentile_range(p_low_series, p_high_series)
+            
+            # Apply clipping
+            vol_normalized_clipped = vol_normalized.copy()
+            for i in range(len(vol_normalized)):
+                if not pd.isna(p_low_series.iloc[i]) and not pd.isna(p_high_series.iloc[i]):
+                    vol_normalized_clipped.iloc[i] = np.clip(
+                        vol_normalized.iloc[i], 
+                        p_low_series.iloc[i], 
+                        p_high_series.iloc[i]
+                    )
+            
+            return vol_normalized_clipped
+        else:
+            # Static percentile calculation
+            p_low = np.percentile(vol_normalized.dropna(), self.config.volatility.percentile_low)
+            p_high = np.percentile(vol_normalized.dropna(), self.config.volatility.percentile_high)
+            
+            # Apply range validation
+            p_low, p_high = self._validate_percentile_range_static(p_low, p_high)
+            
+            return np.clip(vol_normalized, p_low, p_high)
+
+    def _validate_percentile_range(
+        self, 
+        p_low_series: pd.Series, 
+        p_high_series: pd.Series
+    ) -> Tuple[pd.Series, pd.Series]:
+        """
+        Validate percentile range to prevent too narrow ranges.
+        
+        Args:
+            p_low_series: Low percentile series
+            p_high_series: High percentile series
+            
+        Returns:
+            Validated percentile series
+        """
+        min_range = self.config.volatility.percentile_min_range
+        
+        # Calculate range
+        range_series = p_high_series - p_low_series
+        
+        # Find where range is too narrow
+        narrow_mask = range_series < min_range
+        
+        if narrow_mask.any():
+            # Expand range symmetrically around center
+            center = (p_low_series + p_high_series) / 2
+            half_range = min_range / 2
+            
+            p_low_series = np.where(narrow_mask, center - half_range, p_low_series)
+            p_high_series = np.where(narrow_mask, center + half_range, p_high_series)
+        
+        return p_low_series, p_high_series
+
+    def _validate_percentile_range_static(
+        self, 
+        p_low: float, 
+        p_high: float
+    ) -> Tuple[float, float]:
+        """
+        Validate static percentile range to prevent too narrow ranges.
+        
+        Args:
+            p_low: Low percentile value
+            p_high: High percentile value
+            
+        Returns:
+            Validated percentile values
+        """
+        min_range = self.config.volatility.percentile_min_range
+        
+        if p_high - p_low < min_range:
+            # Expand range symmetrically around center
+            center = (p_low + p_high) / 2
+            half_range = min_range / 2
+            p_low = center - half_range
+            p_high = center + half_range
+        
+        return p_low, p_high
 
     def _calculate_effective_threshold(
         self, 
@@ -3460,11 +3575,20 @@ class VolatilityAwareMultiHorizonLabeler:
         # Apply clipping
         multiplier = np.clip(multiplier, min_mult, max_mult)
         
-        # Apply hysteresis to prevent chattering
+        # Apply adaptive hysteresis to prevent chattering
         if hasattr(self, '_last_multiplier') and len(multiplier) > 0:
-            # Only update if change exceeds threshold
+            # Calculate adaptive hysteresis threshold
+            if self.config.volatility.adaptive_hysteresis:
+                # Scale hysteresis by volatility: threshold = base * (1 + factor * vol_normalized)
+                adaptive_threshold = self.config.volatility.hysteresis_threshold * (
+                    1.0 + self.config.volatility.hysteresis_volatility_factor * vol_normalized
+                )
+            else:
+                adaptive_threshold = self.config.volatility.hysteresis_threshold
+            
+            # Only update if change exceeds adaptive threshold
             change = np.abs(multiplier - self._last_multiplier)
-            update_mask = change > self.config.volatility.hysteresis_threshold
+            update_mask = change > adaptive_threshold
             multiplier = np.where(update_mask, multiplier, self._last_multiplier)
         
         # Store for next iteration

@@ -11,6 +11,57 @@ Key Features:
 - Economic interpretability
 
 Libraries: Uses statsmodels.tsa.regime_switching
+
+═══════════════════════════════════════════════════════════════════════════════
+IMPORTANT: Understanding MS-DR Clustering
+═══════════════════════════════════════════════════════════════════════════════
+
+1. UNIVARIATE TIME SERIES REQUIREMENT
+   MS-DR models work with UNIVARIATE time series (single variable over time).
+   Even if you provide multi-dimensional input:
+   - Features are reduced to a single time series via PCA or aggregation
+   - The model identifies regimes in this univariate series
+   - Regime labels represent hidden states in the time series
+
+2. WHAT ARE "REGIMES"?
+   Regimes are hidden states with different statistical properties:
+   - Different mean levels (e.g., bull vs bear markets)
+   - Different volatilities (low vs high volatility states)
+   - Different autocorrelation patterns (trending vs mean-reverting)
+   
+3. HOW TO INTERPRET RESULTS
+   - cluster_labels: Most likely regime at each time point
+   - cluster_probabilities: Probability of being in each regime
+   - transition_matrix: Probability of switching between regimes
+   - regime_params: Statistical parameters for each regime
+   - regime_variances: Volatility in each regime (if switching_variance=True)
+
+4. DIMENSIONALITY REDUCTION STRATEGIES
+   Configure via pca_aggregation parameter:
+   - 'first': Use first principal component (default, captures most variance)
+   - 'weighted_average': Variance-weighted average of components
+   - 'none': Keep all components (may not work with all MS models)
+
+5. MODEL SELECTION
+   When auto_select_regimes=True:
+   - Fits models with different numbers of regimes
+   - Selects best based on information criterion (AIC/BIC/HQIC)
+   - Lower IC values indicate better model fit
+   - Only the best model is stored to optimize memory
+
+6. USE CASES
+   Best suited for:
+   - Market regime identification (bull/bear/sideways)
+   - Volatility regime switching (low/high volatility)
+   - Economic cycle detection
+   - State-dependent forecasting
+   
+   NOT suited for:
+   - Static cluster analysis (use HDBSCAN instead)
+   - High-dimensional clustering without temporal structure
+   - Real-time classification of new samples
+
+═══════════════════════════════════════════════════════════════════════════════
 """
 
 import warnings
@@ -25,7 +76,8 @@ import logging
 
 from src.utils.tprint import (
     tprint, tprint_info, tprint_success, tprint_warning, tprint_error,
-    tprint_debug, tprint_performance, tprint_structured, tprint_timer
+    tprint_debug, tprint_performance, tprint_structured, tprint_timer,
+    tprint_data_preview, tprint_data_format
 )
 
 # Try to import Markov-Switching models
@@ -79,7 +131,6 @@ class MSDRConfig:
     # Model parameters
     n_regimes: int = 5  # Number of regimes (can be optimized)
     switching_variance: bool = True  # Allow variance to switch across regimes
-    switching_trend: bool = True  # Allow trend to switch across regimes
     
     # Model type
     model_type: str = 'autoregression'  # 'autoregression', 'regression', 'dynamic_factor'
@@ -93,6 +144,7 @@ class MSDRConfig:
     enable_pca: bool = True
     pca_components: int = 10
     pca_variance_threshold: float = 0.95
+    pca_aggregation: str = 'first'  # How to convert multi-dim to univariate: 'first', 'weighted_average', 'none'
     
     # Model selection
     auto_select_regimes: bool = True  # Auto-select number of regimes using IC
@@ -125,16 +177,16 @@ class MSDRResult:
     regime_variances: Optional[np.ndarray]
     
     # Quality metrics
-    silhouette_score: float
-    calinski_harabasz_score: float
-    davies_bouldin_score: float
+    silhouette_score: Optional[float]
+    calinski_harabasz_score: Optional[float]
+    davies_bouldin_score: Optional[float]
     noise_ratio: float
-    log_likelihood: float
+    log_likelihood: Optional[float]
     
-    # Model selection metrics
-    aic: float
-    bic: float
-    hqic: float
+    # Model selection metrics (None if model fitting failed)
+    aic: Optional[float]
+    bic: Optional[float]
+    hqic: Optional[float]
     
     # Regime statistics
     regime_durations: Optional[np.ndarray]
@@ -197,7 +249,7 @@ class MSDRClusterer:
             "library": MS_LIBRARY
         }, level="INFO")
     
-    def fit_predict(self, data: np.ndarray, validate: bool = True) -> MSDRResult:
+    def fit_predict(self, data: np.ndarray) -> MSDRResult:
         """
         Fit MS-DR model and predict regime labels.
         
@@ -206,6 +258,10 @@ class MSDRClusterer:
             
         Returns:
             MSDRResult with clustering results
+            
+        Note:
+            Input validation is always performed to ensure reliable MS-DR estimation.
+            The validation checks for minimum samples, feature requirements, and data quality.
         """
         tprint_info("🔍 Starting Markov-Switching regime discovery")
         
@@ -216,9 +272,8 @@ class MSDRClusterer:
         tracemalloc.start()
         
         try:
-            # Validate input data (from code review)
-            if validate:
-                self._validate_input(data)
+            # Validate input data (always validate for reliability)
+            self._validate_input(data)
             
             # Preprocess data
             data_processed, feature_names = self._preprocess_data(data)
@@ -302,14 +357,14 @@ class MSDRClusterer:
                 transition_matrix=None,
                 regime_params=None,
                 regime_variances=None,
-                silhouette_score=0.0,
-                calinski_harabasz_score=0.0,
-                davies_bouldin_score=0.0,
+                silhouette_score=None,
+                calinski_harabasz_score=None,
+                davies_bouldin_score=None,
                 noise_ratio=1.0,
-                log_likelihood=0.0,
-                aic=np.inf,
-                bic=np.inf,
-                hqic=np.inf,
+                log_likelihood=None,
+                aic=None,
+                bic=None,
+                hqic=None,
                 regime_durations=None,
                 transition_persistence=0.0,
                 processing_time=time.time() - start_time,
@@ -320,8 +375,19 @@ class MSDRClusterer:
             )
     
     def _validate_input(self, data: np.ndarray) -> None:
-        """Validate input data (from code review)."""
-        tprint_info("🔍 Validating input data")
+        """
+        Validate input data for MS-DR clustering.
+        
+        Checks:
+        - Minimum sample requirements
+        - Minimum feature requirements  
+        - NaN value ratios
+        - Degenerate cases (all identical values)
+        
+        Raises:
+            ValueError: If validation fails
+        """
+        tprint_debug("🔍 Validating input data")
         
         # Check minimum samples
         n_samples = len(data) if len(data.shape) == 1 else data.shape[0]
@@ -392,21 +458,47 @@ class MSDRClusterer:
         else:
             data_processed = data_scaled
         
-        # For MS models, we typically use the first principal component or average
+        # For MS models, we need univariate time series
+        # Convert multi-dimensional data to univariate based on aggregation strategy
         if data_processed.shape[1] > 1:
-            tprint_info("📊 Using first principal component for MS model")
-            data_processed = data_processed[:, 0].reshape(-1, 1)
-            feature_names = ['pc1']
+            if self.config.pca_aggregation == 'first':
+                tprint_info("📊 Using first principal component for MS model")
+                data_processed = data_processed[:, 0].reshape(-1, 1)
+                feature_names = ['pc1']
+            elif self.config.pca_aggregation == 'weighted_average':
+                tprint_info("📊 Using variance-weighted average of components for MS model")
+                if self.pca is not None:
+                    # Weight by explained variance ratio
+                    weights = self.pca.explained_variance_ratio_[:data_processed.shape[1]]
+                    weights = weights / weights.sum()
+                    data_processed = np.average(data_processed, axis=1, weights=weights).reshape(-1, 1)
+                else:
+                    # Equal weights if no PCA
+                    data_processed = np.mean(data_processed, axis=1).reshape(-1, 1)
+                feature_names = ['weighted_avg']
+            elif self.config.pca_aggregation == 'none':
+                # Keep all components (note: this may not work with all MS models)
+                tprint_warning("⚠️ Keeping all components - MS models typically require univariate input")
+                pass
+            else:
+                raise ValueError(f"Unknown pca_aggregation method: {self.config.pca_aggregation}")
         
         tprint_success(f"✅ Preprocessed data shape: {data_processed.shape}")
         tprint_data_format(data_processed, "Preprocessed Data", check_compatibility=True)
         return data_processed, feature_names
     
     def _select_optimal_regimes(self, data: np.ndarray) -> int:
-        """Select optimal number of regimes using information criteria."""
+        """
+        Select optimal number of regimes using information criteria.
+        
+        Only the best model is retained to optimize memory usage.
+        All intermediate models are discarded after extracting IC values.
+        """
         tprint_info("🔍 Selecting optimal number of regimes")
         
         ic_values = {}
+        best_ic = None
+        best_k = None
         n_candidates = self.config.max_regimes - self.config.min_regimes + 1
         
         # Progress tracking (from code review)
@@ -424,10 +516,20 @@ class MSDRClusterer:
         with tprint_timer("Model Selection", level="PERFORMANCE"):
             for k in iterator:
                 try:
-                    result = self._fit_ms_model(data, k, store_model=True)
+                    # Don't store intermediate models to save memory
+                    result = self._fit_ms_model(data, k, store_model=False)
                     
-                    ic_value = result.get(self.config.ic_criterion, np.inf)
+                    ic_value = result.get(self.config.ic_criterion)
+                    if ic_value is None:
+                        tprint_warning(f"   k={k}: IC value is None, skipping")
+                        continue
+                    
                     ic_values[k] = ic_value
+                    
+                    # Track best model for later storage
+                    if best_ic is None or ic_value < best_ic:
+                        best_ic = ic_value
+                        best_k = k
                     
                     # Update progress
                     if hasattr(iterator, 'set_postfix'):
@@ -440,17 +542,26 @@ class MSDRClusterer:
                     
                 except Exception as e:
                     tprint_warning(f"   k={k}: failed ({e})")
-                    ic_values[k] = np.inf
+                    # Skip failed models (don't add to ic_values)
         
         # Select k with minimum IC
+        if not ic_values:
+            tprint_error("❌ No valid models found during regime selection")
+            raise ValueError("All regime selection attempts failed")
+        
         optimal_k = min(ic_values, key=ic_values.get)
+        
+        # Now fit and store only the best model to optimize memory
+        tprint_info(f"📦 Fitting and storing optimal model (k={optimal_k})")
+        _ = self._fit_ms_model(data, optimal_k, store_model=True)
         
         # Log selection results
         tprint_structured({
             'optimal_k': optimal_k,
             'criterion': self.config.ic_criterion.upper(),
             'optimal_value': ic_values[optimal_k],
-            'all_values': ic_values
+            'all_values': ic_values,
+            'memory_optimization': 'Only best model stored'
         }, level="INFO")
         
         tprint_success(f"✅ Optimal regimes selected: {optimal_k}")
@@ -471,14 +582,7 @@ class MSDRClusterer:
         ts_data = pd.Series(data_series)
         
         # Fit Markov-Switching model based on type
-        if self.config.model_type == 'autoregression':
-            model = MarkovAutoregression(
-                ts_data,
-                k_regimes=n_regimes,
-                order=self.config.order,
-                switching_variance=self.config.switching_variance
-            )
-        elif self.config.model_type == 'regression':
+        if self.config.model_type == 'regression':
             # For regression, we need exogenous variables
             # Use lagged values as predictors
             exog = pd.DataFrame({
@@ -494,7 +598,10 @@ class MSDRClusterer:
                 switching_variance=self.config.switching_variance
             )
         else:
-            # Default to autoregression
+            # Default to autoregression (handles 'autoregression' and unknown types)
+            if self.config.model_type not in ['autoregression', 'regression']:
+                tprint_warning(f"⚠️ Unknown model_type '{self.config.model_type}', defaulting to 'autoregression'")
+            
             model = MarkovAutoregression(
                 ts_data,
                 k_regimes=n_regimes,

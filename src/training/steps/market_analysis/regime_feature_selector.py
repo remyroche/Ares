@@ -16,7 +16,6 @@ Date: 2024
 
 import asyncio
 import logging
-import warnings
 from typing import Dict, List, Optional, Tuple, Union, Any
 from dataclasses import dataclass
 import numpy as np
@@ -540,71 +539,6 @@ class EnhancedRegimeFeatureSelector(BaseStep):
         except Exception as e:
             tprint_warning(f"Hardware optimization setup failed: {e}")
     
-    def _run_feature_selection_pipeline(
-        self,
-        features_df: pd.DataFrame,
-        target: pd.Series,
-        regime_labels: Optional[pd.Series],
-        feature_names: Optional[List[str]]
-    ) -> Dict[str, Any]:
-        """Run the complete feature selection pipeline."""
-        try:
-            results = {
-                'selected_features': [],
-                'feature_importance': {},
-                'selection_metadata': {},
-                'performance_metrics': {},
-                'regime_specific_results': {}
-            }
-            
-            # Data leakage detection
-            if self.leakage_detector:
-                leakage_results = self.leakage_detector.detect_leakage(
-                    features_df, target
-                )
-                results['leakage_detection'] = leakage_results
-                tprint_info(f"Data leakage detection completed: {leakage_results}")
-            
-            # Main feature selection
-            if self.treeshap_selector:
-                selection_results = self._run_treeshap_selection(
-                    features_df, target, feature_names
-                )
-                results.update(selection_results)
-            else:
-                # Fallback to basic feature selection
-                selection_results = self._run_basic_selection(
-                    features_df, target, feature_names
-                )
-                results.update(selection_results)
-            
-            # Regime-specific feature selection
-            if regime_labels is not None:
-                regime_results = self._run_regime_specific_selection(
-                    features_df, target, regime_labels, feature_names
-                )
-                results['regime_specific_results'] = regime_results
-            
-            # Feature importance analysis
-            if self.explainability_tool:
-                importance_analysis = self._analyze_feature_importance(
-                    features_df, target, results['selected_features']
-                )
-                results['importance_analysis'] = importance_analysis
-            
-            # Performance evaluation
-            if self.evaluator:
-                evaluation_results = self._evaluate_selection_performance(
-                    features_df, target, results['selected_features']
-                )
-                results['evaluation_results'] = evaluation_results
-            
-            return results
-            
-        except Exception as e:
-            tprint_error(f"Feature selection pipeline failed: {e}")
-            raise
-    
     def _run_unsupervised_feature_selection_pipeline(
         self,
         features_df: pd.DataFrame,
@@ -786,32 +720,6 @@ class EnhancedRegimeFeatureSelector(BaseStep):
         except Exception as e:
             tprint_warning(f"Regime analysis failed: {e}")
             return {'regime_analysis': f'Analysis failed: {e}'}
-    
-    def _run_basic_selection(
-        self,
-        features_df: pd.DataFrame,
-        target: pd.Series,
-        feature_names: Optional[List[str]]
-    ) -> Dict[str, Any]:
-        """Run basic feature selection as fallback."""
-        try:
-            tprint_info("Running basic feature selection")
-            
-            # Simple correlation-based selection
-            correlations = features_df.corrwith(target).abs()
-            selected_features = correlations.nlargest(
-                min(self.config.max_features, len(correlations))
-            ).index.tolist()
-            
-            return {
-                'selected_features': selected_features,
-                'feature_importance': correlations.to_dict(),
-                'selection_method': 'correlation_based'
-            }
-            
-        except Exception as e:
-            tprint_error(f"Basic selection failed: {e}")
-            raise
     
     def _optimize_features_with_vectorbt(
         self,

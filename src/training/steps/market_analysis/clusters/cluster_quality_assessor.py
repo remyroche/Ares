@@ -156,6 +156,98 @@ class ClusterQualityMetrics:
     # Overall quality
     quality_score: Optional[float] = None
     
+    # ENHANCEMENT: I. PREDICTIVE/GENERALIZATION CHECKS
+    rolling_predictive_ll: Optional[Dict[str, Any]] = field(default_factory=dict)
+    # Rolling log-likelihood on holdout blocks
+    one_step_ahead_scores: Optional[np.ndarray] = None  # One-step-ahead predictive densities
+    baseline_comparison: Optional[Dict[str, float]] = field(default_factory=dict)  # vs AR(1), constant vol
+    delta_ll_across_folds: Optional[List[float]] = None  # ΔLL across folds
+    predictive_ll_effect_size: Optional[float] = None  # Effect size vs noise
+    
+    # DIAGNOSTIC: Median & IQR of predictive LL
+    predictive_ll_median: Optional[float] = None
+    predictive_ll_iqr: Optional[float] = None  # Interquartile range
+    predictive_ll_q25: Optional[float] = None
+    predictive_ll_q75: Optional[float] = None
+    
+    # ENHANCEMENT: II. STABILITY & REPRODUCIBILITY
+    refit_stability_ari: Optional[float] = None  # Adjusted Rand Index across refits
+    refit_stability_nmi: Optional[float] = None  # Normalized Mutual Information
+    refit_stability_median: Optional[float] = None  # Median ARI across runs
+    subsample_stability: Optional[Dict[str, float]] = field(default_factory=dict)  # Stability across windows
+    transition_matrix_stability: Optional[float] = None  # Transition matrix similarity
+    
+    # DIAGNOSTIC: ARI across restarts (detailed)
+    ari_across_restarts: Optional[List[float]] = None  # All ARI values
+    ari_median: Optional[float] = None
+    ari_iqr: Optional[float] = None
+    ari_q25: Optional[float] = None
+    ari_q75: Optional[float] = None
+    
+    # ENHANCEMENT: III. REGIME OCCUPANCY & PERSISTENCE
+    state_occupancy: Optional[Dict[int, float]] = field(default_factory=dict)  # Fraction of time in each state
+    tiny_state_count: Optional[int] = None  # States with < 1% occupancy
+    expected_state_durations: Optional[Dict[int, float]] = field(default_factory=dict)  # E[D] = 1/(1-p_ii)
+    min_expected_duration: Optional[float] = None  # Minimum expected duration
+    max_expected_duration: Optional[float] = None  # Maximum expected duration
+    duration_quality_flag: Optional[str] = None  # 'good', 'warning', 'poor'
+    
+    # DIAGNOSTIC: State occupancy distribution (detailed)
+    occupancy_distribution: Optional[List[float]] = None  # Sorted occupancies
+    occupancy_entropy: Optional[float] = None  # Shannon entropy of distribution
+    min_occupancy_pct: Optional[float] = None  # Minimum state occupancy %
+    max_occupancy_pct: Optional[float] = None  # Maximum state occupancy %
+    
+    # ENHANCEMENT: IV. TRANSITION MATRIX SENSIBILITY
+    transition_matrix_checks: Optional[Dict[str, Any]] = field(default_factory=dict)
+    unrealistic_oscillation_detected: Optional[bool] = None
+    transition_interpretability_score: Optional[float] = None  # 0-1, higher = more interpretable
+    
+    # ENHANCEMENT: V. EMISSION/GEOMETRIC DIAGNOSTICS
+    state_conditioned_stats: Optional[Dict[int, Dict[str, float]]] = field(default_factory=dict)
+    # mean, std, skew, kurtosis per state
+    emission_distinctiveness: Optional[float] = None  # How distinct are emissions?
+    umap_separation_score: Optional[float] = None  # Visual separation score
+    
+    # ENHANCEMENT: VI. POSTERIOR PREDICTIVE CHECKS
+    simulated_vs_empirical_moments: Optional[Dict[str, float]] = field(default_factory=dict)
+    # return distribution, autocorr, vol clustering, cross-feature corr
+    probability_calibration_score: Optional[float] = None  # PIT/CRPS calibration
+    pit_histogram_uniformity: Optional[float] = None  # Kolmogorov-Smirnov test
+    predictive_density_calibration: Optional[str] = None  # 'well_calibrated', 'too_narrow', 'too_wide'
+    
+    # DIAGNOSTIC: CRPS and PIT (detailed)
+    crps_score: Optional[float] = None  # Continuous Ranked Probability Score
+    pit_values: Optional[np.ndarray] = None  # Probability Integral Transform values
+    pit_uniformity_pvalue: Optional[float] = None  # KS test p-value
+    
+    # DIAGNOSTIC: Tail quantiles (simulated vs empirical)
+    tail_quantile_comparison: Optional[Dict[str, Any]] = field(default_factory=dict)
+    # Contains: q01_empirical, q01_simulated, q05, q95, q99, etc.
+    tail_coverage_score: Optional[float] = None  # How well tails are captured (0-1)
+    
+    # ENHANCEMENT: VII. ECONOMIC UTILITY & ROBUSTNESS
+    out_of_sample_sharpe: Optional[float] = None
+    out_of_sample_max_drawdown: Optional[float] = None
+    strategy_turnover: Optional[float] = None
+    transaction_cost_robustness: Optional[Dict[str, float]] = field(default_factory=dict)
+    bootstrap_significance: Optional[Dict[str, Any]] = field(default_factory=dict)
+    sharpe_uplift_vs_baseline: Optional[float] = None
+    economic_utility_score: Optional[float] = None  # Composite economic metric
+    
+    # DIAGNOSTIC: Median & IQR of economic metrics
+    sharpe_across_folds: Optional[List[float]] = None  # Sharpe per fold
+    sharpe_median: Optional[float] = None
+    sharpe_iqr: Optional[float] = None
+    sharpe_q25: Optional[float] = None
+    sharpe_q75: Optional[float] = None
+    
+    turnover_across_folds: Optional[List[float]] = None  # Turnover per fold
+    turnover_median: Optional[float] = None
+    turnover_iqr: Optional[float] = None
+    turnover_q25: Optional[float] = None
+    turnover_q75: Optional[float] = None
+    
     # Metadata
     timestamp: str = field(default_factory=lambda: datetime.now().isoformat())
     
@@ -202,6 +294,81 @@ class ClusterQualityMetrics:
             # Aggregate scores
             'predictive_power': self.predictive_power,
             'quality_score': self.quality_score,
+            
+            # ENHANCEMENT: I. Predictive/Generalization
+            'rolling_predictive_ll': self.rolling_predictive_ll,
+            'one_step_ahead_scores': self.one_step_ahead_scores.tolist() if self.one_step_ahead_scores is not None else None,
+            'baseline_comparison': self.baseline_comparison,
+            'delta_ll_across_folds': self.delta_ll_across_folds,
+            'predictive_ll_effect_size': self.predictive_ll_effect_size,
+            'predictive_ll_median': self.predictive_ll_median,
+            'predictive_ll_iqr': self.predictive_ll_iqr,
+            'predictive_ll_q25': self.predictive_ll_q25,
+            'predictive_ll_q75': self.predictive_ll_q75,
+            
+            # ENHANCEMENT: II. Stability & Reproducibility
+            'refit_stability_ari': self.refit_stability_ari,
+            'refit_stability_nmi': self.refit_stability_nmi,
+            'refit_stability_median': self.refit_stability_median,
+            'subsample_stability': self.subsample_stability,
+            'transition_matrix_stability': self.transition_matrix_stability,
+            'ari_across_restarts': self.ari_across_restarts,
+            'ari_median': self.ari_median,
+            'ari_iqr': self.ari_iqr,
+            'ari_q25': self.ari_q25,
+            'ari_q75': self.ari_q75,
+            
+            # ENHANCEMENT: III. Regime Occupancy & Persistence
+            'state_occupancy': self.state_occupancy,
+            'tiny_state_count': self.tiny_state_count,
+            'expected_state_durations': self.expected_state_durations,
+            'min_expected_duration': self.min_expected_duration,
+            'max_expected_duration': self.max_expected_duration,
+            'duration_quality_flag': self.duration_quality_flag,
+            'occupancy_distribution': self.occupancy_distribution,
+            'occupancy_entropy': self.occupancy_entropy,
+            'min_occupancy_pct': self.min_occupancy_pct,
+            'max_occupancy_pct': self.max_occupancy_pct,
+            
+            # ENHANCEMENT: IV. Transition Matrix Sensibility
+            'transition_matrix_checks': self.transition_matrix_checks,
+            'unrealistic_oscillation_detected': self.unrealistic_oscillation_detected,
+            'transition_interpretability_score': self.transition_interpretability_score,
+            
+            # ENHANCEMENT: V. Emission/Geometric Diagnostics
+            'state_conditioned_stats': self.state_conditioned_stats,
+            'emission_distinctiveness': self.emission_distinctiveness,
+            'umap_separation_score': self.umap_separation_score,
+            
+            # ENHANCEMENT: VI. Posterior Predictive Checks
+            'simulated_vs_empirical_moments': self.simulated_vs_empirical_moments,
+            'probability_calibration_score': self.probability_calibration_score,
+            'pit_histogram_uniformity': self.pit_histogram_uniformity,
+            'predictive_density_calibration': self.predictive_density_calibration,
+            'crps_score': self.crps_score,
+            'pit_values': self.pit_values.tolist() if self.pit_values is not None else None,
+            'pit_uniformity_pvalue': self.pit_uniformity_pvalue,
+            'tail_quantile_comparison': self.tail_quantile_comparison,
+            'tail_coverage_score': self.tail_coverage_score,
+            
+            # ENHANCEMENT: VII. Economic Utility & Robustness
+            'out_of_sample_sharpe': self.out_of_sample_sharpe,
+            'out_of_sample_max_drawdown': self.out_of_sample_max_drawdown,
+            'strategy_turnover': self.strategy_turnover,
+            'transaction_cost_robustness': self.transaction_cost_robustness,
+            'bootstrap_significance': self.bootstrap_significance,
+            'sharpe_uplift_vs_baseline': self.sharpe_uplift_vs_baseline,
+            'economic_utility_score': self.economic_utility_score,
+            'sharpe_across_folds': self.sharpe_across_folds,
+            'sharpe_median': self.sharpe_median,
+            'sharpe_iqr': self.sharpe_iqr,
+            'sharpe_q25': self.sharpe_q25,
+            'sharpe_q75': self.sharpe_q75,
+            'turnover_across_folds': self.turnover_across_folds,
+            'turnover_median': self.turnover_median,
+            'turnover_iqr': self.turnover_iqr,
+            'turnover_q25': self.turnover_q25,
+            'turnover_q75': self.turnover_q75,
             
             # Metadata
             'timestamp': self.timestamp
@@ -464,6 +631,195 @@ class ClusterQualityAssessor:
             tprint_error(f"❌ Failed to calculate quality score: {e}")
         
         tprint_success(f"✅ Quality assessment complete - Quality Score: {metrics.quality_score:.3f}")
+        
+        return metrics
+    
+    def assess_hmm_regime_quality(
+        self,
+        regime_labels: np.ndarray,
+        feature_data: pd.DataFrame,
+        transition_matrix: Optional[np.ndarray] = None,
+        hmm_model: Optional[Any] = None,
+        forward_returns: Optional[pd.Series] = None,
+        timestamps: Optional[pd.DatetimeIndex] = None,
+        timeframe: str = "1h",
+        min_regime_size: int = 10,
+        run_validators: bool = True
+    ) -> ClusterQualityMetrics:
+        """
+        ENHANCED cluster quality assessment with HMM-specific validators.
+        
+        This method extends assess_quality() with:
+        I. Predictive/generalization checks
+        II. Stability & reproducibility
+        III. Regime occupancy & persistence
+        IV. Transition matrix sensibility
+        V. Emission/geometric diagnostics
+        VI. Posterior predictive checks
+        VII. Economic utility & robustness
+        
+        Args:
+            regime_labels: Cluster/regime assignments
+            feature_data: Feature DataFrame
+            transition_matrix: HMM transition matrix (if available)
+            hmm_model: Fitted HMM model (if available)
+            forward_returns: Forward returns for economic validation
+            timestamps: Timestamps for temporal analysis
+            timeframe: Timeframe string (e.g., '1h', '1d')
+            min_regime_size: Minimum regime size
+            run_validators: Whether to run comprehensive validators
+            
+        Returns:
+            ClusterQualityMetrics with all enhanced metrics
+        """
+        tprint_info("🔍 Starting ENHANCED HMM regime quality assessment")
+        
+        # First, run standard quality assessment
+        metrics = self.assess_quality(
+            regime_labels=regime_labels,
+            feature_data=feature_data,
+            forward_returns=forward_returns,
+            timestamps=timestamps,
+            min_regime_size=min_regime_size
+        )
+        
+        # If validators disabled, return standard metrics
+        if not run_validators:
+            return metrics
+        
+        # Initialize HMM validator
+        try:
+            from .hmm_regime_validators import create_hmm_regime_validator
+            validator = create_hmm_regime_validator(timeframe=timeframe)
+            tprint_success("✅ HMM regime validator initialized")
+        except Exception as e:
+            tprint_warning(f"⚠️ Could not initialize HMM validator: {e}")
+            return metrics
+        
+        tprint_info("="*70)
+        tprint_info("🔬 Running COMPREHENSIVE HMM regime validators...")
+        tprint_info("="*70)
+        
+        # Prepare data
+        data_array = feature_data.select_dtypes(include=[np.number]).values
+        
+        # III. REGIME OCCUPANCY & PERSISTENCE
+        try:
+            occupancy_results = validator.regime_occupancy_persistence_validation(
+                labels=regime_labels,
+                transition_matrix=transition_matrix
+            )
+            metrics.state_occupancy = occupancy_results.get('state_occupancy', {})
+            metrics.tiny_state_count = occupancy_results.get('tiny_state_count', 0)
+            metrics.expected_state_durations = occupancy_results.get('expected_durations', {})
+            metrics.min_expected_duration = occupancy_results.get('min_expected_duration_days')
+            metrics.max_expected_duration = occupancy_results.get('max_expected_duration_days')
+            metrics.duration_quality_flag = occupancy_results.get('duration_quality_flag', 'unknown')
+            # DIAGNOSTIC: Occupancy distribution
+            metrics.occupancy_distribution = occupancy_results.get('occupancy_distribution', [])
+            metrics.occupancy_entropy = occupancy_results.get('occupancy_entropy')
+            metrics.min_occupancy_pct = occupancy_results.get('min_occupancy_pct')
+            metrics.max_occupancy_pct = occupancy_results.get('max_occupancy_pct')
+        except Exception as e:
+            tprint_error(f"❌ Occupancy validation failed: {e}")
+        
+        # IV. TRANSITION MATRIX SENSIBILITY
+        if transition_matrix is not None:
+            try:
+                transition_results = validator.transition_matrix_validation(
+                    transition_matrix=transition_matrix,
+                    labels=regime_labels
+                )
+                metrics.transition_matrix_checks = transition_results
+                metrics.unrealistic_oscillation_detected = transition_results.get('unrealistic_oscillation', False)
+                metrics.transition_interpretability_score = transition_results.get('interpretability_score', 0.0)
+            except Exception as e:
+                tprint_error(f"❌ Transition matrix validation failed: {e}")
+        
+        # V. EMISSION/GEOMETRIC DIAGNOSTICS
+        try:
+            emission_results = validator.emission_diagnostics(
+                data=feature_data,
+                labels=regime_labels
+            )
+            metrics.state_conditioned_stats = emission_results.get('state_conditioned_stats', {})
+            metrics.emission_distinctiveness = emission_results.get('emission_distinctiveness', 0.0)
+        except Exception as e:
+            tprint_error(f"❌ Emission diagnostics failed: {e}")
+        
+        # VII. ECONOMIC UTILITY & ROBUSTNESS
+        if forward_returns is not None and len(forward_returns) > 0:
+            try:
+                economic_results = validator.economic_utility_validation(
+                    labels=regime_labels,
+                    returns=forward_returns
+                )
+                metrics.out_of_sample_sharpe = economic_results.get('out_of_sample_sharpe')
+                metrics.out_of_sample_max_drawdown = economic_results.get('out_of_sample_max_drawdown')
+                metrics.strategy_turnover = economic_results.get('strategy_turnover')
+                metrics.sharpe_uplift_vs_baseline = economic_results.get('sharpe_uplift')
+                metrics.economic_utility_score = economic_results.get('economic_utility_score')
+                metrics.bootstrap_significance = {
+                    'sharpe_ci': economic_results.get('bootstrap_sharpe_ci'),
+                    'significant': economic_results.get('sharpe_significant')
+                }
+                # DIAGNOSTIC: Sharpe & Turnover across folds (median & IQR)
+                metrics.sharpe_across_folds = economic_results.get('sharpe_across_folds')
+                metrics.sharpe_median = economic_results.get('sharpe_median')
+                metrics.sharpe_iqr = economic_results.get('sharpe_iqr')
+                metrics.sharpe_q25 = economic_results.get('sharpe_q25')
+                metrics.sharpe_q75 = economic_results.get('sharpe_q75')
+                metrics.turnover_across_folds = economic_results.get('turnover_across_folds')
+                metrics.turnover_median = economic_results.get('turnover_median')
+                metrics.turnover_iqr = economic_results.get('turnover_iqr')
+                metrics.turnover_q25 = economic_results.get('turnover_q25')
+                metrics.turnover_q75 = economic_results.get('turnover_q75')
+            except Exception as e:
+                tprint_error(f"❌ Economic utility validation failed: {e}")
+        
+        # I. PREDICTIVE/GENERALIZATION (requires model)
+        if hmm_model is not None:
+            try:
+                predictive_results = validator.rolling_predictive_ll_validation(
+                    model=hmm_model,
+                    data=data_array
+                )
+                metrics.rolling_predictive_ll = predictive_results
+                metrics.delta_ll_across_folds = predictive_results.get('delta_ll_across_folds', [])
+                metrics.predictive_ll_effect_size = predictive_results.get('effect_size')
+                metrics.baseline_comparison = {
+                    'mean_delta_ll': predictive_results.get('mean_delta_ll'),
+                    'positive_ratio': predictive_results.get('positive_ratio')
+                }
+                # DIAGNOSTIC: Median & IQR
+                metrics.predictive_ll_median = predictive_results.get('predictive_ll_median')
+                metrics.predictive_ll_iqr = predictive_results.get('predictive_ll_iqr')
+                metrics.predictive_ll_q25 = predictive_results.get('predictive_ll_q25')
+                metrics.predictive_ll_q75 = predictive_results.get('predictive_ll_q75')
+            except Exception as e:
+                tprint_warning(f"⚠️ Predictive validation skipped: {e}")
+        
+        # VI. POSTERIOR PREDICTIVE CHECKS (requires model with sampling)
+        if hmm_model is not None and hasattr(hmm_model, 'sample'):
+            try:
+                posterior_results = validator.posterior_predictive_check(
+                    model=hmm_model,
+                    data=data_array
+                )
+                metrics.simulated_vs_empirical_moments = posterior_results
+                metrics.probability_calibration_score = posterior_results.get('calibration_score')
+                metrics.predictive_density_calibration = posterior_results.get('calibration_flag', 'unknown')
+                # DIAGNOSTIC: CRPS, PIT, Tail quantiles
+                metrics.crps_score = posterior_results.get('crps_score')
+                metrics.pit_uniformity_pvalue = posterior_results.get('pit_uniformity_pvalue')
+                metrics.tail_quantile_comparison = posterior_results.get('tail_quantile_comparison', {})
+                metrics.tail_coverage_score = posterior_results.get('tail_coverage_score')
+            except Exception as e:
+                tprint_warning(f"⚠️ Posterior predictive check skipped: {e}")
+        
+        tprint_info("="*70)
+        tprint_success("✅ COMPREHENSIVE HMM validation complete!")
+        tprint_info("="*70)
         
         return metrics
     

@@ -2250,11 +2250,11 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
         
         # Targets are already provided as parameter
         
-        # Phase 3.1: Shallow LGBM sweep (Select Top 100 Features to protect cross-timeframe features)
-        tprint_info("🤖 Phase 3.1: Shallow LGBM Sweep (Select Top 100 Features)")
+        # Phase 3.1: Shallow LGBM sweep (Select Top 120 Features to protect cross-timeframe features)
+        tprint_info("🤖 Phase 3.1: Shallow LGBM Sweep (Select Top 120 Features)")
         phase3_1_start = time.time()
         
-        top_100_features = await self._phase3_1_shallow_sweep(pruned_features, targets, config)
+        top_120_features = await self._phase3_1_shallow_sweep(pruned_features, targets, config)
         
         self.performance_stats['phase3_1_time'] = time.time() - phase3_1_start
         tprint_performance(f"Phase 3.1 completed", self.performance_stats['phase3_1_time'])
@@ -2262,26 +2262,26 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
         # Feature count summary after Phase 3.1
         tprint_info(f"📊 PHASE 3.1: Shallow sweep results:")
         tprint_info(f"  📈 Input features: {len(pruned_features.columns)} features")
-        tprint_info(f"  📈 Selected features: {len(top_100_features.columns)} features")
-        tprint_info(f"  📈 Selection rate: {len(top_100_features.columns) / len(pruned_features.columns) * 100:.1f}%")
+        tprint_info(f"  📈 Selected features: {len(top_120_features.columns)} features")
+        tprint_info(f"  📈 Selection rate: {len(top_120_features.columns) / len(pruned_features.columns) * 100:.1f}%")
         
         # Phase 3.2: Deeper LGBM refinement (Select Top 80 to protect cross-timeframe features)
         tprint_info("🤖 Phase 3.2: Deeper LGBM Refinement (Select Top 80)")
         phase3_2_start = time.time()
         
-        top_80_features = await self._phase3_2_deeper_refinement(top_100_features, targets, config)
+        top_80_features = await self._phase3_2_deeper_refinement(top_120_features, targets, config)
         
         self.performance_stats['phase3_2_time'] = time.time() - phase3_2_start
         tprint_performance(f"Phase 3.2 completed", self.performance_stats['phase3_2_time'])
         
         # Feature count summary after Phase 3.2
         tprint_info(f"📊 PHASE 3.2: Deeper refinement results:")
-        tprint_info(f"  📈 Input features: {len(top_100_features.columns)} features")
+        tprint_info(f"  📈 Input features: {len(top_120_features.columns)} features")
         tprint_info(f"  📈 Refined features: {len(top_80_features.columns)} features")
-        tprint_info(f"  📈 Refinement rate: {len(top_80_features.columns) / len(top_100_features.columns) * 100:.1f}%")
+        tprint_info(f"  📈 Refinement rate: {len(top_80_features.columns) / len(top_120_features.columns) * 100:.1f}%")
         
-        # Phase 3.3: Deep interaction discovery (Generate Top 50)
-        tprint_info("🤖 Phase 3.3: Deep Interaction Discovery (Generate Top 50)")
+        # Phase 3.3: Deep interaction discovery (Generate Top 80)
+        tprint_info("🤖 Phase 3.3: Deep Interaction Discovery (Generate Top 80)")
         phase3_3_start = time.time()
         
         # Get feature categories for the top 80 features
@@ -2319,14 +2319,14 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
         config: Dict[str, Any]
     ) -> pd.DataFrame:
         """
-        Phase 3.1: Shallow LGBM sweep to select top 100 features.
+        Phase 3.1: Shallow LGBM sweep to select top 120 features.
         
         Uses fast feature importance + mutual information proxy instead of expensive SHAP.
         - max_depth=4 (increased to capture interactions)
         - num_leaves=15 (more flexibility)
         - n_estimators=100 (more stable importance)
         - Fast proxy: 60% feature importance + 40% mutual information
-        - Fixed selection: Always select top 100 features (or all if <100 available)
+        - Fixed selection: Always select top 120 features (or all if <120 available)
         """
         tprint_info("  📊 Training shallow LGBM with fast feature selection...")
         
@@ -2605,8 +2605,8 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
             index=features.columns
         ).sort_values(ascending=False)
         
-        # Select top 100 features (fixed number)
-        n_select = min(100, len(features.columns))  # Select 100 or all if less than 100
+        # Select top 120 features (fixed number)
+        n_select = min(120, len(features.columns))  # Select 120 or all if less than 120
         top_features = feature_importance.head(n_select).index.tolist()
         
         tprint_success(f"  ✅ Selected {len(top_features)} features (top {n_select}) using fast proxy")
@@ -3064,7 +3064,7 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
         1. Train deep LGBM to extract feature pairs
         2. Generate 3 operations per top 10 pairs (30 candidates)
         3. Use standard SHAP values FOR interaction features (not interaction values)
-        4. Select top 50 interactions
+        4. Select top 80 interactions
         5. Generate cross-timeframe interactions between features from different timeframes
         """
         tprint_info("  🌳 Training deep LGBM for interaction guidance...")
@@ -3278,7 +3278,7 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
         tprint_info("📊 COMPOSITE SCORING WITH RFE FOR INTERACTION SELECTION")
         tprint_info("="*80)
         tprint_info(f"  📊 Testing {len(interaction_candidates)} interaction candidates...")
-        tprint_info(f"  📊 Target: Select top 50 interactions")
+        tprint_info(f"  📊 Target: Select top 80 interactions")
         tprint_info(f"  📊 Method: 5-way composite scoring with RFE (33% removal per round)")
         tprint_info(f"  📊 Weights: MI(20%) + Redundancy(20%) + LGBM(20%) + SHAP(20%) + Stability(20%)")
         
@@ -3321,7 +3321,7 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
             X=interaction_df_candidates.values,
             y=targets_aligned[target_col].values,
             feature_names=candidate_names,
-            n_features=50
+            n_features=80
         )
         
         if not selection_result.get('success', False):
@@ -3368,10 +3368,10 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
             tprint_info(f"  📊 Interactions after complexity filtering: {len(sorted_interactions)}")
         
         # Select top interactions with overfitting-aware limits
-        max_interactions = min(50, len(sorted_interactions))  # Increased to 50 for richer interaction set
+        max_interactions = min(80, len(sorted_interactions))  # Increased to 80 for richer interaction set
         top_interactions = sorted_interactions[:max_interactions]
         
-        tprint_info(f"  📊 Selected top {len(top_interactions)} interactions (target: 50)")
+        tprint_info(f"  📊 Selected top {len(top_interactions)} interactions (target: 80)")
         
         # Create interaction features dictionary from top-scoring candidates
         interaction_features = {}
@@ -3608,15 +3608,46 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
         tprint_info(f"  🔍 DEBUG: combined_features shape before save: {combined_features.shape}")
         tprint_info(f"  🔍 DEBUG: combined_features columns count: {len(combined_features.columns)}")
         
-        # Count interaction types in combined_features
-        ct_count = sum(1 for c in combined_features.columns if any(m in c for m in ['_3x_ratio', '_6x_ratio', '_9x_ratio', '_27x_ratio']))
-        int_count = sum(1 for c in combined_features.columns if any(m in c for m in ['_x_', '_div_', '_minus_', '_log_']) and not any(m in c for m in ['_3x_ratio', '_6x_ratio', '_9x_ratio', '_27x_ratio']))
-        base_count = len(combined_features.columns) - ct_count - int_count
+        # Categorize features properly - check interaction operations FIRST
+        hybrid_ct_interactions = []
+        traditional_interactions = []
+        ct_ratio_features = []
+        variant_features_list = []
+        base_features_list = []
+        
+        # Define variant suffixes (excluding _base which IS the base feature)
+        variant_suffixes = ['_volnorm', '_vwap', '_trend_adj']
+        
+        for col in combined_features.columns:
+            # Check interaction operations FIRST (before CT markers)
+            if any(op in col for op in ['_x_', '_div_', '_minus_', '_log_', '_plus_']):
+                if any(marker in col for marker in ['_3x_ratio', '_6x_ratio', '_9x_ratio', '_27x_ratio']):
+                    hybrid_ct_interactions.append(col)  # Hybrid: interaction + cross-timeframe
+                else:
+                    traditional_interactions.append(col)  # Pure interactions
+            elif any(marker in col for marker in ['_3x_ratio', '_6x_ratio', '_9x_ratio', '_27x_ratio']):
+                ct_ratio_features.append(col)  # Pure cross-timeframe ratios
+            else:
+                # Check if it's a variant feature or base feature
+                is_variant = any(col.endswith(suffix) for suffix in variant_suffixes)
+                if is_variant:
+                    variant_features_list.append(col)
+                else:
+                    base_features_list.append(col)
+        
+        # Count each category
+        hybrid_count = len(hybrid_ct_interactions)
+        int_count = len(traditional_interactions)
+        ct_count = len(ct_ratio_features)
+        variant_count = len(variant_features_list)
+        base_count = len(base_features_list)
         
         tprint_info(f"  📊 Feature breakdown before save:")
-        tprint_info(f"    - Cross-timeframe ratios: {ct_count}")
+        tprint_info(f"    - Hybrid CT interactions: {hybrid_count}")
         tprint_info(f"    - Traditional interactions: {int_count}")
-        tprint_info(f"    - Base/variant features: {base_count}")
+        tprint_info(f"    - Cross-timeframe ratios: {ct_count}")
+        tprint_info(f"    - Variant features: {variant_count}")
+        tprint_info(f"    - Base features: {base_count}")
         tprint_info("="*80)
         
         features_path = self._save_artifact(
@@ -4576,8 +4607,8 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
         
         # Select top interactions
         scores.sort(key=lambda x: x[1], reverse=True)
-        # Select top interactions (up to 50 or all if fewer)
-        max_interactions = min(50, len(scores))
+        # Select top interactions (up to 80 or all if fewer)
+        max_interactions = min(80, len(scores))
         top_interactions = scores[:max_interactions]
         
         # Store the scores for use in metadata

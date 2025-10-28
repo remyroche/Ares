@@ -85,20 +85,25 @@ except ImportError:
     DATA_LOADING_AVAILABLE = False
     tprint_warning("⚠️ Data loading utilities not available")
 
-# CMI complementarity components for Analyst mode
+# CMI complementarity components for Tactician mode
 try:
-    # These modules don't exist yet - placeholder for future implementation
+    from src.training.steps.pre_training.unified_data_driven_pipeline.utils.cmi_complementarity import (
+        CMIComplementarityScorer,
+        CMIComplementarityConfig,
+        create_cmi_complementarity_scorer
+    )
+    from src.training.steps.pre_training.unified_data_driven_pipeline.utils.analyst_side_info import (
+        AnalystSideInfoHandler,
+        create_analyst_side_info_handler
+    )
+    CMI_COMPLEMENTARITY_AVAILABLE = True
+    tprint_info("✅ CMI complementarity components loaded successfully")
+except ImportError as e:
+    CMI_COMPLEMENTARITY_AVAILABLE = False
     CMIComplementarityScorer = None
     CMIComplementarityConfig = None
     AnalystSideInfoHandler = None
-    CMI_COMPLEMENTARITY_AVAILABLE = False
-    tprint_warning("⚠️ CMI complementarity components not available - placeholder implementation")
-except ImportError:
-    CMI_COMPLEMENTARITY_AVAILABLE = False
-    CMIComplementarityScorer = None
-    CMIComplementarityConfig = None
-    AnalystSideInfoHandler = None
-    tprint_warning("⚠️ CMI complementarity components not available")
+    tprint_warning(f"⚠️ CMI complementarity components not available: {e}")
 
 # ML utilities
 try:
@@ -141,6 +146,25 @@ try:
 except ImportError as e:
     OVERFITTING_PREVENTION_AVAILABLE = False
     tprint_warning(f"⚠️ Overfitting prevention utilities not available: {e}")
+
+# Import HPO utilities for CMI-weighted LGBM optimization
+try:
+    from src.utils.ml_common.optimization.hierarchical_hpo import (
+        HierarchicalHPOConfig, HPOPhaseConfig, HierarchicalHPOptimizer
+    )
+    from src.utils.ml_common.optimization.bayesian_tpe_optimizer import (
+        BayesianTPEOptimizer, OptimizationConfig as TPEOptimizationConfig
+    )
+    HPO_AVAILABLE = True
+    tprint_info("✅ HPO utilities loaded successfully")
+except ImportError as e:
+    HPO_AVAILABLE = False
+    HierarchicalHPOConfig = None
+    HPOPhaseConfig = None
+    HierarchicalHPOptimizer = None
+    BayesianTPEOptimizer = None
+    TPEOptimizationConfig = None
+    tprint_warning(f"⚠️ HPO utilities not available: {e}")
 
 # Try to import overfitting prevention manager separately (optional)
 try:
@@ -202,6 +226,20 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
             self.cmi_scorer = None
             self.analyst_handler = None
             # Note: CMI availability will be checked at runtime for Tactician mode
+        
+        # Initialize HPO components for CMI-weighted LGBM optimization
+        if HPO_AVAILABLE:
+            self.hpo_optimizer = None  # Will be initialized when needed
+            self.cmi_lgbm_params = {
+                'alpha_cmi': 0.6,  # Weight for LGBM importance
+                'beta_cmi': 0.4,   # Weight for CMI score
+                'enable_cmi_weighting': True
+            }
+            tprint_info("✅ HPO components available for CMI-weighted LGBM")
+        else:
+            self.hpo_optimizer = None
+            self.cmi_lgbm_params = None
+            tprint_warning("⚠️ HPO not available - using default CMI parameters")
         
         # Initialize hardware optimization
         if HARDWARE_OPT_AVAILABLE:
@@ -2156,12 +2194,12 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
         # Get feature categories from lookback optimization (feature bank)
         feature_categories = self._get_feature_categories_from_bank(variant_features.columns, lookback_optimization)
         
-        # Calculate composite scores with MI and stability
+        # Calculate composite scores with MI/CMI and stability
         tprint_info("="*80)
-        tprint_info("📊 CALCULATING COMPOSITE SCORES (MI + Stability)")
+        tprint_info("📊 CALCULATING COMPOSITE SCORES (MI/CMI + Stability)")
         tprint_info("="*80)
         composite_scores = self._calculate_composite_scores(
-            variant_features, targets, feature_categories
+            variant_features, targets, feature_categories, config
         )
         
         # Apply pruning using our utility
@@ -4049,25 +4087,109 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
         
         return category_counts
 
+    def _is_tactician_mode(self, config: Dict[str, Any]) -> bool:
+        """
+        Detect if we're in Tactician mode.
+        
+        Args:
+            config: Configuration dictionary
+            
+        Returns:
+            True if in Tactician mode, False otherwise
+        """
+        # Check step name
+        is_tactician_step = 'tactician' in self.step_name.lower()
+        
+        # Check execution context
+        is_tactician_context = 'tactician' in config.get('execution_context', '').lower()
+        
+        # Check explicit flag
+        is_explicit_tactician = config.get('tactician_mode', False)
+        
+        # Check execution mode set at runtime
+        is_runtime_tactician = self.execution_mode == 'tactician' if self.execution_mode else False
+        
+        return is_tactician_step or is_tactician_context or is_explicit_tactician or is_runtime_tactician
+    
+    def _extract_analyst_side_info(self, config: Dict[str, Any], features_df: Optional[pd.DataFrame] = None) -> Optional[Any]:
+        """
+        Extract Analyst side information from config/pipeline state.
+        
+        Args:
+            config: Configuration dictionary
+            features_df: Optional features dataframe
+            
+        Returns:
+            AnalystSideInfoResult or None
+        """
+        if not CMI_COMPLEMENTARITY_AVAILABLE or self.analyst_handler is None:
+            return None
+        
+        try:
+            # Get pipeline state
+            pipeline_state = config.get('pipeline_state', {})
+            
+            # If features_df provided, extract analyst features
+            if features_df is not None:
+                analyst_features = [col for col in features_df.columns if 'analyst' in col.lower()]
+                if analyst_features:
+                    pipeline_state['analyst_features'] = features_df[analyst_features]
+            
+            # Extract Analyst side information
+            analyst_result = self.analyst_handler.emit_analyst_side_info(
+                pipeline_state=pipeline_state,
+                targets=None,
+                data_index=features_df.index if features_df is not None else None
+            )
+            
+            if analyst_result.analyst_outputs is not None:
+                tprint_info(f"✅ Analyst side information extracted: {analyst_result.analyst_outputs.shape}")
+                return analyst_result
+            else:
+                tprint_warning("⚠️ No Analyst outputs available")
+                return None
+                
+        except Exception as e:
+            tprint_warning(f"⚠️ Failed to extract Analyst side information: {e}")
+            return None
+
     def _calculate_composite_scores(
         self,
         features_df: pd.DataFrame,
         targets_df: pd.DataFrame,
-        feature_categories: Dict[str, str]
+        feature_categories: Dict[str, str],
+        config: Optional[Dict[str, Any]] = None
     ) -> Dict[str, float]:
         """
-        Calculate composite scores for features based on MI and stability.
+        Calculate composite scores for features based on MI/CMI and stability.
+        
+        In Tactician mode, uses CMI (Conditional Mutual Information) instead of MI
+        to select features complementary to Analyst outputs.
         
         Args:
             features_df: DataFrame with features
             targets_df: DataFrame with targets
             feature_categories: Dict mapping feature names to categories
+            config: Optional configuration for mode detection
             
         Returns:
             Dict mapping feature names to composite scores
         """
         from sklearn.feature_selection import mutual_info_regression
         import numpy as np
+        
+        # Check if Tactician mode and CMI available
+        use_cmi = False
+        analyst_side_info = None
+        if config and self._is_tactician_mode(config) and CMI_COMPLEMENTARITY_AVAILABLE:
+            analyst_side_info = self._extract_analyst_side_info(config, features_df)
+            use_cmi = analyst_side_info is not None
+            if use_cmi:
+                tprint_info("🎯 Using CMI-based composite scoring (Tactician mode)")
+            else:
+                tprint_info("📊 Using MI-based composite scoring (CMI unavailable)")
+        else:
+            tprint_info("📊 Using MI-based composite scoring (Analyst mode)")
         
         tprint_info(f"  📊 Calculating MI scores for {len(features_df.columns)} features...")
         
@@ -4120,26 +4242,68 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
         elif len(ct_features_valid) < len(ct_features_total) * 0.5:
             tprint_warning(f"  ⚠️ Only {len(ct_features_valid)}/{len(ct_features_total)} CT features valid ({len(ct_features_valid)/len(ct_features_total):.1%})")
         
-        # Calculate MI scores
+        # Calculate MI or CMI scores
         try:
-            mi_scores = mutual_info_regression(
-                features_for_mi,
-                target_aligned,
-                random_state=42,
-                n_neighbors=3
-            )
-            mi_dict = dict(zip(valid_features, mi_scores))
-            
-            # Normalize MI scores to 0-1
-            if len(mi_scores) > 0 and mi_scores.max() > 0:
-                mi_max = mi_scores.max()
-                mi_dict = {k: v / mi_max for k, v in mi_dict.items()}
-            
-            tprint_info(f"  ✅ MI scores calculated")
-            tprint_info(f"      Min: {min(mi_dict.values()):.4f}, Max: {max(mi_dict.values()):.4f}, Mean: {np.mean(list(mi_dict.values())):.4f}")
+            if use_cmi and analyst_side_info:
+                # Use CMI scoring (Tactician mode)
+                tprint_info(f"  🎯 Calculating CMI scores for {len(valid_features)} features...")
+                
+                # Create features DataFrame from valid features
+                X_for_cmi = features_for_mi
+                y_for_cmi = target_aligned
+                
+                # Score features using CMI
+                cmi_result = self.cmi_scorer.score_features(
+                    features=X_for_cmi,
+                    targets=y_for_cmi,
+                    analyst_outputs=analyst_side_info.analyst_outputs,
+                    regime_labels=analyst_side_info.regime_labels
+                )
+                
+                # Extract scores from result
+                if hasattr(cmi_result, 'complementarity_scores'):
+                    mi_dict = cmi_result.complementarity_scores
+                    tprint_info(f"  ✅ CMI complementarity scores calculated")
+                elif hasattr(cmi_result, 'feature_scores'):
+                    mi_dict = cmi_result.feature_scores
+                    tprint_info(f"  ✅ CMI feature scores calculated")
+                else:
+                    # Fallback to MI
+                    tprint_warning(f"  ⚠️ CMI result missing scores, falling back to MI")
+                    mi_scores = mutual_info_regression(
+                        features_for_mi, target_aligned, random_state=42, n_neighbors=3
+                    )
+                    mi_dict = dict(zip(valid_features, mi_scores))
+                
+                # Normalize scores to 0-1
+                if len(mi_dict) > 0:
+                    mi_values = np.array(list(mi_dict.values()))
+                    if mi_values.max() > 0:
+                        mi_max = mi_values.max()
+                        mi_dict = {k: v / mi_max for k, v in mi_dict.items()}
+                
+                tprint_info(f"      Min: {min(mi_dict.values()):.4f}, Max: {max(mi_dict.values()):.4f}, Mean: {np.mean(list(mi_dict.values())):.4f}")
+                
+            else:
+                # Use standard MI (Analyst mode)
+                mi_scores = mutual_info_regression(
+                    features_for_mi,
+                    target_aligned,
+                    random_state=42,
+                    n_neighbors=3
+                )
+                mi_dict = dict(zip(valid_features, mi_scores))
+                
+                # Normalize MI scores to 0-1
+                if len(mi_scores) > 0 and mi_scores.max() > 0:
+                    mi_max = mi_scores.max()
+                    mi_dict = {k: v / mi_max for k, v in mi_dict.items()}
+                
+                tprint_info(f"  ✅ MI scores calculated")
+                tprint_info(f"      Min: {min(mi_dict.values()):.4f}, Max: {max(mi_dict.values()):.4f}, Mean: {np.mean(list(mi_dict.values())):.4f}")
             
         except Exception as e:
-            tprint_warning(f"  ⚠️ MI calculation failed: {e}")
+            tprint_warning(f"  ⚠️ MI/CMI calculation failed: {e}")
             mi_dict = {col: 0.5 for col in valid_features}
         
         # Calculate stability scores (variance over time windows)

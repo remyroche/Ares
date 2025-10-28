@@ -73,17 +73,23 @@ from src.utils.hardware.adaptive_optimization_engine import (
 
 # Import CMI complementarity components for Tactician mode
 try:
-    # These modules don't exist yet - placeholder for future implementation
+    from src.training.steps.pre_training.unified_data_driven_pipeline.utils.cmi_complementarity import (
+        CMIComplementarityScorer,
+        CMIComplementarityConfig,
+        create_cmi_complementarity_scorer
+    )
+    from src.training.steps.pre_training.unified_data_driven_pipeline.utils.analyst_side_info import (
+        AnalystSideInfoHandler,
+        create_analyst_side_info_handler
+    )
+    CMI_COMPLEMENTARITY_AVAILABLE = True
+    tprint_info("✅ CMI complementarity components loaded successfully")
+except ImportError as e:
+    CMI_COMPLEMENTARITY_AVAILABLE = False
     CMIComplementarityScorer = None
     CMIComplementarityConfig = None
     AnalystSideInfoHandler = None
-    CMI_COMPLEMENTARITY_AVAILABLE = False
-    print("⚠️ CMI complementarity components not available - placeholder implementation")
-except ImportError:
-    CMI_COMPLEMENTARITY_AVAILABLE = False
-    CMIComplementarityScorer = None
-    CMIComplementarityConfig = None
-    AnalystSideInfoHandler = None
+    tprint_warning(f"⚠️ CMI complementarity components not available: {e}")
 
 # Import OptimizationStrategy from the correct location
 from src.feature_generation.core.optimization_strategies import (
@@ -1082,17 +1088,32 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
                 tprint_info(f"🎯 CMI-based selection for {size} features...")
                 
                 # Use CMI scorer for feature selection
-                selected_features = self.cmi_scorer.select_features(
+                cmi_result = self.cmi_scorer.score_features(
                     features=X,
                     targets=y,
-                    analyst_side_info=analyst_side_info['side_info']
+                    analyst_outputs=analyst_side_info['side_info'].analyst_outputs,
+                    regime_labels=analyst_side_info['side_info'].regime_labels
                 )
                 
-                # Limit to requested size
-                selected_features = selected_features[:size]
+                # Get selected features from result
+                selected_features = cmi_result.selected_features[:size] if hasattr(cmi_result, 'selected_features') else []
+                
+                # If no selected features, fall back to top features by score
+                if not selected_features and hasattr(cmi_result, 'complementarity_scores'):
+                    sorted_features = sorted(
+                        cmi_result.complementarity_scores.items(),
+                        key=lambda x: x[1],
+                        reverse=True
+                    )
+                    selected_features = [f[0] for f in sorted_features[:size]]
                 
                 feature_sets[f'selected_features_{size}'] = selected_features
-                feature_sets[f'selected_feature_dataframe_{size}'] = features_df[selected_features + [targets.name if hasattr(targets, 'name') else 'target']].copy()
+                
+                # Get target column name
+                target_col = targets.name if hasattr(targets, 'name') else 'target'
+                target_cols = [target_col] if target_col in features_df.columns else []
+                
+                feature_sets[f'selected_feature_dataframe_{size}'] = features_df[selected_features + target_cols].copy()
                 
                 tprint_success(f"✅ CMI-based selection completed: {len(selected_features)} features selected")
             
@@ -1133,23 +1154,27 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             # Create Analyst features dataframe
             analyst_df = features_df[analyst_features]
             
-            # Extract Analyst side information
-            analyst_side_info = self.analyst_handler.extract_side_info(
-                {'analyst_features': analyst_df},
+            # Extract Analyst side information using emit_analyst_side_info
+            pipeline_state = config.get('pipeline_state', {})
+            pipeline_state['analyst_features'] = analyst_df
+            
+            analyst_side_info_result = self.analyst_handler.emit_analyst_side_info(
+                pipeline_state=pipeline_state,
                 targets=None,  # Will be provided later
                 data_index=analyst_df.index
             )
             
-            if analyst_side_info.is_valid:
+            # Check if we got valid analyst outputs
+            if analyst_side_info_result.analyst_outputs is not None:
                 return {
                     'cmi_enabled': True,
                     'analyst_features': analyst_df,
-                    'side_info': analyst_side_info
+                    'side_info': analyst_side_info_result
                 }
             else:
                 return {
                     'cmi_enabled': False,
-                    'reason': 'Analyst side information invalid'
+                    'reason': 'No Analyst outputs available'
                 }
                 
         except Exception as e:

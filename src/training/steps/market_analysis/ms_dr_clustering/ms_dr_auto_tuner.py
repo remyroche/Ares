@@ -229,7 +229,7 @@ class MSDRAutoTuner:
             )
             
             # Return composite quality score
-            composite_score = quality_metrics.quality_score or 0.0
+            composite_score = quality_metrics.quality_score if quality_metrics.quality_score is not None else 0.0
             
             # Store trial result
             self.trial_history.append({
@@ -386,9 +386,9 @@ class MSDRAutoTuner:
         
         # Limit grid size
         if len(coarse_grid) > n_trials:
-            import random
-            random.seed(self.tuning_config.random_state)
-            coarse_grid = random.sample(coarse_grid, n_trials)
+            np.random.seed(self.tuning_config.random_state)
+            indices = np.random.choice(len(coarse_grid), n_trials, replace=False)
+            coarse_grid = [coarse_grid[i] for i in indices]
         
         # Evaluate each point
         scores = []
@@ -397,7 +397,15 @@ class MSDRAutoTuner:
             score = self._evaluate_params(params, data)
             scores.append(score)
         
-        tprint_success(f"  ✅ Coarse grid completed: Best score = {max(scores):.4f}")
+        # Report results with proper handling of empty/invalid scores
+        if scores:
+            valid_scores = [s for s in scores if s != float('-inf')]
+            if valid_scores:
+                tprint_success(f"  ✅ Coarse grid completed: Best score = {max(valid_scores):.4f}")
+            else:
+                tprint_warning(f"  ⚠️ Coarse grid completed: No valid scores obtained")
+        else:
+            tprint_error(f"  ❌ Coarse grid failed: No trials completed")
         
         return {
             'grid': coarse_grid,
@@ -424,9 +432,9 @@ class MSDRAutoTuner:
         
         # Limit grid size
         if len(fine_grid) > n_trials:
-            import random
-            random.seed(self.tuning_config.random_state)
-            fine_grid = random.sample(fine_grid, n_trials)
+            np.random.seed(self.tuning_config.random_state)
+            indices = np.random.choice(len(fine_grid), n_trials, replace=False)
+            fine_grid = [fine_grid[i] for i in indices]
         
         # Evaluate each point
         scores = []
@@ -435,7 +443,15 @@ class MSDRAutoTuner:
             score = self._evaluate_params(params, data)
             scores.append(score)
         
-        tprint_success(f"  ✅ Fine grid completed: Best score = {max(scores):.4f}")
+        # Report results with proper handling of empty/invalid scores
+        if scores:
+            valid_scores = [s for s in scores if s != float('-inf')]
+            if valid_scores:
+                tprint_success(f"  ✅ Fine grid completed: Best score = {max(valid_scores):.4f}")
+            else:
+                tprint_warning(f"  ⚠️ Fine grid completed: No valid scores obtained")
+        else:
+            tprint_error(f"  ❌ Fine grid failed: No trials completed")
         
         return {
             'grid': fine_grid,
@@ -523,7 +539,7 @@ class MSDRAutoTuner:
             'mean_score': np.mean(scores),
             'std_score': np.std(scores),
             'score_range': (min(scores), max(scores)),
-            'improvement': self.best_score - scores[0] if len(scores) > 0 else 0.0
+            'improvement': (self.best_score - scores[0]) if (len(scores) > 0 and scores[0] != float('-inf')) else 0.0
         }
         
         return summary

@@ -112,8 +112,6 @@ No complex dependencies required.
 """
 
 try:
-    from statsmodels.tsa.regime_switching import markov_switching, markov_autoregression, markov_regression
-    from statsmodels.tsa.regime_switching.markov_switching import MarkovSwitching
     from statsmodels.tsa.regime_switching.markov_autoregression import MarkovAutoregression
     from statsmodels.tsa.regime_switching.markov_regression import MarkovRegression
     MS_AVAILABLE = True
@@ -457,19 +455,28 @@ class MSDRClusterer:
         data_scaled = self.scaler.fit_transform(data)
         
         # Apply PCA if enabled and data has multiple features
-        if self.config.enable_pca and data.shape[1] > 1 and data.shape[1] > self.config.pca_components:
-            tprint_info(f"📊 Applying PCA: {data.shape[1]} → {self.config.pca_components} components")
+        if self.config.enable_pca and data.shape[1] > 1:
+            # Determine if PCA should be applied
+            apply_pca = False
             
             if self.config.pca_variance_threshold < 1.0:
+                # Will use threshold-based selection
+                apply_pca = True
                 self.pca = PCA(n_components=self.config.pca_variance_threshold, random_state=self.config.random_state)
-            else:
+                tprint_info(f"📊 Applying PCA with variance threshold: {self.config.pca_variance_threshold:.2%}")
+            elif data.shape[1] > self.config.pca_components:
+                # Use fixed number of components only if we have more features than target
+                apply_pca = True
                 self.pca = PCA(n_components=self.config.pca_components, random_state=self.config.random_state)
+                tprint_info(f"📊 Applying PCA: {data.shape[1]} → {self.config.pca_components} components")
             
-            data_processed = self.pca.fit_transform(data_scaled)
-            feature_names = [f'pca_{i+1}' for i in range(data_processed.shape[1])]
-            
-            explained_var = np.sum(self.pca.explained_variance_ratio_)
-            tprint_info(f"✅ PCA completed: {explained_var:.2%} variance explained")
+            if apply_pca:
+                data_processed = self.pca.fit_transform(data_scaled)
+                feature_names = [f'pca_{i+1}' for i in range(data_processed.shape[1])]
+                explained_var = np.sum(self.pca.explained_variance_ratio_)
+                tprint_info(f"✅ PCA completed: {explained_var:.2%} variance explained")
+            else:
+                data_processed = data_scaled
         else:
             data_processed = data_scaled
         
@@ -507,13 +514,14 @@ class MSDRClusterer:
         Select optimal number of regimes using information criteria.
         
         Only the best model is retained to optimize memory usage.
-        All intermediate models are discarded after extracting IC values.
+        Previous best models are discarded when a better model is found.
         """
         tprint_info("🔍 Selecting optimal number of regimes")
         
         ic_values = {}
         best_ic = None
         best_k = None
+        best_model_result = None
         n_candidates = self.config.max_regimes - self.config.min_regimes + 1
         
         # Progress tracking (from code review)
@@ -531,7 +539,7 @@ class MSDRClusterer:
         with tprint_timer("Model Selection", level="PERFORMANCE"):
             for k in iterator:
                 try:
-                    # Don't store intermediate models to save memory
+                    # Fit model without storing in fitted_models dict
                     result = self._fit_ms_model(data, k, store_model=False)
                     
                     ic_value = result.get(self.config.ic_criterion)
@@ -541,16 +549,29 @@ class MSDRClusterer:
                     
                     ic_values[k] = ic_value
                     
-                    # Track best model for later storage
+                    # Update and retain ONLY the best model
                     if best_ic is None or ic_value < best_ic:
+                        # Clear previous best model to free memory
+                        if best_k is not None and best_k in self.fitted_models:
+                            del self.fitted_models[best_k]
+                        
+                        # Store new best model
                         best_ic = ic_value
                         best_k = k
+                        best_model_result = result
+                        
+                        # Store in fitted_models and set as current model
+                        self.fitted_models[k] = result['model']
+                        self.model = result['model']
+                        
+                        tprint_debug(f"   \u2b50 New best: k={k}, {self.config.ic_criterion.upper()}={ic_value:.2f}")
                     
                     # Update progress
                     if hasattr(iterator, 'set_postfix'):
                         iterator.set_postfix({
                             'k': k,
-                            self.config.ic_criterion.upper(): f"{ic_value:.1f}"
+                            self.config.ic_criterion.upper(): f"{ic_value:.1f}",
+                            'best_k': best_k
                         })
                     else:
                         tprint_info(f"   k={k}: {self.config.ic_criterion.upper()}={ic_value:.2f}")
@@ -559,16 +580,17 @@ class MSDRClusterer:
                     tprint_warning(f"   k={k}: failed ({e})")
                     # Skip failed models (don't add to ic_values)
         
-        # Select k with minimum IC
+        # Validate that we found at least one valid model
         if not ic_values:
             tprint_error("❌ No valid models found during regime selection")
             raise ValueError("All regime selection attempts failed")
         
         optimal_k = min(ic_values, key=ic_values.get)
         
-        # Now fit and store only the best model to optimize memory
-        tprint_info(f"📦 Fitting and storing optimal model (k={optimal_k})")
-        _ = self._fit_ms_model(data, optimal_k, store_model=True)
+        # Verify the optimal model is stored (it should be from the loop above)
+        if optimal_k not in self.fitted_models:
+            tprint_error(f"❌ Optimal model (k={optimal_k}) not found in fitted_models")
+            raise ValueError(f"Optimal model not properly stored during selection")
         
         # Log selection results
         tprint_structured({
@@ -576,7 +598,7 @@ class MSDRClusterer:
             'criterion': self.config.ic_criterion.upper(),
             'optimal_value': ic_values[optimal_k],
             'all_values': ic_values,
-            'memory_optimization': 'Only best model stored'
+            'memory_optimization': 'Only best model retained during search'
         }, level="INFO")
         
         tprint_success(f"✅ Optimal regimes selected: {optimal_k}")
@@ -588,13 +610,17 @@ class MSDRClusterer:
         tprint_info(f"🔄 Fitting MS model with {n_regimes} regimes")
         
         # Ensure data is 1D for MS models
-        if len(data.shape) > 1 and data.shape[1] == 1:
-            data_series = data.flatten()
-        else:
-            data_series = data.flatten()
+        data_series = data.flatten()
         
         # Create pandas Series for statsmodels
         ts_data = pd.Series(data_series)
+        
+        # Validate model type
+        if self.config.model_type not in ['autoregression', 'regression']:
+            raise ValueError(
+                f"Unknown model_type '{self.config.model_type}'. "
+                f"Valid options: 'autoregression', 'regression'"
+            )
         
         # Fit Markov-Switching model based on type
         if self.config.model_type == 'regression':
@@ -613,10 +639,7 @@ class MSDRClusterer:
                 switching_variance=self.config.switching_variance
             )
         else:
-            # Default to autoregression (handles 'autoregression' and unknown types)
-            if self.config.model_type not in ['autoregression', 'regression']:
-                tprint_warning(f"⚠️ Unknown model_type '{self.config.model_type}', defaulting to 'autoregression'")
-            
+            # Autoregression model
             model = MarkovAutoregression(
                 ts_data,
                 k_regimes=n_regimes,
@@ -716,10 +739,15 @@ class MSDRClusterer:
         metrics['noise_ratio'] = 0.0  # MS models don't have noise concept
         
         # For metrics, we need multi-dimensional data
-        # Use the regime probabilities as features
-        if data.shape[1] == 1 and hasattr(self, 'model') and self.model is not None:
-            # Use smoothed probabilities as feature space
-            data_for_metrics = self.model.smoothed_marginal_probabilities.values
+        # Try to use smoothed probabilities if available from the current model result
+        if data.shape[1] == 1:
+            # Check if we have a model fitted for this specific evaluation
+            if hasattr(self, 'model') and self.model is not None:
+                data_for_metrics = self.model.smoothed_marginal_probabilities.values
+            else:
+                # No model available - metrics may be less reliable for 1D data
+                tprint_warning("⚠️ Computing metrics on 1D data - consider using regime probabilities")
+                data_for_metrics = data
         else:
             data_for_metrics = data
         

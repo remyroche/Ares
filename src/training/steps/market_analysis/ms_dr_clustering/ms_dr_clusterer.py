@@ -80,10 +80,19 @@ from src.utils.tprint import (
     tprint_data_preview, tprint_data_format
 )
 
-# Import comprehensive quality assessor
-from src.training.steps.market_analysis.hdbscan_clustering.quality_assessment import (
-    create_quality_assessor,
-    QualityMetrics as QualityAssessmentMetrics
+# Import unified cluster quality assessor (updated to use the centralized one)
+from src.training.steps.market_analysis.clusters.cluster_quality_assessor import (
+    create_cluster_quality_assessor,
+    ClusterQualityMetrics
+)
+
+# Import clustering optimization goals
+from src.training.steps.market_analysis.clusters.clustering_optimization_goals import (
+    DEFAULT_CLUSTERING_GOALS,
+    DEFAULT_OPTIMIZATION_TARGETS,
+    calculate_composite_score,
+    meets_optimization_constraints,
+    format_metrics_report
 )
 
 # Try to import Markov-Switching models
@@ -714,15 +723,23 @@ class MSDRClusterer:
         else:
             data_for_metrics = data
         
-        # Use comprehensive quality assessor for clustering metrics
+        # Use unified cluster quality assessor for comprehensive metrics
         try:
-            quality_assessor = create_quality_assessor()
-            quality_metrics = quality_assessor.assess_clustering_quality(
-                cluster_labels=labels,
-                features=data_for_metrics,
-                clusterer=None,  # MS-DR doesn't have HDBSCAN clusterer
+            quality_assessor = create_cluster_quality_assessor()
+            
+            # Convert data_for_metrics to DataFrame if needed
+            if isinstance(data_for_metrics, np.ndarray):
+                feature_df = pd.DataFrame(data_for_metrics)
+            else:
+                feature_df = data_for_metrics
+            
+            # Assess quality using the unified assessor
+            quality_metrics = quality_assessor.assess_quality(
+                regime_labels=labels,
+                feature_data=feature_df,
+                forward_returns=None,  # Add if available from input data
                 timestamps=None,  # Add if available from input data
-                returns=None     # Add if available from input data
+                min_regime_size=10
             )
             
             # Extract metrics
@@ -732,12 +749,39 @@ class MSDRClusterer:
             
             # Add comprehensive quality metrics
             metrics['quality_assessment'] = quality_metrics.to_dict()
-            metrics['composite_quality_score'] = quality_metrics.composite_quality_score
+            metrics['composite_quality_score'] = quality_metrics.quality_score
             
-            tprint_success(f"✅ Comprehensive quality assessment: Score={quality_metrics.composite_quality_score:.3f}")
+            # Calculate optimization metrics using clustering optimization goals
+            composite_score = calculate_composite_score(
+                cv_score=quality_metrics.between_regime_cv / (quality_metrics.within_regime_cv + 1e-8) if quality_metrics.within_regime_cv else 1.0,
+                silhouette_score=quality_metrics.silhouette_score or 0.0,
+                dbi_score=quality_metrics.davies_bouldin_score or float('inf'),
+                balance_score=quality_metrics.balance_score or 0.0,
+                temporal_smoothness=quality_metrics.temporal_smoothness or 0.0
+            )
+            metrics['optimization_composite_score'] = composite_score
+            
+            # Check if metrics meet optimization constraints
+            constraints_met, constraint_checks = meets_optimization_constraints(
+                cv_score=quality_metrics.between_regime_cv / (quality_metrics.within_regime_cv + 1e-8) if quality_metrics.within_regime_cv else 1.0,
+                silhouette_score=quality_metrics.silhouette_score or 0.0,
+                dbi_score=quality_metrics.davies_bouldin_score or float('inf'),
+                balance_score=quality_metrics.balance_score or 0.0,
+                temporal_smoothness=quality_metrics.temporal_smoothness or 0.0,
+                n_clusters=n_clusters
+            )
+            metrics['meets_optimization_constraints'] = constraints_met
+            metrics['constraint_checks'] = constraint_checks
+            
+            tprint_success(
+                f"✅ Quality Assessment - Composite: {quality_metrics.quality_score:.3f}, "
+                f"Optimization: {composite_score:.3f}, Constraints: {'✅' if constraints_met else '❌'}"
+            )
             
         except Exception as e:
             tprint_warning(f"⚠️ Quality assessment failed: {e}")
+            import traceback
+            tprint_debug(traceback.format_exc())
             metrics['silhouette_score'] = 0.0
             metrics['calinski_harabasz_score'] = 0.0
             metrics['davies_bouldin_score'] = 0.0

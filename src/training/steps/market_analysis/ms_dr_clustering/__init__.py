@@ -2,7 +2,7 @@
 MS-DR Clustering Module
 
 This module provides Markov-Switching Dynamic Regression clustering
-for regime discovery.
+for regime discovery with integrated quality assessment and artifact management.
 """
 
 from .ms_dr_clusterer import (
@@ -14,11 +14,26 @@ from .ms_dr_clusterer import (
     MS_LIBRARY
 )
 
+# Import standalone function with artifact manager
+try:
+    from src.feature_generation.integration.enhanced_ms_dr_clustering_integration import (
+        perform_ms_dr_clustering_with_artifact_manager,
+        perform_enhanced_ms_dr_clustering
+    )
+    INTEGRATION_AVAILABLE = True
+except ImportError:
+    INTEGRATION_AVAILABLE = False
+    perform_ms_dr_clustering_with_artifact_manager = None
+    perform_enhanced_ms_dr_clustering = None
+
 __all__ = [
     'MSDRClusterer',
     'MSDRConfig',
     'MSDRResult',
     'create_ms_dr_clusterer',
     'MS_AVAILABLE',
-    'MS_LIBRARY'
+    'MS_LIBRARY',
+    'perform_ms_dr_clustering_with_artifact_manager',
+    'perform_enhanced_ms_dr_clustering',
+    'INTEGRATION_AVAILABLE'
 ]

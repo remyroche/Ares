@@ -114,6 +114,19 @@ from src.training.steps.market_analysis.ms_dr_clustering.ms_dr_clusterer import 
     MSDRClusterer, MSDRConfig, MSDRResult, MS_AVAILABLE
 )
 
+# Import artifact manager for data loading
+from src.training.steps.market_analysis.components.artifact_manager import ArtifactManager
+
+# Import cluster quality assessor and optimization goals
+from src.training.steps.market_analysis.clusters.cluster_quality_assessor import (
+    create_cluster_quality_assessor
+)
+from src.training.steps.market_analysis.clusters.clustering_optimization_goals import (
+    DEFAULT_CLUSTERING_GOALS,
+    DEFAULT_OPTIMIZATION_TARGETS,
+    format_metrics_report
+)
+
 
 class EnhancedMSDRClusteringIntegration:
     """
@@ -440,7 +453,168 @@ def perform_enhanced_ms_dr_clustering(
     return integrator.cluster_with_ms_dr(data)
 
 
+def perform_ms_dr_clustering_with_artifact_manager(
+    symbol: str = "BTCUSDT",
+    exchange: str = "binance",
+    timeframe: str = "30m",
+    artifact_base_dir: str = "artifacts",
+    min_features: int = 50,
+    max_features: int = 100,
+    n_regimes: int = 5,
+    model_type: str = 'autoregression',
+    auto_select_regimes: bool = True,
+    **kwargs
+) -> Dict[str, Any]:
+    """
+    Perform MS-DR clustering with artifact manager for data loading.
+    
+    This is the recommended standalone function that:
+    1. Uses ArtifactManager to load market data
+    2. Performs MS-DR clustering with comprehensive features
+    3. Assesses quality using cluster_quality_assessor
+    4. Validates against clustering_optimization_goals
+    
+    Args:
+        symbol: Trading symbol (e.g., "BTCUSDT")
+        exchange: Exchange name (e.g., "binance")
+        timeframe: Timeframe (e.g., "30m", "1h")
+        artifact_base_dir: Base directory for artifacts
+        min_features: Minimum number of features
+        max_features: Maximum number of features
+        n_regimes: Number of regimes (if not auto-selecting)
+        model_type: Model type ('autoregression', 'regression')
+        auto_select_regimes: Auto-select number of regimes
+        **kwargs: Additional parameters for MSDRClusterer
+        
+    Returns:
+        Dictionary with clustering results and quality metrics
+        
+    Example:
+        >>> from src.feature_generation.integration.enhanced_ms_dr_clustering_integration import (
+        ...     perform_ms_dr_clustering_with_artifact_manager
+        ... )
+        >>> 
+        >>> result = perform_ms_dr_clustering_with_artifact_manager(
+        ...     symbol="BTCUSDT",
+        ...     exchange="binance",
+        ...     timeframe="30m",
+        ...     artifact_base_dir="artifacts",
+        ...     min_features=50,
+        ...     max_features=100,
+        ...     auto_select_regimes=True
+        ... )
+        >>> 
+        >>> # Access results
+        >>> regime_labels = result['cluster_labels']
+        >>> quality_score = result['quality_metrics']['quality_score']
+        >>> print(f"Found {result['n_clusters']} regimes with quality score: {quality_score:.3f}")
+    """
+    tprint_info(f"🚀 Starting MS-DR Clustering with Artifact Manager")
+    tprint_structured({
+        "symbol": symbol,
+        "exchange": exchange,
+        "timeframe": timeframe,
+        "artifact_base_dir": artifact_base_dir,
+        "min_features": min_features,
+        "max_features": max_features,
+        "auto_select_regimes": auto_select_regimes
+    }, level="INFO")
+    
+    # Initialize artifact manager
+    tprint_info("📁 Initializing Artifact Manager")
+    artifact_manager = ArtifactManager(
+        base_dir=artifact_base_dir,
+        symbol=symbol,
+        exchange=exchange,
+        timeframe=timeframe
+    )
+    
+    # Load market data from artifacts
+    tprint_info(f"📊 Loading market data for {symbol} on {exchange} ({timeframe})")
+    try:
+        # Try to load from latest session
+        market_data_dict = artifact_manager.load_artifacts_from_latest_session(
+            component_name="market_data",
+            artifact_names=["ohlcv", "processed_data", "klines"]
+        )
+        
+        if not market_data_dict:
+            tprint_error("❌ No market data found in artifacts. Please ensure market data is available.")
+            raise ValueError(
+                f"No market data found for {symbol}_{exchange}_{timeframe}. "
+                "Please run data collection first or provide data manually using "
+                "perform_enhanced_ms_dr_clustering(data=your_dataframe)"
+            )
+        
+        # Get the first available data artifact
+        market_data = None
+        for artifact_name, data in market_data_dict.items():
+            if data is not None:
+                market_data = data
+                tprint_success(f"✅ Loaded market data from artifact: {artifact_name}")
+                break
+        
+        if market_data is None:
+            raise ValueError("All loaded artifacts were None")
+        
+        # Ensure it's a DataFrame
+        if not isinstance(market_data, pd.DataFrame):
+            tprint_warning(f"⚠️ Market data is not a DataFrame (type: {type(market_data)}). Attempting conversion...")
+            market_data = pd.DataFrame(market_data)
+        
+        tprint_data_preview(market_data, "Loaded Market Data", max_rows=5, max_cols=10)
+        
+    except Exception as e:
+        tprint_error(f"❌ Failed to load market data: {e}")
+        raise ValueError(
+            f"Failed to load market data: {e}\n\n"
+            "Please ensure you have run data collection first, or use "
+            "perform_enhanced_ms_dr_clustering(data=your_dataframe) to provide data manually."
+        )
+    
+    # Perform MS-DR clustering
+    tprint_info("🔄 Performing MS-DR clustering")
+    result = perform_enhanced_ms_dr_clustering(
+        data=market_data,
+        min_features=min_features,
+        max_features=max_features,
+        n_regimes=n_regimes,
+        model_type=model_type,
+        auto_select_regimes=auto_select_regimes,
+        **kwargs
+    )
+    
+    # Add artifact manager information to result
+    result['artifact_manager'] = {
+        'symbol': symbol,
+        'exchange': exchange,
+        'timeframe': timeframe,
+        'artifact_base_dir': artifact_base_dir,
+        'data_loaded_from': 'artifact_manager'
+    }
+    
+    # Generate quality report
+    tprint_info("📊 Generating quality metrics report")
+    quality_metrics = result.get('quality_metrics', {})
+    
+    if quality_metrics:
+        report = format_metrics_report(
+            cv_score=quality_metrics.get('between_regime_cv', 0.0) / (quality_metrics.get('within_regime_cv', 1.0) + 1e-8),
+            silhouette_score=quality_metrics.get('silhouette_score', 0.0),
+            dbi_score=quality_metrics.get('davies_bouldin_score', float('inf')),
+            balance_score=quality_metrics.get('balance_score', 0.0),
+            temporal_smoothness=quality_metrics.get('temporal_smoothness', 0.0),
+            n_clusters=result.get('n_clusters', 0)
+        )
+        tprint(report)
+    
+    tprint_success("🎉 MS-DR Clustering with Artifact Manager completed successfully!")
+    
+    return result
+
+
 __all__ = [
     'EnhancedMSDRClusteringIntegration',
-    'perform_enhanced_ms_dr_clustering'
+    'perform_enhanced_ms_dr_clustering',
+    'perform_ms_dr_clustering_with_artifact_manager'
 ]

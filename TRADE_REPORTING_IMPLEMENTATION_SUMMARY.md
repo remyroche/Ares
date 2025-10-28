@@ -62,13 +62,20 @@ trade_monitoring/
 │   └── binance/
 │       └── BTCUSDT/
 │           ├── daily_recap.csv
-│           └── trades.csv
+│           ├── trades_2025-10-01_to_2025-10-15.csv
+│           └── trades_2025-10-16_to_2025-10-31.csv
 └── trade/
     └── binance/
         └── BTCUSDT/
             ├── daily_recap.csv
-            └── trades.csv
+            ├── trades_2025-10-01_to_2025-10-15.csv
+            └── trades_2025-10-16_to_2025-10-31.csv
 ```
+
+**Note**: Trade files are created in 15-day periods:
+- Files for 1st-15th of each month (e.g., `trades_2025-10-01_to_2025-10-15.csv`)
+- Files for 16th-end of month (e.g., `trades_2025-10-16_to_2025-10-31.csv`)
+- New files are automatically created on the 1st and 16th of each month
 
 ### 3. Daily Recap Reports
 
@@ -242,7 +249,12 @@ python src/launcher/trade_launcher.py \
 ```
 
 Reports will be generated in:
-- `trade_monitoring/paper/binance/BTCUSDT/trades.csv`
+- `trade_monitoring/paper/binance/BTCUSDT/trades_YYYY-MM-DD_to_YYYY-MM-DD.csv` (new file every 15 days)
+- `trade_monitoring/paper/binance/BTCUSDT/daily_recap.csv`
+
+Example files for October 2025:
+- `trade_monitoring/paper/binance/BTCUSDT/trades_2025-10-01_to_2025-10-15.csv`
+- `trade_monitoring/paper/binance/BTCUSDT/trades_2025-10-16_to_2025-10-31.csv`
 - `trade_monitoring/paper/binance/BTCUSDT/daily_recap.csv`
 
 ### Starting Live Trading with Reporting
@@ -258,7 +270,12 @@ python src/launcher/trade_launcher.py \
 ```
 
 Reports will be generated in:
-- `trade_monitoring/trade/binance/BTCUSDT/trades.csv`
+- `trade_monitoring/trade/binance/BTCUSDT/trades_YYYY-MM-DD_to_YYYY-MM-DD.csv` (new file every 15 days)
+- `trade_monitoring/trade/binance/BTCUSDT/daily_recap.csv`
+
+Example files for October 2025:
+- `trade_monitoring/trade/binance/BTCUSDT/trades_2025-10-01_to_2025-10-15.csv`
+- `trade_monitoring/trade/binance/BTCUSDT/trades_2025-10-16_to_2025-10-31.csv`
 - `trade_monitoring/trade/binance/BTCUSDT/daily_recap.csv`
 
 ### Manual Report Generation
@@ -280,9 +297,20 @@ await simulator.generate_daily_report("BTCUSDT", target_date)
 
 ```python
 import pandas as pd
+from pathlib import Path
+import glob
 
-# Read per-trade data
-trades_df = pd.read_csv("trade_monitoring/paper/binance/BTCUSDT/trades.csv")
+# Read all per-trade data from all periods
+trade_dir = Path("trade_monitoring/paper/binance/BTCUSDT")
+trade_files = sorted(glob.glob(str(trade_dir / "trades_*.csv")))
+
+# Combine all trade files
+all_trades = []
+for file in trade_files:
+    df = pd.read_csv(file)
+    all_trades.append(df)
+
+trades_df = pd.concat(all_trades, ignore_index=True) if all_trades else pd.DataFrame()
 
 # Read daily recaps
 recaps_df = pd.read_csv("trade_monitoring/paper/binance/BTCUSDT/daily_recap.csv")
@@ -291,6 +319,10 @@ recaps_df = pd.read_csv("trade_monitoring/paper/binance/BTCUSDT/daily_recap.csv"
 print(f"Total PnL: {recaps_df['total_pnl'].sum()}")
 print(f"Win Rate: {recaps_df['accuracy'].mean()}")
 print(f"Best Trade: {trades_df['realized_pnl'].max()}")
+
+# Read specific period
+october_first_half = pd.read_csv("trade_monitoring/paper/binance/BTCUSDT/trades_2025-10-01_to_2025-10-15.csv")
+print(f"Trades in first half of October: {len(october_first_half)}")
 ```
 
 ## Benefits
@@ -300,22 +332,28 @@ print(f"Best Trade: {trades_df['realized_pnl'].max()}")
 - Decision-making transparency
 - Context-aware evaluation
 
-### 2. Easy Post-Analysis
+### 2. Manageable File Sizes
+- Trade files split into 15-day periods
+- Prevents individual files from becoming too large
+- Easy to archive or delete old periods
+- Improved file system performance
+
+### 3. Easy Post-Analysis
 - CSV format for easy import
 - Standard structure across modes
 - Compatible with Excel, Pandas, R, etc.
 
-### 3. Compliance and Auditing
+### 4. Compliance and Auditing
 - Complete trade history
 - Decision reasons recorded
 - Timestamped entries
 
-### 4. Performance Optimization
+### 5. Performance Optimization
 - Identify best-performing regimes
 - Analyze decision quality
 - Optimize confidence thresholds
 
-### 5. Risk Management
+### 6. Risk Management
 - Track risk metrics daily
 - Monitor drawdowns
 - Evaluate risk-adjusted returns

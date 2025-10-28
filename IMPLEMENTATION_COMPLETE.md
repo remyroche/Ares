@@ -93,8 +93,8 @@ Successfully implemented a comprehensive paper trading system with realistic ord
   - Execution quality metrics
 - **Automatic daily report generation** at end of day
 - **Separate files per mode/exchange/asset**:
-  - `daily_recap.csv` - Daily summary metrics
-  - `trades.csv` - Individual trade details
+  - `daily_recap.csv` - Daily summary metrics (one continuous file)
+  - `trades_YYYY-MM-DD_to_YYYY-MM-DD.csv` - Individual trade details (new file every 15 days)
 
 ## Usage
 
@@ -259,27 +259,41 @@ trade_monitoring/
 │   ├── binance/
 │   │   ├── BTCUSDT/
 │   │   │   ├── daily_recap.csv
-│   │   │   └── trades.csv
+│   │   │   ├── trades_2025-10-01_to_2025-10-15.csv
+│   │   │   ├── trades_2025-10-16_to_2025-10-31.csv
+│   │   │   ├── trades_2025-11-01_to_2025-11-15.csv
+│   │   │   └── trades_2025-11-16_to_2025-11-30.csv
 │   │   └── ETHUSDT/
 │   │       ├── daily_recap.csv
-│   │       └── trades.csv
+│   │       ├── trades_2025-10-01_to_2025-10-15.csv
+│   │       └── trades_2025-10-16_to_2025-10-31.csv
 │   └── okx/
 │       └── BTCUSDT/
 │           ├── daily_recap.csv
-│           └── trades.csv
+│           ├── trades_2025-10-01_to_2025-10-15.csv
+│           └── trades_2025-10-16_to_2025-10-31.csv
 └── trade/
     ├── binance/
     │   ├── BTCUSDT/
     │   │   ├── daily_recap.csv
-    │   │   └── trades.csv
+    │   │   ├── trades_2025-10-01_to_2025-10-15.csv
+    │   │   └── trades_2025-10-16_to_2025-10-31.csv
     │   └── ETHUSDT/
     │       ├── daily_recap.csv
-    │       └── trades.csv
+    │       ├── trades_2025-10-01_to_2025-10-15.csv
+    │       └── trades_2025-10-16_to_2025-10-31.csv
     └── okx/
         └── BTCUSDT/
             ├── daily_recap.csv
-            └── trades.csv
+            ├── trades_2025-10-01_to_2025-10-15.csv
+            └── trades_2025-10-16_to_2025-10-31.csv
 ```
+
+**Trade File Periods**: Per-trade CSV files are created in 15-day periods:
+- **1st-15th** of each month: `trades_YYYY-MM-01_to_YYYY-MM-15.csv`
+- **16th-end** of each month: `trades_YYYY-MM-16_to_YYYY-MM-DD.csv`
+- New files are automatically created on the 1st and 16th of each month
+- This keeps individual files manageable and makes it easy to archive older periods
 
 ### Daily Recap CSV Columns
 
@@ -305,9 +319,10 @@ trade_monitoring/
 
 Reports are generated automatically during trading and can be accessed:
 
-1. **Real-time**: Reports are written immediately after each trade
+1. **Real-time**: Per-trade reports are written immediately after each trade to period-specific files
 2. **Daily**: Daily recaps are generated automatically at the end of each day
 3. **Manual**: Call `generate_daily_report()` on simulator or order_manager
+4. **15-Day Periods**: New trade CSV files are automatically created on the 1st and 16th of each month
 
 Example:
 ```python

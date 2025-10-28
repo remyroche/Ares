@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Dict, Any, List, Optional, Union
 from dataclasses import dataclass, field, asdict
 from enum import Enum
+import calendar
 
 from src.utils.logger import system_logger
 
@@ -303,8 +304,46 @@ class TradeReportingManager:
             self.logger.error(f"Failed to record trade: {e}", exc_info=True)
             return False
     
+    def _get_trade_period_filename(self, trade_date: datetime) -> str:
+        """
+        Generate filename for trade CSV based on 15-day periods.
+        
+        Files are created for:
+        - 1st-15th of each month
+        - 16th-end of each month
+        
+        Args:
+            trade_date: Date of the trade
+            
+        Returns:
+            Filename for the trade CSV (e.g., "trades_2025-10-01_to_2025-10-15.csv")
+        """
+        year = trade_date.year
+        month = trade_date.month
+        day = trade_date.day
+        
+        if day <= 15:
+            # First period: 1st-15th
+            start_date = f"{year:04d}-{month:02d}-01"
+            end_date = f"{year:04d}-{month:02d}-15"
+        else:
+            # Second period: 16th-end of month
+            # Calculate last day of month
+            import calendar
+            last_day = calendar.monthrange(year, month)[1]
+            start_date = f"{year:04d}-{month:02d}-16"
+            end_date = f"{year:04d}-{month:02d}-{last_day:02d}"
+        
+        return f"trades_{start_date}_to_{end_date}.csv"
+    
     async def _write_trade_to_csv(self, trade_record: TradeRecord):
-        """Write individual trade to per-trade CSV file"""
+        """
+        Write individual trade to per-trade CSV file.
+        
+        Creates separate files every 15 days:
+        - Files for 1st-15th of each month
+        - Files for 16th-end of each month
+        """
         try:
             report_dir = self._get_report_directory(
                 trade_record.mode,
@@ -312,8 +351,9 @@ class TradeReportingManager:
                 trade_record.asset
             )
             
-            # Per-trade CSV file
-            trades_file = report_dir / "trades.csv"
+            # Get period-based filename
+            trades_filename = self._get_trade_period_filename(trade_record.timestamp)
+            trades_file = report_dir / trades_filename
             
             # Check if file exists to determine if we need headers
             file_exists = trades_file.exists()
@@ -325,6 +365,7 @@ class TradeReportingManager:
                 
                 if not file_exists:
                     writer.writeheader()
+                    self.logger.info(f"Created new trade CSV file: {trades_file}")
                 
                 writer.writerow(trade_record.to_csv_dict())
             

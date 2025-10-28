@@ -2,7 +2,7 @@
 
 ## Overview
 
-Successfully implemented a comprehensive paper trading system with realistic order book simulation, configurable fees, slippage modeling, and full position management with direction constraints.
+Successfully implemented a comprehensive paper trading system with realistic order book simulation, configurable fees, slippage modeling, full position management with direction constraints, and comprehensive CSV-based reporting for both paper and live trading modes.
 
 ## Files Created
 
@@ -21,7 +21,12 @@ Successfully implemented a comprehensive paper trading system with realistic ord
 
 ### Files Modified
 10. **`exchanges/exchange_dispatcher.py`** - Added TradingMode enum and simulator integration
-11. **`live_trading/order_manager.py`** - Enhanced with simulator injection and realistic paper trading
+11. **`live_trading/order_manager.py`** - Enhanced with simulator injection, realistic paper trading, and reporting integration
+12. **`src/simulator/paper_trading_simulator.py`** - Enhanced with reporting integration
+13. **`src/launcher/trade_launcher.py`** - Added automatic daily report generation
+
+### Reporting System Files
+14. **`src/trading/reporting/trade_reporting_manager.py`** - Unified reporting system for both modes
 
 ## Key Features Implemented
 
@@ -60,6 +65,36 @@ Successfully implemented a comprehensive paper trading system with realistic ord
 ### 6. Latency Simulation
 - Configurable network latency (50-200ms by default)
 - Realistic order execution delays
+
+### 7. Comprehensive Reporting System
+- **Unified reporting** for both paper and live trading modes
+- **CSV-based reports** stored in `trade_monitoring/MODE/EXCHANGE/ASSET/`
+- **Daily recaps** with comprehensive metrics:
+  - PnL tracking (total, gross profit/loss, net PnL)
+  - Risk-reward ratio, Sharpe ratio, max drawdown
+  - Accuracy (win rate), profit factor
+  - Number of trades (total, longs, shorts, winning, losing)
+  - Execution metrics (fees, slippage, quality)
+  - Decision metrics (confidence scores)
+  - Context metrics (primary regime, volatility, volume)
+- **Per-trade analysis** with:
+  - Entry/exit prices and datetimes
+  - Net gain/loss (percentage and absolute)
+  - Decision reasons:
+    - Analyst confidence
+    - Tactician confidence
+    - Strategist confidence
+    - Ensemble confidence
+    - Signal strength
+  - SHAP/Feature importance (top 3 features)
+  - Context metrics:
+    - Top 3 dominant regimes with probabilities
+    - Volume, volatility, trend
+  - Execution quality metrics
+- **Automatic daily report generation** at end of day
+- **Separate files per mode/exchange/asset**:
+  - `daily_recap.csv` - Daily summary metrics (one continuous file)
+  - `trades_YYYY-MM-DD_to_YYYY-MM-DD.csv` - Individual trade details (new file every 15 days)
 
 ## Usage
 
@@ -214,6 +249,90 @@ All components have been validated:
 - Works transparently with OrderManager
 - Mode awareness via existing TradingConfig
 
+## Reporting File Structure
+
+Reports are automatically generated in the following directory structure:
+
+```
+trade_monitoring/
+├── paper/
+│   ├── binance/
+│   │   ├── BTCUSDT/
+│   │   │   ├── daily_recap.csv
+│   │   │   ├── trades_2025-10-01_to_2025-10-15.csv
+│   │   │   ├── trades_2025-10-16_to_2025-10-31.csv
+│   │   │   ├── trades_2025-11-01_to_2025-11-15.csv
+│   │   │   └── trades_2025-11-16_to_2025-11-30.csv
+│   │   └── ETHUSDT/
+│   │       ├── daily_recap.csv
+│   │       ├── trades_2025-10-01_to_2025-10-15.csv
+│   │       └── trades_2025-10-16_to_2025-10-31.csv
+│   └── okx/
+│       └── BTCUSDT/
+│           ├── daily_recap.csv
+│           ├── trades_2025-10-01_to_2025-10-15.csv
+│           └── trades_2025-10-16_to_2025-10-31.csv
+└── trade/
+    ├── binance/
+    │   ├── BTCUSDT/
+    │   │   ├── daily_recap.csv
+    │   │   ├── trades_2025-10-01_to_2025-10-15.csv
+    │   │   └── trades_2025-10-16_to_2025-10-31.csv
+    │   └── ETHUSDT/
+    │       ├── daily_recap.csv
+    │       ├── trades_2025-10-01_to_2025-10-15.csv
+    │       └── trades_2025-10-16_to_2025-10-31.csv
+    └── okx/
+        └── BTCUSDT/
+            ├── daily_recap.csv
+            ├── trades_2025-10-01_to_2025-10-15.csv
+            └── trades_2025-10-16_to_2025-10-31.csv
+```
+
+**Trade File Periods**: Per-trade CSV files are created in 15-day periods:
+- **1st-15th** of each month: `trades_YYYY-MM-01_to_YYYY-MM-15.csv`
+- **16th-end** of each month: `trades_YYYY-MM-16_to_YYYY-MM-DD.csv`
+- New files are automatically created on the 1st and 16th of each month
+- This keeps individual files manageable and makes it easy to archive older periods
+
+### Daily Recap CSV Columns
+
+- **Basic Info**: date, exchange, asset, mode
+- **Trade Counts**: total_trades, long_trades, short_trades, winning_trades, losing_trades
+- **Performance**: total_pnl, total_pnl_pct, gross_profit, gross_loss, net_pnl, accuracy, profit_factor
+- **Risk**: avg_win, avg_loss, largest_win, largest_loss, risk_reward_ratio, sharpe_ratio, max_drawdown
+- **Execution**: total_fees, avg_slippage_pct, avg_execution_quality
+- **Decision**: avg_confidence, avg_analyst_confidence, avg_tactician_confidence
+- **Context**: primary_regime, avg_volatility, avg_volume
+
+### Per-Trade CSV Columns
+
+- **Identification**: trade_id, timestamp, exchange, asset, mode
+- **Trade Details**: entry_datetime, exit_datetime, entry_price, exit_price, quantity, side, direction
+- **Performance**: net_gain_loss_pct, net_gain_loss_absolute, realized_pnl, fees, slippage_pct
+- **Decision Reasons**: analyst_confidence, tactician_confidence, strategist_confidence, ensemble_confidence, signal_strength
+- **Feature Importance**: top_feature_1, top_feature_1_importance, top_feature_2, top_feature_2_importance, top_feature_3, top_feature_3_importance
+- **Context**: regime_1, regime_1_probability, regime_2, regime_2_probability, regime_3, regime_3_probability, volume, volatility, trend
+- **Execution**: execution_time_ms, execution_quality
+
+## Accessing Reports
+
+Reports are generated automatically during trading and can be accessed:
+
+1. **Real-time**: Per-trade reports are written immediately after each trade to period-specific files
+2. **Daily**: Daily recaps are generated automatically at the end of each day
+3. **Manual**: Call `generate_daily_report()` on simulator or order_manager
+4. **15-Day Periods**: New trade CSV files are automatically created on the 1st and 16th of each month
+
+Example:
+```python
+# For paper trading
+await simulator.generate_daily_report("BTCUSDT")
+
+# For live trading
+await order_manager.generate_daily_report("BTCUSDT")
+```
+
 ## Next Steps (Optional Enhancements)
 
 1. Add stop loss/take profit simulation
@@ -223,6 +342,8 @@ All components have been validated:
 5. Add backtesting integration
 6. Add real-time dashboard
 7. Add trade replay functionality
+8. Add email/webhook notifications for daily reports
+9. Add report aggregation across multiple assets
 
 ## Summary
 

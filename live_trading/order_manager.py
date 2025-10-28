@@ -6,14 +6,19 @@ Handles order creation, tracking, and execution for live trading.
 
 import asyncio
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 from typing import Dict, List, Optional, Any, Callable, Awaitable
 from dataclasses import dataclass, field
 from enum import Enum
 import logging
+import uuid
 
 from .config import OrderType, OrderSide, TradingConfig
 from ..src.interfaces.base_interfaces import TradeDecision
+from src.trading.reporting.trade_reporting_manager import (
+    TradeRecord, trade_reporting_manager, generate_daily_recap
+)
+from src.utils.tprint import tprint_info, tprint_success, tprint_error, tprint_debug
 
 
 class OrderStatus(Enum):
@@ -89,6 +94,9 @@ class OrderManager:
         # Background tasks
         self._monitoring_task: Optional[asyncio.Task] = None
         self._running = False
+        
+        # Track position entries for exit reporting
+        self._position_entries: Dict[str, Dict[str, Any]] = {}  # symbol -> entry info
         
     async def start(self) -> None:
         """Start the order manager"""
@@ -289,6 +297,9 @@ class OrderManager:
                     # Notify handlers
                     await self._notify_handlers("on_order_filled", order)
                     
+                    # Record trade for reporting
+                    await self._record_trade_for_reporting(order)
+                    
                     self.logger.info(f"Paper order filled via simulator: {order.id} @ {order.average_price}")
                 elif result.get("status") == "REJECTED":
                     order.status = OrderStatus.REJECTED
@@ -452,6 +463,209 @@ class OrderManager:
                 except Exception as e:
                     self.logger.error(f"❌ Error in order handler: {e}")
                     self.logger.warning("⚠️ Order handler failed - continuing with other handlers")
+    
+    async def _record_trade_for_reporting(self, order: Order) -> None:
+        """Record filled order for reporting system"""
+        try:
+            if order.status != OrderStatus.FILLED:
+                return
+            
+            # Determine if this is an entry or exit
+            is_entry = order.side == OrderSide.BUY
+            is_exit = order.side == OrderSide.SELL
+            
+            # Extract metadata
+            metadata = order.metadata or {}
+            
+            # Extract confidence scores
+            analyst_confidence = metadata.get('analyst_confidence', 0.0)
+            tactician_confidence = metadata.get('tactician_confidence', 0.0)
+            strategist_confidence = metadata.get('strategist_confidence', 0.0)
+            ensemble_confidence = metadata.get('confidence', 0.0)
+            signal_strength = metadata.get('signal_strength', 0.0)
+            
+            # Extract SHAP/feature importance
+            shap_values = metadata.get('shap_values', {})
+            top_features = sorted(
+                shap_values.items(),
+                key=lambda x: abs(x[1]),
+                reverse=True
+            )[:3] if shap_values else []
+            
+            # Extract regime information
+            regime_probs = metadata.get('regime_probabilities', {})
+            top_regimes = sorted(
+                regime_probs.items(),
+                key=lambda x: x[1],
+                reverse=True
+            )[:3] if regime_probs else []
+            
+            # Extract context
+            volume = metadata.get('volume', 0.0)
+            volatility = metadata.get('volatility', 0.0)
+            trend = metadata.get('trend', 'neutral')
+            
+            # Determine trading mode
+            mode = "trade" if self.config.mode.value == "live" else "paper"
+            
+            # Get exchange name (simplified - would need proper exchange identification)
+            exchange = self.config.exchange_name if hasattr(self.config, 'exchange_name') else "unknown"
+            
+            # Handle entry vs exit
+            if is_entry:
+                # Store entry information for later exit
+                self._position_entries[order.symbol] = {
+                    'entry_time': order.timestamp,
+                    'entry_price': order.average_price or order.price,
+                    'quantity': order.filled_quantity,
+                    'metadata': metadata
+                }
+                
+                # Record entry trade
+                trade_record = TradeRecord(
+                    trade_id=str(uuid.uuid4()),
+                    timestamp=order.timestamp,
+                    exchange=exchange,
+                    asset=order.symbol,
+                    mode=mode,
+                    entry_datetime=order.timestamp,
+                    exit_datetime=None,
+                    entry_price=order.average_price or order.price,
+                    exit_price=None,
+                    quantity=order.filled_quantity,
+                    side=order.side.value,
+                    direction="long" if is_entry else "short",
+                    net_gain_loss_pct=None,
+                    net_gain_loss_absolute=None,
+                    realized_pnl=None,
+                    fees=order.commission,
+                    slippage_pct=0.0,  # Would need to calculate from expected vs actual price
+                    analyst_confidence=analyst_confidence,
+                    tactician_confidence=tactician_confidence,
+                    strategist_confidence=strategist_confidence,
+                    ensemble_confidence=ensemble_confidence,
+                    signal_strength=signal_strength,
+                    top_feature_1=top_features[0][0] if len(top_features) > 0 else "",
+                    top_feature_1_importance=top_features[0][1] if len(top_features) > 0 else 0.0,
+                    top_feature_2=top_features[1][0] if len(top_features) > 1 else "",
+                    top_feature_2_importance=top_features[1][1] if len(top_features) > 1 else 0.0,
+                    top_feature_3=top_features[2][0] if len(top_features) > 2 else "",
+                    top_feature_3_importance=top_features[2][1] if len(top_features) > 2 else 0.0,
+                    regime_1=top_regimes[0][0] if len(top_regimes) > 0 else "",
+                    regime_1_probability=top_regimes[0][1] if len(top_regimes) > 0 else 0.0,
+                    regime_2=top_regimes[1][0] if len(top_regimes) > 1 else "",
+                    regime_2_probability=top_regimes[1][1] if len(top_regimes) > 1 else 0.0,
+                    regime_3=top_regimes[2][0] if len(top_regimes) > 2 else "",
+                    regime_3_probability=top_regimes[2][1] if len(top_regimes) > 2 else 0.0,
+                    volume=volume,
+                    volatility=volatility,
+                    trend=trend,
+                    execution_time_ms=0.0,  # Would need to track execution time
+                    execution_quality=1.0  # Simplified
+                )
+                
+                await trade_reporting_manager.record_trade(trade_record)
+                
+            elif is_exit and order.symbol in self._position_entries:
+                # Calculate PnL for exit
+                entry_info = self._position_entries[order.symbol]
+                entry_price = entry_info['entry_price']
+                exit_price = order.average_price or order.price
+                quantity = min(order.filled_quantity, entry_info['quantity'])
+                
+                pnl = (exit_price - entry_price) * quantity
+                pnl_pct = ((exit_price - entry_price) / entry_price) if entry_price > 0 else 0.0
+                
+                # Record exit trade
+                trade_record = TradeRecord(
+                    trade_id=str(uuid.uuid4()),
+                    timestamp=order.timestamp,
+                    exchange=exchange,
+                    asset=order.symbol,
+                    mode=mode,
+                    entry_datetime=entry_info['entry_time'],
+                    exit_datetime=order.timestamp,
+                    entry_price=entry_price,
+                    exit_price=exit_price,
+                    quantity=quantity,
+                    side=order.side.value,
+                    direction="long",  # Assuming long position for simplicity
+                    net_gain_loss_pct=pnl_pct,
+                    net_gain_loss_absolute=pnl,
+                    realized_pnl=pnl - order.commission,
+                    fees=order.commission,
+                    slippage_pct=0.0,
+                    analyst_confidence=analyst_confidence,
+                    tactician_confidence=tactician_confidence,
+                    strategist_confidence=strategist_confidence,
+                    ensemble_confidence=ensemble_confidence,
+                    signal_strength=signal_strength,
+                    top_feature_1=top_features[0][0] if len(top_features) > 0 else "",
+                    top_feature_1_importance=top_features[0][1] if len(top_features) > 0 else 0.0,
+                    top_feature_2=top_features[1][0] if len(top_features) > 1 else "",
+                    top_feature_2_importance=top_features[1][1] if len(top_features) > 1 else 0.0,
+                    top_feature_3=top_features[2][0] if len(top_features) > 2 else "",
+                    top_feature_3_importance=top_features[2][1] if len(top_features) > 2 else 0.0,
+                    regime_1=top_regimes[0][0] if len(top_regimes) > 0 else "",
+                    regime_1_probability=top_regimes[0][1] if len(top_regimes) > 0 else 0.0,
+                    regime_2=top_regimes[1][0] if len(top_regimes) > 1 else "",
+                    regime_2_probability=top_regimes[1][1] if len(top_regimes) > 1 else 0.0,
+                    regime_3=top_regimes[2][0] if len(top_regimes) > 2 else "",
+                    regime_3_probability=top_regimes[2][1] if len(top_regimes) > 2 else 0.0,
+                    volume=volume,
+                    volatility=volatility,
+                    trend=trend,
+                    execution_time_ms=0.0,
+                    execution_quality=1.0
+                )
+                
+                await trade_reporting_manager.record_trade(trade_record)
+                
+                # Clean up entry record
+                del self._position_entries[order.symbol]
+            
+            tprint_debug(f"📊 Trade recorded for reporting: {order.id}")
+            
+        except Exception as e:
+            tprint_error(f"❌ Failed to record trade for reporting: {e}")
+    
+    async def generate_daily_report(
+        self,
+        symbol: str,
+        target_date: Optional[date] = None
+    ) -> bool:
+        """
+        Generate daily report for a specific symbol.
+        
+        Args:
+            symbol: Trading symbol
+            target_date: Date to generate report for (defaults to today)
+            
+        Returns:
+            True if successful
+        """
+        try:
+            mode = "trade" if self.config.mode.value == "live" else "paper"
+            exchange = self.config.exchange_name if hasattr(self.config, 'exchange_name') else "unknown"
+            
+            tprint_info(f"📊 Generating daily report for {symbol} ({target_date or date.today()})")
+            
+            result = await generate_daily_recap(
+                mode=mode,
+                exchange=exchange,
+                asset=symbol,
+                target_date=target_date
+            )
+            
+            if result:
+                tprint_success(f"✅ Daily report generated for {symbol}")
+            else:
+                tprint_error(f"❌ Failed to generate daily report for {symbol}")
+            
+            return result
+        except Exception as e:
+            tprint_error(f"❌ Failed to generate daily report: {e}")
+            return False
     
     async def get_performance_metrics(self) -> Dict[str, Any]:
         """Get order performance metrics"""

@@ -202,6 +202,8 @@ Examples:
         
         # Run until interrupted
         try:
+            last_report_date = None
+            
             while True:
                 await asyncio.sleep(60)  # Update every minute
                 
@@ -213,6 +215,22 @@ Examples:
                         f"PnL: {metrics['net_pnl']:.2f} ({metrics['net_pnl_pct']:.2%}) | "
                         f"Trades: {metrics['total_trades']}"
                     )
+                
+                # Generate daily report at end of day (or once per day)
+                from datetime import date
+                current_date = date.today()
+                if last_report_date != current_date:
+                    logger.info("Generating daily report...")
+                    
+                    # Generate report for paper trading
+                    if simulator:
+                        await simulator.generate_daily_report(args.asset, current_date)
+                    else:
+                        # Generate report for live trading
+                        await trading_engine.order_manager.generate_daily_report(args.asset, current_date)
+                    
+                    last_report_date = current_date
+                    logger.info("✅ Daily report generated")
         
         except KeyboardInterrupt:
             logger.info("\nReceived stop signal, shutting down...")

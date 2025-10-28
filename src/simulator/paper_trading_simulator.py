@@ -8,7 +8,7 @@ fees, slippage, and position management.
 import asyncio
 import random
 from typing import Dict, Any, Optional, List, Tuple
-from datetime import datetime
+from datetime import datetime, date
 import uuid
 import logging
 
@@ -18,6 +18,10 @@ from .slippage_calculator import SlippageCalculator
 from .order_validator import OrderValidator
 from .position_manager import PositionManager, Position
 from .persistence import SimulatorPersistence
+from src.trading.reporting.trade_reporting_manager import (
+    TradeRecord, trade_reporting_manager, generate_daily_recap
+)
+from src.utils.tprint import tprint_info, tprint_success, tprint_error, tprint_debug
 
 
 class PaperTradingSimulator:
@@ -265,6 +269,21 @@ class PaperTradingSimulator:
                 f"(fee={fee_result.fee_amount:.4f}, slippage={fill_result.slippage_pct:.2%})"
             )
             
+            # Record trade for reporting
+            await self._record_trade_for_reporting(
+                symbol=symbol,
+                side=side,
+                direction=direction,
+                quantity=fill_result.filled_quantity,
+                price=fill_price,
+                fee=fee_result.fee_amount,
+                slippage=fill_result.slippage_pct,
+                pnl=pnl,
+                is_closing=is_closing,
+                trading_signal_metadata=trading_signal_metadata,
+                latency_ms=latency_ms
+            )
+            
             # Return exchange-compatible response
             return {
                 "orderId": str(uuid.uuid4()),
@@ -336,6 +355,150 @@ class PaperTradingSimulator:
     def get_trade_history(self, symbol: Optional[str] = None, limit: int = 100) -> List[Dict[str, Any]]:
         """Get trade history."""
         return self.persistence.get_trades(self.simulator_id, symbol=symbol, limit=limit)
+    
+    async def _record_trade_for_reporting(
+        self,
+        symbol: str,
+        side: str,
+        direction: str,
+        quantity: float,
+        price: float,
+        fee: float,
+        slippage: float,
+        pnl: float,
+        is_closing: bool,
+        trading_signal_metadata: Optional[Dict[str, Any]],
+        latency_ms: float
+    ) -> None:
+        """Record trade for reporting system"""
+        try:
+            # Extract metadata
+            metadata = trading_signal_metadata or {}
+            
+            # Extract confidence scores
+            analyst_confidence = metadata.get('analyst_confidence', 0.0)
+            tactician_confidence = metadata.get('tactician_confidence', 0.0)
+            strategist_confidence = metadata.get('strategist_confidence', 0.0)
+            ensemble_confidence = metadata.get('confidence', 0.0)
+            signal_strength = metadata.get('signal_strength', 0.0)
+            
+            # Extract SHAP/feature importance
+            shap_values = metadata.get('shap_values', {})
+            top_features = sorted(
+                shap_values.items(),
+                key=lambda x: abs(x[1]),
+                reverse=True
+            )[:3] if shap_values else []
+            
+            # Extract regime information
+            regime_probs = metadata.get('regime_probabilities', {})
+            top_regimes = sorted(
+                regime_probs.items(),
+                key=lambda x: x[1],
+                reverse=True
+            )[:3] if regime_probs else []
+            
+            # Extract context
+            volume = metadata.get('volume', 0.0)
+            volatility = metadata.get('volatility', 0.0)
+            trend = metadata.get('trend', 'neutral')
+            
+            # Determine entry/exit
+            entry_datetime = datetime.now()
+            exit_datetime = entry_datetime if is_closing else None
+            entry_price = price
+            exit_price = price if is_closing else None
+            
+            # Calculate PnL percentages
+            net_gain_loss_pct = None
+            net_gain_loss_absolute = None
+            
+            if is_closing and pnl != 0:
+                net_gain_loss_absolute = pnl
+                # Estimate percentage (simplified)
+                net_gain_loss_pct = (pnl / (quantity * price)) if (quantity * price) > 0 else 0.0
+            
+            # Create trade record
+            trade_record = TradeRecord(
+                trade_id=str(uuid.uuid4()),
+                timestamp=entry_datetime,
+                exchange=self.exchange,
+                asset=symbol,
+                mode="paper",
+                entry_datetime=entry_datetime,
+                exit_datetime=exit_datetime,
+                entry_price=entry_price,
+                exit_price=exit_price,
+                quantity=quantity,
+                side=side,
+                direction=direction,
+                net_gain_loss_pct=net_gain_loss_pct,
+                net_gain_loss_absolute=net_gain_loss_absolute,
+                realized_pnl=pnl if is_closing else None,
+                fees=fee,
+                slippage_pct=slippage,
+                analyst_confidence=analyst_confidence,
+                tactician_confidence=tactician_confidence,
+                strategist_confidence=strategist_confidence,
+                ensemble_confidence=ensemble_confidence,
+                signal_strength=signal_strength,
+                top_feature_1=top_features[0][0] if len(top_features) > 0 else "",
+                top_feature_1_importance=top_features[0][1] if len(top_features) > 0 else 0.0,
+                top_feature_2=top_features[1][0] if len(top_features) > 1 else "",
+                top_feature_2_importance=top_features[1][1] if len(top_features) > 1 else 0.0,
+                top_feature_3=top_features[2][0] if len(top_features) > 2 else "",
+                top_feature_3_importance=top_features[2][1] if len(top_features) > 2 else 0.0,
+                regime_1=top_regimes[0][0] if len(top_regimes) > 0 else "",
+                regime_1_probability=top_regimes[0][1] if len(top_regimes) > 0 else 0.0,
+                regime_2=top_regimes[1][0] if len(top_regimes) > 1 else "",
+                regime_2_probability=top_regimes[1][1] if len(top_regimes) > 1 else 0.0,
+                regime_3=top_regimes[2][0] if len(top_regimes) > 2 else "",
+                regime_3_probability=top_regimes[2][1] if len(top_regimes) > 2 else 0.0,
+                volume=volume,
+                volatility=volatility,
+                trend=trend,
+                execution_time_ms=latency_ms,
+                execution_quality=1.0 - slippage  # Simplified quality metric
+            )
+            
+            # Record trade
+            await trade_reporting_manager.record_trade(trade_record)
+            
+            tprint_debug(f"📊 Trade recorded for reporting: {trade_record.trade_id}")
+            
+        except Exception as e:
+            tprint_error(f"❌ Failed to record trade for reporting: {e}")
+    
+    async def generate_daily_report(self, symbol: str, target_date: Optional[date] = None) -> bool:
+        """
+        Generate daily report for a specific symbol.
+        
+        Args:
+            symbol: Trading symbol
+            target_date: Date to generate report for (defaults to today)
+            
+        Returns:
+            True if successful
+        """
+        try:
+            tprint_info(f"📊 Generating daily report for {symbol} ({target_date or date.today()})")
+            
+            result = await generate_daily_recap(
+                mode="paper",
+                exchange=self.exchange,
+                asset=symbol,
+                target_date=target_date
+            )
+            
+            if result:
+                tprint_success(f"✅ Daily report generated for {symbol}")
+            else:
+                tprint_error(f"❌ Failed to generate daily report for {symbol}")
+            
+            return result
+        except Exception as e:
+            tprint_error(f"❌ Failed to generate daily report: {e}")
+            return False
     
     def get_performance_metrics(self) -> Dict[str, Any]:
         """Get performance metrics."""

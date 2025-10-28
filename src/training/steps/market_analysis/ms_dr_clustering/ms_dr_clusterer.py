@@ -31,6 +31,18 @@ from src.utils.tprint import (
 # Try to import Markov-Switching models
 MS_AVAILABLE = False
 MS_LIBRARY = None
+MS_INSTALLATION_GUIDE = """
+🔧 Markov-Switching Library Installation Guide:
+
+1. statsmodels (Recommended):
+   pip install statsmodels>=0.13.0
+   
+2. With conda:
+   conda install -c conda-forge statsmodels
+
+Note: statsmodels is well-maintained and easy to install.
+No complex dependencies required.
+"""
 
 try:
     from statsmodels.tsa.regime_switching import markov_switching, markov_autoregression, markov_regression
@@ -39,10 +51,26 @@ try:
     from statsmodels.tsa.regime_switching.markov_regression import MarkovRegression
     MS_AVAILABLE = True
     MS_LIBRARY = 'statsmodels'
-    tprint_info("✅ Using statsmodels for Markov-Switching clustering")
+    tprint_success("✅ Using statsmodels for Markov-Switching clustering")
 except ImportError:
-    warnings.warn("statsmodels.tsa.regime_switching not available. Install with: pip install statsmodels")
+    tprint_warning("⚠️ statsmodels not available")
+    tprint_warning(MS_INSTALLATION_GUIDE)
     MS_LIBRARY = None
+
+# Import existing optimization utilities (from code review)
+try:
+    from src.utils.hardware.device_manager import get_device_manager
+    HARDWARE_UTILS_AVAILABLE = True
+except ImportError:
+    HARDWARE_UTILS_AVAILABLE = False
+    tprint_debug("Hardware utilities not available")
+
+try:
+    from src.utils.ml_common.unified_vectorization_manager import UnifiedVectorizationManager
+    VECTORIZATION_AVAILABLE = True
+except ImportError:
+    VECTORIZATION_AVAILABLE = False
+    tprint_debug("Unified vectorization not available")
 
 
 @dataclass
@@ -72,8 +100,12 @@ class MSDRConfig:
     max_regimes: int = 10
     ic_criterion: str = 'aic'  # Information criterion: 'aic', 'bic', 'hqic'
     
-    # Validation
+    # Validation (enhanced from code review)
     min_regime_size: int = 10
+    min_samples_required: int = 200  # Minimum samples for reliable estimation
+    min_features_required: int = 1  # Minimum features required
+    max_nan_ratio: float = 0.1  # Maximum ratio of NaN values allowed
+    show_progress: bool = True  # Show progress during optimization
     
     # Random seed
     random_state: int = 42
@@ -141,6 +173,17 @@ class MSDRClusterer:
         self.pca = None
         self.fitted_models = {}  # Store models for different regime counts
         
+        # Initialize hardware manager if available (from code review)
+        if HARDWARE_UTILS_AVAILABLE:
+            try:
+                self.device_manager = get_device_manager()
+                tprint_debug(f"Hardware manager initialized: {self.device_manager.get_device_info()}")
+            except Exception as e:
+                tprint_debug(f"Failed to initialize hardware manager: {e}")
+                self.device_manager = None
+        else:
+            self.device_manager = None
+        
         if not MS_AVAILABLE:
             tprint_error("❌ Markov-Switching models not available. Install statsmodels")
             raise ImportError("statsmodels.tsa.regime_switching not available")
@@ -154,7 +197,7 @@ class MSDRClusterer:
             "library": MS_LIBRARY
         }, level="INFO")
     
-    def fit_predict(self, data: np.ndarray) -> MSDRResult:
+    def fit_predict(self, data: np.ndarray, validate: bool = True) -> MSDRResult:
         """
         Fit MS-DR model and predict regime labels.
         
@@ -173,6 +216,10 @@ class MSDRClusterer:
         tracemalloc.start()
         
         try:
+            # Validate input data (from code review)
+            if validate:
+                self._validate_input(data)
+            
             # Preprocess data
             data_processed, feature_names = self._preprocess_data(data)
             
@@ -272,9 +319,46 @@ class MSDRClusterer:
                 error_message=str(e)
             )
     
+    def _validate_input(self, data: np.ndarray) -> None:
+        """Validate input data (from code review)."""
+        tprint_info("🔍 Validating input data")
+        
+        # Check minimum samples
+        n_samples = len(data) if len(data.shape) == 1 else data.shape[0]
+        if n_samples < self.config.min_samples_required:
+            tprint_warning(
+                f"⚠️ Input has {n_samples} samples, but {self.config.min_samples_required}+ "
+                f"recommended for reliable MS-DR estimation"
+            )
+        
+        # Check minimum features
+        if len(data.shape) > 1:
+            n_features = data.shape[1]
+            if n_features < self.config.min_features_required:
+                raise ValueError(
+                    f"Input has {n_features} features, but minimum {self.config.min_features_required} required"
+                )
+        
+        # Check for excessive NaN values
+        if isinstance(data, np.ndarray):
+            nan_ratio = np.isnan(data).sum() / data.size
+            if nan_ratio > self.config.max_nan_ratio:
+                raise ValueError(
+                    f"Input has {nan_ratio:.1%} NaN values, exceeding maximum {self.config.max_nan_ratio:.1%}"
+                )
+        
+        # Check for degenerate cases (all identical values)
+        if isinstance(data, np.ndarray):
+            data_flat = data.flatten()
+            if len(np.unique(data_flat[~np.isnan(data_flat)])) == 1:
+                raise ValueError("All data values are identical - cannot fit MS-DR model")
+        
+        tprint_success("✅ Input validation passed")
+    
     def _preprocess_data(self, data: np.ndarray) -> Tuple[np.ndarray, List[str]]:
         """Preprocess data with scaling and optional PCA."""
         tprint_info("🔧 Preprocessing data for MS-DR")
+        tprint_data_preview(data, "Input Data", max_rows=3, max_cols=5)
         
         # Handle DataFrame input
         if isinstance(data, pd.DataFrame):
@@ -315,6 +399,7 @@ class MSDRClusterer:
             feature_names = ['pc1']
         
         tprint_success(f"✅ Preprocessed data shape: {data_processed.shape}")
+        tprint_data_format(data_processed, "Preprocessed Data", check_compatibility=True)
         return data_processed, feature_names
     
     def _select_optimal_regimes(self, data: np.ndarray) -> int:
@@ -322,22 +407,52 @@ class MSDRClusterer:
         tprint_info("🔍 Selecting optimal number of regimes")
         
         ic_values = {}
+        n_candidates = self.config.max_regimes - self.config.min_regimes + 1
         
-        for k in range(self.config.min_regimes, self.config.max_regimes + 1):
-            try:
-                result = self._fit_ms_model(data, k, store_model=True)
-                
-                ic_value = result.get(self.config.ic_criterion, np.inf)
-                ic_values[k] = ic_value
-                
-                tprint_info(f"   k={k}: {self.config.ic_criterion.upper()}={ic_value:.2f}")
-                
-            except Exception as e:
-                tprint_warning(f"   k={k}: failed ({e})")
-                ic_values[k] = np.inf
+        # Progress tracking (from code review)
+        try:
+            from tqdm import tqdm
+            iterator = tqdm(
+                range(self.config.min_regimes, self.config.max_regimes + 1),
+                desc="Model Selection",
+                disable=not self.config.show_progress
+            )
+        except ImportError:
+            tprint_debug("tqdm not available, showing periodic updates")
+            iterator = range(self.config.min_regimes, self.config.max_regimes + 1)
+        
+        with tprint_timer("Model Selection", level="PERFORMANCE"):
+            for k in iterator:
+                try:
+                    result = self._fit_ms_model(data, k, store_model=True)
+                    
+                    ic_value = result.get(self.config.ic_criterion, np.inf)
+                    ic_values[k] = ic_value
+                    
+                    # Update progress
+                    if hasattr(iterator, 'set_postfix'):
+                        iterator.set_postfix({
+                            'k': k,
+                            self.config.ic_criterion.upper(): f"{ic_value:.1f}"
+                        })
+                    else:
+                        tprint_info(f"   k={k}: {self.config.ic_criterion.upper()}={ic_value:.2f}")
+                    
+                except Exception as e:
+                    tprint_warning(f"   k={k}: failed ({e})")
+                    ic_values[k] = np.inf
         
         # Select k with minimum IC
         optimal_k = min(ic_values, key=ic_values.get)
+        
+        # Log selection results
+        tprint_structured({
+            'optimal_k': optimal_k,
+            'criterion': self.config.ic_criterion.upper(),
+            'optimal_value': ic_values[optimal_k],
+            'all_values': ic_values
+        }, level="INFO")
+        
         tprint_success(f"✅ Optimal regimes selected: {optimal_k}")
         
         return optimal_k

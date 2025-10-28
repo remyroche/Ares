@@ -24,6 +24,32 @@ from .feature_bank_integration import (
     FeatureBankIntegrator, FeatureBankConfig, FeatureBankCategory
 )
 
+# Import regime-specific features (from code review)
+try:
+    from src.feature_generation.categories.regime_features import (
+        RegimeFeatureGenerator, RegimeFeatureConfig
+    )
+    REGIME_FEATURES_AVAILABLE = True
+    tprint_debug("✅ Regime-specific features available")
+except ImportError:
+    REGIME_FEATURES_AVAILABLE = False
+    tprint_debug("⚠️ Regime-specific features not available")
+
+# Import optimization utilities (from code review)
+try:
+    from src.utils.ml_common.optimization.hpo_utils import get_hpo_optimizer
+    HPO_AVAILABLE = True
+except ImportError:
+    HPO_AVAILABLE = False
+    tprint_debug("⚠️ HPO utilities not available")
+
+try:
+    from src.utils.ml_common.unified_vectorization_manager import UnifiedVectorizationManager
+    VECTORIZATION_AVAILABLE = True
+except ImportError:
+    VECTORIZATION_AVAILABLE = False
+    tprint_debug("⚠️ Unified vectorization not available")
+
 # Import MS-DR clusterer
 from src.training.steps.market_analysis.ms_dr_clustering.ms_dr_clusterer import (
     MSDRClusterer, MSDRConfig, MSDRResult, MS_AVAILABLE
@@ -121,6 +147,29 @@ class EnhancedMSDRClusteringIntegration:
         else:
             tprint_warning("⚠️ Comprehensive features disabled")
             self.feature_integrator = None
+        
+        # Initialize regime feature generator if available (from code review)
+        if REGIME_FEATURES_AVAILABLE:
+            try:
+                regime_config = RegimeFeatureConfig()
+                self.regime_feature_gen = RegimeFeatureGenerator(regime_config)
+                tprint_success("✅ Regime feature generator initialized")
+            except Exception as e:
+                tprint_warning(f"⚠️ Failed to initialize regime features: {e}")
+                self.regime_feature_gen = None
+        else:
+            self.regime_feature_gen = None
+        
+        # Initialize vectorization manager if available (from code review)
+        if VECTORIZATION_AVAILABLE:
+            try:
+                self.vectorization_manager = UnifiedVectorizationManager()
+                tprint_success("✅ Vectorization manager initialized")
+            except Exception as e:
+                tprint_warning(f"⚠️ Failed to initialize vectorization: {e}")
+                self.vectorization_manager = None
+        else:
+            self.vectorization_manager = None
     
     def get_comprehensive_clustering_features(self, data: pd.DataFrame) -> Dict[str, Any]:
         """
@@ -133,18 +182,39 @@ class EnhancedMSDRClusteringIntegration:
             Dictionary containing comprehensive features and metadata
         """
         tprint_info("🔍 Generating comprehensive features for MS-DR clustering")
+        tprint_data_preview(data, "Input Market Data", max_rows=3, max_cols=5)
         
         with tprint_timer("Feature Generation", level="PERFORMANCE"):
             if self.enable_comprehensive_features:
+                # Get base features from feature bank
                 result = self.feature_integrator.get_comprehensive_features_for_task(
                     'hdbscan_clustering', data
                 )
+                
+                # Add regime-specific features if available (from code review)
+                if self.regime_feature_gen is not None:
+                    try:
+                        tprint_info("📊 Generating regime-specific features")
+                        regime_features = self.regime_feature_gen.generate_features(data)
+                        
+                        # Merge regime features with base features
+                        if regime_features and 'features' in regime_features:
+                            result['features'].update(regime_features['features'])
+                            result['feature_names'].extend(regime_features.get('feature_names', []))
+                            result['regime_features_added'] = len(regime_features.get('feature_names', []))
+                            
+                            tprint_success(
+                                f"✅ Added {result['regime_features_added']} regime-specific features"
+                            )
+                    except Exception as e:
+                        tprint_warning(f"⚠️ Failed to generate regime features: {e}")
                 
                 result.update({
                     'clustering_method': 'ms_dr',
                     'dynamics_aware': True
                 })
                 
+                tprint_data_format(result['features'], "Generated Features", check_compatibility=True)
                 return result
             else:
                 return self._get_basic_features(data)

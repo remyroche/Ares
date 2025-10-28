@@ -28,26 +28,65 @@ from src.utils.tprint import (
     tprint_debug, tprint_performance, tprint_structured, tprint_timer
 )
 
-# Try to import HMM libraries
+# Try to import HMM libraries with fallback priority
 HMM_AVAILABLE = False
 HMM_LIBRARY = None
+HMM_INSTALLATION_GUIDE = """
+🔧 HMM Library Installation Guide:
+
+1. ssm (Recommended - Modern & Easy):
+   pip install ssm-jax
+   
+2. pyhsmm (Advanced - More features but complex):
+   # Install dependencies first
+   pip install Cython numpy scipy matplotlib
+   # Install pyhsmm
+   pip install git+https://github.com/mattjj/pyhsmm.git
+   
+   Or use conda:
+   conda install -c conda-forge pyhsmm
+
+3. Docker option (Easiest):
+   docker pull <your-image-with-pyhsmm>
+
+Note: ssm is recommended for most users. pyhsmm offers more features
+but has complex C++ dependencies.
+"""
+
+# Try ssm first (modern, JAX-based, easier to install)
+try:
+    import ssm
+    HMM_AVAILABLE = True
+    HMM_LIBRARY = 'ssm'
+    tprint_success("✅ Using ssm (JAX-based) for HDP-HMM clustering")
+except ImportError:
+    # Fall back to pyhsmm (more features but harder to install)
+    try:
+        import pyhsmm
+        from pyhsmm.models import WeakLimitHDPHSMM, WeakLimitStickyHDPHSMM
+        from pyhsmm.basic.distributions import Gaussian
+        HMM_AVAILABLE = True
+        HMM_LIBRARY = 'pyhsmm'
+        tprint_success("✅ Using pyhsmm (full-featured) for HDP-HMM clustering")
+    except ImportError:
+        tprint_warning("⚠️ No HMM libraries available")
+        tprint_warning(HMM_INSTALLATION_GUIDE)
+        HMM_LIBRARY = None
+
+# Import existing optimization utilities
+try:
+    from src.utils.hardware.device_manager import get_device_manager
+    HARDWARE_UTILS_AVAILABLE = True
+except ImportError:
+    HARDWARE_UTILS_AVAILABLE = False
+    tprint_debug("Hardware utilities not available")
 
 try:
-    import pyhsmm
-    from pyhsmm.models import WeakLimitHDPHSMM, WeakLimitStickyHDPHSMM
-    from pyhsmm.basic.distributions import Gaussian
-    HMM_AVAILABLE = True
-    HMM_LIBRARY = 'pyhsmm'
-    tprint_info("✅ Using pyhsmm for HDP-HMM clustering")
+    from src.utils.ml_common.unified_vectorization_manager import UnifiedVectorizationManager
+    VECTORIZATION_AVAILABLE = True
 except ImportError:
-    try:
-        import ssm
-        HMM_AVAILABLE = True
-        HMM_LIBRARY = 'ssm'
-        tprint_info("✅ Using ssm for HDP-HMM clustering")
-    except ImportError:
-        warnings.warn("Neither pyhsmm nor ssm available. Install with: pip install pyhsmm or pip install ssm-jax")
-        HMM_LIBRARY = None
+    VECTORIZATION_AVAILABLE = False
+    tprint_debug("Unified vectorization not available")
 
 
 @dataclass
@@ -62,6 +101,9 @@ class HDPHMMConfig:
     n_iterations: int = 100  # Number of Gibbs sampling iterations
     n_burnin: int = 20  # Number of burn-in iterations
     n_thin: int = 5  # Thinning interval
+    convergence_check: bool = True  # Enable convergence diagnostics
+    convergence_threshold: float = 0.01  # Convergence threshold for early stopping
+    show_progress: bool = True  # Show progress bar during sampling
     
     # Model parameters
     max_states: int = 20  # Maximum number of states (will be inferred)
@@ -79,6 +121,11 @@ class HDPHMMConfig:
     
     # Random seed
     random_state: int = 42
+    
+    # Validation parameters (from code review)
+    min_samples_required: int = 500  # Minimum samples for reliable inference
+    min_features_required: int = 3  # Minimum features required
+    max_nan_ratio: float = 0.1  # Maximum ratio of NaN values allowed
 
 
 @dataclass
@@ -138,6 +185,18 @@ class HDPHMMClusterer:
         self.model = None
         self.scaler = None
         self.pca = None
+        self.convergence_history = []
+        
+        # Initialize hardware manager if available
+        if HARDWARE_UTILS_AVAILABLE:
+            try:
+                self.device_manager = get_device_manager()
+                tprint_debug(f"Hardware manager initialized: {self.device_manager.get_device_info()}")
+            except Exception as e:
+                tprint_debug(f"Failed to initialize hardware manager: {e}")
+                self.device_manager = None
+        else:
+            self.device_manager = None
         
         if not HMM_AVAILABLE:
             tprint_error("❌ HMM libraries not available. Install pyhsmm or ssm-jax")
@@ -152,7 +211,7 @@ class HDPHMMClusterer:
             "library": HMM_LIBRARY
         }, level="INFO")
     
-    def fit_predict(self, data: np.ndarray) -> HDPHMMResult:
+    def fit_predict(self, data: np.ndarray, validate: bool = True) -> HDPHMMResult:
         """
         Fit HDP-HMM model and predict regime labels.
         
@@ -171,6 +230,10 @@ class HDPHMMClusterer:
         tracemalloc.start()
         
         try:
+            # Validate input data (from code review)
+            if validate:
+                self._validate_input(data)
+            
             # Preprocess data
             data_processed, feature_names = self._preprocess_data(data)
             
@@ -262,9 +325,46 @@ class HDPHMMClusterer:
                 error_message=str(e)
             )
     
+    def _validate_input(self, data: np.ndarray) -> None:
+        """Validate input data (from code review)."""
+        tprint_info("🔍 Validating input data")
+        
+        # Check minimum samples
+        n_samples = len(data) if len(data.shape) == 1 else data.shape[0]
+        if n_samples < self.config.min_samples_required:
+            tprint_warning(
+                f"⚠️ Input has {n_samples} samples, but {self.config.min_samples_required}+ "
+                f"recommended for reliable HDP-HMM inference"
+            )
+        
+        # Check minimum features
+        if len(data.shape) > 1:
+            n_features = data.shape[1]
+            if n_features < self.config.min_features_required:
+                raise ValueError(
+                    f"Input has {n_features} features, but minimum {self.config.min_features_required} required"
+                )
+        
+        # Check for excessive NaN values
+        if isinstance(data, np.ndarray):
+            nan_ratio = np.isnan(data).sum() / data.size
+            if nan_ratio > self.config.max_nan_ratio:
+                raise ValueError(
+                    f"Input has {nan_ratio:.1%} NaN values, exceeding maximum {self.config.max_nan_ratio:.1%}"
+                )
+        
+        # Check for degenerate cases
+        if isinstance(data, np.ndarray) and len(data.shape) > 1:
+            # Check if all values are identical (single regime)
+            if np.allclose(data, data[0], rtol=1e-10, atol=1e-10):
+                tprint_warning("⚠️ All data values are identical - may result in single regime")
+        
+        tprint_success("✅ Input validation passed")
+    
     def _preprocess_data(self, data: np.ndarray) -> Tuple[np.ndarray, List[str]]:
         """Preprocess data with scaling and optional PCA."""
         tprint_info("🔧 Preprocessing data for HDP-HMM")
+        tprint_data_preview(data, "Input Data", max_rows=3, max_cols=5)
         
         # Handle DataFrame input
         if isinstance(data, pd.DataFrame):
@@ -295,6 +395,7 @@ class HDPHMMClusterer:
             data_processed = data_scaled
         
         tprint_success(f"✅ Preprocessed data shape: {data_processed.shape}")
+        tprint_data_format(data_processed, "Preprocessed Data", check_compatibility=True)
         return data_processed, feature_names
     
     def _fit_pyhsmm(self, data: np.ndarray) -> Dict[str, Any]:
@@ -332,27 +433,76 @@ class HDPHMMClusterer:
         # Add data
         model.add_data(data)
         
-        # Run Gibbs sampling
+        # Run Gibbs sampling with convergence diagnostics and progress tracking
         tprint_info(f"🔄 Running Gibbs sampling: {self.config.n_iterations} iterations")
         
         state_counts = []
         log_likelihoods = []
+        converged = False
+        convergence_iteration = None
         
-        for iteration in range(self.config.n_iterations):
-            model.resample_model()
-            
-            # Track state count
-            state_counts.append(model.num_states())
-            
-            # Track log likelihood
-            try:
-                ll = model.log_likelihood()
-                log_likelihoods.append(ll)
-            except:
-                log_likelihoods.append(np.nan)
-            
-            if (iteration + 1) % 20 == 0:
-                tprint_info(f"   Iteration {iteration + 1}/{self.config.n_iterations}: {model.num_states()} states")
+        # Progress tracking
+        try:
+            from tqdm import tqdm
+            iterator = tqdm(range(self.config.n_iterations), desc="Gibbs Sampling", 
+                          disable=not self.config.show_progress)
+        except ImportError:
+            tprint_debug("tqdm not available, showing periodic updates")
+            iterator = range(self.config.n_iterations)
+        
+        with tprint_timer("Gibbs Sampling", level="PERFORMANCE"):
+            for iteration in iterator:
+                model.resample_model()
+                
+                # Track state count
+                n_states = model.num_states()
+                state_counts.append(n_states)
+                
+                # Track log likelihood
+                try:
+                    ll = model.log_likelihood()
+                    log_likelihoods.append(ll)
+                except:
+                    log_likelihoods.append(np.nan)
+                
+                # Convergence diagnostics (after burn-in)
+                if (self.config.convergence_check and 
+                    iteration >= self.config.n_burnin and 
+                    len(state_counts) > 10):
+                    
+                    # Check if number of states has stabilized
+                    recent_states = state_counts[-10:]
+                    state_std = np.std(recent_states)
+                    state_change = abs(recent_states[-1] - recent_states[0]) / max(recent_states[0], 1)
+                    
+                    if state_std < 0.5 and state_change < self.config.convergence_threshold:
+                        converged = True
+                        convergence_iteration = iteration + 1
+                        tprint_success(
+                            f"✅ Converged at iteration {convergence_iteration}: "
+                            f"{n_states} states (std={state_std:.2f}, change={state_change:.3f})"
+                        )
+                        break
+                
+                # Periodic progress updates (if no tqdm)
+                if not hasattr(iterator, 'set_postfix') and (iteration + 1) % 20 == 0:
+                    tprint_info(
+                        f"   Iteration {iteration + 1}/{self.config.n_iterations}: "
+                        f"{n_states} states, LL={log_likelihoods[-1]:.2f}"
+                    )
+                elif hasattr(iterator, 'set_postfix'):
+                    iterator.set_postfix({
+                        'states': n_states,
+                        'LL': f"{log_likelihoods[-1]:.1f}" if not np.isnan(log_likelihoods[-1]) else 'N/A'
+                    })
+        
+        # Store convergence history for diagnostics
+        self.convergence_history = {
+            'state_counts': state_counts,
+            'log_likelihoods': log_likelihoods,
+            'converged': converged,
+            'convergence_iteration': convergence_iteration
+        }
         
         # Get final state sequence
         labels = model.stateseqs[0].copy()
@@ -383,7 +533,16 @@ class HDPHMMClusterer:
         # Get final log likelihood
         final_ll = log_likelihoods[-1] if log_likelihoods else 0.0
         
-        tprint_success(f"✅ Gibbs sampling completed: {len(unique_states)} final states")
+        # Log convergence status
+        if converged:
+            tprint_success(
+                f"✅ Gibbs sampling converged early at iteration {convergence_iteration}/{self.config.n_iterations}: "
+                f"{len(unique_states)} final states"
+            )
+        else:
+            tprint_success(f"✅ Gibbs sampling completed: {len(unique_states)} final states")
+            if self.config.convergence_check:
+                tprint_warning("⚠️ Did not converge within iteration limit - consider increasing n_iterations")
         
         return {
             'labels': labels,

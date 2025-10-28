@@ -16,9 +16,10 @@ from dataclasses import dataclass, field, asdict
 from enum import Enum
 import calendar
 
-from src.utils.logger import system_logger
-
-logger = system_logger.getChild('TradeReportingManager')
+from src.utils.tprint import (
+    tprint_info, tprint_success, tprint_error, tprint_warning,
+    tprint_debug, tprint_data_preview, tprint_data_format
+)
 
 
 class TradingMode(Enum):
@@ -237,7 +238,6 @@ class TradeReportingManager:
             base_directory: Base directory for all trade reports
         """
         self.base_directory = Path(base_directory)
-        self.logger = logger.getChild('TradeReportingManager')
         
         # In-memory storage for current day's trades
         self.current_trades: Dict[str, List[TradeRecord]] = {}  # Key: "mode_exchange_asset"
@@ -245,7 +245,7 @@ class TradeReportingManager:
         # Ensure base directory exists
         self.base_directory.mkdir(parents=True, exist_ok=True)
         
-        self.logger.info(f"Trade reporting manager initialized: {self.base_directory}")
+        tprint_info(f"📊 Trade reporting manager initialized: {self.base_directory}")
     
     def _get_report_directory(self, mode: str, exchange: str, asset: str) -> Path:
         """
@@ -293,15 +293,15 @@ class TradeReportingManager:
             # Write to per-trade CSV immediately
             await self._write_trade_to_csv(trade_record)
             
-            self.logger.info(
-                f"Trade recorded: {trade_record.trade_id} "
+            tprint_success(
+                f"✅ Trade recorded: {trade_record.trade_id} "
                 f"({trade_record.mode}/{trade_record.exchange}/{trade_record.asset})"
             )
             
             return True
             
         except Exception as e:
-            self.logger.error(f"Failed to record trade: {e}", exc_info=True)
+            tprint_error(f"❌ Failed to record trade: {e}")
             return False
     
     def _get_trade_period_filename(self, trade_date: datetime) -> str:
@@ -365,14 +365,21 @@ class TradeReportingManager:
                 
                 if not file_exists:
                     writer.writeheader()
-                    self.logger.info(f"Created new trade CSV file: {trades_file}")
+                    tprint_info(f"📄 Created new trade CSV file: {trades_file}")
                 
                 writer.writerow(trade_record.to_csv_dict())
             
-            self.logger.debug(f"Trade written to CSV: {trades_file}")
+            # Preview data being written
+            tprint_data_preview(
+                trade_record.to_csv_dict(), 
+                name=f"Trade Data Written to {trades_filename}",
+                max_rows=1
+            )
+            
+            tprint_debug(f"📝 Trade written to CSV: {trades_file}")
             
         except Exception as e:
-            self.logger.error(f"Failed to write trade to CSV: {e}", exc_info=True)
+            tprint_error(f"❌ Failed to write trade to CSV: {e}")
     
     async def generate_daily_recap(
         self,
@@ -407,8 +414,8 @@ class TradeReportingManager:
             ]
             
             if not daily_trades:
-                self.logger.warning(
-                    f"No trades found for {recap_date} "
+                tprint_warning(
+                    f"⚠️ No trades found for {recap_date} "
                     f"({mode}/{exchange}/{asset})"
                 )
                 # Still create a zero-activity recap
@@ -422,15 +429,15 @@ class TradeReportingManager:
             # Write to daily recap CSV
             await self._write_daily_recap_to_csv(recap)
             
-            self.logger.info(
-                f"Daily recap generated: {recap_date} "
-                f"({mode}/{exchange}/{asset})"
+            tprint_success(
+                f"✅ Daily recap generated: {recap_date} "
+                f"({mode}/{exchange}/{asset}) - {recap.total_trades} trades"
             )
             
             return True
             
         except Exception as e:
-            self.logger.error(f"Failed to generate daily recap: {e}", exc_info=True)
+            tprint_error(f"❌ Failed to generate daily recap: {e}")
             return False
     
     async def _calculate_daily_recap(
@@ -545,10 +552,17 @@ class TradeReportingManager:
             volumes = [t.volume for t in trades if t.volume > 0]
             recap.avg_volume = sum(volumes) / len(volumes) if volumes else 0.0
             
+            # Preview calculated recap
+            tprint_info(f"📊 Daily Recap Calculated for {recap_date}:")
+            tprint_info(f"   Total Trades: {recap.total_trades}")
+            tprint_info(f"   Total PnL: ${recap.total_pnl:.2f}")
+            tprint_info(f"   Win Rate: {recap.accuracy:.2%}")
+            tprint_info(f"   Profit Factor: {recap.profit_factor:.2f}")
+            
             return recap
             
         except Exception as e:
-            self.logger.error(f"Failed to calculate daily recap: {e}", exc_info=True)
+            tprint_error(f"❌ Failed to calculate daily recap: {e}")
             return DailyRecap(
                 date=recap_date,
                 exchange=exchange,
@@ -592,8 +606,8 @@ class TradeReportingManager:
                     for record in existing_records:
                         writer.writerow(record)
                     
-                    # Write new recap
-                    writer.writerow(recap.to_csv_dict())
+                # Write new recap
+                writer.writerow(recap.to_csv_dict())
             else:
                 # Create new file
                 with open(recap_file, 'w', newline='') as f:
@@ -602,10 +616,17 @@ class TradeReportingManager:
                     writer.writeheader()
                     writer.writerow(recap.to_csv_dict())
             
-            self.logger.debug(f"Daily recap written to CSV: {recap_file}")
+            # Preview data being written
+            tprint_data_preview(
+                recap.to_csv_dict(),
+                name=f"Daily Recap Data Written",
+                max_rows=1
+            )
+            
+            tprint_debug(f"📝 Daily recap written to CSV: {recap_file}")
             
         except Exception as e:
-            self.logger.error(f"Failed to write daily recap to CSV: {e}", exc_info=True)
+            tprint_error(f"❌ Failed to write daily recap to CSV: {e}")
     
     async def generate_all_daily_recaps(self, target_date: Optional[date] = None) -> bool:
         """
@@ -634,10 +655,15 @@ class TradeReportingManager:
                     if not result:
                         success = False
             
+            if success:
+                tprint_success(f"✅ Generated all daily recaps for {recap_date}")
+            else:
+                tprint_warning(f"⚠️ Some daily recaps failed for {recap_date}")
+            
             return success
             
         except Exception as e:
-            self.logger.error(f"Failed to generate all daily recaps: {e}", exc_info=True)
+            tprint_error(f"❌ Failed to generate all daily recaps: {e}")
             return False
     
     def get_trade_count(self, mode: Optional[str] = None, 

@@ -18,6 +18,7 @@ from ..src.interfaces.base_interfaces import TradeDecision
 from src.trading.reporting.trade_reporting_manager import (
     TradeRecord, trade_reporting_manager, generate_daily_recap
 )
+from src.utils.tprint import tprint_info, tprint_success, tprint_error, tprint_debug
 
 
 class OrderStatus(Enum):
@@ -623,8 +624,10 @@ class OrderManager:
                 # Clean up entry record
                 del self._position_entries[order.symbol]
             
+            tprint_debug(f"📊 Trade recorded for reporting: {order.id}")
+            
         except Exception as e:
-            self.logger.error(f"Failed to record trade for reporting: {e}", exc_info=True)
+            tprint_error(f"❌ Failed to record trade for reporting: {e}")
     
     async def generate_daily_report(
         self,
@@ -645,14 +648,23 @@ class OrderManager:
             mode = "trade" if self.config.mode.value == "live" else "paper"
             exchange = self.config.exchange_name if hasattr(self.config, 'exchange_name') else "unknown"
             
-            return await generate_daily_recap(
+            tprint_info(f"📊 Generating daily report for {symbol} ({target_date or date.today()})")
+            
+            result = await generate_daily_recap(
                 mode=mode,
                 exchange=exchange,
                 asset=symbol,
                 target_date=target_date
             )
+            
+            if result:
+                tprint_success(f"✅ Daily report generated for {symbol}")
+            else:
+                tprint_error(f"❌ Failed to generate daily report for {symbol}")
+            
+            return result
         except Exception as e:
-            self.logger.error(f"Failed to generate daily report: {e}", exc_info=True)
+            tprint_error(f"❌ Failed to generate daily report: {e}")
             return False
     
     async def get_performance_metrics(self) -> Dict[str, Any]:

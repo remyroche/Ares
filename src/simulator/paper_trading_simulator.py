@@ -21,6 +21,7 @@ from .persistence import SimulatorPersistence
 from src.trading.reporting.trade_reporting_manager import (
     TradeRecord, trade_reporting_manager, generate_daily_recap
 )
+from src.utils.tprint import tprint_info, tprint_success, tprint_error, tprint_debug
 
 
 class PaperTradingSimulator:
@@ -463,8 +464,10 @@ class PaperTradingSimulator:
             # Record trade
             await trade_reporting_manager.record_trade(trade_record)
             
+            tprint_debug(f"📊 Trade recorded for reporting: {trade_record.trade_id}")
+            
         except Exception as e:
-            self.logger.error(f"Failed to record trade for reporting: {e}", exc_info=True)
+            tprint_error(f"❌ Failed to record trade for reporting: {e}")
     
     async def generate_daily_report(self, symbol: str, target_date: Optional[date] = None) -> bool:
         """
@@ -478,14 +481,23 @@ class PaperTradingSimulator:
             True if successful
         """
         try:
-            return await generate_daily_recap(
+            tprint_info(f"📊 Generating daily report for {symbol} ({target_date or date.today()})")
+            
+            result = await generate_daily_recap(
                 mode="paper",
                 exchange=self.exchange,
                 asset=symbol,
                 target_date=target_date
             )
+            
+            if result:
+                tprint_success(f"✅ Daily report generated for {symbol}")
+            else:
+                tprint_error(f"❌ Failed to generate daily report for {symbol}")
+            
+            return result
         except Exception as e:
-            self.logger.error(f"Failed to generate daily report: {e}", exc_info=True)
+            tprint_error(f"❌ Failed to generate daily report: {e}")
             return False
     
     def get_performance_metrics(self) -> Dict[str, Any]:

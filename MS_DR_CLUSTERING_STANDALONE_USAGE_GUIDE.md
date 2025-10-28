@@ -528,6 +528,8 @@ result = perform_ms_dr_clustering_with_artifact_manager(
 - Quality assessor: `src/training/steps/market_analysis/clusters/cluster_quality_assessor.py`
 - Optimization goals: `src/training/steps/market_analysis/clusters/clustering_optimization_goals.py`
 - Artifact manager: `src/training/steps/market_analysis/components/artifact_manager.py`
+- **Regime categorization**: `src/feature_generation/categories/regime_feature_categorization.py`
+- **Regime integration**: `src/feature_generation/categories/regime_feature_integration.py`
 - Module init: `src/training/steps/market_analysis/ms_dr_clustering/__init__.py`
 
 ## Summary
@@ -538,17 +540,20 @@ The MS-DR clustering is now fully integrated with:
 ✅ **Clustering Optimization Goals**: Standardized targets and constraints  
 ✅ **Artifact Manager**: Automatic market data loading  
 ✅ **Auto-Tuner**: Staged hyperparameter optimization (Coarse Grid → Fine Grid → TPE)  
+✅ **Regime Feature Categorization**: Priority-based feature selection for regime clustering  
+✅ **Regime Feature Integration**: Dynamic regime detection and adaptive feature generation  
 
 ### Quick Start
 
 ```python
-# Full pipeline with auto-tuning
+# Full pipeline with auto-tuning and regime features
 from src.training.steps.market_analysis.ms_dr_clustering import (
     perform_ms_dr_clustering_with_artifact_manager,
     auto_tune_ms_dr_clustering
 )
 
 # Load data from artifacts (defaults: symbol=ETHUSDT, timeframe=1h)
+# Automatically uses regime categorization and integration
 result = perform_ms_dr_clustering_with_artifact_manager()
 
 # Or with auto-tuning
@@ -556,6 +561,41 @@ tuning_result = auto_tune_ms_dr_clustering(
     data=market_data,
     n_trials=100
 )
+```
+
+### Regime Feature Integration
+
+The system automatically integrates two powerful regime feature modules:
+
+**Regime Feature Categorization**:
+- Categorizes features by use case (REGIME_CLUSTERING)
+- Selects priority features optimized for MS-DR
+- Validates feature sets to avoid data leakage
+- Ensures lookahead-safe and stable features
+
+**Regime Feature Integration**:
+- Detects current market regime dynamically
+- Generates regime-adaptive features
+- Tracks regime transitions and stability
+- Creates features for: trending, mean-reverting, volatile, and stable regimes
+
+You can control these features:
+
+```python
+from src.feature_generation.integration.enhanced_ms_dr_clustering_integration import (
+    EnhancedMSDRClusteringIntegration
+)
+
+# Customize regime feature usage
+integrator = EnhancedMSDRClusteringIntegration(
+    min_features=50,
+    max_features=100,
+    enable_regime_categorization=True,   # Use regime feature categorization
+    enable_regime_integration=True,       # Use regime feature integration
+    auto_select_regimes=True
+)
+
+result = integrator.cluster_with_ms_dr(market_data)
 ```
 
 ### Default Parameters

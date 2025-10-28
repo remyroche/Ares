@@ -83,7 +83,7 @@ from .feature_bank_integration import (
     FeatureBankIntegrator, FeatureBankConfig, FeatureBankCategory
 )
 
-# Import regime-specific features (from code review)
+# Import regime-specific features and categorization
 try:
     from src.feature_generation.categories.regime_features import (
         RegimeFeatureGenerator, RegimeFeatureConfig
@@ -93,6 +93,34 @@ try:
 except ImportError:
     REGIME_FEATURES_AVAILABLE = False
     tprint_debug("⚠️ Regime-specific features not available")
+
+# Import regime feature categorization system
+try:
+    from src.feature_generation.categories.regime_feature_categorization import (
+        RegimeFeatureCategorizer,
+        FeatureUseCase,
+        get_regime_clustering_features,
+        validate_feature_set
+    )
+    REGIME_CATEGORIZATION_AVAILABLE = True
+    tprint_debug("✅ Regime feature categorization available")
+except ImportError:
+    REGIME_CATEGORIZATION_AVAILABLE = False
+    tprint_debug("⚠️ Regime feature categorization not available")
+
+# Import regime feature integration
+try:
+    from src.feature_generation.categories.regime_feature_integration import (
+        RegimeFeatureIntegration,
+        RegimeFeatureConfig as RegimeIntegrationConfig,
+        generate_regime_features,
+        create_default_regime_feature_generators
+    )
+    REGIME_INTEGRATION_AVAILABLE = True
+    tprint_debug("✅ Regime feature integration available")
+except ImportError:
+    REGIME_INTEGRATION_AVAILABLE = False
+    tprint_debug("⚠️ Regime feature integration not available")
 
 # Import optimization utilities (from code review)
 try:
@@ -149,7 +177,9 @@ class EnhancedMSDRClusteringIntegration:
                  switching_variance: bool = True,
                  auto_select_regimes: bool = True,
                  min_regimes: int = 2,
-                 max_regimes: int = 10):
+                 max_regimes: int = 10,
+                 enable_regime_categorization: bool = True,
+                 enable_regime_integration: bool = True):
         """
         Initialize Enhanced MS-DR Clustering Integration.
         
@@ -166,6 +196,8 @@ class EnhancedMSDRClusteringIntegration:
             auto_select_regimes: Auto-select number of regimes using IC
             min_regimes: Minimum number of regimes to consider
             max_regimes: Maximum number of regimes to consider
+            enable_regime_categorization: Use regime feature categorization system
+            enable_regime_integration: Use regime feature integration module
         """
         tprint_info("🚀 Initializing Enhanced MS-DR Clustering Integration")
         
@@ -183,6 +215,8 @@ class EnhancedMSDRClusteringIntegration:
         self.auto_select_regimes = auto_select_regimes
         self.min_regimes = min_regimes
         self.max_regimes = max_regimes
+        self.enable_regime_categorization = enable_regime_categorization
+        self.enable_regime_integration = enable_regime_integration
         
         # Log configuration
         tprint_structured({
@@ -195,7 +229,9 @@ class EnhancedMSDRClusteringIntegration:
             "model_type": model_type,
             "order": order,
             "switching_variance": switching_variance,
-            "auto_select_regimes": auto_select_regimes
+            "auto_select_regimes": auto_select_regimes,
+            "enable_regime_categorization": enable_regime_categorization,
+            "enable_regime_integration": enable_regime_integration
         }, level="INFO")
         
         # Initialize feature bank integrator
@@ -248,6 +284,28 @@ class EnhancedMSDRClusteringIntegration:
                 self.vectorization_manager = None
         else:
             self.vectorization_manager = None
+        
+        # Initialize regime feature categorizer
+        if self.enable_regime_categorization and REGIME_CATEGORIZATION_AVAILABLE:
+            try:
+                self.regime_categorizer = RegimeFeatureCategorizer()
+                tprint_success("✅ Regime feature categorizer initialized")
+            except Exception as e:
+                tprint_warning(f"⚠️ Failed to initialize regime categorizer: {e}")
+                self.regime_categorizer = None
+        else:
+            self.regime_categorizer = None
+        
+        # Initialize regime feature integration
+        if self.enable_regime_integration and REGIME_INTEGRATION_AVAILABLE:
+            try:
+                self.regime_integration_generators = create_default_regime_feature_generators()
+                tprint_success(f"✅ Regime integration initialized ({len(self.regime_integration_generators)} generators)")
+            except Exception as e:
+                tprint_warning(f"⚠️ Failed to initialize regime integration: {e}")
+                self.regime_integration_generators = []
+        else:
+            self.regime_integration_generators = []
     
     def get_comprehensive_clustering_features(self, data: pd.DataFrame) -> Dict[str, Any]:
         """
@@ -291,9 +349,88 @@ class EnhancedMSDRClusteringIntegration:
                         import traceback
                         tprint_debug(traceback.format_exc())
                 
+                # Add regime categorization features if enabled
+                if self.regime_categorizer is not None:
+                    try:
+                        tprint_info("📊 Applying regime feature categorization")
+                        
+                        # Get regime clustering features
+                        regime_clustering_features = self.regime_categorizer.get_priority_features(
+                            FeatureUseCase.REGIME_CLUSTERING,
+                            max_features=max_features
+                        )
+                        
+                        # Filter features to only include those optimized for regime clustering
+                        filtered_features = {}
+                        for feature_name in regime_clustering_features:
+                            if feature_name in result['features']:
+                                filtered_features[feature_name] = result['features'][feature_name]
+                        
+                        if filtered_features:
+                            result['features'] = filtered_features
+                            result['feature_names'] = list(filtered_features.keys())
+                            result['feature_count'] = len(filtered_features)
+                            result['regime_categorization_applied'] = True
+                            
+                            tprint_success(
+                                f"✅ Applied regime categorization: {len(filtered_features)} features selected"
+                            )
+                        
+                        # Validate feature set
+                        validation = validate_feature_set(
+                            list(filtered_features.keys()),
+                            FeatureUseCase.REGIME_CLUSTERING
+                        )
+                        
+                        if not validation['validation_passed']:
+                            tprint_warning(
+                                f"⚠️ Feature validation: {validation['invalid_count']} invalid features found"
+                            )
+                        
+                    except Exception as e:
+                        tprint_warning(f"⚠️ Failed to apply regime categorization: {e}")
+                
+                # Add regime integration features if enabled
+                if self.regime_integration_generators:
+                    try:
+                        tprint_info("🔄 Generating regime integration features")
+                        
+                        regime_integration_features = {}
+                        for generator in self.regime_integration_generators:
+                            gen_features = generate_regime_features(data, generator.regime_config)
+                            
+                            # Convert to proper format
+                            for key, value in gen_features.items():
+                                feature_name = f"regime_integration_{key}"
+                                if isinstance(value, (int, float, bool)):
+                                    # Broadcast scalar to array
+                                    regime_integration_features[feature_name] = np.full(len(data), value)
+                                elif isinstance(value, str):
+                                    # Encode string as category
+                                    regime_integration_features[feature_name] = np.full(len(data), hash(value) % 1000)
+                                else:
+                                    regime_integration_features[feature_name] = value
+                        
+                        if regime_integration_features:
+                            result['features'].update(regime_integration_features)
+                            result['feature_names'].extend(regime_integration_features.keys())
+                            result['feature_count'] += len(regime_integration_features)
+                            result['regime_integration_features_added'] = len(regime_integration_features)
+                            
+                            tprint_success(
+                                f"✅ Added {len(regime_integration_features)} regime integration features"
+                            )
+                        
+                    except Exception as e:
+                        tprint_warning(f"⚠️ Failed to generate regime integration features: {e}")
+                        import traceback
+                        tprint_debug(traceback.format_exc())
+                
                 result.update({
                     'clustering_method': 'ms_dr',
-                    'dynamics_aware': True
+                    'dynamics_aware': True,
+                    'regime_categorization_enabled': self.regime_categorizer is not None,
+                    'regime_integration_enabled': len(self.regime_integration_generators) > 0
                 })
                 
                 tprint_data_format(result['features'], "Generated Features", check_compatibility=True)

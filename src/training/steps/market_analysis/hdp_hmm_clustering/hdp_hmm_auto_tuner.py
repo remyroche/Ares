@@ -92,82 +92,123 @@ except ImportError:
 @dataclass
 class HDPHMMSearchSpace:
     """
-    Search space definition for HDP-HMM hyperparameters.
+    COMPREHENSIVE search space definition for HDP-HMM hyperparameters.
     
-    Parameters:
-        alpha: HDP concentration parameter
-            - Controls regime diversity (higher = more regimes)
-            - Range: 1.0 - 10.0
-            - Default range: 2.0 - 5.0
-            
-        kappa: Stickiness parameter
-            - Controls regime persistence (higher = longer durations)
-            - Range: 10.0 - 100.0
-            - Default range: 30.0 - 70.0
-            
+    Covers all critical HMM parameters for robust regime discovery:
+    
+    I. HDP Structure Parameters:
+        n_states: Number of latent regimes (2-10 or wider for long data)
+        alpha: HDP concentration (regime diversity)
         gamma: Base distribution hyperparameter
-            - Controls prior over states
-            - Range: 1.0 - 10.0
-            - Default range: 2.0 - 5.0
-            
-        n_iterations: Number of Gibbs sampling iterations
-            - More iterations = better convergence but slower
-            - Range: 50 - 500
-            - Default range: 100 - 200
-            
-        pca_components: Number of PCA components for dimensionality reduction
-            - Reduces feature space complexity
-            - Range: 5 - 20
-            - Default range: 8 - 15
-            
-        min_features: Minimum features to select from feature bank
-            - Ensures sufficient signal
-            - Range: 20 - 100
-            - Default range: 40 - 60
-            
-        max_features: Maximum features to select from feature bank
-            - Prevents overfitting and reduces computation
-            - Range: 50 - 150
-            - Default range: 80 - 120
+        
+    II. Emission Parameters:
+        n_mixtures_per_state: GMM mixtures (1-4)
+        emission_cov_type: Covariance type (diag/full)
+        covariance_floor: Regularization (1e-6 to 1e-1, log scale)
+        
+    III. Transition/Persistence Parameters:
+        kappa: Stickiness (promotes persistence, 0.5-50)
+        dirichlet_concentration: Prior on transitions (0.01-10, log scale)
+        
+    IV. Learning Parameters:
+        n_iterations: Gibbs sampling iterations
+        learning_rate: For variational EM (0.001-0.1, log scale)
+        batch_size: For mini-batch learning
+        
+    V. Initialization & Stability:
+        initialization: Method (random/kmeans/hdbscan)
+        n_restarts: Number of random restarts (1-10)
+        
+    VI. Feature/Preprocessing:
+        min_features, max_features: Feature selection
+        pca_components: Dimensionality reduction
     """
     
-    # Primary HDP-HMM parameters
-    alpha_min: float = 2.0
-    alpha_max: float = 5.0
+    # I. HDP STRUCTURE PARAMETERS
+    # Number of latent states/regimes
+    n_states_min: int = 2
+    n_states_max: int = 10  # Can be wider for long data
     
-    kappa_min: float = 30.0
-    kappa_max: float = 70.0
+    # HDP concentration (regime diversity)
+    alpha_min: float = 1.0
+    alpha_max: float = 10.0
     
-    gamma_min: float = 2.0
-    gamma_max: float = 5.0
+    # Base distribution hyperparameter
+    gamma_min: float = 1.0
+    gamma_max: float = 10.0
     
-    n_iterations_min: int = 100
-    n_iterations_max: int = 200
+    # II. EMISSION PARAMETERS
+    # Number of Gaussian mixtures per state (if GMM emissions)
+    n_mixtures_min: int = 1
+    n_mixtures_max: int = 4
     
-    # Feature selection parameters
-    min_features_min: int = 40
-    min_features_max: int = 60
+    # Covariance type: 'diag' or 'full' (categorical)
+    emission_cov_types: List[str] = field(default_factory=lambda: ['diag', 'full'])
     
-    max_features_min: int = 80
-    max_features_max: int = 120
+    # Covariance regularization floor (log scale: 1e-6 to 1e-1)
+    covariance_floor_min: float = 1e-6
+    covariance_floor_max: float = 1e-1
+    
+    # III. TRANSITION/PERSISTENCE PARAMETERS
+    # Stickiness parameter (promotes state persistence)
+    kappa_min: float = 0.5
+    kappa_max: float = 50.0
+    
+    # Dirichlet concentration for transition priors (log scale)
+    dirichlet_concentration_min: float = 0.01
+    dirichlet_concentration_max: float = 10.0
+    
+    # IV. LEARNING ALGORITHM PARAMETERS
+    # Gibbs sampling iterations
+    n_iterations_min: int = 50
+    n_iterations_max: int = 500
+    
+    # Learning rate for variational EM (log scale)
+    learning_rate_min: float = 0.001
+    learning_rate_max: float = 0.1
+    
+    # Batch size for mini-batch learning
+    batch_size_min: int = 50
+    batch_size_max: int = 500
+    
+    # V. INITIALIZATION & STABILITY
+    # Initialization schemes (categorical)
+    initialization_methods: List[str] = field(
+        default_factory=lambda: ['random', 'kmeans', 'hdbscan']
+    )
+    
+    # Number of random restarts for stability
+    n_restarts_min: int = 1
+    n_restarts_max: int = 10
+    
+    # Random seed range
+    seed_min: int = 0
+    seed_max: int = 9999
+    
+    # VI. FEATURE SELECTION PARAMETERS
+    min_features_min: int = 20
+    min_features_max: int = 100
+    
+    max_features_min: int = 50
+    max_features_max: int = 150
     
     # PCA parameters
-    pca_components_min: int = 8
-    pca_components_max: int = 15
+    pca_components_min: int = 5
+    pca_components_max: int = 20
     
     def to_search_space(self) -> Dict[str, Dict[str, Any]]:
-        """Convert to optimization search space format."""
+        """Convert to comprehensive optimization search space format."""
         return {
+            # I. HDP STRUCTURE PARAMETERS
+            'n_states': {
+                'type': 'int',
+                'low': self.n_states_min,
+                'high': self.n_states_max
+            },
             'alpha': {
                 'type': 'float',
                 'low': self.alpha_min,
                 'high': self.alpha_max,
-                'log': False
-            },
-            'kappa': {
-                'type': 'float',
-                'low': self.kappa_min,
-                'high': self.kappa_max,
                 'log': False
             },
             'gamma': {
@@ -176,11 +217,73 @@ class HDPHMMSearchSpace:
                 'high': self.gamma_max,
                 'log': False
             },
+            
+            # II. EMISSION PARAMETERS
+            'n_mixtures_per_state': {
+                'type': 'int',
+                'low': self.n_mixtures_min,
+                'high': self.n_mixtures_max
+            },
+            'emission_cov_type': {
+                'type': 'categorical',
+                'choices': self.emission_cov_types
+            },
+            'covariance_floor': {
+                'type': 'float',
+                'low': self.covariance_floor_min,
+                'high': self.covariance_floor_max,
+                'log': True  # Log scale for regularization
+            },
+            
+            # III. TRANSITION/PERSISTENCE PARAMETERS
+            'kappa': {
+                'type': 'float',
+                'low': self.kappa_min,
+                'high': self.kappa_max,
+                'log': False
+            },
+            'dirichlet_concentration': {
+                'type': 'float',
+                'low': self.dirichlet_concentration_min,
+                'high': self.dirichlet_concentration_max,
+                'log': True  # Log scale
+            },
+            
+            # IV. LEARNING ALGORITHM PARAMETERS
             'n_iterations': {
                 'type': 'int',
                 'low': self.n_iterations_min,
                 'high': self.n_iterations_max
             },
+            'learning_rate': {
+                'type': 'float',
+                'low': self.learning_rate_min,
+                'high': self.learning_rate_max,
+                'log': True  # Log scale
+            },
+            'batch_size': {
+                'type': 'int',
+                'low': self.batch_size_min,
+                'high': self.batch_size_max
+            },
+            
+            # V. INITIALIZATION & STABILITY
+            'initialization': {
+                'type': 'categorical',
+                'choices': self.initialization_methods
+            },
+            'n_restarts': {
+                'type': 'int',
+                'low': self.n_restarts_min,
+                'high': self.n_restarts_max
+            },
+            'seed': {
+                'type': 'int',
+                'low': self.seed_min,
+                'high': self.seed_max
+            },
+            
+            # VI. FEATURE SELECTION PARAMETERS
             'min_features': {
                 'type': 'int',
                 'low': self.min_features_min,
@@ -570,11 +673,16 @@ class HDPHMMAutoTuner:
         
         start_time = time.time()
         
-        # Define parameter groups with priorities
+        # Define COMPREHENSIVE parameter groups with priorities
         param_groups = [
             ParameterGroup(
-                name="hdp_structure",
+                name="hdp_structure_and_states",
                 params={
+                    "n_states": {
+                        "type": "int",
+                        "low": self.search_space.n_states_min,
+                        "high": self.search_space.n_states_max
+                    },
                     "alpha": {
                         "type": "float",
                         "low": self.search_space.alpha_min,
@@ -584,28 +692,98 @@ class HDPHMMAutoTuner:
                         "type": "float",
                         "low": self.search_space.gamma_min,
                         "high": self.search_space.gamma_max
+                    },
+                    "dirichlet_concentration": {
+                        "type": "float",
+                        "low": self.search_space.dirichlet_concentration_min,
+                        "high": self.search_space.dirichlet_concentration_max,
+                        "log": True
                     }
                 },
-                priority=1,  # Optimize first
-                description="HDP structure parameters (number of regimes)"
+                priority=1,  # Optimize FIRST - most critical
+                description="HDP structure: number of states, concentration, priors"
             ),
             ParameterGroup(
-                name="temporal_dynamics",
+                name="emission_and_regularization",
+                params={
+                    "n_mixtures_per_state": {
+                        "type": "int",
+                        "low": self.search_space.n_mixtures_min,
+                        "high": self.search_space.n_mixtures_max
+                    },
+                    "emission_cov_type": {
+                        "type": "categorical",
+                        "choices": self.search_space.emission_cov_types
+                    },
+                    "covariance_floor": {
+                        "type": "float",
+                        "low": self.search_space.covariance_floor_min,
+                        "high": self.search_space.covariance_floor_max,
+                        "log": True
+                    }
+                },
+                priority=2,  # Optimize SECOND - emission model
+                depends_on=["hdp_structure_and_states"],
+                description="Emission distributions and regularization"
+            ),
+            ParameterGroup(
+                name="persistence_and_transitions",
                 params={
                     "kappa": {
                         "type": "float",
                         "low": self.search_space.kappa_min,
                         "high": self.search_space.kappa_max
-                    },
+                    }
+                },
+                priority=3,  # Optimize THIRD - state persistence
+                depends_on=["hdp_structure_and_states", "emission_and_regularization"],
+                description="State stickiness and persistence"
+            ),
+            ParameterGroup(
+                name="learning_and_convergence",
+                params={
                     "n_iterations": {
                         "type": "int",
                         "low": self.search_space.n_iterations_min,
                         "high": self.search_space.n_iterations_max
+                    },
+                    "learning_rate": {
+                        "type": "float",
+                        "low": self.search_space.learning_rate_min,
+                        "high": self.search_space.learning_rate_max,
+                        "log": True
+                    },
+                    "batch_size": {
+                        "type": "int",
+                        "low": self.search_space.batch_size_min,
+                        "high": self.search_space.batch_size_max
                     }
                 },
-                priority=2,  # Optimize second
-                depends_on=["hdp_structure"],
-                description="Temporal persistence parameters"
+                priority=4,  # Optimize FOURTH - learning parameters
+                depends_on=["hdp_structure_and_states", "emission_and_regularization"],
+                description="Learning algorithm and convergence parameters"
+            ),
+            ParameterGroup(
+                name="initialization_and_stability",
+                params={
+                    "initialization": {
+                        "type": "categorical",
+                        "choices": self.search_space.initialization_methods
+                    },
+                    "n_restarts": {
+                        "type": "int",
+                        "low": self.search_space.n_restarts_min,
+                        "high": self.search_space.n_restarts_max
+                    },
+                    "seed": {
+                        "type": "int",
+                        "low": self.search_space.seed_min,
+                        "high": self.search_space.seed_max
+                    }
+                },
+                priority=5,  # Optimize FIFTH - initialization
+                depends_on=["hdp_structure_and_states"],
+                description="Initialization scheme and stability parameters"
             ),
             ParameterGroup(
                 name="feature_preprocessing",
@@ -626,9 +804,9 @@ class HDPHMMAutoTuner:
                         "high": self.search_space.pca_components_max
                     }
                 },
-                priority=3,  # Optimize last
-                depends_on=["hdp_structure", "temporal_dynamics"],
-                description="Feature preprocessing parameters"
+                priority=6,  # Optimize LAST - feature selection
+                depends_on=["hdp_structure_and_states", "emission_and_regularization"],
+                description="Feature selection and dimensionality reduction"
             )
         ]
         

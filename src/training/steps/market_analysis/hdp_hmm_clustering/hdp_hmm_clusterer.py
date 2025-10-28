@@ -179,6 +179,9 @@ class HDPHMMConfig:
     # Random seed
     random_state: int = 42
     
+    # Timeframe for duration interpretation
+    timeframe: str = "1h"  # Timeframe string (e.g., '1h', '1d', '4h')
+    
     # Validation parameters (from code review)
     min_samples_required: int = 500  # Minimum samples for reliable inference
     min_features_required: int = 3  # Minimum features required
@@ -933,13 +936,17 @@ class HDPHMMClusterer:
             else:
                 feature_data = data
             
-            # Use comprehensive quality assessor
-            quality_metrics = self.quality_assessor.assess_quality(
+            # Use ENHANCED HMM regime quality assessor
+            quality_metrics = self.quality_assessor.assess_hmm_regime_quality(
                 regime_labels=labels,
                 feature_data=feature_data,
+                transition_matrix=transition_matrix,
+                hmm_model=self.model,
                 forward_returns=forward_returns,
                 timestamps=timestamps,
-                min_regime_size=self.config.min_regime_size
+                timeframe=self.config.timeframe if hasattr(self.config, 'timeframe') else "1h",
+                min_regime_size=self.config.min_regime_size,
+                run_validators=True  # Run comprehensive HMM validators
             )
             
             # Extract core metrics
@@ -1023,15 +1030,19 @@ class HDPHMMClusterer:
         else:
             feature_data = data
         
-        # Use vectorized operations for quality assessment
+        # Use vectorized operations for ENHANCED HMM quality assessment
         result = self.vectorization_manager.execute_operation(
-            operation_func=self.quality_assessor.assess_quality,
+            operation_func=self.quality_assessor.assess_hmm_regime_quality,
             operation_config=operation_config,
             regime_labels=labels,
             feature_data=feature_data,
+            transition_matrix=transition_matrix,
+            hmm_model=self.model,
             forward_returns=forward_returns,
             timestamps=timestamps,
-            min_regime_size=self.config.min_regime_size
+            timeframe=self.config.timeframe if hasattr(self.config, 'timeframe') else "1h",
+            min_regime_size=self.config.min_regime_size,
+            run_validators=True  # Run comprehensive HMM validators
         )
         
         quality_metrics = result.result

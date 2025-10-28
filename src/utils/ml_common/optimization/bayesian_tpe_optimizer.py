@@ -41,18 +41,29 @@ except ImportError as e:
 
 # VectorBT optimization imports
 try:
-    import vectorbt as vbt
+    # Import from src.vectorbt instead of direct vectorbt import
+    from src.vectorbt import (
+        vbt, rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max,
+        rolling_sum, rolling_apply, VECTORBT_AVAILABLE as VBT_AVAILABLE
+    )
     from ..unified_vectorization_manager import get_unified_vectorization_manager, OperationType
     from src.feature_generation.utils.vectorbt_rolling_optimizer import VectorBTRollingOptimizer, get_vectorbt_rolling_optimizer
     from src.utils.ml_common.unified_vectorization_manager import (
         UnifiedVectorizationManager, get_unified_vectorization_manager as get_feature_vectorization_manager
     )
     from src.feature_generation.utils.unified_vectorization_manager import VectorizationConfig
-    VECTORBT_AVAILABLE = True
+    VECTORBT_AVAILABLE = VBT_AVAILABLE
 except ImportError as e:
     logging.warning(f"VectorBT optimization not available: {e}")
     VECTORBT_AVAILABLE = False
     vbt = None
+    rolling_mean = None
+    rolling_std = None
+    rolling_var = None
+    rolling_min = None
+    rolling_max = None
+    rolling_sum = None
+    rolling_apply = None
     VectorBTRollingOptimizer = None
     get_vectorbt_rolling_optimizer = None
     UnifiedVectorizationManager = None
@@ -89,6 +100,8 @@ class OptimizationConfig:
     coarse_grid_trials: int = 25  # 5x5 grid for 2D search space
     fine_grid_trials: int = 25    # 5x5 grid for 2D search space
     tpe_trials: int = 50         # Remaining trials for TPE
+    max_coarse_grid_size: int = 1000  # Maximum grid points to evaluate in coarse stage (prevent OOM)
+    max_fine_grid_size: int = 500     # Maximum grid points to evaluate in fine stage (prevent OOM)
 
     # Hardware optimization settings
     enable_hardware_optimization: bool = True
@@ -1098,7 +1111,7 @@ class BayesianTPEOptimizer:
         return max(self.min_patience, min(self.max_patience, adaptive_patience))
 
     def _run_coarse_grid_stage(self, objective: Callable, search_space: Dict[str, Any]) -> Dict[str, Any]:
-        """Run VectorBT-optimized coarse grid search stage."""
+        """Run VectorBT-optimized coarse grid search stage with memory-efficient chunking."""
         try:
             self.logger.info("🔍 Stage 1: VectorBT-optimized coarse grid search")
 
@@ -1119,6 +1132,12 @@ class BayesianTPEOptimizer:
                 self.logger.warning("⚠️ No coarse grid points generated")
                 return None
 
+            # Check if grid is too large and needs chunking for memory efficiency
+            if len(coarse_grid) > self.config.max_coarse_grid_size:
+                self.logger.warning(f"⚠️ Coarse grid size ({len(coarse_grid)}) exceeds max ({self.config.max_coarse_grid_size})")
+                self.logger.info(f"   Using chunked evaluation for memory efficiency")
+                return self._chunked_evaluate_grid(objective, coarse_grid, 'coarse', self.config.max_coarse_grid_size)
+
             # Use batch evaluation if available and safe
             if (self.batch_processor and self.config.enable_batch_processing and
                 len(coarse_grid) > 1 and self._is_batch_evaluation_safe(coarse_grid)):
@@ -1133,7 +1152,7 @@ class BayesianTPEOptimizer:
 
     def _run_fine_grid_stage(self, objective: Callable, search_space: Dict[str, Any],
                            coarse_best_params: Dict[str, Any]) -> Dict[str, Any]:
-        """Run VectorBT-optimized fine grid search stage around best coarse results."""
+        """Run VectorBT-optimized fine grid search stage around best coarse results with memory-efficient chunking."""
         try:
             self.logger.info("🔍 Stage 2: VectorBT-optimized fine grid search")
 
@@ -1153,6 +1172,12 @@ class BayesianTPEOptimizer:
             if not fine_grid:
                 self.logger.warning("⚠️ No fine grid points generated")
                 return None
+
+            # Check if grid is too large and needs chunking for memory efficiency
+            if len(fine_grid) > self.config.max_fine_grid_size:
+                self.logger.warning(f"⚠️ Fine grid size ({len(fine_grid)}) exceeds max ({self.config.max_fine_grid_size})")
+                self.logger.info(f"   Using chunked evaluation for memory efficiency")
+                return self._chunked_evaluate_grid(objective, fine_grid, 'fine', self.config.max_fine_grid_size)
 
             # Use batch evaluation if available and safe
             if (self.batch_processor and self.config.enable_batch_processing and
@@ -1636,6 +1661,118 @@ class BayesianTPEOptimizer:
             else:
                 # Re-raise other errors
                 raise
+
+    def _chunked_evaluate_grid(self, objective: Callable, grid_points: List[Dict[str, Any]],
+                              stage: str, chunk_size: int) -> Dict[str, Any]:
+        """
+        Evaluate grid points in chunks for memory efficiency.
+        
+        This method splits large grids into manageable chunks, evaluates each chunk,
+        and keeps track of the best parameters across all chunks. This prevents OOM
+        errors when evaluating very large parameter grids.
+        
+        Args:
+            objective: Objective function to optimize
+            grid_points: List of parameter dictionaries to evaluate
+            stage: Stage name ('coarse' or 'fine')
+            chunk_size: Maximum number of grid points per chunk
+            
+        Returns:
+            Dictionary with best parameters, best value, and all trials
+        """
+        try:
+            self.logger.info(f"🔄 Chunked evaluation: {len(grid_points)} points in chunks of {chunk_size}")
+            
+            # Initialize tracking variables
+            all_trials = []
+            best_params = None
+            best_value = None
+            start_time = time.time()
+            
+            # Split grid into chunks
+            num_chunks = (len(grid_points) + chunk_size - 1) // chunk_size
+            self.logger.info(f"   Processing {num_chunks} chunks")
+            
+            for chunk_idx in range(num_chunks):
+                chunk_start = chunk_idx * chunk_size
+                chunk_end = min((chunk_idx + 1) * chunk_size, len(grid_points))
+                chunk_points = grid_points[chunk_start:chunk_end]
+                
+                self.logger.info(f"   📦 Chunk {chunk_idx + 1}/{num_chunks}: evaluating {len(chunk_points)} points")
+                
+                # Evaluate chunk
+                chunk_results = self._sequential_evaluate_grid(objective, chunk_points, f"{stage}_chunk_{chunk_idx}")
+                
+                if chunk_results is None:
+                    self.logger.warning(f"⚠️ Chunk {chunk_idx + 1} evaluation failed, skipping")
+                    continue
+                
+                # Update best parameters if this chunk has better results
+                if chunk_results['best_value'] is not None:
+                    if self._is_better_result(chunk_results['best_value'], best_value):
+                        best_params = chunk_results['best_params']
+                        best_value = chunk_results['best_value']
+                        self.logger.info(f"   ✨ New best found in chunk {chunk_idx + 1}: {best_value:.6f}")
+                
+                # Accumulate trials
+                all_trials.extend(chunk_results['trials'])
+                
+                # Optional: Early stopping if we've found good enough results
+                if self.config.enable_early_stopping and best_value is not None:
+                    # Check if current best is good enough to skip remaining chunks
+                    if self._should_stop_chunked_evaluation(best_value, chunk_idx, num_chunks):
+                        self.logger.info(f"⏹️ Early stopping chunked evaluation at chunk {chunk_idx + 1}/{num_chunks}")
+                        break
+            
+            end_time = time.time()
+            
+            # Record performance metrics
+            performance_info = {
+                'stage': stage,
+                'duration': end_time - start_time,
+                'total_evaluations': len(all_trials),
+                'evaluations_per_second': len(all_trials) / (end_time - start_time),
+                'num_chunks': num_chunks,
+                'chunk_size': chunk_size,
+                'chunked_evaluation': True
+            }
+            
+            self.performance_metrics.append(performance_info)
+            self.logger.info(f"   Chunked evaluation completed in {performance_info['duration']:.2f}s")
+            self.logger.info(f"   Evaluations/sec: {performance_info['evaluations_per_second']:.1f}")
+            self.logger.info(f"   Best value: {best_value if best_value is not None else 'N/A'}")
+            
+            return {
+                'best_params': best_params,
+                'best_value': best_value,
+                'trials': all_trials
+            }
+            
+        except Exception as e:
+            self.logger.error(f"❌ Chunked evaluation failed: {e}")
+            import traceback
+            self.logger.error(traceback.format_exc())
+            return None
+    
+    def _should_stop_chunked_evaluation(self, current_best: float, current_chunk: int, total_chunks: int) -> bool:
+        """
+        Determine if chunked evaluation should stop early.
+        
+        This is a simple heuristic: if we've evaluated at least 25% of chunks and
+        the current best is very good (based on improvement threshold), we can stop.
+        """
+        # Only consider early stopping after processing at least 25% of chunks
+        if current_chunk < total_chunks * 0.25:
+            return False
+        
+        # If we have early stopping threshold configured, check it
+        if self.config.early_stopping_threshold is not None:
+            if self.config.direction == 'maximize':
+                return current_best >= self.config.early_stopping_threshold
+            else:
+                return current_best <= self.config.early_stopping_threshold
+        
+        return False
 
     def _sequential_evaluate_grid(self, objective: Callable, grid_points: List[Dict[str, Any]],
                                 stage: str) -> Dict[str, Any]:

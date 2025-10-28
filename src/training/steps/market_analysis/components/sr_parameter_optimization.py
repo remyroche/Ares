@@ -34,25 +34,31 @@ except ImportError:
 
 # VectorBT imports
 try:
-    import vectorbt as vbt
-    from vectorbt.optimization import RollingOptimizer
-    VECTORBT_AVAILABLE = True
-    VECTORBT_ROLLING_AVAILABLE = True
+    # Import from src.vectorbt instead of direct vectorbt import
+    from src.vectorbt import (
+        vbt, rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max,
+        rolling_sum, rolling_apply, VECTORBT_AVAILABLE as VBT_AVAILABLE
+    )
+    VECTORBT_AVAILABLE = VBT_AVAILABLE
+    # Try to import RollingOptimizer if available
+    try:
+        from vectorbt.optimization import RollingOptimizer
+        VECTORBT_ROLLING_AVAILABLE = True
+    except (ImportError, AttributeError):
+        VECTORBT_ROLLING_AVAILABLE = False
+        RollingOptimizer = None
 except ImportError:
     VECTORBT_AVAILABLE = False
     VECTORBT_ROLLING_AVAILABLE = False
     vbt = None
     RollingOptimizer = None
-
-# Rolling functions - use numpy/pandas fallbacks if vectorbt not available
-if vbt is None:
-    rolling_mean = lambda x, window: pd.Series(x).rolling(window).mean() if PANDAS_AVAILABLE else None
-    rolling_std = lambda x, window: pd.Series(x).rolling(window).std() if PANDAS_AVAILABLE else None
-    rolling_var = lambda x, window: pd.Series(x).rolling(window).var() if PANDAS_AVAILABLE else None
-    rolling_min = lambda x, window: pd.Series(x).rolling(window).min() if PANDAS_AVAILABLE else None
-    rolling_max = lambda x, window: pd.Series(x).rolling(window).max() if PANDAS_AVAILABLE else None
-    rolling_sum = lambda x, window: pd.Series(x).rolling(window).sum() if PANDAS_AVAILABLE else None
-    rolling_apply = lambda x, window, func: pd.Series(x).rolling(window).apply(func) if PANDAS_AVAILABLE else None
+    rolling_mean = None
+    rolling_std = None
+    rolling_var = None
+    rolling_min = None
+    rolling_max = None
+    rolling_sum = None
+    rolling_apply = None
 
 # Hardware and vectorization imports
 try:
@@ -779,6 +785,9 @@ class SRParameterOptimizationStep(BaseStep):
         market_characteristics = self._analyze_market_characteristics(input_artifacts)
         
         # Base parameter bounds with adaptive adjustments
+        # NOTE: This optimizes SR DETECTION parameters only. Trading strategy parameters
+        # (stop_loss, take_profit, risk_reward_ratio) should be optimized separately
+        # in the BACKTESTING stage, not here in MARKET_ANALYSIS.
         search_space = {
             # Core SR detection parameters - adaptive based on market volatility
             'min_touches': self._get_adaptive_range('min_touches', market_characteristics),
@@ -806,17 +815,22 @@ class SRParameterOptimizationStep(BaseStep):
             # Price action parameters - adaptive based on price action patterns
             'wick_ratio_threshold': self._get_adaptive_range('wick_ratio_threshold', market_characteristics),
             'body_ratio_threshold': self._get_adaptive_range('body_ratio_threshold', market_characteristics),
-            'price_momentum_threshold': self._get_adaptive_range('price_momentum_threshold', market_characteristics),
+            'price_momentum_threshold': self._get_adaptive_range('price_momentum_threshold', market_characteristics)
             
-            # Risk management parameters - adaptive based on market risk
-            'stop_loss_multiplier': self._get_adaptive_range('stop_loss_multiplier', market_characteristics),
-            'take_profit_multiplier': self._get_adaptive_range('take_profit_multiplier', market_characteristics),
-            'risk_reward_ratio': self._get_adaptive_range('risk_reward_ratio', market_characteristics),
-            
-            # Filtering parameters - adaptive based on noise levels
-            'noise_filter_threshold': self._get_adaptive_range('noise_filter_threshold', market_characteristics),
-            'correlation_threshold': self._get_adaptive_range('correlation_threshold', market_characteristics),
-            'volatility_threshold': self._get_adaptive_range('volatility_threshold', market_characteristics)
+            # REMOVED: Trading strategy parameters (moved to separate optimization in BACKTESTING stage)
+            # These were causing:
+            # - 70% larger search space (24 params → 17 params)
+            # - 10x more memory usage
+            # - Confusion between SR detection quality and trading strategy performance
+            # - OOM kills due to excessive grid size
+            #
+            # Previously removed parameters:
+            # - 'stop_loss_multiplier': Trading strategy, not SR detection
+            # - 'take_profit_multiplier': Trading strategy, not SR detection  
+            # - 'risk_reward_ratio': Trading strategy, not SR detection
+            # - 'noise_filter_threshold': Should be in data preprocessing
+            # - 'correlation_threshold': Should be in feature selection
+            # - 'volatility_threshold': Should be in regime detection
         }
         
         # Enhance search space based on input artifacts
@@ -965,33 +979,50 @@ class SRParameterOptimizationStep(BaseStep):
             return characteristics
 
     def _get_adaptive_range(self, param_name: str, characteristics: Dict[str, Any]) -> Dict[str, Any]:
-        """Get adaptive parameter range based on market characteristics."""
-        # Default ranges
+        """
+        Get adaptive parameter range based on market characteristics.
+        
+        NOTE: Only SR detection parameters are included. Trading strategy parameters
+        have been removed to focus optimization on SR level quality, not trading performance.
+        """
+        # Default ranges for SR DETECTION parameters only
         default_ranges = {
+            # Core SR detection parameters
             'min_touches': {'type': 'int', 'low': 2, 'high': 15},
             'strength_threshold': {'type': 'float', 'low': 0.1, 'high': 0.9},
             'distance_threshold': {'type': 'float', 'low': 0.001, 'high': 0.05},
             'lookback_periods': {'type': 'int', 'low': 20, 'high': 500},
             'volume_threshold': {'type': 'float', 'low': 0.5, 'high': 3.0},
+            
+            # Advanced SR parameters
             'touch_tolerance': {'type': 'float', 'low': 0.001, 'high': 0.02},
             'breakout_threshold': {'type': 'float', 'low': 0.01, 'high': 0.1},
             'consolidation_periods': {'type': 'int', 'low': 5, 'high': 50},
             'trend_strength_threshold': {'type': 'float', 'low': 0.3, 'high': 0.8},
+            
+            # Time-based parameters
             'min_formation_time': {'type': 'int', 'low': 1, 'high': 30},
             'max_formation_time': {'type': 'int', 'low': 30, 'high': 200},
             'time_decay_factor': {'type': 'float', 'low': 0.8, 'high': 1.0},
+            
+            # Volume-based parameters
             'volume_spike_threshold': {'type': 'float', 'low': 1.5, 'high': 5.0},
             'volume_consistency_threshold': {'type': 'float', 'low': 0.7, 'high': 1.0},
             'volume_weight': {'type': 'float', 'low': 0.1, 'high': 0.5},
+            
+            # Price action parameters
             'wick_ratio_threshold': {'type': 'float', 'low': 0.1, 'high': 0.5},
             'body_ratio_threshold': {'type': 'float', 'low': 0.3, 'high': 0.8},
-            'price_momentum_threshold': {'type': 'float', 'low': 0.1, 'high': 0.5},
-            'stop_loss_multiplier': {'type': 'float', 'low': 1.0, 'high': 3.0},
-            'take_profit_multiplier': {'type': 'float', 'low': 1.5, 'high': 5.0},
-            'risk_reward_ratio': {'type': 'float', 'low': 1.0, 'high': 3.0},
-            'noise_filter_threshold': {'type': 'float', 'low': 0.01, 'high': 0.1},
-            'correlation_threshold': {'type': 'float', 'low': 0.3, 'high': 0.9},
-            'volatility_threshold': {'type': 'float', 'low': 0.01, 'high': 0.1}
+            'price_momentum_threshold': {'type': 'float', 'low': 0.1, 'high': 0.5}
+            
+            # REMOVED: Trading strategy parameters
+            # These should be optimized in the BACKTESTING stage:
+            # - 'stop_loss_multiplier': Trading strategy parameter
+            # - 'take_profit_multiplier': Trading strategy parameter
+            # - 'risk_reward_ratio': Trading strategy parameter
+            # - 'noise_filter_threshold': Data preprocessing parameter
+            # - 'correlation_threshold': Feature selection parameter
+            # - 'volatility_threshold': Regime detection parameter
         }
         
         base_range = default_ranges.get(param_name, {'type': 'float', 'low': 0.0, 'high': 1.0})

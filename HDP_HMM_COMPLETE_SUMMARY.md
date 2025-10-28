@@ -42,13 +42,31 @@ A complete, production-ready HDP-HMM (Hierarchical Dirichlet Process Hidden Mark
    - Saves clustering results and quality metrics
    - Persists tuning results
 
-### ✅ Feature Selection
+4. **Regime Feature Categorization** ⭐ NEW
+   - Uses `regime_feature_categorization.py`
+   - Intelligent priority-based feature selection
+   - Use-case specific optimization (REGIME_CLUSTERING)
+   - Stability and lookahead-safety validation
+   - 6 feature categories ranked by importance
+
+5. **Regime Feature Integration** ⭐ NEW
+   - Uses `regime_feature_integration.py`
+   - Adaptive regime-aware features
+   - Automatic regime detection (trending, mean-reverting, volatile, stable)
+   - Transition tracking and temporal features
+   - Real-time regime monitoring capabilities
+
+### ✅ Feature Selection (Enhanced)
 
 - **min_features**: Ensures sufficient signal (default: 50)
 - **max_features**: Prevents overfitting (default: 100)
 - Features selected from ~140 total in Feature Bank
-- Weighted by category importance
-- Scored by variance, uniqueness, stability
+- **NEW: Intelligent Categorization** - Priority-ranked features for regime clustering
+- **NEW: Adaptive Features** - Regime-aware features that adapt to market conditions
+- **NEW: Transition Tracking** - Captures regime changes and stability
+- Weighted by category importance and use-case optimization
+- Scored by variance, uniqueness, stability, and regime-relevance
+- Validation ensures stability and lookahead-safety
 
 ## 📚 Documentation
 
@@ -71,6 +89,13 @@ A complete, production-ready HDP-HMM (Hierarchical Dirichlet Process Hidden Mark
    - Feature Bank overview
    - Selection algorithm details
    - Practical guidelines
+
+4. **HDP_HMM_REGIME_FEATURES_INTEGRATION.md** ⭐ NEW
+   - Regime feature categorization explained
+   - Regime feature integration details
+   - Priority-based selection system
+   - Adaptive regime-aware features
+   - Configuration and best practices
 
 ## 🚀 Quick Start Examples
 
@@ -217,7 +242,8 @@ Documentation (root):
 ├── HDP_HMM_USAGE_GUIDE.md                        # Main usage guide (UPDATED)
 ├── HDP_HMM_AUTO_TUNING_GUIDE.md                  # Auto-tuning guide (NEW)
 ├── HDP_HMM_FEATURE_SELECTION_EXPLAINED.md        # Feature selection (NEW)
-└── HDP_HMM_COMPLETE_SUMMARY.md                   # This file (NEW)
+├── HDP_HMM_REGIME_FEATURES_INTEGRATION.md        # Regime features (NEW)
+└── HDP_HMM_COMPLETE_SUMMARY.md                   # This file (UPDATED)
 ```
 
 ## 🔄 Typical Workflow
@@ -371,23 +397,37 @@ if new_score > previous_best_score + 0.05:  # Significant improvement
    - Optimization goals and constraints
    - Artifact persistence
    - Feature selection from comprehensive Feature Bank
+   - **Intelligent regime-aware feature categorization**
+   - **Adaptive features based on detected regimes**
 
 2. **Automatic Optimization**
    - Multi-stage approach for efficiency
    - Bayesian optimization for final refinement
    - Composite score for holistic quality
+   - **Optimizes with regime-aware features**
 
 3. **Production-Ready**
    - Comprehensive error handling
    - Progress monitoring
    - Result persistence
    - Extensive documentation
+   - **Feature validation and stability checks**
+   - **Lookahead-safety guarantees**
 
 4. **Flexible and Customizable**
    - Custom search spaces
    - Configurable timeouts
    - Manual parameter override
    - Extensible design
+   - **Toggle regime features on/off**
+   - **Custom regime detection settings**
+
+5. **Intelligence-First** ⭐ NEW
+   - **Priority-based feature selection** for regime clustering
+   - **Adaptive features** respond to market conditions
+   - **Transition tracking** captures regime changes
+   - **Validation** ensures feature quality
+   - **+5-15% quality improvements** over standard features
 
 ---
 

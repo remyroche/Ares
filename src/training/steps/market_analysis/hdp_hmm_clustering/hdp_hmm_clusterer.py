@@ -25,7 +25,8 @@ import logging
 
 from src.utils.tprint import (
     tprint, tprint_info, tprint_success, tprint_warning, tprint_error,
-    tprint_debug, tprint_performance, tprint_structured, tprint_timer
+    tprint_debug, tprint_performance, tprint_structured, tprint_timer,
+    tprint_data_preview, tprint_data_format
 )
 
 # Import comprehensive quality assessor and optimization goals
@@ -78,7 +79,7 @@ except ImportError:
     # Fall back to pyhsmm (more features but harder to install)
     try:
         import pyhsmm
-        from pyhsmm.models import WeakLimitHDPHSMM, WeakLimitStickyHDPHSMM
+        from pyhsmm.models import WeakLimitHDPHSMM, WeakLimitStickyHDPHMM
         from pyhsmm.basic.distributions import Gaussian
         HMM_AVAILABLE = True
         HMM_LIBRARY = 'pyhsmm'
@@ -505,21 +506,36 @@ class HDPHMMClusterer:
         # Create observation distribution
         obs_dim = data.shape[1]
         
-        # Observation hyperparameters (weak prior)
+        # Observation hyperparameters (improved prior)
         if self.config.obs_hypparams is None:
+            # Use data-driven prior for better stability
+            data_mean = np.mean(data, axis=0)
+            data_cov = np.cov(data.T)
+            
+            # Ensure covariance is positive definite
+            if np.all(np.linalg.eigvals(data_cov) > 0):
+                prior_cov = data_cov * 0.1  # Scale by 0.1 for weak but stable prior
+            else:
+                # Fallback to identity if covariance is problematic
+                prior_cov = np.eye(obs_dim)
+                tprint_warning("⚠️ Using identity covariance for prior (data covariance not positive definite)")
+            
             obs_hypparams = {
-                'mu_0': np.zeros(obs_dim),
-                'sigma_0': np.eye(obs_dim),
-                'kappa_0': 0.01,
+                'mu_0': data_mean,  # Data-driven prior mean
+                'sigma_0': prior_cov,  # Data-driven prior covariance
+                'kappa_0': 0.1,  # More stable than 0.01
                 'nu_0': obs_dim + 2
             }
+            
+            tprint_debug(f"📊 Using data-driven observation prior with kappa_0=0.1")
         else:
             obs_hypparams = self.config.obs_hypparams
+            tprint_debug("📊 Using custom observation hyperparameters")
         
         obs_distns = [Gaussian(**obs_hypparams) for _ in range(self.config.max_states)]
         
         # Create Sticky HDP-HSMM model
-        model = WeakLimitStickyHDPHSMM(
+        model = WeakLimitStickyHDPHMM(
             alpha=self.config.alpha,
             kappa=self.config.kappa,
             gamma=self.config.gamma,
@@ -559,7 +575,8 @@ class HDPHMMClusterer:
                 try:
                     ll = model.log_likelihood()
                     log_likelihoods.append(ll)
-                except:
+                except Exception as e:
+                    tprint_debug(f"⚠️ Failed to compute log-likelihood at iteration {iteration}: {e}")
                     log_likelihoods.append(np.nan)
                 
                 # Convergence diagnostics (after burn-in)
@@ -822,8 +839,24 @@ class HDPHMMClusterer:
         
         # Predict using fitted model
         if HMM_LIBRARY == 'pyhsmm':
-            # For pyhsmm, we need to use Viterbi algorithm
-            labels = self.model.predict(data_processed)
+            # For pyhsmm, we need to add data temporarily and run Viterbi
+            # Save current number of data sequences
+            n_original_seqs = len(self.model.states_list)
+            
+            # Add new data as a temporary sequence
+            self.model.add_data(data_processed)
+            
+            # Run Viterbi on the new sequence to get most likely states
+            self.model.states_list[-1].Viterbi()
+            
+            # Extract the state sequence
+            labels = self.model.states_list[-1].stateseq.copy()
+            
+            # Remove the temporary data to keep model clean
+            self.model.states_list.pop()
+            
+            tprint_debug(f"✅ Predicted {len(labels)} states using pyhsmm Viterbi")
+            
         elif HMM_LIBRARY == 'ssm':
             labels = self.model.most_likely_states(data_processed)
         else:

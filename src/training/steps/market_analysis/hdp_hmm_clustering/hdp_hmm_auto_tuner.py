@@ -171,7 +171,7 @@ class HDPHMMSearchSpace:
             'min_features': {
                 'type': 'int',
                 'low': self.min_features_min,
-                'high': self.max_features_max
+                'high': self.min_features_max
             },
             'max_features': {
                 'type': 'int',
@@ -273,9 +273,46 @@ class HDPHMMAutoTuner:
             Composite score (higher is better)
         """
         try:
-            # Validate min_features <= max_features
+            # Validate and fix min_features <= max_features relationship
             if params['min_features'] > params['max_features']:
-                params['min_features'] = params['max_features'] - 10
+                # Swap them to maintain valid relationship
+                params['min_features'], params['max_features'] = (
+                    min(params['min_features'], params['max_features']),
+                    max(params['min_features'], params['max_features'])
+                )
+                tprint_warning(
+                    f"⚠️ Swapped min_features and max_features: "
+                    f"min={params['min_features']}, max={params['max_features']}"
+                )
+            
+            # Ensure minimum gap between min and max features
+            min_gap = 10
+            if params['max_features'] - params['min_features'] < min_gap:
+                # Adjust max_features to maintain gap
+                params['max_features'] = min(
+                    params['min_features'] + min_gap,
+                    self.search_space.max_features_max
+                )
+                # If we can't increase max, decrease min instead
+                if params['max_features'] - params['min_features'] < min_gap:
+                    params['min_features'] = max(
+                        params['max_features'] - min_gap,
+                        self.search_space.min_features_min
+                    )
+                tprint_warning(
+                    f"⚠️ Adjusted feature range to maintain minimum gap: "
+                    f"min={params['min_features']}, max={params['max_features']}"
+                )
+            
+            # Ensure bounds are respected
+            params['min_features'] = max(
+                self.search_space.min_features_min,
+                min(params['min_features'], self.search_space.min_features_max)
+            )
+            params['max_features'] = max(
+                self.search_space.max_features_min,
+                min(params['max_features'], self.search_space.max_features_max)
+            )
             
             # Run clustering with these parameters
             results = run_hdp_hmm_clustering(
@@ -437,13 +474,23 @@ class HDPHMMAutoTuner:
         
         # Define objective for Optuna
         def optuna_objective(trial):
+            # Sample min_features first
+            min_features = trial.suggest_int('min_features', 
+                                            self.search_space.min_features_min, 
+                                            self.search_space.min_features_max)
+            
+            # Ensure max_features is always >= min_features + 10
+            max_features = trial.suggest_int('max_features',
+                                            min_features + 10,  # Constrained lower bound
+                                            self.search_space.max_features_max)
+            
             params = {
                 'alpha': trial.suggest_float('alpha', self.search_space.alpha_min, self.search_space.alpha_max),
                 'kappa': trial.suggest_float('kappa', self.search_space.kappa_min, self.search_space.kappa_max),
                 'gamma': trial.suggest_float('gamma', self.search_space.gamma_min, self.search_space.gamma_max),
                 'n_iterations': trial.suggest_int('n_iterations', self.search_space.n_iterations_min, self.search_space.n_iterations_max),
-                'min_features': trial.suggest_int('min_features', self.search_space.min_features_min, self.search_space.min_features_max),
-                'max_features': trial.suggest_int('max_features', self.search_space.max_features_min, self.search_space.max_features_max),
+                'min_features': min_features,
+                'max_features': max_features,
                 'pca_components': trial.suggest_int('pca_components', self.search_space.pca_components_min, self.search_space.pca_components_max)
             }
             return self.objective_function(params)

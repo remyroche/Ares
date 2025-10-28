@@ -205,14 +205,41 @@ def run_hdp_hmm_clustering(
         # Run clustering
         results = integration.cluster_with_hdp_hmm(market_data)
         
+        # Validate result structure
+        if 'cluster_labels' not in results:
+            tprint_error("❌ Missing 'cluster_labels' in clustering results")
+            raise KeyError("Expected 'cluster_labels' in clustering results. Available keys: " + 
+                          str(list(results.keys())))
+        
+        cluster_labels = results['cluster_labels']
+        
+        # Validate length match between data and labels
+        if len(cluster_labels) != len(market_data):
+            tprint_warning(
+                f"⚠️ Length mismatch: market_data={len(market_data)}, "
+                f"labels={len(cluster_labels)}"
+            )
+            # Truncate or align data to match labels
+            if len(cluster_labels) < len(market_data):
+                market_data_aligned = market_data.iloc[:len(cluster_labels)] if isinstance(market_data, pd.DataFrame) else market_data[:len(cluster_labels)]
+                tprint_info(f"📊 Aligned market_data to {len(cluster_labels)} samples")
+            else:
+                tprint_error(f"❌ More labels ({len(cluster_labels)}) than data samples ({len(market_data)})")
+                raise ValueError("Cannot have more labels than data samples")
+        else:
+            market_data_aligned = market_data
+            tprint_success(f"✅ Data and labels aligned: {len(cluster_labels)} samples")
+        
         # Save results if requested
         if save_results and artifact_manager:
             try:
-                # Save cluster labels
+                # Save cluster labels with validated alignment
                 artifact_manager.save(
                     data=pd.DataFrame({
-                        'timestamp': market_data.index if isinstance(market_data, pd.DataFrame) else range(len(results['cluster_labels'])),
-                        'cluster_label': results['cluster_labels']
+                        'timestamp': (market_data_aligned.index 
+                                     if isinstance(market_data_aligned, pd.DataFrame) 
+                                     else range(len(cluster_labels))),
+                        'cluster_label': cluster_labels
                     }),
                     artifact_name="cluster_labels",
                     artifact_type="data"

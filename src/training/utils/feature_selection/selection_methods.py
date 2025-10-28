@@ -49,6 +49,24 @@ except ImportError:
     MATRIX_OPERATIONS_AVAILABLE = False
     # Silently use standard operations as fallback
 
+# Import vectorization utilities
+try:
+    from src.utils.ml_common.unified_vectorization_manager import (
+        UnifiedVectorizationManager,
+        get_unified_vectorization_manager,
+        OperationType,
+        OptimizationStrategy
+    )
+    from src.feature_generation.utils.vectorbt_rolling_optimizer import (
+        VectorBTRollingOptimizer,
+        get_vectorbt_rolling_optimizer
+    )
+    VECTORIZATION_AVAILABLE = True
+    tprint("✅ Vectorization utilities available for feature selection")
+except ImportError as e:
+    VECTORIZATION_AVAILABLE = False
+    tprint(f"⚠️ Vectorization utilities not available: {e}")
+
 # Import common operations utilities
 try:
     from src.utils.common_operations import get_memory_usage
@@ -56,6 +74,16 @@ try:
 except ImportError:
     COMMON_OPERATIONS_AVAILABLE = False
     tprint("⚠️ Common operations not available - using fallback implementations")
+
+# Caching utilities for MI proxy
+try:
+    from functools import lru_cache
+    from scipy.spatial.distance import pdist, squareform
+    from scipy.stats import entropy
+    SCIPY_AVAILABLE = True
+except ImportError:
+    SCIPY_AVAILABLE = False
+    tprint("⚠️ SciPy not available - MI proxy will have limited functionality")
 
 def analyze_infinity_values(X: Union[np.ndarray, pd.DataFrame], method_name: str = "unknown", feature_names: List[str] = None) -> Dict[str, Any]:
     """
@@ -326,6 +354,256 @@ except Exception as e:
 
 logger = _LOGGER
 
+# ========================================
+# Mutual Information Proxy
+# ========================================
+
+class MutualInformationProxy:
+    """
+    Fast Mutual Information Proxy for feature selection.
+    
+    Uses vectorized approximations and caching to speed up MI computations:
+    1. Correlation-based approximation for continuous features
+    2. Binning + entropy for discrete approximation
+    3. Caching for repeated computations
+    4. Vectorized batch processing
+    """
+    
+    def __init__(self, use_cache: bool = True, n_bins: int = 10, 
+                 use_correlation_proxy: bool = True):
+        """
+        Initialize MI proxy.
+        
+        Args:
+            use_cache: Enable caching of MI calculations
+            n_bins: Number of bins for discrete MI approximation
+            use_correlation_proxy: Use correlation as MI proxy when applicable
+        """
+        self.use_cache = use_cache
+        self.n_bins = n_bins
+        self.use_correlation_proxy = use_correlation_proxy
+        self._cache = {} if use_cache else None
+        self.logger = logger.getChild('MIProxy')
+        
+        # Initialize vectorization manager if available
+        self.vectorization_manager = None
+        if VECTORIZATION_AVAILABLE:
+            try:
+                self.vectorization_manager = get_unified_vectorization_manager()
+                self.logger.info("✅ Vectorization manager initialized for MI proxy")
+            except Exception as e:
+                self.logger.warning(f"⚠️ Could not initialize vectorization manager: {e}")
+    
+    def _get_cache_key(self, x_id: int, y_id: int) -> str:
+        """Generate cache key for MI computation."""
+        return f"{min(x_id, y_id)}_{max(x_id, y_id)}"
+    
+    def _correlation_based_mi_proxy(self, x: np.ndarray, y: np.ndarray) -> float:
+        """
+        Fast MI approximation using correlation.
+        
+        For continuous variables, MI is related to correlation:
+        MI ≈ -0.5 * log(1 - r^2)
+        
+        This is exact for bivariate Gaussian but a good approximation otherwise.
+        """
+        try:
+            # Ensure arrays are 1D
+            x_flat = x.ravel()
+            y_flat = y.ravel()
+            
+            # Remove NaN/inf
+            mask = np.isfinite(x_flat) & np.isfinite(y_flat)
+            if not np.any(mask):
+                return 0.0
+            
+            x_clean = x_flat[mask]
+            y_clean = y_flat[mask]
+            
+            # Calculate correlation
+            if len(x_clean) < 2:
+                return 0.0
+            
+            corr = np.corrcoef(x_clean, y_clean)[0, 1]
+            
+            # Convert to MI proxy
+            # Clip to avoid log of negative/zero
+            mi_proxy = -0.5 * safe_log(max(1.0 - corr**2, 1e-10))
+            return max(0.0, mi_proxy)
+            
+        except Exception as e:
+            self.logger.debug(f"Correlation-based MI proxy failed: {e}")
+            return 0.0
+    
+    def _binning_based_mi(self, x: np.ndarray, y: np.ndarray) -> float:
+        """
+        Fast MI calculation using histogram-based entropy.
+        
+        Discretizes continuous variables and calculates MI using entropy:
+        MI(X,Y) = H(X) + H(Y) - H(X,Y)
+        """
+        try:
+            # Ensure arrays are 1D
+            x_flat = x.ravel()
+            y_flat = y.ravel()
+            
+            # Remove NaN/inf
+            mask = np.isfinite(x_flat) & np.isfinite(y_flat)
+            if not np.any(mask):
+                return 0.0
+            
+            x_clean = x_flat[mask]
+            y_clean = y_flat[mask]
+            
+            if len(x_clean) < self.n_bins:
+                return 0.0
+            
+            # Discretize using quantiles for robustness
+            try:
+                x_bins = pd.qcut(x_clean, q=self.n_bins, labels=False, duplicates='drop')
+                y_bins = pd.qcut(y_clean, q=self.n_bins, labels=False, duplicates='drop')
+            except (ValueError, TypeError):
+                # Fallback to uniform binning
+                x_bins = np.digitize(x_clean, np.linspace(x_clean.min(), x_clean.max(), self.n_bins))
+                y_bins = np.digitize(y_clean, np.linspace(y_clean.min(), y_clean.max(), self.n_bins))
+            
+            # Calculate joint and marginal distributions
+            # Vectorized histogram computation
+            joint_hist, _, _ = np.histogram2d(x_bins, y_bins, bins=(self.n_bins, self.n_bins))
+            joint_prob = joint_hist / np.sum(joint_hist)
+            
+            x_prob = np.sum(joint_prob, axis=1)
+            y_prob = np.sum(joint_prob, axis=0)
+            
+            # Calculate MI using entropy
+            # H(X) = -sum(p(x) * log(p(x)))
+            h_x = entropy(x_prob[x_prob > 0])
+            h_y = entropy(y_prob[y_prob > 0])
+            h_xy = entropy(joint_prob[joint_prob > 0].ravel())
+            
+            mi = h_x + h_y - h_xy
+            return max(0.0, mi)
+            
+        except Exception as e:
+            self.logger.debug(f"Binning-based MI failed: {e}")
+            return 0.0
+    
+    def compute_mi(self, x: np.ndarray, y: np.ndarray, 
+                   x_id: Optional[int] = None, y_id: Optional[int] = None,
+                   use_sklearn: bool = False) -> float:
+        """
+        Compute mutual information with caching and proxy.
+        
+        Args:
+            x: First variable
+            y: Second variable (target or another feature)
+            x_id: Optional ID for caching
+            y_id: Optional ID for caching
+            use_sklearn: Force sklearn MI calculation (slower but accurate)
+        
+        Returns:
+            Mutual information estimate
+        """
+        # Check cache
+        if self.use_cache and x_id is not None and y_id is not None:
+            cache_key = self._get_cache_key(x_id, y_id)
+            if cache_key in self._cache:
+                return self._cache[cache_key]
+        
+        # Compute MI
+        if use_sklearn and SKLEARN_AVAILABLE:
+            try:
+                x_2d = x.reshape(-1, 1) if x.ndim == 1 else x
+                y_1d = y.ravel()
+                mi = mutual_info_regression(x_2d, y_1d, n_neighbors=3, random_state=42)[0]
+            except Exception as e:
+                self.logger.debug(f"Sklearn MI failed: {e}")
+                mi = self._correlation_based_mi_proxy(x, y)
+        else:
+            # Use fast proxy
+            if self.use_correlation_proxy:
+                mi = self._correlation_based_mi_proxy(x, y)
+            else:
+                mi = self._binning_based_mi(x, y)
+        
+        # Cache result
+        if self.use_cache and x_id is not None and y_id is not None:
+            cache_key = self._get_cache_key(x_id, y_id)
+            self._cache[cache_key] = mi
+        
+        return mi
+    
+    def compute_mi_batch(self, X: np.ndarray, y: np.ndarray, 
+                        feature_indices: Optional[List[int]] = None) -> np.ndarray:
+        """
+        Compute MI for multiple features in batch using vectorization.
+        
+        Args:
+            X: Feature matrix (n_samples, n_features)
+            y: Target vector (n_samples,)
+            feature_indices: Indices of features to compute (default: all)
+        
+        Returns:
+            Array of MI values
+        """
+        if feature_indices is None:
+            feature_indices = list(range(X.shape[1]))
+        
+        n_features = len(feature_indices)
+        mi_scores = np.zeros(n_features)
+        
+        # Try vectorized computation if possible
+        if self.use_correlation_proxy and n_features > 1:
+            try:
+                # Vectorized correlation computation
+                X_subset = X[:, feature_indices]
+                
+                # Center the data
+                X_centered = X_subset - np.mean(X_subset, axis=0)
+                y_centered = y - np.mean(y)
+                
+                # Compute correlations in one go
+                correlations = np.dot(X_centered.T, y_centered) / (
+                    np.sqrt(np.sum(X_centered**2, axis=0)) * 
+                    np.sqrt(np.sum(y_centered**2)) + 1e-10
+                )
+                
+                # Convert to MI proxy
+                mi_scores = -0.5 * np.log(np.maximum(1.0 - correlations**2, 1e-10))
+                mi_scores = np.maximum(0.0, mi_scores)
+                
+                return mi_scores
+            except Exception as e:
+                self.logger.debug(f"Vectorized MI batch failed: {e}, falling back to loop")
+        
+        # Fallback to loop
+        for i, idx in enumerate(feature_indices):
+            mi_scores[i] = self.compute_mi(X[:, idx], y, x_id=idx, y_id=-1)
+        
+        return mi_scores
+    
+    def clear_cache(self):
+        """Clear MI cache."""
+        if self._cache is not None:
+            self._cache.clear()
+    
+    def get_cache_size(self) -> int:
+        """Get number of cached MI values."""
+        return len(self._cache) if self._cache is not None else 0
+
+# Create global MI proxy instance
+_mi_proxy = None
+
+def get_mi_proxy(use_cache: bool = True, n_bins: int = 10,
+                use_correlation_proxy: bool = True) -> MutualInformationProxy:
+    """Get global MI proxy instance."""
+    global _mi_proxy
+    if _mi_proxy is None:
+        _mi_proxy = MutualInformationProxy(use_cache, n_bins, use_correlation_proxy)
+    return _mi_proxy
+
+logger = _LOGGER
+
 try:
     from sklearn.feature_selection import mutual_info_classif, mutual_info_regression, RFE, RFECV
     from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
@@ -361,10 +639,26 @@ class MRMRSelector:
         self.relevance_method = self.config.get('relevance_method', 'mutual_info')
         self.redundancy_method = self.config.get('redundancy_method', 'correlation')
         self.n_neighbors = self.config.get('n_neighbors', 3)
+        self.use_mi_proxy = self.config.get('use_mi_proxy', True)
+        self.use_vectorization = self.config.get('use_vectorization', True)
+        
+        # Initialize MI proxy
+        self.mi_proxy = get_mi_proxy() if self.use_mi_proxy else None
+        
+        # Initialize vectorization manager
+        self.vectorization_manager = None
+        if self.use_vectorization and VECTORIZATION_AVAILABLE:
+            try:
+                self.vectorization_manager = get_unified_vectorization_manager()
+                _LOGGER.info("✅ Vectorization manager initialized for mRMR")
+            except Exception as e:
+                _LOGGER.warning(f"⚠️ Could not initialize vectorization manager: {e}")
 
         _LOGGER.info("🔍 MRMRSelector initialized")
         _LOGGER.info(f"⚙️ Relevance method: {self.relevance_method}")
         _LOGGER.info(f"⚙️ Redundancy method: {self.redundancy_method}")
+        _LOGGER.info(f"⚙️ MI proxy enabled: {self.use_mi_proxy}")
+        _LOGGER.info(f"⚙️ Vectorization enabled: {self.use_vectorization}")
 
     def select_features(self, X: np.ndarray, y: np.ndarray, feature_names: List[str],
                        n_features: int) -> Dict[str, Any]:
@@ -472,7 +766,7 @@ class MRMRSelector:
             }
 
     def _calculate_relevance_scores(self, X: np.ndarray, y: np.ndarray, feature_names: List[str] = None) -> Dict[int, float]:
-        """Calculate relevance scores for all features."""
+        """Calculate relevance scores for all features using vectorized MI proxy."""
         relevance_scores = {}
 
         # Check if shapes match
@@ -481,57 +775,117 @@ class MRMRSelector:
             return {i: 0.0 for i in range(X.shape[1])}
 
         # X is already preprocessed at the method level
-        for i in range(X.shape[1]):
-            if self.relevance_method == 'mutual_info':
-                if SKLEARN_AVAILABLE:
+        if self.relevance_method == 'mutual_info':
+            # Use vectorized MI proxy for batch computation
+            if self.mi_proxy is not None:
+                try:
+                    _LOGGER.info("🚀 Computing MI scores using vectorized proxy...")
+                    mi_scores = self.mi_proxy.compute_mi_batch(X, y)
+                    relevance_scores = {i: float(mi_scores[i]) for i in range(len(mi_scores))}
+                    _LOGGER.info(f"✅ Vectorized MI computation completed for {len(mi_scores)} features")
+                except Exception as e:
+                    _LOGGER.warning(f"⚠️ Vectorized MI failed: {e}, falling back to loop")
+                    # Fallback to loop with MI proxy
+                    for i in range(X.shape[1]):
+                        try:
+                            mi = self.mi_proxy.compute_mi(X[:, i], y, x_id=i, y_id=-1)
+                            relevance_scores[i] = mi
+                        except Exception as e:
+                            feature_name = feature_names[i] if feature_names and i < len(feature_names) else f"feature_{i}"
+                            _LOGGER.warning(f"⚠️ MI calculation failed for feature {feature_name}: {e}")
+                            relevance_scores[i] = 0.0
+            elif SKLEARN_AVAILABLE:
+                # Fallback to sklearn
+                for i in range(X.shape[1]):
                     try:
-                        # Ensure proper shapes for sklearn
                         x_feature = X[:, i].reshape(-1, 1)
                         y_target = y.reshape(-1)
-
                         mi = mutual_info_regression(x_feature, y_target)[0]
                         relevance_scores[i] = mi
-
-                        # Debug: Log first few features only if MI is very low
-                        if i < 3 and mi < 0.001:
-                            feature_name = feature_names[i] if feature_names and i < len(feature_names) else f"feature_{i}"
-                            x_std = np.std(X[:, i])
-                            _LOGGER.debug(f"📊 Feature {feature_name}: MI={mi:.6f}, X_std={x_std:.6f}")
                     except Exception as e:
                         feature_name = feature_names[i] if feature_names and i < len(feature_names) else f"feature_{i}"
                         _LOGGER.warning(f"⚠️ MI calculation failed for feature {feature_name}: {e}")
                         relevance_scores[i] = 0.0
-                else:
-                    relevance_scores[i] = 0.0
-            elif self.relevance_method == 'correlation':
-                relevance_scores[i] = abs(safe_correlation(X[:, i], y))
             else:
-                relevance_scores[i] = 0.0
+                relevance_scores = {i: 0.0 for i in range(X.shape[1])}
+        elif self.relevance_method == 'correlation':
+            # Vectorized correlation computation
+            try:
+                y_centered = y - np.mean(y)
+                X_centered = X - np.mean(X, axis=0)
+                correlations = np.abs(np.dot(X_centered.T, y_centered)) / (
+                    np.sqrt(np.sum(X_centered**2, axis=0)) * np.sqrt(np.sum(y_centered**2)) + 1e-10
+                )
+                relevance_scores = {i: float(correlations[i]) for i in range(len(correlations))}
+            except Exception as e:
+                _LOGGER.warning(f"⚠️ Vectorized correlation failed: {e}")
+                for i in range(X.shape[1]):
+                    relevance_scores[i] = abs(safe_correlation(X[:, i], y))
+        else:
+            relevance_scores = {i: 0.0 for i in range(X.shape[1])}
 
         return relevance_scores
 
     def _calculate_redundancy(self, feature_idx: int, selected_features: List[int], X: np.ndarray) -> float:
-        """Calculate redundancy of a feature with already selected features."""
+        """Calculate redundancy of a feature with already selected features using vectorized operations."""
         if not selected_features:
             return 0.0
 
         # X is already preprocessed at the method level
-        redundancies = []
-        for selected_idx in selected_features:
-            if self.redundancy_method == 'correlation':
-                corr = abs(safe_correlation(X[:, feature_idx], X[:, selected_idx]))
-                redundancies.append(corr)
-            elif self.redundancy_method == 'mutual_info':
-                if SKLEARN_AVAILABLE:
-                    try:
+        if self.redundancy_method == 'correlation':
+            # Vectorized correlation computation
+            try:
+                feature_vec = X[:, feature_idx]
+                selected_vecs = X[:, selected_features]
+                
+                # Center the vectors
+                feature_centered = feature_vec - np.mean(feature_vec)
+                selected_centered = selected_vecs - np.mean(selected_vecs, axis=0)
+                
+                # Compute correlations in one go
+                correlations = np.abs(np.dot(selected_centered.T, feature_centered)) / (
+                    np.sqrt(np.sum(selected_centered**2, axis=0)) * 
+                    np.sqrt(np.sum(feature_centered**2)) + 1e-10
+                )
+                
+                return float(np.mean(correlations))
+            except Exception as e:
+                _LOGGER.debug(f"Vectorized redundancy failed: {e}")
+                # Fallback to loop
+                redundancies = []
+                for selected_idx in selected_features:
+                    corr = abs(safe_correlation(X[:, feature_idx], X[:, selected_idx]))
+                    redundancies.append(corr)
+                return safe_mean(redundancies) if redundancies else 0.0
+                
+        elif self.redundancy_method == 'mutual_info':
+            # Use MI proxy if available
+            if self.mi_proxy is not None:
+                try:
+                    redundancies = []
+                    for selected_idx in selected_features:
+                        mi = self.mi_proxy.compute_mi(
+                            X[:, feature_idx], X[:, selected_idx],
+                            x_id=feature_idx, y_id=selected_idx
+                        )
+                        redundancies.append(mi)
+                    return safe_mean(redundancies) if redundancies else 0.0
+                except Exception as e:
+                    _LOGGER.debug(f"MI proxy redundancy failed: {e}")
+                    return 0.0
+            elif SKLEARN_AVAILABLE:
+                try:
+                    redundancies = []
+                    for selected_idx in selected_features:
                         mi = mutual_info_regression(X[:, feature_idx].reshape(-1, 1), X[:, selected_idx])[0]
                         redundancies.append(mi)
-                    except Exception:
-                        redundancies.append(0.0)
-                else:
-                    redundancies.append(0.0)
-
-        return safe_mean(redundancies) if redundancies else 0.0
+                    return safe_mean(redundancies) if redundancies else 0.0
+                except Exception:
+                    return 0.0
+            else:
+                return 0.0
+        
+        return 0.0
 
 class ElasticNetStabilitySelector:
     """Elastic Net-based stability selection for feature selection.
@@ -1309,10 +1663,26 @@ class CompositeFeatureScorer:
         # RFE parameters
         self.rfe_removal_rate = self.config.get('rfe_removal_rate', 0.33)  # Remove 33% per round
         self.min_features_per_round = self.config.get('min_features_per_round', 10)
+        self.use_mi_proxy = self.config.get('use_mi_proxy', True)
+        self.use_vectorization = self.config.get('use_vectorization', True)
+        
+        # Initialize MI proxy
+        self.mi_proxy = get_mi_proxy() if self.use_mi_proxy else None
+        
+        # Initialize vectorization manager
+        self.vectorization_manager = None
+        if self.use_vectorization and VECTORIZATION_AVAILABLE:
+            try:
+                self.vectorization_manager = get_unified_vectorization_manager()
+                _LOGGER.info("✅ Vectorization manager initialized for composite scoring")
+            except Exception as e:
+                _LOGGER.warning(f"⚠️ Could not initialize vectorization manager: {e}")
         
         _LOGGER.info("🔍 CompositeFeatureScorer initialized")
         _LOGGER.info(f"⚙️ Scoring weights: {self.weights}")
         _LOGGER.info(f"⚙️ RFE removal rate: {self.rfe_removal_rate:.0%} per round")
+        _LOGGER.info(f"⚙️ MI proxy enabled: {self.use_mi_proxy}")
+        _LOGGER.info(f"⚙️ Vectorization enabled: {self.use_vectorization}")
 
     def select_features(self, X: np.ndarray, y: np.ndarray, feature_names: List[str],
                        n_features: int) -> Dict[str, Any]:
@@ -1469,18 +1839,29 @@ class CompositeFeatureScorer:
     
     def _calculate_mi_scores(self, X: np.ndarray, y: np.ndarray, 
                             feature_names: List[str]) -> Dict[str, float]:
-        """Calculate mutual information scores (normalized to 0-1)."""
+        """Calculate mutual information scores using vectorized MI proxy (normalized to 0-1)."""
         try:
-            if not SKLEARN_AVAILABLE:
+            # Use MI proxy for faster computation
+            if self.mi_proxy is not None:
+                _LOGGER.debug("🚀 Using MI proxy for batch MI computation")
+                mi_scores = self.mi_proxy.compute_mi_batch(X, y)
+                
+                # Normalize to 0-1
+                if mi_scores.max() > 0:
+                    mi_scores = mi_scores / mi_scores.max()
+                
+                return {feature_names[i]: float(mi_scores[i]) for i in range(len(feature_names))}
+            elif SKLEARN_AVAILABLE:
+                _LOGGER.debug("🐌 Falling back to sklearn MI computation")
+                mi_scores = mutual_info_regression(X, y, random_state=42, n_neighbors=3)
+                
+                # Normalize to 0-1
+                if mi_scores.max() > 0:
+                    mi_scores = mi_scores / mi_scores.max()
+                
+                return {feature_names[i]: mi_scores[i] for i in range(len(feature_names))}
+            else:
                 return {name: 0.5 for name in feature_names}
-            
-            mi_scores = mutual_info_regression(X, y, random_state=42, n_neighbors=3)
-            
-            # Normalize to 0-1
-            if mi_scores.max() > 0:
-                mi_scores = mi_scores / mi_scores.max()
-            
-            return {feature_names[i]: mi_scores[i] for i in range(len(feature_names))}
         except Exception as e:
             _LOGGER.warning(f"⚠️ MI calculation failed: {e}")
             return {name: 0.5 for name in feature_names}
@@ -1488,22 +1869,31 @@ class CompositeFeatureScorer:
     def _calculate_redundancy_scores(self, X: np.ndarray, 
                                      feature_names: List[str]) -> Dict[str, float]:
         """
-        Calculate redundancy scores (1 - average_correlation with other features).
+        Calculate redundancy scores using vectorized operations (1 - average_correlation with other features).
         Low redundancy = high diversity = better score.
         Normalized to 0-1.
         """
         try:
-            # Calculate correlation matrix
-            corr_matrix = np.corrcoef(X, rowvar=False)
+            # Vectorized correlation matrix computation
+            _LOGGER.debug("🚀 Computing correlation matrix using vectorized operations")
             
-            redundancy_scores = {}
-            for i, feat in enumerate(feature_names):
-                # Average absolute correlation with all other features
-                other_corrs = [abs(corr_matrix[i, j]) for j in range(len(feature_names)) if i != j]
-                avg_corr = np.mean(other_corrs) if other_corrs else 0.0
-                
-                # Invert so low redundancy = high score
-                redundancy_scores[feat] = 1.0 - min(avg_corr, 1.0)
+            # Center the data
+            X_centered = X - np.mean(X, axis=0)
+            
+            # Compute correlation matrix efficiently
+            std_devs = np.sqrt(np.sum(X_centered**2, axis=0))
+            corr_matrix = np.dot(X_centered.T, X_centered) / (np.outer(std_devs, std_devs) + 1e-10)
+            
+            # Vectorized redundancy computation
+            # Sum absolute correlations excluding diagonal
+            abs_corr = np.abs(corr_matrix)
+            np.fill_diagonal(abs_corr, 0)  # Exclude self-correlation
+            
+            avg_corrs = np.sum(abs_corr, axis=1) / (len(feature_names) - 1)
+            
+            # Invert so low redundancy = high score
+            redundancy_scores = {feature_names[i]: float(1.0 - min(avg_corrs[i], 1.0)) 
+                               for i in range(len(feature_names))}
             
             return redundancy_scores
         except Exception as e:
@@ -1586,35 +1976,82 @@ class CompositeFeatureScorer:
     def _calculate_stability_scores(self, X: np.ndarray, y: np.ndarray,
                                    feature_names: List[str]) -> Dict[str, float]:
         """
-        Calculate stability scores using time-based windows.
+        Calculate stability scores using vectorized rolling window operations.
         Measures consistency of feature values across time.
         Normalized to 0-1.
         """
         try:
-            stability_scores = {}
+            _LOGGER.debug("🚀 Computing stability scores using vectorized operations")
             window_size = max(50, len(X) // 10)
+            stride = window_size // 2
+            
+            # Try to use VectorBT rolling optimizer if available
+            if self.vectorization_manager is not None and VECTORIZATION_AVAILABLE:
+                try:
+                    _LOGGER.debug("🚀 Using VectorBT rolling optimizer for stability")
+                    from src.feature_generation.utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer
+                    rolling_optimizer = get_vectorbt_rolling_optimizer()
+                    
+                    stability_scores = {}
+                    for i, feat in enumerate(feature_names):
+                        feature_data = X[:, i]
+                        
+                        # Use rolling operations from VectorBT
+                        try:
+                            rolling_mean = rolling_optimizer.rolling_mean(
+                                feature_data, window=window_size
+                            )
+                            rolling_std = rolling_optimizer.rolling_std(
+                                feature_data, window=window_size
+                            )
+                            
+                            # Sample at stride intervals
+                            sampled_means = rolling_mean[window_size-1::stride]
+                            
+                            if len(sampled_means) > 1:
+                                mean_of_means = np.mean(sampled_means)
+                                std_of_means = np.std(sampled_means)
+                                
+                                if abs(mean_of_means) > 1e-8:
+                                    cv = std_of_means / abs(mean_of_means)
+                                    stability = 1.0 / (1.0 + cv)
+                                else:
+                                    stability = 0.5
+                            else:
+                                stability = 0.5
+                            
+                            stability_scores[feat] = max(0.0, min(1.0, stability))
+                        except Exception as e:
+                            _LOGGER.debug(f"VectorBT rolling failed for {feat}: {e}")
+                            stability_scores[feat] = 0.5
+                    
+                    return stability_scores
+                except Exception as e:
+                    _LOGGER.debug(f"VectorBT optimization failed: {e}, using numpy")
+            
+            # Fallback: Vectorized numpy computation
+            _LOGGER.debug("🐌 Using numpy for stability computation")
+            stability_scores = {}
+            
+            # Vectorized rolling window computation
+            n_windows = (len(X) - window_size) // stride + 1
             
             for i, feat in enumerate(feature_names):
                 feature_data = X[:, i]
                 
-                # Calculate rolling statistics
-                rolling_means = []
-                rolling_stds = []
-                
-                for start in range(0, len(feature_data) - window_size, window_size // 2):
-                    end = start + window_size
-                    window_data = feature_data[start:end]
-                    rolling_means.append(np.mean(window_data))
-                    rolling_stds.append(np.std(window_data))
+                # Vectorized window extraction
+                rolling_means = np.array([
+                    np.mean(feature_data[start:start+window_size])
+                    for start in range(0, len(feature_data) - window_size + 1, stride)
+                ])
                 
                 if len(rolling_means) > 1:
-                    # Stability = 1 - coefficient of variation of rolling means
                     mean_of_means = np.mean(rolling_means)
                     std_of_means = np.std(rolling_means)
                     
                     if abs(mean_of_means) > 1e-8:
                         cv = std_of_means / abs(mean_of_means)
-                        stability = 1.0 / (1.0 + cv)  # Higher stability for lower CV
+                        stability = 1.0 / (1.0 + cv)
                     else:
                         stability = 0.5
                 else:

@@ -22,6 +22,7 @@ import pandas as pd
 from typing import Dict, Any, Optional, List, Tuple
 from dataclasses import dataclass, field
 from datetime import datetime
+from enum import Enum
 
 # Import sklearn metrics
 from sklearn.metrics import (
@@ -34,6 +35,15 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import cross_val_score
 
 logger = logging.getLogger(__name__)
+
+
+class RegimeType(Enum):
+    """Enumeration of regime types for cluster classification."""
+    TRENDING = "trending"
+    MEAN_REVERTING = "mean_reverting"
+    VOLATILE = "volatile"
+    STABLE = "stable"
+    UNKNOWN = "unknown"
 
 
 @dataclass
@@ -91,8 +101,14 @@ class ClusterQualityMetrics:
     # Per-regime metrics
     per_regime_metrics: Dict[int, Dict[str, Any]] = field(default_factory=dict)
     
+    # Regime type classification
+    regime_type_per_cluster: Optional[Dict[int, str]] = None
+    
     # Economic validation
     economic_validation: Dict[str, Any] = field(default_factory=dict)
+    
+    # Economic interpretation (data-driven insights)
+    economic_interpretation: Dict[str, Any] = field(default_factory=dict)
     
     # Predictive power
     predictive_power: Optional[float] = None
@@ -139,7 +155,9 @@ class ClusterQualityMetrics:
             
             # Detailed metrics
             'per_regime_metrics': self.per_regime_metrics,
+            'regime_type_per_cluster': self.regime_type_per_cluster,
             'economic_validation': self.economic_validation,
+            'economic_interpretation': self.economic_interpretation,
             
             # Aggregate scores
             'predictive_power': self.predictive_power,
@@ -301,11 +319,17 @@ class ClusterQualityAssessor:
             except Exception as e:
                 self.logger.warning(f"Failed to calculate temporal metrics: {e}")
         
-        # 7. Per-regime metrics
+        # 7. Per-regime metrics (includes regime type detection)
         try:
             metrics.per_regime_metrics = self._calculate_per_regime_metrics(
                 regime_labels, features_clean, forward_returns
             )
+            
+            # Extract regime types from per-regime metrics
+            metrics.regime_type_per_cluster = {
+                regime_id: regime_data.get('regime_type', RegimeType.UNKNOWN.value)
+                for regime_id, regime_data in metrics.per_regime_metrics.items()
+            }
         except Exception as e:
             self.logger.warning(f"Failed to calculate per-regime metrics: {e}")
         
@@ -317,6 +341,14 @@ class ClusterQualityAssessor:
                 )
             except Exception as e:
                 self.logger.warning(f"Failed to validate regime quality: {e}")
+        
+        # 8b. Economic interpretation (data-driven insights)
+        try:
+            metrics.economic_interpretation = self._generate_economic_interpretation(
+                metrics.per_regime_metrics, metrics.regime_type_per_cluster
+            )
+        except Exception as e:
+            self.logger.warning(f"Failed to generate economic interpretation: {e}")
         
         # 9. Predictive power
         if forward_returns is not None and len(forward_returns) > 0:
@@ -564,11 +596,188 @@ class ClusterQualityAssessor:
         
         return balance_score, min_cluster_size_pct, max_cluster_size_pct, cluster_size_std, cluster_size_distribution
     
+    def _detect_regime_type(self, 
+                           regime_data: pd.DataFrame,
+                           returns: Optional[pd.Series] = None) -> Tuple[RegimeType, Dict[str, float]]:
+        """
+        Detect regime type based on data characteristics (data-driven).
+        
+        Args:
+            regime_data: Feature data for this regime
+            returns: Optional returns series for this regime
+            
+        Returns:
+            Tuple of (RegimeType, metrics_dict with scores for classification)
+        """
+        metrics = {}
+        
+        try:
+            # Calculate regime characteristics
+            if returns is not None and len(returns) > 1:
+                # Trend characteristics
+                mean_return = returns.mean()
+                returns_std = returns.std()
+                
+                # Trend strength: normalized mean return / std
+                trend_strength = abs(mean_return) / (returns_std + 1e-8)
+                metrics['trend_strength'] = float(trend_strength)
+                
+                # Trend persistence: autocorrelation
+                if len(returns) > 2:
+                    autocorr = returns.autocorr(lag=1)
+                    metrics['trend_persistence'] = float(autocorr if not np.isnan(autocorr) else 0.0)
+                else:
+                    metrics['trend_persistence'] = 0.0
+                
+                # Mean reversion strength: negative autocorrelation indicates mean reversion
+                mean_reversion_score = -metrics['trend_persistence']
+                metrics['mean_reversion_strength'] = float(mean_reversion_score)
+                
+                # Volatility characteristics
+                volatility_level = returns_std
+                metrics['volatility_level'] = float(volatility_level)
+                
+                # Volatility clustering: autocorrelation of squared returns
+                if len(returns) > 2:
+                    squared_returns = returns ** 2
+                    vol_clustering = squared_returns.autocorr(lag=1)
+                    metrics['volatility_clustering'] = float(vol_clustering if not np.isnan(vol_clustering) else 0.0)
+                else:
+                    metrics['volatility_clustering'] = 0.0
+                
+                # Stability: coefficient of variation (inverse)
+                cv = volatility_level / (abs(mean_return) + 1e-8)
+                metrics['stability_score'] = float(1.0 / (1.0 + cv))
+                
+                # Classify regime based on dominant characteristic
+                # Use data-driven thresholds
+                
+                # High volatility regime (volatility > 1.5 * median volatility)
+                if volatility_level > 0.02:  # 2% daily volatility threshold
+                    if metrics['volatility_clustering'] > 0.3:
+                        return RegimeType.VOLATILE, metrics
+                
+                # Trending regime (strong trend + high persistence)
+                if trend_strength > 0.5 and metrics['trend_persistence'] > 0.2:
+                    return RegimeType.TRENDING, metrics
+                
+                # Mean reverting regime (negative autocorrelation)
+                if metrics['trend_persistence'] < -0.1:
+                    return RegimeType.MEAN_REVERTING, metrics
+                
+                # Stable regime (low volatility + low trend)
+                if volatility_level < 0.01 and trend_strength < 0.3:
+                    return RegimeType.STABLE, metrics
+                
+                # Default: determine by strongest signal
+                max_score = max(
+                    trend_strength,
+                    abs(mean_reversion_score),
+                    volatility_level * 10,  # Scale volatility for comparison
+                    metrics['stability_score']
+                )
+                
+                if max_score == trend_strength:
+                    return RegimeType.TRENDING, metrics
+                elif max_score == abs(mean_reversion_score):
+                    return RegimeType.MEAN_REVERTING, metrics
+                elif max_score == volatility_level * 10:
+                    return RegimeType.VOLATILE, metrics
+                else:
+                    return RegimeType.STABLE, metrics
+            
+            return RegimeType.UNKNOWN, metrics
+            
+        except Exception as e:
+            self.logger.warning(f"Failed to detect regime type: {e}")
+            return RegimeType.UNKNOWN, {}
+    
+    def _calculate_regime_specific_metrics(self,
+                                          regime_type: RegimeType,
+                                          regime_data: pd.DataFrame,
+                                          returns: Optional[pd.Series] = None) -> Dict[str, Any]:
+        """
+        Calculate regime-specific metrics based on detected regime type.
+        
+        Args:
+            regime_type: Detected regime type
+            regime_data: Feature data for this regime
+            returns: Optional returns series
+            
+        Returns:
+            Dictionary of regime-specific metrics with scores
+        """
+        specific_metrics = {}
+        
+        try:
+            if returns is None or len(returns) < 2:
+                return specific_metrics
+            
+            if regime_type == RegimeType.TRENDING:
+                # Trending regime metrics
+                specific_metrics['trend_direction'] = 'bullish' if returns.mean() > 0 else 'bearish'
+                specific_metrics['trend_consistency'] = float(
+                    np.sum(np.sign(returns) == np.sign(returns.mean())) / len(returns)
+                )
+                
+                # Trend acceleration/deceleration
+                if len(returns) > 5:
+                    first_half_mean = returns.iloc[:len(returns)//2].mean()
+                    second_half_mean = returns.iloc[len(returns)//2:].mean()
+                    specific_metrics['trend_acceleration'] = float(
+                        (second_half_mean - first_half_mean) / (abs(first_half_mean) + 1e-8)
+                    )
+                
+            elif regime_type == RegimeType.MEAN_REVERTING:
+                # Mean reverting regime metrics
+                mean_return = returns.mean()
+                specific_metrics['reversion_center'] = float(mean_return)
+                
+                # Reversion speed: how quickly prices return to mean
+                deviations = abs(returns - mean_return)
+                specific_metrics['reversion_speed'] = float(1.0 / (deviations.mean() + 1e-8))
+                
+                # Reversion range: typical deviation from mean
+                specific_metrics['reversion_range'] = float(deviations.std())
+                
+            elif regime_type == RegimeType.VOLATILE:
+                # Volatile regime metrics
+                specific_metrics['volatility_regime'] = 'high'
+                
+                # Volatility persistence
+                if len(returns) > 5:
+                    rolling_vol = returns.rolling(window=5).std()
+                    vol_autocorr = rolling_vol.autocorr(lag=1)
+                    specific_metrics['volatility_persistence'] = float(
+                        vol_autocorr if not np.isnan(vol_autocorr) else 0.0
+                    )
+                
+                # Extreme move frequency
+                std_dev = returns.std()
+                extreme_moves = np.sum(abs(returns) > 2 * std_dev)
+                specific_metrics['extreme_move_frequency'] = float(extreme_moves / len(returns))
+                
+            elif regime_type == RegimeType.STABLE:
+                # Stable regime metrics
+                specific_metrics['stability_regime'] = 'low_volatility'
+                specific_metrics['mean_return'] = float(returns.mean())
+                specific_metrics['volatility'] = float(returns.std())
+                
+                # Stability score
+                cv = returns.std() / (abs(returns.mean()) + 1e-8)
+                specific_metrics['stability_coefficient'] = float(1.0 / (1.0 + cv))
+            
+            return specific_metrics
+            
+        except Exception as e:
+            self.logger.warning(f"Failed to calculate regime-specific metrics: {e}")
+            return specific_metrics
+    
     def _calculate_per_regime_metrics(self,
                                       regime_labels: np.ndarray,
                                       features: pd.DataFrame,
                                       forward_returns: Optional[pd.Series] = None) -> Dict[int, Dict[str, Any]]:
-        """Calculate detailed metrics for each regime."""
+        """Calculate detailed metrics for each regime, including regime type classification."""
         per_regime_metrics = {}
         total_samples = len(regime_labels)
         
@@ -609,21 +818,227 @@ class ClusterQualityAssessor:
                                                                        if r != -1]) + 1e-8))
             }
             
-            # Add return characteristics if available
-            if forward_returns is not None and len(forward_returns) > 0:
-                regime_returns = forward_returns[regime_mask]
-                if len(regime_returns) > 0:
-                    regime_metrics.update({
-                        'mean_return': float(regime_returns.mean()),
-                        'volatility': float(regime_returns.std()),
-                        'sharpe': float(regime_returns.mean() / (regime_returns.std() + 1e-8)),
-                        'skewness': float(regime_returns.skew()) if hasattr(regime_returns, 'skew') else 0.0,
-                        'max_drawdown': float(self._compute_max_drawdown(regime_returns))
-                    })
+            # Detect regime type and calculate regime-specific characteristics
+            regime_returns = forward_returns[regime_mask] if forward_returns is not None else None
+            
+            if regime_returns is not None and len(regime_returns) > 0:
+                # Detect regime type
+                regime_type, classification_scores = self._detect_regime_type(
+                    regime_features, regime_returns
+                )
+                regime_metrics['regime_type'] = regime_type.value
+                regime_metrics['classification_scores'] = classification_scores
+                
+                # Calculate regime-specific metrics based on detected type
+                specific_metrics = self._calculate_regime_specific_metrics(
+                    regime_type, regime_features, regime_returns
+                )
+                regime_metrics['regime_specific_metrics'] = specific_metrics
+                
+                # Add return characteristics
+                regime_metrics.update({
+                    'mean_return': float(regime_returns.mean()),
+                    'volatility': float(regime_returns.std()),
+                    'sharpe': float(regime_returns.mean() / (regime_returns.std() + 1e-8)),
+                    'skewness': float(regime_returns.skew()) if hasattr(regime_returns, 'skew') else 0.0,
+                    'max_drawdown': float(self._compute_max_drawdown(regime_returns))
+                })
+            else:
+                regime_metrics['regime_type'] = RegimeType.UNKNOWN.value
+                regime_metrics['classification_scores'] = {}
+                regime_metrics['regime_specific_metrics'] = {}
             
             per_regime_metrics[int(regime_id)] = regime_metrics
         
         return per_regime_metrics
+    
+    def _generate_economic_interpretation(self,
+                                          per_regime_metrics: Dict[int, Dict[str, Any]],
+                                          regime_type_per_cluster: Optional[Dict[int, str]]) -> Dict[str, Any]:
+        """
+        Generate data-driven economic interpretation of regimes.
+        
+        Args:
+            per_regime_metrics: Per-regime metrics including returns and characteristics
+            regime_type_per_cluster: Regime type classification for each cluster
+            
+        Returns:
+            Dictionary containing economic insights and actionable information
+        """
+        interpretation = {
+            'regime_summary': {},
+            'trading_implications': {},
+            'risk_characteristics': {},
+            'regime_transitions': {},
+            'performance_comparison': {}
+        }
+        
+        try:
+            if not per_regime_metrics or not regime_type_per_cluster:
+                return interpretation
+            
+            # 1. Regime Summary
+            regime_types_count = {}
+            for regime_type in regime_type_per_cluster.values():
+                regime_types_count[regime_type] = regime_types_count.get(regime_type, 0) + 1
+            
+            interpretation['regime_summary'] = {
+                'total_regimes': len(per_regime_metrics),
+                'regime_type_distribution': regime_types_count,
+                'dominant_regime': max(regime_types_count.items(), key=lambda x: x[1])[0] if regime_types_count else 'unknown'
+            }
+            
+            # 2. Performance Comparison by Regime Type
+            performance_by_type = {}
+            
+            for regime_id, metrics in per_regime_metrics.items():
+                regime_type = metrics.get('regime_type', 'unknown')
+                
+                if regime_type not in performance_by_type:
+                    performance_by_type[regime_type] = {
+                        'mean_returns': [],
+                        'volatilities': [],
+                        'sharpe_ratios': [],
+                        'regimes': []
+                    }
+                
+                if 'mean_return' in metrics:
+                    performance_by_type[regime_type]['mean_returns'].append(metrics['mean_return'])
+                if 'volatility' in metrics:
+                    performance_by_type[regime_type]['volatilities'].append(metrics['volatility'])
+                if 'sharpe' in metrics:
+                    performance_by_type[regime_type]['sharpe_ratios'].append(metrics['sharpe'])
+                performance_by_type[regime_type]['regimes'].append(regime_id)
+            
+            # Aggregate performance statistics
+            for regime_type, data in performance_by_type.items():
+                interpretation['performance_comparison'][regime_type] = {
+                    'avg_return': float(np.mean(data['mean_returns'])) if data['mean_returns'] else 0.0,
+                    'avg_volatility': float(np.mean(data['volatilities'])) if data['volatilities'] else 0.0,
+                    'avg_sharpe': float(np.mean(data['sharpe_ratios'])) if data['sharpe_ratios'] else 0.0,
+                    'num_regimes': len(data['regimes']),
+                    'regime_ids': data['regimes']
+                }
+            
+            # 3. Trading Implications (data-driven)
+            best_regime = None
+            best_sharpe = float('-inf')
+            worst_regime = None
+            worst_sharpe = float('inf')
+            
+            for regime_id, metrics in per_regime_metrics.items():
+                sharpe = metrics.get('sharpe', 0.0)
+                if sharpe > best_sharpe:
+                    best_sharpe = sharpe
+                    best_regime = (regime_id, metrics)
+                if sharpe < worst_sharpe:
+                    worst_sharpe = sharpe
+                    worst_regime = (regime_id, metrics)
+            
+            if best_regime:
+                regime_id, metrics = best_regime
+                interpretation['trading_implications']['most_profitable_regime'] = {
+                    'regime_id': regime_id,
+                    'regime_type': metrics.get('regime_type', 'unknown'),
+                    'sharpe_ratio': metrics.get('sharpe', 0.0),
+                    'mean_return': metrics.get('mean_return', 0.0),
+                    'volatility': metrics.get('volatility', 0.0),
+                    'characteristics': metrics.get('regime_specific_metrics', {})
+                }
+            
+            if worst_regime:
+                regime_id, metrics = worst_regime
+                interpretation['trading_implications']['least_profitable_regime'] = {
+                    'regime_id': regime_id,
+                    'regime_type': metrics.get('regime_type', 'unknown'),
+                    'sharpe_ratio': metrics.get('sharpe', 0.0),
+                    'mean_return': metrics.get('mean_return', 0.0),
+                    'volatility': metrics.get('volatility', 0.0),
+                    'characteristics': metrics.get('regime_specific_metrics', {})
+                }
+            
+            # 4. Risk Characteristics by Regime Type
+            for regime_id, metrics in per_regime_metrics.items():
+                regime_type = metrics.get('regime_type', 'unknown')
+                
+                risk_profile = {
+                    'regime_id': regime_id,
+                    'volatility': metrics.get('volatility', 0.0),
+                    'max_drawdown': metrics.get('max_drawdown', 0.0),
+                    'skewness': metrics.get('skewness', 0.0)
+                }
+                
+                # Add regime-specific risk insights
+                specific_metrics = metrics.get('regime_specific_metrics', {})
+                if regime_type == 'volatile':
+                    risk_profile['extreme_move_frequency'] = specific_metrics.get('extreme_move_frequency', 0.0)
+                    risk_profile['volatility_persistence'] = specific_metrics.get('volatility_persistence', 0.0)
+                elif regime_type == 'trending':
+                    risk_profile['trend_consistency'] = specific_metrics.get('trend_consistency', 0.0)
+                    risk_profile['trend_direction'] = specific_metrics.get('trend_direction', 'unknown')
+                elif regime_type == 'mean_reverting':
+                    risk_profile['reversion_speed'] = specific_metrics.get('reversion_speed', 0.0)
+                    risk_profile['reversion_range'] = specific_metrics.get('reversion_range', 0.0)
+                
+                interpretation['risk_characteristics'][f'regime_{regime_id}'] = risk_profile
+            
+            # 5. Strategy Recommendations (data-driven)
+            recommendations = []
+            
+            # Identify trend-following opportunities
+            trending_regimes = [
+                (rid, m) for rid, m in per_regime_metrics.items() 
+                if m.get('regime_type') == 'trending' and m.get('sharpe', 0) > 0.5
+            ]
+            if trending_regimes:
+                best_trending = max(trending_regimes, key=lambda x: x[1].get('sharpe', 0))
+                recommendations.append({
+                    'strategy': 'trend_following',
+                    'target_regime': best_trending[0],
+                    'expected_sharpe': best_trending[1].get('sharpe', 0.0),
+                    'confidence': best_trending[1].get('classification_scores', {}).get('trend_persistence', 0.0)
+                })
+            
+            # Identify mean reversion opportunities
+            mr_regimes = [
+                (rid, m) for rid, m in per_regime_metrics.items() 
+                if m.get('regime_type') == 'mean_reverting' and m.get('sharpe', 0) > 0.5
+            ]
+            if mr_regimes:
+                best_mr = max(mr_regimes, key=lambda x: x[1].get('sharpe', 0))
+                recommendations.append({
+                    'strategy': 'mean_reversion',
+                    'target_regime': best_mr[0],
+                    'expected_sharpe': best_mr[1].get('sharpe', 0.0),
+                    'confidence': abs(best_mr[1].get('classification_scores', {}).get('mean_reversion_strength', 0.0))
+                })
+            
+            # Identify regimes to avoid
+            high_risk_regimes = [
+                rid for rid, m in per_regime_metrics.items()
+                if m.get('max_drawdown', 0) < -0.15 or m.get('sharpe', 0) < -0.5
+            ]
+            if high_risk_regimes:
+                recommendations.append({
+                    'strategy': 'risk_avoidance',
+                    'target_regimes': high_risk_regimes,
+                    'rationale': 'high drawdown or negative sharpe'
+                })
+            
+            interpretation['trading_implications']['strategy_recommendations'] = recommendations
+            
+            # 6. Regime Stability Insights
+            regime_sizes = [m.get('percentage', 0) for m in per_regime_metrics.values()]
+            interpretation['regime_transitions']['balance'] = {
+                'most_common_regime_pct': float(max(regime_sizes)) if regime_sizes else 0.0,
+                'least_common_regime_pct': float(min(regime_sizes)) if regime_sizes else 0.0,
+                'size_distribution_std': float(np.std(regime_sizes)) if regime_sizes else 0.0
+            }
+            
+        except Exception as e:
+            self.logger.warning(f"Failed to generate complete economic interpretation: {e}")
+        
+        return interpretation
     
     def _validate_regime_quality(self,
                                  regime_labels: np.ndarray,

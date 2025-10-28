@@ -30,18 +30,46 @@ logger = logging.getLogger(__name__)
 @dataclass
 class QualityMetrics:
     """Container for clustering quality metrics."""
+    # Core clustering metrics
     dbcv_score: Optional[float] = None
     silhouette_score: Optional[float] = None
     calinski_harabasz_score: Optional[float] = None
     davies_bouldin_score: Optional[float] = None
+    
+    # Temporal and economic metrics
     temporal_stability: Optional[float] = None
     economic_separation: Optional[float] = None
     cluster_persistence: Optional[float] = None
+    
+    # Predictive power and composite metrics
+    predictive_power: Optional[float] = None
+    composite_quality_score: Optional[float] = None
+    
+    # Cluster composition
     noise_ratio: Optional[float] = None
     n_clusters: int = 0
     n_noise_points: int = 0
     cluster_sizes: Optional[List[int]] = None
     cluster_size_ratios: Optional[List[float]] = None
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert metrics to dictionary."""
+        return {
+            'dbcv_score': self.dbcv_score,
+            'silhouette_score': self.silhouette_score,
+            'calinski_harabasz_score': self.calinski_harabasz_score,
+            'davies_bouldin_score': self.davies_bouldin_score,
+            'temporal_stability': self.temporal_stability,
+            'economic_separation': self.economic_separation,
+            'cluster_persistence': self.cluster_persistence,
+            'predictive_power': self.predictive_power,
+            'composite_quality_score': self.composite_quality_score,
+            'noise_ratio': self.noise_ratio,
+            'n_clusters': self.n_clusters,
+            'n_noise_points': self.n_noise_points,
+            'cluster_sizes': self.cluster_sizes,
+            'cluster_size_ratios': self.cluster_size_ratios
+        }
 
 
 class DBCVCalculator:
@@ -415,6 +443,139 @@ class EconomicSeparationCalculator:
         return regime_stats
 
 
+class PredictivePowerCalculator:
+    """Calculator for predictive power of clustering results."""
+    
+    def __init__(self):
+        self.logger = logging.getLogger(self.__class__.__name__)
+    
+    def calculate_predictive_power(self, cluster_labels: np.ndarray,
+                                   forward_returns: np.ndarray) -> float:
+        """
+        Calculate predictive power: can current regime predict future returns?
+        
+        Uses Random Forest classifier to predict return sign from regime labels.
+        
+        Args:
+            cluster_labels: Cluster labels from clustering
+            forward_returns: Forward returns for prediction
+            
+        Returns:
+            Predictive power score (cross-validation accuracy)
+        """
+        try:
+            from sklearn.ensemble import RandomForestClassifier
+            from sklearn.model_selection import cross_val_score
+            
+            # Use current regime to predict next period's return sign
+            if len(cluster_labels) < 10 or len(forward_returns) < 10:
+                return 0.0
+            
+            # Ensure arrays are aligned and valid
+            min_len = min(len(cluster_labels), len(forward_returns))
+            if min_len < 10:
+                return 0.0
+            
+            X = pd.get_dummies(cluster_labels[:min_len-1])
+            y = (forward_returns[1:min_len] > 0).astype(int)
+            
+            if len(X) != len(y):
+                return 0.0
+            
+            # Check if we have enough samples and variation
+            if len(y) < 10 or len(set(y)) < 2:
+                return 0.0
+            
+            rf = RandomForestClassifier(n_estimators=100, random_state=42)
+            cv_score = cross_val_score(rf, X, y, cv=min(5, len(y) // 2)).mean()
+            
+            self.logger.info(f"Predictive power calculated: {cv_score:.4f}")
+            return float(cv_score)
+            
+        except Exception as e:
+            self.logger.warning(f"Failed to calculate predictive power: {e}")
+            return 0.0
+
+
+class CompositeScoreCalculator:
+    """Calculator for composite quality score."""
+    
+    def __init__(self):
+        self.logger = logging.getLogger(self.__class__.__name__)
+    
+    def calculate_composite_score(self, metrics: 'QualityMetrics') -> float:
+        """
+        Calculate overall composite quality score (0 to 1, higher is better).
+        
+        Combines multiple metrics into a single score:
+        - Silhouette score (weight: 0.25)
+        - Davies-Bouldin Index (weight: 0.20)
+        - Calinski-Harabasz Index (weight: 0.20)
+        - DBCV score (weight: 0.15)
+        - Temporal stability (weight: 0.10)
+        - Noise ratio (weight: 0.10)
+        
+        Args:
+            metrics: QualityMetrics object with computed metrics
+            
+        Returns:
+            Composite quality score (0 to 1)
+        """
+        try:
+            score_components = []
+            weights = []
+            
+            # 1. Silhouette score (normalize to 0-1, already in [-1, 1])
+            if metrics.silhouette_score is not None:
+                silhouette_normalized = (metrics.silhouette_score + 1) / 2
+                score_components.append(silhouette_normalized)
+                weights.append(0.25)
+            
+            # 2. Davies-Bouldin Index (lower is better, normalize inversely)
+            if metrics.davies_bouldin_score is not None and not np.isinf(metrics.davies_bouldin_score):
+                dbi_normalized = 1.0 / (1.0 + metrics.davies_bouldin_score)
+                score_components.append(dbi_normalized)
+                weights.append(0.20)
+            
+            # 3. Calinski-Harabasz Index (higher is better, normalize)
+            if metrics.calinski_harabasz_score is not None:
+                ch_normalized = np.tanh(metrics.calinski_harabasz_score / 100)
+                score_components.append(ch_normalized)
+                weights.append(0.20)
+            
+            # 4. DBCV score (if available, already in [0, 1])
+            if metrics.dbcv_score is not None:
+                # DBCV is typically in range [-1, 1], normalize to [0, 1]
+                dbcv_normalized = (metrics.dbcv_score + 1) / 2
+                score_components.append(dbcv_normalized)
+                weights.append(0.15)
+            
+            # 5. Temporal stability (already in [0, 1])
+            if metrics.temporal_stability is not None:
+                score_components.append(metrics.temporal_stability)
+                weights.append(0.10)
+            
+            # 6. Noise ratio (lower is better, invert)
+            if metrics.noise_ratio is not None:
+                noise_score = 1.0 - metrics.noise_ratio
+                score_components.append(noise_score)
+                weights.append(0.10)
+            
+            # Calculate weighted average
+            if len(score_components) > 0:
+                total_weight = sum(weights)
+                weighted_score = sum(s * w for s, w in zip(score_components, weights)) / total_weight
+                
+                self.logger.info(f"Composite quality score calculated: {weighted_score:.4f}")
+                return float(weighted_score)
+            
+            return 0.0
+            
+        except Exception as e:
+            self.logger.error(f"Failed to calculate composite score: {e}")
+            return 0.0
+
+
 class ComprehensiveQualityAssessor:
     """Comprehensive quality assessment for HDBSCAN clustering results."""
     
@@ -422,6 +583,8 @@ class ComprehensiveQualityAssessor:
         self.dbcv_calculator = DBCVCalculator()
         self.temporal_validator = TemporalStabilityValidator()
         self.economic_calculator = EconomicSeparationCalculator()
+        self.predictive_power_calculator = PredictivePowerCalculator()
+        self.composite_score_calculator = CompositeScoreCalculator()
         self.logger = logging.getLogger(self.__class__.__name__)
     
     def assess_clustering_quality(self, 
@@ -491,8 +654,18 @@ class ComprehensiveQualityAssessor:
         # Calculate cluster persistence
         metrics.cluster_persistence = self._calculate_cluster_persistence(cluster_labels)
         
+        # Calculate predictive power (if returns provided)
+        if returns is not None and len(returns) > 0:
+            metrics.predictive_power = self.predictive_power_calculator.calculate_predictive_power(
+                cluster_labels, returns
+            )
+        
+        # Calculate composite quality score
+        metrics.composite_quality_score = self.composite_score_calculator.calculate_composite_score(metrics)
+        
         assessment_time = time.time() - start_time
         self.logger.info(f"Quality assessment completed in {assessment_time:.2f}s")
+        self.logger.info(f"Composite quality score: {metrics.composite_quality_score:.4f}")
         
         return metrics
     

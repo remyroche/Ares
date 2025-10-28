@@ -360,8 +360,14 @@ class SRParameterOptimizationStep(BaseStep):
         return ['sr_parameter_optimization_result']
     
     def get_required_input_artifacts(self) -> List[str]:
-        """Get list of required input artifacts this step needs from previous steps."""
-        return ['sr_clustering_result', 'sr_levels_dictionary']
+        """
+        Get list of required input artifacts this step needs from previous steps.
+        
+        NOTE: These artifacts are OPTIONAL. If not available (e.g., first iteration),
+        the optimization will proceed with default parameter bounds and sample data.
+        When available, clustering results are used to adaptively adjust parameter bounds.
+        """
+        return []  # Made optional - will attempt to load if available
 
     async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -388,17 +394,17 @@ class SRParameterOptimizationStep(BaseStep):
         tprint("🚀 SR Parameter Optimization: Starting execution", "info")
 
         try:
-            # Fetch required input artifacts from previous steps
-            tprint("📥 Fetching input artifacts", "info")
-            input_artifacts = await self._fetch_input_artifacts(config)
-            tprint_data_preview(input_artifacts, "Input artifacts")
-            if not input_artifacts['success']:
-                return {
-                    'success': False,
-                    'artifacts': {},
-                    'metrics': {},
-                    'error': f"Failed to fetch required input artifacts: {input_artifacts['error']}"
-                }
+            # Attempt to fetch optional input artifacts from previous steps
+            # These are used to enhance parameter bounds but are not required
+            tprint("📥 Attempting to fetch optional input artifacts", "info")
+            input_artifacts_result = await self._fetch_optional_input_artifacts(config)
+            input_artifacts = input_artifacts_result.get('artifacts', {})
+            
+            if input_artifacts:
+                tprint("✅ Using input artifacts from previous steps", "info")
+                tprint_data_preview(input_artifacts, "Input artifacts")
+            else:
+                tprint("⚠️ No input artifacts available - using default parameter bounds", "info")
             
             # Create enhanced configuration
             enhanced_config = EnhancedSRConfig()
@@ -426,9 +432,9 @@ class SRParameterOptimizationStep(BaseStep):
             # Ensure data has proper datetime indexing for backtesting
             market_data = self._prepare_data_for_backtesting(market_data)
 
-            # Run enhanced parameter optimization with input artifacts
+            # Run enhanced parameter optimization with optional input artifacts
             optimization_result = await self._run_enhanced_parameter_optimization(
-                market_data, enhanced_config, config, input_artifacts['artifacts']
+                market_data, enhanced_config, config, input_artifacts
             )
 
             # Extract results
@@ -2471,55 +2477,57 @@ class SRParameterOptimizationStep(BaseStep):
             self.logger.error(f"Validation failed: {e}")
             return {'error': str(e)}
 
-    async def _fetch_input_artifacts(self, config: Dict[str, Any]) -> Dict[str, Any]:
+    async def _fetch_optional_input_artifacts(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Fetch required input artifacts from previous steps.
+        Attempt to fetch optional input artifacts from previous steps.
+        
+        This method tries to load sr_clustering_result and sr_levels_dictionary
+        from previous pipeline runs. If they exist, they are used to enhance
+        parameter bounds. If not available, optimization proceeds with defaults.
         
         Args:
             config: Configuration dictionary
             
         Returns:
-            Dict containing success status and fetched artifacts
+            Dict containing success status and fetched artifacts (may be empty)
         """
         try:
-            self.logger.info("📥 Fetching required input artifacts from previous steps...")
+            self.logger.info("📥 Attempting to fetch optional input artifacts...")
             
             fetched_artifacts = {}
-            required_artifacts = self.get_required_input_artifacts()
+            # Try to fetch clustering artifacts if they exist
+            optional_artifact_names = ['sr_clustering_result', 'sr_levels_dictionary']
             
-            for artifact_name in required_artifacts:
+            for artifact_name in optional_artifact_names:
                 try:
                     # Try to get artifact using BaseStep artifact management
                     artifact_data = self._get_artifact(artifact_name, artifact_type="data")
                     if artifact_data is not None:
                         fetched_artifacts[artifact_name] = artifact_data
-                        self.logger.info(f"✅ Successfully fetched {artifact_name}")
+                        self.logger.info(f"✅ Successfully fetched optional artifact: {artifact_name}")
                     else:
-                        self.logger.warning(f"⚠️ {artifact_name} returned None")
-                        fetched_artifacts[artifact_name] = None
+                        self.logger.debug(f"⚠️ Optional artifact {artifact_name} not available")
                 except Exception as e:
-                    self.logger.warning(f"⚠️ Failed to fetch {artifact_name}: {e}")
-                    fetched_artifacts[artifact_name] = None
+                    self.logger.debug(f"⚠️ Failed to fetch optional artifact {artifact_name}: {e}")
             
-            # Check if critical artifacts are missing
-            missing_artifacts = [name for name, data in fetched_artifacts.items() if data is None]
-            if missing_artifacts:
-                self.logger.warning(f"Missing artifacts: {missing_artifacts}")
-                # For now, we'll continue with None values and handle gracefully
-                # In a production system, you might want to fail here
+            # Report on fetched artifacts
+            if fetched_artifacts:
+                self.logger.info(f"📦 Fetched {len(fetched_artifacts)} optional artifact(s)")
+            else:
+                self.logger.info("📦 No optional artifacts available - proceeding with default bounds")
             
             return {
                 'success': True,
                 'artifacts': fetched_artifacts,
-                'missing_artifacts': missing_artifacts
+                'has_artifacts': len(fetched_artifacts) > 0
             }
             
         except Exception as e:
-            self.logger.error(f"Failed to fetch input artifacts: {e}")
+            self.logger.warning(f"Error while attempting to fetch optional artifacts: {e}")
             return {
-                'success': False,
-                'error': str(e),
-                'artifacts': {}
+                'success': True,  # Still return success - artifacts are optional
+                'artifacts': {},
+                'has_artifacts': False
             }
     
     async def _save_output_artifacts(self, artifacts: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:

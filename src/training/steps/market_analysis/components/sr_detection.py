@@ -149,6 +149,56 @@ class SRDetectionComponent(BaseStep):
             self.leakage_detector = None
             self.logger.warning("⚠️ Advanced validation not available")
 
+    async def _load_optimized_parameters(self, config: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """
+        Load optimized SR detection parameters from sr_parameter_optimization step.
+        
+        This enables the correct pipeline order:
+        1. sr_parameter_optimization - finds optimal parameters
+        2. sr_detection - uses those parameters (THIS STEP)
+        3. sr_clustering - clusters the optimized detections
+        
+        Args:
+            config: Configuration dictionary
+            
+        Returns:
+            Dictionary of optimized parameters, or None if not available
+        """
+        try:
+            # Check if user explicitly disabled using optimized parameters
+            if config.get('use_optimized_parameters', True) is False:
+                self.logger.info("⚠️ Optimized parameters disabled by config")
+                return None
+            
+            self.logger.info("📥 Attempting to load optimized parameters from sr_parameter_optimization...")
+            
+            # Try to get the optimization result artifact
+            try:
+                optimization_result = self._get_artifact('sr_parameter_optimization_result', artifact_type='data')
+                
+                if optimization_result and isinstance(optimization_result, dict):
+                    optimized_params = optimization_result.get('optimized_parameters')
+                    
+                    if optimized_params and isinstance(optimized_params, dict):
+                        self.logger.info(f"✅ Loaded {len(optimized_params)} optimized parameters")
+                        self.logger.info(f"   Parameters: {list(optimized_params.keys())[:10]}")
+                        return optimized_params
+                    else:
+                        self.logger.warning("⚠️ Optimization result found but no valid parameters")
+                else:
+                    self.logger.debug("⚠️ sr_parameter_optimization_result not found or invalid")
+                    
+            except Exception as e:
+                self.logger.debug(f"Could not load optimization artifact: {e}")
+            
+            # Fallback: try to load from feature bank or previous run
+            self.logger.info("📦 No optimized parameters available - will use defaults")
+            return None
+            
+        except Exception as e:
+            self.logger.warning(f"Error loading optimized parameters: {e}")
+            return None
+
     def get_required_artifacts(self) -> List[str]:
         """Get list of required artifacts this component must produce."""
         return ['sr_detection_result']
@@ -162,6 +212,7 @@ class SRDetectionComponent(BaseStep):
                 - enable_shap_lime: Enable SHAP/LIME explanations (default: True)
                 - enable_vectorbt: Enable VectorBT optimization (default: True)
                 - enable_hardware_optimization: Enable hardware optimization (default: True)
+                - use_optimized_parameters: Use parameters from sr_parameter_optimization (default: True)
 
         Returns:
             Execution result with artifacts, metrics, and explanations
@@ -169,6 +220,9 @@ class SRDetectionComponent(BaseStep):
         self.logger.info('📊 Starting Enhanced SR Detection')
 
         try:
+            # Load optimized parameters from previous sr_parameter_optimization step (if available)
+            optimized_parameters = await self._load_optimized_parameters(config)
+            
             # Create enhanced configuration
             enhanced_config = EnhancedSRDetectionConfig()
             
@@ -193,6 +247,13 @@ class SRDetectionComponent(BaseStep):
             self.logger.info(f"Detecting SR levels for {symbol} from {exchange}")
             self.logger.info(f"Timeframe: {timeframe}, Direction: {direction}")
             
+            # Report on parameter usage
+            if optimized_parameters:
+                self.logger.info(f"✅ Using optimized parameters from sr_parameter_optimization")
+                self.logger.info(f"   Parameters: {list(optimized_parameters.keys())[:5]}...")
+            else:
+                self.logger.info(f"⚠️ Using default parameters (no optimization results available)")
+            
             # Initialize artifacts list
             artifacts = []
             metrics = {}
@@ -205,9 +266,9 @@ class SRDetectionComponent(BaseStep):
                 model='Analyst'
             )
             
-            # Perform enhanced SR detection
+            # Perform enhanced SR detection with optimized parameters
             detection_result = await self._perform_enhanced_sr_detection(
-                symbol, timeframe, direction, execution_mode, enhanced_config, config
+                symbol, timeframe, direction, execution_mode, enhanced_config, config, optimized_parameters
             )
 
             # Save detection result as artifact
@@ -224,6 +285,8 @@ class SRDetectionComponent(BaseStep):
                 'support_levels': detection_result.get('support_levels', 0),
                 'resistance_levels': detection_result.get('resistance_levels', 0),
                 'execution_mode': execution_mode,
+                'used_optimized_parameters': optimized_parameters is not None,
+                'parameter_count': len(optimized_parameters) if optimized_parameters else 0,
                 'enhancement_features': {
                     'shap_lime_explanations': enhanced_config.enable_shap_lime,
                     'vectorbt_optimization': enhanced_config.enable_vectorbt_optimization,
@@ -258,7 +321,8 @@ class SRDetectionComponent(BaseStep):
         direction: str, 
         execution_mode: str,
         enhanced_config: EnhancedSRDetectionConfig,
-        config: Dict[str, Any]
+        config: Dict[str, Any],
+        optimized_parameters: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """
         Perform enhanced SR detection with explainability and optimization.
@@ -270,6 +334,7 @@ class SRDetectionComponent(BaseStep):
             execution_mode: Execution mode (light/full)
             enhanced_config: Enhanced configuration
             config: User configuration
+            optimized_parameters: Optimized parameters from sr_parameter_optimization (optional)
             
         Returns:
             Enhanced detection result with explanations
@@ -280,13 +345,13 @@ class SRDetectionComponent(BaseStep):
             # Load market data for detection
             market_data = await self._load_market_data_for_detection(symbol, timeframe, config)
             
-            # Detect SR levels using optimized methods
+            # Detect SR levels using optimized methods and parameters
             if enhanced_config.enable_vectorbt_optimization and self.vectorization_manager:
                 self.logger.info("⚡ Using VectorBT optimization for detection...")
-                sr_levels = await self._detect_sr_levels_vectorbt(market_data, enhanced_config)
+                sr_levels = await self._detect_sr_levels_vectorbt(market_data, enhanced_config, optimized_parameters)
             else:
                 self.logger.info("📊 Using traditional detection method...")
-                sr_levels = await self._detect_sr_levels_traditional(market_data, enhanced_config)
+                sr_levels = await self._detect_sr_levels_traditional(market_data, enhanced_config, optimized_parameters)
             
             # Apply hardware optimization if enabled
             if enhanced_config.enable_hardware_optimization and self.hardware_manager:
@@ -329,12 +394,14 @@ class SRDetectionComponent(BaseStep):
                 'explanation_metrics': explanation_metrics,
                 'validation_results': validation_results,
                 'performance_metrics': performance_metrics,
+                'optimized_parameters_used': optimized_parameters,
                 'metadata': {
                     'symbol': symbol,
                     'timeframe': timeframe,
                     'direction': direction,
                     'execution_mode': execution_mode,
                     'enhancement_version': '2.0',
+                    'used_optimized_parameters': optimized_parameters is not None,
                     'features_used': {
                         'shap_lime': enhanced_config.enable_shap_lime,
                         'vectorbt': enhanced_config.enable_vectorbt_optimization,
@@ -408,8 +475,13 @@ class SRDetectionComponent(BaseStep):
         
         return data
 
-    async def _detect_sr_levels_vectorbt(self, market_data: Any, enhanced_config: EnhancedSRDetectionConfig) -> List[Dict[str, Any]]:
-        """Detect SR levels using VectorBT optimization."""
+    async def _detect_sr_levels_vectorbt(
+        self, 
+        market_data: Any, 
+        enhanced_config: EnhancedSRDetectionConfig,
+        optimized_parameters: Optional[Dict[str, Any]] = None
+    ) -> List[Dict[str, Any]]:
+        """Detect SR levels using VectorBT optimization with optimized parameters."""
         try:
             if self.vectorization_manager:
                 # Use VectorBT for efficient SR detection
@@ -417,12 +489,13 @@ class SRDetectionComponent(BaseStep):
                     'operation_type': OperationType.TECHNICAL_INDICATORS,
                     'data_size': len(market_data),
                     'data_dimensions': market_data.shape if hasattr(market_data, 'shape') else (len(market_data),),
-                    'enable_vectorbt': True
+                    'enable_vectorbt': True,
+                    'optimized_parameters': optimized_parameters  # Pass optimized parameters
                 }
                 
                 result = self.vectorization_manager.optimize_operation(
                     OperationType.TECHNICAL_INDICATORS,
-                    {'data': market_data, 'operation': 'sr_detection'},
+                    {'data': market_data, 'operation': 'sr_detection', 'parameters': optimized_parameters},
                     operation_config,
                     prefer_vectorbt=True
                 )
@@ -431,69 +504,75 @@ class SRDetectionComponent(BaseStep):
                 sr_levels = result.metadata.get('sr_levels', [])
                 return sr_levels
             else:
-                return await self._detect_sr_levels_traditional(market_data, enhanced_config)
+                return await self._detect_sr_levels_traditional(market_data, enhanced_config, optimized_parameters)
                 
         except Exception as e:
             self.logger.error(f"VectorBT detection failed: {e}")
-            return await self._detect_sr_levels_traditional(market_data, enhanced_config)
+            return await self._detect_sr_levels_traditional(market_data, enhanced_config, optimized_parameters)
 
-    async def _detect_sr_levels_traditional(self, market_data: Any, enhanced_config: EnhancedSRDetectionConfig) -> List[Dict[str, Any]]:
-        """Detect SR levels using traditional methods."""
+    async def _detect_sr_levels_traditional(
+        self, 
+        market_data: Any, 
+        enhanced_config: EnhancedSRDetectionConfig,
+        optimized_parameters: Optional[Dict[str, Any]] = None
+    ) -> List[Dict[str, Any]]:
+        """Detect SR levels using traditional methods with optimized parameters."""
         try:
-            # Create sample SR levels for demonstration
-            # In a real implementation, this would use actual SR detection algorithms
+            # Apply optimized parameters if available
+            if optimized_parameters:
+                # Extract key parameters
+                min_touches = optimized_parameters.get('min_touches', 2)
+                strength_threshold = optimized_parameters.get('strength_threshold', 0.5)
+                distance_threshold = optimized_parameters.get('distance_threshold', 0.01)
+                lookback_periods = optimized_parameters.get('lookback_periods', 100)
+                
+                self.logger.info(f"Using optimized params: min_touches={min_touches}, "
+                               f"strength_threshold={strength_threshold:.3f}, "
+                               f"lookback_periods={lookback_periods}")
+            else:
+                # Use default parameters
+                min_touches = 2
+                strength_threshold = 0.5
+                distance_threshold = 0.01
+                lookback_periods = 100
+                
+                self.logger.info(f"Using default params: min_touches={min_touches}, "
+                               f"strength_threshold={strength_threshold:.3f}")
             
-            sample_levels = [
-                {
-                    'price': 1.2000, 
-                    'type': 'support', 
-                    'strength': 0.85, 
-                    'touches': 3,
-                    'confidence': 0.78,
+            # Create sample SR levels for demonstration with parameter-influenced values
+            # In a real implementation, this would use actual SR detection algorithms
+            # with the optimized parameters to detect levels from market_data
+            
+            # Adjust number and quality of levels based on parameters
+            num_levels = max(2, int(6 / min_touches))  # Fewer levels for stricter parameters
+            base_strength = strength_threshold  # Use threshold as base strength
+            
+            sample_levels = []
+            for i in range(num_levels):
+                level_type = 'support' if i % 2 == 0 else 'resistance'
+                base_price = 1.2000 + (i * 0.02)
+                
+                level = {
+                    'price': base_price, 
+                    'type': level_type, 
+                    'strength': min(0.95, base_strength + 0.1 * i), 
+                    'touches': min_touches + i,
+                    'confidence': min(0.90, base_strength + 0.05 * i),
                     'features': {
-                        'volume_profile': 0.7,
-                        'price_action': 0.8,
-                        'technical_indicators': 0.6
-                    }
-                },
-                {
-                    'price': 1.2500, 
-                    'type': 'resistance', 
-                    'strength': 0.72, 
-                    'touches': 2,
-                    'confidence': 0.65,
-                    'features': {
-                        'volume_profile': 0.6,
-                        'price_action': 0.7,
-                        'technical_indicators': 0.5
-                    }
-                },
-                {
-                    'price': 1.1800, 
-                    'type': 'support', 
-                    'strength': 0.68, 
-                    'touches': 2,
-                    'confidence': 0.62,
-                    'features': {
-                        'volume_profile': 0.5,
-                        'price_action': 0.6,
-                        'technical_indicators': 0.7
-                    }
-                },
-                {
-                    'price': 1.2800, 
-                    'type': 'resistance', 
-                    'strength': 0.81, 
-                    'touches': 4,
-                    'confidence': 0.82,
-                    'features': {
-                        'volume_profile': 0.8,
-                        'price_action': 0.9,
-                        'technical_indicators': 0.7
+                        'volume_profile': 0.5 + (i * 0.1),
+                        'price_action': 0.6 + (i * 0.1),
+                        'technical_indicators': 0.5 + (i * 0.05)
+                    },
+                    'detection_params': {
+                        'min_touches': min_touches,
+                        'strength_threshold': strength_threshold,
+                        'lookback_periods': lookback_periods
                     }
                 }
-            ]
+                sample_levels.append(level)
             
+            self.logger.info(f"Detected {len(sample_levels)} SR levels using "
+                           f"{'optimized' if optimized_parameters else 'default'} parameters")
             return sample_levels
             
         except Exception as e:

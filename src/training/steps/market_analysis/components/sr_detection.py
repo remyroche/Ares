@@ -17,7 +17,7 @@ import pandas as pd
 from typing import Any, Dict, List, Optional, Tuple, Union
 from datetime import datetime
 from pathlib import Path
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from src.training.steps.base_step import BaseStep
 from src.utils.logger import system_logger
@@ -86,13 +86,15 @@ class EnhancedSRDetectionConfig:
     enable_data_leakage_detection: bool = True
     cv_folds: int = 5
     
-    # Optimized SR parameters (from sr_parameter_optimization step)
-    sr_parameters: dict = None
-    
-    def __post_init__(self):
-        """Initialize sr_parameters as empty dict if None."""
-        if self.sr_parameters is None:
-            self.sr_parameters = {}
+    # SR detection parameters (defaults, will be overridden by optimized parameters if available)
+    sr_parameters: Dict[str, Any] = field(default_factory=lambda: {
+        'min_touches': 2,
+        'touch_tolerance': 0.5,
+        'lookback_periods': 100,
+        'strength_threshold': 0.5,
+        'distance_threshold': 0.01,
+        'volume_threshold': 1.0
+    })
 
 class SRDetectionComponent(BaseStep):
     """
@@ -553,8 +555,14 @@ class SRDetectionComponent(BaseStep):
             return await self._detect_sr_levels_traditional(market_data, enhanced_config, optimized_parameters)
 
 
-    async def _detect_sr_levels_traditional(self, market_data: Any, enhanced_config: EnhancedSRDetectionConfig) -> List[Dict[str, Any]]:
-        """Detect SR levels using traditional methods with optimized parameters."""
+    async def _detect_sr_levels_traditional(self, market_data: Any, enhanced_config: EnhancedSRDetectionConfig, optimized_parameters: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+        """Detect SR levels using EnhancedSRDetector with optimized parameters from feedback loop.
+        
+        Args:
+            market_data: Market data for detection
+            enhanced_config: Enhanced configuration
+            optimized_parameters: Optional optimized parameters from feedback loop (overrides defaults)
+        """
         try:
             # Import EnhancedSRDetector for actual detection
             try:
@@ -562,23 +570,30 @@ class SRDetectionComponent(BaseStep):
                 detector_available = True
             except ImportError:
                 detector_available = False
-                self.logger.warning("EnhancedSRDetector not available, using sample data")
+                self.logger.warning("⚠️ EnhancedSRDetector not available, using sample data")
             
             if detector_available:
-                # Create SR detector configuration from optimized parameters
+                # Extract optimized parameters if available (FEEDBACK LOOP)
+                params = optimized_parameters.get('parameters', {}) if optimized_parameters else {}
+                
+                # Create SR detector configuration
+                # Priority: optimized params > enhanced_config params > defaults
                 sr_config = {
-                    'min_touches': enhanced_config.sr_parameters.get('min_touches', 2),
-                    'tolerance_pct': enhanced_config.sr_parameters.get('touch_tolerance', 0.5),
-                    'lookback_periods': enhanced_config.sr_parameters.get('lookback_periods', 100),
-                    'strength_threshold': enhanced_config.sr_parameters.get('strength_threshold', 0.5),
-                    'distance_threshold': enhanced_config.sr_parameters.get('distance_threshold', 0.01),
-                    'volume_threshold': enhanced_config.sr_parameters.get('volume_threshold', 1.0),
+                    'min_touches': params.get('min_touches', enhanced_config.sr_parameters.get('min_touches', 2)),
+                    'tolerance_pct': params.get('touch_tolerance', enhanced_config.sr_parameters.get('touch_tolerance', 0.5)),
+                    'lookback_periods': params.get('lookback_periods', enhanced_config.sr_parameters.get('lookback_periods', 100)),
+                    'strength_threshold': params.get('strength_threshold', enhanced_config.sr_parameters.get('strength_threshold', 0.5)),
+                    'distance_threshold': params.get('distance_threshold', enhanced_config.sr_parameters.get('distance_threshold', 0.01)),
+                    'volume_threshold': params.get('volume_threshold', enhanced_config.sr_parameters.get('volume_threshold', 1.0)),
                     'memory_efficient': True,
                     'use_parallel': False,
                     'disable_dbscan_clustering': True
                 }
                 
-                self.logger.info(f"Using optimized SR parameters: {sr_config}")
+                if optimized_parameters:
+                    self.logger.info(f"✅ Using OPTIMIZED SR detection parameters: {sr_config}")
+                else:
+                    self.logger.info(f"ℹ️ Using DEFAULT SR detection parameters: {sr_config}")
                 
                 # Create detector and detect SR levels
                 detector = EnhancedSRDetector(sr_config)
@@ -614,7 +629,8 @@ class SRDetectionComponent(BaseStep):
                     elif isinstance(level, dict):
                         dict_levels.append(level)
                 
-                self.logger.info(f"Detected {len(dict_levels)} SR levels using EnhancedSRDetector with optimized parameters")
+                param_type = "OPTIMIZED" if optimized_parameters else "DEFAULT"
+                self.logger.info(f"✅ Detected {len(dict_levels)} SR levels using EnhancedSRDetector with {param_type} parameters")
                 return dict_levels
             
             # Fallback to sample data if detector not available

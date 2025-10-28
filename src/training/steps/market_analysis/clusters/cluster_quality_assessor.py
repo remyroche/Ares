@@ -23,6 +23,7 @@ from typing import Dict, Any, Optional, List, Tuple
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
+from pathlib import Path
 
 # Import sklearn metrics
 from sklearn.metrics import (
@@ -33,6 +34,45 @@ from sklearn.metrics import (
 )
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import cross_val_score
+
+# Import tprint utilities
+from src.utils.tprint import (
+    tprint,
+    tprint_info,
+    tprint_warning,
+    tprint_error,
+    tprint_success,
+    tprint_debug,
+    tprint_data_preview,
+    tprint_data_format,
+    tprint_timer,
+    tprint_logged
+)
+
+# Import hardware utilities
+try:
+    from src.utils.hardware.unified_hardware_manager import (
+        get_unified_hardware_manager,
+        WorkloadType,
+        OptimizationLevel
+    )
+    HARDWARE_AVAILABLE = True
+except ImportError:
+    HARDWARE_AVAILABLE = False
+    tprint_warning("Hardware optimization utilities not available")
+
+# Import vectorization utilities
+try:
+    from src.features_common.utils import (
+        VectorBTRollingOptimizer,
+        UnifiedVectorizationManager,
+        get_vectorbt_rolling_optimizer,
+        get_unified_vectorization_manager
+    )
+    VECTORIZATION_AVAILABLE = True
+except ImportError:
+    VECTORIZATION_AVAILABLE = False
+    tprint_warning("Vectorization utilities not available")
 
 logger = logging.getLogger(__name__)
 
@@ -209,16 +249,45 @@ class ClusterQualityAssessor:
     manager and computes comprehensive quality metrics.
     """
     
-    def __init__(self, artifact_manager=None):
+    def __init__(self, artifact_manager=None, enable_hardware_optimization=True, enable_vectorization=True):
         """
         Initialize the cluster quality assessor.
         
         Args:
             artifact_manager: Optional artifact manager from BaseStep
+            enable_hardware_optimization: Enable hardware optimizations
+            enable_vectorization: Enable vectorized computations
         """
         self.logger = logging.getLogger(self.__class__.__name__)
         self.artifact_manager = artifact_manager
+        
+        tprint_info("🔧 Initializing ClusterQualityAssessor")
+        
+        # Initialize hardware manager if available
+        self.hardware_manager = None
+        if enable_hardware_optimization and HARDWARE_AVAILABLE:
+            try:
+                self.hardware_manager = get_unified_hardware_manager()
+                self.hardware_manager.optimize_for_workload(
+                    WorkloadType.DATA_PROCESSING,
+                    OptimizationLevel.BALANCED
+                )
+                tprint_success("✅ Hardware optimization enabled")
+            except Exception as e:
+                tprint_warning(f"⚠️ Hardware optimization failed: {e}")
+                self.hardware_manager = None
+        
+        # Initialize vectorization manager if available
+        self.vectorization_manager = None
+        if enable_vectorization and VECTORIZATION_AVAILABLE:
+            try:
+                self.vectorization_manager = get_unified_vectorization_manager()
+                tprint_success("✅ Vectorization enabled")
+            except Exception as e:
+                tprint_warning(f"⚠️ Vectorization initialization failed: {e}")
+                self.vectorization_manager = None
     
+    @tprint_logged(include_args=False, include_result=False)
     def assess_quality(self,
                       regime_labels: np.ndarray,
                       feature_data: pd.DataFrame,
@@ -238,134 +307,163 @@ class ClusterQualityAssessor:
         Returns:
             ClusterQualityMetrics object with all computed metrics
         """
-        self.logger.info("Starting comprehensive cluster quality assessment")
+        tprint_info("🔍 Starting comprehensive cluster quality assessment")
+        
+        # Preview input data
+        tprint_data_preview(regime_labels, "Regime Labels", max_rows=10)
+        tprint_data_preview(feature_data, "Feature Data", max_rows=5, max_cols=5)
+        tprint_data_format(feature_data, "Feature Data", check_compatibility=True)
         
         # Initialize metrics object
         metrics = ClusterQualityMetrics()
         
         # Validate inputs
         if len(regime_labels) == 0 or feature_data.empty:
-            self.logger.warning("Empty inputs - cannot assess quality")
+            tprint_warning("⚠️ Empty inputs - cannot assess quality")
             return metrics
         
         # Filter out noise points for core metrics
         non_noise_mask = regime_labels != -1
         
         if np.sum(non_noise_mask) < min_regime_size:
-            self.logger.warning(f"Insufficient non-noise points ({np.sum(non_noise_mask)}) for quality assessment")
+            tprint_warning(f"⚠️ Insufficient non-noise points ({np.sum(non_noise_mask)}) for quality assessment")
             return metrics
         
         # Get clean numeric features
         features_clean = feature_data.select_dtypes(include=[np.number])
         if features_clean.empty:
-            self.logger.warning("No numeric features available for quality assessment")
+            tprint_warning("⚠️ No numeric features available for quality assessment")
             return metrics
+        
+        tprint_data_preview(features_clean, "Clean Numeric Features", max_rows=5)
         
         # Calculate basic statistics
         metrics.n_regimes = len(set(regime_labels[non_noise_mask]))
         metrics.noise_ratio = np.sum(~non_noise_mask) / len(regime_labels)
         
-        self.logger.info(f"Assessing quality for {metrics.n_regimes} regimes with {metrics.noise_ratio:.1%} noise")
+        tprint_info(f"📊 Assessing quality for {metrics.n_regimes} regimes with {metrics.noise_ratio:.1%} noise")
         
         # 1. Silhouette scores
         try:
-            metrics.silhouette_score, metrics.silhouette_per_cluster = self._calculate_silhouette_scores(
-                regime_labels, features_clean, non_noise_mask
-            )
+            with tprint_timer("Silhouette Score Calculation"):
+                metrics.silhouette_score, metrics.silhouette_per_cluster = self._calculate_silhouette_scores(
+                    regime_labels, features_clean, non_noise_mask
+                )
+            tprint_success(f"✅ Silhouette score: {metrics.silhouette_score:.4f}")
         except Exception as e:
-            self.logger.warning(f"Failed to calculate silhouette scores: {e}")
+            tprint_error(f"❌ Failed to calculate silhouette scores: {e}")
         
         # 2. Davies-Bouldin Index
         try:
-            metrics.davies_bouldin_score = self._calculate_dbi(
-                regime_labels, features_clean, non_noise_mask
-            )
+            with tprint_timer("Davies-Bouldin Index Calculation"):
+                metrics.davies_bouldin_score = self._calculate_dbi(
+                    regime_labels, features_clean, non_noise_mask
+                )
+            tprint_success(f"✅ Davies-Bouldin Index: {metrics.davies_bouldin_score:.4f}")
         except Exception as e:
-            self.logger.warning(f"Failed to calculate DBI: {e}")
+            tprint_error(f"❌ Failed to calculate DBI: {e}")
         
         # 3. Calinski-Harabasz Index
         try:
-            metrics.calinski_harabasz_score = self._calculate_ch(
-                regime_labels, features_clean, non_noise_mask
-            )
+            with tprint_timer("Calinski-Harabasz Index Calculation"):
+                metrics.calinski_harabasz_score = self._calculate_ch(
+                    regime_labels, features_clean, non_noise_mask
+                )
+            tprint_success(f"✅ Calinski-Harabasz Index: {metrics.calinski_harabasz_score:.4f}")
         except Exception as e:
-            self.logger.warning(f"Failed to calculate CH score: {e}")
+            tprint_error(f"❌ Failed to calculate CH score: {e}")
         
         # 4. Coefficient of variation metrics (with std dev and per-regime)
         try:
-            (metrics.within_regime_cv, metrics.within_regime_cv_std,
-             metrics.between_regime_cv, metrics.between_regime_cv_std,
-             metrics.per_regime_cv) = self._calculate_cv_metrics(
-                regime_labels, features_clean, non_noise_mask
-            )
+            with tprint_timer("CV Metrics Calculation"):
+                (metrics.within_regime_cv, metrics.within_regime_cv_std,
+                 metrics.between_regime_cv, metrics.between_regime_cv_std,
+                 metrics.per_regime_cv) = self._calculate_cv_metrics(
+                    regime_labels, features_clean, non_noise_mask
+                )
+            tprint_success(f"✅ Within CV: {metrics.within_regime_cv:.4f}, Between CV: {metrics.between_regime_cv:.4f}")
         except Exception as e:
-            self.logger.warning(f"Failed to calculate CV metrics: {e}")
+            tprint_error(f"❌ Failed to calculate CV metrics: {e}")
         
         # 5. Balance metrics
         try:
-            (metrics.balance_score, metrics.min_cluster_size_pct,
-             metrics.max_cluster_size_pct, metrics.cluster_size_std,
-             metrics.cluster_size_distribution) = self._calculate_balance_metrics(regime_labels)
+            with tprint_timer("Balance Metrics Calculation"):
+                (metrics.balance_score, metrics.min_cluster_size_pct,
+                 metrics.max_cluster_size_pct, metrics.cluster_size_std,
+                 metrics.cluster_size_distribution) = self._calculate_balance_metrics(regime_labels)
+            tprint_success(f"✅ Balance score: {metrics.balance_score:.4f}")
         except Exception as e:
-            self.logger.warning(f"Failed to calculate balance metrics: {e}")
+            tprint_error(f"❌ Failed to calculate balance metrics: {e}")
         
         # 6. Temporal smoothness and persistence
         if timestamps is not None:
             try:
-                metrics.temporal_smoothness = self._calculate_temporal_smoothness(
-                    regime_labels, timestamps
-                )
-                metrics.regime_persistence = self._calculate_regime_persistence(regime_labels)
+                with tprint_timer("Temporal Metrics Calculation"):
+                    metrics.temporal_smoothness = self._calculate_temporal_smoothness(
+                        regime_labels, timestamps
+                    )
+                    metrics.regime_persistence = self._calculate_regime_persistence(regime_labels)
+                tprint_success(f"✅ Temporal smoothness: {metrics.temporal_smoothness:.4f}, Persistence: {metrics.regime_persistence:.2f}")
             except Exception as e:
-                self.logger.warning(f"Failed to calculate temporal metrics: {e}")
+                tprint_error(f"❌ Failed to calculate temporal metrics: {e}")
         
         # 7. Per-regime metrics (includes regime type detection)
         try:
-            metrics.per_regime_metrics = self._calculate_per_regime_metrics(
-                regime_labels, features_clean, forward_returns
-            )
-            
-            # Extract regime types from per-regime metrics
-            metrics.regime_type_per_cluster = {
-                regime_id: regime_data.get('regime_type', RegimeType.UNKNOWN.value)
-                for regime_id, regime_data in metrics.per_regime_metrics.items()
-            }
+            with tprint_timer("Per-Regime Metrics Calculation"):
+                metrics.per_regime_metrics = self._calculate_per_regime_metrics(
+                    regime_labels, features_clean, forward_returns
+                )
+                
+                # Extract regime types from per-regime metrics
+                metrics.regime_type_per_cluster = {
+                    regime_id: regime_data.get('regime_type', RegimeType.UNKNOWN.value)
+                    for regime_id, regime_data in metrics.per_regime_metrics.items()
+                }
+            tprint_success(f"✅ Calculated metrics for {len(metrics.per_regime_metrics)} regimes")
         except Exception as e:
-            self.logger.warning(f"Failed to calculate per-regime metrics: {e}")
+            tprint_error(f"❌ Failed to calculate per-regime metrics: {e}")
         
         # 8. Economic validation (if forward returns provided)
         if forward_returns is not None:
             try:
-                metrics.economic_validation = self._validate_regime_quality(
-                    regime_labels, forward_returns, feature_data
-                )
+                with tprint_timer("Economic Validation"):
+                    metrics.economic_validation = self._validate_regime_quality(
+                        regime_labels, forward_returns, feature_data
+                    )
+                tprint_success("✅ Economic validation complete")
             except Exception as e:
-                self.logger.warning(f"Failed to validate regime quality: {e}")
+                tprint_error(f"❌ Failed to validate regime quality: {e}")
         
         # 8b. Economic interpretation (data-driven insights)
         try:
-            metrics.economic_interpretation = self._generate_economic_interpretation(
-                metrics.per_regime_metrics, metrics.regime_type_per_cluster
-            )
+            with tprint_timer("Economic Interpretation"):
+                metrics.economic_interpretation = self._generate_economic_interpretation(
+                    metrics.per_regime_metrics, metrics.regime_type_per_cluster
+                )
+            tprint_success("✅ Economic interpretation generated")
         except Exception as e:
-            self.logger.warning(f"Failed to generate economic interpretation: {e}")
+            tprint_error(f"❌ Failed to generate economic interpretation: {e}")
         
         # 9. Predictive power
         if forward_returns is not None and len(forward_returns) > 0:
             try:
-                metrics.predictive_power = self._calculate_predictive_power(
-                    regime_labels, forward_returns
-                )
+                with tprint_timer("Predictive Power Calculation"):
+                    metrics.predictive_power = self._calculate_predictive_power(
+                        regime_labels, forward_returns
+                    )
+                tprint_success(f"✅ Predictive power: {metrics.predictive_power:.4f}")
             except Exception as e:
-                self.logger.warning(f"Failed to calculate predictive power: {e}")
+                tprint_error(f"❌ Failed to calculate predictive power: {e}")
         
         # 10. Calculate overall quality score
         try:
-            metrics.quality_score = self._calculate_quality_score(metrics)
+            with tprint_timer("Quality Score Calculation"):
+                metrics.quality_score = self._calculate_quality_score(metrics)
+            tprint_success(f"✅ Overall quality score: {metrics.quality_score:.4f}")
         except Exception as e:
-            self.logger.warning(f"Failed to calculate quality score: {e}")
+            tprint_error(f"❌ Failed to calculate quality score: {e}")
         
-        self.logger.info(f"Quality assessment complete - Quality Score: {metrics.quality_score:.3f}")
+        tprint_success(f"✅ Quality assessment complete - Quality Score: {metrics.quality_score:.3f}")
         
         return metrics
     
@@ -1207,20 +1305,22 @@ class ClusterQualityAssessor:
             artifact_name: Name for the artifact
         """
         if self.artifact_manager is None:
-            self.logger.warning("No artifact manager available - cannot save metrics")
+            tprint_warning("⚠️ No artifact manager available - cannot save metrics")
             return
         
         try:
             metrics_dict = metrics.to_dict()
+            tprint_data_preview(metrics_dict, "Cluster Quality Metrics")
+            
             self.artifact_manager.save(
                 data=metrics_dict,
                 artifact_name=artifact_name,
                 artifact_type="data",
                 compression="auto"
             )
-            self.logger.info(f"Saved cluster quality metrics: {artifact_name}")
+            tprint_success(f"💾 Saved cluster quality metrics: {artifact_name}")
         except Exception as e:
-            self.logger.error(f"Failed to save cluster quality metrics: {e}")
+            tprint_error(f"❌ Failed to save cluster quality metrics: {e}")
     
     def load_metrics(self, artifact_name: str = "cluster_quality_metrics") -> Optional[ClusterQualityMetrics]:
         """
@@ -1233,7 +1333,7 @@ class ClusterQualityAssessor:
             ClusterQualityMetrics object or None if not found
         """
         if self.artifact_manager is None:
-            self.logger.warning("No artifact manager available - cannot load metrics")
+            tprint_warning("⚠️ No artifact manager available - cannot load metrics")
             return None
         
         try:
@@ -1245,22 +1345,308 @@ class ClusterQualityAssessor:
             if metrics_dict is None:
                 return None
             
+            tprint_data_preview(metrics_dict, "Loaded Cluster Quality Metrics")
+            
             # Reconstruct ClusterQualityMetrics from dict
             return ClusterQualityMetrics(**metrics_dict)
             
         except Exception as e:
-            self.logger.error(f"Failed to load cluster quality metrics: {e}")
+            tprint_error(f"❌ Failed to load cluster quality metrics: {e}")
             return None
+    
+    def generate_markdown_report(self, metrics: ClusterQualityMetrics, 
+                                 symbol: str = "UNKNOWN", 
+                                 output_dir: str = "outcomes") -> Optional[str]:
+        """
+        Generate a comprehensive markdown report of cluster quality metrics.
+        
+        Args:
+            metrics: ClusterQualityMetrics object
+            symbol: Trading symbol or identifier
+            output_dir: Output directory for the report (default: outcomes/)
+            
+        Returns:
+            Path to the generated report file, or None if failed
+        """
+        try:
+            # Create output directory if it doesn't exist
+            output_path = Path(output_dir)
+            output_path.mkdir(parents=True, exist_ok=True)
+            
+            # Generate filename with datetime
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"cluster_quality_report_{symbol}_{timestamp}.md"
+            report_path = output_path / filename
+            
+            tprint_info(f"📝 Generating markdown report: {report_path}")
+            
+            # Build markdown content
+            md_content = self._build_markdown_content(metrics, symbol)
+            
+            # Write to file
+            with open(report_path, 'w', encoding='utf-8') as f:
+                f.write(md_content)
+            
+            tprint_success(f"✅ Report generated successfully: {report_path}")
+            return str(report_path)
+            
+        except Exception as e:
+            tprint_error(f"❌ Failed to generate markdown report: {e}")
+            return None
+    
+    def _build_markdown_content(self, metrics: ClusterQualityMetrics, symbol: str) -> str:
+        """Build the markdown content for the report."""
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        md = f"""# Cluster Quality Assessment Report
+
+**Symbol:** {symbol}  
+**Generated:** {timestamp}  
+**Quality Score:** {metrics.quality_score:.4f if metrics.quality_score else 'N/A'}
+
+---
+
+## Executive Summary
+
+This report provides a comprehensive assessment of cluster quality for {symbol}.
+
+### Key Metrics
+
+| Metric | Value | Status |
+|--------|-------|--------|
+| **Number of Regimes** | {metrics.n_regimes} | {'✅' if metrics.n_regimes >= 2 else '⚠️'} |
+| **Noise Ratio** | {metrics.noise_ratio:.2%} | {'✅' if metrics.noise_ratio < 0.3 else '⚠️'} |
+| **Silhouette Score** | {metrics.silhouette_score:.4f if metrics.silhouette_score else 'N/A'} | {'✅' if metrics.silhouette_score and metrics.silhouette_score > 0.3 else '⚠️'} |
+| **Davies-Bouldin Index** | {metrics.davies_bouldin_score:.4f if metrics.davies_bouldin_score else 'N/A'} | {'✅' if metrics.davies_bouldin_score and metrics.davies_bouldin_score < 2.0 else '⚠️'} |
+| **Calinski-Harabasz Index** | {metrics.calinski_harabasz_score:.2f if metrics.calinski_harabasz_score else 'N/A'} | {'✅' if metrics.calinski_harabasz_score and metrics.calinski_harabasz_score > 50 else '⚠️'} |
+| **Balance Score** | {metrics.balance_score:.4f if metrics.balance_score else 'N/A'} | {'✅' if metrics.balance_score and metrics.balance_score > 0.5 else '⚠️'} |
+
+---
+
+## Clustering Metrics
+
+### Silhouette Analysis
+"""
+        
+        if metrics.silhouette_score is not None:
+            md += f"\n**Global Silhouette Score:** {metrics.silhouette_score:.4f}\n\n"
+            
+            if metrics.silhouette_per_cluster:
+                md += "#### Per-Cluster Silhouette Scores\n\n"
+                md += "| Cluster | Mean | Std | Min | Max |\n"
+                md += "|---------|------|-----|-----|-----|\n"
+                
+                for cluster_id, scores in sorted(metrics.silhouette_per_cluster.items()):
+                    md += f"| {cluster_id} | {scores['mean']:.4f} | {scores['std']:.4f} | {scores['min']:.4f} | {scores['max']:.4f} |\n"
+                md += "\n"
+        
+        md += f"""
+### Separation Metrics
+
+- **Davies-Bouldin Index:** {metrics.davies_bouldin_score:.4f if metrics.davies_bouldin_score else 'N/A'} (lower is better)
+- **Calinski-Harabasz Index:** {metrics.calinski_harabasz_score:.2f if metrics.calinski_harabasz_score else 'N/A'} (higher is better)
+
+### Coefficient of Variation
+
+- **Within-Regime CV:** {metrics.within_regime_cv:.4f if metrics.within_regime_cv else 'N/A'} ± {metrics.within_regime_cv_std:.4f if metrics.within_regime_cv_std else 'N/A'}
+- **Between-Regime CV:** {metrics.between_regime_cv:.4f if metrics.between_regime_cv else 'N/A'} ± {metrics.between_regime_cv_std:.4f if metrics.between_regime_cv_std else 'N/A'}
+"""
+        
+        # Add per-regime CV if available
+        if metrics.per_regime_cv:
+            md += "\n#### Per-Regime CV Values\n\n"
+            md += "| Regime | CV |\n"
+            md += "|--------|----|\n"
+            for regime_id, cv in sorted(metrics.per_regime_cv.items()):
+                md += f"| {regime_id} | {cv:.4f} |\n"
+            md += "\n"
+        
+        md += """
+---
+
+## Balance and Distribution
+
+"""
+        
+        if metrics.balance_score is not None:
+            md += f"**Balance Score:** {metrics.balance_score:.4f} (0-1, higher is better)\n\n"
+            md += f"- **Smallest Cluster:** {metrics.min_cluster_size_pct:.2f}% of total\n"
+            md += f"- **Largest Cluster:** {metrics.max_cluster_size_pct:.2f}% of total\n"
+            md += f"- **Cluster Size Std Dev:** {metrics.cluster_size_std:.2f}\n\n"
+            
+            if metrics.cluster_size_distribution:
+                md += "### Cluster Size Distribution\n\n"
+                md += "| Cluster Index | Size (%) |\n"
+                md += "|---------------|----------|\n"
+                for i, size_pct in enumerate(metrics.cluster_size_distribution):
+                    md += f"| {i} | {size_pct:.2f}% |\n"
+                md += "\n"
+        
+        # Temporal metrics
+        if metrics.temporal_smoothness is not None:
+            md += f"""
+---
+
+## Temporal Analysis
+
+- **Temporal Smoothness:** {metrics.temporal_smoothness:.4f} (0-1, higher = fewer transitions)
+- **Regime Persistence:** {metrics.regime_persistence:.2f} bars (average duration)
+
+"""
+        
+        # Per-regime metrics
+        if metrics.per_regime_metrics:
+            md += """
+---
+
+## Per-Regime Analysis
+
+"""
+            for regime_id, regime_data in sorted(metrics.per_regime_metrics.items()):
+                regime_type = regime_data.get('regime_type', 'unknown')
+                md += f"""
+### Regime {regime_id} ({regime_type})
+
+**Size:** {regime_data.get('size', 'N/A')} samples ({regime_data.get('percentage', 0):.2f}%)
+
+"""
+                
+                if 'mean_return' in regime_data:
+                    md += f"""
+**Performance Metrics:**
+- Mean Return: {regime_data['mean_return']:.4f}
+- Volatility: {regime_data['volatility']:.4f}
+- Sharpe Ratio: {regime_data['sharpe']:.4f}
+- Skewness: {regime_data.get('skewness', 'N/A')}
+- Max Drawdown: {regime_data.get('max_drawdown', 'N/A')}
+
+"""
+                
+                if 'regime_specific_metrics' in regime_data and regime_data['regime_specific_metrics']:
+                    md += "**Regime-Specific Characteristics:**\n\n"
+                    for key, value in regime_data['regime_specific_metrics'].items():
+                        md += f"- {key}: {value}\n"
+                    md += "\n"
+        
+        # Economic interpretation
+        if metrics.economic_interpretation:
+            md += """
+---
+
+## Economic Interpretation
+
+"""
+            interp = metrics.economic_interpretation
+            
+            if 'regime_summary' in interp:
+                summary = interp['regime_summary']
+                md += f"""
+### Regime Summary
+
+- **Total Regimes:** {summary.get('total_regimes', 'N/A')}
+- **Dominant Regime:** {summary.get('dominant_regime', 'N/A')}
+
+"""
+                if 'regime_type_distribution' in summary:
+                    md += "**Regime Type Distribution:**\n\n"
+                    for regime_type, count in summary['regime_type_distribution'].items():
+                        md += f"- {regime_type}: {count}\n"
+                    md += "\n"
+            
+            if 'trading_implications' in interp:
+                implications = interp['trading_implications']
+                md += "\n### Trading Implications\n\n"
+                
+                if 'most_profitable_regime' in implications:
+                    best = implications['most_profitable_regime']
+                    md += f"""
+**Most Profitable Regime:** {best.get('regime_id', 'N/A')} ({best.get('regime_type', 'N/A')})
+- Sharpe Ratio: {best.get('sharpe_ratio', 'N/A')}
+- Mean Return: {best.get('mean_return', 'N/A')}
+- Volatility: {best.get('volatility', 'N/A')}
+
+"""
+                
+                if 'strategy_recommendations' in implications:
+                    md += "**Strategy Recommendations:**\n\n"
+                    for rec in implications['strategy_recommendations']:
+                        md += f"- {rec.get('strategy', 'N/A')}: Target Regime {rec.get('target_regime', 'N/A')}\n"
+                    md += "\n"
+        
+        # Predictive power
+        if metrics.predictive_power is not None:
+            md += f"""
+---
+
+## Predictive Power
+
+**Cross-Validation Score:** {metrics.predictive_power:.4f}
+
+This score indicates how well the current regime can predict future return direction.
+"""
+        
+        # Quality assessment
+        md += f"""
+---
+
+## Quality Assessment
+
+**Overall Quality Score:** {metrics.quality_score:.4f if metrics.quality_score else 'N/A'} / 1.0
+
+"""
+        
+        # Determine quality level
+        if metrics.quality_score:
+            if metrics.quality_score >= 0.7:
+                quality_level = "Excellent ✅"
+                recommendation = "The clustering shows excellent quality. Proceed with confidence."
+            elif metrics.quality_score >= 0.5:
+                quality_level = "Good ✅"
+                recommendation = "The clustering shows good quality. Suitable for most applications."
+            elif metrics.quality_score >= 0.3:
+                quality_level = "Moderate ⚠️"
+                recommendation = "The clustering shows moderate quality. Consider parameter tuning."
+            else:
+                quality_level = "Poor ❌"
+                recommendation = "The clustering shows poor quality. Parameter adjustment recommended."
+            
+            md += f"""
+**Quality Level:** {quality_level}
+
+**Recommendation:** {recommendation}
+
+"""
+        
+        md += f"""
+---
+
+## Report Metadata
+
+- **Generated by:** ClusterQualityAssessor
+- **Timestamp:** {metrics.timestamp}
+- **Report Version:** 1.0
+
+"""
+        
+        return md
 
 
-def create_cluster_quality_assessor(artifact_manager=None) -> ClusterQualityAssessor:
+def create_cluster_quality_assessor(artifact_manager=None, 
+                                   enable_hardware_optimization=True,
+                                   enable_vectorization=True) -> ClusterQualityAssessor:
     """
     Factory function to create a cluster quality assessor.
     
     Args:
         artifact_manager: Optional artifact manager from BaseStep
+        enable_hardware_optimization: Enable hardware optimizations
+        enable_vectorization: Enable vectorized computations
         
     Returns:
         ClusterQualityAssessor instance
     """
-    return ClusterQualityAssessor(artifact_manager=artifact_manager)
+    return ClusterQualityAssessor(
+        artifact_manager=artifact_manager,
+        enable_hardware_optimization=enable_hardware_optimization,
+        enable_vectorization=enable_vectorization
+    )

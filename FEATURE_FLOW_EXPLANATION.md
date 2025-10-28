@@ -100,31 +100,60 @@ For each variant, create 4 timeframe ratios:
 
 This is the **most important phase** where the magic happens!
 
-#### Phase 3.1: Shallow LGBM Sweep
+#### Phase 3.1: Shallow LGBM Sweep (400 → 100)
 - Trains shallow LGBM models (max_depth=3)
-- Ranks features by SHAP importance
+- Fast feature selection using **composite proxy**:
+  - 60% LGBM feature importance
+  - 40% Mutual Information (fast proxy)
 - Selects **top 100 features**
 - Fast first pass to remove noise
+- Duration: ~2-3 minutes
 
-#### Phase 3.2: Deep LGBM Refinement
-- Trains deeper LGBM models (max_depth=5)
-- More accurate importance scores
+#### Phase 3.2: Deeper LGBM Refinement (100 → 80)
+- Trains deeper LGBM models (max_depth=4)
+- More accurate multi-criteria selection:
+  - 60% LGBM importance
+  - 30% Mutual Information
+  - 10% Stability score
 - Selects **top 80 features** → **`final_features`**
+- Duration: ~3-5 minutes
 
-#### Phase 3.3: Interaction Discovery
-- Analyzes feature interactions using SHAP interaction values
-- Discovers synergistic feature pairs
-- Generates interaction features:
+#### Phase 3.3: Deep Interaction Discovery (80 features → 20-50 interactions)
+This is the most sophisticated sub-phase:
+
+**Step 1**: Extract cross-timeframe interactions
+**Step 2**: Train deep LGBM for tree analysis
+**Step 3**: Extract top 80 feature pairs from tree splits
+**Step 4**: Generate 400 interaction candidates (80 pairs × 5 operations):
   - Multiplication: `feature1_x_feature2`
   - Division: `feature1_div_feature2`
   - Subtraction: `feature1_minus_feature2`
   - Log ratio: `feature1_log_feature2`
-  - Addition: `feature1_plus_feature2`
-- Output: **`interactions`** DataFrame
+  - Log of ratio: `feature1_log_ratio_feature2`
 
-**Key Point**: 
-- `final_features` = 80 best features (base, variants, CT ratios)
-- `interactions` = Newly discovered interaction features
+**Step 5**: **Composite Scoring with RFE** (Recursive Feature Elimination)
+- 5-way composite score (20% each):
+  1. Mutual Information
+  2. Redundancy (uniqueness)
+  3. LGBM Importance
+  4. SHAP Values (true marginal contribution)
+  5. Stability Score
+- RFE process: 6 rounds of 33% removal (400 → 268 → 180 → 121 → 81 → 54 → 50)
+- Re-scores at each round for accuracy
+
+**Step 6**: Filter by complexity (max 3-way interactions)
+**Step 7**: Apply causality shift (t-1) and RobustScaler normalization
+- Output: **`interactions`** DataFrame (20-50 features)
+- Duration: ~10-15 minutes
+
+**Total Phase 3 Duration**: ~15-23 minutes
+
+**Key Points**: 
+- `final_features` = 80 best "solo performers" (base, variants, CT ratios)
+- `interactions` = 20-50 "duets" (synergistic combinations)
+- Interactions can be hybrid CT (e.g., `rsi_3x_ratio_x_macd_6x_ratio`)
+
+**For detailed explanation, see**: `PHASE3_DETAILED_EXPLANATION.md`
 
 ---
 

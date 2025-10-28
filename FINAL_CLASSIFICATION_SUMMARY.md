@@ -232,7 +232,9 @@ When the pipeline runs, you'll see:
 ## 📚 Related Documentation
 
 - **`FEATURE_FLOW_EXPLANATION.md`**: Complete pipeline flow from Phase 0 to Phase 4
-- **`FEATURE_CLASSIFICATION_FIX_SUMMARY.md`**: Technical details of the fix
+- **`PHASE3_DETAILED_EXPLANATION.md`**: Deep dive into LGBM+SHAP pipeline (how final_features and interactions are created)
+- **`COMPLETE_PHASE3_SUMMARY.md`**: Quick reference for Phase 3 concepts
+- **`FEATURE_CLASSIFICATION_FIX_SUMMARY.md`**: Technical details of the classification fix
 
 ---
 

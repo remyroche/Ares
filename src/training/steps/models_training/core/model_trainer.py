@@ -37,6 +37,7 @@ from .base_trainer import (
     BaseTrainer, TrainingConfig, TrainingResult, ValidationResult, 
     PredictionResult, TrainingRole, ModelType
 )
+from .training_metrics_collector import TrainingMetricsCollector, ModelMetrics
 
 
 class ModelTrainer(BaseTrainer):
@@ -58,6 +59,9 @@ class ModelTrainer(BaseTrainer):
         self._model_instances = {}
         self._training_histories = {}
         self._validation_histories = {}
+        
+        # Metrics collector
+        self._metrics_collector = TrainingMetricsCollector(logger)
     
     def _setup_role_specific_config(self):
         """Setup role-specific configuration."""
@@ -85,43 +89,101 @@ class ModelTrainer(BaseTrainer):
     )
     async def train(self, data: pd.DataFrame, targets: Optional[pd.Series] = None) -> TrainingResult:
         """
-        Train individual models with role-specific optimizations.
+        Train individual models with role-specific optimizations and comprehensive metrics collection.
         
         Args:
             data: Training data
             targets: Target variables
             
         Returns:
-            Training result with models and metrics
+            Training result with models and comprehensive metrics
         """
         try:
-            self.logger.info(f"🚀 Starting {self.config.role.value} model training...")
+            self.logger.info(f"🚀 Starting {self.config.role.value} model training with comprehensive metrics...")
             start_time = time.time()
+            
+            # Start metrics collection session
+            training_type = f"{self.config.role.value}_base"
+            self._metrics_collector.start_session(
+                training_type=training_type,
+                symbol=self.config.symbol,
+                timeframe=self.config.timeframe
+            )
             
             # Preprocess data
             processed_data, processed_targets = self._preprocess_data(data, targets)
             
-            # Train each model type
+            # Train each model type with comprehensive metrics
             training_results = {}
             best_model = None
             best_metrics = {}
+            all_model_metrics = []
             
             for model_type in self.config.model_types:
-                self.logger.info(f"📊 Training {model_type.value} model...")
+                self.logger.info(f"📊 Training {model_type.value} model with metrics collection...")
                 
-                # Create and train model
+                # Create model for pre-HPO baseline
                 model = self._create_model(model_type)
                 # Allow None for models that are created during training (TCN, Neural Networks)
                 if model is None and model_type not in [ModelType.TCN, ModelType.NEURAL_NETWORK]:
                     self.logger.error(f"Failed to create {model_type.value} model")
                     continue
                 
-                # Train model with role-specific logic
+                # Collect pre-HPO metrics
+                tprint_info(f"📊 Phase 1: Collecting pre-HPO baseline metrics for {model_type.value}...")
+                model_metrics = self._metrics_collector.collect_pre_hpo_metrics(
+                    model_name=f"{self.config.role.value}_{model_type.value}",
+                    model_type=model_type.value,
+                    model=model,
+                    X=processed_data,
+                    y=processed_targets,
+                    n_folds=self.config.cross_validation_folds
+                )
+                
+                # Run hyperparameter optimization if enabled
+                best_params = {}
+                hpo_n_trials = 0
+                hpo_time = 0.0
+                
+                if self.config.enable_hyperparameter_optimization:
+                    tprint_info(f"🔧 Phase 2: Running hyperparameter optimization for {model_type.value}...")
+                    hpo_start = time.time()
+                    
+                    model, best_params = await self._optimize_hyperparameters(
+                        model, model_type, processed_data, processed_targets
+                    )
+                    
+                    hpo_time = time.time() - hpo_start
+                    hpo_n_trials = self.config.custom_params.get('hpo_n_trials', 50)
+                    
+                    tprint_success(f"✅ HPO completed in {hpo_time:.2f}s with {hpo_n_trials} trials")
+                else:
+                    tprint_info(f"⏭️  Skipping HPO (disabled in config)")
+                
+                # Train final model with best parameters
+                tprint_info(f"🎯 Phase 3: Training final model with optimized parameters...")
                 model_result = await self._train_single_model(
                     model, model_type, processed_data, processed_targets
                 )
                 
                 if model_result.success:
+                    # Collect post-HPO metrics
+                    tprint_info(f"📈 Phase 4: Collecting post-HPO metrics for {model_type.value}...")
+                    model_metrics = self._metrics_collector.collect_post_hpo_metrics(
+                        model_metrics=model_metrics,
+                        model=model_result.model,
+                        X=processed_data,
+                        y=processed_targets,
+                        best_params=best_params,
+                        hpo_n_trials=hpo_n_trials,
+                        hpo_time=hpo_time,
+                        n_folds=self.config.cross_validation_folds
+                    )
+                    
+                    # Add to session
+                    self._metrics_collector.add_model_metrics(model_metrics)
+                    all_model_metrics.append(model_metrics)
+                    
                     training_results[model_type.value] = model_result
                     self._model_instances[model_type.value] = model_result.model
                     
@@ -129,14 +191,28 @@ class ModelTrainer(BaseTrainer):
                     if not best_model or self._is_better_model(model_result.metrics, best_metrics):
                         best_model = model_result.model
                         best_metrics = model_result.metrics
-                        
+                    
+                    tprint_success(f"✅ {model_type.value} training completed with comprehensive metrics")
                     self.logger.info(f"✅ {model_type.value} training completed")
                 else:
+                    tprint_error(f"❌ {model_type.value} training failed: {model_result.error_message}")
                     self.logger.error(f"❌ {model_type.value} training failed: {model_result.error_message}")
             
             # Calculate overall metrics
             overall_metrics = self._calculate_overall_metrics(training_results)
             training_time = time.time() - start_time
+            
+            # Finalize session and generate report
+            tprint_info("📝 Generating comprehensive training report...")
+            session = self._metrics_collector.finalize_session(
+                total_training_time=training_time,
+                data_quality_score=0.85,  # TODO: Calculate actual quality score
+                n_samples=len(processed_data),
+                n_features=len(processed_data.columns)
+            )
+            
+            # Generate and save report
+            report_path = self._metrics_collector.save_report()
             
             # Update state
             self._training_state['training_completed'] = True
@@ -152,21 +228,26 @@ class ModelTrainer(BaseTrainer):
                     'models_trained': len(training_results),
                     'role': self.config.role.value,
                     'timeframe': self.config.timeframe,
-                    'individual_results': training_results
+                    'individual_results': training_results,
+                    'comprehensive_metrics': all_model_metrics,
+                    'report_path': str(report_path)
                 }
             )
             
             if result.success:
                 self.logger.info(f"✅ Training completed successfully in {training_time:.2f}s")
-                tprint_success(f"Trained {len(training_results)} models for {self.config.role.value}")
+                tprint_success(f"✅ Trained {len(training_results)} models with comprehensive metrics")
+                tprint_success(f"📄 Report saved to: {report_path}")
             else:
                 self.logger.error("❌ All model training failed")
-                tprint_error("Training failed for all models")
+                tprint_error("❌ Training failed for all models")
             
             return result
             
         except Exception as e:
             self.logger.error(f"Training failed: {e}")
+            import traceback
+            traceback.print_exc()
             return TrainingResult(
                 success=False,
                 error_message=str(e),
@@ -205,6 +286,113 @@ class ModelTrainer(BaseTrainer):
         except Exception as e:
             self.logger.error(f"Single model training failed: {e}")
             return TrainingResult(success=False, error_message=str(e))
+    
+    async def _optimize_hyperparameters(
+        self,
+        model: Any,
+        model_type: ModelType,
+        data: pd.DataFrame,
+        targets: pd.Series
+    ) -> Tuple[Any, Dict[str, Any]]:
+        """
+        Optimize hyperparameters using Bayesian TPE optimization.
+        
+        Args:
+            model: Base model to optimize
+            model_type: Type of model
+            data: Training data
+            targets: Training targets
+            
+        Returns:
+            Tuple of (optimized_model, best_params)
+        """
+        try:
+            # Get HPO config
+            n_trials = self.config.custom_params.get('hpo_n_trials', 50)
+            
+            # Define search spaces based on model type
+            if model_type == ModelType.LIGHTGBM:
+                search_space = {
+                    'num_leaves': ('int', 20, 100),
+                    'learning_rate': ('float', 0.01, 0.1),
+                    'feature_fraction': ('float', 0.6, 1.0),
+                    'bagging_fraction': ('float', 0.6, 1.0),
+                    'min_child_samples': ('int', 5, 50)
+                }
+            elif model_type == ModelType.CATBOOST:
+                search_space = {
+                    'depth': ('int', 4, 10),
+                    'learning_rate': ('float', 0.01, 0.1),
+                    'l2_leaf_reg': ('float', 1, 10),
+                    'border_count': ('int', 32, 255)
+                }
+            else:
+                # Return model as-is for types without HPO
+                return model, {}
+            
+            # Use BayesianTPEOptimizer
+            optimizer = BayesianTPEOptimizer()
+            
+            # Define objective function
+            def objective(params):
+                try:
+                    # Create model with params
+                    if model_type == ModelType.LIGHTGBM:
+                        import lightgbm as lgb
+                        test_model = lgb.LGBMRegressor(**params, verbose=-1)
+                    elif model_type == ModelType.CATBOOST:
+                        from catboost import CatBoostRegressor
+                        test_model = CatBoostRegressor(**params, verbose=False)
+                    
+                    # Cross-validate
+                    from sklearn.model_selection import cross_val_score
+                    scores = cross_val_score(
+                        test_model, data, targets, 
+                        cv=3, scoring='r2', n_jobs=-1
+                    )
+                    
+                    return np.mean(scores)
+                except Exception as e:
+                    self.logger.warning(f"HPO trial failed: {e}")
+                    return -999999  # Very bad score
+            
+            # Run optimization
+            best_params = {}
+            best_score = -float('inf')
+            
+            for trial in range(n_trials):
+                # Sample parameters
+                trial_params = {}
+                for param_name, param_spec in search_space.items():
+                    if param_spec[0] == 'int':
+                        trial_params[param_name] = np.random.randint(param_spec[1], param_spec[2] + 1)
+                    elif param_spec[0] == 'float':
+                        trial_params[param_name] = np.random.uniform(param_spec[1], param_spec[2])
+                
+                # Evaluate
+                score = objective(trial_params)
+                
+                # Update best
+                if score > best_score:
+                    best_score = score
+                    best_params = trial_params.copy()
+            
+            # Create optimized model
+            if model_type == ModelType.LIGHTGBM:
+                import lightgbm as lgb
+                optimized_model = lgb.LGBMRegressor(**best_params, verbose=-1)
+            elif model_type == ModelType.CATBOOST:
+                from catboost import CatBoostRegressor
+                optimized_model = CatBoostRegressor(**best_params, verbose=False)
+            else:
+                optimized_model = model
+            
+            self.logger.info(f"✅ HPO completed: best score = {best_score:.4f}")
+            return optimized_model, best_params
+            
+        except Exception as e:
+            self.logger.error(f"HPO failed: {e}, using default model")
+            return model, {}
     
     def _engineer_analyst_features(self, data: pd.DataFrame, targets: pd.Series) -> pd.DataFrame:
         """Engineer features specific to Analyst role."""

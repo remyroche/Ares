@@ -34,25 +34,31 @@ except ImportError:
 
 # VectorBT imports
 try:
-    import vectorbt as vbt
-    from vectorbt.optimization import RollingOptimizer
-    VECTORBT_AVAILABLE = True
-    VECTORBT_ROLLING_AVAILABLE = True
+    # Import from src.vectorbt instead of direct vectorbt import
+    from src.vectorbt import (
+        vbt, rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max,
+        rolling_sum, rolling_apply, VECTORBT_AVAILABLE as VBT_AVAILABLE
+    )
+    VECTORBT_AVAILABLE = VBT_AVAILABLE
+    # Try to import RollingOptimizer if available
+    try:
+        from vectorbt.optimization import RollingOptimizer
+        VECTORBT_ROLLING_AVAILABLE = True
+    except (ImportError, AttributeError):
+        VECTORBT_ROLLING_AVAILABLE = False
+        RollingOptimizer = None
 except ImportError:
     VECTORBT_AVAILABLE = False
     VECTORBT_ROLLING_AVAILABLE = False
     vbt = None
     RollingOptimizer = None
-
-# Rolling functions - use numpy/pandas fallbacks if vectorbt not available
-if vbt is None:
-    rolling_mean = lambda x, window: pd.Series(x).rolling(window).mean() if PANDAS_AVAILABLE else None
-    rolling_std = lambda x, window: pd.Series(x).rolling(window).std() if PANDAS_AVAILABLE else None
-    rolling_var = lambda x, window: pd.Series(x).rolling(window).var() if PANDAS_AVAILABLE else None
-    rolling_min = lambda x, window: pd.Series(x).rolling(window).min() if PANDAS_AVAILABLE else None
-    rolling_max = lambda x, window: pd.Series(x).rolling(window).max() if PANDAS_AVAILABLE else None
-    rolling_sum = lambda x, window: pd.Series(x).rolling(window).sum() if PANDAS_AVAILABLE else None
-    rolling_apply = lambda x, window, func: pd.Series(x).rolling(window).apply(func) if PANDAS_AVAILABLE else None
+    rolling_mean = None
+    rolling_std = None
+    rolling_var = None
+    rolling_min = None
+    rolling_max = None
+    rolling_sum = None
+    rolling_apply = None
 
 # Hardware and vectorization imports
 try:

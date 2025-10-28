@@ -168,7 +168,7 @@ class SimplifiedAresLauncher:
                 'data_integration', 'data_storage', 'data_monitoring', 'data_export'
             ],
             'MARKET_ANALYSIS': [
-                'sr_parameter_optimization', 'sr_detection', 'sr_clustering',
+                'sr_detection', 'sr_clustering', 'sr_parameter_optimization',  # Fixed order: detection -> clustering -> optimization
                 'hdbscan_regime_discovery',  # New HDBSCAN-based regime discovery
                 'regime_feature_selection',  # Enhanced regime feature selection
                 'regime_models_training', 'regime_ensemble_training'

@@ -56,6 +56,12 @@ from src.training.steps.base_step import BaseStep
 from src.utils.logger import system_logger
 from src.utils.tprint import tprint
 
+# Import unified cluster quality assessor
+from src.training.steps.market_analysis.clusters.cluster_quality_assessor import (
+    create_cluster_quality_assessor,
+    ClusterQualityMetrics
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -1381,7 +1387,7 @@ class RegimeClusteringStep(BaseStep):
 
     def _check_quality_targets(self, labels: np.ndarray, hdbscan_artifacts: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Check if clustering results meet quality targets.
+        Check if clustering results meet quality targets using unified quality assessor.
         
         Targets:
         - 4-8 clusters
@@ -1406,16 +1412,50 @@ class RegimeClusteringStep(BaseStep):
                 max_clusters = config.get('max_clusters', unified_targets.max_clusters)
                 min_cv_score = config.get('min_cv_score', unified_targets.min_cv_score)
                 min_silhouette_score = config.get('min_silhouette_score', unified_targets.min_silhouette_score)
-                min_dbi_score = config.get('max_dbi_score', unified_targets.max_dbi_score)  # Lower is better for DBI
+                max_dbi_score = config.get('max_dbi_score', unified_targets.max_dbi_score)  # Lower is better for DBI
                 min_temporal_smoothness = config.get('min_temporal_smoothness', unified_targets.min_temporal_smoothness)
             else:
                 # Fallback to config or hardcoded defaults
                 min_clusters = config.get('min_clusters', 4)
                 max_clusters = config.get('max_clusters', 8)
-                min_cv_score = config.get('min_cv_score', 0.3)
+                min_cv_score = config.get('min_cv_score', 50.0)  # CH score
                 min_silhouette_score = config.get('min_silhouette_score', 0.2)
-                min_dbi_score = config.get('max_dbi_score', 0.5)  # Lower is better for DBI
+                max_dbi_score = config.get('max_dbi_score', 2.0)  # Lower is better for DBI
                 min_temporal_smoothness = config.get('min_temporal_smoothness', 0.6)
+            
+            # Create unified quality assessor
+            quality_assessor = create_cluster_quality_assessor(artifact_manager=self.artifact_manager)
+            
+            # Get features from artifacts
+            features_data = hdbscan_artifacts.get('clustering_features')
+            if features_data is None:
+                features_data = hdbscan_artifacts.get('features')
+            
+            # Convert to DataFrame if needed
+            if features_data is not None:
+                if isinstance(features_data, np.ndarray):
+                    features_df = pd.DataFrame(features_data)
+                elif isinstance(features_data, pd.DataFrame):
+                    features_df = features_data
+                else:
+                    tprint(f"⚠️ Unexpected features data type: {type(features_data)}", "WARNING")
+                    features_df = pd.DataFrame()
+            else:
+                features_df = pd.DataFrame()
+            
+            # Run comprehensive quality assessment
+            quality_metrics = quality_assessor.assess_quality(
+                regime_labels=labels,
+                feature_data=features_df,
+                forward_returns=None,  # Not available at this stage
+                timestamps=None  # Not available at this stage
+            )
+            
+            # Save quality metrics
+            try:
+                quality_assessor.save_metrics(quality_metrics, artifact_name="regime_cluster_quality_metrics")
+            except Exception as e:
+                tprint(f"⚠️ Failed to save quality metrics: {e}", "WARNING")
             
             # Calculate cluster count
             unique_labels = np.unique(labels)
@@ -1433,61 +1473,56 @@ class RegimeClusteringStep(BaseStep):
                 issues.append(f"Too many clusters: {n_clusters} > {max_clusters}")
                 meets_targets = False
             
-            # Calculate quality metrics if we have features
-            features = hdbscan_artifacts.get('features')
-            if features is not None and len(features) > 0:
-                try:
-                    # Calculate CV score (if available)
-                    cv_score = self._calculate_cv_score(features, labels)
-                    if cv_score is not None and cv_score < min_cv_score:
-                        issues.append(f"Low CV score: {cv_score:.3f} < {min_cv_score}")
-                        meets_targets = False
-                    
-                    # Calculate Silhouette score
-                    silhouette_score = self._calculate_silhouette_score(features, labels)
-                    if silhouette_score is not None and silhouette_score < min_silhouette_score:
-                        issues.append(f"Low Silhouette score: {silhouette_score:.3f} < {min_silhouette_score}")
-                        meets_targets = False
-                    
-                    # Calculate DBI score
-                    dbi_score = self._calculate_dbi_score(features, labels)
-                    if dbi_score is not None and dbi_score > min_dbi_score:  # Higher is worse for DBI
-                        issues.append(f"High DBI score: {dbi_score:.3f} > {min_dbi_score}")
-                        meets_targets = False
-                    
-                except Exception as e:
-                    tprint(f"⚠️ Failed to calculate quality metrics: {e}", "WARNING")
-                    issues.append("Quality metrics calculation failed")
+            # Check quality metrics against targets
+            if quality_metrics.calinski_harabasz_score is not None:
+                if quality_metrics.calinski_harabasz_score < min_cv_score:
+                    issues.append(f"Low CH score: {quality_metrics.calinski_harabasz_score:.3f} < {min_cv_score}")
                     meets_targets = False
             
-            # Calculate temporal smoothness
-            temporal_smoothness = self._calculate_temporal_smoothness(labels)
-            if temporal_smoothness < min_temporal_smoothness:
-                issues.append(f"Low temporal smoothness: {temporal_smoothness:.3f} < {min_temporal_smoothness}")
-                meets_targets = False
+            if quality_metrics.silhouette_score is not None:
+                if quality_metrics.silhouette_score < min_silhouette_score:
+                    issues.append(f"Low Silhouette score: {quality_metrics.silhouette_score:.3f} < {min_silhouette_score}")
+                    meets_targets = False
+            
+            if quality_metrics.davies_bouldin_score is not None:
+                if quality_metrics.davies_bouldin_score > max_dbi_score:
+                    issues.append(f"High DBI score: {quality_metrics.davies_bouldin_score:.3f} > {max_dbi_score}")
+                    meets_targets = False
+            
+            if quality_metrics.temporal_smoothness is not None:
+                if quality_metrics.temporal_smoothness < min_temporal_smoothness:
+                    issues.append(f"Low temporal smoothness: {quality_metrics.temporal_smoothness:.3f} < {min_temporal_smoothness}")
+                    meets_targets = False
+            
+            tprint(f"🔍 Quality assessment complete - Score: {quality_metrics.quality_score:.3f}, Meets targets: {meets_targets}", "INFO")
             
             return {
                 'meets_targets': meets_targets,
                 'n_clusters': n_clusters,
                 'issues': issues,
                 'metrics': {
-                    'cv_score': cv_score if 'cv_score' in locals() else None,
-                    'silhouette_score': silhouette_score if 'silhouette_score' in locals() else None,
-                    'dbi_score': dbi_score if 'dbi_score' in locals() else None,
-                    'temporal_smoothness': temporal_smoothness
+                    'silhouette_score': quality_metrics.silhouette_score,
+                    'calinski_harabasz_score': quality_metrics.calinski_harabasz_score,
+                    'davies_bouldin_score': quality_metrics.davies_bouldin_score,
+                    'temporal_smoothness': quality_metrics.temporal_smoothness,
+                    'within_regime_cv': quality_metrics.within_regime_cv,
+                    'between_regime_cv': quality_metrics.between_regime_cv,
+                    'quality_score': quality_metrics.quality_score
                 },
                 'targets': {
                     'min_clusters': min_clusters,
                     'max_clusters': max_clusters,
                     'min_cv_score': min_cv_score,
                     'min_silhouette_score': min_silhouette_score,
-                    'min_dbi_score': min_dbi_score,
+                    'max_dbi_score': max_dbi_score,
                     'min_temporal_smoothness': min_temporal_smoothness
-                }
+                },
+                'quality_metrics_object': quality_metrics  # Include full metrics object for later use
             }
             
         except Exception as e:
             tprint(f"⚠️ Failed to check quality targets: {e}", "WARNING")
+            self.logger.error(f"Quality check error: {e}", exc_info=True)
             return {
                 'meets_targets': False,
                 'n_clusters': 0,

@@ -40,6 +40,34 @@ except ImportError as e:
         "Using base feature bank features only."
     )
 
+# Import regime feature categorization for intelligent feature selection
+try:
+    from src.feature_generation.categories.regime_feature_categorization import (
+        RegimeFeatureCategorizer,
+        FeatureUseCase,
+        get_regime_clustering_features,
+        get_hdbscan_features,
+        validate_feature_set
+    )
+    REGIME_CATEGORIZATION_AVAILABLE = True
+    tprint_debug("✅ Regime feature categorization available")
+except ImportError as e:
+    REGIME_CATEGORIZATION_AVAILABLE = False
+    tprint_debug(f"ℹ️ Regime feature categorization not available: {e}")
+
+# Import regime feature integration for regime-aware features
+try:
+    from src.feature_generation.categories.regime_feature_integration import (
+        RegimeFeatureIntegration,
+        RegimeFeatureConfig as RegimeIntegrationConfig,
+        generate_regime_features
+    )
+    REGIME_INTEGRATION_AVAILABLE = True
+    tprint_debug("✅ Regime feature integration available")
+except ImportError as e:
+    REGIME_INTEGRATION_AVAILABLE = False
+    tprint_debug(f"ℹ️ Regime feature integration not available: {e}")
+
 # Import optimization utilities (from code review)
 try:
     from src.utils.ml_common.optimization.hpo_utils import get_hpo_optimizer
@@ -80,7 +108,9 @@ class EnhancedHDPHMMClusteringIntegration:
                  kappa: float = 50.0,
                  gamma: float = 3.0,
                  n_iterations: int = 100,
-                 max_states: int = 20):
+                 max_states: int = 20,
+                 use_regime_categorization: bool = True,
+                 use_regime_integration: bool = True):
         """
         Initialize Enhanced HDP-HMM Clustering Integration.
         
@@ -95,6 +125,8 @@ class EnhancedHDPHMMClusteringIntegration:
             gamma: HDP-HMM base distribution hyperparameter
             n_iterations: Number of Gibbs sampling iterations
             max_states: Maximum number of states to consider
+            use_regime_categorization: Use intelligent feature categorization (default: True)
+            use_regime_integration: Use regime-aware feature integration (default: True)
         """
         tprint_info("🚀 Initializing Enhanced HDP-HMM Clustering Integration")
         
@@ -103,6 +135,8 @@ class EnhancedHDPHMMClusteringIntegration:
         self.enable_comprehensive_features = enable_comprehensive_features
         self.enable_pca_reduction = enable_pca_reduction
         self.pca_components = pca_components
+        self.use_regime_categorization = use_regime_categorization and REGIME_CATEGORIZATION_AVAILABLE
+        self.use_regime_integration = use_regime_integration and REGIME_INTEGRATION_AVAILABLE
         
         # HDP-HMM parameters
         self.alpha = alpha
@@ -111,6 +145,32 @@ class EnhancedHDPHMMClusteringIntegration:
         self.n_iterations = n_iterations
         self.max_states = max_states
         
+        # Initialize regime feature categorizer
+        self.regime_categorizer = None
+        if self.use_regime_categorization:
+            try:
+                self.regime_categorizer = RegimeFeatureCategorizer()
+                tprint_success("✅ Regime feature categorizer initialized")
+            except Exception as e:
+                tprint_warning(f"⚠️ Failed to initialize regime categorizer: {e}")
+                self.use_regime_categorization = False
+        
+        # Initialize regime feature integration
+        self.regime_integrator = None
+        if self.use_regime_integration:
+            try:
+                regime_int_config = RegimeIntegrationConfig(
+                    enable_regime_detection=True,
+                    enable_adaptive_features=True,
+                    enable_regime_transitions=True,
+                    lookback_period=20
+                )
+                self.regime_integrator = RegimeFeatureIntegration(regime_int_config)
+                tprint_success("✅ Regime feature integration initialized")
+            except Exception as e:
+                tprint_warning(f"⚠️ Failed to initialize regime integration: {e}")
+                self.use_regime_integration = False
+        
         # Log configuration
         tprint_structured({
             "min_features": min_features,
@@ -118,6 +178,8 @@ class EnhancedHDPHMMClusteringIntegration:
             "enable_comprehensive_features": enable_comprehensive_features,
             "enable_pca_reduction": enable_pca_reduction,
             "pca_components": pca_components,
+            "use_regime_categorization": self.use_regime_categorization,
+            "use_regime_integration": self.use_regime_integration,
             "alpha": alpha,
             "kappa": kappa,
             "gamma": gamma,
@@ -176,7 +238,7 @@ class EnhancedHDPHMMClusteringIntegration:
     def get_comprehensive_clustering_features(self, data: pd.DataFrame) -> Dict[str, Any]:
         """
         Get comprehensive features optimized for HDP-HMM clustering.
-        Uses regime-specific features from code review recommendations.
+        Uses intelligent feature categorization and regime-aware integration.
         
         Args:
             data: Market data DataFrame with OHLCV columns
@@ -189,19 +251,48 @@ class EnhancedHDPHMMClusteringIntegration:
         
         with tprint_timer("Feature Generation", level="PERFORMANCE"):
             if self.enable_comprehensive_features:
-                # Get base features from feature bank
-                # NOTE: Using 'hdbscan_clustering' task which provides general clustering features
-                # (volatility, trend, momentum, volume) that are also appropriate for HDP-HMM.
-                # These features capture regime-dependent dynamics and temporal patterns.
-                # TODO: Consider adding dedicated 'hdp_hmm_clustering' task in future
-                result = self.feature_integrator.get_comprehensive_features_for_task(
-                    'hdbscan_clustering', data
-                )
+                # Strategy 1: Use regime categorization for intelligent feature selection
+                if self.use_regime_categorization and self.regime_categorizer:
+                    tprint_info("🎯 Using intelligent regime feature categorization")
+                    result = self._get_categorized_features(data)
+                else:
+                    # Fallback: Get base features from feature bank
+                    # NOTE: Using 'hdbscan_clustering' task which provides general clustering features
+                    # (volatility, trend, momentum, volume) that are also appropriate for HDP-HMM.
+                    tprint_info("📊 Using feature bank integration")
+                    result = self.feature_integrator.get_comprehensive_features_for_task(
+                        'hdbscan_clustering', data
+                    )
                 
-                # Add regime-specific features if available (from code review)
+                # Strategy 2: Add regime-aware integration features
+                if self.use_regime_integration and self.regime_integrator:
+                    try:
+                        tprint_info("🔄 Adding regime-aware integration features")
+                        regime_int_features = self.regime_integrator._generate_regime_features(data)
+                        
+                        # Add to feature set
+                        if regime_int_features:
+                            for feat_name, feat_value in regime_int_features.items():
+                                # Convert categorical to numerical if needed
+                                if isinstance(feat_value, str):
+                                    # Skip categorical features for now
+                                    continue
+                                # Create feature array
+                                feat_array = np.full(len(data), feat_value, dtype=np.float64)
+                                result['features'][f'regime_int_{feat_name}'] = feat_array
+                                result['feature_names'].append(f'regime_int_{feat_name}')
+                            
+                            result['regime_integration_added'] = len(regime_int_features)
+                            tprint_success(
+                                f"✅ Added {result['regime_integration_added']} regime integration features"
+                            )
+                    except Exception as e:
+                        tprint_warning(f"⚠️ Failed to add regime integration features: {e}")
+                
+                # Strategy 3: Add regime-specific features (original implementation)
                 if self.regime_feature_gen is not None:
                     try:
-                        tprint_info("📊 Generating regime-specific features")
+                        tprint_info("📈 Generating regime-specific features")
                         regime_features = self.regime_feature_gen.generate_features(data)
                         
                         # Merge regime features with base features
@@ -218,13 +309,83 @@ class EnhancedHDPHMMClusteringIntegration:
                 
                 result.update({
                     'clustering_method': 'hdp_hmm',
-                    'temporal_aware': True
+                    'temporal_aware': True,
+                    'regime_categorization_used': self.use_regime_categorization,
+                    'regime_integration_used': self.use_regime_integration
                 })
                 
                 tprint_data_format(result['features'], "Generated Features", check_compatibility=True)
                 return result
             else:
                 return self._get_basic_features(data)
+    
+    def _get_categorized_features(self, data: pd.DataFrame) -> Dict[str, Any]:
+        """
+        Get features using intelligent regime categorization.
+        
+        This uses RegimeFeatureCategorizer to select the most appropriate features
+        for regime clustering, ranked by priority and suitability.
+        """
+        try:
+            # Get priority features for regime clustering
+            # This intelligently selects features optimized for regime discovery
+            priority_features = self.regime_categorizer.get_priority_features(
+                FeatureUseCase.REGIME_CLUSTERING,
+                max_features=self.max_features
+            )
+            
+            tprint_info(f"🎯 Selected {len(priority_features)} priority features for regime clustering")
+            
+            # Get feature requirements
+            requirements = self.regime_categorizer.get_feature_requirements(
+                FeatureUseCase.REGIME_CLUSTERING
+            )
+            
+            tprint_structured({
+                "total_categories": requirements['total_categories'],
+                "total_features": requirements['total_features'],
+                "stability_required": requirements['stability_required'],
+                "lookahead_safe": requirements['lookahead_safe'],
+                "categories": requirements['categories']
+            }, level="INFO")
+            
+            # Generate features using feature bank (filtered by categorization)
+            result = self.feature_integrator.get_comprehensive_features_for_task(
+                'hdbscan_clustering', data
+            )
+            
+            # Filter to only priority features (if they exist in generated features)
+            if result['feature_names']:
+                # Keep features that are in priority list
+                filtered_features = {}
+                filtered_names = []
+                
+                for feat_name in result['feature_names']:
+                    # Check if feature matches any priority feature pattern
+                    if any(priority_feat in feat_name for priority_feat in priority_features):
+                        if feat_name in result['features']:
+                            filtered_features[feat_name] = result['features'][feat_name]
+                            filtered_names.append(feat_name)
+                
+                # If we have enough filtered features, use them
+                if len(filtered_names) >= self.min_features:
+                    result['features'] = filtered_features
+                    result['feature_names'] = filtered_names
+                    result['categorization_applied'] = True
+                    tprint_success(f"✅ Filtered to {len(filtered_names)} categorized features")
+                else:
+                    # Keep original features if filtering removes too many
+                    result['categorization_applied'] = False
+                    tprint_warning(f"⚠️ Filtering left too few features ({len(filtered_names)}), using all")
+            
+            return result
+            
+        except Exception as e:
+            tprint_error(f"❌ Failed to use categorization: {e}")
+            # Fallback to standard feature bank
+            return self.feature_integrator.get_comprehensive_features_for_task(
+                'hdbscan_clustering', data
+            )
     
     def _get_basic_features(self, data: pd.DataFrame) -> Dict[str, Any]:
         """Fallback to basic features."""

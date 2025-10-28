@@ -28,10 +28,19 @@ from src.utils.tprint import (
     tprint_debug, tprint_performance, tprint_structured, tprint_timer
 )
 
-# Import comprehensive quality assessor
-from src.training.steps.market_analysis.hdbscan_clustering.quality_assessment import (
-    create_quality_assessor,
-    QualityMetrics as QualityAssessmentMetrics
+# Import comprehensive quality assessor and optimization goals
+from src.training.steps.market_analysis.clusters.cluster_quality_assessor import (
+    create_cluster_quality_assessor,
+    ClusterQualityMetrics,
+    ClusterQualityAssessor
+)
+from src.training.steps.market_analysis.clusters.clustering_optimization_goals import (
+    DEFAULT_CLUSTERING_GOALS,
+    DEFAULT_OPTIMIZATION_TARGETS,
+    ClusteringOptimizationGoals,
+    OptimizationTargets,
+    calculate_composite_score,
+    meets_optimization_constraints
 )
 
 # Try to import HMM libraries with fallback priority
@@ -181,12 +190,19 @@ class HDPHMMClusterer:
     for regime persistence.
     """
     
-    def __init__(self, config: Optional[HDPHMMConfig] = None):
+    def __init__(self, 
+                 config: Optional[HDPHMMConfig] = None,
+                 artifact_manager = None,
+                 optimization_goals: Optional[ClusteringOptimizationGoals] = None,
+                 optimization_targets: Optional[OptimizationTargets] = None):
         """
         Initialize HDP-HMM clusterer.
         
         Args:
             config: Configuration for HDP-HMM clustering
+            artifact_manager: Optional artifact manager for loading/saving data
+            optimization_goals: Optional clustering optimization goals
+            optimization_targets: Optional optimization targets
         """
         self.config = config or HDPHMMConfig()
         self.logger = logging.getLogger(self.__class__.__name__)
@@ -194,6 +210,14 @@ class HDPHMMClusterer:
         self.scaler = None
         self.pca = None
         self.convergence_history = []
+        
+        # Artifact manager and quality assessment
+        self.artifact_manager = artifact_manager
+        self.quality_assessor = create_cluster_quality_assessor(artifact_manager)
+        
+        # Optimization goals and targets
+        self.optimization_goals = optimization_goals or DEFAULT_CLUSTERING_GOALS
+        self.optimization_targets = optimization_targets or DEFAULT_OPTIMIZATION_TARGETS
         
         # Initialize hardware manager if available
         if HARDWARE_UTILS_AVAILABLE:
@@ -255,8 +279,10 @@ class HDPHMMClusterer:
             else:
                 raise ValueError(f"Unsupported HMM library: {HMM_LIBRARY}")
             
-            # Calculate metrics
-            metrics = self._calculate_metrics(data_processed, result['labels'])
+            # Calculate metrics (with optional timestamps and returns if available)
+            timestamps = getattr(data, 'index', None) if isinstance(data, pd.DataFrame) else None
+            forward_returns = None  # Could be passed in future
+            metrics = self._calculate_metrics(data_processed, result['labels'], timestamps, forward_returns)
             
             # Calculate memory usage
             current, peak = tracemalloc.get_traced_memory()
@@ -686,8 +712,12 @@ class HDPHMMClusterer:
             'model': hmm  # Return model for storage
         }
     
-    def _calculate_metrics(self, data: np.ndarray, labels: np.ndarray) -> Dict[str, float]:
-        """Calculate clustering quality metrics."""
+    def _calculate_metrics(self, 
+                          data: np.ndarray, 
+                          labels: np.ndarray,
+                          timestamps: Optional[pd.DatetimeIndex] = None,
+                          forward_returns: Optional[pd.Series] = None) -> Dict[str, float]:
+        """Calculate clustering quality metrics using unified cluster quality assessor."""
         tprint_debug("📊 Calculating clustering metrics")
         
         metrics = {}
@@ -699,33 +729,73 @@ class HDPHMMClusterer:
         metrics['n_clusters'] = n_clusters
         metrics['noise_ratio'] = 0.0  # HMM doesn't have noise concept
         
-        # Use comprehensive quality assessor for clustering metrics
+        # Convert data to DataFrame for quality assessor
         try:
-            quality_assessor = create_quality_assessor()
-            quality_metrics = quality_assessor.assess_clustering_quality(
-                cluster_labels=labels,
-                features=data,
-                clusterer=None,  # HDP-HMM doesn't have HDBSCAN clusterer
-                timestamps=None,  # Add if available from input data
-                returns=None     # Add if available from input data
+            if isinstance(data, np.ndarray):
+                feature_data = pd.DataFrame(data, columns=[f'feature_{i}' for i in range(data.shape[1])])
+            else:
+                feature_data = data
+            
+            # Use comprehensive quality assessor
+            quality_metrics = self.quality_assessor.assess_quality(
+                regime_labels=labels,
+                feature_data=feature_data,
+                forward_returns=forward_returns,
+                timestamps=timestamps,
+                min_regime_size=self.config.min_regime_size
             )
             
-            # Extract metrics
+            # Extract core metrics
             metrics['silhouette_score'] = quality_metrics.silhouette_score or 0.0
             metrics['calinski_harabasz_score'] = quality_metrics.calinski_harabasz_score or 0.0
             metrics['davies_bouldin_score'] = quality_metrics.davies_bouldin_score or 0.0
+            metrics['balance_score'] = quality_metrics.balance_score or 0.0
+            metrics['temporal_smoothness'] = quality_metrics.temporal_smoothness or 0.0
             
-            # Add comprehensive quality metrics
+            # Calculate composite score using optimization goals
+            metrics['composite_score'] = calculate_composite_score(
+                cv_score=quality_metrics.between_regime_cv / (quality_metrics.within_regime_cv + 1e-8) if quality_metrics.within_regime_cv else 1.0,
+                silhouette_score=metrics['silhouette_score'],
+                dbi_score=metrics['davies_bouldin_score'],
+                balance_score=metrics['balance_score'],
+                temporal_smoothness=metrics['temporal_smoothness'],
+                goals=self.optimization_goals
+            )
+            
+            # Check if meets optimization constraints
+            meets_constraints, constraint_checks = meets_optimization_constraints(
+                cv_score=quality_metrics.between_regime_cv / (quality_metrics.within_regime_cv + 1e-8) if quality_metrics.within_regime_cv else 1.0,
+                silhouette_score=metrics['silhouette_score'],
+                dbi_score=metrics['davies_bouldin_score'],
+                balance_score=metrics['balance_score'],
+                temporal_smoothness=metrics['temporal_smoothness'],
+                n_clusters=n_clusters,
+                targets=self.optimization_targets
+            )
+            
+            metrics['meets_constraints'] = meets_constraints
+            metrics['constraint_checks'] = constraint_checks
+            
+            # Add full quality assessment
             metrics['quality_assessment'] = quality_metrics.to_dict()
-            metrics['composite_quality_score'] = quality_metrics.composite_quality_score
             
-            tprint_success(f"✅ Comprehensive quality assessment: Score={quality_metrics.composite_quality_score:.3f}")
+            # Save quality metrics if artifact manager is available
+            if self.artifact_manager:
+                try:
+                    self.quality_assessor.save_metrics(quality_metrics, "hdp_hmm_cluster_quality")
+                except Exception as e:
+                    tprint_warning(f"⚠️ Failed to save quality metrics: {e}")
+            
+            tprint_success(f"✅ Quality assessment: Composite Score={metrics['composite_score']:.3f}, Meets Constraints={meets_constraints}")
             
         except Exception as e:
             tprint_warning(f"⚠️ Quality assessment failed: {e}")
+            self.logger.error(f"Quality assessment error: {e}", exc_info=True)
             metrics['silhouette_score'] = 0.0
             metrics['calinski_harabasz_score'] = 0.0
             metrics['davies_bouldin_score'] = 0.0
+            metrics['composite_score'] = 0.0
+            metrics['meets_constraints'] = False
         
         return metrics
     

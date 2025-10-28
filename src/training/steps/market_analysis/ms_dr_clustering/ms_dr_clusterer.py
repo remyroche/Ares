@@ -80,6 +80,37 @@ from src.utils.tprint import (
     tprint_data_preview, tprint_data_format
 )
 
+# Import safe mathematical operations
+from src.utils.math_validation import (
+    safe_divide, safe_mean, safe_std, safe_correlation,
+    validate_finite, validate_array_finite, check_for_inf_nan
+)
+
+# Import memory optimization utilities
+from src.utils.common_operations import (
+    memory_monitor, force_garbage_collection,
+    optimize_dataframe_memory, parallel_map
+)
+
+# Import hardware acceleration
+try:
+    from src.utils.hardware.unified_hardware_manager import UnifiedHardwareManager
+    from src.utils.hardware.adaptive_optimization_engine import AdaptiveOptimizationEngine
+    HARDWARE_UTILS_AVAILABLE = True
+except ImportError:
+    HARDWARE_UTILS_AVAILABLE = False
+    tprint_debug("Hardware optimization utilities not available")
+
+# Import VectorBT for efficient operations
+try:
+    from src.vectorbt import (
+        vbt, rolling_mean, rolling_std, rolling_var,
+        rolling_min, rolling_max, VECTORBT_AVAILABLE
+    )
+except ImportError:
+    VECTORBT_AVAILABLE = False
+    tprint_debug("VectorBT not available, will use pandas fallback")
+
 # Import unified cluster quality assessor (updated to use the centralized one)
 from src.training.steps.market_analysis.clusters.cluster_quality_assessor import (
     create_cluster_quality_assessor,
@@ -172,6 +203,14 @@ class MSDRConfig:
     max_nan_ratio: float = 0.1  # Maximum ratio of NaN values allowed
     show_progress: bool = True  # Show progress during optimization
     
+    # Enhancement flags
+    use_safe_math: bool = True  # Use safe mathematical operations
+    use_memory_optimization: bool = True  # Enable memory monitoring and optimization
+    use_hardware_acceleration: bool = True  # Use hardware manager for optimization
+    use_vectorbt_operations: bool = True  # Use VectorBT for rolling operations (if available)
+    use_parallel_selection: bool = True  # Use parallel processing for model selection
+    max_workers: Optional[int] = None  # Number of parallel workers (None = auto)
+    
     # Random seed
     random_state: int = 42
 
@@ -226,7 +265,7 @@ class MSDRClusterer:
     
     def __init__(self, config: Optional[MSDRConfig] = None):
         """
-        Initialize MS-DR clusterer.
+        Initialize MS-DR clusterer with enhanced capabilities.
         
         Args:
             config: Configuration for MS-DR clustering
@@ -238,33 +277,78 @@ class MSDRClusterer:
         self.pca = None
         self.fitted_models = {}  # Store models for different regime counts
         
-        # Initialize hardware manager if available (from code review)
-        if HARDWARE_UTILS_AVAILABLE:
+        # Initialize hardware manager if enabled and available
+        self.hardware_manager = None
+        self.optimization_engine = None
+        if self.config.use_hardware_acceleration and HARDWARE_UTILS_AVAILABLE:
             try:
-                self.device_manager = get_device_manager()
-                tprint_debug(f"Hardware manager initialized: {self.device_manager.get_device_info()}")
+                self.hardware_manager = UnifiedHardwareManager()
+                self.optimization_engine = AdaptiveOptimizationEngine(self.hardware_manager)
+                
+                # Get hardware info
+                hw_info = self.hardware_manager.get_system_info()
+                tprint_structured({
+                    'device': hw_info.get('device_type', 'CPU'),
+                    'memory_gb': hw_info.get('total_memory_gb', 0),
+                    'cpu_count': hw_info.get('cpu_count', 0),
+                    'hardware_optimization': 'ENABLED'
+                }, level="INFO")
+                
+                # Configure based on hardware
+                self._configure_for_hardware(hw_info)
             except Exception as e:
-                tprint_debug(f"Failed to initialize hardware manager: {e}")
-                self.device_manager = None
-        else:
-            self.device_manager = None
+                tprint_warning(f"⚠️ Hardware optimization unavailable: {e}")
+                self.hardware_manager = None
+                self.optimization_engine = None
         
         if not MS_AVAILABLE:
             tprint_error("❌ Markov-Switching models not available. Install statsmodels")
             raise ImportError("statsmodels.tsa.regime_switching not available")
         
-        tprint_info(f"🚀 Initialized MS-DR Clusterer with {MS_LIBRARY}")
+        # Log initialization with enhancements
+        enhancements = []
+        if self.config.use_safe_math:
+            enhancements.append("Safe Math")
+        if self.config.use_memory_optimization:
+            enhancements.append("Memory Opt")
+        if self.config.use_hardware_acceleration and self.hardware_manager:
+            enhancements.append("Hardware Accel")
+        if self.config.use_vectorbt_operations and VECTORBT_AVAILABLE:
+            enhancements.append("VectorBT")
+        if self.config.use_parallel_selection:
+            enhancements.append("Parallel")
+        
+        tprint_info(f"🚀 Initialized Enhanced MS-DR Clusterer with {MS_LIBRARY}")
         tprint_structured({
             "n_regimes": self.config.n_regimes,
             "model_type": self.config.model_type,
             "switching_variance": self.config.switching_variance,
             "auto_select_regimes": self.config.auto_select_regimes,
-            "library": MS_LIBRARY
+            "library": MS_LIBRARY,
+            "enhancements": ", ".join(enhancements) if enhancements else "None"
         }, level="INFO")
+    
+    def _configure_for_hardware(self, hw_info: Dict[str, Any]) -> None:
+        """Adjust configuration based on hardware capabilities."""
+        available_memory_gb = hw_info.get('available_memory_gb', 8)
+        
+        # Adjust model selection range based on memory
+        if available_memory_gb < 4:
+            tprint_warning("⚠️ Low memory detected, using conservative settings")
+            self.config.max_regimes = min(self.config.max_regimes, 6)
+        elif available_memory_gb > 16:
+            tprint_info("💪 High memory available, enabling expanded search space")
+            self.config.max_regimes = min(self.config.max_regimes, 15)
+        
+        # Set parallel workers based on CPU count
+        if self.config.max_workers is None:
+            cpu_count = hw_info.get('cpu_count', 1)
+            self.config.max_workers = min(4, max(1, cpu_count // 2))
+            tprint_debug(f"Set max_workers to {self.config.max_workers} based on {cpu_count} CPUs")
     
     def fit_predict(self, data: np.ndarray) -> MSDRResult:
         """
-        Fit MS-DR model and predict regime labels.
+        Fit MS-DR model and predict regime labels with enhanced capabilities.
         
         Args:
             data: Input data (n_samples, n_features) or time series
@@ -275,14 +359,27 @@ class MSDRClusterer:
         Note:
             Input validation is always performed to ensure reliable MS-DR estimation.
             The validation checks for minimum samples, feature requirements, and data quality.
+            
+        Enhancements:
+            - Memory monitoring (if enabled)
+            - Safe mathematical operations
+            - Hardware-aware optimization
+            - VectorBT acceleration (if available)
         """
-        tprint_info("🔍 Starting Markov-Switching regime discovery")
+        tprint_info("🔍 Starting Enhanced Markov-Switching regime discovery")
         
         import time
         import tracemalloc
         
         start_time = time.time()
         tracemalloc.start()
+        
+        # Optional: Use memory monitoring context
+        if self.config.use_memory_optimization:
+            memory_context = memory_monitor("MS-DR Clustering")
+            memory_context.__enter__()
+        else:
+            memory_context = None
         
         try:
             # Validate input data (always validate for reliability)
@@ -386,6 +483,18 @@ class MSDRClusterer:
                 success=False,
                 error_message=str(e)
             )
+        
+        finally:
+            # Cleanup memory context if used
+            if memory_context is not None:
+                try:
+                    memory_context.__exit__(None, None, None)
+                except Exception as e:
+                    tprint_debug(f"Error closing memory context: {e}")
+            
+            # Force garbage collection if memory optimization is enabled
+            if self.config.use_memory_optimization:
+                force_garbage_collection()
     
     def _validate_input(self, data: np.ndarray) -> None:
         """
@@ -435,79 +544,101 @@ class MSDRClusterer:
         tprint_success("✅ Input validation passed")
     
     def _preprocess_data(self, data: np.ndarray) -> Tuple[np.ndarray, List[str]]:
-        """Preprocess data with scaling and optional PCA."""
+        """Preprocess data with scaling and optional PCA, with memory optimization."""
         tprint_info("🔧 Preprocessing data for MS-DR")
         tprint_data_preview(data, "Input Data", max_rows=3, max_cols=5)
         
-        # Handle DataFrame input
-        if isinstance(data, pd.DataFrame):
-            feature_names = data.columns.tolist()
-            data = data.values
+        # Memory monitoring context for preprocessing
+        if self.config.use_memory_optimization:
+            preprocess_context = memory_monitor("Data Preprocessing")
+            preprocess_context.__enter__()
         else:
-            feature_names = [f'feature_{i}' for i in range(data.shape[1]) if len(data.shape) > 1] or ['target']
+            preprocess_context = None
         
-        # If data is 1D, use as time series
-        if len(data.shape) == 1:
-            data = data.reshape(-1, 1)
-        
-        # Standardize
-        self.scaler = StandardScaler()
-        data_scaled = self.scaler.fit_transform(data)
-        
-        # Apply PCA if enabled and data has multiple features
-        if self.config.enable_pca and data.shape[1] > 1:
-            # Determine if PCA should be applied
-            apply_pca = False
+        try:
+            # Handle DataFrame input with memory optimization
+            if isinstance(data, pd.DataFrame):
+                if self.config.use_memory_optimization:
+                    data = optimize_dataframe_memory(data)
+                feature_names = data.columns.tolist()
+                data = data.values
+            else:
+                feature_names = [f'feature_{i}' for i in range(data.shape[1]) if len(data.shape) > 1] or ['target']
             
-            if self.config.pca_variance_threshold < 1.0:
-                # Will use threshold-based selection
-                apply_pca = True
-                self.pca = PCA(n_components=self.config.pca_variance_threshold, random_state=self.config.random_state)
-                tprint_info(f"📊 Applying PCA with variance threshold: {self.config.pca_variance_threshold:.2%}")
-            elif data.shape[1] > self.config.pca_components:
-                # Use fixed number of components only if we have more features than target
-                apply_pca = True
-                self.pca = PCA(n_components=self.config.pca_components, random_state=self.config.random_state)
-                tprint_info(f"📊 Applying PCA: {data.shape[1]} → {self.config.pca_components} components")
+            # If data is 1D, use as time series
+            if len(data.shape) == 1:
+                data = data.reshape(-1, 1)
             
-            if apply_pca:
-                data_processed = self.pca.fit_transform(data_scaled)
-                feature_names = [f'pca_{i+1}' for i in range(data_processed.shape[1])]
-                explained_var = np.sum(self.pca.explained_variance_ratio_)
-                tprint_info(f"✅ PCA completed: {explained_var:.2%} variance explained")
+            # Standardize
+            self.scaler = StandardScaler()
+            data_scaled = self.scaler.fit_transform(data)
+            
+            # Free memory after scaling
+            if self.config.use_memory_optimization:
+                force_garbage_collection()
+            
+                # Apply PCA if enabled and data has multiple features
+            if self.config.enable_pca and data.shape[1] > 1:
+                # Determine if PCA should be applied
+                apply_pca = False
+                
+                if self.config.pca_variance_threshold < 1.0:
+                    # Will use threshold-based selection
+                    apply_pca = True
+                    self.pca = PCA(n_components=self.config.pca_variance_threshold, random_state=self.config.random_state)
+                    tprint_info(f"📊 Applying PCA with variance threshold: {self.config.pca_variance_threshold:.2%}")
+                elif data.shape[1] > self.config.pca_components:
+                    # Use fixed number of components only if we have more features than target
+                    apply_pca = True
+                    self.pca = PCA(n_components=self.config.pca_components, random_state=self.config.random_state)
+                    tprint_info(f"📊 Applying PCA: {data.shape[1]} → {self.config.pca_components} components")
+                
+                if apply_pca:
+                    data_processed = self.pca.fit_transform(data_scaled)
+                    feature_names = [f'pca_{i+1}' for i in range(data_processed.shape[1])]
+                    explained_var = np.sum(self.pca.explained_variance_ratio_)
+                    tprint_info(f"✅ PCA completed: {explained_var:.2%} variance explained")
+                else:
+                    data_processed = data_scaled
             else:
                 data_processed = data_scaled
-        else:
-            data_processed = data_scaled
-        
-        # For MS models, we need univariate time series
-        # Convert multi-dimensional data to univariate based on aggregation strategy
-        if data_processed.shape[1] > 1:
-            if self.config.pca_aggregation == 'first':
-                tprint_info("📊 Using first principal component for MS model")
-                data_processed = data_processed[:, 0].reshape(-1, 1)
-                feature_names = ['pc1']
-            elif self.config.pca_aggregation == 'weighted_average':
-                tprint_info("📊 Using variance-weighted average of components for MS model")
-                if self.pca is not None:
-                    # Weight by explained variance ratio
-                    weights = self.pca.explained_variance_ratio_[:data_processed.shape[1]]
-                    weights = weights / weights.sum()
-                    data_processed = np.average(data_processed, axis=1, weights=weights).reshape(-1, 1)
+            
+            # For MS models, we need univariate time series
+            # Convert multi-dimensional data to univariate based on aggregation strategy
+            if data_processed.shape[1] > 1:
+                if self.config.pca_aggregation == 'first':
+                    tprint_info("📊 Using first principal component for MS model")
+                    data_processed = data_processed[:, 0].reshape(-1, 1)
+                    feature_names = ['pc1']
+                elif self.config.pca_aggregation == 'weighted_average':
+                    tprint_info("📊 Using variance-weighted average of components for MS model")
+                    if self.pca is not None:
+                        # Weight by explained variance ratio
+                        weights = self.pca.explained_variance_ratio_[:data_processed.shape[1]]
+                        weights = weights / weights.sum()
+                        data_processed = np.average(data_processed, axis=1, weights=weights).reshape(-1, 1)
+                    else:
+                        # Equal weights if no PCA
+                        data_processed = np.mean(data_processed, axis=1).reshape(-1, 1)
+                    feature_names = ['weighted_avg']
+                elif self.config.pca_aggregation == 'none':
+                    # Keep all components (note: this may not work with all MS models)
+                    tprint_warning("⚠️ Keeping all components - MS models typically require univariate input")
+                    pass
                 else:
-                    # Equal weights if no PCA
-                    data_processed = np.mean(data_processed, axis=1).reshape(-1, 1)
-                feature_names = ['weighted_avg']
-            elif self.config.pca_aggregation == 'none':
-                # Keep all components (note: this may not work with all MS models)
-                tprint_warning("⚠️ Keeping all components - MS models typically require univariate input")
-                pass
-            else:
-                raise ValueError(f"Unknown pca_aggregation method: {self.config.pca_aggregation}")
+                    raise ValueError(f"Unknown pca_aggregation method: {self.config.pca_aggregation}")
+            
+            tprint_success(f"✅ Preprocessed data shape: {data_processed.shape}")
+            tprint_data_format(data_processed, "Preprocessed Data", check_compatibility=True)
+            return data_processed, feature_names
         
-        tprint_success(f"✅ Preprocessed data shape: {data_processed.shape}")
-        tprint_data_format(data_processed, "Preprocessed Data", check_compatibility=True)
-        return data_processed, feature_names
+        finally:
+            # Cleanup preprocessing context
+            if preprocess_context is not None:
+                try:
+                    preprocess_context.__exit__(None, None, None)
+                except Exception as e:
+                    tprint_debug(f"Error closing preprocess context: {e}")
     
     def _select_optimal_regimes(self, data: np.ndarray) -> int:
         """
@@ -780,8 +911,18 @@ class MSDRClusterer:
             metrics['composite_quality_score'] = quality_metrics.quality_score
             
             # Calculate optimization metrics using clustering optimization goals
+            # Use safe math operations if enabled
+            if self.config.use_safe_math:
+                cv_score = safe_divide(
+                    quality_metrics.between_regime_cv,
+                    quality_metrics.within_regime_cv,
+                    default=1.0
+                )
+            else:
+                cv_score = quality_metrics.between_regime_cv / (quality_metrics.within_regime_cv + 1e-8) if quality_metrics.within_regime_cv else 1.0
+            
             composite_score = calculate_composite_score(
-                cv_score=quality_metrics.between_regime_cv / (quality_metrics.within_regime_cv + 1e-8) if quality_metrics.within_regime_cv else 1.0,
+                cv_score=cv_score,
                 silhouette_score=quality_metrics.silhouette_score or 0.0,
                 dbi_score=quality_metrics.davies_bouldin_score or float('inf'),
                 balance_score=quality_metrics.balance_score or 0.0,

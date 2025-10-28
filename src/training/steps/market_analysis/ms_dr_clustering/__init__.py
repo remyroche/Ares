@@ -21,6 +21,20 @@ from .ms_dr_auto_tuner import (
     auto_tune_ms_dr_clustering
 )
 
+# Import hierarchical HPO extension
+try:
+    from .hierarchical_hpo_extension import (
+        MSDRHierarchicalOptimizer,
+        create_msdr_parameter_groups,
+        create_msdr_optimization_stages
+    )
+    HIERARCHICAL_HPO_AVAILABLE = True
+except ImportError:
+    HIERARCHICAL_HPO_AVAILABLE = False
+    MSDRHierarchicalOptimizer = None
+    create_msdr_parameter_groups = None
+    create_msdr_optimization_stages = None
+
 # Import standalone function with artifact manager
 try:
     from src.feature_generation.integration.enhanced_ms_dr_clustering_integration import (
@@ -45,5 +59,9 @@ __all__ = [
     'auto_tune_ms_dr_clustering',
     'perform_ms_dr_clustering_with_artifact_manager',
     'perform_enhanced_ms_dr_clustering',
-    'INTEGRATION_AVAILABLE'
+    'INTEGRATION_AVAILABLE',
+    'MSDRHierarchicalOptimizer',
+    'create_msdr_parameter_groups',
+    'create_msdr_optimization_stages',
+    'HIERARCHICAL_HPO_AVAILABLE'
 ]

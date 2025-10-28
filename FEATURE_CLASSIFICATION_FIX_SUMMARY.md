@@ -27,20 +27,21 @@ Features with cross-timeframe markers only (no interactions)
 - **Detection**: Contains `_3x_ratio`, `_6x_ratio`, `_9x_ratio`, or `_27x_ratio` WITHOUT interaction operators
 
 ### 4. **Variant Features** (NEW DISTINCTION!)
-Features with variant suffixes
+Features with variant transformation suffixes (NOT including `_base`)
 - **Examples**: 
-  - `rsi_base`
-  - `macd_volnorm`
-  - `volume_weighted_vwap`
-  - `momentum_trend_adj`
-- **Detection**: Ends with `_base`, `_volnorm`, `_vwap`, or `_trend_adj`
+  - `macd_volnorm` (volume-normalized)
+  - `volume_weighted_vwap` (VWAP-weighted)
+  - `momentum_trend_adj` (trend-adjusted)
+- **Detection**: Ends with `_volnorm`, `_vwap`, or `_trend_adj`
 
 ### 5. **Base Features** (NEW DISTINCTION!)
-Original features without variant suffixes
+Original/base features including those with `_base` suffix
 - **Examples**: 
-  - `atr`
-  - `volatility_spike`
-- **Detection**: No interaction operators, no cross-timeframe markers, no variant suffixes
+  - `rsi_base` (base version of RSI)
+  - `atr` (original ATR feature)
+  - `volatility_spike` (original feature)
+- **Detection**: No interaction operators, no cross-timeframe markers, no variant transformation suffixes
+- **Note**: Features with `_base` suffix ARE base features, not variants!
 
 ## 🔧 Changes Made
 
@@ -52,8 +53,8 @@ Lines 3611-3650
 
 ### Key Logic
 ```python
-# Define variant suffixes
-variant_suffixes = ['_base', '_volnorm', '_vwap', '_trend_adj']
+# Define variant suffixes (excluding _base which IS the base feature)
+variant_suffixes = ['_volnorm', '_vwap', '_trend_adj']
 
 for col in combined_features.columns:
     # Check interaction operations FIRST (before CT markers)
@@ -88,10 +89,22 @@ for col in combined_features.columns:
 
 Classification logic tested with sample features - all categorized correctly:
 - ✅ Hybrid CT interactions: 2 features
-- ✅ Traditional interactions: 2 features  
+  - `rsi_base_3x_ratio_x_macd_6x_ratio`
+  - `momentum_trend_adj_9x_ratio_div_atr_27x_ratio`
+- ✅ Traditional interactions: 2 features
+  - `rsi_x_macd`
+  - `volume_div_price`
 - ✅ CT ratio features: 2 features
-- ✅ Variant features: 4 features
-- ✅ Base features: 2 features
+  - `rsi_base_3x_ratio`
+  - `macd_volnorm_6x_ratio`
+- ✅ Variant features: 3 features
+  - `macd_volnorm`
+  - `volume_weighted_vwap`
+  - `momentum_trend_adj`
+- ✅ Base features: 3 features
+  - `rsi_base` (includes _base suffix!)
+  - `atr`
+  - `volatility_spike`
 
 ## 🎯 Priority Order
 

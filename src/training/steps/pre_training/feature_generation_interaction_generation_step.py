@@ -3615,8 +3615,8 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
         variant_features_list = []
         base_features_list = []
         
-        # Define variant suffixes
-        variant_suffixes = ['_base', '_volnorm', '_vwap', '_trend_adj']
+        # Define variant suffixes (excluding _base which IS the base feature)
+        variant_suffixes = ['_volnorm', '_vwap', '_trend_adj']
         
         for col in combined_features.columns:
             # Check interaction operations FIRST (before CT markers)

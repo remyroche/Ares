@@ -454,9 +454,9 @@ def perform_enhanced_ms_dr_clustering(
 
 
 def perform_ms_dr_clustering_with_artifact_manager(
-    symbol: str = "BTCUSDT",
+    symbol: str = "ETHUSDT",
     exchange: str = "binance",
-    timeframe: str = "30m",
+    timeframe: str = "1h",
     artifact_base_dir: str = "artifacts",
     min_features: int = 50,
     max_features: int = 100,

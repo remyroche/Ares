@@ -47,9 +47,9 @@ from src.feature_generation.integration.enhanced_ms_dr_clustering_integration im
 
 # Call with artifact manager to automatically load data
 result = perform_ms_dr_clustering_with_artifact_manager(
-    symbol="BTCUSDT",              # Trading symbol
-    exchange="binance",             # Exchange name
-    timeframe="30m",                # Timeframe
+    symbol="ETHUSDT",               # Trading symbol (default: ETHUSDT)
+    exchange="binance",             # Exchange name (default: binance)
+    timeframe="1h",                 # Timeframe (default: 1h)
     artifact_base_dir="artifacts",  # Base directory for artifacts
     min_features=50,                # Minimum number of features
     max_features=100,               # Maximum number of features
@@ -71,9 +71,9 @@ print(f"Found {n_regimes} regimes with quality score: {quality_score:.3f}")
 
 | Argument | Type | Default | Description |
 |----------|------|---------|-------------|
-| `symbol` | str | "BTCUSDT" | Trading symbol |
+| `symbol` | str | "ETHUSDT" | Trading symbol |
 | `exchange` | str | "binance" | Exchange name |
-| `timeframe` | str | "30m" | Timeframe (e.g., "30m", "1h") |
+| `timeframe` | str | "1h" | Timeframe (e.g., "30m", "1h") |
 | `artifact_base_dir` | str | "artifacts" | Base directory for artifacts |
 | `min_features` | int | 50 | Minimum number of features |
 | `max_features` | int | 100 | Maximum number of features |
@@ -83,19 +83,30 @@ print(f"Found {n_regimes} regimes with quality score: {quality_score:.3f}")
 | `min_regimes` | int | 2 | Minimum regimes to consider (if auto-selecting) |
 | `max_regimes` | int | 10 | Maximum regimes to consider (if auto-selecting) |
 
-### Method 2: With Manual Data Provision
+### Method 2: With Manual Data Provision (Using BaseClass)
 
-Use this method when you already have market data loaded in memory.
+Use this method when you want to load data through a BaseStep class.
 
 ```python
-import pandas as pd
+from src.training.steps.base_step import BaseStep
 from src.feature_generation.integration.enhanced_ms_dr_clustering_integration import (
     perform_enhanced_ms_dr_clustering
 )
 
-# Load your market data (should have OHLCV columns)
-market_data = pd.read_csv("your_data.csv")
-# or load from any other source
+# Load data through BaseClass (inherits from BaseStep)
+class DataLoader(BaseStep):
+    def execute(self):
+        # Your BaseStep implementation
+        # Data is loaded via artifact_manager
+        market_data = self.artifact_manager.get_artifact(
+            artifact_name="market_data",
+            artifact_type="data"
+        )
+        return market_data
+
+# Initialize and load
+loader = DataLoader(config={...})
+market_data = loader.execute()
 
 # Perform clustering
 result = perform_enhanced_ms_dr_clustering(
@@ -223,18 +234,134 @@ else:
     print(result['quality_metrics']['constraint_checks'])
 ```
 
+## Auto-Tuner for Hyperparameter Optimization
+
+The MS-DR clustering now includes an automatic hyperparameter tuner that optimizes the composite quality score using a staged optimization strategy:
+
+**Stage 1**: Coarse Grid Search (broad exploration)  
+**Stage 2**: Fine Grid Search around best results (local refinement)  
+**Stage 3**: TPE (Tree-structured Parzen Estimator) optimization (final optimization)
+
+### Using the Auto-Tuner
+
+```python
+from src.training.steps.market_analysis.ms_dr_clustering import (
+    MSDRAutoTuner,
+    auto_tune_ms_dr_clustering
+)
+from src.feature_generation.integration.enhanced_ms_dr_clustering_integration import (
+    perform_ms_dr_clustering_with_artifact_manager
+)
+
+# Method 1: Using convenience function
+result = auto_tune_ms_dr_clustering(
+    data=market_data,
+    n_trials=100,
+    timeout_minutes=60.0,
+    enable_staged_optimization=True
+)
+
+# Get best parameters
+best_params = result['best_params']
+best_score = result['best_score']
+
+print(f"Best Score: {best_score:.4f}")
+print(f"Best Parameters: {best_params}")
+
+# Method 2: Using MSDRAutoTuner class
+tuner = MSDRAutoTuner()
+
+tuning_result = tuner.auto_tune(
+    data=market_data,
+    n_trials=100,
+    timeout_minutes=60.0
+)
+
+# Access results
+best_params = tuning_result['best_params']
+best_score = tuning_result['best_score']
+trial_history = tuning_result['trial_history']
+optimization_summary = tuning_result['optimization_summary']
+
+print(f"""
+Auto-Tuning Results:
+===================
+Best Score: {best_score:.4f}
+Best Parameters: {best_params}
+Total Trials: {len(trial_history)}
+Improvement: {optimization_summary['improvement']:.4f}
+""")
+```
+
+### Auto-Tuner Search Space
+
+The auto-tuner optimizes the following parameters:
+
+| Parameter | Type | Range | Description |
+|-----------|------|-------|-------------|
+| `n_regimes` | int | 3-12 | Number of market regimes |
+| `order` | int | 1-5 | Autoregression order |
+| `switching_variance` | categorical | [True, False] | Allow variance switching |
+| `model_type` | categorical | ['autoregression', 'regression'] | Model type |
+| `pca_components` | int | 5-20 | Number of PCA components |
+| `pca_variance_threshold` | float | 0.85-0.99 | PCA variance threshold |
+
+### Auto-Tuner Configuration
+
+You can customize the tuning process:
+
+```python
+from src.training.steps.market_analysis.ms_dr_clustering import (
+    MSDRAutoTuner,
+    MSDRTuningConfig
+)
+
+# Create custom tuning configuration
+tuning_config = MSDRTuningConfig(
+    n_trials=150,
+    coarse_grid_trials=40,
+    fine_grid_trials=40,
+    tpe_trials=70,
+    coarse_grid_points=4,
+    fine_grid_points=6,
+    early_stopping_patience=15,
+    timeout_minutes=90.0
+)
+
+# Initialize tuner with custom config
+tuner = MSDRAutoTuner(tuning_config=tuning_config)
+
+# Run auto-tuning
+result = tuner.auto_tune(data=market_data)
+```
+
 ## Complete Example
 
 ```python
 from src.feature_generation.integration.enhanced_ms_dr_clustering_integration import (
     perform_ms_dr_clustering_with_artifact_manager
 )
+from src.training.steps.market_analysis.ms_dr_clustering import (
+    auto_tune_ms_dr_clustering
+)
 
-# Perform clustering with artifact manager
+# Step 1: Auto-tune hyperparameters (optional but recommended)
+print("🎯 Step 1: Auto-tuning hyperparameters...")
+tuning_result = auto_tune_ms_dr_clustering(
+    data=market_data,
+    n_trials=100,
+    timeout_minutes=60.0
+)
+
+best_params = tuning_result['best_params']
+print(f"Best parameters found: {best_params}")
+
+# Step 2: Perform clustering with artifact manager
+print("🚀 Step 2: Performing clustering with optimized parameters...")
 result = perform_ms_dr_clustering_with_artifact_manager(
-    symbol="BTCUSDT",
+    symbol="ETHUSDT",
     exchange="binance",
-    timeframe="30m",
+    timeframe="1h",
     artifact_base_dir="artifacts",
     min_features=50,
     max_features=100,
@@ -397,6 +524,7 @@ result = perform_ms_dr_clustering_with_artifact_manager(
 
 - Main integration: `src/feature_generation/integration/enhanced_ms_dr_clustering_integration.py`
 - MS-DR clusterer: `src/training/steps/market_analysis/ms_dr_clustering/ms_dr_clusterer.py`
+- **Auto-tuner**: `src/training/steps/market_analysis/ms_dr_clustering/ms_dr_auto_tuner.py`
 - Quality assessor: `src/training/steps/market_analysis/clusters/cluster_quality_assessor.py`
 - Optimization goals: `src/training/steps/market_analysis/clusters/clustering_optimization_goals.py`
 - Artifact manager: `src/training/steps/market_analysis/components/artifact_manager.py`
@@ -409,5 +537,31 @@ The MS-DR clustering is now fully integrated with:
 ✅ **Cluster Quality Assessor**: Comprehensive quality metrics  
 ✅ **Clustering Optimization Goals**: Standardized targets and constraints  
 ✅ **Artifact Manager**: Automatic market data loading  
+✅ **Auto-Tuner**: Staged hyperparameter optimization (Coarse Grid → Fine Grid → TPE)  
+
+### Quick Start
+
+```python
+# Full pipeline with auto-tuning
+from src.training.steps.market_analysis.ms_dr_clustering import (
+    perform_ms_dr_clustering_with_artifact_manager,
+    auto_tune_ms_dr_clustering
+)
+
+# Load data from artifacts (defaults: symbol=ETHUSDT, timeframe=1h)
+result = perform_ms_dr_clustering_with_artifact_manager()
+
+# Or with auto-tuning
+tuning_result = auto_tune_ms_dr_clustering(
+    data=market_data,
+    n_trials=100
+)
+```
+
+### Default Parameters
+
+- **Symbol**: `ETHUSDT` (changed from BTCUSDT)
+- **Exchange**: `binance`
+- **Timeframe**: `1h` (changed from 30m)
 
 Use `perform_ms_dr_clustering_with_artifact_manager()` for the complete standalone experience!

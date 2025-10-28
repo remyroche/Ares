@@ -14,6 +14,13 @@ from .ms_dr_clusterer import (
     MS_LIBRARY
 )
 
+# Import auto-tuner
+from .ms_dr_auto_tuner import (
+    MSDRAutoTuner,
+    MSDRTuningConfig,
+    auto_tune_ms_dr_clustering
+)
+
 # Import standalone function with artifact manager
 try:
     from src.feature_generation.integration.enhanced_ms_dr_clustering_integration import (
@@ -33,6 +40,9 @@ __all__ = [
     'create_ms_dr_clusterer',
     'MS_AVAILABLE',
     'MS_LIBRARY',
+    'MSDRAutoTuner',
+    'MSDRTuningConfig',
+    'auto_tune_ms_dr_clustering',
     'perform_ms_dr_clustering_with_artifact_manager',
     'perform_enhanced_ms_dr_clustering',
     'INTEGRATION_AVAILABLE'

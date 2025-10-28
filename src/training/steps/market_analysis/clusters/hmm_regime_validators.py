@@ -128,6 +128,12 @@ class HMMRegimeValidator:
         # Effect size: mean improvement / std
         effect_size = mean_delta / (std_delta + 1e-10)
         
+        # DIAGNOSTIC: Median & IQR of predictive LL
+        median_ll = np.median(holdout_lls)
+        q25_ll = np.percentile(holdout_lls, 25)
+        q75_ll = np.percentile(holdout_lls, 75)
+        iqr_ll = q75_ll - q25_ll
+        
         result = {
             'delta_ll_across_folds': delta_lls,
             'mean_delta_ll': mean_delta,
@@ -137,7 +143,12 @@ class HMMRegimeValidator:
             'positive_ratio': positive_folds / len(delta_lls),
             'effect_size': effect_size,
             'holdout_lls': holdout_lls,
-            'baseline_lls': baseline_lls
+            'baseline_lls': baseline_lls,
+            # DIAGNOSTIC: Median & IQR
+            'predictive_ll_median': float(median_ll),
+            'predictive_ll_iqr': float(iqr_ll),
+            'predictive_ll_q25': float(q25_ll),
+            'predictive_ll_q75': float(q75_ll)
         }
         
         # Heuristic: consistent positive ΔLL
@@ -249,13 +260,24 @@ class HMMRegimeValidator:
         mean_ari = np.mean(ari_scores)
         median_nmi = np.median(nmi_scores) if nmi_scores else 0.0
         
+        # DIAGNOSTIC: ARI median & IQR
+        q25_ari = np.percentile(ari_scores, 25)
+        q75_ari = np.percentile(ari_scores, 75)
+        iqr_ari = q75_ari - q25_ari
+        
         result = {
             'ari_scores': ari_scores,
             'nmi_scores': nmi_scores,
             'median_ari': median_ari,
             'mean_ari': mean_ari,
             'median_nmi': median_nmi,
-            'n_refits': len(all_labels)
+            'n_refits': len(all_labels),
+            # DIAGNOSTIC: ARI across restarts (detailed)
+            'ari_across_restarts': ari_scores,
+            'ari_median': float(median_ari),
+            'ari_iqr': float(iqr_ari),
+            'ari_q25': float(q25_ari),
+            'ari_q75': float(q75_ari)
         }
         
         # Heuristic: ARI median > 0.6 is decent; <0.4 indicates instability
@@ -303,6 +325,15 @@ class HMMRegimeValidator:
         
         # Count tiny states (< 1% occupancy)
         tiny_states = sum(1 for occ in state_occupancy.values() if occ < 0.01)
+        
+        # DIAGNOSTIC: State occupancy distribution
+        occupancy_values = sorted(state_occupancy.values(), reverse=True)
+        min_occupancy_pct = min(occupancy_values) * 100 if occupancy_values else 0.0
+        max_occupancy_pct = max(occupancy_values) * 100 if occupancy_values else 0.0
+        
+        # Shannon entropy of occupancy distribution
+        occupancy_arr = np.array(list(state_occupancy.values()))
+        occupancy_entropy = -np.sum(occupancy_arr * np.log(occupancy_arr + 1e-10))
         
         # Calculate expected durations from transition matrix
         expected_durations = {}
@@ -358,7 +389,12 @@ class HMMRegimeValidator:
             'expected_durations': expected_durations,
             'min_expected_duration_days': min_duration,
             'max_expected_duration_days': max_duration,
-            'duration_quality_flag': duration_quality
+            'duration_quality_flag': duration_quality,
+            # DIAGNOSTIC: State occupancy distribution (detailed)
+            'occupancy_distribution': occupancy_values,
+            'occupancy_entropy': float(occupancy_entropy),
+            'min_occupancy_pct': float(min_occupancy_pct),
+            'max_occupancy_pct': float(max_occupancy_pct)
         }
         
         # Report
@@ -528,17 +564,22 @@ class HMMRegimeValidator:
         n_simulations: int = 100
     ) -> Dict[str, Any]:
         """
-        Compare simulated data from fitted model vs empirical data.
+        ENHANCED posterior predictive check with CRPS, PIT, and tail quantiles.
         
         Args:
             model: Fitted HMM model with sample method
             data: Empirical data
-            n_simulations: Number of simulations
+            n_simulations: Number of simulations for ensemble
             
         Returns:
-            Dict with moment comparisons and calibration scores
+            Dict with:
+            - Moment comparisons
+            - CRPS score (Continuous Ranked Probability Score)
+            - PIT values and uniformity test
+            - Tail quantile comparison (q01, q05, q95, q99)
+            - Tail coverage score
         """
-        tprint_info("📊 VI. Running posterior predictive checks...")
+        tprint_info("📊 VI. Running ENHANCED posterior predictive checks...")
         
         try:
             # Generate simulated data from model
@@ -564,10 +605,66 @@ class HMMRegimeValidator:
             sim_autocorr = self._calculate_autocorrelation(simulated_data[:, 0], lag=1) if simulated_data.shape[1] > 0 else 0.0
             autocorr_diff = abs(emp_autocorr - sim_autocorr)
             
+            # DIAGNOSTIC: CRPS (Continuous Ranked Probability Score)
+            # Simplified CRPS: mean absolute difference between empirical and simulated CDFs
+            emp_data_flat = data.flatten()
+            sim_data_flat = simulated_data.flatten()
+            
+            # Sort both
+            emp_sorted = np.sort(emp_data_flat)
+            sim_sorted = np.sort(sim_data_flat)
+            
+            # Resample to same length for comparison
+            min_len = min(len(emp_sorted), len(sim_sorted))
+            emp_sample = emp_sorted[np.linspace(0, len(emp_sorted)-1, min_len).astype(int)]
+            sim_sample = sim_sorted[np.linspace(0, len(sim_sorted)-1, min_len).astype(int)]
+            
+            crps_score = float(np.mean(np.abs(emp_sample - sim_sample)))
+            
+            # DIAGNOSTIC: PIT (Probability Integral Transform) calibration
+            # For each empirical point, calculate its percentile in simulated distribution
+            pit_values = []
+            for val in emp_data_flat[:min(1000, len(emp_data_flat))]:  # Sample for speed
+                percentile = np.sum(sim_data_flat <= val) / len(sim_data_flat)
+                pit_values.append(percentile)
+            
+            pit_values = np.array(pit_values)
+            
+            # Test uniformity with Kolmogorov-Smirnov test
+            from scipy import stats as scipy_stats
+            ks_statistic, ks_pvalue = scipy_stats.kstest(pit_values, 'uniform')
+            pit_uniformity_pvalue = float(ks_pvalue)
+            
+            # DIAGNOSTIC: Tail quantile comparison
+            quantiles = [0.01, 0.05, 0.25, 0.75, 0.95, 0.99]
+            tail_comparison = {}
+            
+            for q in quantiles:
+                emp_q = np.percentile(emp_data_flat, q * 100)
+                sim_q = np.percentile(sim_data_flat, q * 100)
+                tail_comparison[f'q{int(q*100):02d}'] = {
+                    'empirical': float(emp_q),
+                    'simulated': float(sim_q),
+                    'diff': float(abs(emp_q - sim_q)),
+                    'rel_diff': float(abs(emp_q - sim_q) / (abs(emp_q) + 1e-10))
+                }
+            
+            # Tail coverage score: how well extreme quantiles match
+            tail_qs = [0.01, 0.05, 0.95, 0.99]
+            tail_errors = []
+            for q in tail_qs:
+                emp_q = np.percentile(emp_data_flat, q * 100)
+                sim_q = np.percentile(sim_data_flat, q * 100)
+                rel_error = abs(emp_q - sim_q) / (abs(emp_q) + 1e-10)
+                tail_errors.append(rel_error)
+            
+            tail_coverage_score = float(1.0 - min(1.0, np.mean(tail_errors)))
+            
             # Overall calibration score (0-1, higher is better)
             calibration_score = 1.0 - min(1.0, (mean_diff + std_diff + autocorr_diff) / 3.0)
             
             result = {
+                # Basic moment comparison
                 'mean_difference': float(mean_diff),
                 'std_difference': float(std_diff),
                 'autocorr_difference': float(autocorr_diff),
@@ -575,12 +672,24 @@ class HMMRegimeValidator:
                 'empirical_mean': float(np.mean(empirical_mean)),
                 'simulated_mean': float(np.mean(simulated_mean)),
                 'empirical_std': float(np.mean(empirical_std)),
-                'simulated_std': float(np.mean(simulated_std))
+                'simulated_std': float(np.mean(simulated_std)),
+                
+                # DIAGNOSTIC: CRPS
+                'crps_score': crps_score,
+                
+                # DIAGNOSTIC: PIT
+                'pit_uniformity_pvalue': pit_uniformity_pvalue,
+                'pit_ks_statistic': float(ks_statistic),
+                
+                # DIAGNOSTIC: Tail quantiles
+                'tail_quantile_comparison': tail_comparison,
+                'tail_coverage_score': tail_coverage_score
             }
             
-            if calibration_score > 0.7:
+            # Determine calibration flag
+            if calibration_score > 0.7 and pit_uniformity_pvalue > 0.05:
                 result['calibration_flag'] = 'well_calibrated'
-                tprint_success(f"✅ Well-calibrated model: score={calibration_score:.3f}")
+                tprint_success(f"✅ Well-calibrated: score={calibration_score:.3f}, PIT p={pit_uniformity_pvalue:.3f}")
             elif calibration_score > 0.5:
                 result['calibration_flag'] = 'acceptable'
                 tprint_warning(f"⚠️ Acceptable calibration: score={calibration_score:.3f}")
@@ -588,10 +697,15 @@ class HMMRegimeValidator:
                 result['calibration_flag'] = 'poor'
                 tprint_warning(f"⚠️ Poor calibration: score={calibration_score:.3f}")
             
+            # Report tail coverage
+            tprint_info(f"   CRPS: {crps_score:.4f}, Tail coverage: {tail_coverage_score:.3f}")
+            
             return result
             
         except Exception as e:
             tprint_warning(f"⚠️ Posterior predictive check failed: {e}")
+            import traceback
+            tprint_debug(traceback.format_exc())
             return {}
     
     def _calculate_autocorrelation(self, series: np.ndarray, lag: int = 1) -> float:
@@ -612,19 +726,24 @@ class HMMRegimeValidator:
         labels: np.ndarray,
         returns: pd.Series,
         transaction_cost_bps: float = 10.0,
-        n_bootstrap: int = 100
+        n_bootstrap: int = 100,
+        n_folds: int = 5
     ) -> Dict[str, Any]:
         """
         Validate economic utility via regime-aware strategy backtest.
+        
+        ENHANCED: Now computes Sharpe and turnover across rolling folds
+        to calculate median & IQR for robustness assessment.
         
         Args:
             labels: Regime labels
             returns: Forward returns
             transaction_cost_bps: Transaction costs in basis points
             n_bootstrap: Number of bootstrap samples
+            n_folds: Number of rolling folds for Sharpe/turnover distribution
             
         Returns:
-            Dict with Sharpe, drawdown, significance tests
+            Dict with Sharpe, drawdown, significance tests, and fold-wise distributions
         """
         tprint_info("📊 VII. Validating economic utility and robustness...")
         
@@ -715,6 +834,81 @@ class HMMRegimeValidator:
         # Economic utility score: Sharpe adjusted for turnover and costs
         utility_score = max(0.0, sharpe - 0.5 * turnover)  # Penalize high turnover
         result['economic_utility_score'] = float(utility_score)
+        
+        # DIAGNOSTIC: Sharpe & Turnover across rolling folds
+        sharpe_folds = []
+        turnover_folds = []
+        
+        if n_folds > 1 and len(labels) >= n_folds * 100:  # Need sufficient data
+            fold_size = len(labels) // n_folds
+            
+            for fold_idx in range(n_folds):
+                start_idx = fold_idx * fold_size
+                end_idx = start_idx + fold_size if fold_idx < n_folds - 1 else len(labels)
+                
+                fold_labels = labels[start_idx:end_idx]
+                fold_returns = returns.iloc[start_idx:end_idx]
+                
+                # Calculate regime returns for this fold
+                fold_regime_returns = {}
+                for state in np.unique(fold_labels):
+                    state_mask = fold_labels == state
+                    fold_regime_returns[state] = np.mean(fold_returns[state_mask])
+                
+                # Compute fold strategy
+                fold_strategy_returns = []
+                fold_transitions = 0
+                prev_alloc = None
+                
+                for i, state in enumerate(fold_labels):
+                    allocation = 1.0 if fold_regime_returns.get(state, 0) > 0 else 0.0
+                    
+                    if prev_alloc is not None and allocation != prev_alloc:
+                        fold_transitions += 1
+                    prev_alloc = allocation
+                    
+                    if i < len(fold_returns):
+                        ret = fold_returns.iloc[i] * allocation
+                        if fold_transitions > 0 and i > 0:
+                            ret -= transaction_cost_bps / 10000.0
+                        fold_strategy_returns.append(ret)
+                
+                if len(fold_strategy_returns) > 0:
+                    fold_strategy_returns = np.array(fold_strategy_returns)
+                    fold_sharpe = (np.mean(fold_strategy_returns) / (np.std(fold_strategy_returns) + 1e-10)) * np.sqrt(252 * self.samples_per_day)
+                    fold_turnover = fold_transitions / len(fold_labels)
+                    
+                    sharpe_folds.append(fold_sharpe)
+                    turnover_folds.append(fold_turnover)
+        
+        # Calculate median & IQR for Sharpe and turnover
+        if len(sharpe_folds) > 0:
+            sharpe_median = np.median(sharpe_folds)
+            sharpe_q25 = np.percentile(sharpe_folds, 25)
+            sharpe_q75 = np.percentile(sharpe_folds, 75)
+            sharpe_iqr = sharpe_q75 - sharpe_q25
+            
+            result['sharpe_across_folds'] = sharpe_folds
+            result['sharpe_median'] = float(sharpe_median)
+            result['sharpe_iqr'] = float(sharpe_iqr)
+            result['sharpe_q25'] = float(sharpe_q25)
+            result['sharpe_q75'] = float(sharpe_q75)
+            
+            tprint_info(f"   Sharpe distribution: median={sharpe_median:.3f}, IQR={sharpe_iqr:.3f}")
+        
+        if len(turnover_folds) > 0:
+            turnover_median = np.median(turnover_folds)
+            turnover_q25 = np.percentile(turnover_folds, 25)
+            turnover_q75 = np.percentile(turnover_folds, 75)
+            turnover_iqr = turnover_q75 - turnover_q25
+            
+            result['turnover_across_folds'] = turnover_folds
+            result['turnover_median'] = float(turnover_median)
+            result['turnover_iqr'] = float(turnover_iqr)
+            result['turnover_q25'] = float(turnover_q25)
+            result['turnover_q75'] = float(turnover_q75)
+            
+            tprint_info(f"   Turnover distribution: median={turnover_median:.1%}, IQR={turnover_iqr:.1%}")
         
         # Report
         tprint_info(f"   Sharpe: {sharpe:.3f}, Baseline: {baseline_sharpe:.3f}, Uplift: {sharpe_uplift:.3f}")

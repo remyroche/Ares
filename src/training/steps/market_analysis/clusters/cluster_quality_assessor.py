@@ -164,12 +164,25 @@ class ClusterQualityMetrics:
     delta_ll_across_folds: Optional[List[float]] = None  # ΔLL across folds
     predictive_ll_effect_size: Optional[float] = None  # Effect size vs noise
     
+    # DIAGNOSTIC: Median & IQR of predictive LL
+    predictive_ll_median: Optional[float] = None
+    predictive_ll_iqr: Optional[float] = None  # Interquartile range
+    predictive_ll_q25: Optional[float] = None
+    predictive_ll_q75: Optional[float] = None
+    
     # ENHANCEMENT: II. STABILITY & REPRODUCIBILITY
     refit_stability_ari: Optional[float] = None  # Adjusted Rand Index across refits
     refit_stability_nmi: Optional[float] = None  # Normalized Mutual Information
     refit_stability_median: Optional[float] = None  # Median ARI across runs
     subsample_stability: Optional[Dict[str, float]] = field(default_factory=dict)  # Stability across windows
     transition_matrix_stability: Optional[float] = None  # Transition matrix similarity
+    
+    # DIAGNOSTIC: ARI across restarts (detailed)
+    ari_across_restarts: Optional[List[float]] = None  # All ARI values
+    ari_median: Optional[float] = None
+    ari_iqr: Optional[float] = None
+    ari_q25: Optional[float] = None
+    ari_q75: Optional[float] = None
     
     # ENHANCEMENT: III. REGIME OCCUPANCY & PERSISTENCE
     state_occupancy: Optional[Dict[int, float]] = field(default_factory=dict)  # Fraction of time in each state
@@ -178,6 +191,12 @@ class ClusterQualityMetrics:
     min_expected_duration: Optional[float] = None  # Minimum expected duration
     max_expected_duration: Optional[float] = None  # Maximum expected duration
     duration_quality_flag: Optional[str] = None  # 'good', 'warning', 'poor'
+    
+    # DIAGNOSTIC: State occupancy distribution (detailed)
+    occupancy_distribution: Optional[List[float]] = None  # Sorted occupancies
+    occupancy_entropy: Optional[float] = None  # Shannon entropy of distribution
+    min_occupancy_pct: Optional[float] = None  # Minimum state occupancy %
+    max_occupancy_pct: Optional[float] = None  # Maximum state occupancy %
     
     # ENHANCEMENT: IV. TRANSITION MATRIX SENSIBILITY
     transition_matrix_checks: Optional[Dict[str, Any]] = field(default_factory=dict)
@@ -197,6 +216,16 @@ class ClusterQualityMetrics:
     pit_histogram_uniformity: Optional[float] = None  # Kolmogorov-Smirnov test
     predictive_density_calibration: Optional[str] = None  # 'well_calibrated', 'too_narrow', 'too_wide'
     
+    # DIAGNOSTIC: CRPS and PIT (detailed)
+    crps_score: Optional[float] = None  # Continuous Ranked Probability Score
+    pit_values: Optional[np.ndarray] = None  # Probability Integral Transform values
+    pit_uniformity_pvalue: Optional[float] = None  # KS test p-value
+    
+    # DIAGNOSTIC: Tail quantiles (simulated vs empirical)
+    tail_quantile_comparison: Optional[Dict[str, Any]] = field(default_factory=dict)
+    # Contains: q01_empirical, q01_simulated, q05, q95, q99, etc.
+    tail_coverage_score: Optional[float] = None  # How well tails are captured (0-1)
+    
     # ENHANCEMENT: VII. ECONOMIC UTILITY & ROBUSTNESS
     out_of_sample_sharpe: Optional[float] = None
     out_of_sample_max_drawdown: Optional[float] = None
@@ -205,6 +234,19 @@ class ClusterQualityMetrics:
     bootstrap_significance: Optional[Dict[str, Any]] = field(default_factory=dict)
     sharpe_uplift_vs_baseline: Optional[float] = None
     economic_utility_score: Optional[float] = None  # Composite economic metric
+    
+    # DIAGNOSTIC: Median & IQR of economic metrics
+    sharpe_across_folds: Optional[List[float]] = None  # Sharpe per fold
+    sharpe_median: Optional[float] = None
+    sharpe_iqr: Optional[float] = None
+    sharpe_q25: Optional[float] = None
+    sharpe_q75: Optional[float] = None
+    
+    turnover_across_folds: Optional[List[float]] = None  # Turnover per fold
+    turnover_median: Optional[float] = None
+    turnover_iqr: Optional[float] = None
+    turnover_q25: Optional[float] = None
+    turnover_q75: Optional[float] = None
     
     # Metadata
     timestamp: str = field(default_factory=lambda: datetime.now().isoformat())
@@ -259,6 +301,10 @@ class ClusterQualityMetrics:
             'baseline_comparison': self.baseline_comparison,
             'delta_ll_across_folds': self.delta_ll_across_folds,
             'predictive_ll_effect_size': self.predictive_ll_effect_size,
+            'predictive_ll_median': self.predictive_ll_median,
+            'predictive_ll_iqr': self.predictive_ll_iqr,
+            'predictive_ll_q25': self.predictive_ll_q25,
+            'predictive_ll_q75': self.predictive_ll_q75,
             
             # ENHANCEMENT: II. Stability & Reproducibility
             'refit_stability_ari': self.refit_stability_ari,
@@ -266,6 +312,11 @@ class ClusterQualityMetrics:
             'refit_stability_median': self.refit_stability_median,
             'subsample_stability': self.subsample_stability,
             'transition_matrix_stability': self.transition_matrix_stability,
+            'ari_across_restarts': self.ari_across_restarts,
+            'ari_median': self.ari_median,
+            'ari_iqr': self.ari_iqr,
+            'ari_q25': self.ari_q25,
+            'ari_q75': self.ari_q75,
             
             # ENHANCEMENT: III. Regime Occupancy & Persistence
             'state_occupancy': self.state_occupancy,
@@ -274,6 +325,10 @@ class ClusterQualityMetrics:
             'min_expected_duration': self.min_expected_duration,
             'max_expected_duration': self.max_expected_duration,
             'duration_quality_flag': self.duration_quality_flag,
+            'occupancy_distribution': self.occupancy_distribution,
+            'occupancy_entropy': self.occupancy_entropy,
+            'min_occupancy_pct': self.min_occupancy_pct,
+            'max_occupancy_pct': self.max_occupancy_pct,
             
             # ENHANCEMENT: IV. Transition Matrix Sensibility
             'transition_matrix_checks': self.transition_matrix_checks,
@@ -290,6 +345,11 @@ class ClusterQualityMetrics:
             'probability_calibration_score': self.probability_calibration_score,
             'pit_histogram_uniformity': self.pit_histogram_uniformity,
             'predictive_density_calibration': self.predictive_density_calibration,
+            'crps_score': self.crps_score,
+            'pit_values': self.pit_values.tolist() if self.pit_values is not None else None,
+            'pit_uniformity_pvalue': self.pit_uniformity_pvalue,
+            'tail_quantile_comparison': self.tail_quantile_comparison,
+            'tail_coverage_score': self.tail_coverage_score,
             
             # ENHANCEMENT: VII. Economic Utility & Robustness
             'out_of_sample_sharpe': self.out_of_sample_sharpe,
@@ -299,6 +359,16 @@ class ClusterQualityMetrics:
             'bootstrap_significance': self.bootstrap_significance,
             'sharpe_uplift_vs_baseline': self.sharpe_uplift_vs_baseline,
             'economic_utility_score': self.economic_utility_score,
+            'sharpe_across_folds': self.sharpe_across_folds,
+            'sharpe_median': self.sharpe_median,
+            'sharpe_iqr': self.sharpe_iqr,
+            'sharpe_q25': self.sharpe_q25,
+            'sharpe_q75': self.sharpe_q75,
+            'turnover_across_folds': self.turnover_across_folds,
+            'turnover_median': self.turnover_median,
+            'turnover_iqr': self.turnover_iqr,
+            'turnover_q25': self.turnover_q25,
+            'turnover_q75': self.turnover_q75,
             
             # Metadata
             'timestamp': self.timestamp
@@ -645,6 +715,11 @@ class ClusterQualityAssessor:
             metrics.min_expected_duration = occupancy_results.get('min_expected_duration_days')
             metrics.max_expected_duration = occupancy_results.get('max_expected_duration_days')
             metrics.duration_quality_flag = occupancy_results.get('duration_quality_flag', 'unknown')
+            # DIAGNOSTIC: Occupancy distribution
+            metrics.occupancy_distribution = occupancy_results.get('occupancy_distribution', [])
+            metrics.occupancy_entropy = occupancy_results.get('occupancy_entropy')
+            metrics.min_occupancy_pct = occupancy_results.get('min_occupancy_pct')
+            metrics.max_occupancy_pct = occupancy_results.get('max_occupancy_pct')
         except Exception as e:
             tprint_error(f"❌ Occupancy validation failed: {e}")
         
@@ -688,6 +763,17 @@ class ClusterQualityAssessor:
                     'sharpe_ci': economic_results.get('bootstrap_sharpe_ci'),
                     'significant': economic_results.get('sharpe_significant')
                 }
+                # DIAGNOSTIC: Sharpe & Turnover across folds (median & IQR)
+                metrics.sharpe_across_folds = economic_results.get('sharpe_across_folds')
+                metrics.sharpe_median = economic_results.get('sharpe_median')
+                metrics.sharpe_iqr = economic_results.get('sharpe_iqr')
+                metrics.sharpe_q25 = economic_results.get('sharpe_q25')
+                metrics.sharpe_q75 = economic_results.get('sharpe_q75')
+                metrics.turnover_across_folds = economic_results.get('turnover_across_folds')
+                metrics.turnover_median = economic_results.get('turnover_median')
+                metrics.turnover_iqr = economic_results.get('turnover_iqr')
+                metrics.turnover_q25 = economic_results.get('turnover_q25')
+                metrics.turnover_q75 = economic_results.get('turnover_q75')
             except Exception as e:
                 tprint_error(f"❌ Economic utility validation failed: {e}")
         
@@ -705,6 +791,11 @@ class ClusterQualityAssessor:
                     'mean_delta_ll': predictive_results.get('mean_delta_ll'),
                     'positive_ratio': predictive_results.get('positive_ratio')
                 }
+                # DIAGNOSTIC: Median & IQR
+                metrics.predictive_ll_median = predictive_results.get('predictive_ll_median')
+                metrics.predictive_ll_iqr = predictive_results.get('predictive_ll_iqr')
+                metrics.predictive_ll_q25 = predictive_results.get('predictive_ll_q25')
+                metrics.predictive_ll_q75 = predictive_results.get('predictive_ll_q75')
             except Exception as e:
                 tprint_warning(f"⚠️ Predictive validation skipped: {e}")
         
@@ -718,6 +809,11 @@ class ClusterQualityAssessor:
                 metrics.simulated_vs_empirical_moments = posterior_results
                 metrics.probability_calibration_score = posterior_results.get('calibration_score')
                 metrics.predictive_density_calibration = posterior_results.get('calibration_flag', 'unknown')
+                # DIAGNOSTIC: CRPS, PIT, Tail quantiles
+                metrics.crps_score = posterior_results.get('crps_score')
+                metrics.pit_uniformity_pvalue = posterior_results.get('pit_uniformity_pvalue')
+                metrics.tail_quantile_comparison = posterior_results.get('tail_quantile_comparison', {})
+                metrics.tail_coverage_score = posterior_results.get('tail_coverage_score')
             except Exception as e:
                 tprint_warning(f"⚠️ Posterior predictive check skipped: {e}")
         

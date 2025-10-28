@@ -703,24 +703,35 @@ class SRClusteringComponent(BaseStep):
                 try:
                     previous_artifacts = await self._load_artifacts_from_previous_stage(
                         previous_component_name='sr_detection',
-                        artifact_names=['sr_levels', 'sr_levels_dictionary']
+                        artifact_names=['sr_detection_result', 'sr_levels', 'sr_levels_dictionary']
                     )
                 
                     if previous_artifacts:
-                        # Check for sr_levels_dictionary first
+                        # Check for sr_detection_result first (new artifact name from enhanced SR detection)
+                        if 'sr_detection_result' in previous_artifacts:
+                            sr_detection_result = previous_artifacts['sr_detection_result']
+                            if sr_detection_result:
+                                # Extract levels from detection result
+                                sr_levels = sr_detection_result.get('levels', [])
+                                if sr_levels and isinstance(sr_levels, list):
+                                    tprint_success(f"Loaded {len(sr_levels)} SR levels from sr_detection_result")
+                                    tprint_data_preview(sr_levels, "SR levels from detection result", max_rows=3)
+                                    return sr_levels
+                        
+                        # Check for sr_levels_dictionary (legacy)
                         if 'sr_levels_dictionary' in previous_artifacts:
                             sr_levels_dict = previous_artifacts['sr_levels_dictionary']
                             if sr_levels_dict and sr_levels_dict.get('levels'):
-                                tprint_success(f"Loaded {len(sr_levels_dict['levels'])} SR levels from previous stage")
-                                tprint_data_preview(sr_levels_dict['levels'], "SR levels from previous stage", max_rows=3)
+                                tprint_success(f"Loaded {len(sr_levels_dict['levels'])} SR levels from sr_levels_dictionary")
+                                tprint_data_preview(sr_levels_dict['levels'], "SR levels from dictionary", max_rows=3)
                                 return sr_levels_dict['levels']
                     
-                        # Check for sr_levels directly
+                        # Check for sr_levels directly (legacy)
                         if 'sr_levels' in previous_artifacts:
                             sr_levels = previous_artifacts['sr_levels']
                             if sr_levels and isinstance(sr_levels, list):
-                                tprint_success(f"Loaded {len(sr_levels)} SR levels from previous stage")
-                                tprint_data_preview(sr_levels, "SR levels from previous stage", max_rows=3)
+                                tprint_success(f"Loaded {len(sr_levels)} SR levels from sr_levels")
+                                tprint_data_preview(sr_levels, "SR levels from artifact", max_rows=3)
                                 return sr_levels
                                 
                 except Exception as e:

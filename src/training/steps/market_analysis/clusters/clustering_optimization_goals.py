@@ -12,7 +12,7 @@ By centralizing these goals, we ensure consistency and make tuning easier.
 """
 
 from dataclasses import dataclass, field
-from typing import Dict, Tuple, Optional
+from typing import Dict, Tuple, Optional, List
 from enum import Enum
 
 
@@ -115,6 +115,20 @@ class ClusteringOptimizationGoals:
         description="Temporal stability - prevents excessive regime switching"
     ))
     
+    # ===== STRUCTURAL CONSTRAINTS =====
+    # These are hard constraints on cluster structure
+    
+    # Constraint 1: Number of Clusters
+    # Target range for optimal number of clusters
+    cluster_count_range: Tuple[int, int] = (6, 8)  # Preferred: 6-8 clusters
+    cluster_count_min: int = 5  # Absolute minimum
+    cluster_count_max: int = 10  # Absolute maximum
+    
+    # Constraint 2: Cluster Size Bounds
+    # Minimum and maximum cluster size as percentage of total samples
+    min_cluster_size_pct: float = 0.02  # 2% minimum (prevents tiny clusters)
+    max_cluster_size_pct: float = 0.20  # 20% maximum (prevents dominant clusters)
+    
     def get_all_goals(self) -> Dict[str, GoalConfig]:
         """Get all goal configurations as a dictionary."""
         return {
@@ -192,10 +206,16 @@ class OptimizationTargets:
     target_balance_score: float = 0.7  # Target balance
     target_temporal_smoothness: float = 0.95  # Target temporal smoothness
     
+    # ===== STRUCTURAL CONSTRAINTS =====
+    
     # Cluster count constraints
-    min_clusters: int = 5
-    max_clusters: int = 10
+    min_clusters: int = 5  # Absolute minimum
+    max_clusters: int = 10  # Absolute maximum
     target_clusters: Tuple[int, int] = (6, 8)  # Preferred range
+    
+    # Cluster size constraints (as percentage of total samples)
+    min_cluster_size_pct: float = 0.02  # 2% minimum - prevents tiny clusters
+    max_cluster_size_pct: float = 0.20  # 20% maximum - prevents dominant clusters
     
     def to_dict(self) -> Dict[str, float]:
         """Convert to dictionary format."""
@@ -268,6 +288,61 @@ def calculate_composite_score(
     return composite
 
 
+def validate_cluster_sizes(
+    cluster_sizes: List[int],
+    n_total_samples: int,
+    targets: Optional[OptimizationTargets] = None
+) -> Tuple[bool, Dict[str, any]]:
+    """
+    Validate cluster sizes meet constraints.
+    
+    Args:
+        cluster_sizes: List of cluster sizes
+        n_total_samples: Total number of samples
+        targets: Optional custom targets
+    
+    Returns:
+        Tuple of (all_valid, details)
+    """
+    if targets is None:
+        targets = DEFAULT_OPTIMIZATION_TARGETS
+    
+    min_size = int(n_total_samples * targets.min_cluster_size_pct)
+    max_size = int(n_total_samples * targets.max_cluster_size_pct)
+    
+    violations = []
+    for i, size in enumerate(cluster_sizes):
+        size_pct = size / n_total_samples
+        if size < min_size:
+            violations.append({
+                'cluster': i,
+                'size': size,
+                'size_pct': size_pct,
+                'violation': 'too_small',
+                'threshold': targets.min_cluster_size_pct
+            })
+        elif size > max_size:
+            violations.append({
+                'cluster': i,
+                'size': size,
+                'size_pct': size_pct,
+                'violation': 'too_large',
+                'threshold': targets.max_cluster_size_pct
+            })
+    
+    details = {
+        'all_valid': len(violations) == 0,
+        'min_size': min_size,
+        'max_size': max_size,
+        'min_size_pct': targets.min_cluster_size_pct,
+        'max_size_pct': targets.max_cluster_size_pct,
+        'violations': violations,
+        'n_violations': len(violations)
+    }
+    
+    return len(violations) == 0, details
+
+
 def meets_optimization_constraints(
     cv_score: float,
     silhouette_score: float,
@@ -275,6 +350,8 @@ def meets_optimization_constraints(
     balance_score: float,
     temporal_smoothness: float,
     n_clusters: int,
+    cluster_sizes: Optional[List[int]] = None,
+    n_total_samples: Optional[int] = None,
     targets: Optional[OptimizationTargets] = None
 ) -> Tuple[bool, Dict[str, bool]]:
     """
@@ -287,6 +364,8 @@ def meets_optimization_constraints(
         balance_score: Balance score
         temporal_smoothness: Temporal smoothness
         n_clusters: Number of clusters
+        cluster_sizes: Optional list of cluster sizes for size validation
+        n_total_samples: Optional total samples for size validation
         targets: Optional custom targets
     
     Returns:
@@ -302,9 +381,16 @@ def meets_optimization_constraints(
         'balance_score': balance_score >= targets.min_balance_score,
         'temporal_smoothness': temporal_smoothness >= targets.min_temporal_smoothness,
         'cluster_count': targets.min_clusters <= n_clusters <= targets.max_clusters,
+        'cluster_count_preferred': targets.target_clusters[0] <= n_clusters <= targets.target_clusters[1],
     }
     
-    all_met = all(checks.values())
+    # Validate cluster sizes if provided
+    if cluster_sizes is not None and n_total_samples is not None:
+        sizes_valid, size_details = validate_cluster_sizes(cluster_sizes, n_total_samples, targets)
+        checks['cluster_sizes_valid'] = sizes_valid
+        checks['cluster_sizes_details'] = size_details
+    
+    all_met = all(v if isinstance(v, bool) else True for v in checks.values())
     
     return all_met, checks
 

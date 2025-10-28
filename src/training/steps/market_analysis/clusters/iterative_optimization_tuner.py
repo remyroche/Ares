@@ -105,10 +105,13 @@ class OptimizationParameterSpace:
     """
     
     # Core K and size constraints (from unified targets)
-    K_MIN: Tuple[int, int] = (5, 8)  # Range for minimum clusters
-    K_MAX: Tuple[int, int] = (8, 12)  # Range for maximum clusters
-    MIN_FRAC: Tuple[float, float] = (0.02, 0.05)  # Minimum cluster size fraction
-    MAX_FRAC: Tuple[float, float] = (0.15, 0.25)  # Maximum cluster size fraction
+    # Uses DEFAULT_CLUSTERING_GOALS structural constraints:
+    # - Cluster count: 6-8 preferred (5-10 absolute range)
+    # - Cluster size: 2% min, 20% max
+    K_MIN: Tuple[int, int] = (5, 8)  # Range for minimum clusters (aligned with unified: 5 min)
+    K_MAX: Tuple[int, int] = (8, 12)  # Range for maximum clusters (aligned with unified: 10 max)
+    MIN_FRAC: Tuple[float, float] = (0.02, 0.05)  # Minimum cluster size fraction (unified: 2% min)
+    MAX_FRAC: Tuple[float, float] = (0.15, 0.25)  # Maximum cluster size fraction (unified: 20% max)
     
     # Objective weights - derived from unified clustering goals
     # Default center points from DEFAULT_CLUSTERING_GOALS

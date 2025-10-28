@@ -8,11 +8,18 @@ This module provides automated hyperparameter tuning for `iterative_optimization
 
 ### Optimization Goals (from clustering_optimization_goals.py)
 
-- **CV Score** (Between/Within Variance Ratio) - Primary goal (30% weight), higher is better, target ≥1.0
-- **Silhouette Score** - Primary goal (25% weight), higher is better (range: -1 to 1), target ≥0.2
-- **DBI Score** (Davies-Bouldin Index) - Primary goal (20% weight), lower is better, target ≤2.0
-- **Balance Score** - Soft constraint (15% weight), maintained above 0.5
-- **Temporal Smoothness** - Soft constraint (10% weight), maintained above 0.85
+**Primary Goals (70% weight)**:
+- **CV Score** (Between/Within Variance Ratio) - 30% weight, higher is better, target ≥1.0
+- **Silhouette Score** - 25% weight, higher is better (range: -1 to 1), target ≥0.2
+- **DBI Score** (Davies-Bouldin Index) - 20% weight, lower is better, target ≤2.0
+
+**Secondary Goals (30% weight - soft constraints)**:
+- **Balance Score** - 15% weight, maintained above 0.5
+- **Temporal Smoothness** - 10% weight, maintained above 0.85
+
+**Structural Constraints (hard constraints)**:
+- **Cluster Count** - Preferred: 6-8 clusters, Absolute: 5-10 clusters
+- **Cluster Size** - Minimum: 2% of samples, Maximum: 20% of samples
 
 These goals are shared with:
 - `iterative_optimization.py`

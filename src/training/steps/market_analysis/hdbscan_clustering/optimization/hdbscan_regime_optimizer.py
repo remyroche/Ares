@@ -44,11 +44,30 @@ from src.utils.common_operations import (
 from src.utils.math_validation import validate_positive, validate_range
 from src.utils.tprint import tprint_info, tprint_success, tprint_warning, tprint_error, tprint_performance
 
+# Import unified clustering optimization goals
+try:
+    from src.training.steps.market_analysis.clusters.clustering_optimization_goals import (
+        DEFAULT_CLUSTERING_GOALS,
+        DEFAULT_OPTIMIZATION_TARGETS,
+        validate_cluster_sizes
+    )
+    UNIFIED_GOALS_AVAILABLE = True
+except ImportError:
+    UNIFIED_GOALS_AVAILABLE = False
+    DEFAULT_CLUSTERING_GOALS = None
+    DEFAULT_OPTIMIZATION_TARGETS = None
+
 logger = logging.getLogger(__name__)
 
 @dataclass
 class HDBSCANRegimeOptimizerConfig:
-    """Configuration for HDBSCAN regime optimization."""
+    """
+    Configuration for HDBSCAN regime optimization.
+    
+    Uses unified clustering optimization goals from clustering_optimization_goals.py:
+    - Cluster count: 6-8 preferred (5-10 absolute range)
+    - Cluster size: 2% min, 20% max of total samples
+    """
     # Feature processing configuration
     enable_feature_processing: bool = True
     k_features: int = 50
@@ -62,14 +81,22 @@ class HDBSCANRegimeOptimizerConfig:
     fallback_method: str = 'pca'
     pca_variance_threshold: float = 0.95
     
-    # HDBSCAN configuration
-    min_cluster_size: int = 20
+    # HDBSCAN configuration (aligned with unified goals)
+    # Cluster count constraints: 6-8 preferred (5-10 absolute)
+    min_cluster_size: int = 20  # Will be validated against 2% min constraint
     min_samples: int = 10
     cluster_selection_epsilon: Optional[float] = None
     metric: str = 'euclidean'
     algorithm: str = 'auto'
     leaf_size: int = 40
     n_jobs: int = -1
+    
+    # Unified constraint targets (from clustering_optimization_goals.py)
+    target_n_clusters: Tuple[int, int] = (6, 8)  # Preferred range
+    min_n_clusters: int = 5  # Absolute minimum
+    max_n_clusters: int = 10  # Absolute maximum
+    min_cluster_size_pct: float = 0.02  # 2% minimum
+    max_cluster_size_pct: float = 0.20  # 20% maximum
     
     # Memory and performance optimization
     memory_efficient: bool = True
@@ -295,7 +322,13 @@ class HDBSCANRegimeOptimizer:
     
     def _calculate_quality_metrics(self, clustering_data: np.ndarray, 
                                   cluster_labels: np.ndarray) -> Dict[str, float]:
-        """Calculate clustering quality metrics."""
+        """
+        Calculate clustering quality metrics.
+        
+        Validates against unified clustering optimization goals:
+        - Cluster count: 6-8 preferred (5-10 absolute)
+        - Cluster sizes: 2% min, 20% max
+        """
         quality_metrics = {}
         
         # Filter out noise points for metrics calculation
@@ -306,6 +339,33 @@ class HDBSCANRegimeOptimizer:
         
         valid_data = clustering_data[valid_mask]
         valid_labels = cluster_labels[valid_mask]
+        n_samples = len(valid_labels)
+        
+        # Calculate cluster sizes
+        unique_labels = np.unique(valid_labels)
+        cluster_sizes = [int(np.sum(valid_labels == label)) for label in unique_labels]
+        quality_metrics['cluster_sizes'] = cluster_sizes
+        quality_metrics['n_clusters'] = len(cluster_sizes)
+        
+        # Validate against unified constraints
+        if UNIFIED_GOALS_AVAILABLE and DEFAULT_OPTIMIZATION_TARGETS:
+            targets = DEFAULT_OPTIMIZATION_TARGETS
+            n_clusters = len(cluster_sizes)
+            
+            # Check cluster count
+            if not (targets.min_clusters <= n_clusters <= targets.max_clusters):
+                tprint_warning(f"⚠️ Cluster count {n_clusters} outside range [{targets.min_clusters}, {targets.max_clusters}]")
+            elif targets.target_clusters[0] <= n_clusters <= targets.target_clusters[1]:
+                tprint_success(f"✅ Cluster count {n_clusters} in preferred range {targets.target_clusters}")
+            
+            # Check cluster sizes
+            sizes_valid, size_details = validate_cluster_sizes(cluster_sizes, n_samples, targets)
+            if not sizes_valid:
+                tprint_warning(f"⚠️ {size_details['n_violations']} cluster(s) violate size constraints (2%-20%)")
+                for v in size_details['violations']:
+                    tprint_warning(f"  Cluster {v['cluster']}: {v['size']} samples ({v['size_pct']:.1%}) - {v['violation']}")
+            else:
+                tprint_success(f"✅ All cluster sizes within bounds (2%-20%)")
         
         # Calculate metrics
         if 'silhouette' in self.config.quality_metrics:

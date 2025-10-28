@@ -52,6 +52,18 @@ All components now optimize for these shared goals:
    - Constraint: Soft constraint, should be above 0.85
    - Description: Prevents excessive regime switching
 
+### Structural Constraints (Hard Constraints)
+
+6. **Cluster Count**
+   - Preferred Range: **6-8 clusters**
+   - Absolute Range: 5-10 clusters
+   - Description: Optimal number of market regimes for trading strategies
+
+7. **Cluster Size Bounds**
+   - Minimum: **2%** of total samples
+   - Maximum: **20%** of total samples
+   - Description: Prevents tiny clusters and dominant clusters
+
 ## Composite Score Calculation
 
 The weighted composite score is calculated as:

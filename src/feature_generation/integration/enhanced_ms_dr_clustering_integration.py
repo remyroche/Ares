@@ -6,6 +6,64 @@ integration that combines existing feature bank features with MS-DR-specific
 preprocessing for optimal regime-dependent dynamics modeling.
 
 Target: 50-100 comprehensive features optimized for MS-DR clustering
+
+═══════════════════════════════════════════════════════════════════════════════
+USAGE GUIDE
+═══════════════════════════════════════════════════════════════════════════════
+
+Basic Usage:
+    from src.feature_generation.integration.enhanced_ms_dr_clustering_integration import (
+        perform_enhanced_ms_dr_clustering
+    )
+    
+    # Perform clustering with auto regime selection
+    result = perform_enhanced_ms_dr_clustering(
+        data=market_data,
+        min_features=50,
+        max_features=100,
+        auto_select_regimes=True,
+        min_regimes=2,
+        max_regimes=10
+    )
+    
+    # Access results
+    regime_labels = result['cluster_labels']
+    transition_matrix = result['transition_matrix']
+    regime_probabilities = result['cluster_probabilities']
+
+Advanced Usage:
+    # Create integrator with custom settings
+    integrator = EnhancedMSDRClusteringIntegration(
+        min_features=50,
+        max_features=100,
+        enable_comprehensive_features=True,
+        enable_pca_reduction=True,
+        pca_components=10,
+        n_regimes=5,
+        model_type='autoregression',
+        order=1,
+        switching_variance=True,
+        auto_select_regimes=True
+    )
+    
+    # Run clustering
+    result = integrator.cluster_with_ms_dr(market_data)
+
+Understanding Results:
+    - cluster_labels: Regime assignment for each time point
+    - cluster_probabilities: Probability distribution over regimes
+    - n_clusters: Number of discovered regimes
+    - transition_matrix: Regime transition probabilities
+    - quality_metrics: Various quality measures (silhouette, AIC, BIC, etc.)
+
+IMPORTANT NOTES:
+    1. MS-DR requires time series data (temporal ordering matters)
+    2. Features are reduced to univariate series for regime modeling
+    3. Regimes represent hidden states with different dynamics
+    4. Results include transition probabilities between regimes
+    5. Suitable for market regime identification and state-dependent modeling
+
+═══════════════════════════════════════════════════════════════════════════════
 """
 
 import warnings
@@ -16,7 +74,8 @@ import pandas as pd
 # Import tprint utilities
 from src.utils.tprint import (
     tprint, tprint_info, tprint_success, tprint_warning, tprint_error,
-    tprint_debug, tprint_performance, tprint_structured, tprint_timer
+    tprint_debug, tprint_performance, tprint_structured, tprint_timer,
+    tprint_data_preview, tprint_data_format
 )
 
 # Import feature bank integration
@@ -154,8 +213,11 @@ class EnhancedMSDRClusteringIntegration:
                 regime_config = RegimeFeatureConfig()
                 self.regime_feature_gen = RegimeFeatureGenerator(regime_config)
                 tprint_success("✅ Regime feature generator initialized")
-            except Exception as e:
+            except (ImportError, AttributeError, TypeError) as e:
                 tprint_warning(f"⚠️ Failed to initialize regime features: {e}")
+                self.regime_feature_gen = None
+            except Exception as e:
+                tprint_error(f"❌ Unexpected error initializing regime features: {e}")
                 self.regime_feature_gen = None
         else:
             self.regime_feature_gen = None
@@ -165,8 +227,11 @@ class EnhancedMSDRClusteringIntegration:
             try:
                 self.vectorization_manager = UnifiedVectorizationManager()
                 tprint_success("✅ Vectorization manager initialized")
-            except Exception as e:
+            except (ImportError, AttributeError, TypeError) as e:
                 tprint_warning(f"⚠️ Failed to initialize vectorization: {e}")
+                self.vectorization_manager = None
+            except Exception as e:
+                tprint_error(f"❌ Unexpected error initializing vectorization: {e}")
                 self.vectorization_manager = None
         else:
             self.vectorization_manager = None
@@ -206,8 +271,12 @@ class EnhancedMSDRClusteringIntegration:
                             tprint_success(
                                 f"✅ Added {result['regime_features_added']} regime-specific features"
                             )
+                    except (KeyError, ValueError, AttributeError) as e:
+                        tprint_warning(f"⚠️ Failed to generate regime features (expected): {e}")
                     except Exception as e:
-                        tprint_warning(f"⚠️ Failed to generate regime features: {e}")
+                        tprint_error(f"❌ Unexpected error generating regime features: {e}")
+                        import traceback
+                        tprint_debug(traceback.format_exc())
                 
                 result.update({
                     'clustering_method': 'ms_dr',

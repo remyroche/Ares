@@ -189,6 +189,16 @@ except ImportError as e:
     ParameterOptimizationConfig = None
     print(f"Warning: SR clustering components not available: {e}")
 
+# Import SR detection for parameter testing
+try:
+    from src.tactician.sr_levels.enhanced_sr_detection import EnhancedSRDetector, SRLevel
+    SR_DETECTION_AVAILABLE = True
+except ImportError as e:
+    SR_DETECTION_AVAILABLE = False
+    EnhancedSRDetector = None
+    SRLevel = None
+    print(f"Warning: SR detection not available for parameter testing: {e}")
+
 @dataclass
 class EnhancedSRConfig:
     """Enhanced configuration for SR parameter optimization with advanced ML utilities."""
@@ -1588,12 +1598,68 @@ class SRParameterOptimizationStep(BaseStep):
         return True
 
     def _detect_sr_levels(self, data: Any, params: Dict[str, Any]) -> List[Dict[str, Any]]:
-        """Detect SR levels using multiple proven methods."""
+        """Detect SR levels using EnhancedSRDetector when available, fallback to custom methods."""
         tprint("🔍 SR Detection: Starting level detection", "info")
         try:
             if not PANDAS_AVAILABLE or not isinstance(data, pd.DataFrame):
                 tprint("❌ SR Detection: Pandas not available or invalid data", "error")
                 return []
+            
+            # Try to use EnhancedSRDetector if available (preferred method)
+            if SR_DETECTION_AVAILABLE and EnhancedSRDetector is not None:
+                try:
+                    tprint("🚀 SR Detection: Using EnhancedSRDetector", "info")
+                    
+                    # Create SR detector configuration from parameters
+                    sr_config = {
+                        'min_touches': params.get('min_touches', 2),
+                        'tolerance_pct': params.get('touch_tolerance', 0.5),
+                        'lookback_periods': params.get('lookback_periods', 100),
+                        'strength_threshold': params.get('strength_threshold', 0.5),
+                        'distance_threshold': params.get('distance_threshold', 0.01),
+                        'volume_threshold': params.get('volume_threshold', 1.0),
+                        'memory_efficient': True,
+                        'use_parallel': False,
+                        'disable_dbscan_clustering': True
+                    }
+                    
+                    # Create detector and detect SR levels
+                    detector = EnhancedSRDetector(sr_config)
+                    sr_levels_result = detector.detect_sr_levels(data)
+                    
+                    # Convert SRLevel objects to dictionaries for compatibility
+                    if isinstance(sr_levels_result, dict):
+                        # Extract levels from dict result
+                        support_levels = sr_levels_result.get('support_levels', [])
+                        resistance_levels = sr_levels_result.get('resistance_levels', [])
+                        all_levels = support_levels + resistance_levels
+                    elif isinstance(sr_levels_result, list):
+                        all_levels = sr_levels_result
+                    else:
+                        all_levels = []
+                    
+                    # Convert SRLevel objects to dicts
+                    dict_levels = []
+                    for level in all_levels:
+                        if hasattr(level, 'price'):
+                            dict_levels.append({
+                                'price': level.price,
+                                'strength': getattr(level, 'strength', 0.5),
+                                'type': getattr(level, 'type', 'support'),
+                                'touch_count': getattr(level, 'touch_count', 0)
+                            })
+                        elif isinstance(level, dict):
+                            dict_levels.append(level)
+                    
+                    tprint(f"✅ SR Detection: Detected {len(dict_levels)} levels using EnhancedSRDetector", "success")
+                    return dict_levels
+                    
+                except Exception as e:
+                    tprint(f"⚠️ SR Detection: EnhancedSRDetector failed: {e}, falling back to custom methods", "warning")
+                    # Fall through to custom methods below
+            
+            # Fallback to custom SR detection methods
+            tprint("📊 SR Detection: Using custom detection methods", "info")
             
             # Extract price data
             high = data['high'].values

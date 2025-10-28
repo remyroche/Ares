@@ -14,7 +14,7 @@ import time
 from scipy import stats
 from scipy.spatial.distance import pdist, squareform
 from sklearn.feature_selection import mutual_info_regression
-from sklearn.preprocessing import StandardScaler, RobustScaler
+from sklearn.preprocessing import StandardScaler, RobustScaler, QuantileTransformer
 from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
 
@@ -32,8 +32,8 @@ logger = logging.getLogger(__name__)
 @dataclass
 class PreprocessingConfig:
     """Configuration for optimized preprocessing."""
-    # Winsorization
-    winsorize_limits: Tuple[float, float] = (0.05, 0.05)
+    # Winsorization - more aggressive for better outlier handling
+    winsorize_limits: Tuple[float, float] = (0.02, 0.02)  # Updated from (0.05, 0.05)
     enable_winsorization: bool = True
     
     # Correlation pruning
@@ -51,9 +51,17 @@ class PreprocessingConfig:
     enable_hsic_pruning: bool = True
     hsic_sample_size: int = 1000  # Sample size for HSIC calculation
     
-    # Scaling
-    scaling_method: str = 'robust'  # 'standard', 'robust', 'minmax'
+    # Scaling - RobustScaler is default for better regime detection
+    scaling_method: str = 'robust'  # 'standard', 'robust', 'minmax', 'quantile'
     enable_scaling: bool = True
+    
+    # Quantile transformation for Gaussian features
+    enable_quantile_transformation: bool = True
+    quantile_output_distribution: str = 'normal'  # 'normal' or 'uniform'
+    
+    # Rolling normalization for regime-adaptive preprocessing
+    enable_rolling_normalization: bool = True
+    rolling_window: int = 60  # Window size in bars for rolling normalization
     
     # Memory optimization
     memory_efficient: bool = True
@@ -104,7 +112,11 @@ class OptimizedPreprocessor:
         self.scalers = {
             'standard': StandardScaler(),
             'robust': RobustScaler(),
-            'minmax': None  # Will use VectorBT minmax scaling
+            'minmax': None,  # Will use VectorBT minmax scaling
+            'quantile': QuantileTransformer(
+                output_distribution=self.config.quantile_output_distribution,
+                random_state=42
+            )
         }
     
     def preprocess_features(self, features_df: pd.DataFrame) -> pd.DataFrame:
@@ -123,23 +135,31 @@ class OptimizedPreprocessor:
         # Validate input
         self._validate_features(features_df)
         
-        # Step 1: Winsorization (if enabled)
+        # Step 1: Rolling normalization (if enabled) - applied before other preprocessing
+        if self.config.enable_rolling_normalization:
+            features_df = self._apply_rolling_normalization(features_df)
+        
+        # Step 2: Winsorization (if enabled)
         if self.config.enable_winsorization:
             features_df = self._winsorize_features(features_df)
         
-        # Step 2: Correlation pruning with sampling
+        # Step 3: Correlation pruning with sampling
         if self.config.enable_correlation_pruning:
             features_df = self._prune_correlated_features(features_df)
         
-        # Step 3: Mutual information pruning with sampling
+        # Step 4: Mutual information pruning with sampling
         if self.config.enable_mi_pruning:
             features_df = self._prune_low_mi_features(features_df)
         
-        # Step 4: HSIC pruning with sampling
+        # Step 5: HSIC pruning with sampling
         if self.config.enable_hsic_pruning:
             features_df = self._prune_low_hsic_features(features_df)
         
-        # Step 5: Scaling
+        # Step 6: Quantile transformation (if enabled) - applied before scaling
+        if self.config.enable_quantile_transformation:
+            features_df = self._apply_quantile_transformation(features_df)
+        
+        # Step 7: Scaling
         if self.config.enable_scaling:
             features_df = self._scale_features(features_df)
         
@@ -345,6 +365,72 @@ class OptimizedPreprocessor:
             
         except Exception as e:
             logger.error(f"❌ Feature scaling failed: {e}")
+            return features_df
+    
+    def _apply_rolling_normalization(self, features_df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Apply rolling normalization to adapt to regime changes.
+        
+        Uses rolling window to normalize features, making them adaptive
+        to recent market conditions rather than the entire history.
+        """
+        logger.info(f"🔄 Applying rolling normalization (window={self.config.rolling_window})")
+        
+        try:
+            normalized_df = features_df.copy()
+            
+            for col in features_df.columns:
+                # Calculate rolling mean and std
+                rolling_mean = features_df[col].rolling(
+                    window=self.config.rolling_window,
+                    min_periods=max(1, self.config.rolling_window // 2)
+                ).mean()
+                
+                rolling_std = features_df[col].rolling(
+                    window=self.config.rolling_window,
+                    min_periods=max(1, self.config.rolling_window // 2)
+                ).std()
+                
+                # Avoid division by zero
+                rolling_std = rolling_std.replace(0, 1e-8)
+                
+                # Apply normalization: (x - rolling_mean) / rolling_std
+                normalized_df[col] = (features_df[col] - rolling_mean) / rolling_std
+            
+            # Fill any NaN values with 0
+            normalized_df = normalized_df.fillna(0)
+            
+            logger.info("✅ Rolling normalization completed")
+            return normalized_df
+            
+        except Exception as e:
+            logger.error(f"❌ Rolling normalization failed: {e}")
+            return features_df
+    
+    def _apply_quantile_transformation(self, features_df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Apply quantile transformation to ensure Gaussian features.
+        
+        Transforms features to follow a normal distribution, which can
+        improve clustering performance by making features more comparable.
+        """
+        logger.info(f"🔄 Applying quantile transformation (output={self.config.quantile_output_distribution})")
+        
+        try:
+            # Use the quantile transformer from scalers
+            quantile_transformer = self.scalers['quantile']
+            
+            transformed_df = pd.DataFrame(
+                quantile_transformer.fit_transform(features_df),
+                index=features_df.index,
+                columns=features_df.columns
+            )
+            
+            logger.info("✅ Quantile transformation completed")
+            return transformed_df
+            
+        except Exception as e:
+            logger.error(f"❌ Quantile transformation failed: {e}")
             return features_df
     
     def _validate_features(self, features_df: pd.DataFrame):

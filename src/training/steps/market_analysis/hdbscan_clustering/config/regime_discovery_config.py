@@ -21,15 +21,20 @@ class RegimeDiscoveryConfig:
     """
     
     # ============================================================================
-    # CORE HDBSCAN PARAMETERS
+    # CORE HDBSCAN PARAMETERS - OPTIMIZED FOR MORE REGIME DISCOVERY
     # ============================================================================
-    min_cluster_size_pct: float = 0.008  # % of N_eff (after windowing) - more aggressive
-    min_cluster_size_floor: int = 8      # Absolute minimum - lower for more clusters
-    min_samples_options: List[Union[int, str]] = field(default_factory=lambda: [None, 'half', 'same'])
-    cluster_selection_method_options: List[str] = field(default_factory=lambda: ['eom', 'leaf'])
-    cluster_selection_epsilon: float = 0.005  # Tighter clusters for better separation
+    min_cluster_size_pct: float = 0.005  # % of N_eff (after windowing) - more aggressive for more clusters
+    min_cluster_size_floor: int = 5      # Absolute minimum - lower for more clusters
+    min_samples_options: List[Union[int, str]] = field(default_factory=lambda: [2, None, 'half', 'same'])
+    cluster_selection_method_options: List[str] = field(default_factory=lambda: ['leaf', 'eom'])  # Prefer 'leaf' for balanced clusters
+    cluster_selection_epsilon: float = 0.0  # Tightest clusters for better separation (0.0 = no merging)
     metric: str = 'manhattan'  # Distance metric: 'manhattan' more robust to outliers
     prediction_data: bool = True
+    
+    # Regime count optimization
+    target_regime_count_min: int = 4  # Minimum desired regimes
+    target_regime_count_max: int = 8  # Maximum desired regimes
+    regime_count_penalty: float = 0.2  # Penalty weight for deviating from target range
     
     # ============================================================================
     # DIMENSIONALITY REDUCTION
@@ -65,14 +70,22 @@ class RegimeDiscoveryConfig:
     # ============================================================================
     # PREPROCESSING WITH NUMERICAL STABILITY
     # ============================================================================
-    winsorize_limits: Tuple[float, float] = (0.01, 0.99)
+    winsorize_limits: Tuple[float, float] = (0.02, 0.98)  # More aggressive outlier removal
     quantile_transformer_output: str = 'normal'
+    quantile_transformation_enabled: bool = True  # Enable quantile transformation for Gaussian features
     correlation_threshold: float = 0.85
     mi_threshold: float = 0.9  # Mutual information pruning
     per_asset_fitting: bool = True  # Avoid cross-sectional leakage
     variance_floor: float = 1e-8  # Clamp tiny variances
     min_history_for_asset_fit: int = 1000  # Use frozen default until met
     cold_asset_transformer: str = 'global_median'
+    
+    # Scaling method
+    scaling_method: str = 'robust'  # Use RobustScaler instead of StandardScaler
+    
+    # Rolling normalization for regime-adaptive preprocessing
+    enable_rolling_normalization: bool = True
+    rolling_normalization_window: int = 60  # Window size in bars for rolling normalization
     
     # ============================================================================
     # TEMPORAL WINDOWS
@@ -124,7 +137,7 @@ class RegimeDiscoveryConfig:
     # ============================================================================
     # VALIDATION THRESHOLDS
     # ============================================================================
-    target_regime_count: Tuple[int, int] = (3, 7)  # Min, max actionable regimes
+    target_regime_count: Tuple[int, int] = (4, 8)  # Min, max actionable regimes - increased for more diversity
     min_dbcv: float = 0.4
     min_silhouette: float = 0.3
     min_stability_index: float = 0.7

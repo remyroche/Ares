@@ -103,6 +103,8 @@ class HDPHMMConfig:
     n_thin: int = 5  # Thinning interval
     convergence_check: bool = True  # Enable convergence diagnostics
     convergence_threshold: float = 0.01  # Convergence threshold for early stopping
+    convergence_window: int = 10  # Number of recent iterations to check for convergence
+    convergence_std_threshold: float = 0.5  # Standard deviation threshold for state count stability
     show_progress: bool = True  # Show progress bar during sampling
     
     # Model parameters
@@ -240,8 +242,10 @@ class HDPHMMClusterer:
             # Fit HDP-HMM model
             if HMM_LIBRARY == 'pyhsmm':
                 result = self._fit_pyhsmm(data_processed)
+                self.model = result.get('model')  # Store fitted model
             elif HMM_LIBRARY == 'ssm':
                 result = self._fit_ssm(data_processed)
+                self.model = result.get('model')  # Store fitted model
             else:
                 raise ValueError(f"Unsupported HMM library: {HMM_LIBRARY}")
             
@@ -326,40 +330,101 @@ class HDPHMMClusterer:
             )
     
     def _validate_input(self, data: np.ndarray) -> None:
-        """Validate input data (from code review)."""
+        """Validate input data with strict checks."""
         tprint_info("🔍 Validating input data")
         
-        # Check minimum samples
-        n_samples = len(data) if len(data.shape) == 1 else data.shape[0]
+        # Ensure data is numpy array
+        if not isinstance(data, np.ndarray):
+            raise TypeError(f"Expected numpy array, got {type(data)}")
+        
+        # Enforce 2D array requirement
+        if len(data.shape) != 2:
+            raise ValueError(
+                f"Expected 2D array with shape (n_samples, n_features), got shape {data.shape}. "
+                f"HDP-HMM requires multivariate time series data."
+            )
+        
+        n_samples, n_features = data.shape
+        
+        # Check minimum samples (error, not warning)
         if n_samples < self.config.min_samples_required:
-            tprint_warning(
-                f"⚠️ Input has {n_samples} samples, but {self.config.min_samples_required}+ "
-                f"recommended for reliable HDP-HMM inference"
+            raise ValueError(
+                f"Insufficient samples: {n_samples} < {self.config.min_samples_required}. "
+                f"HDP-HMM requires substantial data for reliable Bayesian inference. "
+                f"Consider collecting more data or reducing min_samples_required."
             )
         
         # Check minimum features
-        if len(data.shape) > 1:
-            n_features = data.shape[1]
-            if n_features < self.config.min_features_required:
-                raise ValueError(
-                    f"Input has {n_features} features, but minimum {self.config.min_features_required} required"
-                )
+        if n_features < self.config.min_features_required:
+            raise ValueError(
+                f"Insufficient features: {n_features} < {self.config.min_features_required}. "
+                f"HDP-HMM requires multiple features to identify distinct regimes."
+            )
         
         # Check for excessive NaN values
-        if isinstance(data, np.ndarray):
-            nan_ratio = np.isnan(data).sum() / data.size
-            if nan_ratio > self.config.max_nan_ratio:
-                raise ValueError(
-                    f"Input has {nan_ratio:.1%} NaN values, exceeding maximum {self.config.max_nan_ratio:.1%}"
-                )
+        nan_ratio = np.isnan(data).sum() / data.size
+        if nan_ratio > self.config.max_nan_ratio:
+            raise ValueError(
+                f"Excessive NaN values: {nan_ratio:.1%} > {self.config.max_nan_ratio:.1%}. "
+                f"Clean your data before clustering."
+            )
+        
+        # Check for infinite values
+        inf_ratio = np.isinf(data).sum() / data.size
+        if inf_ratio > 0:
+            raise ValueError(
+                f"Data contains {inf_ratio:.1%} infinite values. "
+                f"Replace infinite values before clustering."
+            )
         
         # Check for degenerate cases
-        if isinstance(data, np.ndarray) and len(data.shape) > 1:
-            # Check if all values are identical (single regime)
-            if np.allclose(data, data[0], rtol=1e-10, atol=1e-10):
-                tprint_warning("⚠️ All data values are identical - may result in single regime")
+        if np.allclose(data, data[0], rtol=1e-10, atol=1e-10):
+            tprint_warning("⚠️ All data values are nearly identical - may result in single regime")
         
-        tprint_success("✅ Input validation passed")
+        # Check for very low variance features
+        feature_stds = np.std(data, axis=0)
+        low_var_features = np.sum(feature_stds < 1e-10)
+        if low_var_features > 0:
+            tprint_warning(
+                f"⚠️ {low_var_features}/{n_features} features have near-zero variance. "
+                f"Consider removing constant features."
+            )
+        
+        tprint_success(f"✅ Input validation passed: {n_samples} samples × {n_features} features")
+    
+    def _calculate_state_durations(self, labels: np.ndarray) -> np.ndarray:
+        """
+        Calculate average duration for each state.
+        
+        Args:
+            labels: State sequence array
+            
+        Returns:
+            Array of average durations for each unique state
+        """
+        unique_states = np.unique(labels)
+        state_durations = []
+        
+        for state in unique_states:
+            state_mask = labels == state
+            # Find continuous segments
+            state_indices = np.where(state_mask)[0]
+            if len(state_indices) == 0:
+                state_durations.append(0.0)
+                continue
+            
+            # Split into continuous segments
+            segment_breaks = np.where(np.diff(state_indices) != 1)[0] + 1
+            segments = np.split(state_indices, segment_breaks)
+            
+            # Calculate mean duration
+            durations = [len(seg) for seg in segments if len(seg) > 0]
+            if durations:
+                state_durations.append(np.mean(durations))
+            else:
+                state_durations.append(0.0)
+        
+        return np.array(state_durations)
     
     def _preprocess_data(self, data: np.ndarray) -> Tuple[np.ndarray, List[str]]:
         """Preprocess data with scaling and optional PCA."""
@@ -468,14 +533,14 @@ class HDPHMMClusterer:
                 # Convergence diagnostics (after burn-in)
                 if (self.config.convergence_check and 
                     iteration >= self.config.n_burnin and 
-                    len(state_counts) > 10):
+                    len(state_counts) >= self.config.convergence_window):
                     
                     # Check if number of states has stabilized
-                    recent_states = state_counts[-10:]
+                    recent_states = state_counts[-self.config.convergence_window:]
                     state_std = np.std(recent_states)
                     state_change = abs(recent_states[-1] - recent_states[0]) / max(recent_states[0], 1)
                     
-                    if state_std < 0.5 and state_change < self.config.convergence_threshold:
+                    if state_std < self.config.convergence_std_threshold and state_change < self.config.convergence_threshold:
                         converged = True
                         convergence_iteration = iteration + 1
                         tprint_success(
@@ -510,18 +575,9 @@ class HDPHMMClusterer:
         # Get transition matrix
         transition_matrix = model.trans_distn.trans_matrix.copy()
         
-        # Calculate state durations
+        # Calculate state durations using helper method
         unique_states = np.unique(labels)
-        state_durations = []
-        for state in unique_states:
-            state_mask = labels == state
-            # Find continuous segments
-            segments = np.split(np.where(state_mask)[0], np.where(np.diff(np.where(state_mask)[0]) != 1)[0] + 1)
-            durations = [len(seg) for seg in segments if len(seg) > 0]
-            if durations:
-                state_durations.append(np.mean(durations))
-            else:
-                state_durations.append(0)
+        state_durations = self._calculate_state_durations(labels)
         
         # Calculate posterior statistics
         posterior_mean_states = np.mean(state_counts[self.config.n_burnin:])
@@ -552,25 +608,33 @@ class HDPHMMClusterer:
                 'means': [obs_distn.mu for obs_distn in model.obs_distns],
                 'covariances': [obs_distn.sigma for obs_distn in model.obs_distns]
             },
-            'state_durations': np.array(state_durations),
+            'state_durations': state_durations,
             'log_likelihood': final_ll,
             'posterior_mean_states': posterior_mean_states,
             'posterior_std_states': posterior_std_states,
             'transition_persistence': transition_persistence,
             'state_counts_history': state_counts,
-            'log_likelihood_history': log_likelihoods
+            'log_likelihood_history': log_likelihoods,
+            'model': model  # Return model for storage
         }
     
     def _fit_ssm(self, data: np.ndarray) -> Dict[str, Any]:
-        """Fit HDP-HMM using ssm library (fallback)."""
+        """
+        Fit HMM using ssm library (fallback).
+        
+        WARNING: ssm doesn't have true HDP-HMM, so we use standard HMM with fixed K.
+        This means the number of states is not inferred nonparametrically.
+        Consider installing pyhsmm for full HDP-HMM functionality.
+        """
+        tprint_warning("⚠️ Using ssm fallback: NOT true HDP-HMM (fixed number of states)")
         tprint_info("🔄 Fitting HMM with ssm library")
         
         # Note: ssm doesn't have HDP-HMM, so we use standard HMM with fixed K
-        # This is a fallback implementation
         import ssm
         
         # Set number of states (use middle of range)
         K = (self.config.min_regimes + self.config.max_regimes) // 2
+        tprint_info(f"   Using fixed K={K} states (not nonparametric)")
         
         # Create HMM model
         hmm = ssm.HMM(
@@ -581,7 +645,7 @@ class HDPHMMClusterer:
         )
         
         # Fit model
-        tprint_info(f"🔄 Fitting HMM with {K} states")
+        tprint_info(f"🔄 Fitting HMM with {K} states using EM algorithm")
         ll = hmm.fit(data, method="em", num_iters=self.config.n_iterations)
         
         # Get state sequence
@@ -590,22 +654,15 @@ class HDPHMMClusterer:
         # Get transition matrix
         transition_matrix = hmm.transitions.transition_matrix
         
-        # Calculate state durations
+        # Calculate state durations using helper method
         unique_states = np.unique(labels)
-        state_durations = []
-        for state in unique_states:
-            state_mask = labels == state
-            segments = np.split(np.where(state_mask)[0], np.where(np.diff(np.where(state_mask)[0]) != 1)[0] + 1)
-            durations = [len(seg) for seg in segments if len(seg) > 0]
-            if durations:
-                state_durations.append(np.mean(durations))
-            else:
-                state_durations.append(0)
+        state_durations = self._calculate_state_durations(labels)
         
         # Calculate transition persistence
         transition_persistence = np.mean(np.diag(transition_matrix))
         
         tprint_success(f"✅ HMM fitting completed: {len(unique_states)} states")
+        tprint_warning("⚠️ Remember: This is NOT true HDP-HMM (number of states was fixed)")
         
         return {
             'labels': labels,
@@ -615,11 +672,12 @@ class HDPHMMClusterer:
                 'means': hmm.observations.mus,
                 'covariances': hmm.observations.Sigmas
             },
-            'state_durations': np.array(state_durations),
+            'state_durations': state_durations,
             'log_likelihood': ll[-1] if isinstance(ll, np.ndarray) else ll,
             'posterior_mean_states': float(len(unique_states)),
             'posterior_std_states': 0.0,
-            'transition_persistence': transition_persistence
+            'transition_persistence': transition_persistence,
+            'model': hmm  # Return model for storage
         }
     
     def _calculate_metrics(self, data: np.ndarray, labels: np.ndarray) -> Dict[str, float]:

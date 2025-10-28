@@ -1,8 +1,11 @@
 """
-Complete Example: Risk Mitigation & CV Enhancement Auto-Tuning
+Complete Example: Risk Mitigation Auto-Tuning
 
-This script demonstrates how to use both tuners together to optimize
-clustering quality and stability.
+This script demonstrates how to use the risk mitigation tuner to optimize
+clustering stability and quality.
+
+Note: CV Enhancement tuner has been removed as AdaptiveWeightScheduler
+      was not integrated into the optimization loop.
 
 Usage:
     python example_risk_cv_tuning.py --symbol ETHUSDT --trials 30
@@ -22,10 +25,6 @@ from src.utils.tprint import tprint
 from src.training.steps.market_analysis.clusters.risk_mitigation_tuner import (
     run_risk_mitigation_tuning,
     RiskMitigationTuner
-)
-from src.training.steps.market_analysis.clusters.cv_enhancement_tuner import (
-    run_cv_enhancement_tuning,
-    CVEnhancementTuner
 )
 
 
@@ -61,58 +60,38 @@ def load_data_for_tuning(symbol: str):
     return features, labels, market_data
 
 
-def run_parallel_tuning(features, labels, market_data, n_trials: int = 30):
+def run_risk_tuning(features, labels, market_data, n_trials: int = 30):
     """
-    Run both tuners in parallel for faster optimization.
+    Run risk mitigation tuner.
     
     Args:
         features: Feature matrix
         labels: Initial cluster labels
         market_data: Market data DataFrame
-        n_trials: Number of trials per tuner
+        n_trials: Number of trials
         
     Returns:
-        Tuple of (risk_results, cv_results)
+        Risk mitigation tuning results
     """
-    tprint("🚀 Starting parallel tuning (Risk + CV)...", "INFO")
-    
-    def tune_risk():
-        tprint("🛡️ [Thread 1] Risk Mitigation tuning started", "INFO")
-        return run_risk_mitigation_tuning(
-            features=features,
-            initial_labels=labels,
-            market_data=market_data,
-            n_trials=n_trials
-        )
-    
-    def tune_cv():
-        tprint("📈 [Thread 2] CV Enhancement tuning started", "INFO")
-        return run_cv_enhancement_tuning(
-            features=features,
-            initial_labels=labels,
-            market_data=market_data,
-            n_trials=n_trials
-        )
+    tprint("🚀 Starting risk mitigation tuning...", "INFO")
     
     start_time = time.time()
     
-    # Run in parallel
-    with ThreadPoolExecutor(max_workers=2) as executor:
-        risk_future = executor.submit(tune_risk)
-        cv_future = executor.submit(tune_cv)
-        
-        # Wait for both to complete
-        risk_results = risk_future.result()
-        cv_results = cv_future.result()
+    risk_results = run_risk_mitigation_tuning(
+        features=features,
+        initial_labels=labels,
+        market_data=market_data,
+        n_trials=n_trials
+    )
     
     elapsed = time.time() - start_time
     
-    tprint(f"✅ Parallel tuning completed in {elapsed/60:.1f} minutes", "SUCCESS")
+    tprint(f"✅ Tuning completed in {elapsed/60:.1f} minutes", "SUCCESS")
     
-    return risk_results, cv_results
+    return risk_results
 
 
-def print_results_summary(risk_results, cv_results):
+def print_results_summary(risk_results):
     """Print comprehensive results summary."""
     
     tprint("\n" + "="*80, "INFO")
@@ -154,45 +133,9 @@ def print_results_summary(risk_results, cv_results):
         tprint("❌ Risk Mitigation tuning failed", "ERROR")
     
     tprint("\n" + "="*80 + "\n", "INFO")
-    
-    # CV Enhancement Results
-    if cv_results:
-        tprint("📈 CV ENHANCEMENT TUNING", "INFO")
-        tprint("-" * 80, "INFO")
-        
-        cv_params = cv_results['best_params']
-        cv_metrics = cv_results['best_metrics']
-        
-        tprint(f"Best Composite Score: {cv_results['best_score']:.4f}", "SUCCESS")
-        tprint(f"CV Quality Score: {cv_metrics.get_cv_quality_score():.4f}", "SUCCESS")
-        tprint(f"\nClustering Quality:", "INFO")
-        tprint(f"  CV Score:         {cv_metrics.cv_score:.3f}", "INFO")
-        tprint(f"  CV Improvement:   {cv_metrics.cv_improvement:+.2%}", "SUCCESS")
-        tprint(f"  Silhouette:       {cv_metrics.silhouette_score:.3f}", "INFO")
-        tprint(f"  DBI:              {cv_metrics.dbi_score:.3f}", "INFO")
-        tprint(f"  Clusters:         {cv_metrics.n_clusters}", "INFO")
-        
-        tprint(f"\nWeight Progression:", "INFO")
-        tprint(f"  Initial CV Weight:      {cv_metrics.initial_cv_weight:.3f}", "INFO")
-        tprint(f"  Final CV Weight:        {cv_metrics.final_cv_weight:.3f}", "INFO")
-        tprint(f"  Weight Increase:        {cv_metrics.final_cv_weight - cv_metrics.initial_cv_weight:.3f}", "INFO")
-        
-        tprint(f"\nBest Parameters:", "INFO")
-        tprint(f"  Initial CV Weight:      {cv_params['initial_cv_weight']:.3f}", "INFO")
-        tprint(f"  Final CV Weight:        {cv_params['final_cv_weight']:.3f}", "INFO")
-        tprint(f"  Transition Speed:       {cv_params['weight_transition_speed']:.3f}", "INFO")
-        tprint(f"  Between Var Amplifier:  {cv_params['between_var_amplifier']:.3f}", "INFO")
-        tprint(f"  Within Var Dampener:    {cv_params['within_var_dampener']:.3f}", "INFO")
-        
-        tprint(f"\n📁 Results saved to:", "INFO")
-        tprint(f"   artifacts/hyperparameter_tuning/cv_enhancement_*", "INFO")
-    else:
-        tprint("❌ CV Enhancement tuning failed", "ERROR")
-    
-    tprint("\n" + "="*80 + "\n", "INFO")
 
 
-def save_best_params_to_config(symbol: str, risk_results, cv_results, config_path: str = None):
+def save_best_params_to_config(symbol: str, risk_results, config_path: str = None):
     """
     Save best parameters to configuration file.
     
@@ -221,15 +164,6 @@ def save_best_params_to_config(symbol: str, risk_results, cv_results, config_pat
             else:
                 tprint(f"  {key}: {value}", "INFO")
     
-    tprint("\n# CV Enhancement Parameters (from tuning)", "INFO")
-    tprint("cv_enhancement:", "INFO")
-    if cv_results:
-        for key, value in cv_results['best_params'].items():
-            if isinstance(value, float):
-                tprint(f"  {key}: {value:.4f}", "INFO")
-            else:
-                tprint(f"  {key}: {value}", "INFO")
-    
     tprint("```\n", "INFO")
 
 
@@ -251,12 +185,6 @@ def main():
         help='Number of trials per tuner (default: 30)'
     )
     parser.add_argument(
-        '--parallel',
-        action='store_true',
-        default=True,
-        help='Run tuners in parallel (default: True)'
-    )
-    parser.add_argument(
         '--output-dir',
         type=str,
         default='artifacts/hyperparameter_tuning/',
@@ -266,42 +194,27 @@ def main():
     args = parser.parse_args()
     
     tprint("\n" + "="*80, "INFO")
-    tprint("🎯 RISK MITIGATION & CV ENHANCEMENT AUTO-TUNING", "INFO")
+    tprint("🎯 RISK MITIGATION AUTO-TUNING", "INFO")
     tprint("="*80, "INFO")
     tprint(f"\nSymbol: {args.symbol}", "INFO")
-    tprint(f"Trials per tuner: {args.trials}", "INFO")
-    tprint(f"Parallel execution: {args.parallel}", "INFO")
+    tprint(f"Trials: {args.trials}", "INFO")
     tprint(f"Output directory: {args.output_dir}\n", "INFO")
     
     # Step 1: Load data
     features, labels, market_data = load_data_for_tuning(args.symbol)
     
     # Step 2: Run tuning
-    if args.parallel:
-        risk_results, cv_results = run_parallel_tuning(
-            features, labels, market_data, n_trials=args.trials
-        )
-    else:
-        # Sequential execution
-        tprint("🛡️ Running Risk Mitigation tuning...", "INFO")
-        risk_results = run_risk_mitigation_tuning(
-            features, labels, market_data, 
-            n_trials=args.trials,
-            output_dir=args.output_dir
-        )
-        
-        tprint("\n📈 Running CV Enhancement tuning...", "INFO")
-        cv_results = run_cv_enhancement_tuning(
-            features, labels, market_data,
-            n_trials=args.trials,
-            output_dir=args.output_dir
-        )
+    tprint("🛡️ Running Risk Mitigation tuning...", "INFO")
+    risk_results = run_risk_tuning(
+        features, labels, market_data, 
+        n_trials=args.trials
+    )
     
     # Step 3: Print results
-    print_results_summary(risk_results, cv_results)
+    print_results_summary(risk_results)
     
     # Step 4: Save to config
-    save_best_params_to_config(args.symbol, risk_results, cv_results)
+    save_best_params_to_config(args.symbol, risk_results)
     
     tprint("✅ Tuning completed successfully!", "SUCCESS")
     tprint("\n💡 Next steps:", "INFO")

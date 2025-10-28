@@ -4,12 +4,17 @@ Iterative Optimization Hyperparameter Tuner
 This script uses multi-objective optimization to tune the hyperparameters of iterative_optimization.py
 to maximize CV, Silhouette, and DBI while maintaining Balance and Temporal Smoothness.
 
-Objectives:
-- Maximize CV (Between/Within Variance Ratio)
-- Maximize Silhouette Score  
-- Minimize DBI (Davies-Bouldin Index)
-- Maintain Balance Score (soft constraint)
-- Maintain Temporal Smoothness (soft constraint)
+Optimization Goals (from clustering_optimization_goals.py):
+- Maximize CV (Between/Within Variance Ratio) - Primary goal (30% weight)
+- Maximize Silhouette Score - Primary goal (25% weight)
+- Minimize DBI (Davies-Bouldin Index) - Primary goal (20% weight)
+- Maintain Balance Score (soft constraint) - Secondary goal (15% weight)
+- Maintain Temporal Smoothness (soft constraint) - Secondary goal (10% weight)
+
+All goals are centralized in clustering_optimization_goals.py for consistency across:
+- iterative_optimization.py
+- hdbscan_clustering optimization
+- regime_clustering_step.py
 
 Uses tools from src/utils/ml_common/optimization/
 """
@@ -32,6 +37,15 @@ from src.utils.ml_common.optimization import (
     HPOPhaseConfig
 )
 
+# Import unified clustering optimization goals
+from .clustering_optimization_goals import (
+    DEFAULT_CLUSTERING_GOALS,
+    DEFAULT_OPTIMIZATION_TARGETS,
+    calculate_composite_score,
+    meets_optimization_constraints,
+    format_metrics_report
+)
+
 
 @dataclass
 class IterativeOptimizationMetrics:
@@ -44,56 +58,95 @@ class IterativeOptimizationMetrics:
     n_clusters: int
     cluster_sizes: List[int]
     optimization_time: float
+    cluster_sizes_valid: bool = True  # Whether cluster sizes meet 2%-20% constraints
+    size_violations: List[Dict[str, Any]] = field(default_factory=list)  # Size violation details
     
     def get_composite_score(self, weights: Dict[str, float] = None) -> float:
-        """Calculate weighted composite score."""
+        """Calculate weighted composite score using unified goals."""
         if weights is None:
-            weights = {
-                'cv': 0.30,
-                'silhouette': 0.25,
-                'dbi': 0.20,  # Inverted: lower is better
-                'balance': 0.15,
-                'temporal': 0.10
-            }
+            weights = DEFAULT_CLUSTERING_GOALS.get_weights_dict()
         
-        # Normalize DBI (invert since lower is better)
-        dbi_normalized = 1.0 / (1.0 + self.dbi_score) if self.dbi_score > 0 else 0.0
-        
-        score = (
-            weights['cv'] * self.cv_score +
-            weights['silhouette'] * max(0, self.silhouette_score) +  # Clip negative
-            weights['dbi'] * dbi_normalized +
-            weights['balance'] * self.balance_score +
-            weights['temporal'] * self.temporal_smoothness
+        # Use unified calculation function
+        return calculate_composite_score(
+            cv_score=self.cv_score,
+            silhouette_score=self.silhouette_score,
+            dbi_score=self.dbi_score,
+            balance_score=self.balance_score,
+            temporal_smoothness=self.temporal_smoothness
         )
-        
-        return score
     
     def meets_constraints(self, 
-                         min_balance: float = 0.5,
-                         min_temporal: float = 0.85,
-                         target_clusters: Tuple[int, int] = (6, 8)) -> bool:
-        """Check if metrics meet minimum constraints."""
-        return (
+                         min_balance: Optional[float] = None,
+                         min_temporal: Optional[float] = None,
+                         target_clusters: Optional[Tuple[int, int]] = None,
+                         n_total_samples: Optional[int] = None) -> bool:
+        """
+        Check if metrics meet minimum constraints using unified targets.
+        
+        Args:
+            min_balance: Minimum balance score (default: from unified targets)
+            min_temporal: Minimum temporal smoothness (default: from unified targets)
+            target_clusters: Target cluster count range (default: from unified targets)
+            n_total_samples: Total number of samples for size validation
+            
+        Returns:
+            bool: True if all constraints are met
+        """
+        from .clustering_optimization_goals import validate_cluster_sizes
+        
+        targets = DEFAULT_OPTIMIZATION_TARGETS
+        
+        # Override with custom values if provided
+        if min_balance is None:
+            min_balance = targets.min_balance_score
+        if min_temporal is None:
+            min_temporal = targets.min_temporal_smoothness
+        if target_clusters is None:
+            target_clusters = targets.target_clusters
+        
+        # Basic constraint checks
+        basic_checks = (
             self.balance_score >= min_balance and
             self.temporal_smoothness >= min_temporal and
             target_clusters[0] <= self.n_clusters <= target_clusters[1]
         )
+        
+        # Validate cluster sizes if available
+        if n_total_samples and self.cluster_sizes:
+            sizes_valid, _ = validate_cluster_sizes(
+                self.cluster_sizes, 
+                n_total_samples, 
+                targets
+            )
+            return basic_checks and sizes_valid
+        
+        # If size validation not possible, use stored validation result
+        return basic_checks and self.cluster_sizes_valid
 
 
 @dataclass
 class OptimizationParameterSpace:
-    """Define the hyperparameter search space for iterative optimization."""
+    """
+    Define the hyperparameter search space for iterative optimization.
     
-    # Core K and size constraints
-    K_MIN: Tuple[int, int] = (5, 8)  # Range for minimum clusters
-    K_MAX: Tuple[int, int] = (8, 12)  # Range for maximum clusters
-    MIN_FRAC: Tuple[float, float] = (0.02, 0.05)  # Minimum cluster size fraction
-    MAX_FRAC: Tuple[float, float] = (0.15, 0.25)  # Maximum cluster size fraction
+    Uses unified clustering optimization goals from clustering_optimization_goals.py
+    to ensure consistency across all clustering components.
+    """
     
-    # Objective weights - focus on CV, Silhouette, Temporal
-    w_cv: Tuple[float, float] = (0.50, 0.80)  # Weight for CV ratio
-    w_sil: Tuple[float, float] = (0.05, 0.20)  # Weight for Silhouette
+    # Core K and size constraints (from unified targets)
+    # Uses DEFAULT_CLUSTERING_GOALS structural constraints:
+    # - Cluster count: 6-8 preferred (5-10 absolute range)
+    # - Cluster size: 2% min, 20% max
+    K_MIN: Tuple[int, int] = (5, 8)  # Range for minimum clusters (aligned with unified: 5 min)
+    K_MAX: Tuple[int, int] = (8, 12)  # Range for maximum clusters (aligned with unified: 10 max)
+    MIN_FRAC: Tuple[float, float] = (0.02, 0.05)  # Minimum cluster size fraction (unified: 2% min)
+    MAX_FRAC: Tuple[float, float] = (0.15, 0.25)  # Maximum cluster size fraction (unified: 20% max)
+    
+    # Objective weights - derived from unified clustering goals
+    # Default center points from DEFAULT_CLUSTERING_GOALS
+    # CV: 0.30, Silhouette: 0.25, DBI: 0.20, Balance: 0.15, Temporal: 0.10
+    w_cv: Tuple[float, float] = (0.50, 0.80)  # Weight for CV ratio (explore higher)
+    w_sil: Tuple[float, float] = (0.05, 0.20)  # Weight for Silhouette (tunable)
     w_temp: Tuple[float, float] = (0.10, 0.30)  # Weight for Temporal smoothness
     w_bal: Tuple[float, float] = (0.02, 0.10)  # Weight for Balance
     
@@ -318,17 +371,40 @@ class IterativeOptimizationTuner:
             n_clusters = len(np.unique(optimized_labels))
             cluster_sizes = [int(np.sum(optimized_labels == i)) for i in range(n_clusters)]
             
-            # Calculate CV ratio (between/within variance)
+            # Validate cluster sizes against unified constraints (2%-20%)
+            from .clustering_optimization_goals import validate_cluster_sizes
+            n_total_samples = len(self.filtered_labels)
+            sizes_valid, size_details = validate_cluster_sizes(
+                cluster_sizes, 
+                n_total_samples,
+                DEFAULT_OPTIMIZATION_TARGETS
+            )
+            
+            # Log size violations if any
+            if not sizes_valid and self.verbose:
+                tprint(f"⚠️ Trial has {size_details['n_violations']} cluster size violations (2%-20% constraint)", "DEBUG")
+                for v in size_details['violations'][:3]:  # Show first 3 violations
+                    tprint(f"  Cluster {v['cluster']}: {v['size']} ({v['size_pct']:.1%}) - {v['violation']}", "DEBUG")
+            
+            # Calculate CV ratio using sklearn's optimized implementation
             from sklearn.metrics import calinski_harabasz_score
-            within_variance = self._calculate_within_variance(self.filtered_features, optimized_labels)
-            between_variance = self._calculate_between_variance(self.filtered_features, optimized_labels)
-            cv_score = between_variance / within_variance if within_variance > 0 else 0.0
+            if n_clusters >= 2:
+                try:
+                    # Use sklearn's Calinski-Harabasz score (more efficient than custom calculation)
+                    # This is the same as between_variance / within_variance
+                    cv_score = calinski_harabasz_score(self.filtered_features, optimized_labels)
+                except (ValueError, RuntimeError) as e:
+                    tprint(f"⚠️ CV score calculation failed: {e}", "DEBUG")
+                    cv_score = 0.0
+            else:
+                cv_score = 0.0
             
             # Calculate silhouette score
             if n_clusters >= 2:
                 try:
                     silhouette = silhouette_score(self.filtered_features, optimized_labels)
-                except:
+                except (ValueError, RuntimeError) as e:
+                    tprint(f"⚠️ Silhouette score calculation failed: {e}", "DEBUG")
                     silhouette = -1.0
             else:
                 silhouette = -1.0
@@ -337,7 +413,8 @@ class IterativeOptimizationTuner:
             if n_clusters >= 2:
                 try:
                     dbi = davies_bouldin_score(self.filtered_features, optimized_labels)
-                except:
+                except (ValueError, RuntimeError) as e:
+                    tprint(f"⚠️ DBI score calculation failed: {e}", "DEBUG")
                     dbi = 10.0
             else:
                 dbi = 10.0
@@ -358,14 +435,16 @@ class IterativeOptimizationTuner:
                 temporal_smoothness=temporal,
                 n_clusters=n_clusters,
                 cluster_sizes=cluster_sizes,
-                optimization_time=optimization_time
+                optimization_time=optimization_time,
+                cluster_sizes_valid=sizes_valid,
+                size_violations=size_details['violations']
             )
             
         except Exception as e:
             tprint(f"❌ Trial execution failed: {e}", "ERROR")
             import traceback
             traceback.print_exc()
-            # Return poor metrics
+            # Return poor metrics with failed validation
             return IterativeOptimizationMetrics(
                 cv_score=0.0,
                 silhouette_score=-1.0,
@@ -374,11 +453,21 @@ class IterativeOptimizationTuner:
                 temporal_smoothness=0.0,
                 n_clusters=0,
                 cluster_sizes=[],
-                optimization_time=0.0
+                optimization_time=0.0,
+                cluster_sizes_valid=False,
+                size_violations=[]
             )
     
     def _params_to_config(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Convert optimization parameters to config dict."""
+        """
+        Convert optimization parameters to config dict.
+        
+        Args:
+            params: Parameter dictionary from optimization trial
+            
+        Returns:
+            Configuration dictionary for iterative optimization
+        """
         return {
             'min_clusters': params['K_MIN'],
             'max_clusters': params['K_MAX'],
@@ -388,7 +477,19 @@ class IterativeOptimizationTuner:
         }
     
     def _calculate_within_variance(self, features: np.ndarray, labels: np.ndarray) -> float:
-        """Calculate within-cluster variance."""
+        """
+        Calculate within-cluster variance (WCSS).
+        
+        Note: This method is kept for backward compatibility but is no longer used.
+        We now use sklearn's calinski_harabasz_score directly for better performance.
+        
+        Args:
+            features: Feature matrix (n_samples, n_features)
+            labels: Cluster labels (n_samples,)
+            
+        Returns:
+            Normalized within-cluster sum of squares
+        """
         total_wcss = 0.0
         for cluster_id in np.unique(labels):
             cluster_mask = labels == cluster_id
@@ -400,7 +501,19 @@ class IterativeOptimizationTuner:
         return total_wcss / len(features) if len(features) > 0 else 0.0
     
     def _calculate_between_variance(self, features: np.ndarray, labels: np.ndarray) -> float:
-        """Calculate between-cluster variance."""
+        """
+        Calculate between-cluster variance (BCSS).
+        
+        Note: This method is kept for backward compatibility but is no longer used.
+        We now use sklearn's calinski_harabasz_score directly for better performance.
+        
+        Args:
+            features: Feature matrix (n_samples, n_features)
+            labels: Cluster labels (n_samples,)
+            
+        Returns:
+            Normalized between-cluster sum of squares
+        """
         global_mean = np.mean(features, axis=0)
         total_bcss = 0.0
         for cluster_id in np.unique(labels):
@@ -413,7 +526,18 @@ class IterativeOptimizationTuner:
         return total_bcss / len(features) if len(features) > 0 else 0.0
     
     def _calculate_balance_score(self, cluster_sizes: List[int]) -> float:
-        """Calculate cluster balance score (0-1, higher is better)."""
+        """
+        Calculate cluster balance score (0-1, higher is better).
+        
+        Uses coefficient of variation (CV) to measure balance.
+        Lower CV indicates more balanced cluster sizes.
+        
+        Args:
+            cluster_sizes: List of cluster sizes
+            
+        Returns:
+            Balance score in [0, 1], where 1 is perfectly balanced
+        """
         if not cluster_sizes or len(cluster_sizes) < 2:
             return 0.0
         sizes_array = np.array(cluster_sizes)
@@ -426,7 +550,20 @@ class IterativeOptimizationTuner:
         return balance
     
     def _calculate_temporal_smoothness(self, labels: np.ndarray) -> float:
-        """Calculate temporal smoothness (ratio of consecutive identical labels)."""
+        """
+        Calculate temporal smoothness (ratio of consecutive identical labels).
+        
+        Temporal smoothness measures how stable cluster assignments are over time.
+        Higher values indicate fewer regime switches, which is desirable for trading.
+        
+        Args:
+            labels: Cluster labels in temporal order (n_samples,)
+            
+        Returns:
+            Smoothness score in [0, 1]
+            - 0.0: Every sample has different label (maximum switching)
+            - 1.0: All samples have same label (no switching)
+        """
         if len(labels) < 2:
             return 0.0
         changes = np.sum(labels[1:] != labels[:-1])
@@ -434,7 +571,7 @@ class IterativeOptimizationTuner:
         smoothness = 1.0 - (changes / total_pairs)
         return smoothness
     
-    def _objective_function(self, trial) -> float:
+    def _objective_function(self, trial: Any) -> float:
         """
         Objective function for Optuna optimization.
         Returns composite score to maximize.
@@ -457,11 +594,15 @@ class IterativeOptimizationTuner:
             'metrics': metrics
         })
         
-        # Check if constraints are met
-        if not metrics.meets_constraints():
+        # Check if constraints are met (including cluster size validation)
+        n_total_samples = len(self.filtered_labels)
+        if not metrics.meets_constraints(n_total_samples=n_total_samples):
             # Penalize trials that don't meet constraints
             penalty = -10.0
-            tprint(f"❌ Trial {trial.number} failed constraints: {metrics.n_clusters} clusters, balance={metrics.balance_score:.3f}, temporal={metrics.temporal_smoothness:.3f}", "WARNING")
+            constraint_info = f"clusters={metrics.n_clusters}, balance={metrics.balance_score:.3f}, temporal={metrics.temporal_smoothness:.3f}"
+            if not metrics.cluster_sizes_valid:
+                constraint_info += f", size_violations={len(metrics.size_violations)}"
+            tprint(f"❌ Trial {trial.number} failed constraints: {constraint_info}", "WARNING")
             return penalty
         
         # Calculate composite score
@@ -644,7 +785,7 @@ class IterativeOptimizationTuner:
             traceback.print_exc()
             return None
     
-    def _find_best_compromise(self, pareto_trials: List[Dict]) -> Optional[Dict]:
+    def _find_best_compromise(self, pareto_trials: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
         """Find the best compromise solution from Pareto front."""
         if not pareto_trials:
             return None
@@ -669,8 +810,14 @@ class IterativeOptimizationTuner:
         
         return best_solution
     
-    def save_results(self, results: Dict[str, Any], output_path: str):
-        """Save optimization results to file."""
+    def save_results(self, results: Dict[str, Any], output_path: str) -> None:
+        """
+        Save optimization results to file.
+        
+        Args:
+            results: Optimization results dictionary
+            output_path: Path to save JSON results file
+        """
         try:
             # Convert results to serializable format
             serializable_results = {
@@ -699,9 +846,18 @@ class IterativeOptimizationTuner:
         except Exception as e:
             tprint(f"❌ Failed to save results: {e}", "ERROR")
     
-    def generate_report(self, results: Dict[str, Any], output_path: str):
-        """Generate comprehensive optimization report."""
+    def generate_report(self, results: Dict[str, Any], output_path: str) -> None:
+        """
+        Generate comprehensive optimization report using unified targets.
+        
+        Args:
+            results: Optimization results dictionary
+            output_path: Path to save the report
+        """
         try:
+            # Use unified optimization targets for thresholds
+            targets = DEFAULT_OPTIMIZATION_TARGETS
+            
             report = []
             report.append("# Iterative Optimization Hyperparameter Tuning Report\n")
             report.append(f"**Generated**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
@@ -713,14 +869,32 @@ class IterativeOptimizationTuner:
                 report.append(f"**Total Trials**: {len(self.optimization_history)}\n")
                 report.append(f"**Best Composite Score**: {results.get('best_score', 'N/A'):.4f}\n")
                 report.append("\n### Best Configuration Metrics\n")
-                report.append("| Metric | Value | Status |\n")
-                report.append("|--------|-------|--------|\n")
-                report.append(f"| CV Score | {metrics.cv_score:.4f} | {'✅' if metrics.cv_score > 1.0 else '⚠️'} |\n")
-                report.append(f"| Silhouette Score | {metrics.silhouette_score:.4f} | {'✅' if metrics.silhouette_score > 0.2 else '⚠️'} |\n")
-                report.append(f"| DBI Score | {metrics.dbi_score:.4f} | {'✅' if metrics.dbi_score < 1.5 else '⚠️'} |\n")
-                report.append(f"| Balance Score | {metrics.balance_score:.4f} | {'✅' if metrics.balance_score > 0.5 else '⚠️'} |\n")
-                report.append(f"| Temporal Smoothness | {metrics.temporal_smoothness:.4f} | {'✅' if metrics.temporal_smoothness > 0.85 else '⚠️'} |\n")
-                report.append(f"| Number of Clusters | {metrics.n_clusters} | {'✅' if 6 <= metrics.n_clusters <= 8 else '⚠️'} |\n")
+                report.append("| Metric | Value | Target | Status |\n")
+                report.append("|--------|-------|--------|--------|\n")
+                
+                # Use unified targets instead of hard-coded values
+                cv_status = '✅' if metrics.cv_score >= targets.min_cv_score else '⚠️'
+                report.append(f"| CV Score | {metrics.cv_score:.4f} | ≥{targets.min_cv_score} | {cv_status} |\n")
+                
+                sil_status = '✅' if metrics.silhouette_score >= targets.min_silhouette_score else '⚠️'
+                report.append(f"| Silhouette Score | {metrics.silhouette_score:.4f} | ≥{targets.min_silhouette_score} | {sil_status} |\n")
+                
+                dbi_status = '✅' if metrics.dbi_score <= targets.max_dbi_score else '⚠️'
+                report.append(f"| DBI Score | {metrics.dbi_score:.4f} | ≤{targets.max_dbi_score} | {dbi_status} |\n")
+                
+                bal_status = '✅' if metrics.balance_score >= targets.min_balance_score else '⚠️'
+                report.append(f"| Balance Score | {metrics.balance_score:.4f} | ≥{targets.min_balance_score} | {bal_status} |\n")
+                
+                temp_status = '✅' if metrics.temporal_smoothness >= targets.min_temporal_smoothness else '⚠️'
+                report.append(f"| Temporal Smoothness | {metrics.temporal_smoothness:.4f} | ≥{targets.min_temporal_smoothness} | {temp_status} |\n")
+                
+                cluster_status = '✅' if targets.target_clusters[0] <= metrics.n_clusters <= targets.target_clusters[1] else '⚠️'
+                report.append(f"| Number of Clusters | {metrics.n_clusters} | {targets.target_clusters[0]}-{targets.target_clusters[1]} | {cluster_status} |\n")
+                
+                # Add cluster size validation status if available
+                if hasattr(metrics, 'cluster_sizes_valid'):
+                    size_status = '✅' if metrics.cluster_sizes_valid else '⚠️'
+                    report.append(f"| Cluster Sizes Valid | {metrics.cluster_sizes_valid} | 2%-20% | {size_status} |\n")
                 
                 report.append("\n### Best Parameters\n")
                 report.append("```json\n")
@@ -744,7 +918,7 @@ def run_tuning_pipeline(
     n_trials: int = 30,
     method: str = 'bayesian',
     output_dir: str = 'artifacts/hyperparameter_tuning/'
-) -> Dict[str, Any]:
+) -> Optional[Dict[str, Any]]:
     """
     Run the complete hyperparameter tuning pipeline.
     

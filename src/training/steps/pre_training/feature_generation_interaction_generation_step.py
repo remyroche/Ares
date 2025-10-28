@@ -3608,14 +3608,34 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
         tprint_info(f"  🔍 DEBUG: combined_features shape before save: {combined_features.shape}")
         tprint_info(f"  🔍 DEBUG: combined_features columns count: {len(combined_features.columns)}")
         
-        # Count interaction types in combined_features
-        ct_count = sum(1 for c in combined_features.columns if any(m in c for m in ['_3x_ratio', '_6x_ratio', '_9x_ratio', '_27x_ratio']))
-        int_count = sum(1 for c in combined_features.columns if any(m in c for m in ['_x_', '_div_', '_minus_', '_log_']) and not any(m in c for m in ['_3x_ratio', '_6x_ratio', '_9x_ratio', '_27x_ratio']))
-        base_count = len(combined_features.columns) - ct_count - int_count
+        # Categorize features properly - check interaction operations FIRST
+        hybrid_ct_interactions = []
+        traditional_interactions = []
+        ct_ratio_features = []
+        base_variant_features = []
+        
+        for col in combined_features.columns:
+            # Check interaction operations FIRST (before CT markers)
+            if any(op in col for op in ['_x_', '_div_', '_minus_', '_log_', '_plus_']):
+                if any(marker in col for marker in ['_3x_ratio', '_6x_ratio', '_9x_ratio', '_27x_ratio']):
+                    hybrid_ct_interactions.append(col)  # NEW CATEGORY
+                else:
+                    traditional_interactions.append(col)
+            elif any(marker in col for marker in ['_3x_ratio', '_6x_ratio', '_9x_ratio', '_27x_ratio']):
+                ct_ratio_features.append(col)
+            else:
+                base_variant_features.append(col)
+        
+        # Count each category
+        hybrid_count = len(hybrid_ct_interactions)
+        int_count = len(traditional_interactions)
+        ct_count = len(ct_ratio_features)
+        base_count = len(base_variant_features)
         
         tprint_info(f"  📊 Feature breakdown before save:")
-        tprint_info(f"    - Cross-timeframe ratios: {ct_count}")
+        tprint_info(f"    - Hybrid CT interactions: {hybrid_count}")
         tprint_info(f"    - Traditional interactions: {int_count}")
+        tprint_info(f"    - Cross-timeframe ratios: {ct_count}")
         tprint_info(f"    - Base/variant features: {base_count}")
         tprint_info("="*80)
         

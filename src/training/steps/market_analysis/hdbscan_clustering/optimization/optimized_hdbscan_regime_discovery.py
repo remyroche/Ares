@@ -27,6 +27,12 @@ except ImportError as e:
 from src.utils.hardware.m1_memory_optimizer import M1MemoryOptimizer
 from src.utils.hardware.unified_hardware_manager import UnifiedHardwareManager, WorkloadType
 
+# Import comprehensive quality assessor
+from ..quality_assessment import (
+    create_quality_assessor,
+    QualityMetrics
+)
+
 # Import optimization components
 from .enhanced_memory_optimizer import (
     EnhancedMemoryOptimizer,
@@ -1734,49 +1740,69 @@ def create_optimized_hdbscan_regime_discovery(
     return OptimizedHDBSCANRegimeDiscovery(config)
 
     def _assess_clustering_quality(self, result: OptimizedRegimeResult) -> Dict[str, Any]:
-        """Assess clustering quality using ML Common advanced metrics."""
-        if not ML_COMMON_AVAILABLE:
-            # Fallback to basic quality assessment
-            return {
-                'silhouette_score': result.silhouette_score,
-                'n_clusters': result.n_clusters,
-                'noise_ratio': result.noise_ratio,
-                'poor_quality': (result.silhouette_score is not None and result.silhouette_score < 0.0) or
-                              result.n_clusters < 2 or result.noise_ratio > 0.5,
-                'fallback_needed': False
-            }
+        """
+        Assess clustering quality using comprehensive quality assessor.
         
+        Uses the standardized ComprehensiveQualityAssessor from quality_assessment.py
+        which includes DBCV, predictive power, temporal metrics, and composite scoring.
+        """
         try:
-            # Use ML Common advanced metrics for comprehensive quality assessment
-            quality_metrics = {
-                'silhouette_score': result.silhouette_score,
-                'calinski_harabasz_score': result.calinski_harabasz_score,
-                'davies_bouldin_score': result.davies_bouldin_score,
-                'n_clusters': result.n_clusters,
-                'noise_ratio': result.noise_ratio
-            }
+            # Create comprehensive quality assessor
+            quality_assessor = create_quality_assessor()
             
-            # Determine if fallback is needed based on multiple criteria
+            # Prepare data for assessment
+            if hasattr(result, 'features_df') and result.features_df is not None:
+                features = result.features_df
+            elif hasattr(result, 'clustering_data') and result.clustering_data is not None:
+                features = pd.DataFrame(result.clustering_data) if isinstance(result.clustering_data, np.ndarray) else result.clustering_data
+            else:
+                # Fallback to basic assessment if no features available
+                logger.warning("No features available for comprehensive quality assessment - using basic metrics")
+                return {
+                    'silhouette_score': result.silhouette_score,
+                    'n_clusters': result.n_clusters,
+                    'noise_ratio': result.noise_ratio,
+                    'poor_quality': (result.silhouette_score is not None and result.silhouette_score < 0.0) or
+                                  result.n_clusters < 2 or result.noise_ratio > 0.5,
+                    'fallback_needed': False
+                }
+            
+            # Run comprehensive assessment
+            quality_metrics_obj = quality_assessor.assess_clustering_quality(
+                cluster_labels=result.regime_labels.values if hasattr(result.regime_labels, 'values') else result.regime_labels,
+                features=features,
+                clusterer=result.clusterer if hasattr(result, 'clusterer') else None,
+                timestamps=result.regime_labels.index if hasattr(result.regime_labels, 'index') else None,
+                returns=None  # Add if available
+            )
+            
+            # Determine if fallback is needed based on comprehensive metrics
             poor_quality = (
-                (result.silhouette_score is not None and result.silhouette_score < 0.0) or
-                result.n_clusters < 2 or
-                result.noise_ratio > 0.5 or
-                (result.calinski_harabasz_score is not None and result.calinski_harabasz_score < 10.0) or
-                (result.davies_bouldin_score is not None and result.davies_bouldin_score > 5.0)
+                (quality_metrics_obj.silhouette_score is not None and quality_metrics_obj.silhouette_score < 0.0) or
+                quality_metrics_obj.n_regimes < 2 or
+                quality_metrics_obj.noise_ratio > 0.5 or
+                (quality_metrics_obj.composite_quality_score is not None and quality_metrics_obj.composite_quality_score < 0.3) or
+                (quality_metrics_obj.calinski_harabasz_score is not None and quality_metrics_obj.calinski_harabasz_score < 10.0) or
+                (quality_metrics_obj.davies_bouldin_score is not None and quality_metrics_obj.davies_bouldin_score > 5.0)
             )
             
             return {
-                'quality_metrics': quality_metrics,
+                'quality_metrics': quality_metrics_obj.to_dict(),
+                'composite_quality_score': quality_metrics_obj.composite_quality_score,
                 'poor_quality': poor_quality,
                 'fallback_needed': poor_quality
             }
             
         except Exception as e:
-            logger.warning(f"Error assessing clustering quality: {e}")
+            logger.warning(f"Error in comprehensive quality assessment: {e}")
+            # Fallback to basic metrics
             return {
-                'quality_metrics': {'error': str(e)},
+                'silhouette_score': result.silhouette_score if hasattr(result, 'silhouette_score') else 0.0,
+                'n_clusters': result.n_clusters if hasattr(result, 'n_clusters') else 0,
+                'noise_ratio': result.noise_ratio if hasattr(result, 'noise_ratio') else 1.0,
                 'poor_quality': True,
-                'fallback_needed': True
+                'fallback_needed': True,
+                'error': str(e)
             }
     
     def _create_fallback_strategies(self, data: pd.DataFrame) -> List[Dict[str, Any]]:
@@ -1994,31 +2020,59 @@ def create_optimized_hdbscan_regime_discovery(
         original: OptimizedRegimeResult, 
         improved: OptimizedRegimeResult
     ) -> float:
-        """Calculate quality improvement percentage using ML Common metrics."""
-        improvements = []
+        """
+        Calculate quality improvement percentage using comprehensive quality metrics.
         
-        # Silhouette score improvement
-        if (original.silhouette_score is not None and 
-            improved.silhouette_score is not None):
-            if original.silhouette_score != 0:
+        Uses composite quality scores from the comprehensive quality assessor for
+        a more robust comparison that includes DBCV, predictive power, and temporal metrics.
+        """
+        try:
+            # Get comprehensive quality assessment for both results
+            original_assessment = self._assess_clustering_quality(original)
+            improved_assessment = self._assess_clustering_quality(improved)
+            
+            # Primary improvement: composite quality score
+            original_composite = original_assessment.get('composite_quality_score')
+            improved_composite = improved_assessment.get('composite_quality_score')
+            
+            if original_composite is not None and improved_composite is not None and original_composite > 0:
+                # Direct comparison of composite scores (already normalized to 0-1)
+                composite_improvement = (improved_composite - original_composite) / original_composite
+                logger.info(f"Composite quality improvement: {composite_improvement:.2%} "
+                          f"(from {original_composite:.3f} to {improved_composite:.3f})")
+                return float(composite_improvement)
+            
+            # Fallback to individual metric improvements if composite scores not available
+            improvements = []
+            
+            # Silhouette score improvement
+            if (original.silhouette_score is not None and 
+                improved.silhouette_score is not None and 
+                original.silhouette_score != 0):
                 sil_improvement = (improved.silhouette_score - original.silhouette_score) / abs(original.silhouette_score)
                 improvements.append(sil_improvement)
-        
-        # Cluster count improvement (prefer more clusters if reasonable)
-        if improved.n_clusters > original.n_clusters and improved.n_clusters <= 8:
-            cluster_improvement = (improved.n_clusters - original.n_clusters) / max(original.n_clusters, 1)
-            improvements.append(cluster_improvement)
-        
-        # Noise ratio improvement (prefer less noise)
-        if improved.noise_ratio < original.noise_ratio:
-            noise_improvement = (original.noise_ratio - improved.noise_ratio) / max(original.noise_ratio, 0.01)
-            improvements.append(noise_improvement)
-        
-        # Calinski-Harabasz score improvement
-        if (original.calinski_harabasz_score is not None and 
-            improved.calinski_harabasz_score is not None):
-            if original.calinski_harabasz_score != 0:
+            
+            # Cluster count improvement (prefer more clusters if reasonable)
+            if improved.n_clusters > original.n_clusters and improved.n_clusters <= 8:
+                cluster_improvement = (improved.n_clusters - original.n_clusters) / max(original.n_clusters, 1)
+                improvements.append(cluster_improvement)
+            
+            # Noise ratio improvement (prefer less noise)
+            if improved.noise_ratio < original.noise_ratio:
+                noise_improvement = (original.noise_ratio - improved.noise_ratio) / max(original.noise_ratio, 0.01)
+                improvements.append(noise_improvement)
+            
+            # Calinski-Harabasz score improvement
+            if (original.calinski_harabasz_score is not None and 
+                improved.calinski_harabasz_score is not None and
+                original.calinski_harabasz_score != 0):
                 ch_improvement = (improved.calinski_harabasz_score - original.calinski_harabasz_score) / abs(original.calinski_harabasz_score)
                 improvements.append(ch_improvement)
-        
-        return np.mean(improvements) if improvements else 0.0
+            
+            avg_improvement = float(np.mean(improvements)) if improvements else 0.0
+            logger.info(f"Average metric improvement: {avg_improvement:.2%} (based on {len(improvements)} metrics)")
+            return avg_improvement
+            
+        except Exception as e:
+            logger.warning(f"Error calculating quality improvement: {e}")
+            return 0.0

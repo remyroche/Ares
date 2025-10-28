@@ -63,9 +63,12 @@ class ClusterQualityMetrics:
     davies_bouldin_score: Optional[float] = None
     calinski_harabasz_score: Optional[float] = None
     
-    # Coefficient of variation metrics
+    # Coefficient of variation metrics (with std dev)
     within_regime_cv: Optional[float] = None
+    within_regime_cv_std: Optional[float] = None
     between_regime_cv: Optional[float] = None
+    between_regime_cv_std: Optional[float] = None
+    per_regime_cv: Optional[Dict[int, float]] = None  # Per-regime CV values
     
     # Temporal metrics
     temporal_smoothness: Optional[float] = None
@@ -74,6 +77,16 @@ class ClusterQualityMetrics:
     # Cluster composition
     n_regimes: int = 0
     noise_ratio: float = 0.0
+    
+    # Balance metrics
+    balance_score: Optional[float] = None  # Global balance score (0-1, higher is better)
+    min_cluster_size_pct: Optional[float] = None  # Smallest cluster as % of total
+    max_cluster_size_pct: Optional[float] = None  # Largest cluster as % of total
+    cluster_size_std: Optional[float] = None  # Std dev of cluster sizes
+    cluster_size_distribution: Optional[List[float]] = None  # Size of each cluster as %
+    
+    # Model-specific metrics
+    log_likelihood: Optional[float] = None  # For Markov-Switching, HMM models
     
     # Per-regime metrics
     per_regime_metrics: Dict[int, Dict[str, Any]] = field(default_factory=dict)
@@ -93,20 +106,46 @@ class ClusterQualityMetrics:
     def to_dict(self) -> Dict[str, Any]:
         """Convert metrics to dictionary."""
         return {
+            # Core metrics
             'silhouette_score': self.silhouette_score,
             'silhouette_per_cluster': self.silhouette_per_cluster,
             'davies_bouldin_score': self.davies_bouldin_score,
             'calinski_harabasz_score': self.calinski_harabasz_score,
+            
+            # CV metrics with std dev
             'within_regime_cv': self.within_regime_cv,
+            'within_regime_cv_std': self.within_regime_cv_std,
             'between_regime_cv': self.between_regime_cv,
+            'between_regime_cv_std': self.between_regime_cv_std,
+            'per_regime_cv': self.per_regime_cv,
+            
+            # Temporal metrics
             'temporal_smoothness': self.temporal_smoothness,
             'regime_persistence': self.regime_persistence,
+            
+            # Composition metrics
             'n_regimes': self.n_regimes,
             'noise_ratio': self.noise_ratio,
+            
+            # Balance metrics
+            'balance_score': self.balance_score,
+            'min_cluster_size_pct': self.min_cluster_size_pct,
+            'max_cluster_size_pct': self.max_cluster_size_pct,
+            'cluster_size_std': self.cluster_size_std,
+            'cluster_size_distribution': self.cluster_size_distribution,
+            
+            # Model-specific
+            'log_likelihood': self.log_likelihood,
+            
+            # Detailed metrics
             'per_regime_metrics': self.per_regime_metrics,
             'economic_validation': self.economic_validation,
+            
+            # Aggregate scores
             'predictive_power': self.predictive_power,
             'quality_score': self.quality_score,
+            
+            # Metadata
             'timestamp': self.timestamp
         }
     
@@ -234,15 +273,25 @@ class ClusterQualityAssessor:
         except Exception as e:
             self.logger.warning(f"Failed to calculate CH score: {e}")
         
-        # 4. Coefficient of variation metrics
+        # 4. Coefficient of variation metrics (with std dev and per-regime)
         try:
-            metrics.within_regime_cv, metrics.between_regime_cv = self._calculate_cv_metrics(
+            (metrics.within_regime_cv, metrics.within_regime_cv_std,
+             metrics.between_regime_cv, metrics.between_regime_cv_std,
+             metrics.per_regime_cv) = self._calculate_cv_metrics(
                 regime_labels, features_clean, non_noise_mask
             )
         except Exception as e:
             self.logger.warning(f"Failed to calculate CV metrics: {e}")
         
-        # 5. Temporal smoothness and persistence
+        # 5. Balance metrics
+        try:
+            (metrics.balance_score, metrics.min_cluster_size_pct,
+             metrics.max_cluster_size_pct, metrics.cluster_size_std,
+             metrics.cluster_size_distribution) = self._calculate_balance_metrics(regime_labels)
+        except Exception as e:
+            self.logger.warning(f"Failed to calculate balance metrics: {e}")
+        
+        # 6. Temporal smoothness and persistence
         if timestamps is not None:
             try:
                 metrics.temporal_smoothness = self._calculate_temporal_smoothness(
@@ -252,7 +301,7 @@ class ClusterQualityAssessor:
             except Exception as e:
                 self.logger.warning(f"Failed to calculate temporal metrics: {e}")
         
-        # 6. Per-regime metrics
+        # 7. Per-regime metrics
         try:
             metrics.per_regime_metrics = self._calculate_per_regime_metrics(
                 regime_labels, features_clean, forward_returns
@@ -260,7 +309,7 @@ class ClusterQualityAssessor:
         except Exception as e:
             self.logger.warning(f"Failed to calculate per-regime metrics: {e}")
         
-        # 7. Economic validation (if forward returns provided)
+        # 8. Economic validation (if forward returns provided)
         if forward_returns is not None:
             try:
                 metrics.economic_validation = self._validate_regime_quality(
@@ -269,7 +318,7 @@ class ClusterQualityAssessor:
             except Exception as e:
                 self.logger.warning(f"Failed to validate regime quality: {e}")
         
-        # 8. Predictive power
+        # 9. Predictive power
         if forward_returns is not None and len(forward_returns) > 0:
             try:
                 metrics.predictive_power = self._calculate_predictive_power(
@@ -278,7 +327,7 @@ class ClusterQualityAssessor:
             except Exception as e:
                 self.logger.warning(f"Failed to calculate predictive power: {e}")
         
-        # 9. Calculate overall quality score
+        # 10. Calculate overall quality score
         try:
             metrics.quality_score = self._calculate_quality_score(metrics)
         except Exception as e:
@@ -348,21 +397,25 @@ class ClusterQualityAssessor:
     def _calculate_cv_metrics(self,
                               regime_labels: np.ndarray,
                               features: pd.DataFrame,
-                              non_noise_mask: np.ndarray) -> Tuple[float, float]:
+                              non_noise_mask: np.ndarray) -> Tuple[float, float, float, float, Dict[int, float]]:
         """
-        Calculate within-regime and between-regime coefficient of variation.
+        Calculate within-regime and between-regime coefficient of variation with std dev.
         
         Returns:
-            Tuple of (within_regime_cv, between_regime_cv)
+            Tuple of (within_regime_cv_mean, within_regime_cv_std, 
+                     between_regime_cv_mean, between_regime_cv_std,
+                     per_regime_cv_dict)
         """
         features_clean = features.iloc[non_noise_mask]
         labels_clean = regime_labels[non_noise_mask]
         
         if len(set(labels_clean)) < 2:
-            return 0.0, 0.0
+            return 0.0, 0.0, 0.0, 0.0, {}
         
-        # Within-regime CV
+        # Within-regime CV (per cluster)
         within_cvs = []
+        per_regime_cv = {}
+        
         for cluster_id in set(labels_clean):
             cluster_mask = labels_clean == cluster_id
             cluster_data = features_clean[cluster_mask]
@@ -384,9 +437,13 @@ class ClusterQualityAssessor:
                 cv_values = cv_values[np.isfinite(cv_values)]
                 
                 if len(cv_values) > 0:
-                    within_cvs.append(np.mean(cv_values))
+                    cluster_cv = float(np.mean(cv_values))
+                    within_cvs.append(cluster_cv)
+                    per_regime_cv[int(cluster_id)] = cluster_cv
         
-        within_regime_cv = np.mean(within_cvs) if within_cvs else 0.0
+        # Calculate mean and std dev of within-regime CVs
+        within_regime_cv_mean = float(np.mean(within_cvs)) if within_cvs else 0.0
+        within_regime_cv_std = float(np.std(within_cvs)) if len(within_cvs) > 1 else 0.0
         
         # Between-regime CV
         cluster_means = []
@@ -400,26 +457,30 @@ class ClusterQualityAssessor:
                 if len(cluster_mean) > 0:
                     cluster_means.append(cluster_mean)
         
+        between_regime_cv_mean = 0.0
+        between_regime_cv_std = 0.0
+        
         if len(cluster_means) > 1:
             cluster_means_array = np.array(cluster_means)
-            between_cluster_std = np.std(cluster_means_array, axis=0)
-            between_cluster_mean = np.mean(cluster_means_array, axis=0)
             
-            # Safe division
-            denominator = np.abs(between_cluster_mean) + 1e-8
-            cv_values = np.divide(
-                between_cluster_std,
-                denominator,
-                out=np.zeros_like(between_cluster_std),
-                where=denominator != 0
-            )
+            # Calculate CV for each feature across regimes
+            between_cvs = []
+            for feature_idx in range(cluster_means_array.shape[1]):
+                feature_means = cluster_means_array[:, feature_idx]
+                feature_std = np.std(feature_means)
+                feature_mean = np.mean(feature_means)
+                
+                # Safe division
+                denominator = np.abs(feature_mean) + 1e-8
+                cv = feature_std / denominator
+                
+                if np.isfinite(cv):
+                    between_cvs.append(cv)
             
-            cv_values = cv_values[np.isfinite(cv_values)]
-            between_regime_cv = np.mean(cv_values) if len(cv_values) > 0 else 0.0
-        else:
-            between_regime_cv = 0.0
+            between_regime_cv_mean = float(np.mean(between_cvs)) if between_cvs else 0.0
+            between_regime_cv_std = float(np.std(between_cvs)) if len(between_cvs) > 1 else 0.0
         
-        return within_regime_cv, between_regime_cv
+        return within_regime_cv_mean, within_regime_cv_std, between_regime_cv_mean, between_regime_cv_std, per_regime_cv
     
     def _calculate_temporal_smoothness(self,
                                        regime_labels: np.ndarray,
@@ -459,12 +520,57 @@ class ClusterQualityAssessor:
         
         return avg_regime_duration
     
+    def _calculate_balance_metrics(self,
+                                   regime_labels: np.ndarray) -> Tuple[float, float, float, float, List[float]]:
+        """
+        Calculate cluster balance metrics.
+        
+        Returns:
+            Tuple of (balance_score, min_cluster_size_pct, max_cluster_size_pct,
+                     cluster_size_std, cluster_size_distribution)
+        """
+        unique_labels = np.unique(regime_labels)
+        non_noise_labels = unique_labels[unique_labels != -1]
+        
+        if len(non_noise_labels) < 2:
+            return 0.0, 0.0, 0.0, 0.0, []
+        
+        total_samples = len(regime_labels)
+        cluster_sizes = []
+        cluster_size_distribution = []
+        
+        for label in non_noise_labels:
+            size = int(np.sum(regime_labels == label))
+            size_pct = float(100.0 * size / total_samples)
+            cluster_sizes.append(size)
+            cluster_size_distribution.append(size_pct)
+        
+        # Calculate metrics
+        min_cluster_size_pct = float(min(cluster_size_distribution))
+        max_cluster_size_pct = float(max(cluster_size_distribution))
+        cluster_size_std = float(np.std(cluster_sizes))
+        
+        # Calculate balance score (0-1, higher is better)
+        # Perfect balance = all clusters same size (std = 0, score = 1)
+        # Highly imbalanced = one cluster dominates (score → 0)
+        mean_size = np.mean(cluster_sizes)
+        if mean_size > 0:
+            # Normalize std by mean to get coefficient of variation
+            cv = cluster_size_std / mean_size
+            # Convert to score (0-1, lower CV = higher score)
+            balance_score = float(1.0 / (1.0 + cv))
+        else:
+            balance_score = 0.0
+        
+        return balance_score, min_cluster_size_pct, max_cluster_size_pct, cluster_size_std, cluster_size_distribution
+    
     def _calculate_per_regime_metrics(self,
                                       regime_labels: np.ndarray,
                                       features: pd.DataFrame,
                                       forward_returns: Optional[pd.Series] = None) -> Dict[int, Dict[str, Any]]:
         """Calculate detailed metrics for each regime."""
         per_regime_metrics = {}
+        total_samples = len(regime_labels)
         
         for regime_id in set(regime_labels):
             if regime_id == -1:  # Skip noise
@@ -483,12 +589,24 @@ class ClusterQualityAssessor:
                     cv = regime_features[col].std() / (abs(regime_features[col].mean()) + 1e-8)
                     feature_cv[col] = float(cv)
             
+            # Calculate regime-specific metrics
+            regime_size = int(len(regime_features))
+            regime_percentage = float((regime_size / total_samples) * 100)
+            
             regime_metrics = {
-                'size': int(len(regime_features)),
-                'percentage': float((len(regime_features) / len(regime_labels)) * 100),
+                # Size and balance
+                'size': regime_size,
+                'percentage': regime_percentage,
+                
+                # CV metrics
                 'feature_coefficient_of_variation': feature_cv,
                 'mean_cv': float(np.mean(list(feature_cv.values()))) if feature_cv else 0.0,
-                'std_cv': float(np.std(list(feature_cv.values()))) if feature_cv else 0.0
+                'std_cv': float(np.std(list(feature_cv.values()))) if feature_cv else 0.0,
+                
+                # Individual regime balance contribution
+                'balance_contribution': float(regime_size / (np.mean([np.sum(regime_labels == r) 
+                                                                       for r in set(regime_labels) 
+                                                                       if r != -1]) + 1e-8))
             }
             
             # Add return characteristics if available
@@ -602,10 +720,11 @@ class ClusterQualityAssessor:
         Calculate overall composite quality score (0 to 1, higher is better).
         
         Combines multiple metrics into a single score:
-        - Silhouette score (weight: 0.25)
-        - Davies-Bouldin Index (weight: 0.20)
-        - Calinski-Harabasz Index (weight: 0.20)
+        - Silhouette score (weight: 0.20)
+        - Davies-Bouldin Index (weight: 0.15)
+        - Calinski-Harabasz Index (weight: 0.15)
         - Within/Between CV ratio (weight: 0.15)
+        - Balance score (weight: 0.15)
         - Temporal smoothness (weight: 0.10)
         - Noise ratio (weight: 0.10)
         """
@@ -616,21 +735,21 @@ class ClusterQualityAssessor:
         if metrics.silhouette_score is not None:
             silhouette_normalized = (metrics.silhouette_score + 1) / 2  # Map [-1, 1] to [0, 1]
             score_components.append(silhouette_normalized)
-            weights.append(0.25)
+            weights.append(0.20)
         
         # 2. Davies-Bouldin Index (lower is better, normalize inversely)
         if metrics.davies_bouldin_score is not None and not np.isinf(metrics.davies_bouldin_score):
             # DBI typically ranges from 0 to 5+, map to [0, 1] inversely
             dbi_normalized = 1.0 / (1.0 + metrics.davies_bouldin_score)
             score_components.append(dbi_normalized)
-            weights.append(0.20)
+            weights.append(0.15)
         
         # 3. Calinski-Harabasz Index (higher is better, normalize)
         if metrics.calinski_harabasz_score is not None:
             # CH typically ranges from 0 to 1000+, use sigmoid-like normalization
             ch_normalized = np.tanh(metrics.calinski_harabasz_score / 100)
             score_components.append(ch_normalized)
-            weights.append(0.20)
+            weights.append(0.15)
         
         # 4. CV ratio (higher between/lower within is better)
         if metrics.within_regime_cv is not None and metrics.between_regime_cv is not None:
@@ -641,12 +760,17 @@ class ClusterQualityAssessor:
             score_components.append(cv_normalized)
             weights.append(0.15)
         
-        # 5. Temporal smoothness (already in [0, 1])
+        # 5. Balance score (already in [0, 1])
+        if metrics.balance_score is not None:
+            score_components.append(metrics.balance_score)
+            weights.append(0.15)
+        
+        # 6. Temporal smoothness (already in [0, 1])
         if metrics.temporal_smoothness is not None:
             score_components.append(metrics.temporal_smoothness)
             weights.append(0.10)
         
-        # 6. Noise ratio (lower is better, invert)
+        # 7. Noise ratio (lower is better, invert)
         noise_score = 1.0 - metrics.noise_ratio
         score_components.append(noise_score)
         weights.append(0.10)

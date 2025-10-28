@@ -24,6 +24,12 @@ from sklearn.metrics import silhouette_score, calinski_harabasz_score, davies_bo
 from sklearn.preprocessing import StandardScaler
 import warnings
 
+# Import comprehensive quality assessor
+from ..quality_assessment import (
+    create_quality_assessor,
+    QualityMetrics
+)
+
 # Import optimization modules
 from .optimized_regime_feature_processor import (
     OptimizedRegimeFeatureProcessor,
@@ -270,13 +276,22 @@ class HDBSCANRegimeOptimizer:
             # Step 4: Quality Metrics (if enabled)
             quality_metrics = {}
             if self.config.enable_quality_metrics and n_clusters > 1:
-                tprint_info("🔄 Step 4: Quality Metrics")
+                tprint_info("🔄 Step 4: Comprehensive Quality Assessment")
                 metrics_start = time.time()
-                quality_metrics = self._calculate_quality_metrics(clustering_data, cluster_labels)
+                
+                # Pass clusterer for DBCV calculation, timestamps and returns if available
+                quality_metrics = self._calculate_quality_metrics(
+                    clustering_data=clustering_data,
+                    cluster_labels=cluster_labels,
+                    clusterer=self.clusterer,
+                    timestamps=data.index if hasattr(data, 'index') and isinstance(data.index, pd.DatetimeIndex) else None,
+                    returns=None  # Add if available in input
+                )
+                
                 metrics_time = time.time() - metrics_start
                 self.performance_stats['quality_metrics_time'] = metrics_time
                 
-                tprint_success(f"✅ Quality metrics calculated in {metrics_time:.2f}s")
+                tprint_success(f"✅ Comprehensive quality metrics calculated in {metrics_time:.2f}s")
             else:
                 self.performance_stats['quality_metrics_time'] = 0.0
                 tprint_info("ℹ️ Quality metrics disabled or insufficient clusters")
@@ -321,75 +336,86 @@ class HDBSCANRegimeOptimizer:
         return clustering_data
     
     def _calculate_quality_metrics(self, clustering_data: np.ndarray, 
-                                  cluster_labels: np.ndarray) -> Dict[str, float]:
+                                  cluster_labels: np.ndarray,
+                                  clusterer: Optional[Any] = None,
+                                  timestamps: Optional[pd.DatetimeIndex] = None,
+                                  returns: Optional[np.ndarray] = None) -> Dict[str, float]:
         """
-        Calculate clustering quality metrics.
+        Calculate clustering quality metrics using comprehensive quality assessor.
         
         Validates against unified clustering optimization goals:
         - Cluster count: 6-8 preferred (5-10 absolute)
         - Cluster sizes: 2% min, 20% max
+        
+        Args:
+            clustering_data: Feature data used for clustering
+            cluster_labels: Cluster labels from HDBSCAN
+            clusterer: Optional HDBSCAN clusterer object (for DBCV)
+            timestamps: Optional timestamps for temporal metrics
+            returns: Optional returns for economic validation
+            
+        Returns:
+            Dictionary of quality metrics
         """
-        quality_metrics = {}
-        
-        # Filter out noise points for metrics calculation
-        valid_mask = cluster_labels != -1
-        if valid_mask.sum() < 2:
-            tprint_warning("⚠️ Too few valid points for quality metrics")
-            return quality_metrics
-        
-        valid_data = clustering_data[valid_mask]
-        valid_labels = cluster_labels[valid_mask]
-        n_samples = len(valid_labels)
-        
-        # Calculate cluster sizes
-        unique_labels = np.unique(valid_labels)
-        cluster_sizes = [int(np.sum(valid_labels == label)) for label in unique_labels]
-        quality_metrics['cluster_sizes'] = cluster_sizes
-        quality_metrics['n_clusters'] = len(cluster_sizes)
-        
-        # Validate against unified constraints
-        if UNIFIED_GOALS_AVAILABLE and DEFAULT_OPTIMIZATION_TARGETS:
-            targets = DEFAULT_OPTIMIZATION_TARGETS
-            n_clusters = len(cluster_sizes)
+        try:
+            # Create comprehensive quality assessor
+            quality_assessor = create_quality_assessor()
             
-            # Check cluster count
-            if not (targets.min_clusters <= n_clusters <= targets.max_clusters):
-                tprint_warning(f"⚠️ Cluster count {n_clusters} outside range [{targets.min_clusters}, {targets.max_clusters}]")
-            elif targets.target_clusters[0] <= n_clusters <= targets.target_clusters[1]:
-                tprint_success(f"✅ Cluster count {n_clusters} in preferred range {targets.target_clusters}")
-            
-            # Check cluster sizes
-            sizes_valid, size_details = validate_cluster_sizes(cluster_sizes, n_samples, targets)
-            if not sizes_valid:
-                tprint_warning(f"⚠️ {size_details['n_violations']} cluster(s) violate size constraints (2%-20%)")
-                for v in size_details['violations']:
-                    tprint_warning(f"  Cluster {v['cluster']}: {v['size']} samples ({v['size_pct']:.1%}) - {v['violation']}")
+            # Convert to DataFrame if needed
+            if isinstance(clustering_data, np.ndarray):
+                features_df = pd.DataFrame(clustering_data)
             else:
-                tprint_success(f"✅ All cluster sizes within bounds (2%-20%)")
-        
-        # Calculate metrics
-        if 'silhouette' in self.config.quality_metrics:
-            try:
-                quality_metrics['silhouette_score'] = silhouette_score(valid_data, valid_labels)
-            except Exception as e:
-                tprint_warning(f"⚠️ Failed to calculate silhouette score: {e}")
-                quality_metrics['silhouette_score'] = 0.0
-        
-        if 'calinski_harabasz' in self.config.quality_metrics:
-            try:
-                quality_metrics['calinski_harabasz_score'] = calinski_harabasz_score(valid_data, valid_labels)
-            except Exception as e:
-                tprint_warning(f"⚠️ Failed to calculate Calinski-Harabasz score: {e}")
-                quality_metrics['calinski_harabasz_score'] = 0.0
-        
-        if 'davies_bouldin' in self.config.quality_metrics:
-            try:
-                quality_metrics['davies_bouldin_score'] = davies_bouldin_score(valid_data, valid_labels)
-            except Exception as e:
-                tprint_warning(f"⚠️ Failed to calculate Davies-Bouldin score: {e}")
-                quality_metrics['davies_bouldin_score'] = 0.0
-        
-        return quality_metrics
+                features_df = clustering_data
+            
+            # Run comprehensive assessment
+            quality_metrics_obj = quality_assessor.assess_clustering_quality(
+                cluster_labels=cluster_labels,
+                features=features_df,
+                clusterer=clusterer,
+                timestamps=timestamps,
+                returns=returns
+            )
+            
+            # Convert to dict
+            quality_metrics = quality_metrics_obj.to_dict()
+            
+            # Validate against unified constraints
+            n_clusters = quality_metrics_obj.n_regimes
+            cluster_sizes = [int(size) for size in quality_metrics_obj.per_regime_metrics.values() if isinstance(size, dict)]
+            
+            if UNIFIED_GOALS_AVAILABLE and DEFAULT_OPTIMIZATION_TARGETS:
+                targets = DEFAULT_OPTIMIZATION_TARGETS
+                
+                # Check cluster count
+                if not (targets.min_clusters <= n_clusters <= targets.max_clusters):
+                    tprint_warning(f"⚠️ Cluster count {n_clusters} outside range [{targets.min_clusters}, {targets.max_clusters}]")
+                elif targets.target_clusters[0] <= n_clusters <= targets.target_clusters[1]:
+                    tprint_success(f"✅ Cluster count {n_clusters} in preferred range {targets.target_clusters}")
+                
+                # Check cluster size distribution
+                if quality_metrics_obj.cluster_size_distribution:
+                    violations = [
+                        pct for pct in quality_metrics_obj.cluster_size_distribution
+                        if pct < 2.0 or pct > 20.0
+                    ]
+                    if violations:
+                        tprint_warning(f"⚠️ {len(violations)} cluster(s) violate size constraints (2%-20%)")
+                    else:
+                        tprint_success(f"✅ All cluster sizes within bounds (2%-20%)")
+            
+            tprint_success(f"✅ Comprehensive quality assessment: Score={quality_metrics_obj.composite_quality_score:.3f}")
+            
+            return quality_metrics
+            
+        except Exception as e:
+            tprint_error(f"❌ Quality assessment failed: {e}")
+            logger.error(f"Quality assessment error: {e}", exc_info=True)
+            return {
+                'silhouette_score': 0.0,
+                'calinski_harabasz_score': 0.0,
+                'davies_bouldin_score': 0.0,
+                'n_clusters': 0
+            }
     
     def _create_regime_labels(self, cluster_labels: np.ndarray, 
                             index: pd.Index) -> pd.Series:

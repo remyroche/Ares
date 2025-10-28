@@ -1,0 +1,129 @@
+# SR Pipeline Configuration - Iterative Refinement
+# This configuration runs the SR pipeline multiple times, where each iteration
+# uses clustering results from the previous iteration to refine parameter bounds
+
+pipeline:
+  name: "SR Analysis Pipeline - Iterative Refinement"
+  description: "Iterative SR pipeline that improves with each iteration"
+  version: "2.0"
+  
+  # Global configuration
+  global:
+    symbol: "ETHUSDT"
+    exchange: "binance"
+    timeframe: "15m"
+    direction: "longs"
+    execution_mode: "full"
+  
+  # Iterative execution settings
+  iterations:
+    enabled: true
+    count: 3  # Run 3 iterations for refinement
+    convergence_threshold: 0.01  # Stop if improvement < 1%
+    save_each_iteration: true
+    
+  # Pipeline stages (run in this order for each iteration)
+  stages:
+    # STAGE 1: Parameter Optimization
+    # Iteration 1: Uses default bounds
+    # Iteration 2+: Uses clustering results from iteration N-1 to refine bounds
+    - name: "sr_parameter_optimization"
+      component: "SRParameterOptimizationStep"
+      enabled: true
+      config:
+        symbol: "${global.symbol}"
+        exchange: "${global.exchange}"
+        timeframe: "${global.timeframe}"
+        
+        # Will automatically load clustering results from previous iteration
+        use_previous_clustering: true
+        
+        # Optimization settings (more trials for first iteration)
+        enable_bayesian_hpo: true
+        n_trials: "${iteration == 1 ? 100 : 50}"  # More trials on first iteration
+        enable_staged_optimization: true
+        
+        # Adaptive bounds based on clustering
+        enable_adaptive_bounds: true  # Use clustering to adjust parameter bounds
+      
+      outputs:
+        - artifact: "sr_parameter_optimization_result"
+          save_iteration: true  # Save for each iteration
+    
+    # STAGE 2: SR Detection
+    # Always uses latest optimized parameters
+    - name: "sr_detection"
+      component: "SRDetectionComponent"
+      enabled: true
+      depends_on: ["sr_parameter_optimization"]
+      config:
+        symbol: "${global.symbol}"
+        use_optimized_parameters: true
+        
+        # Track improvement across iterations
+        track_quality_improvement: true
+      
+      outputs:
+        - artifact: "sr_detection_result"
+          save_iteration: true
+    
+    # STAGE 3: SR Clustering
+    # Results fed back to parameter optimization in next iteration
+    - name: "sr_clustering"
+      component: "SRClusteringComponent"
+      enabled: true
+      depends_on: ["sr_detection"]
+      config:
+        symbol: "${global.symbol}"
+        clustering_algorithm: "ensemble"
+        
+        # Save for feedback to next iteration
+        save_for_next_iteration: true
+        
+        # Track clustering quality improvement
+        track_efficiency_improvement: true
+      
+      outputs:
+        - artifact: "sr_clustering_result"
+          save_iteration: true
+          feed_to_next_iteration: true  # Feed to param optimization
+        - artifact: "sr_levels_dictionary"
+          save_iteration: true
+  
+  # Convergence criteria
+  convergence:
+    metrics:
+      - name: "clustering_efficiency"
+        threshold: 0.01
+      - name: "detection_quality"
+        threshold: 0.01
+      - name: "parameter_stability"
+        threshold: 0.05
+    
+    conditions:
+      - type: "all_metrics"
+        operator: "below_threshold"
+      - type: "max_iterations"
+        value: 3
+  
+  # Comparison and reporting
+  reporting:
+    enabled: true
+    compare_iterations: true
+    generate_plots: true
+    metrics_to_track:
+      - "total_levels_detected"
+      - "clustering_efficiency"
+      - "silhouette_score"
+      - "parameter_optimization_score"
+      - "detection_quality"
+    
+    output_format: "html"
+    output_path: "outcomes/sr_pipeline_iterative_report.html"
+
+  # Execution settings
+  execution:
+    mode: "iterative"
+    on_failure: "continue_next_iteration"
+    save_intermediate: true
+    log_level: "INFO"

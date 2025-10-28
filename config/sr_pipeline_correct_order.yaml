@@ -1,0 +1,181 @@
+# SR Pipeline Configuration - Correct Order
+# This configuration demonstrates the correct execution order for SR analysis:
+# 1. sr_parameter_optimization (finds optimal parameters)
+# 2. sr_detection (uses optimized parameters)
+# 3. sr_clustering (clusters optimized detections)
+
+pipeline:
+  name: "SR Analysis Pipeline - Correct Order"
+  description: "Implements the correct SR pipeline order for optimal results"
+  version: "2.0"
+  
+  # Global configuration
+  global:
+    symbol: "ETHUSDT"
+    exchange: "binance"
+    timeframe: "15m"
+    direction: "longs"
+    execution_mode: "full"
+    data_dir: "historical_data"
+  
+  # Pipeline stages in correct order
+  stages:
+    # STAGE 1: Parameter Optimization (FIRST)
+    # Finds optimal SR detection parameters through Bayesian optimization
+    # Can run without prior artifacts (uses default bounds)
+    - name: "sr_parameter_optimization"
+      component: "SRParameterOptimizationStep"
+      enabled: true
+      config:
+        # Core settings
+        symbol: "${global.symbol}"
+        exchange: "${global.exchange}"
+        timeframe: "${global.timeframe}"
+        direction: "${global.direction}"
+        
+        # Optimization settings
+        enable_bayesian_hpo: true
+        enable_vectorbt_optimization: true
+        enable_hardware_optimization: true
+        enable_advanced_validation: true
+        
+        # Bayesian HPO settings
+        n_trials: 50
+        enable_staged_optimization: true
+        coarse_grid_points: 20
+        fine_grid_points: 30
+        tpe_trials: 50
+        
+        # Validation settings
+        enable_purged_cv: true
+        enable_data_leakage_detection: true
+        temporal_gap_hours: 24
+        
+        # Performance settings
+        enable_caching: true
+        parallel_processing: true
+        max_workers: 4
+      
+      outputs:
+        - artifact: "sr_parameter_optimization_result"
+          type: "data"
+          required: true
+    
+    # STAGE 2: SR Detection (SECOND)
+    # Detects SR levels using the optimized parameters from Stage 1
+    # Loads parameters from sr_parameter_optimization_result artifact
+    - name: "sr_detection"
+      component: "SRDetectionComponent"
+      enabled: true
+      depends_on: ["sr_parameter_optimization"]  # Explicit dependency
+      config:
+        # Core settings
+        symbol: "${global.symbol}"
+        exchange: "${global.exchange}"
+        timeframe: "${global.timeframe}"
+        direction: "${global.direction}"
+        execution_mode: "${global.execution_mode}"
+        
+        # Parameter usage
+        use_optimized_parameters: true  # Load from sr_parameter_optimization
+        
+        # Enhancement settings
+        enable_shap_lime: true
+        enable_vectorbt: true
+        enable_hardware_optimization: true
+        
+        # SHAP/LIME settings
+        shap_sample_size: 100
+        lime_sample_size: 1000
+        explain_all_levels: true
+        
+        # Hardware optimization
+        workload_type: "ml_training"
+        optimization_level: "balanced"
+        enable_gpu_acceleration: true
+      
+      inputs:
+        - artifact: "sr_parameter_optimization_result"
+          required: false  # Optional but recommended
+          fallback: "use_default_parameters"
+      
+      outputs:
+        - artifact: "sr_detection_result"
+          type: "data"
+          required: true
+    
+    # STAGE 3: SR Clustering (THIRD)
+    # Clusters the SR levels detected in Stage 2
+    # Loads SR levels from sr_detection_result artifact
+    - name: "sr_clustering"
+      component: "SRClusteringComponent"
+      enabled: true
+      depends_on: ["sr_detection"]  # Explicit dependency
+      config:
+        # Core settings
+        symbol: "${global.symbol}"
+        exchange: "${global.exchange}"
+        timeframe: "${global.timeframe}"
+        direction: "${global.direction}"
+        
+        # Clustering algorithm settings
+        clustering_algorithm: "ensemble"  # hdbscan, dbscan, kmeans, spectral, gmm, ensemble
+        min_cluster_size: 2
+        min_samples: 2
+        eps: 0.01
+        n_clusters: 5
+        
+        # Enhancement settings
+        enable_hardware_optimization: true
+        enable_vectorbt_optimization: true
+        enable_memory_optimization: true
+        enable_gpu_acceleration: true
+        
+        # Advanced features
+        enable_adaptive_tuning: true
+        enable_quality_metrics: true
+        enable_data_leakage_detection: true
+        enable_explainability: true
+        
+        # Ensemble clustering
+        enable_ensemble_clustering: true
+        ensemble_algorithms: ["hdbscan", "dbscan", "kmeans", "spectral"]
+        ensemble_weights: [0.3, 0.2, 0.2, 0.3]
+        
+        # Quality thresholds
+        min_silhouette_score: 0.3
+        min_cluster_quality: 0.5
+        max_cluster_ratio: 0.8
+      
+      inputs:
+        - artifact: "sr_detection_result"
+          required: true
+      
+      outputs:
+        - artifact: "sr_clustering_result"
+          type: "data"
+          required: true
+        - artifact: "sr_levels_dictionary"
+          type: "data"
+          required: true
+  
+  # Execution settings
+  execution:
+    mode: "sequential"  # Run stages in order
+    on_failure: "stop"  # Stop pipeline if any stage fails
+    save_intermediate: true  # Save artifacts after each stage
+    log_level: "INFO"
+    
+  # Artifact management
+  artifacts:
+    output_dir: "artifacts"
+    format: "json"
+    compression: false
+    version_control: true
+    
+  # Performance monitoring
+  monitoring:
+    enabled: true
+    track_metrics: true
+    track_performance: true
+    track_artifacts: true

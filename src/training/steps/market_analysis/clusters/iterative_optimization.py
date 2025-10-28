@@ -91,13 +91,11 @@ from .cluster_quality_assessor import ClusterQualityAssessor
 
 # Import CV enhancement strategies
 try:
-    from .cv_enhancement_strategies import (
-        AdaptiveWeightScheduler,
-        EnhancedVarianceRatioCalculator
-    )
+    from .cv_enhancement_strategies import EnhancedVarianceRatioCalculator
     CV_ENHANCEMENT_AVAILABLE = True
 except ImportError:
     CV_ENHANCEMENT_AVAILABLE = False
+    EnhancedVarianceRatioCalculator = None
 
 # Import optimization utilities
 try:

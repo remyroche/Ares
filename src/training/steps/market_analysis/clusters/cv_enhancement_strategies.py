@@ -172,72 +172,9 @@ class RegimeDiscriminativeFeatures:
 
         return persistence
 
-class AdaptiveWeightScheduler:
-    """
-    Adaptive weight scheduler that adjusts optimization weights based on iteration progress.
-    Early iterations: balanced exploration
-    Late iterations: aggressive CV optimization
-    """
-
-    def __init__(self, max_iterations: int = 30):
-        """
-        Initialize adaptive weight scheduler.
-
-        Parameters:
-        -----------
-        max_iterations : int
-            Maximum number of optimization iterations
-        """
-        self.max_iterations = max_iterations
-
-    def get_weights(self, iteration: int) -> Dict[str, float]:
-        """
-        Get adaptive weights for current iteration.
-
-        Parameters:
-        -----------
-        iteration : int
-            Current iteration number (0-based)
-
-        Returns:
-        --------
-        weights : dict
-            Dictionary with weight values for each component
-        """
-        progress = min(1.0, iteration / self.max_iterations)
-
-        # Gradually increase CV weight (0.45 → 0.55)
-        # As we progress, focus more on CV ratio
-        w_cv = 0.45 + 0.10 * progress
-
-        # Gradually decrease balance weight (0.05 → 0.02)
-        # Balance becomes less important as we optimize
-        w_bal = 0.05 * (1 - 0.6 * progress)
-
-        # Keep temporal and silhouette relatively stable with slight emphasis
-        # Temporal: 0.35 → 0.32 (slight decrease to accommodate CV increase)
-        w_temp = 0.35 - 0.03 * progress
-
-        # Silhouette: 0.15 → 0.16 (slight increase for quality)
-        w_sil = 0.15 + 0.01 * progress
-
-        # Normalize to sum to 1.0
-        total = w_cv + w_temp + w_sil + w_bal
-
-        weights = {
-            'w_cv': w_cv / total,
-            'w_temp': w_temp / total,
-            'w_sil': w_sil / total,
-            'w_bal': w_bal / total
-        }
-
-        # Log adaptive weights at key milestones
-        if iteration % 5 == 0 or iteration == 0:
-            tprint(f"📊 Iteration {iteration}: Adaptive weights - "
-                  f"CV={weights['w_cv']:.3f}, Temp={weights['w_temp']:.3f}, "
-                  f"Sil={weights['w_sil']:.3f}, Bal={weights['w_bal']:.3f}", "INFO")
-
-        return weights
+# AdaptiveWeightScheduler REMOVED - Not used in production
+# Weights are managed statically in OptConfig within iterative_optimization.py
+# This class was never integrated into the optimization loop
 
 class EnhancedVarianceRatioCalculator:
     """

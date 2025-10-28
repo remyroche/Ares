@@ -83,7 +83,7 @@ from .feature_bank_integration import (
     FeatureBankIntegrator, FeatureBankConfig, FeatureBankCategory
 )
 
-# Import regime-specific features (from code review)
+# Import regime-specific features and categorization
 try:
     from src.feature_generation.categories.regime_features import (
         RegimeFeatureGenerator, RegimeFeatureConfig
@@ -93,6 +93,34 @@ try:
 except ImportError:
     REGIME_FEATURES_AVAILABLE = False
     tprint_debug("⚠️ Regime-specific features not available")
+
+# Import regime feature categorization system
+try:
+    from src.feature_generation.categories.regime_feature_categorization import (
+        RegimeFeatureCategorizer,
+        FeatureUseCase,
+        get_regime_clustering_features,
+        validate_feature_set
+    )
+    REGIME_CATEGORIZATION_AVAILABLE = True
+    tprint_debug("✅ Regime feature categorization available")
+except ImportError:
+    REGIME_CATEGORIZATION_AVAILABLE = False
+    tprint_debug("⚠️ Regime feature categorization not available")
+
+# Import regime feature integration
+try:
+    from src.feature_generation.categories.regime_feature_integration import (
+        RegimeFeatureIntegration,
+        RegimeFeatureConfig as RegimeIntegrationConfig,
+        generate_regime_features,
+        create_default_regime_feature_generators
+    )
+    REGIME_INTEGRATION_AVAILABLE = True
+    tprint_debug("✅ Regime feature integration available")
+except ImportError:
+    REGIME_INTEGRATION_AVAILABLE = False
+    tprint_debug("⚠️ Regime feature integration not available")
 
 # Import optimization utilities (from code review)
 try:
@@ -112,6 +140,19 @@ except ImportError:
 # Import MS-DR clusterer
 from src.training.steps.market_analysis.ms_dr_clustering.ms_dr_clusterer import (
     MSDRClusterer, MSDRConfig, MSDRResult, MS_AVAILABLE
+)
+
+# Import artifact manager for data loading
+from src.training.steps.market_analysis.components.artifact_manager import ArtifactManager
+
+# Import cluster quality assessor and optimization goals
+from src.training.steps.market_analysis.clusters.cluster_quality_assessor import (
+    create_cluster_quality_assessor
+)
+from src.training.steps.market_analysis.clusters.clustering_optimization_goals import (
+    DEFAULT_CLUSTERING_GOALS,
+    DEFAULT_OPTIMIZATION_TARGETS,
+    format_metrics_report
 )
 
 
@@ -136,7 +177,9 @@ class EnhancedMSDRClusteringIntegration:
                  switching_variance: bool = True,
                  auto_select_regimes: bool = True,
                  min_regimes: int = 2,
-                 max_regimes: int = 10):
+                 max_regimes: int = 10,
+                 enable_regime_categorization: bool = True,
+                 enable_regime_integration: bool = True):
         """
         Initialize Enhanced MS-DR Clustering Integration.
         
@@ -153,6 +196,8 @@ class EnhancedMSDRClusteringIntegration:
             auto_select_regimes: Auto-select number of regimes using IC
             min_regimes: Minimum number of regimes to consider
             max_regimes: Maximum number of regimes to consider
+            enable_regime_categorization: Use regime feature categorization system
+            enable_regime_integration: Use regime feature integration module
         """
         tprint_info("🚀 Initializing Enhanced MS-DR Clustering Integration")
         
@@ -170,6 +215,8 @@ class EnhancedMSDRClusteringIntegration:
         self.auto_select_regimes = auto_select_regimes
         self.min_regimes = min_regimes
         self.max_regimes = max_regimes
+        self.enable_regime_categorization = enable_regime_categorization
+        self.enable_regime_integration = enable_regime_integration
         
         # Log configuration
         tprint_structured({
@@ -182,7 +229,9 @@ class EnhancedMSDRClusteringIntegration:
             "model_type": model_type,
             "order": order,
             "switching_variance": switching_variance,
-            "auto_select_regimes": auto_select_regimes
+            "auto_select_regimes": auto_select_regimes,
+            "enable_regime_categorization": enable_regime_categorization,
+            "enable_regime_integration": enable_regime_integration
         }, level="INFO")
         
         # Initialize feature bank integrator
@@ -235,6 +284,28 @@ class EnhancedMSDRClusteringIntegration:
                 self.vectorization_manager = None
         else:
             self.vectorization_manager = None
+        
+        # Initialize regime feature categorizer
+        if self.enable_regime_categorization and REGIME_CATEGORIZATION_AVAILABLE:
+            try:
+                self.regime_categorizer = RegimeFeatureCategorizer()
+                tprint_success("✅ Regime feature categorizer initialized")
+            except Exception as e:
+                tprint_warning(f"⚠️ Failed to initialize regime categorizer: {e}")
+                self.regime_categorizer = None
+        else:
+            self.regime_categorizer = None
+        
+        # Initialize regime feature integration
+        if self.enable_regime_integration and REGIME_INTEGRATION_AVAILABLE:
+            try:
+                self.regime_integration_generators = create_default_regime_feature_generators()
+                tprint_success(f"✅ Regime integration initialized ({len(self.regime_integration_generators)} generators)")
+            except Exception as e:
+                tprint_warning(f"⚠️ Failed to initialize regime integration: {e}")
+                self.regime_integration_generators = []
+        else:
+            self.regime_integration_generators = []
     
     def get_comprehensive_clustering_features(self, data: pd.DataFrame) -> Dict[str, Any]:
         """
@@ -278,9 +349,88 @@ class EnhancedMSDRClusteringIntegration:
                         import traceback
                         tprint_debug(traceback.format_exc())
                 
+                # Add regime categorization features if enabled
+                if self.regime_categorizer is not None:
+                    try:
+                        tprint_info("📊 Applying regime feature categorization")
+                        
+                        # Get regime clustering features
+                        regime_clustering_features = self.regime_categorizer.get_priority_features(
+                            FeatureUseCase.REGIME_CLUSTERING,
+                            max_features=max_features
+                        )
+                        
+                        # Filter features to only include those optimized for regime clustering
+                        filtered_features = {}
+                        for feature_name in regime_clustering_features:
+                            if feature_name in result['features']:
+                                filtered_features[feature_name] = result['features'][feature_name]
+                        
+                        if filtered_features:
+                            result['features'] = filtered_features
+                            result['feature_names'] = list(filtered_features.keys())
+                            result['feature_count'] = len(filtered_features)
+                            result['regime_categorization_applied'] = True
+                            
+                            tprint_success(
+                                f"✅ Applied regime categorization: {len(filtered_features)} features selected"
+                            )
+                        
+                        # Validate feature set
+                        validation = validate_feature_set(
+                            list(filtered_features.keys()),
+                            FeatureUseCase.REGIME_CLUSTERING
+                        )
+                        
+                        if not validation['validation_passed']:
+                            tprint_warning(
+                                f"⚠️ Feature validation: {validation['invalid_count']} invalid features found"
+                            )
+                        
+                    except Exception as e:
+                        tprint_warning(f"⚠️ Failed to apply regime categorization: {e}")
+                
+                # Add regime integration features if enabled
+                if self.regime_integration_generators:
+                    try:
+                        tprint_info("🔄 Generating regime integration features")
+                        
+                        regime_integration_features = {}
+                        for generator in self.regime_integration_generators:
+                            gen_features = generate_regime_features(data, generator.regime_config)
+                            
+                            # Convert to proper format
+                            for key, value in gen_features.items():
+                                feature_name = f"regime_integration_{key}"
+                                if isinstance(value, (int, float, bool)):
+                                    # Broadcast scalar to array
+                                    regime_integration_features[feature_name] = np.full(len(data), value)
+                                elif isinstance(value, str):
+                                    # Encode string as category
+                                    regime_integration_features[feature_name] = np.full(len(data), hash(value) % 1000)
+                                else:
+                                    regime_integration_features[feature_name] = value
+                        
+                        if regime_integration_features:
+                            result['features'].update(regime_integration_features)
+                            result['feature_names'].extend(regime_integration_features.keys())
+                            result['feature_count'] += len(regime_integration_features)
+                            result['regime_integration_features_added'] = len(regime_integration_features)
+                            
+                            tprint_success(
+                                f"✅ Added {len(regime_integration_features)} regime integration features"
+                            )
+                        
+                    except Exception as e:
+                        tprint_warning(f"⚠️ Failed to generate regime integration features: {e}")
+                        import traceback
+                        tprint_debug(traceback.format_exc())
+                
                 result.update({
                     'clustering_method': 'ms_dr',
-                    'dynamics_aware': True
+                    'dynamics_aware': True,
+                    'regime_categorization_enabled': self.regime_categorizer is not None,
+                    'regime_integration_enabled': len(self.regime_integration_generators) > 0
                 })
                 
                 tprint_data_format(result['features'], "Generated Features", check_compatibility=True)
@@ -440,7 +590,168 @@ def perform_enhanced_ms_dr_clustering(
     return integrator.cluster_with_ms_dr(data)
 
 
+def perform_ms_dr_clustering_with_artifact_manager(
+    symbol: str = "ETHUSDT",
+    exchange: str = "binance",
+    timeframe: str = "1h",
+    artifact_base_dir: str = "artifacts",
+    min_features: int = 50,
+    max_features: int = 100,
+    n_regimes: int = 5,
+    model_type: str = 'autoregression',
+    auto_select_regimes: bool = True,
+    **kwargs
+) -> Dict[str, Any]:
+    """
+    Perform MS-DR clustering with artifact manager for data loading.
+    
+    This is the recommended standalone function that:
+    1. Uses ArtifactManager to load market data
+    2. Performs MS-DR clustering with comprehensive features
+    3. Assesses quality using cluster_quality_assessor
+    4. Validates against clustering_optimization_goals
+    
+    Args:
+        symbol: Trading symbol (e.g., "BTCUSDT")
+        exchange: Exchange name (e.g., "binance")
+        timeframe: Timeframe (e.g., "30m", "1h")
+        artifact_base_dir: Base directory for artifacts
+        min_features: Minimum number of features
+        max_features: Maximum number of features
+        n_regimes: Number of regimes (if not auto-selecting)
+        model_type: Model type ('autoregression', 'regression')
+        auto_select_regimes: Auto-select number of regimes
+        **kwargs: Additional parameters for MSDRClusterer
+        
+    Returns:
+        Dictionary with clustering results and quality metrics
+        
+    Example:
+        >>> from src.feature_generation.integration.enhanced_ms_dr_clustering_integration import (
+        ...     perform_ms_dr_clustering_with_artifact_manager
+        ... )
+        >>> 
+        >>> result = perform_ms_dr_clustering_with_artifact_manager(
+        ...     symbol="BTCUSDT",
+        ...     exchange="binance",
+        ...     timeframe="30m",
+        ...     artifact_base_dir="artifacts",
+        ...     min_features=50,
+        ...     max_features=100,
+        ...     auto_select_regimes=True
+        ... )
+        >>> 
+        >>> # Access results
+        >>> regime_labels = result['cluster_labels']
+        >>> quality_score = result['quality_metrics']['quality_score']
+        >>> print(f"Found {result['n_clusters']} regimes with quality score: {quality_score:.3f}")
+    """
+    tprint_info(f"🚀 Starting MS-DR Clustering with Artifact Manager")
+    tprint_structured({
+        "symbol": symbol,
+        "exchange": exchange,
+        "timeframe": timeframe,
+        "artifact_base_dir": artifact_base_dir,
+        "min_features": min_features,
+        "max_features": max_features,
+        "auto_select_regimes": auto_select_regimes
+    }, level="INFO")
+    
+    # Initialize artifact manager
+    tprint_info("📁 Initializing Artifact Manager")
+    artifact_manager = ArtifactManager(
+        base_dir=artifact_base_dir,
+        symbol=symbol,
+        exchange=exchange,
+        timeframe=timeframe
+    )
+    
+    # Load market data from artifacts
+    tprint_info(f"📊 Loading market data for {symbol} on {exchange} ({timeframe})")
+    try:
+        # Try to load from latest session
+        market_data_dict = artifact_manager.load_artifacts_from_latest_session(
+            component_name="market_data",
+            artifact_names=["ohlcv", "processed_data", "klines"]
+        )
+        
+        if not market_data_dict:
+            tprint_error("❌ No market data found in artifacts. Please ensure market data is available.")
+            raise ValueError(
+                f"No market data found for {symbol}_{exchange}_{timeframe}. "
+                "Please run data collection first or provide data manually using "
+                "perform_enhanced_ms_dr_clustering(data=your_dataframe)"
+            )
+        
+        # Get the first available data artifact
+        market_data = None
+        for artifact_name, data in market_data_dict.items():
+            if data is not None:
+                market_data = data
+                tprint_success(f"✅ Loaded market data from artifact: {artifact_name}")
+                break
+        
+        if market_data is None:
+            raise ValueError("All loaded artifacts were None")
+        
+        # Ensure it's a DataFrame
+        if not isinstance(market_data, pd.DataFrame):
+            tprint_warning(f"⚠️ Market data is not a DataFrame (type: {type(market_data)}). Attempting conversion...")
+            market_data = pd.DataFrame(market_data)
+        
+        tprint_data_preview(market_data, "Loaded Market Data", max_rows=5, max_cols=10)
+        
+    except Exception as e:
+        tprint_error(f"❌ Failed to load market data: {e}")
+        raise ValueError(
+            f"Failed to load market data: {e}\n\n"
+            "Please ensure you have run data collection first, or use "
+            "perform_enhanced_ms_dr_clustering(data=your_dataframe) to provide data manually."
+        )
+    
+    # Perform MS-DR clustering
+    tprint_info("🔄 Performing MS-DR clustering")
+    result = perform_enhanced_ms_dr_clustering(
+        data=market_data,
+        min_features=min_features,
+        max_features=max_features,
+        n_regimes=n_regimes,
+        model_type=model_type,
+        auto_select_regimes=auto_select_regimes,
+        **kwargs
+    )
+    
+    # Add artifact manager information to result
+    result['artifact_manager'] = {
+        'symbol': symbol,
+        'exchange': exchange,
+        'timeframe': timeframe,
+        'artifact_base_dir': artifact_base_dir,
+        'data_loaded_from': 'artifact_manager'
+    }
+    
+    # Generate quality report
+    tprint_info("📊 Generating quality metrics report")
+    quality_metrics = result.get('quality_metrics', {})
+    
+    if quality_metrics:
+        report = format_metrics_report(
+            cv_score=quality_metrics.get('between_regime_cv', 0.0) / (quality_metrics.get('within_regime_cv', 1.0) + 1e-8),
+            silhouette_score=quality_metrics.get('silhouette_score', 0.0),
+            dbi_score=quality_metrics.get('davies_bouldin_score', float('inf')),
+            balance_score=quality_metrics.get('balance_score', 0.0),
+            temporal_smoothness=quality_metrics.get('temporal_smoothness', 0.0),
+            n_clusters=result.get('n_clusters', 0)
+        )
+        tprint(report)
+    
+    tprint_success("🎉 MS-DR Clustering with Artifact Manager completed successfully!")
+    
+    return result
+
+
 __all__ = [
     'EnhancedMSDRClusteringIntegration',
-    'perform_enhanced_ms_dr_clustering'
+    'perform_enhanced_ms_dr_clustering',
+    'perform_ms_dr_clustering_with_artifact_manager'
 ]

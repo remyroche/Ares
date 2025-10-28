@@ -237,43 +237,82 @@ class CausalDilatedTCNModel(BaseEstimator, RegressorMixin):
         self.fitted = False
         self.feature_names = None
 
-    def _prepare_sequences(self, X: np.ndarray, sequence_length: int) -> Tuple[np.ndarray, np.ndarray]:
-        """Prepare sequences for TCN input."""
+    def _prepare_sequences(self, X: np.ndarray, y: np.ndarray, sequence_length: int) -> Tuple[np.ndarray, np.ndarray]:
+        """Prepare sequences for TCN input.
+        
+        Args:
+            X: Feature array (n_samples, n_features) - can be engineered features
+            y: Target array (n_samples,) - actual prediction targets
+            sequence_length: Length of temporal sequences to create
+            
+        Returns:
+            X_seq: Sequence array (n_sequences, sequence_length, n_features)
+            y_seq: Target array (n_sequences,)
+        """
         try:
+            # Validate inputs
+            if len(X) != len(y):
+                raise ValueError(f"X and y must have same length: X={len(X)}, y={len(y)}")
+            
+            # Check for NaN values and clean them
+            if np.any(np.isnan(X)):
+                logger.warning(f"⚠️ Found {np.sum(np.isnan(X))} NaN values in X, filling with 0")
+                X = np.nan_to_num(X, nan=0.0, posinf=0.0, neginf=0.0)
+            
+            if np.any(np.isnan(y)):
+                logger.warning(f"⚠️ Found {np.sum(np.isnan(y))} NaN values in y, filling with 0")
+                y = np.nan_to_num(y, nan=0.0, posinf=0.0, neginf=0.0)
+            
             sequences = []
             targets = []
 
+            # Create sliding window sequences
             for i in range(sequence_length, len(X)):
-                sequence = X[i-sequence_length:i]
-                target = X[i]  # Use the next timestep as target
+                sequence = X[i-sequence_length:i]  # Shape: (sequence_length, n_features)
+                target = y[i]  # Shape: (,) - scalar target
                 sequences.append(sequence)
                 targets.append(target)
 
             if not sequences:
-                # If no sequences can be created, create a single sequence
+                # If no sequences can be created, create a single sequence with padding
                 if len(X) < sequence_length:
-                    # Pad the sequence
+                    # Pad the sequence with zeros at the beginning
                     padded_X = np.zeros((sequence_length, X.shape[1]))
                     padded_X[-len(X):] = X
                     sequences = [padded_X]
-                    targets = [X[-1]]  # Use last available target
+                    targets = [y[-1]]  # Use last available target
                 else:
+                    # Use the last available sequence
                     sequences = [X[-sequence_length:]]
-                    targets = [X[-1]]
+                    targets = [y[-1]]
 
-            return np.array(sequences), np.array(targets)
+            # Convert to numpy arrays with correct shapes
+            sequences_array = np.array(sequences)  # Shape: (n_sequences, sequence_length, n_features)
+            targets_array = np.array(targets)  # Shape: (n_sequences,)
+            
+            logger.info(f"✅ Created {len(sequences_array)} sequences with shape {sequences_array.shape}")
+            return sequences_array, targets_array
 
         except Exception as e:
             logger.warning(f"⚠️ Sequence preparation failed: {e}")
-            # Fallback: create single sequence
+            # Fallback: create single sequence with proper error handling
             if len(X) < sequence_length:
                 padded_X = np.zeros((sequence_length, X.shape[1]))
                 padded_X[-len(X):] = X
-                return padded_X.reshape(1, sequence_length, -1), X[-1:].reshape(1, -1)
-            return X[-sequence_length:].reshape(1, sequence_length, -1), X[-1:].reshape(1, -1)
+                return padded_X.reshape(1, sequence_length, -1), np.array([y[-1]])
+            return X[-sequence_length:].reshape(1, sequence_length, -1), np.array([y[-1]])
 
     def fit(self, X: np.ndarray, y: np.ndarray, sample_weight: Optional[np.ndarray] = None) -> 'CausalDilatedTCNModel':
-        """Fit the Causal Dilated TCN model."""
+        """Fit the Causal Dilated TCN model.
+        
+        Args:
+            X: Feature array (n_samples, n_features) - accepts engineered features
+            y: Target array (n_samples,) - regression targets
+            sample_weight: Optional sample weights (not currently used)
+            
+        Returns:
+            self: Fitted model
+        """
         try:
             import torch
             import torch.nn as nn
@@ -284,22 +323,56 @@ class CausalDilatedTCNModel(BaseEstimator, RegressorMixin):
             if hasattr(X, 'columns'):
                 self.feature_names = list(X.columns)
                 X = X.values
+            
+            # Convert y to numpy if needed
+            if hasattr(y, 'values'):
+                y = y.values
+            
+            # Clean NaN values before scaling
+            if np.any(np.isnan(X)):
+                logger.warning(f"⚠️ Found {np.sum(np.isnan(X))} NaN values in X before scaling, filling with 0")
+                X = np.nan_to_num(X, nan=0.0, posinf=0.0, neginf=0.0)
+            
+            if np.any(np.isnan(y)):
+                logger.warning(f"⚠️ Found {np.sum(np.isnan(y))} NaN values in y, filling with 0")
+                y = np.nan_to_num(y, nan=0.0, posinf=0.0, neginf=0.0)
+            
+            logger.info(f"📊 TCN input: X shape={X.shape}, y shape={y.shape}")
 
             # Scale features
             self.scaler = StandardScaler()
             X_scaled = self.scaler.fit_transform(X)
+            
+            # Verify no NaN after scaling
+            if np.any(np.isnan(X_scaled)):
+                logger.error("❌ NaN values found after scaling, this should not happen")
+                X_scaled = np.nan_to_num(X_scaled, nan=0.0, posinf=0.0, neginf=0.0)
 
-            # Prepare sequences
+            # Prepare sequences with targets
             sequence_length = min(50, len(X) // 4)  # Adaptive sequence length
-            X_seq, y_seq = self._prepare_sequences(X_scaled, sequence_length)
+            if sequence_length < 10:
+                sequence_length = min(10, len(X) - 1)  # Ensure minimum sequence length
+            
+            logger.info(f"📊 Creating sequences with length={sequence_length}")
+            X_seq, y_seq = self._prepare_sequences(X_scaled, y, sequence_length)
 
+            # Verify sequence shapes
+            logger.info(f"✅ Sequence shapes - X_seq: {X_seq.shape}, y_seq: {y_seq.shape}")
+            
             # Convert to tensors
             X_tensor = torch.FloatTensor(X_seq)
             y_tensor = torch.FloatTensor(y_seq)
+            
+            logger.info(f"✅ Tensor shapes - X_tensor: {X_tensor.shape}, y_tensor: {y_tensor.shape}")
 
-            # Create TCN model
+            # Create TCN model with correct input size (number of features)
+            # X_seq shape is (n_sequences, sequence_length, n_features)
+            # input_size should be n_features (which is X_seq.shape[2])
+            actual_n_features = X_seq.shape[2]
+            logger.info(f"📊 Creating TCN with input_size={actual_n_features} features")
+            
             self.tcn_model = CausalDilatedTCN(
-                input_size=X.shape[1],
+                input_size=actual_n_features,
                 num_filters=self.config.num_filters,
                 kernel_size=self.config.kernel_size,
                 dilation_base=self.config.dilation_base,
@@ -307,6 +380,9 @@ class CausalDilatedTCNModel(BaseEstimator, RegressorMixin):
                 dropout=self.config.dropout,
                 use_skip_connections=self.config.use_skip_connections
             )
+            
+            # Store the input size for later use
+            self.input_size = actual_n_features
 
             # Training setup
             optimizer = optim.Adam(self.tcn_model.parameters(), lr=self.config.learning_rate)
@@ -333,7 +409,12 @@ class CausalDilatedTCNModel(BaseEstimator, RegressorMixin):
 
                     # Forward pass
                     predictions = self.tcn_model(batch_X)
-                    loss = criterion(predictions.squeeze(), batch_y.squeeze())
+                    
+                    # Handle batch_y shape - ensure it's 1D
+                    if len(batch_y.shape) > 1:
+                        batch_y = batch_y.squeeze()
+                    
+                    loss = criterion(predictions.squeeze(), batch_y)
 
                     # Backward pass
                     loss.backward()
@@ -372,18 +453,35 @@ class CausalDilatedTCNModel(BaseEstimator, RegressorMixin):
     def _fit_fallback(self, X: np.ndarray, y: np.ndarray, sample_weight: Optional[np.ndarray] = None) -> 'CausalDilatedTCNModel':
         """Fallback to simple linear model."""
         try:
-            from sklearn.linear_model import LinearRegression
+            from sklearn.linear_model import Ridge
+
+            # Clean NaN values
+            if np.any(np.isnan(X)):
+                logger.warning(f"⚠️ Cleaning {np.sum(np.isnan(X))} NaN values in fallback X")
+                X = np.nan_to_num(X, nan=0.0, posinf=0.0, neginf=0.0)
+            
+            if np.any(np.isnan(y)):
+                logger.warning(f"⚠️ Cleaning {np.sum(np.isnan(y))} NaN values in fallback y")
+                y = np.nan_to_num(y, nan=0.0, posinf=0.0, neginf=0.0)
 
             # Scale features
             self.scaler = StandardScaler()
             X_scaled = self.scaler.fit_transform(X)
+            
+            # Verify no NaN after scaling
+            if np.any(np.isnan(X_scaled)):
+                logger.error("❌ NaN values found after scaling in fallback")
+                X_scaled = np.nan_to_num(X_scaled, nan=0.0, posinf=0.0, neginf=0.0)
 
-            # Simple linear model as fallback
-            self.tcn_model = LinearRegression()
+            # Use Ridge regression as fallback (more stable than LinearRegression)
+            self.tcn_model = Ridge(alpha=1.0)
             self.tcn_model.fit(X_scaled, y, sample_weight)
+            
+            # Store input size
+            self.input_size = X.shape[1]
 
             self.fitted = True
-            logger.info("✅ Fallback linear model fitted")
+            logger.info("✅ Fallback Ridge regression model fitted")
 
             return self
 
@@ -392,7 +490,14 @@ class CausalDilatedTCNModel(BaseEstimator, RegressorMixin):
             raise
 
     def predict(self, X: np.ndarray) -> np.ndarray:
-        """Make predictions using the fitted model."""
+        """Make predictions using the fitted model.
+        
+        Args:
+            X: Feature array (n_samples, n_features) - same features as training
+            
+        Returns:
+            predictions: Predicted values (n_samples,)
+        """
         if not self.fitted:
             raise ValueError("Model must be fitted before prediction")
 
@@ -400,17 +505,32 @@ class CausalDilatedTCNModel(BaseEstimator, RegressorMixin):
             # Convert to numpy if pandas DataFrame
             if hasattr(X, 'values'):
                 X = X.values
+            
+            # Clean NaN values
+            if np.any(np.isnan(X)):
+                logger.warning(f"⚠️ Found {np.sum(np.isnan(X))} NaN values in prediction X, filling with 0")
+                X = np.nan_to_num(X, nan=0.0, posinf=0.0, neginf=0.0)
 
             # Scale features
             X_scaled = self.scaler.transform(X)
+            
+            # Verify no NaN after scaling
+            if np.any(np.isnan(X_scaled)):
+                logger.warning("⚠️ NaN values found after scaling in predict, cleaning")
+                X_scaled = np.nan_to_num(X_scaled, nan=0.0, posinf=0.0, neginf=0.0)
 
             # Check if model is PyTorch model
             if hasattr(self.tcn_model, 'forward'):
                 import torch
 
-                # Prepare sequences
+                # Prepare sequences (for prediction, we use dummy targets)
                 sequence_length = min(50, len(X_scaled) // 4)
-                X_seq, _ = self._prepare_sequences(X_scaled, sequence_length)
+                if sequence_length < 10:
+                    sequence_length = min(10, len(X_scaled) - 1)
+                
+                # Create dummy targets for sequence preparation
+                dummy_targets = np.zeros(len(X_scaled))
+                X_seq, _ = self._prepare_sequences(X_scaled, dummy_targets, sequence_length)
 
                 # Convert to tensor
                 X_tensor = torch.FloatTensor(X_seq)

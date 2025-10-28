@@ -1,0 +1,55 @@
+"""
+DEPRECATED: EconomicRegimeFeatureSelector
+
+This file has been deprecated and should NOT be used.
+
+ISSUES:
+1. Circular Dependency: Uses economic targets (75% volatility-based) as proxy for regime labels
+   before clustering occurs, creating a circular dependency.
+
+2. Optimization Mismatch: Features are optimized for predicting returns/volatility, NOT for
+   separating market regimes.
+
+3. No Unsupervised Mode: Lacks proper unsupervised feature selection for pre-clustering use.
+
+REPLACEMENT:
+Use EnhancedRegimeFeatureSelector instead (from regime_feature_selector.py):
+- Has proper unsupervised mode for pre-clustering feature selection
+- No circular dependency on regime labels
+- Integrates regime_feature_categorization system
+- Selects features optimized for regime separation
+
+MIGRATION:
+Old:
+    from src.training.steps.market_analysis.economic_regime_feature_selector import EconomicRegimeFeatureSelector
+    selector = EconomicRegimeFeatureSelector()
+
+New:
+    from src.training.steps.market_analysis.regime_feature_selector import EnhancedRegimeFeatureSelector
+    selector = EnhancedRegimeFeatureSelector()
+    
+    # For unsupervised (pre-clustering)
+    result = selector.select_features(
+        features_df=features,
+        regime_labels=None,      # No labels needed!
+        use_supervised=False
+    )
+
+DEPRECATED: 2025-10-28
+REASON: Circular dependency and optimization mismatch
+FILE KEPT FOR REFERENCE ONLY - DO NOT USE IN PRODUCTION
+
+For details, see:
+- REGIME_FEATURE_SELECTION_ANALYSIS.md
+- REGIME_FEATURE_SELECTION_FIX_SUMMARY.md
+"""
+
+# This file is kept for reference only.
+# All code has been moved to the DEPRECATED section.
+# DO NOT IMPORT OR USE THIS FILE.
+
+raise DeprecationWarning(
+    "EconomicRegimeFeatureSelector is deprecated. "
+    "Use EnhancedRegimeFeatureSelector from regime_feature_selector.py instead. "
+    "See REGIME_FEATURE_SELECTION_FIX_SUMMARY.md for migration guide."
+)

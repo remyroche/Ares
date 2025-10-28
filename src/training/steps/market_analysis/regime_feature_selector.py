@@ -852,6 +852,10 @@ class EnhancedRegimeFeatureSelector(BaseStep):
         """
         Execute the regime feature selection step.
         
+        IMPORTANT: This runs BEFORE clustering, so it uses UNSUPERVISED feature selection
+        to avoid circular dependency. It selects features optimized for regime clustering
+        using variance, correlation, and category-based filtering.
+        
         Args:
             config: Configuration dictionary containing:
                 - symbol: Trading symbol
@@ -860,14 +864,14 @@ class EnhancedRegimeFeatureSelector(BaseStep):
                 - execution_mode: 'light' or 'full'
                 - feature_selection_config: Optional custom config
                 - features_data: Optional pre-loaded features data
-                - target_data: Optional pre-loaded target data
-                - regime_labels: Optional pre-loaded regime labels
+                - use_supervised: Optional bool (default False) - only True if regime_labels provided
+                - regime_labels: Optional pre-loaded regime labels (for supervised mode)
         
         Returns:
             Dict containing execution results and artifacts
         """
         try:
-            self.logger.info("Starting regime feature selection execution")
+            self.logger.info("Starting UNSUPERVISED regime feature selection for clustering")
             
             # Update config with any custom settings
             if 'feature_selection_config' in config:
@@ -885,24 +889,40 @@ class EnhancedRegimeFeatureSelector(BaseStep):
             tprint_info(f"Processing regime feature selection for {symbol} on {exchange}")
             tprint_info(f"Timeframes: {timeframes}, Mode: {execution_mode}")
             
-            # Load features data and regime labels from clustering step
+            # Load features data (regime labels optional)
             features_data, regime_labels = await self._load_features_and_regime_labels(config)
             
             if features_data is None or features_data.empty:
                 raise ValueError("No features data available for feature selection")
             
-            if regime_labels is None or regime_labels.empty:
-                raise ValueError("No regime labels available from clustering step")
+            # Apply regime feature categorization to pre-filter features
+            tprint_info("🎯 Applying regime feature categorization...")
+            features_data = self._apply_regime_categorization(features_data)
             
             # Apply light mode filtering if needed
             features_data = self._apply_light_mode_filter(features_data, config, timeframes[0])
-            regime_labels = self._apply_light_mode_filter(regime_labels, config, timeframes[0])
+            if regime_labels is not None:
+                regime_labels = self._apply_light_mode_filter(regime_labels, config, timeframes[0])
             
-            # Perform feature selection using regime labels as target
-            selection_results = self.select_features(
-                features_df=features_data,
-                regime_labels=regime_labels
-            )
+            # Determine selection mode
+            use_supervised = config.get('use_supervised', False) and regime_labels is not None
+            
+            if use_supervised:
+                tprint_warning("⚠️ Using SUPERVISED mode - ensure this is post-clustering refinement!")
+                # Perform supervised feature selection using regime labels
+                selection_results = self.select_features(
+                    features_df=features_data,
+                    regime_labels=regime_labels,
+                    use_supervised=True
+                )
+            else:
+                tprint_info("✅ Using UNSUPERVISED mode - optimal for pre-clustering feature selection")
+                # Perform unsupervised feature selection (no regime labels needed)
+                selection_results = self.select_features(
+                    features_df=features_data,
+                    regime_labels=None,
+                    use_supervised=False
+                )
             
             # Save artifacts
             artifacts = []
@@ -979,7 +999,7 @@ class EnhancedRegimeFeatureSelector(BaseStep):
             markdown_report = self._generate_comprehensive_markdown_report(
                 symbol, exchange, timeframes, execution_mode, 
                 selection_results, performance_metrics,
-                features_data, target_data, regime_labels
+                features_data, None, regime_labels  # target_data=None in unsupervised mode
             )
             
             # Save markdown report to outcomes directory
@@ -1050,17 +1070,18 @@ class EnhancedRegimeFeatureSelector(BaseStep):
             }
     
     async def _load_features_and_regime_labels(self, config: Dict[str, Any]) -> Tuple[Optional[pd.DataFrame], Optional[pd.Series]]:
-        """Load features data and regime labels from clustering step artifacts."""
+        """Load features data (regime labels optional for unsupervised mode)."""
         try:
             symbol = config.get('symbol', 'UNKNOWN')
             exchange = config.get('exchange', 'UNKNOWN')
             
             # Try to load pre-loaded data first
             features_data = config.get('features_data')
-            regime_labels = config.get('regime_labels')
+            regime_labels = config.get('regime_labels')  # Optional
             
-            if features_data is not None and regime_labels is not None:
-                tprint_info("Using pre-loaded features data and regime labels")
+            if features_data is not None:
+                mode = "with regime labels" if regime_labels is not None else "WITHOUT regime labels (unsupervised mode)"
+                tprint_info(f"Using pre-loaded features data {mode}")
                 return features_data, regime_labels
             
             # Try to load from artifacts
@@ -1098,76 +1119,70 @@ class EnhancedRegimeFeatureSelector(BaseStep):
             except Exception as e:
                 self.logger.debug(f"Could not generate data from feature bank: {e}")
             
-            # Generate sample data as fallback
-            tprint_warning("No data available, generating sample data for testing")
-            return self._generate_sample_data()
+            # Generate sample data as fallback (no regime labels for unsupervised mode)
+            tprint_warning("No data available, generating sample data for testing (unsupervised mode)")
+            features_df, _ = self._generate_sample_data()
+            return features_df, None  # Return None for regime_labels in unsupervised mode
             
         except Exception as e:
             self.logger.error(f"Error loading features and regime labels: {e}")
             return None, None
     
-    async def _load_or_generate_data(self, config: Dict[str, Any]) -> Tuple[Optional[pd.DataFrame], Optional[pd.Series], Optional[pd.Series]]:
-        """Load or generate features, target, and regime labels data."""
+    def _apply_regime_categorization(self, features_df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Apply regime feature categorization to filter features appropriate for clustering.
+        
+        Uses the regime_feature_categorization system to select features optimized
+        for regime clustering, avoiding features meant for live trading or other purposes.
+        """
         try:
-            symbol = config.get('symbol', 'UNKNOWN')
-            exchange = config.get('exchange', 'UNKNOWN')
+            from src.feature_generation.categories.regime_feature_categorization import (
+                get_regime_clustering_features,
+                RegimeFeatureCategorizer,
+                FeatureUseCase
+            )
             
-            # Try to load pre-loaded data first
-            features_data = config.get('features_data')
-            target_data = config.get('target_data')
-            regime_labels = config.get('regime_labels')
+            tprint_info("📋 Loading regime clustering feature priorities...")
+            categorizer = RegimeFeatureCategorizer()
             
-            if features_data is not None:
-                tprint_info("Using pre-loaded features data")
-                return features_data, target_data, regime_labels
+            # Get priority features for regime clustering
+            priority_features = categorizer.get_priority_features(
+                FeatureUseCase.REGIME_CLUSTERING,
+                max_features=200  # Get top 200 priority features
+            )
             
-            # Try to load from artifacts
-            try:
-                features_data = self._get_artifact(
-                    artifact_name=f'features_{symbol}_{exchange}',
-                    artifact_type='data'
-                )
-                target_data = self._get_artifact(
-                    artifact_name=f'target_{symbol}_{exchange}',
-                    artifact_type='data'
-                )
-                regime_labels = self._get_artifact(
-                    artifact_name=f'regime_labels_{symbol}_{exchange}',
-                    artifact_type='data'
-                )
-                tprint_info("Loaded data from artifacts")
-                return features_data, target_data, regime_labels
-            except Exception as e:
-                self.logger.debug(f"Could not load data from artifacts: {e}")
+            tprint_info(f"🎯 Found {len(priority_features)} priority regime clustering features")
             
-            # Try to load from feature bank
-            try:
-                from src.feature_generation.core.feature_bank import get_global_feature_bank
-                feature_bank = get_global_feature_bank()
+            # Filter features_df to only include those that match priority feature patterns
+            # Since priority_features contains generic names, match by pattern
+            matching_features = []
+            for col in features_df.columns:
+                col_lower = col.lower()
+                # Check if column matches any priority feature pattern
+                for priority_feature in priority_features:
+                    if priority_feature.lower() in col_lower:
+                        matching_features.append(col)
+                        break
+            
+            if matching_features:
+                filtered_df = features_df[matching_features]
+                tprint_success(f"✅ Filtered to {len(filtered_df.columns)} regime-optimized features (from {len(features_df.columns)} total)")
+                return filtered_df
+            else:
+                tprint_warning("⚠️ No matching regime features found, using all features")
+                return features_df
                 
-                # Generate features for the symbol/exchange
-                features_result = feature_bank.generate_features(
-                    symbol=symbol,
-                    exchange=exchange,
-                    timeframes=config.get('timeframes', ['15m'])
-                )
-                
-                if features_result and 'features' in features_result:
-                    features_data = features_result['features']
-                    target_data = features_result.get('target')
-                    regime_labels = features_result.get('regime_labels')
-                    tprint_info("Generated data from feature bank")
-                    return features_data, target_data, regime_labels
-            except Exception as e:
-                self.logger.debug(f"Could not generate data from feature bank: {e}")
-            
-            # Generate sample data as fallback
-            tprint_warning("No data available, generating sample data for testing")
-            return self._generate_sample_data()
-            
+        except ImportError as e:
+            tprint_warning(f"⚠️ Regime feature categorization not available: {e}")
+            tprint_info("Using all features without categorization filtering")
+            return features_df
         except Exception as e:
-            self.logger.error(f"Error loading/generating data: {e}")
-            return None, None, None
+            tprint_warning(f"⚠️ Error applying regime categorization: {e}")
+            tprint_info("Using all features without categorization filtering")
+            return features_df
+    
+    # REMOVED: _load_or_generate_data() - Dead code, not used after unsupervised mode refactoring
+    # Use _load_features_and_regime_labels() instead, which doesn't require target_data
     
     def _generate_sample_data(self) -> Tuple[pd.DataFrame, pd.Series]:
         """Generate sample data for testing purposes."""

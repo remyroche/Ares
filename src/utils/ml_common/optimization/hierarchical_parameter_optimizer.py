@@ -275,6 +275,7 @@ class HierarchicalParameterOptimizer:
         cv_folds: int = 5,
         scoring_metric: str = 'neg_mean_squared_error',
         direction: str = 'maximize',
+        n_rounds: int = 2,
         enable_final_refinement: bool = True,
         final_refinement_trials: int = 50,
         cache_dir: Optional[str] = None,
@@ -292,6 +293,9 @@ class HierarchicalParameterOptimizer:
             cv_folds: Number of cross-validation folds
             scoring_metric: Metric to optimize
             direction: 'maximize' or 'minimize'
+            n_rounds: Number of rounds to iterate through all parameter groups (default: 2)
+                     Round 1: Full exploration with coarse/fine/TPE
+                     Round 2+: Refinement with narrowed search spaces
             enable_final_refinement: Whether to do final joint optimization
             final_refinement_trials: Number of trials for final refinement
             cache_dir: Directory to cache results
@@ -309,6 +313,7 @@ class HierarchicalParameterOptimizer:
         self.cv_folds = cv_folds
         self.scoring_metric = scoring_metric
         self.direction = direction
+        self.n_rounds = max(1, n_rounds)  # Ensure at least 1 round
         self.enable_final_refinement = enable_final_refinement
         self.final_refinement_trials = final_refinement_trials
         self.cache_dir = cache_dir
@@ -318,6 +323,7 @@ class HierarchicalParameterOptimizer:
         # Internal state
         self.optimized_params: Dict[str, Any] = {}  # Accumulated best parameters
         self.group_results: List[OptimizationResult] = []
+        self.round_results: List[Dict[str, Any]] = []  # Results for each round
         
         # Validate
         self._validate_configuration()
@@ -423,6 +429,7 @@ class HierarchicalParameterOptimizer:
         logger.info("Hierarchical Parameter Optimizer Configuration")
         logger.info("=" * 80)
         logger.info(f"Number of parameter groups: {len(self.param_groups)}")
+        logger.info(f"Optimization rounds: {self.n_rounds}")
         logger.info(f"Optimization stages: {[s.value for s in self.stages]}")
         logger.info(f"Direction: {self.direction}")
         logger.info(f"CV folds: {self.cv_folds}")
@@ -447,7 +454,7 @@ class HierarchicalParameterOptimizer:
         initial_params: Optional[Dict[str, Any]] = None
     ) -> HierarchicalOptimizationResult:
         """
-        Run hierarchical optimization.
+        Run hierarchical optimization with multiple rounds.
         
         Args:
             X_train: Training features
@@ -465,43 +472,106 @@ class HierarchicalParameterOptimizer:
         logger.info("🚀 Starting hierarchical parameter optimization")
         logger.info(f"   Training samples: {len(X_train)}")
         logger.info(f"   Features: {X_train.shape[1] if hasattr(X_train, 'shape') else 'N/A'}")
+        logger.info(f"   Number of rounds: {self.n_rounds}")
         
         # Initialize with any provided initial parameters
         if initial_params:
             self.optimized_params = deepcopy(initial_params)
             logger.info(f"   Starting with {len(initial_params)} initial parameters")
         
-        # Optimize each parameter group sequentially
+        # Optimize through multiple rounds
         total_trials = 0
+        best_score_overall = float('-inf') if self.direction == 'maximize' else float('inf')
         
-        for group_idx, group in enumerate(self.param_groups):
+        for round_num in range(1, self.n_rounds + 1):
             logger.info("")
-            logger.info("=" * 80)
-            logger.info(f"📊 Optimizing Parameter Group {group_idx + 1}/{len(self.param_groups)}: '{group.name}'")
-            logger.info(f"   Priority: {group.priority}")
-            logger.info(f"   Parameters: {list(group.params.keys())}")
-            logger.info("=" * 80)
+            logger.info("█" * 80)
+            logger.info(f"🔄 ROUND {round_num}/{self.n_rounds}")
+            logger.info("█" * 80)
             
-            # Optimize this group through all stages
-            group_result = self._optimize_parameter_group(
-                group=group,
-                X_train=X_train,
-                y_train=y_train,
-                X_val=X_val,
-                y_val=y_val,
-                model=model,
-                fixed_params=self.optimized_params.copy()
-            )
+            round_start_time = time.time()
+            round_group_results = []
+            round_start_score = best_score_overall
             
-            # Update optimized parameters with results from this group
-            self.optimized_params.update(group_result.best_params)
-            self.group_results.append(group_result)
-            total_trials += group_result.n_trials
+            # Determine if this is a refinement round
+            is_refinement_round = round_num > 1
             
-            logger.info(f"✅ Group '{group.name}' optimization complete")
-            logger.info(f"   Best score: {group_result.best_score:.6f}")
-            logger.info(f"   Best params: {group_result.best_params}")
-            logger.info(f"   Time: {group_result.optimization_time:.2f}s")
+            # Optimize each parameter group sequentially
+            for group_idx, group in enumerate(self.param_groups):
+                logger.info("")
+                logger.info("=" * 80)
+                logger.info(f"📊 Round {round_num} - Optimizing Group {group_idx + 1}/{len(self.param_groups)}: '{group.name}'")
+                logger.info(f"   Priority: {group.priority}")
+                logger.info(f"   Parameters: {list(group.params.keys())}")
+                if is_refinement_round:
+                    logger.info(f"   Mode: Refinement (narrowed search space)")
+                else:
+                    logger.info(f"   Mode: Exploration (full search space)")
+                logger.info("=" * 80)
+                
+                # For refinement rounds, use narrowed search space around current best
+                if is_refinement_round:
+                    # Create narrowed search space for this group
+                    group_best_params = {k: v for k, v in self.optimized_params.items() if k in group.params}
+                    narrowed_group = self._create_narrowed_group(group, group_best_params)
+                    group_to_optimize = narrowed_group
+                else:
+                    group_to_optimize = group
+                
+                # Optimize this group through all stages
+                group_result = self._optimize_parameter_group(
+                    group=group_to_optimize,
+                    X_train=X_train,
+                    y_train=y_train,
+                    X_val=X_val,
+                    y_val=y_val,
+                    model=model,
+                    fixed_params=self.optimized_params.copy(),
+                    round_num=round_num,
+                    is_refinement=is_refinement_round
+                )
+                
+                # Update optimized parameters with results from this group
+                self.optimized_params.update(group_result.best_params)
+                round_group_results.append(group_result)
+                self.group_results.append(group_result)
+                total_trials += group_result.n_trials
+                
+                # Update best score
+                is_better = (
+                    (self.direction == 'maximize' and group_result.best_score > best_score_overall) or
+                    (self.direction == 'minimize' and group_result.best_score < best_score_overall)
+                )
+                if is_better or round_num == 1:
+                    best_score_overall = group_result.best_score
+                
+                logger.info(f"✅ Group '{group.name}' optimization complete")
+                logger.info(f"   Best score: {group_result.best_score:.6f}")
+                logger.info(f"   Best params: {group_result.best_params}")
+                logger.info(f"   Time: {group_result.optimization_time:.2f}s")
+            
+            # Round summary
+            round_time = time.time() - round_start_time
+            round_improvement = best_score_overall - round_start_score if round_num > 1 else 0.0
+            
+            self.round_results.append({
+                'round': round_num,
+                'best_score': best_score_overall,
+                'improvement': round_improvement,
+                'time': round_time,
+                'trials': sum(r.n_trials for r in round_group_results),
+                'group_results': round_group_results
+            })
+            
+            logger.info("")
+            logger.info("─" * 80)
+            logger.info(f"✅ Round {round_num} Complete")
+            logger.info(f"   Round best score: {best_score_overall:.6f}")
+            if round_num > 1:
+                logger.info(f"   Improvement from previous: {round_improvement:+.6f}")
+            logger.info(f"   Round time: {round_time:.2f}s")
+            logger.info(f"   Round trials: {sum(r.n_trials for r in round_group_results)}")
+            logger.info("─" * 80)
         
         # Final refinement: jointly optimize all parameters around best point
         final_refinement_result = None
@@ -520,24 +590,26 @@ class HierarchicalParameterOptimizer:
                 current_best_params=self.optimized_params.copy()
             )
             
-            if final_refinement_result.best_score > self.group_results[-1].best_score:
-                logger.info(f"✅ Final refinement improved score from {self.group_results[-1].best_score:.6f} to {final_refinement_result.best_score:.6f}")
+            is_better = (
+                (self.direction == 'maximize' and final_refinement_result.best_score > best_score_overall) or
+                (self.direction == 'minimize' and final_refinement_result.best_score < best_score_overall)
+            )
+            
+            if is_better:
+                logger.info(f"✅ Final refinement improved score from {best_score_overall:.6f} to {final_refinement_result.best_score:.6f}")
                 self.optimized_params = final_refinement_result.best_params
-                best_score = final_refinement_result.best_score
+                best_score_overall = final_refinement_result.best_score
             else:
                 logger.info(f"ℹ️  Final refinement did not improve score")
-                best_score = self.group_results[-1].best_score
             
             total_trials += final_refinement_result.n_trials
-        else:
-            best_score = self.group_results[-1].best_score
         
         total_time = time.time() - start_time
         
         # Create final result
         result = HierarchicalOptimizationResult(
             best_params=self.optimized_params,
-            best_score=best_score,
+            best_score=best_score_overall,
             group_results=self.group_results,
             total_time=total_time,
             total_trials=total_trials,
@@ -548,10 +620,16 @@ class HierarchicalParameterOptimizer:
         logger.info("=" * 80)
         logger.info("🎉 Hierarchical Optimization Complete!")
         logger.info("=" * 80)
+        logger.info(f"   Rounds completed: {self.n_rounds}")
         logger.info(f"   Best score: {result.best_score:.6f}")
         logger.info(f"   Total time: {result.total_time:.2f}s")
         logger.info(f"   Total trials: {result.total_trials}")
         logger.info(f"   Best parameters: {result.best_params}")
+        logger.info("")
+        logger.info("   Round-by-round summary:")
+        for round_info in self.round_results:
+            improvement_str = f" (improvement: {round_info['improvement']:+.6f})" if round_info['round'] > 1 else ""
+            logger.info(f"     Round {round_info['round']}: score={round_info['best_score']:.6f}{improvement_str}")
         logger.info("=" * 80)
         
         # Save results if cache directory is specified
@@ -568,7 +646,9 @@ class HierarchicalParameterOptimizer:
         X_val: Optional[np.ndarray],
         y_val: Optional[np.ndarray],
         model: Optional[Any],
-        fixed_params: Dict[str, Any]
+        fixed_params: Dict[str, Any],
+        round_num: int = 1,
+        is_refinement: bool = False
     ) -> OptimizationResult:
         """
         Optimize a single parameter group through all stages.
@@ -579,6 +659,8 @@ class HierarchicalParameterOptimizer:
             X_val, y_val: Validation data (optional)
             model: Model instance
             fixed_params: Parameters that are already optimized (fixed)
+            round_num: Current optimization round number
+            is_refinement: Whether this is a refinement round (narrowed search space)
         
         Returns:
             OptimizationResult for this group
@@ -1228,6 +1310,41 @@ class HierarchicalParameterOptimizer:
             narrowed[param_name] = narrowed_config
         
         return narrowed
+    
+    def _create_narrowed_group(
+        self,
+        group: ParameterGroup,
+        best_params: Dict[str, Any],
+        narrow_factor: float = 0.15
+    ) -> ParameterGroup:
+        """
+        Create a narrowed parameter group around best parameters for refinement rounds.
+        
+        Args:
+            group: Original parameter group
+            best_params: Best parameters found for this group
+            narrow_factor: Factor to narrow range (0.15 = ±15% of original range)
+        
+        Returns:
+            New ParameterGroup with narrowed search space
+        """
+        narrowed_params = self._create_narrowed_search_space(
+            group.params,
+            best_params,
+            narrow_factor=narrow_factor
+        )
+        
+        # Create new group with narrowed parameters but same metadata
+        narrowed_group = ParameterGroup(
+            name=group.name,
+            params=narrowed_params,
+            priority=group.priority,
+            depends_on=group.depends_on,
+            description=group.description,
+            optimize_jointly=group.optimize_jointly
+        )
+        
+        return narrowed_group
     
     def _save_results(self, result: HierarchicalOptimizationResult):
         """Save optimization results to cache directory."""

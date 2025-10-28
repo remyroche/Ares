@@ -7,10 +7,11 @@ The Hierarchical Parameter Optimizer is a general-purpose optimization framework
 ### Key Features
 
 1. **Parameter Grouping**: Organize parameters into logical groups and optimize them sequentially
-2. **Staged Optimization**: Coarse grid → Fine grid → Advanced methods (TPE, BOHB)
-3. **Backend Agnostic**: Works with Optuna TPE, BOHB, Random Search, etc.
-4. **Memory Efficient**: Reduces search space complexity
-5. **Integration Ready**: Compatible with existing optimization tools
+2. **Multi-Round Optimization**: Default 2 rounds (exploration + refinement) to capture parameter interactions
+3. **Staged Optimization**: Coarse grid → Fine grid → Advanced methods (TPE, BOHB)
+4. **Backend Agnostic**: Works with Optuna TPE, BOHB, Random Search, etc.
+5. **Memory Efficient**: Reduces search space complexity
+6. **Integration Ready**: Compatible with existing optimization tools
 
 ### When to Use
 
@@ -20,6 +21,7 @@ Use hierarchical optimization when:
 - You want to **save computation time** by not exploring the full cartesian product
 - Some parameters are **more critical** than others
 - You want a **principled approach** to staged optimization
+- Parameter interactions exist between groups (captured via 2+ rounds)
 
 ## Quick Start
 
@@ -119,6 +121,49 @@ model.fit(X_train, y_train)
 ```
 
 ## Advanced Usage
+
+### Multiple Optimization Rounds
+
+The optimizer performs **2 rounds by default** to capture parameter interactions:
+
+**Round 1 (Exploration)**:
+- Full search space exploration
+- Optimizes each group with coarse → fine → TPE
+- Establishes baseline parameter values
+
+**Round 2 (Refinement)**:
+- Narrowed search space (±15% around Round 1 results)
+- Re-optimizes groups with updated context
+- Captures interactions: optimal values for Group A may change after Group B is optimized
+
+```python
+# Use default 2 rounds (recommended)
+optimizer = HierarchicalParameterOptimizer(
+    param_groups=param_groups,
+    objective_func=default_objective_function,
+    n_rounds=2  # Default
+)
+
+# Single round (faster but may miss interactions)
+optimizer = HierarchicalParameterOptimizer(
+    param_groups=param_groups,
+    objective_func=default_objective_function,
+    n_rounds=1
+)
+
+# Three rounds (thorough but slower)
+optimizer = HierarchicalParameterOptimizer(
+    param_groups=param_groups,
+    objective_func=default_objective_function,
+    n_rounds=3
+)
+```
+
+**Why 2 Rounds?**
+- **Parameter Interactions**: Group A optimal values may depend on Group B
+- **Iterative Refinement**: Second pass improves convergence
+- **Balanced Trade-off**: Good results without excessive computation
+- **Empirical Best Practice**: Most models converge well in 2 rounds
 
 ### Custom Objective Function
 

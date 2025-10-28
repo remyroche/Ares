@@ -22,24 +22,36 @@ Successfully implemented a new **general-purpose hierarchical optimization modul
 **Features Implemented**:
 1. ✅ Parameter Grouping - organize parameters into logical groups
 2. ✅ Sequential Optimization - optimize groups by priority and dependencies
-3. ✅ Staged Optimization - coarse grid → fine grid → TPE/BOHB
-4. ✅ Multiple Backends - Optuna TPE, BOHB, Random Search
-5. ✅ Final Refinement - joint optimization of all parameters
-6. ✅ Result Caching - save optimization results to disk
-7. ✅ Flexible Configuration - customizable stages and configs
+3. ✅ **Multi-Round Optimization** - **2 rounds by default (exploration + refinement)**
+4. ✅ Staged Optimization - coarse grid → fine grid → TPE/BOHB
+5. ✅ Multiple Backends - Optuna TPE, BOHB, Random Search
+6. ✅ Final Refinement - joint optimization of all parameters
+7. ✅ Result Caching - save optimization results to disk
+8. ✅ Flexible Configuration - customizable stages and configs
 
 **Architecture**:
 ```
 Hierarchical Parameter Optimizer
-├── Parameter Grouping
-│   ├── Group by priority (1, 2, 3, ...)
-│   ├── Define dependencies between groups
-│   └── Optimize sequentially
-│
-├── Per-Group Staged Optimization
-│   ├── Stage 1: Coarse Grid Search (3-5 points per param)
-│   ├── Stage 2: Fine Grid Search (5-7 points around best)
-│   └── Stage 3: Advanced Methods (TPE, BOHB, etc.)
+├── Multi-Round Optimization (Default: 2 rounds)
+│   │
+│   ├── Round 1: Exploration
+│   │   ├── Full search space
+│   │   ├── Parameter Grouping
+│   │   │   ├── Group by priority (1, 2, 3, ...)
+│   │   │   ├── Define dependencies between groups
+│   │   │   └── Optimize sequentially
+│   │   │
+│   │   └── Per-Group Staged Optimization
+│   │       ├── Stage 1: Coarse Grid Search (3-5 points per param)
+│   │       ├── Stage 2: Fine Grid Search (5-7 points around best)
+│   │       └── Stage 3: Advanced Methods (TPE, BOHB, etc.)
+│   │
+│   ├── Round 2: Refinement
+│   │   ├── Narrowed search space (±15% of original)
+│   │   ├── Re-optimize groups with updated context
+│   │   └── Captures parameter interactions
+│   │
+│   └── Round N: Additional refinement (optional)
 │
 └── Final Refinement (optional)
     └── Joint optimization of all groups
@@ -152,7 +164,7 @@ param_groups = [
     )
 ]
 
-# Create optimizer
+# Create optimizer with 2 rounds (default)
 optimizer = HierarchicalParameterOptimizer(
     param_groups=param_groups,
     objective_func=default_objective_function,
@@ -163,7 +175,8 @@ optimizer = HierarchicalParameterOptimizer(
     ],
     cv_folds=5,
     scoring_metric='neg_mean_squared_error',
-    direction='maximize'
+    direction='maximize',
+    n_rounds=2  # Round 1: exploration, Round 2: refinement
 )
 
 # Run optimization

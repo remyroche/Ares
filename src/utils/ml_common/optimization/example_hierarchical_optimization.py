@@ -110,6 +110,7 @@ def main():
         cv_folds=3,  # Use 3 folds for speed in this example
         scoring_metric='neg_mean_squared_error',
         direction='maximize',
+        n_rounds=2,  # 2 rounds: exploration + refinement
         enable_final_refinement=True,
         final_refinement_trials=30,
         cache_dir="./optimization_cache",
@@ -119,8 +120,10 @@ def main():
     print()
     
     # Run optimization
-    print("5. Running hierarchical optimization...")
-    print("   This will optimize each parameter group sequentially.")
+    print("5. Running hierarchical optimization with 2 rounds...")
+    print("   Round 1: Full exploration of parameter space")
+    print("   Round 2: Refinement with narrowed search space")
+    print("   This captures parameter interactions between groups.")
     print()
     
     result = optimizer.optimize(

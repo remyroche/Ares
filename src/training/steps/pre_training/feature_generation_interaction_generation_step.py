@@ -3612,31 +3612,42 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
         hybrid_ct_interactions = []
         traditional_interactions = []
         ct_ratio_features = []
-        base_variant_features = []
+        variant_features_list = []
+        base_features_list = []
+        
+        # Define variant suffixes
+        variant_suffixes = ['_base', '_volnorm', '_vwap', '_trend_adj']
         
         for col in combined_features.columns:
             # Check interaction operations FIRST (before CT markers)
             if any(op in col for op in ['_x_', '_div_', '_minus_', '_log_', '_plus_']):
                 if any(marker in col for marker in ['_3x_ratio', '_6x_ratio', '_9x_ratio', '_27x_ratio']):
-                    hybrid_ct_interactions.append(col)  # NEW CATEGORY
+                    hybrid_ct_interactions.append(col)  # Hybrid: interaction + cross-timeframe
                 else:
-                    traditional_interactions.append(col)
+                    traditional_interactions.append(col)  # Pure interactions
             elif any(marker in col for marker in ['_3x_ratio', '_6x_ratio', '_9x_ratio', '_27x_ratio']):
-                ct_ratio_features.append(col)
+                ct_ratio_features.append(col)  # Pure cross-timeframe ratios
             else:
-                base_variant_features.append(col)
+                # Check if it's a variant feature or base feature
+                is_variant = any(col.endswith(suffix) for suffix in variant_suffixes)
+                if is_variant:
+                    variant_features_list.append(col)
+                else:
+                    base_features_list.append(col)
         
         # Count each category
         hybrid_count = len(hybrid_ct_interactions)
         int_count = len(traditional_interactions)
         ct_count = len(ct_ratio_features)
-        base_count = len(base_variant_features)
+        variant_count = len(variant_features_list)
+        base_count = len(base_features_list)
         
         tprint_info(f"  📊 Feature breakdown before save:")
         tprint_info(f"    - Hybrid CT interactions: {hybrid_count}")
         tprint_info(f"    - Traditional interactions: {int_count}")
         tprint_info(f"    - Cross-timeframe ratios: {ct_count}")
-        tprint_info(f"    - Base/variant features: {base_count}")
+        tprint_info(f"    - Variant features: {variant_count}")
+        tprint_info(f"    - Base features: {base_count}")
         tprint_info("="*80)
         
         features_path = self._save_artifact(

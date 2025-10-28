@@ -24,16 +24,21 @@ from .feature_bank_integration import (
     FeatureBankIntegrator, FeatureBankConfig, FeatureBankCategory
 )
 
-# Import regime-specific features (from code review)
+# Import regime-specific features
+# NOTE: RegimeFeatureGenerator is an optional enhancement
+# The system works fine without it using base feature bank features
 try:
     from src.feature_generation.categories.regime_features import (
         RegimeFeatureGenerator, RegimeFeatureConfig
     )
     REGIME_FEATURES_AVAILABLE = True
     tprint_debug("✅ Regime-specific features available")
-except ImportError:
+except ImportError as e:
     REGIME_FEATURES_AVAILABLE = False
-    tprint_debug("⚠️ Regime-specific features not available")
+    tprint_debug(
+        f"ℹ️ Regime-specific features not available (optional): {e}. "
+        "Using base feature bank features only."
+    )
 
 # Import optimization utilities (from code review)
 try:
@@ -125,14 +130,17 @@ class EnhancedHDPHMMClusteringIntegration:
             tprint_info("🔧 Configuring Feature Bank Integrator for HDP-HMM clustering")
             
             config = FeatureBankConfig()
+            # NOTE: Using hdbscan config parameters as general clustering configuration
+            # These parameters work for both HDBSCAN and HDP-HMM clustering
             config.hdbscan_min_features = min_features
             config.hdbscan_max_features = max_features
             # Weight features for temporal and regime-dependent patterns
+            # These weights emphasize features that capture regime transitions
             config.hdbscan_weights = {
-                FeatureBankCategory.VOLATILITY: 0.3,   # Volatility regime changes
-                FeatureBankCategory.TREND: 0.25,       # Trend dynamics
-                FeatureBankCategory.MOMENTUM: 0.2,     # Momentum shifts
-                FeatureBankCategory.VOLUME: 0.15,      # Volume patterns
+                FeatureBankCategory.VOLATILITY: 0.3,   # Volatility regime changes (high priority)
+                FeatureBankCategory.TREND: 0.25,       # Trend dynamics (important for regimes)
+                FeatureBankCategory.MOMENTUM: 0.2,     # Momentum shifts (regime indicators)
+                FeatureBankCategory.VOLUME: 0.15,      # Volume patterns (regime confirmation)
                 FeatureBankCategory.CLUSTERING: 0.1    # Auxiliary clustering features
             }
             
@@ -182,6 +190,10 @@ class EnhancedHDPHMMClusteringIntegration:
         with tprint_timer("Feature Generation", level="PERFORMANCE"):
             if self.enable_comprehensive_features:
                 # Get base features from feature bank
+                # NOTE: Using 'hdbscan_clustering' task which provides general clustering features
+                # (volatility, trend, momentum, volume) that are also appropriate for HDP-HMM.
+                # These features capture regime-dependent dynamics and temporal patterns.
+                # TODO: Consider adding dedicated 'hdp_hmm_clustering' task in future
                 result = self.feature_integrator.get_comprehensive_features_for_task(
                     'hdbscan_clustering', data
                 )
@@ -248,13 +260,40 @@ class EnhancedHDPHMMClusteringIntegration:
             # Convert to numpy array
             feature_matrix = np.column_stack([features[name] for name in feature_names])
             
-            # Handle NaN values
-            feature_matrix = np.nan_to_num(feature_matrix, nan=0.0, posinf=1e6, neginf=-1e6)
+            # Handle NaN and inf values with proper imputation
+            n_nan = np.isnan(feature_matrix).sum()
+            n_inf = np.isinf(feature_matrix).sum()
+            
+            if n_nan > 0 or n_inf > 0:
+                nan_ratio = n_nan / feature_matrix.size
+                inf_ratio = n_inf / feature_matrix.size
+                
+                tprint_warning(
+                    f"⚠️ Cleaning feature matrix: {n_nan} NaN ({nan_ratio:.2%}) "
+                    f"and {n_inf} inf ({inf_ratio:.2%}) values"
+                )
+                
+                # Use median imputation for NaN values
+                from sklearn.impute import SimpleImputer
+                imputer = SimpleImputer(strategy='median', copy=False)
+                
+                try:
+                    feature_matrix = imputer.fit_transform(feature_matrix)
+                    tprint_info("   ✅ Applied median imputation for NaN values")
+                except Exception as e:
+                    tprint_warning(f"   ⚠️ Median imputation failed: {e}, using zero fill")
+                    feature_matrix = np.nan_to_num(feature_matrix, nan=0.0)
+                
+                # Clip extreme values (inf becomes large but bounded)
+                feature_matrix = np.clip(feature_matrix, -1e3, 1e3)
+                tprint_info("   ✅ Clipped extreme values to [-1000, 1000]")
             
             metadata = feature_result.copy()
             metadata.update({
                 'final_shape': feature_matrix.shape,
-                'clustering_method': 'hdp_hmm'
+                'clustering_method': 'hdp_hmm',
+                'nan_values_cleaned': int(n_nan),
+                'inf_values_cleaned': int(n_inf)
             })
             
             tprint_success(f"✅ Data preparation completed: {feature_matrix.shape}")

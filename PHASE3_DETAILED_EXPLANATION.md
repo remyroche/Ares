@@ -4,7 +4,7 @@
 
 Phase 3 is the **most important phase** where feature selection and interaction discovery happen. It takes ~400-480 pruned features and produces:
 - **80 best features** (`final_features`)
-- **20-50 interaction features** (`interactions`)
+- **80 interaction features** (`interactions`)
 
 The phase uses a **3-stage progressive refinement** approach with machine learning models.
 
@@ -14,9 +14,9 @@ The phase uses a **3-stage progressive refinement** approach with machine learni
 
 ```
 Phase 3: LGBM+SHAP Pipeline
-├── Phase 3.1: Shallow LGBM Sweep (400 → 100 features)
+├── Phase 3.1: Shallow LGBM Sweep (400 → 120 features)
 ├── Phase 3.2: Deeper LGBM Refinement (100 → 80 features)  
-└── Phase 3.3: Deep Interaction Discovery (80 features → 20-50 interactions)
+└── Phase 3.3: Deep Interaction Discovery (80 features → 20-80 interactions)
 ```
 
 ---
@@ -24,7 +24,7 @@ Phase 3: LGBM+SHAP Pipeline
 ## 🔍 Phase 3.1: Shallow LGBM Sweep
 
 ### Goal
-Rapidly filter from ~400-480 pruned features down to **top 100 features**
+Rapidly filter from ~400-480 pruned features down to **top 120 features**
 
 ### Method: Fast Proxy Selection
 
@@ -65,7 +65,7 @@ mi_normalized = (mi - min) / (max - min)
 combined_score = 0.6 × importance_normalized + 0.4 × mi_normalized
 ```
 
-**4. Select Top 100**
+**4. Select Top 120**
 ```python
 top_100_features = features[top_100_indices]
 ```
@@ -77,7 +77,7 @@ top_100_features = features[top_100_indices]
 - **Aggressive**: Removes 75% of features (400 → 100) quickly
 
 ### Output
-- **100 features** with highest combined scores
+- **120 features** with highest combined scores
 - Typically includes mix of base, variants, CT ratios
 
 ---
@@ -85,7 +85,7 @@ top_100_features = features[top_100_indices]
 ## 🎯 Phase 3.2: Deeper LGBM Refinement
 
 ### Goal
-Refine from 100 features down to **top 80 features** with more accurate scoring
+Refine from 120 features down to **top 80 features** with more accurate scoring
 
 ### Method: Multi-Criteria Selection
 
@@ -143,7 +143,7 @@ final_features = features[top_80_indices]
 ## 🌳 Phase 3.3: Deep Interaction Discovery
 
 ### Goal
-Discover synergistic feature pairs and generate **20-50 interaction features**
+Discover synergistic feature pairs and generate **80 interaction features**
 
 This is the **most complex phase** with multiple steps:
 
@@ -291,7 +291,7 @@ Round 2: 268 candidates → Score all → Remove bottom 33% → 180 remain
 Round 3: 180 candidates → Score all → Remove bottom 33% → 121 remain
 Round 4: 121 candidates → Score all → Remove bottom 33% → 81 remain
 Round 5: 81 candidates  → Score all → Remove bottom 33% → 54 remain
-Round 6: 54 candidates  → Score all → Keep top 50     → 50 remain
+Round 6: 54 candidates  → Score all → Keep top 80     → 80 remain
 ```
 
 **Why RFE?**
@@ -347,7 +347,7 @@ interaction_df = scaler.fit_transform(interaction_df)
 ---
 
 ### Output
-- **20-50 interaction features** → This becomes `interactions`
+- **80 interaction features** → This becomes `interactions`
 - Each interaction has passed rigorous multi-criteria evaluation
 - Names clearly show operation: `rsi_base_x_macd_volnorm`, `volume_div_price`, etc.
 
@@ -364,9 +364,9 @@ Phase 3 Input: 400-480 pruned features
 │  ├─ Extract feature importance                       │
 │  ├─ Calculate MI (fast proxy)                        │
 │  ├─ Combine: 60% importance + 40% MI                 │
-│  └─ Select top 100 features                          │
+│  └─ Select top 120 features                          │
 │                                                        │
-│  Output: 100 features ────────────────────────────────┤
+│  Output: 120 features ────────────────────────────────┤
 │                                                        │
 ├─ Phase 3.2: Deeper LGBM Refinement ──────────────────┤
 │  │                                                     │
@@ -410,11 +410,11 @@ Phase 3 Input: 400-480 pruned features
 │  ├─ Apply causality shift (t-1)                      │
 │  └─ Apply RobustScaler normalization                 │
 │                                                        │
-│  Output: 20-50 interactions ──────────────────────────┤
+│  Output: 20-80 interactions ──────────────────────────┤
 │                                                        │
 └─ Phase 3 Output: ────────────────────────────────────┘
    ├─ final_features: 80 best features
-   └─ interactions: 20-50 interaction features
+   └─ interactions: 80 interaction features
 ```
 
 ---
@@ -454,7 +454,7 @@ No single metric is perfect. Equal weighting (20% each) prevents bias.
 
 **Starting Point**: 480 pruned features
 
-**After Phase 3.1** (100 features):
+**After Phase 3.1** (120 features):
 ```
 - rsi_base
 - rsi_volnorm  
@@ -479,7 +479,7 @@ No single metric is perfect. Equal weighting (20% each) prevents bias.
 ... (73 more)
 ```
 
-**After Phase 3.3** (50 interactions):
+**After Phase 3.3** (80 interactions):
 ```
 - rsi_base_x_macd_volnorm
 - rsi_base_3x_ratio_x_volume_vwap       ← Hybrid CT interaction!
@@ -489,7 +489,7 @@ No single metric is perfect. Equal weighting (20% each) prevents bias.
 ... (45 more)
 ```
 
-**Final Phase 3 Output**: 80 + 50 = **130 features total**
+**Final Phase 3 Output**: 80 + 50 = **160 features total**
 
 ---
 

@@ -100,7 +100,7 @@ For each variant, create 4 timeframe ratios:
 
 This is the **most important phase** where the magic happens!
 
-#### Phase 3.1: Shallow LGBM Sweep (400 → 100)
+#### Phase 3.1: Shallow LGBM Sweep (400 → 120)
 - Trains shallow LGBM models (max_depth=3)
 - Fast feature selection using **composite proxy**:
   - 60% LGBM feature importance
@@ -109,7 +109,7 @@ This is the **most important phase** where the magic happens!
 - Fast first pass to remove noise
 - Duration: ~2-3 minutes
 
-#### Phase 3.2: Deeper LGBM Refinement (100 → 80)
+#### Phase 3.2: Deeper LGBM Refinement (120 → 80)
 - Trains deeper LGBM models (max_depth=4)
 - More accurate multi-criteria selection:
   - 60% LGBM importance
@@ -138,7 +138,7 @@ This is the most sophisticated sub-phase:
   3. LGBM Importance
   4. SHAP Values (true marginal contribution)
   5. Stability Score
-- RFE process: 6 rounds of 33% removal (400 → 268 → 180 → 121 → 81 → 54 → 50)
+- RFE process: 5 rounds to reach 80 (400 → 268 → 180 → 121 → 81 → 80)
 - Re-scores at each round for accuracy
 
 **Step 6**: Filter by complexity (max 3-way interactions)
@@ -257,18 +257,18 @@ For a typical run with 40 initial features:
 | Phase 1 | 800 | 40 × 4 variants × 5 (base + 4 CT) |
 | Phase 2 | 400-480 | 40-50% pruning |
 | Phase 3 final | 80 | Top 80 features |
-| Phase 3 interactions | 20-50 | Discovered interactions |
-| Phase 4 combined | **100-130** | Final output |
+| Phase 3 interactions | 80 | Discovered interactions |
+| Phase 4 combined | **130-160** | Final output |
 
 ### Final Breakdown Example:
 ```
 📊 Feature breakdown before save:
-  - Hybrid CT interactions: 15
-  - Traditional interactions: 20
+  - Hybrid CT interactions: 25
+  - Traditional interactions: 55
   - Cross-timeframe ratios: 30
   - Variant features: 25
-  - Base features: 40
-  Total: 130 features
+  - Base features: 25
+  Total: 160 features
 ```
 
 ---

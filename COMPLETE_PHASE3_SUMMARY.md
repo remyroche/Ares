@@ -20,7 +20,7 @@ Input: 400-480 pruned features
 │ • Duration: ~2-3 minutes                │
 └─────────────────────────────────────────┘
     ↓
-100 features
+120 features
     ↓
 ┌─────────────────────────────────────────┐
 │ Phase 3.2: Deeper LGBM Refinement       │
@@ -44,7 +44,7 @@ Input: 400-480 pruned features
 │ • Duration: ~10-15 minutes              │
 └─────────────────────────────────────────┘
     ↓
-20-50 interactions
+80 interactions
 ```
 
 **Total Duration**: ~15-23 minutes
@@ -65,7 +65,7 @@ Input: 400-480 pruned features
 
 ---
 
-### interactions (20-50 features)
+### interactions (80 features)
 **What**: Newly discovered synergistic feature combinations
 
 **Created from**: 80 final_features analyzed for co-occurrence in decision trees
@@ -128,11 +128,10 @@ Round 1: Score 400 → Remove worst 33% → 268 remain
 Round 2: Score 268 → Remove worst 33% → 180 remain
 Round 3: Score 180 → Remove worst 33% → 121 remain
 Round 4: Score 121 → Remove worst 33% → 81 remain
-Round 5: Score 81  → Remove worst 33% → 54 remain
-Round 6: Score 54  → Keep best 50   → 50 remain
+Round 5: Score 81  → Keep best 80    → 80 remain
 ```
 
-**Why RFE?** Interactions affect each other. A feature might look good with 400 candidates but redundant with 50. RFE re-evaluates at each stage.
+**Why RFE?** Interactions affect each other. A feature might look good with 400 candidates but redundant with 80. RFE re-evaluates at each stage.
 
 ---
 
@@ -149,7 +148,7 @@ rsi_base_6x_ratio
 ... (474 more)
 ```
 
-### After Phase 3.1: 100 features
+### After Phase 3.1: 120 features
 ```
 rsi_base              ← Selected
 rsi_volnorm           ← Selected
@@ -171,19 +170,19 @@ atr_base              ← Volatility signal
 ... (74 more)
 ```
 
-### After Phase 3.3: 50 interactions
+### After Phase 3.3: 80 interactions
 ```
 rsi_base_x_macd_base                    ← Traditional interaction
 rsi_base_3x_ratio_x_macd_base           ← Hybrid! (CT + base)
 rsi_base_3x_ratio_x_macd_6x_ratio       ← Hybrid! (CT + CT)
 volume_vwap_div_atr_base                ← Traditional interaction
 macd_base_minus_rsi_volnorm             ← Traditional interaction
-... (45 more)
+... (75 more)
 ```
 
-### Combined Output: 130 features
+### Combined Output: 160 features
 ```
-80 final_features + 50 interactions = 130 total features
+80 final_features + 80 interactions = 160 total features
 ```
 
 ---
@@ -203,22 +202,22 @@ macd_base_minus_rsi_volnorm             ← Traditional interaction
 ### Why combine them?
 - **final_features**: Handle simple patterns
 - **interactions**: Handle complex patterns
-- **Together**: Comprehensive feature set for model training
+- **Together**: Comprehensive feature set (160 features) for model training
 
 ---
 
 ## 📈 Feature Type Breakdown (Typical)
 
-From the final 130 features:
+From the final 160 features:
 
 ```
 📊 Feature Classification:
-  - Hybrid CT interactions: 15    (e.g., rsi_3x_ratio_x_macd_6x_ratio)
-  - Traditional interactions: 35   (e.g., rsi_x_macd)
+  - Hybrid CT interactions: 25    (e.g., rsi_3x_ratio_x_macd_6x_ratio)
+  - Traditional interactions: 55   (e.g., rsi_x_macd)
   - Cross-timeframe ratios: 30     (e.g., rsi_base_3x_ratio)
   - Variant features: 25           (e.g., macd_volnorm)
   - Base features: 25              (e.g., rsi_base, atr)
-  Total: 130 features
+  Total: 160 features
 ```
 
 ### Hybrid CT Interactions (NEW!)
@@ -279,4 +278,4 @@ For more details:
 
 ## ✅ Summary in One Sentence
 
-**Phase 3 uses 3 stages of LGBM models with composite scoring to select 80 best individual features, then uses tree-based analysis with 5-way RFE scoring to discover 20-50 synergistic interaction features.**
+**Phase 3 uses 3 stages of LGBM models with composite scoring to select 80 best individual features, then uses tree-based analysis with 5-way RFE scoring to discover 80 synergistic interaction features.**

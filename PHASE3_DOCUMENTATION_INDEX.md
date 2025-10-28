@@ -186,14 +186,14 @@ Phase 2: Cheap Pruning
   
 Phase 3: LGBM+SHAP Pipeline ⭐ MOST IMPORTANT
   Input: 400-480 features
-  Phase 3.1: 400 → 100 (fast filtering)
-  Phase 3.2: 100 → 80 (accurate selection) → final_features
-  Phase 3.3: 80 → 20-50 interactions → interactions
-  Output: 80 final_features + 20-50 interactions
+  Phase 3.1: 400 → 120 (fast filtering)
+  Phase 3.2: 120 → 80 (accurate selection) → final_features
+  Phase 3.3: 80 → 80 interactions → interactions
+  Output: 80 final_features + 80 interactions
   
 Phase 4: Combine & Save
   Input: final_features + interactions
-  Output: combined_features (130 total)
+  Output: combined_features (160 total)
   Action: Classify into 5 categories and save
 ```
 
@@ -267,8 +267,9 @@ Priority:
 
 To verify you understand the concepts, can you answer these?
 
-1. How many features does Phase 3.2 output? **Answer**: 80 (final_features)
-2. How many operations are applied to each feature pair? **Answer**: 5 (_x_, _div_, _minus_, _log_, _log_ratio_)
+1. How many features does Phase 3.1 output? **Answer**: 120 features
+2. How many features does Phase 3.2 output? **Answer**: 80 (final_features)
+3. How many operations are applied to each feature pair? **Answer**: 5 (_x_, _div_, _minus_, _log_, _log_ratio_)
 3. Is `rsi_base` a base or variant feature? **Answer**: Base
 4. What's a hybrid CT interaction? **Answer**: Interaction with CT markers (e.g., `rsi_3x_ratio_x_macd_6x_ratio`)
 5. How many scoring methods in Phase 3.3 RFE? **Answer**: 5 (MI, Redundancy, LGBM, SHAP, Stability)

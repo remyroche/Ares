@@ -87,6 +87,7 @@ from ..shared_utils import get_logger
 from src.utils.matrix_operations.unified_operations import UnifiedMatrixOperations
 from .step1_feature_preparation import ClusteringContext
 from .risk_mitigation import RiskMitigationSystem, PRODUCTION_RISK_CONFIG
+from .cluster_quality_assessor import ClusterQualityAssessor
 
 # Import CV enhancement strategies
 try:
@@ -2670,6 +2671,10 @@ class IterativeOptimization:
             cache_size=1000
         )
 
+        # Initialize cluster quality assessor for post-optimization assessment
+        self.cluster_quality_assessor = ClusterQualityAssessor()
+        self.last_quality_metrics = None  # Store the most recent quality assessment
+
         # Call hydrate defaults to ensure all attributes are set
         # Note: features will be set when optimization starts
         # self._hydrate_defaults() # Will be called at start of optimization
@@ -4843,6 +4848,58 @@ class IterativeOptimization:
             # Final metrics using cheap proxies for speed
             final_metrics = self.evaluate_metrics_cheap(X, assignments, entity_ids, time_idx, sample_indices)
             self._log_with_context(f"Final metrics (cheap): CV={final_metrics['cv']:.4f}, Sil={final_metrics['sil']:.4f}, Temp={final_metrics['temp']:.4f}", "INFO", "MAIN")
+
+            # Post-optimization cluster quality assessment
+            self._log_with_context("Running comprehensive cluster quality assessment", "INFO", "MAIN")
+            try:
+                # Convert X to DataFrame if needed
+                feature_df = pd.DataFrame(X) if not isinstance(X, pd.DataFrame) else X
+                
+                # Prepare timestamps if available
+                timestamps_series = None
+                if time_idx is not None:
+                    try:
+                        timestamps_series = pd.DatetimeIndex(time_idx)
+                    except Exception as e:
+                        self._log_with_context(f"Could not convert time_idx to DatetimeIndex: {e}", "WARNING", "MAIN")
+                
+                # Run comprehensive quality assessment
+                quality_metrics = self.cluster_quality_assessor.assess_quality(
+                    regime_labels=assignments,
+                    feature_data=feature_df,
+                    forward_returns=None,  # Not available in this context
+                    timestamps=timestamps_series,
+                    min_regime_size=max(1, int(np.ceil(self.config.min_size_ratio * N)))
+                )
+                
+                # Store the quality metrics
+                self.last_quality_metrics = quality_metrics
+                
+                # Log comprehensive quality results
+                self._log_with_context(
+                    f"Cluster Quality Assessment - Quality Score: {quality_metrics.quality_score:.3f}, "
+                    f"Silhouette: {quality_metrics.silhouette_score:.3f}, "
+                    f"DBI: {quality_metrics.davies_bouldin_score:.3f}, "
+                    f"CH: {quality_metrics.calinski_harabasz_score:.1f}, "
+                    f"Balance: {quality_metrics.balance_score:.3f}, "
+                    f"Noise Ratio: {quality_metrics.noise_ratio:.2%}",
+                    "INFO", "MAIN"
+                )
+                
+                # Log per-cluster metrics if available
+                if quality_metrics.silhouette_per_cluster:
+                    self._log_with_context("Per-cluster Silhouette Scores:", "INFO", "MAIN")
+                    for cluster_id, scores in quality_metrics.silhouette_per_cluster.items():
+                        self._log_with_context(
+                            f"  Cluster {cluster_id}: mean={scores['mean']:.3f}, std={scores['std']:.3f}",
+                            "INFO", "MAIN"
+                        )
+                
+            except Exception as e:
+                self._log_with_context(f"Cluster quality assessment failed: {e}", "WARNING", "MAIN")
+                # Don't fail the optimization if quality assessment fails
+                import traceback
+                self._log_with_context(f"Traceback: {traceback.format_exc()}", "DEBUG", "MAIN")
 
             return assignments
 

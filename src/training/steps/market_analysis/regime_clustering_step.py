@@ -116,8 +116,18 @@ class RegimeClusteringStep(BaseStep):
             selected_features = self._load_selected_features(config)
             if selected_features:
                 tprint(f"✅ Loaded {len(selected_features)} selected features from regime_feature_selection", "SUCCESS")
+                
+                # Validate feature selection quality
+                validation_result = self._validate_selected_features(selected_features, config)
+                if not validation_result.get('valid', True):
+                    tprint(f"⚠️ Feature selection validation issues: {validation_result.get('issues', [])}", "WARNING")
+                    if validation_result.get('use_fallback', False):
+                        tprint("🔄 Using fallback feature set due to validation failures", "WARNING")
+                        selected_features = validation_result.get('fallback_features', selected_features)
             else:
-                tprint("⚠️ No selected features found from regime_feature_selection - proceeding without feature filtering", "WARNING")
+                tprint("⚠️ No selected features found from regime_feature_selection - using fallback features", "WARNING")
+                # Use fallback features from categorization system
+                selected_features = self._get_fallback_regime_features()
 
             # Load HDBSCAN artifacts from previous step
             tprint("📥 Loading HDBSCAN regime discovery artifacts...", "INFO")
@@ -379,6 +389,74 @@ class RegimeClusteringStep(BaseStep):
                 )
             except Exception:
                 pass  # Ignore errors during context restoration
+    
+    def _validate_selected_features(self, selected_features: List[str], config: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Validate selected features using the validation utilities.
+        
+        Args:
+            selected_features: List of selected feature names
+            config: Configuration dictionary
+            
+        Returns:
+            Validation result dictionary
+        """
+        try:
+            from .feature_selection_validation import validate_regime_clustering_features
+            
+            # Validate features
+            validation_result = validate_regime_clustering_features(selected_features)
+            
+            # Determine if fallback is needed
+            use_fallback = False
+            if not validation_result.get('valid', True):
+                # Use fallback if validation fails critically
+                if validation_result.get('use_case_alignment', {}).get('invalid_count', 0) > len(selected_features) * 0.5:
+                    use_fallback = True
+            
+            # Add fallback features if needed
+            if use_fallback:
+                fallback_features = self._get_fallback_regime_features()
+                validation_result['use_fallback'] = True
+                validation_result['fallback_features'] = fallback_features
+            else:
+                validation_result['use_fallback'] = False
+            
+            return validation_result
+            
+        except Exception as e:
+            tprint(f"⚠️ Feature validation failed: {e}, proceeding without validation", "WARNING")
+            return {'valid': True, 'use_fallback': False}
+    
+    def _get_fallback_regime_features(self) -> List[str]:
+        """
+        Get fallback feature set from the categorization system.
+        
+        Returns:
+            List of fallback feature names
+        """
+        try:
+            from src.feature_generation.categories.regime_feature_categorization import (
+                get_regime_clustering_features,
+                FeatureUseCase,
+                RegimeFeatureCategorizer
+            )
+            
+            # Get priority features for regime clustering
+            categorizer = RegimeFeatureCategorizer()
+            fallback_features = categorizer.get_priority_features(
+                FeatureUseCase.REGIME_CLUSTERING,
+                max_features=50
+            )
+            
+            tprint(f"📋 Generated {len(fallback_features)} fallback features from categorization system", "INFO")
+            
+            return fallback_features
+            
+        except Exception as e:
+            tprint(f"⚠️ Failed to get fallback features: {e}", "WARNING")
+            # Return empty list if categorization system fails
+            return []
 
     def _refine_hdbscan_clusters(self, hdbscan_artifacts: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
         """

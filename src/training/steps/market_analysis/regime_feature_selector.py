@@ -341,44 +341,68 @@ class EnhancedRegimeFeatureSelector(BaseStep):
     def select_features(
         self,
         features_df: pd.DataFrame,
-        regime_labels: pd.Series,
-        feature_names: Optional[List[str]] = None
+        regime_labels: Optional[pd.Series] = None,
+        feature_names: Optional[List[str]] = None,
+        use_supervised: bool = True
     ) -> Dict[str, Any]:
         """
-        Select features for regime detection/clustering using TreeSHAP.
+        Select features for regime detection/clustering.
         
-        This method selects a common set of features that work across all regimes
-        for regime detection and clustering purposes.
+        Supports both supervised (with regime labels) and unsupervised (without labels) modes.
+        Unsupervised mode should be used before initial clustering to avoid circular dependency.
         
         Args:
             features_df: DataFrame containing features
-            regime_labels: Regime labels from clustering step (used as target)
+            regime_labels: Optional regime labels (for supervised mode)
             feature_names: Optional list of feature names
+            use_supervised: Whether to use supervised selection (requires regime_labels)
             
         Returns:
             Dictionary containing selected features and metadata
         """
         try:
-            tprint_info("Starting regime feature selection for regime detection")
+            tprint_info(f"Starting {'supervised' if use_supervised and regime_labels is not None else 'unsupervised'} regime feature selection")
             tprint_data_preview(f"Features shape: {features_df.shape}")
-            tprint_data_preview(f"Regime labels shape: {regime_labels.shape}")
-            tprint_data_preview(f"Unique regimes: {regime_labels.nunique()}")
             
-            # Validate inputs
-            if regime_labels is None:
-                raise ValueError("Regime labels are required for regime feature selection")
+            if use_supervised and regime_labels is not None:
+                tprint_data_preview(f"Regime labels shape: {regime_labels.shape}")
+                tprint_data_preview(f"Unique regimes: {regime_labels.nunique()}")
+            else:
+                tprint_info("Using unsupervised feature selection (no regime labels)")
             
-            # Data validation and preprocessing
-            features_df, regime_labels = self._validate_and_preprocess_data(features_df, regime_labels)
+            # Validate inputs based on mode
+            if use_supervised:
+                if regime_labels is None:
+                    tprint_warning("Supervised mode requested but no regime labels provided, falling back to unsupervised")
+                    use_supervised = False
+                else:
+                    # Data validation and preprocessing for supervised mode
+                    features_df, regime_labels = self._validate_and_preprocess_data(features_df, regime_labels)
+            else:
+                # Basic validation for unsupervised mode
+                if features_df.empty:
+                    raise ValueError("Features DataFrame cannot be empty")
+                
+                # Handle missing values
+                if features_df.isnull().any().any():
+                    tprint_warning("Missing values detected, filling with median")
+                    features_df = features_df.fillna(features_df.median())
             
             # Hardware optimization setup
             if self.hardware_manager:
                 self._setup_hardware_optimization()
             
-            # Feature selection pipeline - use regime labels as target
-            selection_results = self._run_regime_feature_selection_pipeline(
-                features_df, regime_labels, feature_names
-            )
+            # Feature selection pipeline
+            if use_supervised and regime_labels is not None:
+                # Supervised: use regime labels as target
+                selection_results = self._run_regime_feature_selection_pipeline(
+                    features_df, regime_labels, feature_names
+                )
+            else:
+                # Unsupervised: use variance and correlation-based selection
+                selection_results = self._run_unsupervised_feature_selection_pipeline(
+                    features_df, feature_names
+                )
             
             # Performance tracking
             self._track_performance(selection_results)
@@ -579,6 +603,106 @@ class EnhancedRegimeFeatureSelector(BaseStep):
             
         except Exception as e:
             tprint_error(f"Feature selection pipeline failed: {e}")
+            raise
+    
+    def _run_unsupervised_feature_selection_pipeline(
+        self,
+        features_df: pd.DataFrame,
+        feature_names: Optional[List[str]]
+    ) -> Dict[str, Any]:
+        """
+        Run unsupervised feature selection pipeline.
+        
+        Uses variance-based and correlation-based filtering to select features
+        without requiring regime labels. This avoids circular dependency.
+        """
+        try:
+            tprint_info("Running unsupervised feature selection pipeline")
+            
+            results = {
+                'selected_features': [],
+                'feature_importance': {},
+                'selection_metadata': {
+                    'selection_method': 'unsupervised_variance_correlation',
+                    'execution_time': 0.0
+                },
+                'performance_metrics': {},
+                'regime_analysis': {}
+            }
+            
+            import time
+            start_time = time.time()
+            
+            # Step 1: Remove low-variance features
+            tprint_info("Step 1: Removing low-variance features")
+            variances = features_df.var()
+            variance_threshold = variances.quantile(0.10)  # Keep top 90%
+            high_variance_features = variances[variances > variance_threshold].index.tolist()
+            
+            tprint_info(f"Kept {len(high_variance_features)}/{len(features_df.columns)} features after variance filtering")
+            
+            if len(high_variance_features) == 0:
+                tprint_warning("No features passed variance threshold, using all features")
+                high_variance_features = list(features_df.columns)
+            
+            # Step 2: Remove highly correlated features
+            tprint_info("Step 2: Removing highly correlated features")
+            features_subset = features_df[high_variance_features]
+            
+            # Calculate correlation matrix
+            corr_matrix = features_subset.corr().abs()
+            
+            # Find features to drop (keep first of each correlated pair)
+            upper_triangle = corr_matrix.where(
+                np.triu(np.ones(corr_matrix.shape), k=1).astype(bool)
+            )
+            
+            to_drop = [column for column in upper_triangle.columns 
+                      if any(upper_triangle[column] > 0.95)]
+            
+            decorrelated_features = [f for f in high_variance_features if f not in to_drop]
+            
+            tprint_info(f"Removed {len(to_drop)} highly correlated features, {len(decorrelated_features)} remaining")
+            
+            if len(decorrelated_features) == 0:
+                tprint_warning("No features after correlation filtering, using variance-filtered features")
+                decorrelated_features = high_variance_features
+            
+            # Step 3: Select top features by variance
+            feature_variances = variances[decorrelated_features].sort_values(ascending=False)
+            
+            # Limit to max_features
+            max_features = min(self.config.max_features, len(decorrelated_features))
+            selected_features = feature_variances.head(max_features).index.tolist()
+            
+            # Normalize variances for importance scores (0-1 range)
+            if len(feature_variances) > 0:
+                normalized_variances = (feature_variances - feature_variances.min()) / (feature_variances.max() - feature_variances.min() + 1e-10)
+                feature_importance = normalized_variances.to_dict()
+            else:
+                feature_importance = {}
+            
+            execution_time = time.time() - start_time
+            
+            tprint_success(f"Unsupervised selection completed: {len(selected_features)} features selected in {execution_time:.2f}s")
+            
+            # Update results
+            results['selected_features'] = selected_features
+            results['feature_importance'] = feature_importance
+            results['selection_metadata'].update({
+                'total_features': len(features_df.columns),
+                'variance_filtered': len(high_variance_features),
+                'correlation_filtered': len(decorrelated_features),
+                'final_selected': len(selected_features),
+                'execution_time': execution_time,
+                'variance_threshold': float(variance_threshold),
+                'correlation_threshold': 0.95
+            })
+            
+            return results
+            
+        except Exception as e:
+            tprint_error(f"Unsupervised feature selection failed: {e}")
             raise
     
     def _run_treeshap_selection(

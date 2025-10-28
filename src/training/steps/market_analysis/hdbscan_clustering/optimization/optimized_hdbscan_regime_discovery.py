@@ -149,21 +149,31 @@ class OptimizedHDBSCANRegimeDiscoveryConfig:
     def __post_init__(self):
         """Apply execution mode-based optimizations."""
         if self.execution_mode == "light":
-            # Light mode: reduce complexity for faster execution
-            self.max_features = 30
+            # Light mode: balanced performance and quality
+            # Increased from 30 to 50 features for better regime differentiation
+            self.max_features = 50
             self.cv_folds = 3
             self.chunk_size = 500
-            self.enable_entropy_features = False
+            # Re-enabled entropy features (important for regime complexity)
+            self.enable_entropy_features = True
+            # Keep spectral disabled (expensive to compute)
             self.enable_spectral_features = False
+            # Always enable regime features (critical for regime detection)
+            self.enable_regime_features = True
+            self.enable_normalization_features = True
         elif self.execution_mode == "blank":
-            # Blank mode: minimal configuration for testing (180 days data)
-            self.max_features = 40
+            # Blank mode: minimal but functional configuration (180 days data)
+            # Increased from 40 to 50 features for adequate regime coverage
+            self.max_features = 50
             self.cv_folds = 3
             self.chunk_size = 1000
+            # Disable expensive features only
             self.enable_entropy_features = False
             self.enable_spectral_features = False
-            self.enable_regime_features = False
-            self.enable_normalization_features = False
+            # CRITICAL: Always enable regime features - they are essential for regime detection
+            self.enable_regime_features = True
+            # Re-enabled normalization features (lightweight and important)
+            self.enable_normalization_features = True
         # Full mode: keep default values
 
 class OptimizedHDBSCANRegimeDiscovery:

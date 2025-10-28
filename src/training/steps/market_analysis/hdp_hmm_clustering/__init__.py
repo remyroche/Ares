@@ -36,6 +36,13 @@ from .standalone_runner import (
     load_market_data_for_clustering
 )
 
+from .hdp_hmm_auto_tuner import (
+    HDPHMMAutoTuner,
+    HDPHMMSearchSpace,
+    TuningResult,
+    run_hdp_hmm_auto_tuning
+)
+
 __all__ = [
     'HDPHMMClusterer',
     'HDPHMMConfig',
@@ -45,5 +52,9 @@ __all__ = [
     'HMM_LIBRARY',
     'run_hdp_hmm_clustering',
     'run_hdp_hmm_clustering_from_artifacts',
-    'load_market_data_for_clustering'
+    'load_market_data_for_clustering',
+    'HDPHMMAutoTuner',
+    'HDPHMMSearchSpace',
+    'TuningResult',
+    'run_hdp_hmm_auto_tuning'
 ]

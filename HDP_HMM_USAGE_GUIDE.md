@@ -11,7 +11,40 @@ The HDP-HMM clustering module now includes:
 
 ## Quick Start
 
-### 1. Basic Usage with DataFrame
+### 1. Auto-Tuning (Recommended)
+
+**Best way to get started** - Let the system find optimal parameters:
+
+```python
+import pandas as pd
+from src.training.steps.market_analysis.hdp_hmm_clustering import run_hdp_hmm_auto_tuning
+
+# Load market data
+df = pd.read_csv("market_data.csv", index_col=0, parse_dates=True)
+
+# Run auto-tuning to find best parameters
+best_params, best_score, tuning_result = run_hdp_hmm_auto_tuning(
+    market_data=df,
+    symbol="ETHUSDT",
+    exchange="binance",
+    timeframe="1h",
+    timeout=3600  # 1 hour
+)
+
+print(f"Best composite score: {best_score:.4f}")
+print(f"Optimized parameters: {best_params}")
+
+# Use optimized parameters for final clustering
+from src.training.steps.market_analysis.hdp_hmm_clustering import run_hdp_hmm_clustering
+
+final_results = run_hdp_hmm_clustering(
+    market_data=df,
+    symbol="ETHUSDT",
+    **best_params
+)
+```
+
+### 2. Basic Usage with DataFrame
 
 ```python
 import pandas as pd
@@ -38,7 +71,7 @@ print(f"Quality score: {results['quality_metrics']['composite_score']:.3f}")
 print(f"Meets constraints: {results['quality_metrics']['meets_constraints']}")
 ```
 
-### 2. Loading Data from Artifacts
+### 3. Loading Data from Artifacts
 
 ```python
 from src.training.steps.market_analysis.hdp_hmm_clustering import (
@@ -58,7 +91,7 @@ results = run_hdp_hmm_clustering_from_artifacts(
 )
 ```
 
-### 3. Just Loading Market Data
+### 4. Just Loading Market Data
 
 ```python
 from src.training.steps.market_analysis.hdp_hmm_clustering import (
@@ -78,6 +111,66 @@ print(df.head())
 ```
 
 ## Function Reference
+
+### `run_hdp_hmm_auto_tuning()`
+
+**RECOMMENDED** - Automatically find optimal hyperparameters using multi-stage optimization.
+
+**Multi-Stage Approach**:
+1. **Coarse Grid Search** - Broad exploration (sparse grid)
+2. **Fine Grid Search** - Refinement around best results
+3. **TPE Optimization** - Bayesian optimization for final tuning
+
+**Parameters**:
+- `market_data` (pd.DataFrame): Market data with OHLCV columns
+- `symbol` (str): Trading symbol (default: "ETHUSDT")
+- `exchange` (str): Exchange name (default: "binance")
+- `timeframe` (str): Timeframe (default: "1h")
+- `search_space` (HDPHMMSearchSpace): Custom search space (optional)
+- `coarse_grid_points` (int): Points per parameter in coarse grid (default: 3)
+  - 3 points = 3^7 = 2,187 combinations
+  - 4 points = 4^7 = 16,384 combinations
+- `fine_grid_points` (int): Points per parameter in fine grid (default: 3)
+- `tpe_trials` (int): Number of TPE trials (default: 50)
+- `timeout` (float): Total timeout in seconds (optional)
+- `save_results` (bool): Save results to artifacts (default: True)
+
+**Returns**:
+Tuple of `(best_params, best_score, tuning_result)`:
+- `best_params`: Dictionary of optimized hyperparameters
+- `best_score`: Best composite score achieved
+- `tuning_result`: TuningResult object with complete history
+
+**Example**:
+```python
+# Standard auto-tuning (1-2 hours)
+best_params, best_score, results = run_hdp_hmm_auto_tuning(
+    market_data=df,
+    symbol="ETHUSDT",
+    timeout=7200  # 2 hours
+)
+
+# Quick tuning (30 minutes)
+best_params, best_score, results = run_hdp_hmm_auto_tuning(
+    market_data=df,
+    symbol="ETHUSDT",
+    coarse_grid_points=2,  # Faster
+    fine_grid_points=2,
+    tpe_trials=20,
+    timeout=1800
+)
+
+# Thorough tuning (4-6 hours)
+best_params, best_score, results = run_hdp_hmm_auto_tuning(
+    market_data=df,
+    symbol="ETHUSDT",
+    coarse_grid_points=4,  # More exploration
+    tpe_trials=100,
+    timeout=21600
+)
+```
+
+**See Also**: `HDP_HMM_AUTO_TUNING_GUIDE.md` for detailed auto-tuning documentation
 
 ### `run_hdp_hmm_clustering()`
 
@@ -328,9 +421,62 @@ pip install git+https://github.com/mattjj/pyhsmm.git
 
 See `minimal_test_hdp_hmm.py` in the root directory for a complete working example.
 
+## Auto-Tuning vs Manual Parameter Selection
+
+### When to Use Auto-Tuning
+
+✅ **Recommended for**:
+- First-time users (let system find optimal params)
+- Production systems (best performance)
+- New markets/timeframes (unknown optimal params)
+- Research (thorough optimization)
+- When you have time (1-4 hours)
+
+### When to Use Manual Parameters
+
+✅ **Recommended for**:
+- Quick exploration (< 5 minutes)
+- Known good parameters (from previous tuning)
+- Testing specific hypotheses
+- Limited computational resources
+- Real-time/streaming scenarios
+
+### Hybrid Approach (Best Practice)
+
+1. **Initial**: Run auto-tuning once to find optimal parameters
+2. **Store**: Save best parameters for your market/timeframe
+3. **Reuse**: Use saved parameters for subsequent runs
+4. **Re-tune**: Periodically (monthly/quarterly) to adapt to regime changes
+
+```python
+# One-time: Find optimal parameters
+best_params, best_score, _ = run_hdp_hmm_auto_tuning(
+    market_data=historical_data,
+    symbol="ETHUSDT",
+    timeout=7200
+)
+
+# Save for reuse
+import json
+with open("ethusdt_1h_params.json", "w") as f:
+    json.dump(best_params, f)
+
+# Daily usage: Load and use saved parameters
+with open("ethusdt_1h_params.json", "r") as f:
+    saved_params = json.load(f)
+
+results = run_hdp_hmm_clustering(
+    market_data=new_data,
+    symbol="ETHUSDT",
+    **saved_params
+)
+```
+
 ## Support
 
 For issues or questions, please refer to:
-- Module documentation: Docstrings in each file
-- Quality assessment guide: `CLUSTER_QUALITY_ASSESSOR_GUIDE.md`
-- Optimization goals reference: `clustering_optimization_goals.py` docstrings
+- **Auto-Tuning**: `HDP_HMM_AUTO_TUNING_GUIDE.md` - Complete auto-tuning guide
+- **Feature Selection**: `HDP_HMM_FEATURE_SELECTION_EXPLAINED.md` - min/max_features explained
+- **Module documentation**: Docstrings in each file
+- **Quality assessment**: `CLUSTER_QUALITY_ASSESSOR_GUIDE.md`
+- **Optimization goals**: `clustering_optimization_goals.py` docstrings

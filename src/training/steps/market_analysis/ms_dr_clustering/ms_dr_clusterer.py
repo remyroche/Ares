@@ -80,6 +80,12 @@ from src.utils.tprint import (
     tprint_data_preview, tprint_data_format
 )
 
+# Import comprehensive quality assessor
+from src.training.steps.market_analysis.hdbscan_clustering.quality_assessment import (
+    create_quality_assessor,
+    QualityMetrics as QualityAssessmentMetrics
+)
+
 # Try to import Markov-Switching models
 MS_AVAILABLE = False
 MS_LIBRARY = None
@@ -708,18 +714,30 @@ class MSDRClusterer:
         else:
             data_for_metrics = data
         
-        # Clustering quality metrics
-        if n_clusters > 1 and len(data_for_metrics) > n_clusters:
-            try:
-                metrics['silhouette_score'] = silhouette_score(data_for_metrics, labels)
-                metrics['calinski_harabasz_score'] = calinski_harabasz_score(data_for_metrics, labels)
-                metrics['davies_bouldin_score'] = davies_bouldin_score(data_for_metrics, labels)
-            except Exception as e:
-                tprint_warning(f"⚠️ Could not calculate some metrics: {e}")
-                metrics['silhouette_score'] = 0.0
-                metrics['calinski_harabasz_score'] = 0.0
-                metrics['davies_bouldin_score'] = 0.0
-        else:
+        # Use comprehensive quality assessor for clustering metrics
+        try:
+            quality_assessor = create_quality_assessor()
+            quality_metrics = quality_assessor.assess_clustering_quality(
+                cluster_labels=labels,
+                features=data_for_metrics,
+                clusterer=None,  # MS-DR doesn't have HDBSCAN clusterer
+                timestamps=None,  # Add if available from input data
+                returns=None     # Add if available from input data
+            )
+            
+            # Extract metrics
+            metrics['silhouette_score'] = quality_metrics.silhouette_score or 0.0
+            metrics['calinski_harabasz_score'] = quality_metrics.calinski_harabasz_score or 0.0
+            metrics['davies_bouldin_score'] = quality_metrics.davies_bouldin_score or 0.0
+            
+            # Add comprehensive quality metrics
+            metrics['quality_assessment'] = quality_metrics.to_dict()
+            metrics['composite_quality_score'] = quality_metrics.composite_quality_score
+            
+            tprint_success(f"✅ Comprehensive quality assessment: Score={quality_metrics.composite_quality_score:.3f}")
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Quality assessment failed: {e}")
             metrics['silhouette_score'] = 0.0
             metrics['calinski_harabasz_score'] = 0.0
             metrics['davies_bouldin_score'] = 0.0

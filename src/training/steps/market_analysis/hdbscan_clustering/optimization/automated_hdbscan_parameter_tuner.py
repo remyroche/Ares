@@ -79,6 +79,13 @@ except ImportError as e:
     MATH_VALIDATION_AVAILABLE = False
     logging.warning(f"Math validation tools not available: {e}")
 
+# Import quality assessment module
+from ..quality_assessment import (
+    ComprehensiveQualityAssessor,
+    QualityMetrics,
+    create_quality_assessor
+)
+
 from src.utils.tprint import tprint
 from src.utils.logger import system_logger
 
@@ -95,9 +102,16 @@ class HDBSCANParameterSpace:
     alpha: Tuple[float, float] = (0.5, 2.0)
     cluster_selection_epsilon: Tuple[float, float] = (0.0, 0.5)
 
+# Deprecated: Use QualityMetrics from quality_assessment.py instead
+# This adapter provides backward compatibility for ClusteringQualityMetrics
 @dataclass
 class ClusteringQualityMetrics:
-    """Comprehensive clustering quality metrics optimized for regime discovery."""
+    """
+    DEPRECATED: Use QualityMetrics from quality_assessment.py instead.
+    
+    This adapter class provides backward compatibility for existing code.
+    Maps QualityMetrics to the old interface expected by the tuner.
+    """
     silhouette_score: Optional[float] = None
     calinski_harabasz_score: Optional[float] = None
     davies_bouldin_score: Optional[float] = None
@@ -112,6 +126,7 @@ class ClusteringQualityMetrics:
     between_cluster_cv: Optional[float] = None  # Higher is better
     temporal_stability: Optional[float] = None  # Higher is better
     regime_persistence: Optional[float] = None  # Higher is better
+    cluster_persistence: Optional[float] = None  # Alternative name for regime_persistence
     
     # Cluster distribution metrics
     cluster_distributions: Optional[List[float]] = None  # Distribution percentages for each cluster
@@ -119,71 +134,130 @@ class ClusteringQualityMetrics:
     max_cluster_size_pct: Optional[float] = None  # Maximum cluster size as percentage
     distribution_balanced: Optional[bool] = None  # Whether distribution meets 2%-20% constraint
     
+    # New metrics from quality_assessment.py
+    predictive_power: Optional[float] = None
+    composite_quality_score: Optional[float] = None
+    
+    @classmethod
+    def from_quality_metrics(cls, qm: QualityMetrics, 
+                            cluster_distributions: Optional[List[float]] = None,
+                            distribution_balanced: Optional[bool] = None) -> 'ClusteringQualityMetrics':
+        """
+        Create ClusteringQualityMetrics from QualityMetrics (quality_assessment.py).
+        
+        Args:
+            qm: QualityMetrics from quality_assessment module
+            cluster_distributions: Optional cluster size distributions
+            distribution_balanced: Optional distribution balance flag
+            
+        Returns:
+            ClusteringQualityMetrics adapter instance
+        """
+        # Calculate cluster distributions if not provided
+        if cluster_distributions is None and qm.cluster_size_ratios is not None:
+            cluster_distributions = [r * 100 for r in qm.cluster_size_ratios]  # Convert to percentages
+        
+        # Check distribution balance (2%-20% constraint)
+        if distribution_balanced is None and cluster_distributions is not None:
+            distribution_balanced = all(2.0 <= d <= 20.0 for d in cluster_distributions)
+        
+        # Calculate CV metrics if not available (approximation)
+        within_cv = None
+        between_cv = None
+        
+        # Estimate economic separation from cluster_persistence if not available
+        economic_sep = 0.0
+        if hasattr(qm, 'economic_separation') and qm.economic_separation is not None:
+            economic_sep = qm.economic_separation
+        
+        return cls(
+            silhouette_score=qm.silhouette_score,
+            calinski_harabasz_score=qm.calinski_harabasz_score,
+            davies_bouldin_score=qm.davies_bouldin_score,
+            n_clusters=qm.n_clusters,
+            n_noise_points=qm.n_noise_points,
+            noise_ratio=qm.noise_ratio or 0.0,
+            dbcv_score=qm.dbcv_score,
+            economic_separation=economic_sep,
+            within_cluster_cv=within_cv,
+            between_cluster_cv=between_cv,
+            temporal_stability=qm.temporal_stability,
+            regime_persistence=qm.cluster_persistence,
+            cluster_persistence=qm.cluster_persistence,
+            cluster_distributions=cluster_distributions,
+            min_cluster_size_pct=min(cluster_distributions) if cluster_distributions else None,
+            max_cluster_size_pct=max(cluster_distributions) if cluster_distributions else None,
+            distribution_balanced=distribution_balanced,
+            predictive_power=qm.predictive_power,
+            composite_quality_score=qm.composite_quality_score
+        )
+    
     def is_poor_quality(self) -> bool:
         """Determine if clustering quality is poor based on regime discovery targets."""
-        # Check basic quality criteria
+        # Use composite score if available from quality_assessment.py
+        if self.composite_quality_score is not None:
+            return self.composite_quality_score < 0.3  # Quality score below 30%
+        
+        # Fallback to legacy logic
         basic_poor = (
-            (self.silhouette_score is not None and self.silhouette_score < -0.1) or  # More lenient silhouette threshold
+            (self.silhouette_score is not None and self.silhouette_score < -0.1) or
             self.n_clusters < 2 or
-            self.noise_ratio > 0.6 or  # More lenient noise threshold
-            (self.calinski_harabasz_score is not None and self.calinski_harabasz_score < 5.0) or  # More lenient CH threshold
-            (self.davies_bouldin_score is not None and self.davies_bouldin_score > 8.0)  # More lenient DB threshold
+            self.noise_ratio > 0.6 or
+            (self.calinski_harabasz_score is not None and self.calinski_harabasz_score < 5.0) or
+            (self.davies_bouldin_score is not None and self.davies_bouldin_score > 8.0)
         )
         
-        # Check regime-specific criteria - PRIORITIZE 5-8 CLUSTERS
         regime_poor = (
-            self.n_clusters < 5 or self.n_clusters > 8 or  # STRICT: Target 5-8 clusters only
-            (self.within_cluster_cv is not None and self.within_cluster_cv > 0.4) or  # More lenient within-cluster CV
-            (self.between_cluster_cv is not None and self.between_cluster_cv < 0.05) or  # More lenient between-cluster CV
-            (self.economic_separation < 0.05) or  # Much more lenient economic separation
-            (self.distribution_balanced is not None and not self.distribution_balanced) or  # Cluster distribution constraint
-            (self.silhouette_score is not None and self.silhouette_score < -0.2)  # Much more lenient silhouette score
+            self.n_clusters < 5 or self.n_clusters > 8 or
+            (self.within_cluster_cv is not None and self.within_cluster_cv > 0.4) or
+            (self.between_cluster_cv is not None and self.between_cluster_cv < 0.05) or
+            (self.economic_separation < 0.05) or
+            (self.distribution_balanced is not None and not self.distribution_balanced) or
+            (self.silhouette_score is not None and self.silhouette_score < -0.2)
         )
         
         return basic_poor or regime_poor
     
     def calculate_composite_score(self) -> float:
         """Calculate composite quality score for optimization."""
+        # Use composite score from quality_assessment.py if available
+        if self.composite_quality_score is not None:
+            return self.composite_quality_score
+        
+        # Fallback to legacy calculation
         scores = []
         
-        # Silhouette score (higher is better, range -1 to 1)
         if self.silhouette_score is not None:
-            scores.append(max(0, self.silhouette_score))  # Normalize to 0-1
+            scores.append(max(0, self.silhouette_score))
         
-        # Davies-Bouldin score (lower is better, invert)
         if self.davies_bouldin_score is not None:
-            scores.append(max(0, 1 - min(1, self.davies_bouldin_score / 5.0)))  # Normalize to 0-1
+            scores.append(max(0, 1 - min(1, self.davies_bouldin_score / 5.0)))
         
-        # Cluster count preference (5-8 clusters optimal) - HEAVILY WEIGHTED
+        # Cluster count preference (5-8 clusters optimal)
         if 5 <= self.n_clusters <= 8:
-            cluster_score = 1.0  # Perfect score for 5-8 clusters
+            cluster_score = 1.0
         elif self.n_clusters == 4 or self.n_clusters == 9:
-            cluster_score = 0.7  # Good score for adjacent ranges
+            cluster_score = 0.7
         elif self.n_clusters == 3 or self.n_clusters == 10:
-            cluster_score = 0.4  # Moderate score
+            cluster_score = 0.4
         elif self.n_clusters == 2 or self.n_clusters == 11:
-            cluster_score = 0.1  # Poor score
+            cluster_score = 0.1
         else:
-            cluster_score = 0.0  # Very poor score for other counts
+            cluster_score = 0.0
         scores.append(cluster_score)
         
-        # Within-cluster CV (lower is better)
         if self.within_cluster_cv is not None:
-            scores.append(max(0, 1 - min(1, self.within_cluster_cv / 0.5)))  # Normalize to 0-1
+            scores.append(max(0, 1 - min(1, self.within_cluster_cv / 0.5)))
         
-        # Between-cluster CV (higher is better)
         if self.between_cluster_cv is not None:
-            scores.append(min(1, self.between_cluster_cv / 0.3))  # Normalize to 0-1
+            scores.append(min(1, self.between_cluster_cv / 0.3))
         
-        # Economic separation (higher is better)
         if self.economic_separation > 0:
-            scores.append(min(1, self.economic_separation / 0.2))  # Normalize to 0-1
+            scores.append(min(1, self.economic_separation / 0.2))
         
-        # Noise ratio (lower is better)
         noise_score = max(0, 1 - self.noise_ratio)
         scores.append(noise_score)
         
-        # Cluster distribution balance (higher is better)
         if self.distribution_balanced is not None:
             distribution_score = 1.0 if self.distribution_balanced else 0.0
             scores.append(distribution_score)

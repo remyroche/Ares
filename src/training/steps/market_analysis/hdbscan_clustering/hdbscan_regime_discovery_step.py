@@ -46,6 +46,12 @@ from src.utils.tprint import tprint, tprint_info, tprint_success, tprint_warning
 from src.utils.data.klines_parquet import get_klines_manager
 from src.utils.serialization_utils import save_pickle, load_pickle
 
+# Import unified cluster quality assessor
+from src.training.steps.market_analysis.clusters.cluster_quality_assessor import (
+    create_cluster_quality_assessor,
+    ClusterQualityMetrics
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -565,199 +571,63 @@ class HDBSCANRegimeDiscoveryStep(BaseStep):
             return None
     
     def _calculate_comprehensive_clustering_metrics(self, features_df: pd.DataFrame, regime_labels: np.ndarray) -> Dict[str, Any]:
-        """Calculate comprehensive clustering metrics including per-cluster metrics."""
+        """
+        Calculate comprehensive clustering metrics using unified quality assessor.
+        
+        This method now uses the standardized ClusterQualityAssessor for all metrics.
+        """
         try:
-            from sklearn.metrics import silhouette_score, calinski_harabasz_score, davies_bouldin_score
-            from sklearn.metrics import silhouette_samples
-            import numpy as np
+            tprint(f"🔧 Using unified cluster quality assessor for comprehensive metrics", "INFO")
             
-            # Filter out noise points for global metrics
-            non_noise_mask = regime_labels != -1
-            if np.sum(non_noise_mask) < 2:
-                return {'error': 'Insufficient non-noise points for metrics calculation'}
+            # Create quality assessor with artifact manager
+            quality_assessor = create_cluster_quality_assessor(artifact_manager=self.artifact_manager)
             
-            # CRITICAL FIX: Filter only numeric columns before sklearn calculations
-            features_clean = features_df.iloc[non_noise_mask].select_dtypes(include=[np.number])
-            labels_clean = regime_labels[non_noise_mask]
-            
-            # Additional validation
-            if features_clean.empty:
-                return {'error': 'No numeric features available for metrics calculation'}
-            
-            tprint(f"🔧 Using {len(features_clean.columns)} numeric features for clustering metrics", "INFO")
-            
-            # Global clustering metrics
-            metrics = {}
-            
-            # Silhouette score (global)
-            if len(set(labels_clean)) > 1:
-                metrics['silhouette_score'] = silhouette_score(features_clean, labels_clean)
-                
-                # Per-cluster silhouette scores
-                silhouette_samples_scores = silhouette_samples(features_clean, labels_clean)
-                cluster_silhouettes = {}
-                for cluster_id in set(labels_clean):
-                    cluster_mask = labels_clean == cluster_id
-                    cluster_silhouettes[f'cluster_{cluster_id}'] = {
-                        'mean': np.mean(silhouette_samples_scores[cluster_mask]),
-                        'std': np.std(silhouette_samples_scores[cluster_mask]),
-                        'min': np.min(silhouette_samples_scores[cluster_mask]),
-                        'max': np.max(silhouette_samples_scores[cluster_mask])
-                    }
-                metrics['per_cluster_silhouette'] = cluster_silhouettes
-            else:
-                metrics['silhouette_score'] = 0.0
-                metrics['per_cluster_silhouette'] = {}
-            
-            # Calinski-Harabasz score (higher is better)
-            if len(set(labels_clean)) > 1:
-                metrics['calinski_harabasz_score'] = calinski_harabasz_score(features_clean, labels_clean)
-            else:
-                metrics['calinski_harabasz_score'] = 0.0
-            
-            # Davies-Bouldin score (lower is better)
-            if len(set(labels_clean)) > 1:
-                metrics['davies_bouldin_score'] = davies_bouldin_score(features_clean, labels_clean)
-            else:
-                metrics['davies_bouldin_score'] = float('inf')
-            
-            # Per-cluster metrics
-            cluster_metrics = {}
-            for cluster_id in set(regime_labels):
-                if cluster_id == -1:  # Skip noise points
-                    continue
-                
-                cluster_mask = regime_labels == cluster_id
-                cluster_features = features_df.iloc[cluster_mask].select_dtypes(include=[np.number])
-                
-                if len(cluster_features) > 0:
-                    # Coefficient of variation for each feature
-                    feature_cv = {}
-                    for col in cluster_features.columns:
-                        if cluster_features[col].std() > 0:
-                            cv = cluster_features[col].std() / abs(cluster_features[col].mean())
-                            feature_cv[col] = cv
-                    
-                    cluster_metrics[f'cluster_{cluster_id}'] = {
-                        'size': len(cluster_features),
-                        'percentage': (len(cluster_features) / len(regime_labels)) * 100,
-                        'feature_coefficient_of_variation': feature_cv,
-                        'mean_cv': np.mean(list(feature_cv.values())) if feature_cv else 0.0,
-                        'std_cv': np.std(list(feature_cv.values())) if feature_cv else 0.0
-                    }
-            
-            metrics['per_cluster_metrics'] = cluster_metrics
-            
-            # Overall coefficient of variation
-            all_features = features_df.select_dtypes(include=[np.number])
-            overall_cv = {}
-            for col in all_features.columns:
-                if all_features[col].std() > 0:
-                    cv = all_features[col].std() / abs(all_features[col].mean())
-                    overall_cv[col] = cv
-            
-            metrics['overall_coefficient_of_variation'] = {
-                'mean_cv': np.mean(list(overall_cv.values())) if overall_cv else 0.0,
-                'std_cv': np.std(list(overall_cv.values())) if overall_cv else 0.0,
-                'feature_cv': overall_cv
-            }
-            
-            # Cluster separation metrics
-            if len(set(labels_clean)) > 1:
-                # Calculate inter-cluster distances
-                cluster_centers = {}
-                for cluster_id in set(labels_clean):
-                    cluster_mask = labels_clean == cluster_id
-                    cluster_centers[cluster_id] = features_clean.iloc[cluster_mask].mean()
-                
-                # Inter-cluster distances
-                inter_cluster_distances = []
-                cluster_ids = list(cluster_centers.keys())
-                for i in range(len(cluster_ids)):
-                    for j in range(i + 1, len(cluster_ids)):
-                        dist = np.linalg.norm(
-                            cluster_centers[cluster_ids[i]] - cluster_centers[cluster_ids[j]]
-                        )
-                        inter_cluster_distances.append(dist)
-                
-                metrics['cluster_separation'] = {
-                    'mean_inter_cluster_distance': np.mean(inter_cluster_distances),
-                    'std_inter_cluster_distance': np.std(inter_cluster_distances),
-                    'min_inter_cluster_distance': np.min(inter_cluster_distances),
-                    'max_inter_cluster_distance': np.max(inter_cluster_distances)
-                }
-            
-            # Calculate CV metrics (Coefficient of Variation)
-            if len(set(labels_clean)) > 1:
+            # Extract forward returns if available (for economic validation)
+            forward_returns = None
+            if 'close' in features_df.columns:
                 try:
-                    # Calculate within-cluster CV
-                    within_cvs = []
-                    for cluster_id in set(labels_clean):
-                        cluster_mask = labels_clean == cluster_id
-                        cluster_data = features_clean[cluster_mask]
-                        
-                        if len(cluster_data) > 1:
-                            cluster_std = cluster_data.std()
-                            cluster_mean = cluster_data.mean()
-                            
-                            # Safe division with proper handling of zeros and infinities
-                            denominator = np.abs(cluster_mean) + 1e-8
-                            cv_values = np.divide(cluster_std, denominator, out=np.zeros_like(cluster_std), where=denominator!=0)
-                            
-                            # Remove any infinite or NaN values
-                            cv_values = cv_values[np.isfinite(cv_values)]
-                            
-                            if len(cv_values) > 0:
-                                cluster_cv = np.mean(cv_values)
-                                within_cvs.append(cluster_cv)
-                    
-                    within_cluster_cv = np.mean(within_cvs) if within_cvs else 0.0
-                    
-                    # Calculate between-cluster CV
-                    cluster_means = []
-                    for cluster_id in set(labels_clean):
-                        cluster_mask = labels_clean == cluster_id
-                        cluster_data = features_clean[cluster_mask]
-                        
-                        if len(cluster_data) > 0:
-                            cluster_mean = cluster_data.mean()
-                            # Remove any non-finite values
-                            cluster_mean = cluster_mean[np.isfinite(cluster_mean)]
-                            if len(cluster_mean) > 0:
-                                cluster_means.append(cluster_mean)
-                    
-                    if len(cluster_means) > 1:
-                        cluster_means_array = np.array(cluster_means)
-                        between_cluster_std = np.std(cluster_means_array, axis=0)
-                        between_cluster_mean = np.mean(cluster_means_array, axis=0)
-                        
-                        # Safe division for between-cluster CV
-                        denominator = np.abs(between_cluster_mean) + 1e-8
-                        cv_values = np.divide(between_cluster_std, denominator, out=np.zeros_like(between_cluster_std), where=denominator!=0)
-                        
-                        # Remove any infinite or NaN values
-                        cv_values = cv_values[np.isfinite(cv_values)]
-                        
-                        between_cluster_cv = np.mean(cv_values) if len(cv_values) > 0 else 0.0
-                    else:
-                        between_cluster_cv = 0.0
-                    
-                    metrics['within_cluster_cv'] = within_cluster_cv
-                    metrics['between_cluster_cv'] = between_cluster_cv
-                    tprint(f"🔍 CV metrics calculated: within={within_cluster_cv:.4f}, between={between_cluster_cv:.4f}", "INFO")
-                    
+                    forward_returns = features_df['close'].pct_change().shift(-1)  # Forward returns
                 except Exception as e:
-                    tprint(f"⚠️ Failed to calculate CV metrics: {e}", "WARNING")
-                    metrics['within_cluster_cv'] = 0.0
-                    metrics['between_cluster_cv'] = 0.0
-            else:
-                metrics['within_cluster_cv'] = 0.0
-                metrics['between_cluster_cv'] = 0.0
+                    tprint(f"⚠️ Failed to extract forward returns: {e}", "WARNING")
             
-            return metrics
+            # Extract timestamps if available (for temporal metrics)
+            timestamps = None
+            if isinstance(features_df.index, pd.DatetimeIndex):
+                timestamps = features_df.index
+            elif 'timestamp' in features_df.columns:
+                try:
+                    timestamps = pd.to_datetime(features_df['timestamp'])
+                except Exception:
+                    pass
+            
+            # Run comprehensive quality assessment
+            quality_metrics = quality_assessor.assess_quality(
+                regime_labels=regime_labels,
+                feature_data=features_df,
+                forward_returns=forward_returns,
+                timestamps=timestamps
+            )
+            
+            # Save metrics using artifact manager
+            try:
+                quality_assessor.save_metrics(quality_metrics, artifact_name="hdbscan_cluster_quality_metrics")
+            except Exception as e:
+                tprint(f"⚠️ Failed to save quality metrics: {e}", "WARNING")
+            
+            # Convert to dictionary for compatibility with existing code
+            metrics_dict = quality_metrics.to_dict()
+            
+            # Add backward compatibility mappings
+            metrics_dict['per_cluster_silhouette'] = quality_metrics.silhouette_per_cluster or {}
+            metrics_dict['per_cluster_metrics'] = quality_metrics.per_regime_metrics or {}
+            
+            tprint(f"✅ Unified quality assessment complete - Quality Score: {quality_metrics.quality_score:.3f}", "SUCCESS")
+            
+            return metrics_dict
             
         except Exception as e:
             tprint(f"⚠️ Failed to calculate comprehensive clustering metrics: {e}", "WARNING")
+            self.logger.error(f"Quality assessment error: {e}", exc_info=True)
             return {'error': str(e)}
     
     def _create_artifacts(self, regime_result: RegimeResult, config: Dict[str, Any], features_df: pd.DataFrame) -> Dict[str, Any]:

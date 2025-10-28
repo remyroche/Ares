@@ -1181,68 +1181,8 @@ class EnhancedRegimeFeatureSelector(BaseStep):
             tprint_info("Using all features without categorization filtering")
             return features_df
     
-    async def _load_or_generate_data(self, config: Dict[str, Any]) -> Tuple[Optional[pd.DataFrame], Optional[pd.Series], Optional[pd.Series]]:
-        """Load or generate features, target, and regime labels data."""
-        try:
-            symbol = config.get('symbol', 'UNKNOWN')
-            exchange = config.get('exchange', 'UNKNOWN')
-            
-            # Try to load pre-loaded data first
-            features_data = config.get('features_data')
-            target_data = config.get('target_data')
-            regime_labels = config.get('regime_labels')
-            
-            if features_data is not None:
-                tprint_info("Using pre-loaded features data")
-                return features_data, target_data, regime_labels
-            
-            # Try to load from artifacts
-            try:
-                features_data = self._get_artifact(
-                    artifact_name=f'features_{symbol}_{exchange}',
-                    artifact_type='data'
-                )
-                target_data = self._get_artifact(
-                    artifact_name=f'target_{symbol}_{exchange}',
-                    artifact_type='data'
-                )
-                regime_labels = self._get_artifact(
-                    artifact_name=f'regime_labels_{symbol}_{exchange}',
-                    artifact_type='data'
-                )
-                tprint_info("Loaded data from artifacts")
-                return features_data, target_data, regime_labels
-            except Exception as e:
-                self.logger.debug(f"Could not load data from artifacts: {e}")
-            
-            # Try to load from feature bank
-            try:
-                from src.feature_generation.core.feature_bank import get_global_feature_bank
-                feature_bank = get_global_feature_bank()
-                
-                # Generate features for the symbol/exchange
-                features_result = feature_bank.generate_features(
-                    symbol=symbol,
-                    exchange=exchange,
-                    timeframes=config.get('timeframes', ['15m'])
-                )
-                
-                if features_result and 'features' in features_result:
-                    features_data = features_result['features']
-                    target_data = features_result.get('target')
-                    regime_labels = features_result.get('regime_labels')
-                    tprint_info("Generated data from feature bank")
-                    return features_data, target_data, regime_labels
-            except Exception as e:
-                self.logger.debug(f"Could not generate data from feature bank: {e}")
-            
-            # Generate sample data as fallback
-            tprint_warning("No data available, generating sample data for testing")
-            return self._generate_sample_data()
-            
-        except Exception as e:
-            self.logger.error(f"Error loading/generating data: {e}")
-            return None, None, None
+    # REMOVED: _load_or_generate_data() - Dead code, not used after unsupervised mode refactoring
+    # Use _load_features_and_regime_labels() instead, which doesn't require target_data
     
     def _generate_sample_data(self) -> Tuple[pd.DataFrame, pd.Series]:
         """Generate sample data for testing purposes."""

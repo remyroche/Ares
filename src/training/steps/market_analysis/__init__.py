@@ -19,9 +19,11 @@ from .regime_clustering_step import RegimeClusteringStep
 from .regime_models_training_step import RegimeModelsTrainingStep
 from .regime_ensemble_training_step import RegimeEnsembleTrainingStep
 
-# Import regime feature selectors
-from .economic_regime_feature_selector import EconomicRegimeFeatureSelector
+# Import regime feature selector (EnhancedRegimeFeatureSelector with unsupervised mode)
 from .regime_feature_selector import EnhancedRegimeFeatureSelector
+
+# Note: EconomicRegimeFeatureSelector removed - it had circular dependency issues
+# and lacked unsupervised mode. Use EnhancedRegimeFeatureSelector instead.
 
 # Register market analysis steps
 step_registry.register("sr_parameter_optimization", SRParameterOptimizationStep)
@@ -33,5 +35,3 @@ step_registry.register("sr_detection", SRDetectionComponent)
 step_registry.register("hdbscan_regime_discovery", HDBSCANRegimeDiscoveryStep)
 # Use EnhancedRegimeFeatureSelector which has proper unsupervised mode for pre-clustering selection
 step_registry.register("regime_feature_selection", EnhancedRegimeFeatureSelector)
-# Keep economic selector registered for post-clustering refinement (optional)
-step_registry.register("economic_regime_feature_selection", EconomicRegimeFeatureSelector)

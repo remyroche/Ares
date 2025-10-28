@@ -106,16 +106,22 @@ class OptimizedRegimeResult:
 @dataclass
 class OptimizedHDBSCANRegimeDiscoveryConfig:
     """Configuration for optimized HDBSCAN regime discovery."""
-    # Core HDBSCAN parameters - FORCE MORE CLUSTERS
-    min_cluster_size: int = 3
-    min_samples: int = 2
-    cluster_selection_epsilon: float = 0.0
-    cluster_selection_method: str = 'eom'
-    metric: str = 'euclidean'
+    # Core HDBSCAN parameters - OPTIMIZED FOR MORE REGIME DISCOVERY
+    min_cluster_size: int = 5  # Lowered from default for more clusters
+    min_samples: int = 2  # Lowered for more flexibility
+    cluster_selection_epsilon: float = 0.0  # Tightest clustering
+    cluster_selection_method: str = 'leaf'  # More balanced than 'eom'
+    metric: str = 'manhattan'  # More robust to outliers than euclidean
     alpha: float = 1.0
 
     # Execution mode for adaptive configuration (detected from ares_launcher)
     execution_mode: str = "light"  # "full", "light", "blank" - default fallback
+
+    # Regime count optimization
+    target_regime_count_min: int = 4  # Minimum desired regimes
+    target_regime_count_max: int = 8  # Maximum desired regimes
+    regime_count_penalty: float = 0.2  # Penalty weight for deviating from target range
+    enable_regime_count_objective: bool = True  # Enable regime count objective
 
     # Optimization settings
     enable_hyperparameter_optimization: bool = True
@@ -145,6 +151,13 @@ class OptimizedHDBSCANRegimeDiscoveryConfig:
     feature_selection_method: str = 'mrmr'  # 'mrmr', 'lasso', 'mutual_info'
     max_features: int = 50
     feature_selection_threshold: float = 0.01
+    
+    # Preprocessing settings
+    winsorize_limits: Tuple[float, float] = (0.02, 0.98)  # More aggressive outlier removal
+    scaling_method: str = 'robust'  # RobustScaler instead of StandardScaler
+    enable_quantile_transformation: bool = True  # Ensure Gaussian features
+    enable_rolling_normalization: bool = True  # Regime-adaptive normalization
+    rolling_normalization_window: int = 60  # Window size for rolling normalization
 
     def __post_init__(self):
         """Apply execution mode-based optimizations."""
@@ -285,7 +298,11 @@ class OptimizedHDBSCANRegimeDiscovery:
                 primary_metric=self.config.primary_metric,
                 enable_parallel=self.config.enable_parallel_processing,
                 memory_efficient=True,
-                execution_mode=self.config.execution_mode
+                execution_mode=self.config.execution_mode,
+                target_regime_count_min=self.config.target_regime_count_min,
+                target_regime_count_max=self.config.target_regime_count_max,
+                regime_count_penalty=self.config.regime_count_penalty,
+                enable_regime_count_objective=self.config.enable_regime_count_objective
             )
         else:
             self.hyperparameter_optimizer = None

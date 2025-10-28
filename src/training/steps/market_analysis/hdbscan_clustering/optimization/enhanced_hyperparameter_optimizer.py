@@ -73,6 +73,12 @@ class HDBSCANHyperparameterConfig:
     adaptive_trials: bool = True
     smart_sampling: bool = True
     
+    # Regime count optimization
+    target_regime_count_min: int = 4  # Minimum desired regimes
+    target_regime_count_max: int = 8  # Maximum desired regimes
+    regime_count_penalty: float = 0.2  # Penalty weight for deviating from target range
+    enable_regime_count_objective: bool = True  # Enable regime count objective
+    
     # Trial tracking
     _current_trial: int = 0
 
@@ -724,9 +730,47 @@ class EnhancedHyperparameterOptimizer:
             tprint(f"DEBUG: Parameter evaluation failed: {e} | params: {params}")
             return -np.inf
     
+    def _apply_regime_count_penalty(self, base_score: float, cluster_labels: np.ndarray) -> float:
+        """
+        Apply penalty for deviating from target regime count range.
+        
+        Args:
+            base_score: Base quality score (silhouette, CH, DBI, etc.)
+            cluster_labels: Cluster assignments
+            
+        Returns:
+            Adjusted score with regime count penalty
+        """
+        if not self.config.enable_regime_count_objective:
+            return base_score
+        
+        # Count actual regimes (excluding noise)
+        n_regimes = len(set(cluster_labels)) - (1 if -1 in cluster_labels else 0)
+        
+        # Calculate penalty for deviating from target range [4, 8]
+        target_min = self.config.target_regime_count_min
+        target_max = self.config.target_regime_count_max
+        
+        if target_min <= n_regimes <= target_max:
+            # Within target range - no penalty
+            penalty = 0.0
+        elif n_regimes < target_min:
+            # Too few regimes - penalty proportional to deviation
+            penalty = self.config.regime_count_penalty * (target_min - n_regimes) / target_min
+        else:
+            # Too many regimes - penalty proportional to deviation
+            penalty = self.config.regime_count_penalty * (n_regimes - target_max) / target_max
+        
+        adjusted_score = base_score - penalty
+        
+        tprint(f"🎯 Regime count: {n_regimes} (target: {target_min}-{target_max}) | "
+               f"Base: {base_score:.4f} | Penalty: {penalty:.4f} | Adjusted: {adjusted_score:.4f}", "INFO")
+        
+        return adjusted_score
+    
     def _calculate_silhouette_score(self, features_df: pd.DataFrame, 
                                    cluster_labels: np.ndarray) -> float:
-        """Calculate silhouette score."""
+        """Calculate silhouette score with regime count objective."""
         try:
             # Remove noise points for evaluation
             valid_mask = cluster_labels != -1
@@ -747,9 +791,14 @@ class EnhancedHyperparameterOptimizer:
                 tprint("⚠️ No numeric features for silhouette calculation", "WARNING")
                 return -1.0
             
-            score = silhouette_score(valid_features, valid_labels)
-            tprint(f"📊 Silhouette score: {score:.4f} (clusters: {len(set(valid_labels))}, samples: {len(valid_features)})", "INFO")
-            return score
+            base_score = silhouette_score(valid_features, valid_labels)
+            
+            # Apply regime count penalty
+            adjusted_score = self._apply_regime_count_penalty(base_score, cluster_labels)
+            
+            tprint(f"📊 Silhouette score: {adjusted_score:.4f} (base: {base_score:.4f}, "
+                   f"clusters: {len(set(valid_labels))}, samples: {len(valid_features)})", "INFO")
+            return adjusted_score
         except Exception as e:
             tprint(f"❌ Silhouette calculation failed: {e}", "ERROR")
             return -1.0
@@ -870,13 +919,16 @@ class EnhancedHyperparameterOptimizer:
             # Simple scoring based on cluster count and noise ratio
             noise_ratio = n_noise / n_total if n_total > 0 else 1.0
             
-            # Prefer 3-8 clusters for small datasets
-            if 3 <= n_clusters <= 8:
+            # Prefer 4-8 clusters (updated target range)
+            target_min = self.config.target_regime_count_min
+            target_max = self.config.target_regime_count_max
+            
+            if target_min <= n_clusters <= target_max:
                 cluster_score = 1.0
-            elif n_clusters < 3:
-                cluster_score = n_clusters / 3.0
+            elif n_clusters < target_min:
+                cluster_score = n_clusters / target_min
             else:
-                cluster_score = max(0.0, 1.0 - (n_clusters - 8) / 10.0)
+                cluster_score = max(0.0, 1.0 - (n_clusters - target_max) / 10.0)
             
             # Prefer lower noise ratio
             noise_score = 1.0 - noise_ratio
@@ -952,7 +1004,7 @@ class EnhancedHyperparameterOptimizer:
     
     def _calculate_calinski_harabasz_score(self, features_df: pd.DataFrame, 
                                          cluster_labels: np.ndarray) -> float:
-        """Calculate Calinski-Harabasz score."""
+        """Calculate Calinski-Harabasz score with regime count objective."""
         try:
             # Remove noise points for evaluation
             valid_mask = cluster_labels != -1
@@ -965,13 +1017,32 @@ class EnhancedHyperparameterOptimizer:
             if len(set(valid_labels)) < 2:
                 return 0.0
             
-            return calinski_harabasz_score(valid_features, valid_labels)
-        except:
+            # Ensure numeric features
+            valid_features = valid_features.select_dtypes(include=[np.number])
+            if valid_features.empty:
+                return 0.0
+            
+            base_score = calinski_harabasz_score(valid_features, valid_labels)
+            
+            # Normalize CH score to [0, 1] range for penalty application
+            # CH scores can be large, so use log scaling
+            normalized_score = np.log1p(base_score) / 10.0  # Roughly [0, 1]
+            
+            # Apply regime count penalty
+            adjusted_score = self._apply_regime_count_penalty(normalized_score, cluster_labels)
+            
+            # Scale back to CH range
+            final_score = np.expm1(adjusted_score * 10.0)
+            
+            tprint(f"📊 Calinski-Harabasz score: {final_score:.4f} (base: {base_score:.4f})", "INFO")
+            return final_score
+        except Exception as e:
+            tprint(f"❌ Calinski-Harabasz calculation failed: {e}", "ERROR")
             return 0.0
     
     def _calculate_davies_bouldin_score(self, features_df: pd.DataFrame, 
                                       cluster_labels: np.ndarray) -> float:
-        """Calculate Davies-Bouldin score (lower is better)."""
+        """Calculate Davies-Bouldin score with regime count objective (lower is better)."""
         try:
             # Remove noise points for evaluation
             valid_mask = cluster_labels != -1
@@ -984,10 +1055,24 @@ class EnhancedHyperparameterOptimizer:
             if len(set(valid_labels)) < 2:
                 return np.inf
             
-            # Davies-Bouldin score (lower is better, so negate)
-            return -davies_bouldin_score(valid_features, valid_labels)
-        except:
-            return np.inf
+            # Ensure numeric features
+            valid_features = valid_features.select_dtypes(include=[np.number])
+            if valid_features.empty:
+                return np.inf
+            
+            base_db_score = davies_bouldin_score(valid_features, valid_labels)
+            
+            # Davies-Bouldin score (lower is better, so negate for maximization)
+            negated_score = -base_db_score
+            
+            # Apply regime count penalty (on negated score)
+            adjusted_score = self._apply_regime_count_penalty(negated_score, cluster_labels)
+            
+            tprint(f"📊 Davies-Bouldin score: {adjusted_score:.4f} (base: {negated_score:.4f})", "INFO")
+            return adjusted_score
+        except Exception as e:
+            tprint(f"❌ Davies-Bouldin calculation failed: {e}", "ERROR")
+            return -np.inf
     
     def _generate_parameter_combinations(self) -> List[Dict[str, Any]]:
         """Generate parameter combinations from search space."""
@@ -1062,7 +1147,11 @@ def create_enhanced_hyperparameter_optimizer(
         primary_metric: str = "silhouette",
         enable_parallel: bool = True,
         memory_efficient: bool = True,
-        execution_mode: str = "light"
+        execution_mode: str = "light",
+        target_regime_count_min: int = 4,
+        target_regime_count_max: int = 8,
+        regime_count_penalty: float = 0.2,
+        enable_regime_count_objective: bool = True
 ) -> EnhancedHyperparameterOptimizer:
     """
     Create an enhanced hyperparameter optimizer with specified configuration.
@@ -1074,6 +1163,10 @@ def create_enhanced_hyperparameter_optimizer(
         enable_parallel: Enable parallel processing
         memory_efficient: Enable memory optimization
         execution_mode: Execution mode ("full", "light", "blank") for adaptive configuration
+        target_regime_count_min: Minimum desired number of regimes
+        target_regime_count_max: Maximum desired number of regimes
+        regime_count_penalty: Penalty weight for deviating from target regime count range
+        enable_regime_count_objective: Whether to enable regime count objective
 
     Returns:
         EnhancedHyperparameterOptimizer instance
@@ -1084,7 +1177,11 @@ def create_enhanced_hyperparameter_optimizer(
         primary_metric=primary_metric,
         enable_parallel=enable_parallel,
         memory_efficient=memory_efficient,
-        execution_mode=execution_mode
+        execution_mode=execution_mode,
+        target_regime_count_min=target_regime_count_min,
+        target_regime_count_max=target_regime_count_max,
+        regime_count_penalty=regime_count_penalty,
+        enable_regime_count_objective=enable_regime_count_objective
     )
 
     return EnhancedHyperparameterOptimizer(config)

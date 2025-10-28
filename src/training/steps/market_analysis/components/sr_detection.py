@@ -85,6 +85,14 @@ class EnhancedSRDetectionConfig:
     enable_temporal_cv: bool = True
     enable_data_leakage_detection: bool = True
     cv_folds: int = 5
+    
+    # Optimized SR parameters (from sr_parameter_optimization step)
+    sr_parameters: dict = None
+    
+    def __post_init__(self):
+        """Initialize sr_parameters as empty dict if None."""
+        if self.sr_parameters is None:
+            self.sr_parameters = {}
 
 class SRDetectionComponent(BaseStep):
     """
@@ -167,6 +175,7 @@ class SRDetectionComponent(BaseStep):
                 - enable_shap_lime: Enable SHAP/LIME explanations (default: True)
                 - enable_vectorbt: Enable VectorBT optimization (default: True)
                 - enable_hardware_optimization: Enable hardware optimization (default: True)
+                - sr_parameters: Optimized SR detection parameters from sr_parameter_optimization (optional)
 
         Returns:
             Execution result with artifacts, metrics, and explanations
@@ -184,6 +193,16 @@ class SRDetectionComponent(BaseStep):
                 enhanced_config.enable_vectorbt_optimization = config['enable_vectorbt']
             if 'enable_hardware_optimization' in config:
                 enhanced_config.enable_hardware_optimization = config['enable_hardware_optimization']
+
+            # Extract optimized SR parameters if provided (from sr_parameter_optimization step)
+            sr_parameters = config.get('sr_parameters', {})
+            if sr_parameters:
+                self.logger.info(f"📊 Using optimized SR parameters: {list(sr_parameters.keys())}")
+                # Store for use in detection methods
+                enhanced_config.sr_parameters = sr_parameters
+            else:
+                self.logger.info("📊 Using default SR parameters (no optimization results provided)")
+                enhanced_config.sr_parameters = {}
 
             # Extract configuration
             symbol = config.get('symbol', 'ETHUSDT')
@@ -533,29 +552,72 @@ class SRDetectionComponent(BaseStep):
             self.logger.error(f"VectorBT detection failed: {e}")
             return await self._detect_sr_levels_traditional(market_data, enhanced_config, optimized_parameters)
 
-    async def _detect_sr_levels_traditional(self, market_data: Any, enhanced_config: EnhancedSRDetectionConfig, optimized_parameters: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
-        """Detect SR levels using traditional methods.
-        
-        Args:
-            market_data: Market data for detection
-            enhanced_config: Enhanced configuration
-            optimized_parameters: Optional optimized parameters from feedback loop
-        """
+
+    async def _detect_sr_levels_traditional(self, market_data: Any, enhanced_config: EnhancedSRDetectionConfig) -> List[Dict[str, Any]]:
+        """Detect SR levels using traditional methods with optimized parameters."""
         try:
-            # Apply optimized parameters if available
-            params = optimized_parameters.get('parameters', {}) if optimized_parameters else {}
+            # Import EnhancedSRDetector for actual detection
+            try:
+                from src.tactician.sr_levels.enhanced_sr_detection import EnhancedSRDetector, SRLevel
+                detector_available = True
+            except ImportError:
+                detector_available = False
+                self.logger.warning("EnhancedSRDetector not available, using sample data")
             
-            # Use optimized weights for detection if available
-            strength_multiplier = params.get('strength_multiplier', 1.0)
-            confidence_threshold = params.get('confidence_threshold', 0.5)
-            min_touches = params.get('min_touches', 2)
+            if detector_available:
+                # Create SR detector configuration from optimized parameters
+                sr_config = {
+                    'min_touches': enhanced_config.sr_parameters.get('min_touches', 2),
+                    'tolerance_pct': enhanced_config.sr_parameters.get('touch_tolerance', 0.5),
+                    'lookback_periods': enhanced_config.sr_parameters.get('lookback_periods', 100),
+                    'strength_threshold': enhanced_config.sr_parameters.get('strength_threshold', 0.5),
+                    'distance_threshold': enhanced_config.sr_parameters.get('distance_threshold', 0.01),
+                    'volume_threshold': enhanced_config.sr_parameters.get('volume_threshold', 1.0),
+                    'memory_efficient': True,
+                    'use_parallel': False,
+                    'disable_dbscan_clustering': True
+                }
+                
+                self.logger.info(f"Using optimized SR parameters: {sr_config}")
+                
+                # Create detector and detect SR levels
+                detector = EnhancedSRDetector(sr_config)
+                sr_levels_result = detector.detect_sr_levels(market_data)
+                
+                # Convert SRLevel objects to dictionaries for compatibility
+                if isinstance(sr_levels_result, dict):
+                    # Extract levels from dict result
+                    support_levels = sr_levels_result.get('support_levels', [])
+                    resistance_levels = sr_levels_result.get('resistance_levels', [])
+                    all_levels = support_levels + resistance_levels
+                elif isinstance(sr_levels_result, list):
+                    all_levels = sr_levels_result
+                else:
+                    all_levels = []
+                
+                # Convert SRLevel objects to dicts
+                dict_levels = []
+                for level in all_levels:
+                    if hasattr(level, 'price'):
+                        dict_levels.append({
+                            'price': level.price,
+                            'strength': getattr(level, 'strength', 0.5),
+                            'type': getattr(level, 'type', 'support'),
+                            'touches': getattr(level, 'touch_count', 0),
+                            'confidence': getattr(level, 'strength', 0.5),
+                            'features': {
+                                'volume_profile': 0.7,
+                                'price_action': 0.8,
+                                'technical_indicators': 0.6
+                            }
+                        })
+                    elif isinstance(level, dict):
+                        dict_levels.append(level)
+                
+                self.logger.info(f"Detected {len(dict_levels)} SR levels using EnhancedSRDetector with optimized parameters")
+                return dict_levels
             
-            self.logger.info(f"Detection parameters: strength_multiplier={strength_multiplier}, "
-                           f"confidence_threshold={confidence_threshold}, min_touches={min_touches}")
-            
-            # Create sample SR levels for demonstration
-            # In a real implementation, this would use actual SR detection algorithms with optimized parameters
-            
+            # Fallback to sample data if detector not available
             sample_levels = [
                 {
                     'price': 1.2000, 

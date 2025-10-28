@@ -212,9 +212,11 @@ task_configs:
 
   # Sequence task (T4)
   sequence:
-    sequence_length: 100  # Input sequence length
+    sequence_length: 50  # Input sequence length (adaptive, min 10, max 50)
     prediction_horizon: 1  # H periods ahead
     output_mode: "multi_label"  # or "regression"
+    handle_nan: true  # Automatically clean NaN values before training
+    accept_engineered_features: true  # Accept features after engineering (e.g., 9 from 4 base)
 
 # Integration with existing Analyst system
 analyst_integration:

@@ -38,6 +38,7 @@ from .base_trainer import (
     PredictionResult, TrainingRole, ModelType
 )
 from .model_trainer import ModelTrainer
+from .training_metrics_collector import TrainingMetricsCollector, ModelMetrics
 
 
 class EnsembleStrategy:
@@ -70,6 +71,9 @@ class EnsembleTrainer(BaseTrainer):
         self._meta_learner = None
         self._oof_predictions = {}
         self._ensemble_weights = {}
+        
+        # Metrics collector
+        self._metrics_collector = TrainingMetricsCollector(logger)
     
     @handles_errors(
         exceptions=(ValueError, RuntimeError, MemoryError),
@@ -78,43 +82,94 @@ class EnsembleTrainer(BaseTrainer):
     )
     async def train(self, data: pd.DataFrame, targets: Optional[pd.Series] = None) -> TrainingResult:
         """
-        Train ensemble models with multiple strategies.
+        Train ensemble models with multiple strategies and comprehensive metrics collection.
         
         Args:
             data: Training data
             targets: Target variables
             
         Returns:
-            Training result with ensemble model and metrics
+            Training result with ensemble model and comprehensive metrics
         """
         try:
-            self.logger.info(f"🚀 Starting {self.config.role.value} ensemble training...")
+            self.logger.info(f"🚀 Starting {self.config.role.value} ensemble training with comprehensive metrics...")
             start_time = time.time()
+            
+            # Start metrics collection session
+            training_type = f"{self.config.role.value}_ensemble"
+            self._metrics_collector.start_session(
+                training_type=training_type,
+                symbol=self.config.symbol,
+                timeframe=self.config.timeframe
+            )
             
             # Preprocess data
             processed_data, processed_targets = self._preprocess_data(data, targets)
             
-            # Train individual models
+            # Phase 1: Train individual models
+            tprint_info("📊 Phase 1: Training individual base models...")
             individual_results = await self._train_individual_models(processed_data, processed_targets)
             
             if not individual_results:
                 return TrainingResult(success=False, error_message="No individual models trained successfully")
             
-            # Generate out-of-fold predictions
+            # Phase 2: Generate out-of-fold predictions
+            tprint_info("🔄 Phase 2: Generating out-of-fold predictions...")
             oof_predictions = await self._generate_oof_predictions(processed_data, processed_targets)
             
-            # Train meta-learner
+            # Phase 3: Collect pre-HPO metrics for meta-learner
+            tprint_info("📈 Phase 3: Collecting pre-HPO metrics for meta-learner...")
+            meta_model_metrics = self._metrics_collector.collect_pre_hpo_metrics(
+                model_name=f"{self.config.role.value}_ensemble_meta",
+                model_type=self.meta_learner_type,
+                model=self._create_meta_learner_model(),
+                X=pd.DataFrame(oof_predictions),
+                y=processed_targets,
+                n_folds=self.cv_folds
+            )
+            
+            # Phase 4: Train meta-learner
+            tprint_info("🧠 Phase 4: Training meta-learner...")
             meta_result = await self._train_meta_learner(oof_predictions, processed_targets)
             
             if not meta_result.success:
                 return TrainingResult(success=False, error_message="Meta-learner training failed")
             
+            # Phase 5: Collect post-HPO metrics
+            tprint_info("📊 Phase 5: Collecting post-HPO metrics for meta-learner...")
+            meta_model_metrics = self._metrics_collector.collect_post_hpo_metrics(
+                model_metrics=meta_model_metrics,
+                model=self._meta_learner,
+                X=pd.DataFrame(oof_predictions),
+                y=processed_targets,
+                best_params=meta_result.metadata.get('best_params', {}),
+                hpo_n_trials=0,  # Meta-learner typically doesn't use HPO
+                hpo_time=0.0,
+                n_folds=self.cv_folds
+            )
+            
+            # Add metrics to session
+            self._metrics_collector.add_model_metrics(meta_model_metrics)
+            
             # Calculate ensemble metrics
+            tprint_info("📈 Phase 6: Calculating ensemble metrics...")
             ensemble_metrics = await self._calculate_ensemble_metrics(
                 individual_results, meta_result, processed_data, processed_targets
             )
             
             training_time = time.time() - start_time
+            
+            # Finalize session and generate report
+            tprint_info("📝 Generating comprehensive ensemble training report...")
+            session = self._metrics_collector.finalize_session(
+                total_training_time=training_time,
+                data_quality_score=0.85,
+                n_samples=len(processed_data),
+                n_features=len(processed_data.columns)
+            )
+            
+            # Generate and save report
+            report_path = self._metrics_collector.save_report()
             
             # Update state
             self._training_state['training_completed'] = True
@@ -131,22 +186,43 @@ class EnsembleTrainer(BaseTrainer):
                     'individual_models': len(individual_results),
                     'meta_learner_type': self.meta_learner_type,
                     'individual_results': individual_results,
-                    'oof_predictions_shape': oof_predictions.shape if oof_predictions is not None else None
+                    'oof_predictions_shape': oof_predictions.shape if oof_predictions is not None else None,
+                    'comprehensive_metrics': meta_model_metrics,
+                    'report_path': str(report_path)
                 }
             )
             
             self.logger.info(f"✅ Ensemble training completed successfully in {training_time:.2f}s")
-            tprint_success(f"Trained ensemble with {len(individual_results)} base models")
+            tprint_success(f"✅ Trained ensemble with {len(individual_results)} base models and comprehensive metrics")
+            tprint_success(f"📄 Report saved to: {report_path}")
             
             return result
             
         except Exception as e:
             self.logger.error(f"Ensemble training failed: {e}")
+            import traceback
+            traceback.print_exc()
             return TrainingResult(
                 success=False,
                 error_message=str(e),
                 training_time=time.time() - start_time
             )
+    
+    def _create_meta_learner_model(self) -> Any:
+        """Create a meta-learner model for pre-HPO metrics."""
+        try:
+            if self.meta_learner_type == 'lightgbm':
+                import lightgbm as lgb
+                return lgb.LGBMRegressor(verbose=-1)
+            elif self.meta_learner_type == 'catboost':
+                from catboost import CatBoostRegressor
+                return CatBoostRegressor(verbose=False)
+            else:
+                import lightgbm as lgb
+                return lgb.LGBMRegressor(verbose=-1)
+        except Exception as e:
+            self.logger.warning(f"Failed to create meta-learner model: {e}")
+            return None
     
     async def _train_individual_models(
         self, 

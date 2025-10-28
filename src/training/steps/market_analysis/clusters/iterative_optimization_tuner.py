@@ -4,12 +4,17 @@ Iterative Optimization Hyperparameter Tuner
 This script uses multi-objective optimization to tune the hyperparameters of iterative_optimization.py
 to maximize CV, Silhouette, and DBI while maintaining Balance and Temporal Smoothness.
 
-Objectives:
-- Maximize CV (Between/Within Variance Ratio)
-- Maximize Silhouette Score  
-- Minimize DBI (Davies-Bouldin Index)
-- Maintain Balance Score (soft constraint)
-- Maintain Temporal Smoothness (soft constraint)
+Optimization Goals (from clustering_optimization_goals.py):
+- Maximize CV (Between/Within Variance Ratio) - Primary goal (30% weight)
+- Maximize Silhouette Score - Primary goal (25% weight)
+- Minimize DBI (Davies-Bouldin Index) - Primary goal (20% weight)
+- Maintain Balance Score (soft constraint) - Secondary goal (15% weight)
+- Maintain Temporal Smoothness (soft constraint) - Secondary goal (10% weight)
+
+All goals are centralized in clustering_optimization_goals.py for consistency across:
+- iterative_optimization.py
+- hdbscan_clustering optimization
+- regime_clustering_step.py
 
 Uses tools from src/utils/ml_common/optimization/
 """
@@ -32,6 +37,15 @@ from src.utils.ml_common.optimization import (
     HPOPhaseConfig
 )
 
+# Import unified clustering optimization goals
+from .clustering_optimization_goals import (
+    DEFAULT_CLUSTERING_GOALS,
+    DEFAULT_OPTIMIZATION_TARGETS,
+    calculate_composite_score,
+    meets_optimization_constraints,
+    format_metrics_report
+)
+
 
 @dataclass
 class IterativeOptimizationMetrics:
@@ -46,34 +60,34 @@ class IterativeOptimizationMetrics:
     optimization_time: float
     
     def get_composite_score(self, weights: Dict[str, float] = None) -> float:
-        """Calculate weighted composite score."""
+        """Calculate weighted composite score using unified goals."""
         if weights is None:
-            weights = {
-                'cv': 0.30,
-                'silhouette': 0.25,
-                'dbi': 0.20,  # Inverted: lower is better
-                'balance': 0.15,
-                'temporal': 0.10
-            }
+            weights = DEFAULT_CLUSTERING_GOALS.get_weights_dict()
         
-        # Normalize DBI (invert since lower is better)
-        dbi_normalized = 1.0 / (1.0 + self.dbi_score) if self.dbi_score > 0 else 0.0
-        
-        score = (
-            weights['cv'] * self.cv_score +
-            weights['silhouette'] * max(0, self.silhouette_score) +  # Clip negative
-            weights['dbi'] * dbi_normalized +
-            weights['balance'] * self.balance_score +
-            weights['temporal'] * self.temporal_smoothness
+        # Use unified calculation function
+        return calculate_composite_score(
+            cv_score=self.cv_score,
+            silhouette_score=self.silhouette_score,
+            dbi_score=self.dbi_score,
+            balance_score=self.balance_score,
+            temporal_smoothness=self.temporal_smoothness
         )
-        
-        return score
     
     def meets_constraints(self, 
-                         min_balance: float = 0.5,
-                         min_temporal: float = 0.85,
-                         target_clusters: Tuple[int, int] = (6, 8)) -> bool:
-        """Check if metrics meet minimum constraints."""
+                         min_balance: float = None,
+                         min_temporal: float = None,
+                         target_clusters: Tuple[int, int] = None) -> bool:
+        """Check if metrics meet minimum constraints using unified targets."""
+        targets = DEFAULT_OPTIMIZATION_TARGETS
+        
+        # Override with custom values if provided
+        if min_balance is None:
+            min_balance = targets.min_balance_score
+        if min_temporal is None:
+            min_temporal = targets.min_temporal_smoothness
+        if target_clusters is None:
+            target_clusters = targets.target_clusters
+        
         return (
             self.balance_score >= min_balance and
             self.temporal_smoothness >= min_temporal and
@@ -83,17 +97,24 @@ class IterativeOptimizationMetrics:
 
 @dataclass
 class OptimizationParameterSpace:
-    """Define the hyperparameter search space for iterative optimization."""
+    """
+    Define the hyperparameter search space for iterative optimization.
     
-    # Core K and size constraints
+    Uses unified clustering optimization goals from clustering_optimization_goals.py
+    to ensure consistency across all clustering components.
+    """
+    
+    # Core K and size constraints (from unified targets)
     K_MIN: Tuple[int, int] = (5, 8)  # Range for minimum clusters
     K_MAX: Tuple[int, int] = (8, 12)  # Range for maximum clusters
     MIN_FRAC: Tuple[float, float] = (0.02, 0.05)  # Minimum cluster size fraction
     MAX_FRAC: Tuple[float, float] = (0.15, 0.25)  # Maximum cluster size fraction
     
-    # Objective weights - focus on CV, Silhouette, Temporal
-    w_cv: Tuple[float, float] = (0.50, 0.80)  # Weight for CV ratio
-    w_sil: Tuple[float, float] = (0.05, 0.20)  # Weight for Silhouette
+    # Objective weights - derived from unified clustering goals
+    # Default center points from DEFAULT_CLUSTERING_GOALS
+    # CV: 0.30, Silhouette: 0.25, DBI: 0.20, Balance: 0.15, Temporal: 0.10
+    w_cv: Tuple[float, float] = (0.50, 0.80)  # Weight for CV ratio (explore higher)
+    w_sil: Tuple[float, float] = (0.05, 0.20)  # Weight for Silhouette (tunable)
     w_temp: Tuple[float, float] = (0.10, 0.30)  # Weight for Temporal smoothness
     w_bal: Tuple[float, float] = (0.02, 0.10)  # Weight for Balance
     

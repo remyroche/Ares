@@ -2,12 +2,22 @@
 
 ## Overview
 
-This module provides automated hyperparameter tuning for `iterative_optimization.py` to improve clustering quality metrics:
-- **CV Score** (Between/Within Variance Ratio) - Higher is better
-- **Silhouette Score** - Higher is better (range: -1 to 1)
-- **DBI Score** (Davies-Bouldin Index) - Lower is better
-- **Balance Score** - Maintained above 0.5
-- **Temporal Smoothness** - Maintained above 0.85
+This module provides automated hyperparameter tuning for `iterative_optimization.py` to improve clustering quality metrics.
+
+**NEW**: All optimization goals are now centralized in `clustering_optimization_goals.py` for consistency across all clustering components!
+
+### Optimization Goals (from clustering_optimization_goals.py)
+
+- **CV Score** (Between/Within Variance Ratio) - Primary goal (30% weight), higher is better, target ≥1.0
+- **Silhouette Score** - Primary goal (25% weight), higher is better (range: -1 to 1), target ≥0.2
+- **DBI Score** (Davies-Bouldin Index) - Primary goal (20% weight), lower is better, target ≤2.0
+- **Balance Score** - Soft constraint (15% weight), maintained above 0.5
+- **Temporal Smoothness** - Soft constraint (10% weight), maintained above 0.85
+
+These goals are shared with:
+- `iterative_optimization.py`
+- `hdbscan_clustering` optimization
+- `regime_clustering_step.py`
 
 ## Current Baseline Metrics
 

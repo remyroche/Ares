@@ -41,6 +41,17 @@ except ImportError:
     ECONOMIC_VALIDATOR_AVAILABLE = False
     EconomicRegimeValidator = None
 
+# Import unified clustering optimization goals
+try:
+    from src.training.steps.market_analysis.clusters.clustering_optimization_goals import (
+        DEFAULT_OPTIMIZATION_TARGETS,
+        format_metrics_report
+    )
+    UNIFIED_GOALS_AVAILABLE = True
+except ImportError:
+    UNIFIED_GOALS_AVAILABLE = False
+    DEFAULT_OPTIMIZATION_TARGETS = None
+
 from src.training.steps.base_step import BaseStep
 from src.utils.logger import system_logger
 from src.utils.tprint import tprint
@@ -1079,30 +1090,40 @@ class RegimeClusteringStep(BaseStep):
                 report_content += f"\n| Metric | Value | Target | Status |\n"
                 report_content += f"|--------|-------|--------|--------|\n"
                 
+                # Use unified optimization targets if available
+                if UNIFIED_GOALS_AVAILABLE and DEFAULT_OPTIMIZATION_TARGETS:
+                    unified_targets = DEFAULT_OPTIMIZATION_TARGETS
+                    cv_target = targets.get('min_cv_score', unified_targets.min_cv_score)
+                    sil_target = targets.get('min_silhouette_score', unified_targets.min_silhouette_score)
+                    dbi_target = targets.get('max_dbi_score', unified_targets.max_dbi_score)
+                    temp_target = targets.get('min_temporal_smoothness', unified_targets.min_temporal_smoothness)
+                else:
+                    # Fallback to hardcoded defaults
+                    cv_target = targets.get('min_cv_score', 0.3)
+                    sil_target = targets.get('min_silhouette_score', 0.2)
+                    dbi_target = targets.get('max_dbi_score', 2.0)
+                    temp_target = targets.get('min_temporal_smoothness', 0.6)
+                
                 # CV Score
                 cv_score = metrics.get('cv_score')
-                cv_target = targets.get('min_cv_score', 0.3)
                 cv_status = "✅" if cv_score and cv_score >= cv_target else "❌"
                 cv_display = f"{cv_score:.3f}" if cv_score is not None else "N/A"
                 report_content += f"| CV Score | {cv_display} | ≥{cv_target} | {cv_status} |\n"
                 
                 # Silhouette Score
                 sil_score = metrics.get('silhouette_score')
-                sil_target = targets.get('min_silhouette_score', 0.2)
                 sil_status = "✅" if sil_score and sil_score >= sil_target else "❌"
                 sil_display = f"{sil_score:.3f}" if sil_score is not None else "N/A"
                 report_content += f"| Silhouette | {sil_display} | ≥{sil_target} | {sil_status} |\n"
                 
                 # DBI Score
                 dbi_score = metrics.get('dbi_score')
-                dbi_target = targets.get('min_dbi_score', 0.5)
                 dbi_status = "✅" if dbi_score and dbi_score <= dbi_target else "❌"
                 dbi_display = f"{dbi_score:.3f}" if dbi_score is not None else "N/A"
                 report_content += f"| DBI Score | {dbi_display} | ≤{dbi_target} | {dbi_status} |\n"
                 
                 # Temporal Smoothness
                 temp_smooth = metrics.get('temporal_smoothness')
-                temp_target = targets.get('min_temporal_smoothness', 0.6)
                 temp_status = "✅" if temp_smooth and temp_smooth >= temp_target else "❌"
                 temp_display = f"{temp_smooth:.3f}" if temp_smooth is not None else "N/A"
                 report_content += f"| Temporal Smoothness | {temp_display} | ≥{temp_target} | {temp_status} |\n"
@@ -1300,13 +1321,23 @@ class RegimeClusteringStep(BaseStep):
             Dictionary with quality assessment results
         """
         try:
-            # Get quality thresholds from config
-            min_clusters = config.get('min_clusters', 4)
-            max_clusters = config.get('max_clusters', 8)
-            min_cv_score = config.get('min_cv_score', 0.3)
-            min_silhouette_score = config.get('min_silhouette_score', 0.2)
-            min_dbi_score = config.get('min_dbi_score', 0.5)  # Lower is better for DBI
-            min_temporal_smoothness = config.get('min_temporal_smoothness', 0.6)
+            # Get quality thresholds from unified targets if available, otherwise use config or defaults
+            if UNIFIED_GOALS_AVAILABLE and DEFAULT_OPTIMIZATION_TARGETS:
+                unified_targets = DEFAULT_OPTIMIZATION_TARGETS
+                min_clusters = config.get('min_clusters', unified_targets.min_clusters)
+                max_clusters = config.get('max_clusters', unified_targets.max_clusters)
+                min_cv_score = config.get('min_cv_score', unified_targets.min_cv_score)
+                min_silhouette_score = config.get('min_silhouette_score', unified_targets.min_silhouette_score)
+                min_dbi_score = config.get('max_dbi_score', unified_targets.max_dbi_score)  # Lower is better for DBI
+                min_temporal_smoothness = config.get('min_temporal_smoothness', unified_targets.min_temporal_smoothness)
+            else:
+                # Fallback to config or hardcoded defaults
+                min_clusters = config.get('min_clusters', 4)
+                max_clusters = config.get('max_clusters', 8)
+                min_cv_score = config.get('min_cv_score', 0.3)
+                min_silhouette_score = config.get('min_silhouette_score', 0.2)
+                min_dbi_score = config.get('max_dbi_score', 0.5)  # Lower is better for DBI
+                min_temporal_smoothness = config.get('min_temporal_smoothness', 0.6)
             
             # Calculate cluster count
             unique_labels = np.unique(labels)

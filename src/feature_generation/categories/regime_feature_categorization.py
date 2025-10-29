@@ -100,7 +100,7 @@ class RegimeFeatureCategorizer:
         # Core Regime Features (for regime detection and clustering)
         categories["core_regime"] = FeatureCategory(
             name="Core Regime Features",
-            description="Essential features for regime identification and clustering",
+            description="Essential features for regime identification and clustering. Includes lagged, derived, and temporal features.",
             use_cases={
                 FeatureUseCase.HDBSCAN_CLUSTERING,
                 FeatureUseCase.REGIME_CLUSTERING,
@@ -115,7 +115,24 @@ class RegimeFeatureCategorizer:
             feature_names=[
                 "regime_persistence", "vol_regime_strength", "vol_clustering",
                 "vol_regime_change", "volume_regime_strength", "volume_clustering",
-                "statistical_persistence", "distribution_stability"
+                "statistical_persistence", "distribution_stability",
+                # Lagged features (windowed features for past 3-5 bars)
+                "lagged_ma_3", "lagged_ma_4", "lagged_ma_5",
+                "lagged_volatility_3", "lagged_volatility_4", "lagged_volatility_5",
+                # Derived features (ratios, normalized indicators, trend strength)
+                "price_zscore", "price_to_ma_ratio_5", "price_to_ma_ratio_10", "price_to_ma_ratio_20",
+                "returns_cv", "trend_strength_ratio", "volatility_ratio",
+                # Temporal awareness features (differences, momentum indicators)
+                "temporal_price_diff", "temporal_price_acceleration",
+                "momentum_3", "momentum_5", "momentum_10", "momentum_acceleration",
+                "roc_3", "roc_5", "roc_10",
+                # Comprehensive technical indicators (only features NOT in other categories)
+                "ma_slope_3", "ma_slope_4", "ma_slope_5",
+                "ema_slope_3", "ema_slope_4", "ema_slope_5",
+                "rolling_std_5", "rolling_std_10", "rolling_std_15", "rolling_std_20",
+                "price_momentum_1", "price_momentum_2", "price_momentum_3", "price_momentum_4", "price_momentum_5",
+                "returns_zscore_5", "returns_zscore_10",
+                "ewma_volatility_10", "ewma_volatility_20"
             ],
             priority=10,
             stability_required=True,
@@ -225,7 +242,30 @@ class RegimeFeatureCategorizer:
             ],
             feature_names=[
                 "rsi", "macd", "bollinger_bands", "atr", "sma", "ema",
-                "volume_sma", "price_momentum", "volatility_rolling"
+                "volume_sma", "price_momentum", "volatility_rolling",
+                # Lagged features (windowed features for past 3-5 bars)
+                "lagged_ma_3", "lagged_ma_4", "lagged_ma_5",
+                "lagged_volatility_3", "lagged_volatility_4", "lagged_volatility_5",
+                "lagged_range_3", "lagged_range_4", "lagged_range_5",
+                "lagged_volume_ma_3", "lagged_volume_ma_4", "lagged_volume_ma_5",
+                "lagged_max_3", "lagged_max_4", "lagged_max_5",
+                "lagged_min_3", "lagged_min_4", "lagged_min_5",
+                # Derived features (ratios, normalized indicators, trend strength)
+                "price_zscore", "price_to_ma_ratio_5", "price_to_ma_ratio_10", "price_to_ma_ratio_20",
+                "returns_cv", "trend_strength_ratio", "volatility_ratio",
+                "range_ratio", "volume_ratio", "mean_reversion_strength_normalized",
+                # Temporal awareness features (differences, momentum indicators)
+                "temporal_price_diff", "temporal_price_acceleration",
+                "momentum_3", "momentum_5", "momentum_10", "momentum_acceleration",
+                "roc_3", "roc_5", "roc_10",
+                "volatility_trend", "volume_momentum", "volume_roc", "price_position_trend",
+                # Comprehensive technical indicators (only features NOT in other categories)
+                "ma_slope_3", "ma_slope_4", "ma_slope_5",
+                "ema_slope_3", "ema_slope_4", "ema_slope_5",
+                "rolling_std_5", "rolling_std_10", "rolling_std_15", "rolling_std_20",
+                "price_momentum_1", "price_momentum_2", "price_momentum_3", "price_momentum_4", "price_momentum_5",
+                "returns_zscore_5", "returns_zscore_10",
+                "ewma_volatility_10", "ewma_volatility_20"
             ],
             priority=5,
             stability_required=True,

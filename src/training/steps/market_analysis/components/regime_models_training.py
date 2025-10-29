@@ -1934,8 +1934,9 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
             feature_bank = get_feature_bank()
             tprint("✅ [REGIME_MODELS] Feature bank retrieved successfully", color="green")
 
-            # Define feature categories to generate
+            # Define feature categories to generate - prioritize REGIME category for core regime features
             categories = [
+                FeatureCategory.REGIME,  # Core regime features (lagged, derived, temporal)
                 FeatureCategory.MOMENTUM,
                 FeatureCategory.VOLATILITY,
                 FeatureCategory.VOLUME,
@@ -1944,6 +1945,83 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                 FeatureCategory.RETURNS
             ]
 
+            # Add core regime features with lagged, derived, and temporal features
+            tprint("🔧 [REGIME_MODELS] Adding core regime features (lagged, derived, temporal)", color="cyan")
+            core_regime_features = pd.DataFrame(index=data.index)
+            try:
+                from src.feature_generation.categories.regime_feature_integration import RegimeFeatureIntegration, RegimeFeatureConfig
+                from src.feature_generation.categories.regime_feature_categorization import (
+                    RegimeFeatureCategorizer, FeatureUseCase, get_regime_models_training_features
+                )
+                
+                # Create RegimeFeatureIntegration generator
+                regime_config = RegimeFeatureConfig(
+                    enable_regime_detection=True,
+                    enable_adaptive_features=True,
+                    enable_regime_transitions=True
+                )
+                regime_generator = RegimeFeatureIntegration(regime_config)
+                
+                # Generate core regime features (lagged, derived, temporal) for all rows
+                # Use vectorized approach: generate features using rolling windows
+                # Initialize all feature columns
+                all_feature_keys = set()
+                
+                # Sample a few windows to get all feature names
+                sample_windows = [
+                    data.iloc[:min(20, len(data))],
+                    data.iloc[max(0, len(data)-20):] if len(data) > 20 else data
+                ]
+                for window_data in sample_windows:
+                    if len(window_data) >= 5:
+                        sample_features = regime_generator._generate_regime_features(window_data)
+                        all_feature_keys.update(sample_features.keys())
+                
+                # Initialize DataFrame with all feature columns
+                for feature_name in all_feature_keys:
+                    core_regime_features[feature_name] = np.nan
+                
+                # Generate features row by row using a rolling window
+                window_size = 20
+                for i in range(len(data)):
+                    if i < 5:  # Need at least 5 rows for some features
+                        window_data = data.iloc[:i+1]
+                    else:
+                        # Use rolling window
+                        window_start = max(0, i - window_size + 1)
+                        window_data = data.iloc[window_start:i+1]
+                    
+                    # Generate features for this window
+                    regime_features_dict = regime_generator._generate_regime_features(window_data)
+                    
+                    # Store features
+                    for feature_name, feature_value in regime_features_dict.items():
+                        if isinstance(feature_value, (int, float)):
+                            core_regime_features.loc[data.index[i], feature_name] = feature_value
+                        elif isinstance(feature_value, bool):
+                            core_regime_features.loc[data.index[i], feature_name] = float(feature_value)
+                        elif isinstance(feature_value, str):
+                            # Store numeric representation of string (e.g., regime type)
+                            core_regime_features.loc[data.index[i], feature_name] = hash(feature_value) % 1000
+                        else:
+                            core_regime_features.loc[data.index[i], feature_name] = 0.0
+                    
+                    # Progress indicator for large datasets
+                    if (i + 1) % 100 == 0:
+                        tprint(f"🔧 [REGIME_MODELS] Generated core regime features for {i+1}/{len(data)} rows", color="blue")
+                
+                tprint(f"✅ [REGIME_MODELS] Generated {len(core_regime_features.columns)} core regime features", color="green")
+                
+                # Log which core regime features are available
+                categorizer = RegimeFeatureCategorizer()
+                core_regime_feature_names = categorizer.get_features_for_use_case(FeatureUseCase.REGIME_MODELS_TRAINING)
+                tprint(f"📋 [REGIME_MODELS] Core regime features available: {len(core_regime_feature_names)}", color="blue")
+                
+            except Exception as e:
+                tprint(f"⚠️ [REGIME_MODELS] Error generating core regime features: {e}", color="yellow")
+                import traceback
+                tprint(f"Traceback: {traceback.format_exc()}", color="yellow")
+            
             # Add advanced regime features for better regime detection
             tprint("🔧 [REGIME_MODELS] Adding advanced regime features for enhanced regime detection", color="cyan")
             advanced_generators = []
@@ -1960,6 +2038,12 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
 
             all_features = pd.DataFrame(index=data.index)
             total_features = 0
+            
+            # Add core regime features first (lagged, derived, temporal)
+            if not core_regime_features.empty:
+                all_features = pd.concat([all_features, core_regime_features], axis=1)
+                total_features += len(core_regime_features.columns)
+                tprint(f"📊 [REGIME_MODELS] Core regime features: {core_regime_features.shape[1]}", color="blue")
 
             # Generate features for each category
             for category in categories:

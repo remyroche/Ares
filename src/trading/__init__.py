@@ -3,7 +3,6 @@ Trading Module
 
 This module provides a comprehensive trading system with the following components:
 
-- regime/: ML-based detection of 15-25 market regimes with percentage weights
 - execution/: Order management, exchange interfaces, and live trading coordination
 - monitoring/: Real-time trading monitoring and performance tracking
 - data/: Live data collection and market data providers with ML integration
@@ -24,7 +23,6 @@ New Features:
 """
 
 from .config import *
-from .regime import *
 from .execution import *
 from .monitoring import *
 from .data import *

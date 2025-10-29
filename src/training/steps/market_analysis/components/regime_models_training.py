@@ -1380,6 +1380,7 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                     'sample_count': X.shape[0],
                     'regime_models_config': self.regime_models_config,
                     'feature_selection': training_results.get('feature_selection', feature_selection_info),
+                    'feature_selection_info': feature_selection_info,  # Full feature selection info
                     'selected_feature_names': feature_selection_info.get('selected_feature_names', []) if feature_selection_info else []
                 }
             }
@@ -1427,6 +1428,19 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
             except Exception as e:
                 tprint(f"⚠️ [REGIME_MODELS] Failed to save artifacts persistently: {e}", color="yellow")
 
+            # Create component_result structure that includes feature_selection_info
+            component_result = {
+                'models': training_results['models'],
+                'metrics': training_results['metrics'],
+                'feature_selection_info': feature_selection_info,  # Ensure this is in component_result
+                'selected_feature_names': feature_selection_info.get('selected_feature_names', []) if feature_selection_info else [],
+                'feature_count': X.shape[1],
+                'selected_feature_count': feature_selection_info.get('retained_feature_count', X.shape[1]) if feature_selection_info else X.shape[1],
+            }
+            
+            # Add component_result to artifacts for easy access
+            artifacts['component_result'] = component_result
+            
             return ComponentResult(
                 success=True,
                 artifacts=artifacts,

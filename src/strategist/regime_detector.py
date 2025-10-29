@@ -74,6 +74,14 @@ class RegimeDetector:
         # Regime feature engineer for consistent feature generation
         self.regime_feature_engineer = None
         
+        # Artifact manager for loading latest artifacts
+        self.artifact_manager = None
+        
+        # Trading context for artifact loading
+        self.symbol: str = config.get('symbol', 'ETHUSDT')
+        self.exchange: str = config.get('exchange', 'binance')
+        self.timeframe: str = config.get('timeframe', '1h')
+        
         # State
         self.is_initialized = False
         
@@ -434,26 +442,83 @@ class RegimeDetector:
             self.logger.warning(f"⚠️ Failed to load metadata: {e}")
     
     async def _initialize_regime_feature_engineer(self) -> None:
-        """Initialize regime feature engineer with selected features from training."""
+        """Initialize regime feature engineer with selected features from training artifacts."""
         try:
             from src.feature_generation.shared.regime_feature_engineer import (
                 create_regime_feature_engineer
             )
+            from src.training.steps.market_analysis.components.artifact_manager import ArtifactManager
             
-            # Try to load selected features from artifacts
-            artifacts_path = Path(self.models_directory) / "regime_models_training_result.pkl"
-            if not artifacts_path.exists():
-                # Try alternative paths
-                artifacts_dir = Path(self.models_directory)
-                if artifacts_dir.exists():
-                    for artifact_file in artifacts_dir.glob("**/regime_models_training_result.pkl"):
-                        artifacts_path = artifact_file
+            # Initialize artifact manager
+            self.artifact_manager = ArtifactManager(
+                base_dir=self.models_directory if Path(self.models_directory).is_absolute() else Path("artifacts"),
+                symbol=self.symbol,
+                exchange=self.exchange,
+                timeframe=self.timeframe
+            )
+            
+            # Load latest artifacts using artifact manager
+            # Component name is the class name used in save_artifacts
+            loaded_artifacts = self.artifact_manager.load_artifacts_from_latest_session(
+                component_name='RegimeModelsTrainingComponent',
+                artifact_names=['regime_models_training_result']
+            )
+            
+            # If not found, try with alternative name patterns
+            if not loaded_artifacts.get('regime_models_training_result'):
+                # Try various component name patterns
+                for alt_name in ['regime_models_training', 'RegimeModelsTraining', 'regime_models_training_step']:
+                    alt_artifacts = self.artifact_manager.load_artifacts_from_latest_session(
+                        component_name=alt_name,
+                        artifact_names=['regime_models_training_result']
+                    )
+                    if alt_artifacts.get('regime_models_training_result'):
+                        loaded_artifacts = alt_artifacts
+                        self.logger.info(f"✅ Found artifacts using component name: {alt_name}")
                         break
+            
+            selected_feature_names = self.selected_feature_names
+            feature_selection_info = {}
+            
+            # Try to extract from loaded artifacts
+            if loaded_artifacts.get('regime_models_training_result'):
+                artifact_data = loaded_artifacts['regime_models_training_result']
+                
+                # Check component_result structure
+                if isinstance(artifact_data, dict):
+                    if 'component_result' in artifact_data:
+                        comp_result = artifact_data['component_result']
+                        if isinstance(comp_result, dict) and 'feature_selection_info' in comp_result:
+                            feature_selection_info = comp_result['feature_selection_info']
+                            if isinstance(feature_selection_info, dict):
+                                selected_feature_names = feature_selection_info.get('selected_feature_names', [])
+                    
+                    # Also check direct access
+                    if not selected_feature_names and 'feature_selection_info' in artifact_data:
+                        fs_info = artifact_data['feature_selection_info']
+                        if isinstance(fs_info, dict):
+                            selected_feature_names = fs_info.get('selected_feature_names', [])
+                    
+                    if not selected_feature_names and 'selected_feature_names' in artifact_data:
+                        selected_feature_names = artifact_data['selected_feature_names']
+                
+                self.logger.info(f"✅ Loaded feature selection from latest artifact session for {self.symbol}/{self.exchange}/{self.timeframe}")
+            
+            # Fallback: try direct file path
+            if not selected_feature_names:
+                artifacts_path = Path(self.models_directory) / "regime_models_training_result.pkl"
+                if not artifacts_path.exists():
+                    artifacts_dir = Path(self.models_directory)
+                    if artifacts_dir.exists():
+                        for artifact_file in artifacts_dir.glob("**/regime_models_training_result.pkl"):
+                            artifacts_path = artifact_file
+                            break
             
             # Create feature engineer
             self.regime_feature_engineer = create_regime_feature_engineer(
-                selected_feature_names=self.selected_feature_names,
-                artifacts_path=artifacts_path if artifacts_path.exists() else None,
+                selected_feature_names=selected_feature_names,
+                feature_selection_info=feature_selection_info if feature_selection_info else None,
+                artifacts_path=artifacts_path if (not selected_feature_names and Path(artifacts_path).exists() if 'artifacts_path' in locals() else False) else None,
                 logger=self.logger
             )
             
@@ -466,6 +531,7 @@ class RegimeDetector:
                 
         except Exception as e:
             self.logger.warning(f"⚠️ Failed to initialize regime feature engineer: {e}. Will use simplified features.")
+            self.logger.debug(f"Error details: {e}", exc_info=True)
             self.regime_feature_engineer = None
 
     async def predict_regime(

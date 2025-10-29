@@ -129,6 +129,16 @@ class Strategist:
             regime_config = self.config.get("strategist", {}).get("regime_detector", {})
             regime_config.setdefault("models_directory", "artifacts/regime_models")
             
+            # Ensure symbol, exchange, and timeframe are passed for artifact loading
+            # These should come from the main config or trading context
+            if "symbol" not in regime_config:
+                regime_config["symbol"] = self.config.get("trading", {}).get("symbol") or self.config.get("symbol", "ETHUSDT")
+            if "exchange" not in regime_config:
+                regime_config["exchange"] = self.config.get("trading", {}).get("exchange") or self.config.get("exchange", "binance")
+            if "timeframe" not in regime_config:
+                # Regime detection typically uses 1h timeframe
+                regime_config["timeframe"] = self.config.get("regime_timeframe") or self.config.get("trading", {}).get("timeframe", "1h")
+            
             self.regime_detector = RegimeDetector(regime_config)
             await self.regime_detector.initialize()
             

@@ -139,11 +139,14 @@ class LiveTrader:
         """Initialize live trader components."""
         try:
             # Initialize exchange interface first
-            exchange_type = ExchangeType(self.config.get('exchange_type', 'simulated'))
-            self.exchange_interface = await create_exchange_interface(
-                exchange_type, self.config
-            )
-
+            exchange_config = self.config.copy()
+            exchange_type_str = self.config.get('exchange_type', 'simulated')
+            exchange_config['exchange_type'] = exchange_type_str
+            
+            # Create exchange interface
+            self.exchange_interface = create_exchange_interface(exchange_config)
+            
+            # Connect to exchange
             if not await self.exchange_interface.connect():
                 raise ExecutionError("Failed to connect to exchange")
             
@@ -410,6 +413,16 @@ class LiveTrader:
 
             position = self.positions[symbol]
             close_quantity = quantity or position.quantity
+            
+            # Validate quantity
+            if close_quantity <= 0:
+                tprint_error(f"❌ Invalid close quantity: {close_quantity}")
+                return False
+            
+            # Ensure we don't close more than available
+            if close_quantity > position.quantity:
+                tprint_warning(f"⚠️ Close quantity {close_quantity} exceeds position {position.quantity}. Closing full position.")
+                close_quantity = position.quantity
 
             # Execute closing trade
             close_side = 'sell' if position.side == 'long' else 'buy'
@@ -627,6 +640,19 @@ class LiveTrader:
             for order_id in list(self.active_orders.keys()):
                 await self.cancel_order(order_id)
 
+            # Clean up signal generators
+            if self.analyst_signal_generator and hasattr(self.analyst_signal_generator, 'cleanup'):
+                try:
+                    await self.analyst_signal_generator.cleanup()
+                except Exception as e:
+                    tprint_warning(f"⚠️ Error cleaning up analyst signal generator: {e}")
+            
+            if self.tactician_signal_generator and hasattr(self.tactician_signal_generator, 'cleanup'):
+                try:
+                    await self.tactician_signal_generator.cleanup()
+                except Exception as e:
+                    tprint_warning(f"⚠️ Error cleaning up tactician signal generator: {e}")
+
             # Close session
             if self.session:
                 self.session.end_time = datetime.now()
@@ -634,6 +660,10 @@ class LiveTrader:
             # Disconnect exchange
             if self.exchange_interface:
                 await self.exchange_interface.disconnect()
+
+            # Clean up order manager
+            if self.order_manager and hasattr(self.order_manager, 'cleanup'):
+                await self.order_manager.cleanup()
 
             self.status = LiveTraderStatus.STOPPED
 

@@ -824,6 +824,161 @@ class PerformanceReporter:
         html += '</div>'
         return html
 
+    async def _compare_model_performance(self, model_performance: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
+        """Compare performance across different models."""
+        try:
+            if not model_performance:
+                return {}
+            
+            # Rank models by various metrics
+            models_by_pnl = sorted(model_performance.items(), key=lambda x: x[1].get('total_pnl', 0), reverse=True)
+            models_by_accuracy = sorted(model_performance.items(), key=lambda x: x[1].get('accuracy', 0), reverse=True)
+            models_by_confidence = sorted(model_performance.items(), key=lambda x: x[1].get('avg_confidence', 0), reverse=True)
+            
+            return {
+                'rankings': {
+                    'by_pnl': [(m[0], m[1].get('total_pnl', 0)) for m in models_by_pnl],
+                    'by_accuracy': [(m[0], m[1].get('accuracy', 0)) for m in models_by_accuracy],
+                    'by_confidence': [(m[0], m[1].get('avg_confidence', 0)) for m in models_by_confidence]
+                },
+                'best_performer': models_by_pnl[0][0] if models_by_pnl else None,
+                'most_accurate': models_by_accuracy[0][0] if models_by_accuracy else None,
+                'most_confident': models_by_confidence[0][0] if models_by_confidence else None
+            }
+        except Exception as e:
+            tprint_error(f"❌ Failed to compare model performance: {e}")
+            return {}
+
+    async def _analyze_ensemble_performance(self, trades: List[DetailedTradeMetrics]) -> Dict[str, Any]:
+        """Analyze ensemble model performance."""
+        try:
+            if not trades:
+                return {}
+            
+            # Analyze trades where multiple models were used
+            ensemble_trades = [t for t in trades if len(t.models_used) > 1]
+            single_model_trades = [t for t in trades if len(t.models_used) == 1]
+            
+            ensemble_pnl = [t.pnl_absolute for t in ensemble_trades if t.pnl_absolute is not None]
+            single_pnl = [t.pnl_absolute for t in single_model_trades if t.pnl_absolute is not None]
+            
+            return {
+                'ensemble_vs_single': {
+                    'ensemble_trades': len(ensemble_trades),
+                    'single_model_trades': len(single_model_trades),
+                    'ensemble_avg_pnl': np.mean(ensemble_pnl) if ensemble_pnl else 0.0,
+                    'single_avg_pnl': np.mean(single_pnl) if single_pnl else 0.0,
+                    'ensemble_win_rate': len([p for p in ensemble_pnl if p > 0]) / len(ensemble_pnl) if ensemble_pnl else 0.0,
+                    'single_win_rate': len([p for p in single_pnl if p > 0]) / len(single_pnl) if single_pnl else 0.0
+                },
+                'ensemble_effectiveness': 'better' if ensemble_pnl and single_pnl and np.mean(ensemble_pnl) > np.mean(single_pnl) else 'similar' if ensemble_pnl and single_pnl else 'unknown'
+            }
+        except Exception as e:
+            tprint_error(f"❌ Failed to analyze ensemble performance: {e}")
+            return {}
+
+    async def _calculate_trade_quality_metrics(self, trades: List[DetailedTradeMetrics]) -> Dict[str, Any]:
+        """Calculate trade quality metrics."""
+        try:
+            if not trades:
+                return {}
+            
+            # Quality indicators
+            high_confidence_trades = [t for t in trades if t.signal_confidence > 0.7]
+            low_confidence_trades = [t for t in trades if t.signal_confidence < 0.5]
+            
+            high_conf_pnl = [t.pnl_absolute for t in high_confidence_trades if t.pnl_absolute is not None]
+            low_conf_pnl = [t.pnl_absolute for t in low_confidence_trades if t.pnl_absolute is not None]
+            
+            return {
+                'high_confidence_metrics': {
+                    'count': len(high_confidence_trades),
+                    'avg_pnl': np.mean(high_conf_pnl) if high_conf_pnl else 0.0,
+                    'win_rate': len([p for p in high_conf_pnl if p > 0]) / len(high_conf_pnl) if high_conf_pnl else 0.0
+                },
+                'low_confidence_metrics': {
+                    'count': len(low_confidence_trades),
+                    'avg_pnl': np.mean(low_conf_pnl) if low_conf_pnl else 0.0,
+                    'win_rate': len([p for p in low_conf_pnl if p > 0]) / len(low_conf_pnl) if low_conf_pnl else 0.0
+                },
+                'quality_score': len(high_confidence_trades) / len(trades) if trades else 0.0
+            }
+        except Exception as e:
+            tprint_error(f"❌ Failed to calculate trade quality metrics: {e}")
+            return {}
+
+    async def _analyze_model_agreement(self, trades: List[DetailedTradeMetrics]) -> Dict[str, Any]:
+        """Analyze model agreement across trades."""
+        try:
+            if not trades:
+                return {}
+            
+            agreement_scores = []
+            for trade in trades:
+                if len(trade.model_predictions) > 1:
+                    predictions = list(trade.model_predictions.values())
+                    # Agreement is inverse of variance
+                    variance = np.var(predictions)
+                    agreement = 1.0 - min(variance, 1.0)
+                    agreement_scores.append(agreement)
+            
+            return {
+                'avg_agreement': np.mean(agreement_scores) if agreement_scores else 0.0,
+                'trades_with_multiple_models': len([t for t in trades if len(t.models_used) > 1]),
+                'agreement_distribution': {
+                    'high': len([s for s in agreement_scores if s > 0.8]),
+                    'medium': len([s for s in agreement_scores if 0.5 <= s <= 0.8]),
+                    'low': len([s for s in agreement_scores if s < 0.5])
+                }
+            }
+        except Exception as e:
+            tprint_error(f"❌ Failed to analyze model agreement: {e}")
+            return {}
+
+    async def _identify_drawdown_periods(self, cumulative_pnl: np.ndarray) -> List[Dict[str, Any]]:
+        """Identify drawdown periods in cumulative PnL."""
+        try:
+            if len(cumulative_pnl) < 2:
+                return []
+            
+            periods = []
+            peak = np.maximum.accumulate(cumulative_pnl)
+            drawdown = peak - cumulative_pnl
+            
+            # Find drawdown periods (where drawdown > 0)
+            in_drawdown = False
+            start_idx = None
+            
+            for i, dd in enumerate(drawdown):
+                if dd > 0 and not in_drawdown:
+                    # Start of drawdown
+                    in_drawdown = True
+                    start_idx = i
+                elif dd == 0 and in_drawdown:
+                    # End of drawdown
+                    in_drawdown = False
+                    if start_idx is not None:
+                        periods.append({
+                            'start_index': start_idx,
+                            'end_index': i - 1,
+                            'duration': i - start_idx,
+                            'max_drawdown': max(drawdown[start_idx:i])
+                        })
+            
+            # Handle case where drawdown continues to end
+            if in_drawdown and start_idx is not None:
+                periods.append({
+                    'start_index': start_idx,
+                    'end_index': len(drawdown) - 1,
+                    'duration': len(drawdown) - start_idx,
+                    'max_drawdown': max(drawdown[start_idx:])
+                })
+            
+            return periods
+        except Exception as e:
+            tprint_error(f"❌ Failed to identify drawdown periods: {e}")
+            return []
+
 # Global instance
 performance_reporter = PerformanceReporter()
 

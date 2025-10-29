@@ -798,6 +798,186 @@ class DashboardGenerator:
         html += '</div>'
         return html
 
+    async def _calculate_recent_model_usage(self, recent_trades: List[DetailedTradeMetrics]) -> Dict[str, int]:
+        """Calculate recent model usage statistics."""
+        try:
+            model_usage = {}
+            for trade in recent_trades:
+                for model_id in trade.models_used.keys():
+                    model_usage[model_id] = model_usage.get(model_id, 0) + 1
+            return model_usage
+        except Exception as e:
+            tprint_error(f"❌ Failed to calculate recent model usage: {e}")
+            return {}
+
+    async def _get_current_market_status(self, trades: List[DetailedTradeMetrics]) -> Dict[str, Any]:
+        """Get current market status from recent trades."""
+        try:
+            if not trades:
+                return {'status': 'unknown'}
+            
+            recent_trades = trades[-10:] if len(trades) > 10 else trades
+            
+            # Analyze recent market conditions
+            avg_volatility = np.mean([t.volatility_estimate for t in recent_trades if t.volatility_estimate > 0]) if recent_trades else 0.0
+            avg_confidence = np.mean([t.signal_confidence for t in recent_trades if t.signal_confidence > 0]) if recent_trades else 0.0
+            
+            # Most recent regime
+            current_regime = recent_trades[-1].regime_type if recent_trades else "unknown"
+            
+            return {
+                'status': 'active' if recent_trades else 'inactive',
+                'avg_volatility': avg_volatility,
+                'avg_confidence': avg_confidence,
+                'current_regime': current_regime,
+                'recent_trade_count': len(recent_trades)
+            }
+        except Exception as e:
+            tprint_error(f"❌ Failed to get current market status: {e}")
+            return {'status': 'unknown'}
+
+    async def _generate_model_performance_timeline(self, trades: List[DetailedTradeMetrics]) -> List[Dict[str, Any]]:
+        """Generate timeline of model performance over time."""
+        try:
+            if not trades:
+                return []
+            
+            # Sort trades by timestamp
+            sorted_trades = sorted(trades, key=lambda t: t.timestamp)
+            
+            timeline = []
+            model_performance_by_time = {}
+            
+            for trade in sorted_trades:
+                time_key = trade.timestamp.strftime('%Y-%m-%d %H:%M')
+                
+                for model_id in trade.models_used.keys():
+                    if model_id not in model_performance_by_time:
+                        model_performance_by_time[model_id] = {'pnl': [], 'timestamps': []}
+                    
+                    if trade.pnl_absolute is not None:
+                        model_performance_by_time[model_id]['pnl'].append(trade.pnl_absolute)
+                        model_performance_by_time[model_id]['timestamps'].append(trade.timestamp.isoformat())
+            
+            # Aggregate by time windows
+            for model_id, data in model_performance_by_time.items():
+                if data['timestamps']:
+                    timeline.append({
+                        'model_id': model_id,
+                        'timestamps': data['timestamps'],
+                        'cumulative_pnl': np.cumsum(data['pnl']).tolist() if data['pnl'] else []
+                    })
+            
+            return timeline
+        except Exception as e:
+            tprint_error(f"❌ Failed to generate model performance timeline: {e}")
+            return []
+
+    async def _generate_trade_frequency_data(self, trades: List[DetailedTradeMetrics]) -> Dict[str, Any]:
+        """Generate trade frequency analysis data."""
+        try:
+            if not trades:
+                return {}
+            
+            # Sort by timestamp
+            sorted_trades = sorted(trades, key=lambda t: t.timestamp)
+            
+            # Group by hour
+            hourly_counts = {}
+            for trade in sorted_trades:
+                hour = trade.timestamp.hour
+                hourly_counts[hour] = hourly_counts.get(hour, 0) + 1
+            
+            # Calculate trades per hour average
+            if len(sorted_trades) > 1:
+                duration_hours = (sorted_trades[-1].timestamp - sorted_trades[0].timestamp).total_seconds() / 3600
+                avg_trades_per_hour = len(trades) / duration_hours if duration_hours > 0 else 0.0
+            else:
+                avg_trades_per_hour = 0.0
+            
+            return {
+                'hourly_distribution': hourly_counts,
+                'total_trades': len(trades),
+                'avg_trades_per_hour': avg_trades_per_hour,
+                'time_range': {
+                    'start': sorted_trades[0].timestamp.isoformat() if sorted_trades else None,
+                    'end': sorted_trades[-1].timestamp.isoformat() if sorted_trades else None
+                }
+            }
+        except Exception as e:
+            tprint_error(f"❌ Failed to generate trade frequency data: {e}")
+            return {}
+
+    async def _get_model_feature_importance(self, model_id: str, model_trades: List[DetailedTradeMetrics]) -> Dict[str, float]:
+        """Get aggregated feature importance for a specific model."""
+        try:
+            if not model_trades:
+                return {}
+            
+            feature_importance = {}
+            feature_counts = {}
+            
+            for trade in model_trades:
+                # Get SHAP values for this model
+                if model_id in trade.shap_explanations:
+                    shap_values = trade.shap_explanations[model_id]
+                    for feature, importance in shap_values.items():
+                        if feature not in feature_importance:
+                            feature_importance[feature] = 0.0
+                            feature_counts[feature] = 0
+                        feature_importance[feature] += abs(importance)
+                        feature_counts[feature] += 1
+            
+            # Average feature importance
+            for feature in feature_importance:
+                if feature_counts[feature] > 0:
+                    feature_importance[feature] /= feature_counts[feature]
+            
+            # Sort by importance and return top 10
+            sorted_features = sorted(feature_importance.items(), key=lambda x: x[1], reverse=True)[:10]
+            
+            return dict(sorted_features)
+        except Exception as e:
+            tprint_error(f"❌ Failed to get model feature importance: {e}")
+            return {}
+
+    async def _analyze_regime_transitions(self, trades: List[DetailedTradeMetrics]) -> Dict[str, Any]:
+        """Analyze regime transitions in trading history."""
+        try:
+            if not trades or len(trades) < 2:
+                return {}
+            
+            # Sort by timestamp
+            sorted_trades = sorted(trades, key=lambda t: t.timestamp)
+            
+            transitions = []
+            transition_matrix = {}
+            
+            for i in range(1, len(sorted_trades)):
+                prev_regime = sorted_trades[i-1].regime_type
+                curr_regime = sorted_trades[i].regime_type
+                
+                if prev_regime != curr_regime:
+                    transitions.append({
+                        'timestamp': sorted_trades[i].timestamp.isoformat(),
+                        'from_regime': prev_regime,
+                        'to_regime': curr_regime
+                    })
+                    
+                    # Update transition matrix
+                    key = f"{prev_regime} -> {curr_regime}"
+                    transition_matrix[key] = transition_matrix.get(key, 0) + 1
+            
+            return {
+                'total_transitions': len(transitions),
+                'transition_matrix': transition_matrix,
+                'recent_transitions': transitions[-10:] if transitions else [],
+                'avg_transitions_per_day': len(transitions) / ((sorted_trades[-1].timestamp - sorted_trades[0].timestamp).days + 1) if len(sorted_trades) > 1 and (sorted_trades[-1].timestamp - sorted_trades[0].timestamp).days >= 0 else 0.0
+            }
+        except Exception as e:
+            tprint_error(f"❌ Failed to analyze regime transitions: {e}")
+            return {}
+
 # Global instance
 dashboard_generator = DashboardGenerator()
 

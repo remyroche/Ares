@@ -9,12 +9,12 @@ import asyncio
 import csv
 import json
 import logging
+import calendar
 from datetime import datetime, date, timedelta
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Union
 from dataclasses import dataclass, field, asdict
 from enum import Enum
-import calendar
 
 from src.utils.tprint import (
     tprint_info, tprint_success, tprint_error, tprint_warning,
@@ -265,7 +265,8 @@ class TradeReportingManager:
     
     def _get_storage_key(self, mode: str, exchange: str, asset: str) -> str:
         """Get storage key for in-memory trade storage"""
-        return f"{mode}_{exchange}_{asset}"
+        # Use delimiter that's unlikely to appear in exchange/asset names
+        return f"{mode}::{exchange}::{asset}"
     
     async def record_trade(self, trade_record: TradeRecord) -> bool:
         """
@@ -329,7 +330,6 @@ class TradeReportingManager:
         else:
             # Second period: 16th-end of month
             # Calculate last day of month
-            import calendar
             last_day = calendar.monthrange(year, month)[1]
             start_date = f"{year:04d}-{month:02d}-16"
             end_date = f"{year:04d}-{month:02d}-{last_day:02d}"
@@ -606,8 +606,8 @@ class TradeReportingManager:
                     for record in existing_records:
                         writer.writerow(record)
                     
-                # Write new recap
-                writer.writerow(recap.to_csv_dict())
+                    # Write new recap
+                    writer.writerow(recap.to_csv_dict())
             else:
                 # Create new file
                 with open(recap_file, 'w', newline='') as f:
@@ -643,8 +643,8 @@ class TradeReportingManager:
             success = True
             
             for storage_key in self.current_trades.keys():
-                # Parse storage key
-                parts = storage_key.split('_', 2)
+                # Parse storage key (format: "mode::exchange::asset")
+                parts = storage_key.split('::', 2)
                 if len(parts) == 3:
                     mode, exchange, asset = parts
                     
@@ -672,7 +672,7 @@ class TradeReportingManager:
         """Get count of trades matching criteria"""
         count = 0
         for storage_key, trades in self.current_trades.items():
-            parts = storage_key.split('_', 2)
+            parts = storage_key.split('::', 2)
             if len(parts) == 3:
                 key_mode, key_exchange, key_asset = parts
                 

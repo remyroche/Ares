@@ -322,7 +322,7 @@ class ResamplingConfig:
 class PipelineConfig:
     """Configuration for the enhanced klines processing pipeline."""
     data_dir: str = "historical_data"
-    exchange: str = "binance"
+    exchange: str = "binance"  # Default to Binance, but supports any exchange
     enable_logging: bool = True
     max_gap_minutes: int = 1
     enable_gap_filling: bool = True
@@ -929,6 +929,97 @@ class EnhancedKlinesProcessingPipeline:
 
             return results
 
+    async def process_klines_data_simple(
+        self,
+        exchange: str,
+        asset: str,
+        lookback_period: str,
+        interval: str = "1m",
+        api_key: str = "",
+        api_secret: str = "",
+        use_testnet: bool = True,
+        resampling_config: Optional[ResamplingConfig] = None,
+        batch_id: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Simplified interface for processing klines data with exchange, asset, and lookback period.
+        
+        Args:
+            exchange: Exchange name (e.g., "binance", "bingx", "okx")
+            asset: Trading asset (e.g., "BTC", "ETH", "ADA")
+            lookback_period: Lookback period (e.g., "1y", "6m", "30d", "7d")
+            interval: Data interval (e.g., "1m", "5m", "1h")
+            api_key: Exchange API key
+            api_secret: Exchange API secret
+            use_testnet: Whether to use testnet
+            resampling_config: Configuration for data resampling
+            batch_id: Optional batch identifier
+            
+        Returns:
+            Dictionary with complete processing results
+        """
+        # Parse lookback period
+        years = self._parse_lookback_period(lookback_period)
+        
+        # Create symbol
+        symbol = f"{asset}USDT"
+        
+        # Create exchange interface
+        exchange_config = {
+            'exchange_type': exchange.lower(),
+            'api_key': api_key,
+            'api_secret': api_secret,
+            'testnet': use_testnet,
+            'rate_limits': {}
+        }
+        
+        from src.trading.execution.exchange_interface import ExchangeInterface
+        exchange_interface = ExchangeInterface(exchange_config)
+        
+        try:
+            # Connect to exchange
+            await exchange_interface.connect()
+            
+            # Process klines data
+            results = await self.process_klines_data(
+                symbol=symbol,
+                interval=interval,
+                years=years,
+                exchange_interface=exchange_interface,
+                resampling_config=resampling_config,
+                batch_id=batch_id
+            )
+            
+            return results
+            
+        finally:
+            # Disconnect from exchange
+            await exchange_interface.disconnect()
+
+    def _parse_lookback_period(self, lookback_period: str) -> int:
+        """
+        Parse lookback period string into years.
+        
+        Args:
+            lookback_period: Period string (e.g., "1y", "6m", "30d", "7d")
+            
+        Returns:
+            Number of years
+        """
+        lookback_period = lookback_period.lower().strip()
+        
+        if lookback_period.endswith('y'):
+            return int(lookback_period[:-1])
+        elif lookback_period.endswith('m'):
+            months = int(lookback_period[:-1])
+            return max(1, months // 12)  # Convert to years, minimum 1
+        elif lookback_period.endswith('d'):
+            days = int(lookback_period[:-1])
+            return max(1, days // 365)  # Convert to years, minimum 1
+        else:
+            # Assume it's a number of years
+            return int(lookback_period)
+
     async def _download_data(
         self,
         symbol: str,
@@ -950,7 +1041,7 @@ class EnhancedKlinesProcessingPipeline:
                 tprint_info(f"📥 Processing {years} years of {symbol} {interval} data")
 
             # Check if we have existing data first
-            data_dir = Path(self.config.data_dir) / "binance" / symbol.lower() / "raw"
+            data_dir = Path(self.config.data_dir) / self.exchange / symbol.lower() / "raw"
             parquet_files = list(data_dir.glob(f"{symbol.lower()}_{interval}_*.parquet")) if data_dir.exists() else []
             
             if parquet_files and not getattr(self.config, 'force_download', False):
@@ -2148,6 +2239,58 @@ async def process_klines_data_enhanced(
     )
 
 if __name__ == "__main__":
+    # Example usage - simplified interface with exchange, asset, lookback period
+    async def main_simple():
+        """Example using the simplified interface."""
+        try:
+            # Configure pipeline
+            pipeline_config = PipelineConfig(
+                data_dir="historical_data",
+                exchange="bingx",  # or "binance", "okx", etc.
+                enable_logging=True,
+                enable_gap_filling=True,
+                enable_resampling=True,
+                enable_duplicate_handling=True,
+                enable_quality_validation=True,
+                batch_compatible=True
+            )
+            
+            # Configure resampling
+            resampling_config = ResamplingConfig(
+                target_intervals=['5m', '15m', '30m', '1h'],
+                method='ohlc',
+                preserve_volume=True,
+                resample_older_than_days=1,
+                enable_auto_resampling=True
+            )
+            
+            # Create pipeline
+            pipeline = EnhancedKlinesProcessingPipeline(pipeline_config)
+            
+            # Process data using simplified interface
+            results = await pipeline.process_klines_data_simple(
+                exchange="bingx",  # Exchange name
+                asset="BTC",       # Asset (will create BTCUSDT symbol)
+                lookback_period="1y",  # Lookback period: "1y", "6m", "30d", "7d"
+                interval="1m",     # Data interval
+                api_key="",        # Your API key
+                api_secret="",     # Your API secret
+                use_testnet=True,  # Use testnet
+                resampling_config=resampling_config,
+                batch_id="simple_test"
+            )
+            
+            print(f"🎉 Simple processing completed: {results['pipeline_success']}")
+            print(f"📊 Data quality: {results['data_quality']}")
+            print(f"📈 Final shape: {results['final_data_shape']}")
+            print(f"💾 Stored files: {results['stored_files']}")
+            print(f"🔄 Resampled intervals: {results['resampled_intervals']}")
+            
+        except Exception as e:
+            print(f"❌ Error in simple processing: {e}")
+            import traceback
+            traceback.print_exc()
+
     # Example usage - simplified for working with existing data
     async def main():
         try:
@@ -2173,8 +2316,9 @@ if __name__ == "__main__":
             )
 
             # Create enhanced exchange interface for data downloading
+            # Supports: 'binance', 'bingx', 'okx', 'mexc', 'gateio', 'phemex'
             exchange_config = {
-                'exchange_type': 'binance',
+                'exchange_type': 'binance',  # Change to 'bingx' for BingX
                 'api_key': "",  # Add your API key here
                 'api_secret': "",  # Add your API secret here
                 'testnet': True,
@@ -2228,4 +2372,5 @@ if __name__ == "__main__":
             import traceback
             traceback.print_exc()
 
-    asyncio.run(main())
+    # Run the simplified example
+    asyncio.run(main_simple())

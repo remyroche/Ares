@@ -25,7 +25,7 @@ from .factory import ExchangeFactory
 
 # Import exchange implementations
 # from .binance import BinanceExchange  # Commented out to avoid circular import
-# from .bingx import BingXExchange, create_bingx_exchange  # Commented out due to import issues
+from .bingx import BingXExchange, create_bingx_exchange
 # from .gateio import GateioExchange  # Commented out due to import issues
 # from .mexc import MexcExchange  # Commented out due to import issues
 # from .okx import OkxExchange, create_okx_exchange  # Commented out due to import issues
@@ -54,8 +54,8 @@ __all__ = [
     "ResponseHandler",
     "ExchangeFactory",
     # "BinanceExchange",  # Commented out to avoid circular import
-    # "BingXExchange",  # Commented out due to import issues
-    # "create_bingx_exchange",  # Commented out due to import issues
+    "BingXExchange",
+    "create_bingx_exchange",
     # "GateioExchange",  # Commented out due to import issues
     # "MexcExchange",  # Commented out due to import issues
     # "OkxExchange",  # Commented out due to import issues

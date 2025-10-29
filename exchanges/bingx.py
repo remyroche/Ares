@@ -479,9 +479,12 @@ class BingXExchange(BaseExchange):
         return await self._convert_to_market_data(raw_data, symbol, interval)
 
     @handles_errors
-    async def get_account_info(self) -> dict[str, Any]:
+    async def get_account_info(self) -> dict[str, Any] | None:
         """Get account information - public interface method."""
-        return await self._get_account_info_raw()
+        try:
+            return await self._get_account_info_raw()
+        except Exception:
+            return None
 
     @handles_errors
     async def create_order(
@@ -496,9 +499,84 @@ class BingXExchange(BaseExchange):
         return await self._create_order_raw(symbol, side, order_type, quantity, price, None)
 
     @handles_errors
+    async def cancel_order(self, symbol: str, order_id: str) -> bool:
+        """Cancel an order - public interface method."""
+        try:
+            result = await self._cancel_order_raw(symbol, order_id)
+            return result is not None and result.get("success", False)
+        except Exception:
+            return False
+
+    @handles_errors
+    async def get_order_status(self, symbol: str, order_id: str) -> dict[str, Any] | None:
+        """Get order status - public interface method."""
+        try:
+            return await self._get_order_status_raw(symbol, order_id)
+        except Exception:
+            return None
+
+    @handles_errors
+    async def get_open_orders(self, symbol: str | None = None) -> list[dict[str, Any]]:
+        """Get open orders - public interface method."""
+        try:
+            return await self._get_open_orders_raw(symbol)
+        except Exception:
+            return []
+
+    @handles_errors
     async def get_position_risk(self, symbol: str) -> dict[str, Any]:
         """Get position risk information - public interface method."""
         return await self._get_position_risk_raw(symbol)
+
+    @handles_errors
+    async def get_positions(self) -> list[dict[str, Any]]:
+        """Get all open positions - public interface method."""
+        return await self._get_positions_raw()
+
+    @handles_errors
+    async def get_price(self, symbol: str) -> float | None:
+        """Get current price for symbol - public interface method."""
+        return await self._get_price_raw(symbol)
+
+    @handles_errors
+    async def get_ticker(self, symbol: str) -> dict[str, Any] | None:
+        """Get ticker data for symbol - public interface method."""
+        return await self._get_ticker_raw(symbol)
+
+    @handles_errors
+    async def get_order_book(self, symbol: str, limit: int = 20) -> dict[str, Any] | None:
+        """Get order book for symbol - public interface method."""
+        return await self._get_order_book_raw(symbol, limit)
+
+    @handles_errors
+    async def get_balance(self, currency: str = "USDT") -> float:
+        """Get balance for currency - public interface method."""
+        return await self._get_balance_raw(currency)
+
+    @handles_errors
+    async def get_liquidation_risk(self, symbol: str) -> dict[str, Any] | None:
+        """Get liquidation risk for symbol - public interface method."""
+        return await self._get_liquidation_risk_raw(symbol)
+
+    @handles_errors
+    async def set_leverage(self, symbol: str, leverage: float) -> bool:
+        """Set leverage for a symbol - public interface method."""
+        return await self._set_leverage_raw(symbol, leverage)
+
+    @handles_errors
+    async def set_margin_mode(self, symbol: str, mode: str) -> bool:
+        """Set margin mode for a symbol - public interface method."""
+        return await self._set_margin_mode_raw(symbol, mode)
+
+    @handles_errors
+    async def close_position(self, symbol: str, side: str | None = None) -> dict[str, Any]:
+        """Close a position - public interface method."""
+        return await self._close_position_raw(symbol, side)
+
+    @handles_errors
+    async def modify_position(self, symbol: str, quantity: float, side: str) -> dict[str, Any]:
+        """Modify a position - public interface method."""
+        return await self._modify_position_raw(symbol, quantity, side)
 
     @handles_errors
     async def close(self) -> None:
@@ -507,6 +585,209 @@ class BingXExchange(BaseExchange):
             await self.session.close()
             self.session = None
         self.logger.info("BingX exchange connection closed")
+
+    # Raw implementation methods for perp trading
+    @handles_errors
+    async def _get_positions_raw(self) -> list[dict[str, Any]]:
+        """Get raw positions data from BingX."""
+        data = await self._make_request("GET", "/openApi/swap/v2/user/positions", {})
+        
+        if not data:
+            raise BingXAPIError("No positions data received")
+        
+        positions = []
+        for pos in data:
+            positions.append({
+                "symbol": pos.get("symbol", ""),
+                "side": pos.get("side", ""),
+                "size": float(pos.get("size", 0)),
+                "entryPrice": float(pos.get("entryPrice", 0)),
+                "markPrice": float(pos.get("markPrice", 0)),
+                "pnl": float(pos.get("pnl", 0)),
+                "percentage": float(pos.get("percentage", 0)),
+                "margin": float(pos.get("margin", 0)),
+                "leverage": float(pos.get("leverage", 1)),
+                "liquidationPrice": float(pos.get("liquidationPrice", 0)),
+                "timestamp": pos.get("timestamp", 0)
+            })
+        
+        return positions
+
+    @handles_errors
+    async def _set_leverage_raw(self, symbol: str, leverage: float) -> bool:
+        """Set leverage for a symbol on BingX."""
+        params = {
+            "symbol": symbol.upper(),
+            "leverage": int(leverage)
+        }
+        
+        data = await self._make_request("POST", "/openApi/swap/v2/trade/leverage", params)
+        
+        if not data:
+            raise BingXAPIError("Failed to set leverage")
+        
+        return data.get("success", False)
+
+    @handles_errors
+    async def _set_margin_mode_raw(self, symbol: str, mode: str) -> bool:
+        """Set margin mode for a symbol on BingX."""
+        params = {
+            "symbol": symbol.upper(),
+            "marginMode": mode.upper()  # ISOLATED or CROSSED
+        }
+        
+        data = await self._make_request("POST", "/openApi/swap/v2/trade/marginMode", params)
+        
+        if not data:
+            raise BingXAPIError("Failed to set margin mode")
+        
+        return data.get("success", False)
+
+    @handles_errors
+    async def _close_position_raw(self, symbol: str, side: str | None = None) -> dict[str, Any]:
+        """Close a position on BingX."""
+        # Get current position to determine side if not provided
+        if not side:
+            positions = await self._get_positions_raw()
+            for pos in positions:
+                if pos["symbol"] == symbol.upper() and float(pos["size"]) > 0:
+                    side = "SELL" if pos["side"] == "LONG" else "BUY"
+                    break
+        
+        if not side:
+            raise BingXAPIError(f"No open position found for {symbol}")
+        
+        # Create a market order to close the position
+        params = {
+            "symbol": symbol.upper(),
+            "side": side,
+            "type": "MARKET",
+            "quantity": "0",  # Close entire position
+            "reduceOnly": True
+        }
+        
+        data = await self._make_request("POST", "/openApi/swap/v2/trade/order", params)
+        
+        if not data:
+            raise BingXAPIError("Failed to close position")
+        
+        return {
+            "orderId": data.get("orderId", ""),
+            "symbol": symbol,
+            "side": side,
+            "status": "FILLED",
+            "message": "Position closed successfully"
+        }
+
+    @handles_errors
+    async def _modify_position_raw(self, symbol: str, quantity: float, side: str) -> dict[str, Any]:
+        """Modify a position on BingX."""
+        params = {
+            "symbol": symbol.upper(),
+            "side": side.upper(),
+            "type": "MARKET",
+            "quantity": str(quantity)
+        }
+        
+        data = await self._make_request("POST", "/openApi/swap/v2/trade/order", params)
+        
+        if not data:
+            raise BingXAPIError("Failed to modify position")
+        
+        return {
+            "orderId": data.get("orderId", ""),
+            "symbol": symbol,
+            "side": side,
+            "quantity": quantity,
+            "status": "FILLED",
+            "message": "Position modified successfully"
+        }
+
+    @handles_errors
+    async def _get_price_raw(self, symbol: str) -> float | None:
+        """Get raw price data from BingX."""
+        data = await self._make_request("GET", "/openApi/swap/v2/quote/ticker", {"symbol": symbol.upper()})
+        
+        if not data:
+            return None
+        
+        return float(data.get("lastPrice", 0))
+
+    @handles_errors
+    async def _get_ticker_raw(self, symbol: str) -> dict[str, Any] | None:
+        """Get raw ticker data from BingX."""
+        data = await self._make_request("GET", "/openApi/swap/v2/quote/ticker", {"symbol": symbol.upper()})
+        
+        if not data:
+            return None
+        
+        return {
+            "symbol": data.get("symbol", ""),
+            "price": float(data.get("lastPrice", 0)),
+            "bid": float(data.get("bidPrice", 0)),
+            "ask": float(data.get("askPrice", 0)),
+            "volume": float(data.get("volume", 0)),
+            "quoteVolume": float(data.get("quoteVolume", 0)),
+            "high": float(data.get("highPrice", 0)),
+            "low": float(data.get("lowPrice", 0)),
+            "change": float(data.get("priceChange", 0)),
+            "changePercent": float(data.get("priceChangePercent", 0)),
+            "timestamp": data.get("time", 0)
+        }
+
+    @handles_errors
+    async def _get_order_book_raw(self, symbol: str, limit: int = 20) -> dict[str, Any] | None:
+        """Get raw order book data from BingX."""
+        params = {
+            "symbol": symbol.upper(),
+            "limit": min(limit, 100)  # BingX max limit is 100
+        }
+        
+        data = await self._make_request("GET", "/openApi/swap/v2/quote/depth", params)
+        
+        if not data:
+            return None
+        
+        return {
+            "symbol": data.get("symbol", ""),
+            "bids": [[float(bid[0]), float(bid[1])] for bid in data.get("bids", [])],
+            "asks": [[float(ask[0]), float(ask[1])] for ask in data.get("asks", [])],
+            "timestamp": data.get("time", 0)
+        }
+
+    @handles_errors
+    async def _get_balance_raw(self, currency: str = "USDT") -> float:
+        """Get raw balance data from BingX."""
+        data = await self._make_request("GET", "/openApi/swap/v2/user/balance", {})
+        
+        if not data:
+            return 0.0
+        
+        # Find the currency in the balance list
+        for balance in data:
+            if balance.get("asset", "").upper() == currency.upper():
+                return float(balance.get("balance", 0))
+        
+        return 0.0
+
+    @handles_errors
+    async def _get_liquidation_risk_raw(self, symbol: str) -> dict[str, Any] | None:
+        """Get raw liquidation risk data from BingX."""
+        # Get position data to calculate liquidation risk
+        positions = await self._get_positions_raw()
+        
+        for pos in positions:
+            if pos["symbol"] == symbol.upper() and float(pos["size"]) > 0:
+                return {
+                    "symbol": pos["symbol"],
+                    "liquidationPrice": float(pos["liquidationPrice"]),
+                    "marginRatio": float(pos["margin"]) / float(pos["size"]) if float(pos["size"]) > 0 else 0,
+                    "leverage": float(pos["leverage"]),
+                    "unrealizedPnl": float(pos["pnl"]),
+                    "riskLevel": "HIGH" if float(pos["liquidationPrice"]) > 0 else "LOW"
+                }
+        
+        return None
 
 
 # Factory function for creating BingX exchange instances
